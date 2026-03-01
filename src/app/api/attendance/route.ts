@@ -63,7 +63,6 @@ export async function GET(req: NextRequest) {
 
 export async function DELETE(req: Request) {
     const session = await getServerSession(authOptions);
-    const session = await getServerSession(authOptions);
     const user = session?.user as any;
 
     if (!user) {

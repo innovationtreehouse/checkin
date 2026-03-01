@@ -9,8 +9,9 @@ export default function NavBar() {
     const router = useRouter();
     const pathname = usePathname();
 
-    // Don't show complex navigation on the homepage if they aren't signed in
+    // Don't show navigation on the homepage if they aren't signed in, or on the kiosk display
     if (!session && pathname === '/') return null;
+    if (pathname === '/kioskdisplay') return null;
 
     return (
         <nav style={{
