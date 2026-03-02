@@ -1,0 +1,29 @@
+nohup: ignoring input
+
+> checkmein@0.1.0 dev
+> next dev -p 4000 -H 0.0.0.0
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:4000
+- Network:       http://0.0.0.0:4000
+- Environments: .env
+
+✓ Starting...
+✓ Ready in 5.3s
+ GET / 200 in 2.8s (compile: 1765ms, render: 1017ms)
+ GET /api/auth/dev-personas 200 in 4.4s (compile: 2.7s, render: 1711ms)
+ GET /api/auth/providers 200 in 232ms (compile: 129ms, render: 103ms)
+ GET /api/auth/session 200 in 6.4s (compile: 6.3s, render: 125ms)
+ GET /api/auth/csrf 200 in 146ms (compile: 100ms, render: 46ms)
+ POST /api/auth/callback/credentials 200 in 447ms (compile: 17ms, render: 430ms)
+ GET /api/attendance 200 in 1174ms (compile: 378ms, render: 796ms)
+ GET / 200 in 530ms (compile: 52ms, render: 478ms)
+ GET /api/auth/dev-personas 200 in 74ms (compile: 10ms, render: 64ms)
+ GET /api/auth/session 200 in 51ms (compile: 22ms, render: 29ms)
+ GET /api/attendance 200 in 52ms (compile: 11ms, render: 41ms)
+ GET /admin 200 in 1294ms (compile: 1049ms, render: 246ms)
+ GET /api/admin/orphans 200 in 605ms (compile: 529ms, render: 76ms)
+ GET /api/admin/orphans 200 in 54ms (compile: 9ms, render: 45ms)
+ GET /admin/print-badges 200 in 345ms (compile: 231ms, render: 113ms)
+ GET /api/admin/participants/search 200 in 1642ms (compile: 1523ms, render: 119ms)
+ GET /api/admin/participants/search 200 in 51ms (compile: 14ms, render: 38ms)

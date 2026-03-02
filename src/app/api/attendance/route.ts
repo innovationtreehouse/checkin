@@ -111,6 +111,7 @@ export async function DELETE(req: Request) {
 }
 
 export async function POST(req: Request) {
+    const session = await getServerSession(authOptions);
     const user = session?.user as any;
 
     if (!user) {

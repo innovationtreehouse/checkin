@@ -114,6 +114,15 @@ export default function AdminDashboardIndex() {
 
                     <button
                         className="glass-button"
+                        onClick={() => router.push('/admin/print-badges')}
+                        style={{ background: 'rgba(56, 189, 248, 0.2)', borderColor: 'rgba(56, 189, 248, 0.4)', padding: '2rem', fontSize: '1.25rem', flexDirection: 'column' }}
+                    >
+                        <strong>Print Badges</strong>
+                        <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem', color: 'var(--color-text)' }}>Bulk print standard Avery 5390 ID badges for members.</p>
+                    </button>
+
+                    <button
+                        className="glass-button"
                         onClick={() => router.push('/admin/participants/new')}
                         style={{ background: 'rgba(245, 158, 11, 0.2)', borderColor: 'rgba(245, 158, 11, 0.4)', padding: '2rem', fontSize: '1.25rem', gridColumn: '1 / -1', flexDirection: 'column' }}
                     >
