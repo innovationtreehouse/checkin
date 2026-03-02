@@ -10,13 +10,16 @@ echo "--- Pulling latest code ---"
 git pull
 
 echo "--- Installing dependencies ---"
-npm install --omit=dev
+npm install
 
 echo "--- Generating Prisma client ---"
 npx prisma generate
 
 echo "--- Building application ---"
 npm run build
+
+echo "--- Cleaning up dev dependencies ---"
+npm prune --omit=dev
 
 echo "--- Restarting application service ---"
 # If using systemd:
