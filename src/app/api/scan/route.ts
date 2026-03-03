@@ -116,17 +116,6 @@ export async function POST(req: NextRequest) {
         console.log(`Active visit found: ${activeVisit ? 'Yes' : 'No'}`);
 
         if (activeVisit) {
-            // User is already checked in, so we Check them Out
-            const updatedVisit = await prisma.visit.update({
-                where: { id: activeVisit.id },
-                data: { departed: new Date() },
-            });
-
-            // Fire-and-forget: send check-out notifications
-            sendCheckinNotifications(participant.id, 'checkout').catch(err =>
-                console.error('Checkout notification error:', err)
-            );
-
             let facilityClosed = false;
 
             // Check if they were a keyholder
@@ -135,12 +124,48 @@ export async function POST(req: NextRequest) {
                 const remainingKeyholders = await prisma.visit.count({
                     where: {
                         departed: null,
-                        participant: { keyholder: true }
+                        participant: { keyholder: true },
+                        id: { not: activeVisit.id }
                     }
                 });
 
-                // If 0 remaining, close the facility
+                // If 0 remaining, check if there are other users
                 if (remainingKeyholders === 0) {
+                    const remainingUsers = await prisma.visit.findMany({
+                        where: {
+                            departed: null,
+                            id: { not: activeVisit.id }
+                        },
+                        include: { participant: true }
+                    });
+
+                    if (remainingUsers.length > 0) {
+                        let confirmForceClose = false;
+
+                        // Check if they badged recently to confirm
+                        const recentEvents = await prisma.rawBadgeEvent.findMany({
+                            where: { participantId: participant.id },
+                            orderBy: { time: "desc" },
+                            take: 2
+                        });
+
+                        if (recentEvents.length === 2) {
+                            const timeDiff = recentEvents[0].time.getTime() - recentEvents[1].time.getTime();
+                            if (timeDiff <= 12000) { // Within ~10-12 seconds
+                                confirmForceClose = true;
+                            }
+                        }
+
+                        if (!confirmForceClose) {
+                            // Do not log them out. Flash a warning.
+                            const names = remainingUsers.map(u => u.participant.name || u.participant.email).join(", ");
+                            return NextResponse.json({
+                                error: `Warning! You are the last keyholder, but others are here:\n${names}\n\nBadge again within 10 seconds to confirm you've checked them and close the facility.`,
+                                type: "warning"
+                            }, { status: 400 });
+                        }
+                    }
+
                     facilityClosed = true;
                     // Forcibly checkout all remaining attendees
                     await prisma.visit.updateMany({
@@ -150,6 +175,14 @@ export async function POST(req: NextRequest) {
                     console.log("Facility closed. Forcibly checked out all remaining members.");
                 }
             }
+
+            // User is already checked in, so we Check them Out
+            const updatedVisit = await prisma.visit.update({
+                where: { id: activeVisit.id },
+                data: { departed: new Date() },
+            });
+
+            // Fire-and-forget: send check-out notifications
 
             return NextResponse.json({
                 message: facilityClosed ? "Checked out and Facility closed" : "Checked out successfully",
