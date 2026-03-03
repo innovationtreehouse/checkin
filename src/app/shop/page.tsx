@@ -85,6 +85,16 @@ export default function ShopStewardPage() {
                             <p style={{ margin: '0.5rem 0 0 0', fontSize: '1rem', color: 'var(--color-text)' }}>Review master tool lists and grant safety clearance levels to fellow members.</p>
                         </button>
                     )}
+
+                    <button
+                        className="glass-button"
+                        onClick={() => window.open('/kioskdisplay/certifications', '_blank')}
+                        style={{ background: 'rgba(16, 185, 129, 0.2)', borderColor: 'rgba(16, 185, 129, 0.4)', padding: '2.5rem', fontSize: '1.25rem', flexDirection: 'column', gridColumn: '1 / -1' }}
+                    >
+                        <span style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>&#128202;</span>
+                        <strong>Live Certifications Center</strong>
+                        <p style={{ margin: '0.5rem 0 0 0', fontSize: '1rem', color: 'var(--color-text)' }}>View a live matrix of participants currently at the facility and their tool certifications.</p>
+                    </button>
                 </div>
 
             </div>
