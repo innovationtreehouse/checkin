@@ -180,6 +180,33 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         } catch { }
     };
 
+    const handleAddParticipant = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newVolId) return; // Reusing state for the same lookup
+
+        setSaving(true);
+        setMessage("");
+        try {
+            const res = await fetch(`/api/programs/${id}/participants`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    participantId: parseInt(newVolId),
+                    override: true
+                })
+            });
+            if (res.ok) {
+                setNewVolId("");
+                fetchProgram();
+            } else {
+                const data = await res.json();
+                setMessage(data.error || "Failed to enroll participant.");
+            }
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleRemoveParticipant = async (participantId: number) => {
         if (!confirm("Remove this participant?")) return;
         try {
@@ -333,6 +360,20 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         {/* Participants Section */}
                         <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '8px' }}>
                             <h3 style={{ margin: '0 0 1rem 0' }}>Enrolled Participants ({program.participants.length})</h3>
+
+                            <form onSubmit={handleAddParticipant} style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                                <div style={{ flex: 1, minWidth: '200px' }}>
+                                    <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Assign Participant</label>
+                                    <select className="glass-input" value={newVolId} onChange={e => setNewVolId(e.target.value)} style={{ width: '100%', padding: '0.5rem' }} required>
+                                        <option value="">-- Select Member --</option>
+                                        {allParticipants.map(p => (
+                                            <option key={p.id} value={p.id}>{p.name || 'Unnamed'} ({p.email})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <button type="submit" className="glass-button" disabled={saving || !newVolId} style={{ padding: '0.5rem 1rem' }}>Enroll</button>
+                            </form>
+
                             {program.participants.length === 0 ? <p style={{ color: 'gray', margin: 0 }}>No participants yet.</p> :
                                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                     {program.participants.map(p => (

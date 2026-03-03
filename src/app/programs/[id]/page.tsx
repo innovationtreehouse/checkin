@@ -10,6 +10,7 @@ type ProgramDetail = {
     name: string;
     begin: string | null;
     end: string | null;
+    leadMentorId: number | null;
     participants: { participantId: number }[];
 };
 
@@ -114,9 +115,16 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             <div className={`glass-container ${styles.heroContainer}`} style={{ maxWidth: '800px', width: '100%' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
                     <h1 className="text-gradient" style={{ fontSize: '2.5rem', margin: 0 }}>{program.name}</h1>
-                    <button className="glass-button" onClick={() => router.push('/programs')} style={{ padding: '0.5rem 1rem' }}>
-                        &larr; Back
-                    </button>
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                        {(session && ((session.user as any)?.sysadmin || (session.user as any)?.boardMember || (session.user as any)?.id === program.leadMentorId)) && (
+                            <button className="glass-button" onClick={() => router.push(`/admin/programs/${program.id}`)} style={{ padding: '0.5rem 1rem', background: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.4)', color: '#4ade80' }}>
+                                Manage Program
+                            </button>
+                        )}
+                        <button className="glass-button" onClick={() => router.push('/programs')} style={{ padding: '0.5rem 1rem' }}>
+                            &larr; Back
+                        </button>
+                    </div>
                 </div>
 
                 <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '8px', marginBottom: '2rem' }}>

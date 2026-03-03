@@ -11,6 +11,7 @@ type ProgramSummary = {
     begin: string | null;
     end: string | null;
     memberOnly: boolean;
+    leadMentorId: number | null;
 };
 
 export default function PublicProgramsDirectory() {
@@ -96,9 +97,16 @@ export default function PublicProgramsDirectory() {
                                 {program.end ? ` - ${new Date(program.end).toLocaleDateString()}` : ' (Ongoing)'}
                             </p>
 
-                            <Link href={`/programs/${program.id}`} style={{ display: 'block', textAlign: 'center', background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', padding: '0.75rem', borderRadius: '8px', textDecoration: 'none', fontWeight: 500, marginTop: '1.5rem' }}>
-                                View Details
-                            </Link>
+                            <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                                <Link href={`/programs/${program.id}`} style={{ flex: 1, display: 'block', textAlign: 'center', background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', padding: '0.75rem', borderRadius: '8px', textDecoration: 'none', fontWeight: 500 }}>
+                                    View Details
+                                </Link>
+                                {(session && ((session.user as any)?.sysadmin || (session.user as any)?.boardMember || (session.user as any)?.id === program.leadMentorId)) && (
+                                    <Link href={`/admin/programs/${program.id}`} style={{ flex: 1, display: 'block', textAlign: 'center', background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', padding: '0.75rem', borderRadius: '8px', textDecoration: 'none', fontWeight: 500 }}>
+                                        Manage
+                                    </Link>
+                                )}
+                            </div>
                         </div>
                     ))}
 
