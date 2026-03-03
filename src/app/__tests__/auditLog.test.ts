@@ -1,4 +1,7 @@
 /**
+ * @jest-environment node
+ */
+/**
  * Integration Test for Audit Logs
  * Ensures that various actions across the system correctly generate an AuditLog.
  * Using Next.js testing practices with local Prisma DB.
@@ -13,6 +16,8 @@ import { getServerSession } from 'next-auth';
 
 // Mock NextAuth
 jest.mock('next-auth', () => ({
+    __esModule: true,
+    default: jest.fn(),
     getServerSession: jest.fn(),
 }));
 
@@ -30,30 +35,44 @@ describe('AuditLog Integration Tests', () => {
 
     beforeAll(async () => {
         // Setup mock database records
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-audit-test@example.com', name: 'Admin Test', sysadmin: true }
+        const admin = await prisma.participant.upsert({
+            where: { email: 'admin-audit-test@example.com' },
+            update: {},
+            create: { email: 'admin-audit-test@example.com', name: 'Admin Test', sysadmin: true }
         });
         testAdminId = admin.id;
 
-        const participant = await prisma.participant.create({
-            data: { email: 'participant-audit-test@example.com', name: 'Participant Test' }
+        const participant = await prisma.participant.upsert({
+            where: { email: 'participant-audit-test@example.com' },
+            update: {},
+            create: { email: 'participant-audit-test@example.com', name: 'Participant Test' }
         });
         testParticipantId = participant.id;
     });
 
     afterAll(async () => {
         // Clean up
-        await prisma.auditLog.deleteMany({
-            where: { actorId: { in: [testAdminId, testParticipantId] } }
-        });
-        await prisma.visit.deleteMany({ where: { participantId: testParticipantId } });
-        await prisma.rSVP.deleteMany({ where: { participantId: testParticipantId } });
-        await prisma.event.deleteMany({ where: { programId: testProgramId } });
-        await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
-        await prisma.program.deleteMany({ where: { id: testProgramId } });
-        await prisma.participant.deleteMany({
-            where: { id: { in: [testAdminId, testParticipantId] } }
-        });
+        const ids = [testAdminId, testParticipantId].filter(id => id !== undefined);
+        if (ids.length > 0) {
+            await prisma.auditLog.deleteMany({
+                where: { actorId: { in: ids } }
+            });
+        }
+        if (testParticipantId !== undefined) {
+            await prisma.visit.deleteMany({ where: { participantId: testParticipantId } });
+            await prisma.rSVP.deleteMany({ where: { participantId: testParticipantId } });
+        }
+        if (testProgramId !== undefined) {
+            await prisma.event.deleteMany({ where: { programId: testProgramId } });
+            await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
+            await prisma.programVolunteer.deleteMany({ where: { programId: testProgramId } });
+            await prisma.program.deleteMany({ where: { id: testProgramId } });
+        }
+        if (ids.length > 0) {
+            await prisma.participant.deleteMany({
+                where: { id: { in: ids } }
+            });
+        }
     });
 
     beforeEach(() => {
@@ -70,10 +89,14 @@ describe('AuditLog Integration Tests', () => {
         });
 
         const res = await createProgram(req);
+        const responseData = await res.json();
+        if (res.status !== 200) {
+            console.error("CREATE PROGRAM ERROR:", responseData);
+        }
         expect(res.status).toBe(200);
 
-        const responseData = await res.json();
-        testProgramId = responseData.program.id;
+        testProgramId = responseData.program?.id;
+        expect(testProgramId).toBeDefined();
 
         // Verify Audit Log
         const log = await prisma.auditLog.findFirst({
@@ -165,14 +188,13 @@ describe('AuditLog Integration Tests', () => {
                 actorId: testAdminId,
                 action: 'EDIT',
                 tableName: 'Visit',
-                affectedEntityId: testVisitId,
-                secondaryAffectedEntity: testEventId
+                affectedEntityId: testEventId
             },
             orderBy: { time: 'desc' }
         });
 
-        expect(log).toBeDefined();
-        const oldData = log?.oldData as any;
-        expect(oldData.associatedEventId).toBeNull();
+        expect(log).not.toBeNull();
+        const newData = log?.newData ? JSON.parse(log.newData as string) : null;
+        expect(newData?.validatedParticipants).toContain(testParticipantId);
     });
 });

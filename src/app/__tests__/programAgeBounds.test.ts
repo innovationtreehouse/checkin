@@ -41,28 +41,38 @@ describe('Program Age Bounds Integration Tests', () => {
         const dob20 = new Date(now.getFullYear() - 20, now.getMonth(), now.getDate());
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-age-test@example.com', name: 'Admin Age Test', sysadmin: true }
+        const admin = await prisma.participant.upsert({
+            where: { email: 'admin-age-test@example.com' },
+            update: {},
+            create: { email: 'admin-age-test@example.com', name: 'Admin Age Test', sysadmin: true }
         });
         testAdminId = admin.id;
 
-        const pValid = await prisma.participant.create({
-            data: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dob: dob16 }
+        const pValid = await prisma.participant.upsert({
+            where: { email: 'valid-age-test@example.com' },
+            update: { dob: dob16 },
+            create: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dob: dob16 }
         });
         validUserId = pValid.id;
 
-        const pUnder = await prisma.participant.create({
-            data: { email: 'underage-test@example.com', name: 'Underage Test', dob: dob12 }
+        const pUnder = await prisma.participant.upsert({
+            where: { email: 'underage-test@example.com' },
+            update: { dob: dob12 },
+            create: { email: 'underage-test@example.com', name: 'Underage Test', dob: dob12 }
         });
         underageUserId = pUnder.id;
 
-        const pOver = await prisma.participant.create({
-            data: { email: 'overage-test@example.com', name: 'Overage Test', dob: dob20 }
+        const pOver = await prisma.participant.upsert({
+            where: { email: 'overage-test@example.com' },
+            update: { dob: dob20 },
+            create: { email: 'overage-test@example.com', name: 'Overage Test', dob: dob20 }
         });
         overageUserId = pOver.id;
 
-        const pNoDob = await prisma.participant.create({
-            data: { email: 'no-dob-test@example.com', name: 'No DOB Test' }
+        const pNoDob = await prisma.participant.upsert({
+            where: { email: 'no-dob-test@example.com' },
+            update: {},
+            create: { email: 'no-dob-test@example.com', name: 'No DOB Test' }
         });
         noDobUserId = pNoDob.id;
 
@@ -80,14 +90,22 @@ describe('Program Age Bounds Integration Tests', () => {
 
     afterAll(async () => {
         // Clean up
-        await prisma.auditLog.deleteMany({
-            where: { actorId: { in: [testAdminId, validUserId, underageUserId, overageUserId, noDobUserId] } }
-        });
-        await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
-        await prisma.program.deleteMany({ where: { id: testProgramId } });
-        await prisma.participant.deleteMany({
-            where: { id: { in: [testAdminId, validUserId, underageUserId, overageUserId, noDobUserId] } }
-        });
+        const ids = [testAdminId, validUserId, underageUserId, overageUserId, noDobUserId].filter(id => id !== undefined);
+        if (ids.length > 0) {
+            await prisma.auditLog.deleteMany({
+                where: { actorId: { in: ids } }
+            });
+        }
+        if (testProgramId !== undefined) {
+            await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
+            await prisma.programVolunteer.deleteMany({ where: { programId: testProgramId } });
+            await prisma.program.deleteMany({ where: { id: testProgramId } });
+        }
+        if (ids.length > 0) {
+            await prisma.participant.deleteMany({
+                where: { id: { in: ids } }
+            });
+        }
     });
 
     afterEach(async () => {
