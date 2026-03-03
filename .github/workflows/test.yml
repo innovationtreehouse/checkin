@@ -40,10 +40,14 @@ jobs:
       env:
         HUSKY: "0"
       
+    - name: Verify Prisma Schema
+      run: |
+        ls -l prisma/schema.prisma
+        cat prisma/schema.prisma
+
     - name: Generate Prisma Client
       run: |
-        npx prisma --version
-        npx -y prisma generate > prisma_gen.txt 2>&1 || (cat prisma_gen.txt && exit 1)
+        npm run generate > prisma_gen.txt 2>&1 || (cat prisma_gen.txt && exit 1)
       env:
         DATABASE_URL: postgresql://user:password@127.0.0.1:5432/checkmein_test?sslmode=disable
 

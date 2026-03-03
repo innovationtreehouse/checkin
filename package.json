@@ -8,6 +8,7 @@
     "start": "next start -p 4000",
     "lint": "eslint",
     "test": "jest",
+    "generate": "prisma generate",
     "prepare": "husky install"
   },
   "dependencies": {
