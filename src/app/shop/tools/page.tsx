@@ -16,10 +16,14 @@ type Certification = {
     userId: number;
     toolId: number;
     level: "BASIC" | "DOF" | "CERTIFIED" | "MAY_CERTIFY_OTHERS";
-    user: {
+    user?: {
         id: number;
         name: string | null;
         email: string;
+    };
+    tool?: {
+        id: number;
+        name: string;
     };
 };
 
@@ -34,14 +38,18 @@ export default function ToolManagementPage() {
     const router = useRouter();
     const hasFetched = useRef(false);
 
+    const [filterMode, setFilterMode] = useState<'MEMBER' | 'TOOL'>('MEMBER');
+
     const [tools, setTools] = useState<Tool[]>([]);
     const [selectedToolId, setSelectedToolId] = useState<number | null>(null);
-    const [certifications, setCertifications] = useState<Certification[]>([]);
     const [allParticipants, setAllParticipants] = useState<ParticipantOption[]>([]);
+    const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
+    const [certifications, setCertifications] = useState<Certification[]>([]);
 
     const [confirmDialog, setConfirmDialog] = useState<{
         type: 'PROMOTION' | 'DEMOTION' | 'NEW';
         userName: string;
+        toolName: string;
         oldLevel: string;
         newLevel: string;
         payload: { toolId: number, participantId: number, level: string }
@@ -56,6 +64,7 @@ export default function ToolManagementPage() {
     };
 
     const [newCertUserId, setNewCertUserId] = useState("");
+    const [newCertToolId, setNewCertToolId] = useState("");
     const [newCertLevel, setNewCertLevel] = useState("CERTIFIED");
 
     const [loading, setLoading] = useState(true);
@@ -75,12 +84,14 @@ export default function ToolManagementPage() {
     }, [status]);
 
     useEffect(() => {
-        if (selectedToolId) {
-            fetchCertifications(selectedToolId);
+        if (filterMode === 'TOOL' && selectedToolId) {
+            fetchCertifications('TOOL', selectedToolId);
+        } else if (filterMode === 'MEMBER' && selectedMemberId) {
+            fetchCertifications('MEMBER', selectedMemberId);
         } else {
             setCertifications([]);
         }
-    }, [selectedToolId]);
+    }, [filterMode, selectedToolId, selectedMemberId]);
 
     const fetchTools = async () => {
         try {
@@ -101,9 +112,12 @@ export default function ToolManagementPage() {
         } catch { /* silent fail */ }
     };
 
-    const fetchCertifications = async (toolId: number) => {
+    const fetchCertifications = async (type: 'TOOL' | 'MEMBER', id: number) => {
         try {
-            const res = await fetch(`/api/shop/certifications?toolId=${toolId}`);
+            const url = type === 'TOOL'
+                ? `/api/shop/certifications?toolId=${id}`
+                : `/api/shop/certifications?participantId=${id}`;
+            const res = await fetch(url);
             if (res.ok) setCertifications(await res.json());
         } catch { }
     };
@@ -112,17 +126,34 @@ export default function ToolManagementPage() {
         e.preventDefault();
         setMessage("");
 
-        if (!selectedToolId || !newCertUserId || !newCertLevel) return;
+        let participantId: number;
+        let toolId: number;
+        let userName = "Unknown User";
+        let toolName = "Unknown Tool";
 
-        const participantId = parseInt(newCertUserId);
-        const participant = allParticipants.find(p => p.id === participantId);
-        const userName = participant?.name || participant?.email || "Unknown User";
+        if (filterMode === 'TOOL') {
+            if (!selectedToolId || !newCertUserId || !newCertLevel) return;
+            participantId = parseInt(newCertUserId);
+            toolId = selectedToolId;
+            const participant = allParticipants.find(p => p.id === participantId);
+            userName = participant?.name || participant?.email || "Unknown User";
+            toolName = tools.find(t => t.id === toolId)?.name || "Unknown Tool";
+        } else {
+            if (!selectedMemberId || !newCertToolId || !newCertLevel) return;
+            participantId = selectedMemberId;
+            toolId = parseInt(newCertToolId);
+            const participant = allParticipants.find(p => p.id === participantId);
+            userName = participant?.name || participant?.email || "Unknown User";
+            toolName = tools.find(t => t.id === toolId)?.name || "Unknown Tool";
+        }
 
-        const existingCert = certifications.find(c => c.userId === participantId);
+        const existingCert = certifications.find(c =>
+            filterMode === 'TOOL' ? c.userId === participantId : c.toolId === toolId
+        );
         const oldLevel = existingCert ? existingCert.level : "NONE";
 
         if (oldLevel === newCertLevel) {
-            setMessage("User already has this certification level.");
+            setMessage(`User already has the ${newCertLevel} certification level on this tool.`);
             return;
         }
 
@@ -133,10 +164,11 @@ export default function ToolManagementPage() {
         setConfirmDialog({
             type,
             userName,
+            toolName,
             oldLevel,
             newLevel: newCertLevel,
             payload: {
-                toolId: selectedToolId,
+                toolId,
                 participantId,
                 level: newCertLevel
             }
@@ -156,9 +188,14 @@ export default function ToolManagementPage() {
             });
 
             if (res.ok) {
-                setMessage(`Certification successfully updated for ${confirmDialog.userName}.`);
-                setNewCertUserId("");
-                fetchCertifications(selectedToolId!);
+                setMessage(`Certification successfully updated for ${confirmDialog.userName} on ${confirmDialog.toolName}.`);
+                if (filterMode === 'TOOL') setNewCertUserId("");
+                if (filterMode === 'MEMBER') setNewCertToolId("");
+
+                fetchCertifications(
+                    filterMode,
+                    filterMode === 'TOOL' ? selectedToolId! : selectedMemberId!
+                );
             } else {
                 const data = await res.json();
                 setMessage(data.error || "Failed to grant certification.");
@@ -175,6 +212,11 @@ export default function ToolManagementPage() {
         tool.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    const filteredParticipants = allParticipants.filter(p =>
+        (p.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.email.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
     const getBadgeStyle = (level: string) => {
         switch (level) {
             case 'BASIC': return { bg: '#3b82f6', color: '#fff', label: 'Basic' };
@@ -184,8 +226,6 @@ export default function ToolManagementPage() {
             default: return { bg: 'transparent', color: 'gray', label: '-' };
         }
     };
-
-
 
     if (loading || status === "loading") {
         return <main className={styles.main}><div className="glass-container animate-float"><h2>Loading...</h2></div></main>;
@@ -212,67 +252,140 @@ export default function ToolManagementPage() {
                     {/* Left Sidebar */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                         <div>
+                            {/* Filter Mode Toggle */}
+                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.25rem', borderRadius: '12px' }}>
+                                <button
+                                    onClick={() => { setFilterMode('MEMBER'); setSearchQuery(""); }}
+                                    style={{
+                                        flex: 1, padding: '0.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', transition: 'all 0.2s',
+                                        background: filterMode === 'MEMBER' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+                                        color: filterMode === 'MEMBER' ? '#38bdf8' : 'gray',
+                                        fontWeight: filterMode === 'MEMBER' ? 600 : 400
+                                    }}>
+                                    By Member
+                                </button>
+                                <button
+                                    onClick={() => { setFilterMode('TOOL'); setSearchQuery(""); }}
+                                    style={{
+                                        flex: 1, padding: '0.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', transition: 'all 0.2s',
+                                        background: filterMode === 'TOOL' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+                                        color: filterMode === 'TOOL' ? '#38bdf8' : 'gray',
+                                        fontWeight: filterMode === 'TOOL' ? 600 : 400
+                                    }}>
+                                    By Tool
+                                </button>
+                            </div>
+
                             <div style={{ marginBottom: '1rem' }}>
-                                <h3 style={{ marginBottom: '0.5rem' }}>Select Tool</h3>
                                 <input
                                     type="text"
                                     className="glass-input"
-                                    placeholder="Search tools..."
+                                    placeholder={filterMode === 'TOOL' ? "Search tools..." : "Search members..."}
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
                                     style={{ width: '100%', padding: '0.75rem' }}
                                 />
                             </div>
-                            <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '0.5rem' }}>
-                                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                    {filteredTools.map(tool => (
-                                        <li key={tool.id}>
-                                            <button
-                                                onClick={() => setSelectedToolId(tool.id)}
-                                                style={{
-                                                    width: '100%',
-                                                    textAlign: 'left',
-                                                    padding: '0.75rem 1rem',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid',
-                                                    borderColor: selectedToolId === tool.id ? '#38bdf8' : 'rgba(255,255,255,0.1)',
-                                                    background: selectedToolId === tool.id ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.05)',
-                                                    color: selectedToolId === tool.id ? '#fff' : 'var(--color-text-muted)',
-                                                    cursor: 'pointer',
-                                                    fontWeight: selectedToolId === tool.id ? 600 : 400,
-                                                    transition: 'all 0.2s'
-                                                }}
-                                            >
-                                                {tool.name}
-                                            </button>
-                                        </li>
-                                    ))}
-                                    {filteredTools.length === 0 && <p style={{ color: 'gray' }}>No tools match your search.</p>}
-                                </ul>
+
+                            <div style={{ maxHeight: '530px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                                {filterMode === 'TOOL' ? (
+                                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        {filteredTools.map(tool => (
+                                            <li key={tool.id}>
+                                                <button
+                                                    onClick={() => setSelectedToolId(tool.id)}
+                                                    style={{
+                                                        width: '100%',
+                                                        textAlign: 'left',
+                                                        padding: '0.75rem 1rem',
+                                                        borderRadius: '8px',
+                                                        border: '1px solid',
+                                                        borderColor: selectedToolId === tool.id ? '#38bdf8' : 'rgba(255,255,255,0.1)',
+                                                        background: selectedToolId === tool.id ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.05)',
+                                                        color: selectedToolId === tool.id ? '#fff' : 'var(--color-text-muted)',
+                                                        cursor: 'pointer',
+                                                        fontWeight: selectedToolId === tool.id ? 600 : 400,
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                >
+                                                    {tool.name}
+                                                </button>
+                                            </li>
+                                        ))}
+                                        {filteredTools.length === 0 && <p style={{ color: 'gray' }}>No tools match your search.</p>}
+                                    </ul>
+                                ) : (
+                                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        {filteredParticipants.map(participant => (
+                                            <li key={participant.id}>
+                                                <button
+                                                    onClick={() => setSelectedMemberId(participant.id)}
+                                                    style={{
+                                                        width: '100%',
+                                                        textAlign: 'left',
+                                                        padding: '0.75rem 1rem',
+                                                        borderRadius: '8px',
+                                                        border: '1px solid',
+                                                        borderColor: selectedMemberId === participant.id ? '#38bdf8' : 'rgba(255,255,255,0.1)',
+                                                        background: selectedMemberId === participant.id ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.05)',
+                                                        color: selectedMemberId === participant.id ? '#fff' : 'var(--color-text-muted)',
+                                                        cursor: 'pointer',
+                                                        fontWeight: selectedMemberId === participant.id ? 600 : 400,
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                >
+                                                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {participant.name || 'Unnamed'}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.75rem', color: selectedMemberId === participant.id ? 'rgba(255,255,255,0.7)' : 'gray', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {participant.email}
+                                                    </div>
+                                                </button>
+                                            </li>
+                                        ))}
+                                        {filteredParticipants.length === 0 && <p style={{ color: 'gray' }}>No members match your search.</p>}
+                                    </ul>
+                                )}
                             </div>
                         </div>
                     </div>
 
                     {/* Right Content Area */}
                     <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '1.5rem', border: '1px solid rgba(255,255,255,0.1)', minHeight: '400px' }}>
-                        {!selectedToolId ? (
+                        {(filterMode === 'TOOL' && !selectedToolId) || (filterMode === 'MEMBER' && !selectedMemberId) ? (
                             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'gray' }}>
-                                Select a tool from the list to view or grant certifications.
+                                Select a {filterMode === 'TOOL' ? 'tool' : 'member'} from the list to view or grant certifications.
                             </div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                                 <div>
-                                    <h3 style={{ margin: '0 0 1rem 0', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>Grant Certification Level</h3>
+                                    <h3 style={{ margin: '0 0 1rem 0', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>
+                                        Grant Certification Level
+                                    </h3>
                                     <form onSubmit={initiateGrantCertification} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                                        <div style={{ flex: 1, minWidth: '200px' }}>
-                                            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'gray' }}>Member</label>
-                                            <select className="glass-input" value={newCertUserId} onChange={e => setNewCertUserId(e.target.value)} required style={{ width: '100%', padding: '0.75rem' }}>
-                                                <option value="">-- Search... --</option>
-                                                {allParticipants.map(p => (
-                                                    <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
-                                                ))}
-                                            </select>
-                                        </div>
+
+                                        {filterMode === 'TOOL' ? (
+                                            <div style={{ flex: 1, minWidth: '200px' }}>
+                                                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'gray' }}>Member</label>
+                                                <select className="glass-input" value={newCertUserId} onChange={e => setNewCertUserId(e.target.value)} required style={{ width: '100%', padding: '0.75rem' }}>
+                                                    <option value="">-- Select Member --</option>
+                                                    {allParticipants.map(p => (
+                                                        <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        ) : (
+                                            <div style={{ flex: 1, minWidth: '200px' }}>
+                                                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'gray' }}>Tool</label>
+                                                <select className="glass-input" value={newCertToolId} onChange={e => setNewCertToolId(e.target.value)} required style={{ width: '100%', padding: '0.75rem' }}>
+                                                    <option value="">-- Select Tool --</option>
+                                                    {tools.map(t => (
+                                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+
                                         <div style={{ width: '150px' }}>
                                             <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'gray' }}>Level</label>
                                             <select className="glass-input" value={newCertLevel} onChange={e => setNewCertLevel(e.target.value)} required style={{ width: '100%', padding: '0.75rem' }}>
@@ -282,7 +395,7 @@ export default function ToolManagementPage() {
                                                 <option value="MAY_CERTIFY_OTHERS">Certifier</option>
                                             </select>
                                         </div>
-                                        <button type="submit" className="glass-button" disabled={saving || !newCertUserId} style={{ padding: '0.75rem 1.5rem', background: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.4)' }}>
+                                        <button type="submit" className="glass-button" disabled={saving || (filterMode === 'TOOL' ? !newCertUserId : !newCertToolId)} style={{ padding: '0.75rem 1.5rem', background: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.4)' }}>
                                             Grant
                                         </button>
                                     </form>
@@ -290,14 +403,22 @@ export default function ToolManagementPage() {
                                 </div>
 
                                 <div>
-                                    <h3 style={{ margin: '0 0 1rem 0' }}>Certified Members On Tool</h3>
-                                    {certifications.length === 0 ? <p style={{ color: 'gray' }}>No users have certifications for this tool.</p> : (
+                                    <h3 style={{ margin: '0 0 1rem 0' }}>
+                                        {filterMode === 'TOOL'
+                                            ? `Certified Members on ${tools.find(t => t.id === selectedToolId)?.name || 'Tool'}`
+                                            : `Certifications for ${allParticipants.find(p => p.id === selectedMemberId)?.name || 'Member'}`}
+                                    </h3>
+                                    {certifications.length === 0 ? <p style={{ color: 'gray' }}>No certifications found.</p> : (
                                         <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                             {certifications.map(cert => {
                                                 const style = getBadgeStyle(cert.level);
                                                 return (
-                                                    <li key={cert.userId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1rem', borderRadius: '8px' }}>
-                                                        <span>{cert.user.name || 'Unnamed'} <span style={{ color: 'gray', fontSize: '0.85rem' }}>({cert.user.email})</span></span>
+                                                    <li key={`${cert.userId}-${cert.toolId}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1rem', borderRadius: '8px' }}>
+                                                        {filterMode === 'TOOL' ? (
+                                                            <span>{cert.user?.name || 'Unnamed'} <span style={{ color: 'gray', fontSize: '0.85rem' }}>({cert.user?.email})</span></span>
+                                                        ) : (
+                                                            <span>{cert.tool?.name || 'Unknown Tool'}</span>
+                                                        )}
                                                         <span style={{
                                                             background: style.bg,
                                                             color: style.color,
@@ -338,7 +459,7 @@ export default function ToolManagementPage() {
                         </div>
 
                         <p style={{ marginBottom: '1.5rem', fontSize: '1.1rem' }}>
-                            You are about to change the certification level for <strong>{confirmDialog.userName}</strong>.
+                            You are about to change the certification level for <strong>{confirmDialog.userName}</strong> on <strong>{confirmDialog.toolName}</strong>.
                         </p>
 
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginBottom: '2rem', fontWeight: 'bold' }}>
