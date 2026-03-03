@@ -42,7 +42,8 @@ jobs:
       
     - name: Generate Prisma Client
       run: |
-        npx prisma generate > prisma_gen.txt 2>&1 || (cat prisma_gen.txt && exit 1)
+        npx prisma --version
+        npx -y prisma generate > prisma_gen.txt 2>&1 || (cat prisma_gen.txt && exit 1)
       env:
         DATABASE_URL: postgresql://user:password@127.0.0.1:5432/checkmein_test?sslmode=disable
 
