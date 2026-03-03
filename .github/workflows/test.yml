@@ -9,6 +9,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: checkmein_test
+        ports:
+          - 5432:5432
+        # Wait for postgres to be ready
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
     - uses: actions/checkout@v4
@@ -22,5 +38,14 @@ jobs:
     - name: Clean Install Dependencies
       run: npm ci
       
+    - name: Sync Database Schema
+      run: npx prisma db push
+      env:
+        DATABASE_URL: postgresql://user:password@localhost:5432/checkmein_test
+
     - name: Run Tests
       run: npm run test
+      env:
+        DATABASE_URL: postgresql://user:password@localhost:5432/checkmein_test
+        NEXTAUTH_SECRET: "test-secret"
+        BOOTSTRAP_SYSADMINS: "admin@example.com"
