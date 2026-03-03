@@ -113,9 +113,6 @@ export default function ProfilePage() {
             <div className={`glass-container animate-float ${styles.heroContainer}`} style={{ maxWidth: '600px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
                     <h1 className="text-gradient" style={{ fontSize: '2.5rem', margin: 0 }}>My Profile</h1>
-                    <button className="glass-button" onClick={() => router.push('/')} style={{ padding: '0.5rem 1rem' }}>
-                        &larr; Back
-                    </button>
                 </div>
 
                 <p style={{ color: 'var(--color-text-muted)', marginBottom: '2rem' }}>
