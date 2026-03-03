@@ -43,7 +43,7 @@ jobs:
 
     - name: Sync Database Schema
       run: |
-        npx prisma db push --accept-data-loss
+        npx prisma db push --accept-data-loss > prisma_out.txt 2>&1 || (cat prisma_out.txt && exit 1)
       env:
         DATABASE_URL: postgresql://user:password@127.0.0.1:5432/checkmein_test
 
