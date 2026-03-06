@@ -95,11 +95,11 @@ async function seed() {
     const frankRes = await pool.query(\`SELECT id FROM \"Participant\" WHERE email = 'frank.steward@example.com'\`);
 
     if (carolRes.rows.length > 0) {
-        await pool.query(\`INSERT INTO \"ToolStatus\" (\"userId\", \"toolId\", level) VALUES (\\\$1, \\\$2, 'GREEN')\`, [carolRes.rows[0].id, toolIds[0]]);
-        await pool.query(\`INSERT INTO \"ToolStatus\" (\"userId\", \"toolId\", level) VALUES (\\\$1, \\\$2, 'YELLOW')\`, [carolRes.rows[0].id, toolIds[1]]);
+        await pool.query(\`INSERT INTO \"ToolStatus\" (\"userId\", \"toolId\", level) VALUES (\\\$1, \\\$2, 'CERTIFIED')\`, [carolRes.rows[0].id, toolIds[0]]);
+        await pool.query(\`INSERT INTO \"ToolStatus\" (\"userId\", \"toolId\", level) VALUES (\\\$1, \\\$2, 'BASIC')\`, [carolRes.rows[0].id, toolIds[1]]);
     }
     if (frankRes.rows.length > 0) {
-        await pool.query(\`INSERT INTO \"ToolStatus\" (\"userId\", \"toolId\", level) VALUES (\\\$1, \\\$2, 'GREEN')\`, [frankRes.rows[0].id, toolIds[2]]);
+        await pool.query(\`INSERT INTO \"ToolStatus\" (\"userId\", \"toolId\", level) VALUES (\\\$1, \\\$2, 'CERTIFIED')\`, [frankRes.rows[0].id, toolIds[2]]);
     }
     console.log('  ✓ Added sample tool certifications');
 
