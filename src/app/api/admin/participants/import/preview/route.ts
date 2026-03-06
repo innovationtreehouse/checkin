@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
         const parentEmailIndex = headers.findIndex(h => h.includes("parent email"));
         const firstNameIndex = headers.findIndex(h => h.includes("first name"));
         const lastNameIndex = headers.findIndex(h => h.includes("last name"));
-        const dobIndex = headers.findIndex(h => h.includes("dob"));
+        const dobIndex = headers.findIndex(h => h.includes("dob") || h.includes("date of birth"));
         const addressIndex = headers.findIndex(h => h.includes("address"));
         const sameHouseholdIndex = headers.findIndex(h => h.includes("same household as"));
 
@@ -69,25 +69,56 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Missing required 'First Name' or 'Last Name' columns." }, { status: 400 });
         }
 
-        const previews: RowPreview[] = [];
-        const emailsSeen = new Map<string, number>(); // email -> first row number
+        // Parse all rows first so we can check cross-references
+        interface ParsedRow {
+            rowNumber: number;
+            firstName: string;
+            lastName: string;
+            fullName: string;
+            email: string;
+            parentEmail: string;
+            dobString: string;
+            address: string;
+            sameHouseholdAs: string;
+        }
+
+        const parsedRows: ParsedRow[] = [];
+        const batchEmails = new Set<string>();
+        const batchNames = new Set<string>();
 
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
-            const rowNumber = i + 2; // 1-indexed, skip header
-
             const firstName = row[firstNameIndex]?.toString().trim() || "";
             const lastName = row[lastNameIndex]?.toString().trim() || "";
-            const email = emailIndex !== -1 ? row[emailIndex]?.toString().trim() || "" : "";
-            const parentEmail = parentEmailIndex !== -1 ? row[parentEmailIndex]?.toString().trim() || "" : "";
-            const dobString = dobIndex !== -1 ? row[dobIndex]?.toString().trim() || "" : "";
-            const address = addressIndex !== -1 ? row[addressIndex]?.toString().trim() || "" : "";
-            const sameHouseholdAs = sameHouseholdIndex !== -1 ? row[sameHouseholdIndex]?.toString().trim() || "" : "";
-
+            
             // Skip fully empty rows
-            if (!firstName && !lastName && !email && !parentEmail) {
-                continue;
-            }
+            if (!firstName && !lastName) continue;
+
+            const fullName = `${firstName} ${lastName}`.trim();
+            const email = emailIndex !== -1 ? row[emailIndex]?.toString().trim() || "" : "";
+            
+            parsedRows.push({
+                rowNumber: i + 2,
+                firstName,
+                lastName,
+                fullName,
+                email,
+                parentEmail: parentEmailIndex !== -1 ? row[parentEmailIndex]?.toString().trim() || "" : "",
+                dobString: dobIndex !== -1 ? row[dobIndex]?.toString().trim() || "" : "",
+                address: addressIndex !== -1 ? row[addressIndex]?.toString().trim() || "" : "",
+                sameHouseholdAs: sameHouseholdIndex !== -1 ? row[sameHouseholdIndex]?.toString().trim() || "" : "",
+            });
+
+            if (email) batchEmails.add(email.toLowerCase());
+            if (fullName) batchNames.add(fullName.toLowerCase());
+        }
+
+        const previews: RowPreview[] = [];
+        const emailsSeen = new Map<string, number>(); // email -> first row number
+
+        // Process each parsed row
+        for (const pr of parsedRows) {
+            const { rowNumber, firstName, lastName, fullName, email, parentEmail, dobString, address, sameHouseholdAs } = pr;
 
             const warnings: string[] = [];
             let status: RowStatus = "ready";
@@ -105,8 +136,6 @@ export async function POST(req: NextRequest) {
                 });
                 continue;
             }
-
-            const fullName = `${firstName} ${lastName}`.trim();
 
             // Check: DOB parsing
             let parsedDob: Date | undefined;
@@ -144,9 +173,17 @@ export async function POST(req: NextRequest) {
 
             // Check "Same Household As" validity
             if (sameHouseholdAs) {
-                // Try to resolve the reference
                 let found = false;
-                if (sameHouseholdAs.includes('@')) {
+                const searchLower = sameHouseholdAs.toLowerCase();
+
+                // 1. Check if the ref exists in the current spreadsheet batch
+                if (batchEmails.has(searchLower) || batchNames.has(searchLower)) {
+                    found = true;
+                    action += `Will link to household of "${sameHouseholdAs}" (from this spreadsheet). `;
+                }
+                
+                // 2. Try to resolve the reference via DB
+                if (!found && sameHouseholdAs.includes('@')) {
                     const byEmail = await prisma.participant.findUnique({
                         where: { email: sameHouseholdAs },
                         select: { id: true, name: true, householdId: true }

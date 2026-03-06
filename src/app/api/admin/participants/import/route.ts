@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
         const parentEmailIndex = headers.findIndex(h => h.includes("parent email"));
         const firstNameIndex = headers.findIndex(h => h.includes("first name"));
         const lastNameIndex = headers.findIndex(h => h.includes("last name"));
-        const dobIndex = headers.findIndex(h => h.includes("dob"));
+        const dobIndex = headers.findIndex(h => h.includes("dob") || h.includes("date of birth"));
         const addressIndex = headers.findIndex(h => h.includes("address"));
         const sameHouseholdIndex = headers.findIndex(h => h.includes("same household as"));
 
