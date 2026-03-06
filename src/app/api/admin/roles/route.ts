@@ -17,8 +17,18 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: "Forbidden: Requires Sysadmin or Board Member privileges" }, { status: 403 });
         }
 
-        // Fetch all users with their roles, ordered by name
+        // Filter out minors (under 18)
+        const eighteenYearsAgo = new Date();
+        eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+
+        // Fetch all adult users with their roles, ordered by name
         const participants = await prisma.participant.findMany({
+            where: {
+                OR: [
+                    { dob: { lte: eighteenYearsAgo } },
+                    { dob: null, email: { not: null } } // fallback: adults likely have emails, minors shouldn't
+                ]
+            },
             select: {
                 id: true,
                 name: true,
