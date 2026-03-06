@@ -303,29 +303,82 @@ export async function POST(req: NextRequest) {
                 if (pr.sameHouseholdAs) {
                     const resolved = await resolveHouseholdRef(pr.sameHouseholdAs);
                     if (resolved) {
-                        await prisma.participant.update({
+                        const targetHouseholdId = resolved.householdId;
+                        
+                        // Get the participant's current household (might have just been created in Pass 1)
+                        const participant = await prisma.participant.findUnique({
                             where: { id: participantId },
-                            data: { householdId: resolved.householdId }
+                            select: { householdId: true }
                         });
 
-                        // If this is an adult with email, also make them a household lead
+                        const sourceHouseholdId = participant?.householdId;
+
+                        // If they are already in the target household, do nothing
+                        if (sourceHouseholdId === targetHouseholdId) {
+                            continue;
+                        }
+
+                        // If they have a household, we must merge the ENTIRE source household into the target
+                        if (sourceHouseholdId) {
+                            // Move all participants from source to target
+                            await prisma.participant.updateMany({
+                                where: { householdId: sourceHouseholdId },
+                                data: { householdId: targetHouseholdId }
+                            });
+
+                            // Move all leads from source to target
+                            const sourceLeads = await prisma.householdLead.findMany({
+                                where: { householdId: sourceHouseholdId }
+                            });
+
+                            for (const lead of sourceLeads) {
+                                await prisma.householdLead.upsert({
+                                    where: {
+                                        householdId_participantId: {
+                                            householdId: targetHouseholdId,
+                                            participantId: lead.participantId
+                                        }
+                                    },
+                                    update: {},
+                                    create: {
+                                        householdId: targetHouseholdId,
+                                        participantId: lead.participantId
+                                    }
+                                });
+                            }
+
+                            // Delete memberships and leads from the old source household
+                            await prisma.membership.deleteMany({ where: { householdId: sourceHouseholdId } });
+                            await prisma.householdLead.deleteMany({ where: { householdId: sourceHouseholdId } });
+
+                            // Finally delete the source household
+                            await prisma.household.delete({ where: { id: sourceHouseholdId } });
+                        } else {
+                            // They don't have a household yet, just add them to the target
+                            await prisma.participant.update({
+                                where: { id: participantId },
+                                data: { householdId: targetHouseholdId }
+                            });
+                        }
+
+                        // If the row that initiated the merge is an adult with an email, ensure they are a lead
                         if (pr.email) {
                             await prisma.householdLead.upsert({
                                 where: {
                                     householdId_participantId: {
-                                        householdId: resolved.householdId,
+                                        householdId: targetHouseholdId,
                                         participantId: participantId
                                     }
                                 },
                                 update: {},
                                 create: {
-                                    householdId: resolved.householdId,
+                                    householdId: targetHouseholdId,
                                     participantId: participantId
                                 }
                             });
                         }
 
-                        await ensureHouseholdMembership(resolved.householdId);
+                        await ensureHouseholdMembership(targetHouseholdId);
                     } else {
                         errors.push(`Row ${pr.index + 2} (${pr.fullName}): Could not find participant "${pr.sameHouseholdAs}" for household association`);
                     }
