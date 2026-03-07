@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import styles from '@/app/page.module.css';
+import { formatDateTime } from '@/lib/time';
 
 export default function AdminBadgesPage() {
     const { data: session, status } = useSession();
@@ -91,7 +92,7 @@ export default function AdminBadgesPage() {
                             {badges.map(b => (
                                 <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                     <td style={{ padding: '0.75rem' }}>{b.id}</td>
-                                    <td style={{ padding: '0.75rem' }}>{new Date(b.time).toLocaleString()}</td>
+                                    <td style={{ padding: '0.75rem' }}>{formatDateTime(b.time)}</td>
                                     <td style={{ padding: '0.75rem' }}>{b.participant?.name || "Unknown"}</td>
                                     <td style={{ padding: '0.75rem' }}>{b.participant?.email}</td>
                                     <td style={{ padding: '0.75rem' }}>{b.location || 'Front Door'}</td>

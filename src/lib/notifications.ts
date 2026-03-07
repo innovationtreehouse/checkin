@@ -1,5 +1,6 @@
 import prisma from "./prisma";
 import { sendEmail } from "./email";
+import { formatTime, formatDate } from "./time";
 
 /**
  * Service to handle sending notifications to users via their defined preferences.
@@ -89,12 +90,12 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
         if (!participant) return;
 
         const now = new Date();
-        const timeStr = now.toLocaleTimeString('en-US', {
+        const timeStr = formatTime(now, {
             hour: 'numeric',
             minute: '2-digit',
             hour12: true
         });
-        const dateStr = now.toLocaleDateString('en-US', {
+        const dateStr = formatDate(now, {
             weekday: 'long',
             month: 'long',
             day: 'numeric'

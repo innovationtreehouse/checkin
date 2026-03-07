@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "../page.module.css";
+import { formatTime } from "@/lib/time";
 
 type Participant = {
     id: number;
@@ -131,7 +132,7 @@ export default function KioskDisplay() {
                                     )}
                                 </div>
                                 <div style={{ color: "var(--color-text-muted)", fontSize: "0.875rem" }}>
-                                    Arrived: {new Date(visit.arrived).toLocaleTimeString()}
+                                    Arrived: {formatTime(visit.arrived)}
                                 </div>
                             </li>
                         ))}

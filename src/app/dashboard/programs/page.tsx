@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import styles from '../../page.module.css';
+import { formatDate } from '@/lib/time';
 
 type UserProgram = {
     programId: number;
@@ -80,8 +81,8 @@ export default function MyProgramsDashboard() {
                         <div key={program.id} style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '1.5rem', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column' }}>
                             <h3 style={{ margin: '0 0 1rem 0' }}>{program.name}</h3>
                             <p style={{ color: 'var(--color-text-muted)', marginBottom: '0.5rem', flex: 1 }}>
-                                {program.begin ? new Date(program.begin).toLocaleDateString() : 'Start Date TBD'}
-                                {program.end ? ` - ${new Date(program.end).toLocaleDateString()}` : ' (Ongoing)'}
+                                {program.begin ? formatDate(program.begin) : 'Start Date TBD'}
+                                {program.end ? ` - ${formatDate(program.end)}` : ' (Ongoing)'}
                             </p>
 
                             <Link href={`/programs/${program.id}`} style={{ display: 'block', textAlign: 'center', background: 'rgba(255, 255, 255, 0.1)', color: 'white', padding: '0.75rem', borderRadius: '8px', textDecoration: 'none', fontWeight: 500, marginTop: '1.5rem' }}>

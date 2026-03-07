@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import styles from '../page.module.css';
+import { formatDate, formatTime, formatDateTime } from '@/lib/time';
 
 export default function HouseholdPage() {
     const { data: session, status } = useSession();
@@ -418,7 +419,7 @@ export default function HouseholdPage() {
 
                     <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>
                         {filterDate ? (
-                            <>Showing activity from <strong>{new Date(new Date(filterDate).getTime() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString()}</strong> to <strong>{new Date(new Date(filterDate).getTime() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString()}</strong></>
+                            <>Showing activity from <strong>{formatDate(new Date(filterDate).getTime() - 7 * 24 * 60 * 60 * 1000)}</strong> to <strong>{formatDate(new Date(filterDate).getTime() + 7 * 24 * 60 * 60 * 1000)}</strong></>
                         ) : (
                             <>Showing activity for the <strong>past 7 days</strong></>
                         )}
@@ -442,12 +443,12 @@ export default function HouseholdPage() {
                                         <strong style={{ display: 'block', color: 'var(--color-primary)' }}>{v.participant?.name || 'Unnamed Member'}</strong>
                                         <span style={{ fontSize: '0.9rem', color: 'var(--color-text)' }}>{v.event?.name || 'General Facility Visit'} </span>
                                         <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
-                                            &bull; {new Date(v.arrived).toLocaleString()}
+                                            &bull; {formatDateTime(v.arrived)}
                                         </span>
                                     </div>
                                     <div style={{ textAlign: 'right', fontSize: '0.9rem' }}>
                                         {v.departed ? (
-                                            <span style={{ color: '#4ade80' }}>Departed {new Date(v.departed).toLocaleTimeString()}</span>
+                                            <span style={{ color: '#4ade80' }}>Departed {formatTime(v.departed)}</span>
                                         ) : (
                                             <span style={{ color: '#fbbf24' }}>Active Visit</span>
                                         )}

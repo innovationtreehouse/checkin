@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import styles from '../../../page.module.css';
+import { formatDateTime } from '@/lib/time';
 
 type ProgramDetail = {
     id: number;
@@ -662,7 +663,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                                         {program.events.map(ev => (
                                             <tr key={ev.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                                 <td style={{ padding: '0.75rem', fontWeight: 500 }}>{ev.name}</td>
-                                                <td style={{ padding: '0.75rem', color: 'var(--color-text-muted)' }}>{new Date(ev.start).toLocaleString()}</td>
+                                                <td style={{ padding: '0.75rem', color: 'var(--color-text-muted)' }}>{formatDateTime(ev.start)}</td>
                                                 <td style={{ padding: '0.75rem', textAlign: 'right' }}>
                                                     <Link href={`/admin/events/${ev.id}`} style={{ color: '#60a5fa', textDecoration: 'none' }}>
                                                         Attendance &rarr;

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import styles from '../page.module.css';
+import { formatDate } from '@/lib/time';
 
 type ProgramSummary = {
     id: number;
@@ -115,8 +116,8 @@ export default function PublicProgramsDirectory() {
                                 )}
                             </div>
                             <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem', flex: 1 }}>
-                                {program.begin ? new Date(program.begin).toLocaleDateString() : 'Start Date TBD'}
-                                {program.end ? ` - ${new Date(program.end).toLocaleDateString()}` : ' (Ongoing)'}
+                                {program.begin ? formatDate(program.begin) : 'Start Date TBD'}
+                                {program.end ? ` - ${formatDate(program.end)}` : ' (Ongoing)'}
                             </p>
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.1)', padding: '0.75rem', borderRadius: '8px', fontSize: '0.85rem' }}>

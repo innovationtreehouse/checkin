@@ -4,6 +4,7 @@ import { use, useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import styles from '../../page.module.css';
+import { formatDate } from '@/lib/time';
 
 type ProgramDetail = {
     id: number;
@@ -137,8 +138,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                             </div>
                         )}
                         <div>
-                            <strong>Starts:</strong> {program.begin ? new Date(program.begin).toLocaleDateString() : 'TBD'} <br /><br />
-                            <strong>Ends:</strong> {program.end ? new Date(program.end).toLocaleDateString() : 'Ongoing'}
+                            <strong>Starts:</strong> {program.begin ? formatDate(program.begin) : 'TBD'} <br /><br />
+                            <strong>Ends:</strong> {program.end ? formatDate(program.end) : 'Ongoing'}
                         </div>
                     </div>
                 </div>

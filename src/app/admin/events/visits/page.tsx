@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import styles from '@/app/page.module.css';
+import { formatDateTime } from '@/lib/time';
 
 export default function AdminVisitsPage() {
     const { data: session, status } = useSession();
@@ -164,8 +165,8 @@ export default function AdminVisitsPage() {
                                         </>
                                     ) : (
                                         <>
-                                            <td style={{ padding: '0.75rem' }}>{new Date(v.arrived).toLocaleString()}</td>
-                                            <td style={{ padding: '0.75rem' }}>{v.departed ? new Date(v.departed).toLocaleString() : <span style={{ color: '#fbbf24' }}>Active</span>}</td>
+                                            <td style={{ padding: '0.75rem' }}>{formatDateTime(v.arrived)}</td>
+                                            <td style={{ padding: '0.75rem' }}>{v.departed ? formatDateTime(v.departed) : <span style={{ color: '#fbbf24' }}>Active</span>}</td>
                                             <td style={{ padding: '0.75rem' }}>
                                                 <button
                                                     onClick={() => handleEditClick(v)}

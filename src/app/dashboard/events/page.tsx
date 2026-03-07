@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import styles from '../../page.module.css';
+import { formatDateTime } from '@/lib/time';
 
 type EventData = {
     id: number;
@@ -110,7 +111,7 @@ export default function ParticipantEventsDashboard() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
                         {events.map(ev => {
                             const userRSVP = ev.rsvps.length > 0 ? ev.rsvps[0].status : null;
-                            const startStr = new Date(ev.start).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                            const startStr = formatDateTime(ev.start, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
                             return (
                                 <div key={ev.id} style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', border: '1px solid rgba(255,255,255,0.1)' }}>

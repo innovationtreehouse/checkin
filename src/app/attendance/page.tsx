@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import styles from "../page.module.css";
+import { formatTime } from "@/lib/time";
 
 type Participant = {
     id: number;
@@ -375,7 +376,7 @@ export default function AttendanceDashboard() {
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                                     <div style={{ color: "var(--color-text-muted)", fontSize: "0.875rem" }}>
-                                        Arrived: {new Date(visit.arrived).toLocaleTimeString()}
+                                        Arrived: {formatTime(visit.arrived)}
                                     </div>
                                     {(currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember || visit.participant.id === (session?.user as any)?.id || (household?.leads?.some((l:any) => l.participantId === (session?.user as any)?.id) && visit.participant.householdId === currentUserHouseholdId)) && (
                                         <button
