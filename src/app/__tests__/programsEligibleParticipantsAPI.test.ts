@@ -163,18 +163,18 @@ describe('Eligible Participants API Integration Tests', () => {
             });
         }
 
+        if (existingUserIds.length > 0) {
+            await prisma.participant.deleteMany({
+                where: { id: { in: existingUserIds } }
+            });
+        }
+
         await prisma.household.deleteMany({
         });
 
         if (validProgramIds.length > 0) {
             await prisma.program.deleteMany({
                 where: { id: { in: validProgramIds } }
-            });
-        }
-        
-        if (existingUserIds.length > 0) {
-            await prisma.participant.deleteMany({
-                where: { id: { in: existingUserIds } }
             });
         }
     });
