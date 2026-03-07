@@ -196,7 +196,7 @@ export async function POST(req: Request) {
                     action: 'CREATE',
                     tableName: 'SYSTEM_NOTIFY',
                     affectedEntityId: 0,
-                    details: `Sent Two-Deep warning to ${boardMembers.length} board member(s).`
+                    newData: { message: `Sent Two-Deep warning to ${boardMembers.length} board member(s).` }
                 } as any
             });
 

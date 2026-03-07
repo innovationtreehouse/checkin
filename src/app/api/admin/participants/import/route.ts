@@ -417,8 +417,8 @@ export async function POST(req: NextRequest) {
             errors: errors.length > 0 ? errors : undefined
         });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error in participant bulk import:", error);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        return NextResponse.json({ error: `Internal server error: ${error.message}` }, { status: 500 });
     }
 }

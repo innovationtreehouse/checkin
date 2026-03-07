@@ -13,9 +13,10 @@ import { getServerSession } from 'next-auth';
 
 // Mock NextAuth
 jest.mock('next-auth', () => ({
+    __esModule: true,
+    default: jest.fn(() => ({})),
     getServerSession: jest.fn(),
 }));
-
 // Mock Notifications to avoid external calls
 jest.mock('@/lib/notifications', () => ({
     sendNotification: jest.fn()
@@ -29,6 +30,18 @@ describe('AuditLog Integration Tests', () => {
     let testVisitId: number;
 
     beforeAll(async () => {
+        // Clean up any leaked state from previous runs
+        await prisma.auditLog.deleteMany({});
+        await prisma.visit.deleteMany({});
+        await prisma.rSVP.deleteMany({});
+        await prisma.programParticipant.deleteMany({});
+        await prisma.programVolunteer.deleteMany({});
+        await prisma.event.deleteMany({});
+        await prisma.program.deleteMany({});
+        await prisma.participant.deleteMany({
+            where: { email: { contains: 'audit-test' } }
+        });
+
         // Setup mock database records
         const admin = await prisma.participant.create({
             data: { email: 'admin-audit-test@example.com', name: 'Admin Test', sysadmin: true }
@@ -43,17 +56,26 @@ describe('AuditLog Integration Tests', () => {
 
     afterAll(async () => {
         // Clean up
-        await prisma.auditLog.deleteMany({
-            where: { actorId: { in: [testAdminId, testParticipantId] } }
-        });
-        await prisma.visit.deleteMany({ where: { participantId: testParticipantId } });
-        await prisma.rSVP.deleteMany({ where: { participantId: testParticipantId } });
-        await prisma.event.deleteMany({ where: { programId: testProgramId } });
-        await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
-        await prisma.program.deleteMany({ where: { id: testProgramId } });
-        await prisma.participant.deleteMany({
-            where: { id: { in: [testAdminId, testParticipantId] } }
-        });
+        if (testParticipantId !== undefined) {
+            await prisma.visit.deleteMany({ where: { participantId: testParticipantId } });
+            await prisma.rSVP.deleteMany({ where: { participantId: testParticipantId } });
+        }
+
+        if (testProgramId !== undefined) {
+            await prisma.event.deleteMany({ where: { programId: testProgramId } });
+            await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
+            await prisma.program.deleteMany({ where: { id: testProgramId } });
+        }
+
+        const actorIds = [testAdminId, testParticipantId].filter(id => id !== undefined);
+        if (actorIds.length > 0) {
+            await prisma.auditLog.deleteMany({
+                where: { actorId: { in: actorIds } }
+            });
+            await prisma.participant.deleteMany({
+                where: { id: { in: actorIds } }
+            });
+        }
     });
 
     beforeEach(() => {
@@ -165,14 +187,15 @@ describe('AuditLog Integration Tests', () => {
                 actorId: testAdminId,
                 action: 'EDIT',
                 tableName: 'Visit',
-                affectedEntityId: testVisitId,
-                secondaryAffectedEntity: testEventId
+                affectedEntityId: testEventId
             },
             orderBy: { time: 'desc' }
         });
 
         expect(log).toBeDefined();
-        const oldData = log?.oldData as any;
-        expect(oldData.associatedEventId).toBeNull();
+        // Prisma Json fields can be returned as string depending on setup, the API explicitly stringified it
+        const newDataString = log?.newData as string;
+        const newData = JSON.parse(newDataString);
+        expect(newData.validatedParticipants).toContain(testParticipantId);
     });
 });

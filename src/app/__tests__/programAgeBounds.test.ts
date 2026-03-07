@@ -40,6 +40,16 @@ describe('Program Age Bounds Integration Tests', () => {
         const dob12 = new Date(now.getFullYear() - 12, now.getMonth(), now.getDate());
         const dob20 = new Date(now.getFullYear() - 20, now.getMonth(), now.getDate());
 
+        // Clean up any leaked state from previous runs
+        await prisma.auditLog.deleteMany({});
+        await prisma.programParticipant.deleteMany({});
+        await prisma.programVolunteer.deleteMany({});
+        await prisma.event.deleteMany({});
+        await prisma.program.deleteMany({});
+        await prisma.participant.deleteMany({
+            where: { email: { contains: 'age-test' } }
+        });
+
         // Setup mock database records
         const admin = await prisma.participant.create({
             data: { email: 'admin-age-test@example.com', name: 'Admin Age Test', sysadmin: true }
@@ -81,14 +91,20 @@ describe('Program Age Bounds Integration Tests', () => {
 
     afterAll(async () => {
         // Clean up
-        await prisma.auditLog.deleteMany({
-            where: { actorId: { in: [testAdminId, validUserId, underageUserId, overageUserId, noDobUserId] } }
-        });
-        await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
-        await prisma.program.deleteMany({ where: { id: testProgramId } });
-        await prisma.participant.deleteMany({
-            where: { id: { in: [testAdminId, validUserId, underageUserId, overageUserId, noDobUserId] } }
-        });
+        if (testProgramId !== undefined) {
+            await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
+            await prisma.program.deleteMany({ where: { id: testProgramId } });
+        }
+
+        const actorIds = [testAdminId, validUserId, underageUserId, overageUserId, noDobUserId].filter(id => id !== undefined);
+        if (actorIds.length > 0) {
+            await prisma.auditLog.deleteMany({
+                where: { actorId: { in: actorIds } }
+            });
+            await prisma.participant.deleteMany({
+                where: { id: { in: actorIds } }
+            });
+        }
     });
 
     afterEach(async () => {
