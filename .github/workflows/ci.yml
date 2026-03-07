@@ -32,4 +32,6 @@ jobs:
         run: npx prisma generate
 
       - name: Run Jest Tests
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
         run: npm run test:ci
