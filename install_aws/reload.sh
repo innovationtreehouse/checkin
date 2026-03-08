@@ -12,8 +12,8 @@ git pull
 echo "--- Installing dependencies ---"
 npm install
 
-echo "--- Applying Database Migrations ---"
-npx prisma migrate deploy
+echo "--- Syncing Database Schema ---"
+npx prisma db push
 
 echo "--- Generating Prisma client ---"
 npx prisma generate
