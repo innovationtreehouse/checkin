@@ -50,7 +50,6 @@ export default function AdminLayout({
     {
       title: "Operations",
       links: [
-        { name: "Schedule Event", href: "/admin/events/new", icon: "📅" },
         { name: "Visits", href: "/admin/events/visits", icon: "🕒" },
         { name: "Live Logs", href: "/admin/events/badges", icon: "📡" },
         { name: "Print Badges", href: "/admin/print-badges", icon: "🖨️" },

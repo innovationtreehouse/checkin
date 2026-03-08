@@ -74,17 +74,26 @@
 
 @media (max-width: 1024px) {
   .sidebar {
-    width: 80px;
-    padding: 2rem 0.5rem;
+    width: 100px;
+    padding: 2rem 0.25rem;
   }
   
-  .sectionTitle, .linkText {
+  .sectionTitle {
     display: none;
+  }
+
+  .linkText {
+    display: block;
+    font-size: 0.7rem;
+    text-align: center;
+    line-height: 1.1;
   }
   
   .navLink {
+    flex-direction: column;
     justify-content: center;
-    padding: 1rem;
+    padding: 0.75rem 0.25rem;
+    gap: 4px;
   }
 }
 
@@ -99,7 +108,10 @@
     flex-direction: row;
     padding: 0.5rem;
     overflow-x: auto;
-    position: static;
+    position: sticky;
+    top: 0;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   }
   
   .logo, .sectionTitle {
@@ -113,5 +125,15 @@
   
   .navLink {
     margin-bottom: 0;
+    flex-direction: column;
+    padding: 0.5rem;
+    min-width: 80px;
+    gap: 2px;
+  }
+
+  .linkText {
+    display: block;
+    font-size: 0.65rem;
+    text-align: center;
   }
 }
