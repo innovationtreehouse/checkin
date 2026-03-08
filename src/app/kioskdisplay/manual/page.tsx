@@ -46,7 +46,7 @@ export default function ManualAttendance() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                     <h1 className="text-gradient" style={{ margin: 0 }}>Manual Time Entry</h1>
                     <button
-                        onClick={() => router.push("/attendance")}
+                        onClick={() => router.push("/kioskdisplay")}
                         style={{
                             background: "rgba(255, 255, 255, 0.1)",
                             border: "1px solid rgba(255, 255, 255, 0.2)",

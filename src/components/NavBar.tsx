@@ -9,9 +9,8 @@ export default function NavBar() {
     const router = useRouter();
     const pathname = usePathname();
 
-    // Don't show navigation on the homepage if they aren't signed in, or on the kiosk display
+    // Don't show navigation on the homepage if they aren't signed in
     if (!session && pathname === '/') return null;
-    if (pathname === '/kioskdisplay') return null;
 
     return (
         <nav style={{
@@ -34,7 +33,7 @@ export default function NavBar() {
                     </h2>
                 </Link>
                 <div style={{ display: 'flex', gap: '1rem' }}>
-                    <Link href="/attendance" style={{ color: pathname === '/attendance' ? 'white' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
+                    <Link href="/kioskdisplay" style={{ color: pathname === '/kioskdisplay' ? 'white' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
                         Attendance
                     </Link>
                     {session && (
