@@ -322,7 +322,7 @@ export default function KioskDisplay() {
     };
 
     return (
-        <main className={styles.main}>
+        <main className={styles.main} style={{ cursor: "none" }}>
             <div className="glass-container" style={{ width: "100%", maxWidth: "1200px" }}>
                 {/* Check-in button */}
                 <div style={{ marginBottom: "2rem" }}>
