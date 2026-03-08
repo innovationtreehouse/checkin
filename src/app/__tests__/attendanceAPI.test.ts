@@ -178,14 +178,17 @@ describe('General Attendance API Integration Tests', () => {
              jest.restoreAllMocks();
         });
 
-        it('should fetch active visits with an authenticated session', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId } });
+        it('should fetch active visits with an authenticated admin session', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
              const res = await GET(req as any);
              expect(res.status).toBe(200);
              
              const data = await res.json();
+             expect(data.access).toBe('full');
+             expect(data.counts).toBeDefined();
+             expect(data.counts.total).toBeGreaterThanOrEqual(2);
              const emails = data.attendance.map((v: any) => v.participant.email);
              expect(emails).toContain('common-attend-api-test@example.com');
              expect(emails).toContain('child-attend-api-test@example.com');

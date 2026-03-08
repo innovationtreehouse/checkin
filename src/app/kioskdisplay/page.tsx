@@ -15,27 +15,54 @@ type Participant = {
     householdId?: number | null;
 };
 
-const isStudent = (dob: string | undefined | null) => {
-    if (!dob) return false;
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const m = today.getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
-    }
-    return age < 18;
-};
-
 type Visit = {
     id: number;
     arrived: string;
     participant: Participant;
 };
 
+type Counts = {
+    keyholders: number;
+    volunteers: number;
+    students: number;
+    total: number;
+};
+
+type SafetyFlags = {
+    isLastKeyholder: boolean;
+    isTwoDeepViolation: boolean;
+};
+
+type FullResponse = {
+    access: "full";
+    attendance: Visit[];
+    counts: Counts;
+    safety: SafetyFlags;
+};
+
+type LimitedResponse = {
+    access: "limited";
+    counts: Counts;
+    safety: SafetyFlags;
+    self: Visit | null;
+    household: Visit[];
+};
+
+type AttendanceResponse = FullResponse | LimitedResponse;
+
+const isStudent = (dob: string | undefined | null) => {
+    if (!dob) return false;
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age < 18;
+};
+
 export default function KioskDisplay() {
     const { data: session } = useSession();
-    const [attendance, setAttendance] = useState<Visit[]>([]);
+    const [data, setData] = useState<AttendanceResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [checkingOut, setCheckingOut] = useState<number | null>(null);
@@ -53,14 +80,35 @@ export default function KioskDisplay() {
     const canManuallyCheckInGlobal = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
     const canCheckInHousehold = Boolean(currentUserHouseholdId);
 
+    const isFull = data?.access === "full";
+    const counts = data?.counts || { keyholders: 0, volunteers: 0, students: 0, total: 0 };
+    const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
+
+    // For full access, split attendance into columns
+    const fullAttendance = isFull ? (data as FullResponse).attendance : [];
+    const keyholderList = fullAttendance.filter(v => v.participant.keyholder);
+    const volunteerList = fullAttendance.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
+    const studentList = fullAttendance.filter(v => isStudent(v.participant.dob));
+
+    // For limited access, determine visible household members per category
+    const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
+    const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
+    const householdKeyholders = limitedHousehold.filter(v => v.participant.keyholder);
+    const householdVolunteers = limitedHousehold.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
+    const householdStudents = limitedHousehold.filter(v => isStudent(v.participant.dob));
+
+    // Is current user checked in?
+    const isCheckedIn = isFull
+        ? fullAttendance.some(v => v.participant.id === (session?.user as any)?.id)
+        : limitedSelf !== null;
 
     const fetchHousehold = async () => {
         if (!currentUserHouseholdId) return;
         try {
             const res = await fetch("/api/household");
             if (res.ok) {
-                const data = await res.json();
-                setHousehold(data.household);
+                const hData = await res.json();
+                setHousehold(hData.household);
             }
         } catch (error) {
             console.error("Failed to fetch household:", error);
@@ -76,12 +124,12 @@ export default function KioskDisplay() {
     const fetchAttendance = async () => {
         try {
             const res = await fetch("/api/attendance");
-            const data = await res.json();
-            if (res.ok && data.attendance) {
-                setAttendance(data.attendance);
+            const json = await res.json();
+            if (res.ok && (json.access === "full" || json.access === "limited")) {
+                setData(json);
                 setError(null);
             } else if (!res.ok) {
-                setError(data.error || "Failed to load attendance");
+                setError(json.error || "Failed to load attendance");
             }
         } catch (error) {
             console.error("Failed to fetch attendance:", error);
@@ -93,17 +141,15 @@ export default function KioskDisplay() {
 
     const handleForceCheckout = async (visitId: number) => {
         if (!confirm("Are you sure you want to force checkout this user?")) return;
-
         setCheckingOut(visitId);
         try {
             const res = await fetch("/api/attendance", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ visitId })
+                body: JSON.stringify({ visitId }),
             });
             if (res.ok) {
-                // Remove the visit immediately on success
-                setAttendance(prev => prev.filter(v => v.id !== visitId));
+                fetchAttendance();
             } else {
                 alert("Failed to force checkout.");
             }
@@ -117,7 +163,6 @@ export default function KioskDisplay() {
 
     useEffect(() => {
         fetchAttendance();
-        // Refresh every 10 seconds
         const interval = setInterval(fetchAttendance, 10000);
         return () => clearInterval(interval);
     }, []);
@@ -130,13 +175,13 @@ export default function KioskDisplay() {
             }
             setSearching(true);
             try {
-                // Borrow admin roles endpoint which conveniently searches participants
                 const res = await fetch(`/api/admin/roles`);
                 if (res.ok) {
                     const data = await res.json();
-                    const filtered = data.participants.filter((p: any) =>
-                        p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        p.email.toLowerCase().includes(searchQuery.toLowerCase())
+                    const filtered = data.participants.filter(
+                        (p: any) =>
+                            p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            p.email.toLowerCase().includes(searchQuery.toLowerCase())
                     );
                     setSearchResults(filtered);
                 }
@@ -146,7 +191,6 @@ export default function KioskDisplay() {
                 setSearching(false);
             }
         };
-
         const timeoutId = setTimeout(performSearch, 300);
         return () => clearTimeout(timeoutId);
     }, [searchQuery]);
@@ -157,16 +201,15 @@ export default function KioskDisplay() {
             const res = await fetch("/api/attendance", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ type: "MANUAL_CHECKIN", participantId })
+                body: JSON.stringify({ type: "MANUAL_CHECKIN", participantId }),
             });
-
             if (res.ok) {
                 setSearchQuery("");
                 setSearchResults([]);
                 fetchAttendance();
             } else {
-                const data = await res.json();
-                alert(`Error: ${data.error}`);
+                const d = await res.json();
+                alert(`Error: ${d.error}`);
             }
         } catch (e) {
             console.error(e);
@@ -176,110 +219,268 @@ export default function KioskDisplay() {
         }
     };
 
-    const keyholdersPresent = attendance.filter((v) => v.participant.keyholder).length;
+    // Visits that are already checked in (for filtering manual search results)
+    const checkedInIds = isFull
+        ? fullAttendance.map(v => v.participant.id)
+        : [...limitedHousehold.map(v => v.participant.id), ...(limitedSelf ? [limitedSelf.participant.id] : [])];
+    const displayResults = searchResults.filter(p => !checkedInIds.includes(p.id));
 
-    const activeAdultVisits = attendance.filter((v) => !isStudent(v.participant.dob));
-    const activeStudentVisits = attendance.filter((v) => isStudent(v.participant.dob));
+    // -- Render helpers --
 
-    // A student is 'unaccompanied' if they have no adult from their own household checked in.
-    const unaccompaniedStudents = activeStudentVisits.filter(studentVisit => {
-        // If they don't belong to a household, they are considered unaccompanied immediately.
-        if (!studentVisit.participant.householdId) return true;
+    const renderPersonCard = (visit: Visit, showCheckout: boolean) => (
+        <div
+            key={visit.id}
+            style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "0.5rem 0.75rem",
+                background: "rgba(255, 255, 255, 0.04)",
+                borderRadius: "6px",
+                border: "1px solid rgba(255, 255, 255, 0.06)",
+            }}
+        >
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
+                <span
+                    style={{
+                        fontWeight: 500,
+                        fontSize: "0.85rem",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                    }}
+                    title={visit.participant.name || visit.participant.email}
+                >
+                    {visit.participant.name || visit.participant.email.split("@")[0]}
+                </span>
+                <span style={{ color: "var(--color-text-muted)", fontSize: "0.7rem" }}>
+                    {formatTime(visit.arrived)}
+                </span>
+            </div>
+            {showCheckout && (
+                <button
+                    onClick={() => handleForceCheckout(visit.id)}
+                    disabled={checkingOut === visit.id}
+                    style={{
+                        background: "rgba(239, 68, 68, 0.2)",
+                        border: "1px solid rgba(239, 68, 68, 0.4)",
+                        color: "#fca5a5",
+                        padding: "0.15rem 0.4rem",
+                        borderRadius: "4px",
+                        cursor: "pointer",
+                        fontSize: "0.7rem",
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                    }}
+                >
+                    {checkingOut === visit.id ? "..." : "Out"}
+                </button>
+            )}
+        </div>
+    );
 
-        // Otherwise, see if any active adult shares their household ID.
-        const hasAdultInHousehold = activeAdultVisits.some(
-            adultVisit => adultVisit.participant.householdId === studentVisit.participant.householdId
-        );
-        return !hasAdultInHousehold;
+    const canCheckoutVisit = (visit: Visit) =>
+        currentUserIsSysadmin ||
+        currentUserIsKeyholder ||
+        currentUserIsBoardMember ||
+        visit.participant.id === (session?.user as any)?.id ||
+        (household?.leads?.some((l: any) => l.participantId === (session?.user as any)?.id) &&
+            visit.participant.householdId === currentUserHouseholdId);
+
+    const columnHeaderStyle = (color: string) => ({
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        marginBottom: "0.75rem",
+        paddingBottom: "0.5rem",
+        borderBottom: `2px solid ${color}`,
     });
 
-    const isTwoDeepViolation = unaccompaniedStudents.length > 0 && activeAdultVisits.length < 2;
+    const columnCountStyle = {
+        fontSize: "1.5rem",
+        fontWeight: 800 as const,
+        lineHeight: 1,
+    };
 
-    const displayResults = searchResults.filter(p => !attendance.some(v => v.participant.id === p.id));
+    const columnLabelStyle = {
+        fontSize: "0.75rem",
+        textTransform: "uppercase" as const,
+        letterSpacing: "0.05em",
+        color: "var(--color-text-muted)",
+    };
 
     return (
         <main className={styles.main}>
             <div className="glass-container" style={{ width: "100%", maxWidth: "1200px" }}>
-                <div style={{ marginBottom: '2rem' }}>
-                    {!attendance.some(v => v.participant.id === (session?.user as any)?.id) ? (
+                {/* Check-in button */}
+                <div style={{ marginBottom: "2rem" }}>
+                    {!isCheckedIn ? (
                         <button
                             onClick={() => handleManualCheckIn((session?.user as any)?.id)}
                             disabled={checkingInId === (session?.user as any)?.id}
                             className="glass-button primary"
-                            style={{ padding: '1rem 2rem', fontSize: '1.1rem', fontWeight: 600, width: '100%' }}
+                            style={{ padding: "1rem 2rem", fontSize: "1.1rem", fontWeight: 600, width: "100%" }}
                         >
-                            {checkingInId === (session?.user as any)?.id ? 'Checking In...' : 'Check Me In'}
+                            {checkingInId === (session?.user as any)?.id ? "Checking In..." : "Check Me In"}
                         </button>
                     ) : (
-                        <div style={{ padding: '1rem', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '8px', color: '#6ee7b7', textAlign: 'center' }}>
+                        <div
+                            style={{
+                                padding: "1rem",
+                                background: "rgba(16, 185, 129, 0.1)",
+                                border: "1px solid rgba(16, 185, 129, 0.3)",
+                                borderRadius: "8px",
+                                color: "#6ee7b7",
+                                textAlign: "center",
+                            }}
+                        >
                             You are currently checked in!
                         </div>
                     )}
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <h1 className="text-gradient" style={{ margin: 0 }}>Current Attendance</h1>
-                    <div style={{ padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.1)', borderRadius: '20px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
-                        <span title={`${activeStudentVisits.length} Students Present`}>{attendance.length} People Present</span>
+                {/* Header */}
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "1.5rem",
+                        flexWrap: "wrap",
+                        gap: "0.5rem",
+                    }}
+                >
+                    <h1 className="text-gradient" style={{ margin: 0 }}>
+                        Current Attendance
+                    </h1>
+                    <div
+                        style={{
+                            padding: "0.5rem 1rem",
+                            background: "rgba(255,255,255,0.1)",
+                            borderRadius: "20px",
+                            display: "flex",
+                            gap: "8px",
+                            alignItems: "center",
+                        }}
+                    >
+                        <span
+                            style={{
+                                width: "10px",
+                                height: "10px",
+                                borderRadius: "50%",
+                                background: "#10b981",
+                                display: "inline-block",
+                            }}
+                        />
+                        <span>{counts.total} People Present</span>
                     </div>
                 </div>
 
-                {canCheckInHousehold && household && household.leads?.some((l:any) => l.participantId === (session?.user as any)?.id) && (
-                    <div style={{ marginBottom: '2rem' }}>
-                        <h3 style={{ marginBottom: '1rem', color: 'var(--color-primary-light)' }}>Check In Household Members</h3>
-                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            {household.participants?.filter((p:any) => !attendance.some(v => v.participant.id === p.id)).map((p:any) => (
-                                <button
-                                    key={p.id}
-                                    onClick={() => handleManualCheckIn(p.id)}
-                                    disabled={checkingInId === p.id}
-                                    className="glass-button"
-                                    style={{ padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-                                >
-                                    {checkingInId === p.id ? '...' : <span>{p.name || p.email}</span>}
-                                </button>
-                            ))}
-                            {household.participants?.filter((p:any) => !attendance.some(v => v.participant.id === p.id)).length === 0 && (
-                                <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: '0.875rem' }}>All household members are currently checked in!</span>
-                            )}
+                {/* Household check-in buttons */}
+                {canCheckInHousehold &&
+                    household &&
+                    household.leads?.some((l: any) => l.participantId === (session?.user as any)?.id) && (
+                        <div style={{ marginBottom: "2rem" }}>
+                            <h3 style={{ marginBottom: "1rem", color: "var(--color-primary-light)" }}>
+                                Check In Household Members
+                            </h3>
+                            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                                {household.participants
+                                    ?.filter((p: any) => !checkedInIds.includes(p.id))
+                                    .map((p: any) => (
+                                        <button
+                                            key={p.id}
+                                            onClick={() => handleManualCheckIn(p.id)}
+                                            disabled={checkingInId === p.id}
+                                            className="glass-button"
+                                            style={{
+                                                padding: "0.5rem 1rem",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "0.5rem",
+                                            }}
+                                        >
+                                            {checkingInId === p.id ? "..." : <span>{p.name || p.email}</span>}
+                                        </button>
+                                    ))}
+                                {household.participants?.filter((p: any) => !checkedInIds.includes(p.id)).length ===
+                                    0 && (
+                                    <span
+                                        style={{
+                                            color: "var(--color-text-muted)",
+                                            fontStyle: "italic",
+                                            fontSize: "0.875rem",
+                                        }}
+                                    >
+                                        All household members are currently checked in!
+                                    </span>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
 
+                {/* Admin manual check-in search */}
                 {canManuallyCheckInGlobal && (
-                    <div style={{ marginBottom: '2rem', position: 'relative' }}>
+                    <div style={{ marginBottom: "2rem", position: "relative" }}>
                         <input
                             type="text"
                             placeholder="Manually check someone in (Search by name or email)..."
                             className="glass-input"
-                            style={{ width: '100%', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', color: 'white' }}
+                            style={{
+                                width: "100%",
+                                padding: "0.75rem",
+                                background: "rgba(0,0,0,0.2)",
+                                color: "white",
+                            }}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                         {displayResults.length > 0 && searchQuery.length >= 2 && (
-                            <div style={{
-                                position: 'absolute', top: '100%', left: 0, right: 0,
-                                background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '8px', marginTop: '4px', zIndex: 10,
-                                maxHeight: '200px', overflowY: 'auto'
-                            }}>
-                                {displayResults.map(p => (
-                                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div
+                                style={{
+                                    position: "absolute",
+                                    top: "100%",
+                                    left: 0,
+                                    right: 0,
+                                    background: "#1e293b",
+                                    border: "1px solid rgba(255,255,255,0.1)",
+                                    borderRadius: "8px",
+                                    marginTop: "4px",
+                                    zIndex: 10,
+                                    maxHeight: "200px",
+                                    overflowY: "auto",
+                                }}
+                            >
+                                {displayResults.map((p) => (
+                                    <div
+                                        key={p.id}
+                                        style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            padding: "0.75rem",
+                                            borderBottom: "1px solid rgba(255,255,255,0.05)",
+                                        }}
+                                    >
                                         <div>
-                                            <div style={{ fontWeight: 500 }}>{p.name || 'Unnamed'}</div>
-                                            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{p.email}</div>
+                                            <div style={{ fontWeight: 500 }}>{p.name || "Unnamed"}</div>
+                                            <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+                                                {p.email}
+                                            </div>
                                         </div>
                                         <button
                                             disabled={checkingInId === p.id}
                                             onClick={() => handleManualCheckIn(p.id)}
                                             style={{
-                                                background: 'rgba(59, 130, 246, 0.2)', color: '#93c5fd',
-                                                border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '4px',
-                                                padding: '0.2rem 0.5rem', cursor: 'pointer', fontSize: '0.8rem'
+                                                background: "rgba(59, 130, 246, 0.2)",
+                                                color: "#93c5fd",
+                                                border: "1px solid rgba(59, 130, 246, 0.4)",
+                                                borderRadius: "4px",
+                                                padding: "0.2rem 0.5rem",
+                                                cursor: "pointer",
+                                                fontSize: "0.8rem",
                                             }}
                                         >
-                                            {checkingInId === p.id ? '...' : 'Check In'}
+                                            {checkingInId === p.id ? "..." : "Check In"}
                                         </button>
                                     </div>
                                 ))}
@@ -288,108 +489,152 @@ export default function KioskDisplay() {
                     </div>
                 )}
 
-                {isTwoDeepViolation ? (
-                    <div style={{
-                        background: 'rgba(239, 68, 68, 0.2)',
-                        border: '1px solid rgba(239, 68, 68, 0.5)',
-                        color: '#fca5a5',
-                        padding: '1rem',
-                        borderRadius: '8px',
-                        marginBottom: '1.5rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px'
-                    }}>
+                {/* Safety warnings */}
+                {safety.isTwoDeepViolation && (
+                    <div
+                        style={{
+                            background: "rgba(239, 68, 68, 0.2)",
+                            border: "1px solid rgba(239, 68, 68, 0.5)",
+                            color: "#fca5a5",
+                            padding: "1rem",
+                            borderRadius: "8px",
+                            marginBottom: "1.5rem",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "12px",
+                        }}
+                    >
                         <span>🚨</span>
-                        <strong>Critical Warning:</strong> Two-Deep Compliance is failing! An unaccompanied student is present, but there are only {activeAdultVisits.length} adult(s) in the building.
+                        <strong>Critical Warning:</strong> Two-Deep Compliance is failing! An unaccompanied
+                        student is present without sufficient adult supervision.
                     </div>
-                ) : keyholdersPresent === 1 && (
-                    <div style={{
-                        background: 'rgba(245, 158, 11, 0.2)',
-                        border: '1px solid rgba(245, 158, 11, 0.5)',
-                        color: '#fcd34d',
-                        padding: '1rem',
-                        borderRadius: '8px',
-                        marginBottom: '1.5rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px'
-                    }}>
+                )}
+                {!safety.isTwoDeepViolation && safety.isLastKeyholder && (
+                    <div
+                        style={{
+                            background: "rgba(245, 158, 11, 0.2)",
+                            border: "1px solid rgba(245, 158, 11, 0.5)",
+                            color: "#fcd34d",
+                            padding: "1rem",
+                            borderRadius: "8px",
+                            marginBottom: "1.5rem",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "12px",
+                        }}
+                    >
                         <span>⚠️</span>
                         <strong>Warning:</strong> Only one keyholder is currently in the building.
                     </div>
                 )}
 
+                {/* Main content */}
                 {loading ? (
                     <p style={{ color: "var(--color-text-muted)" }}>Loading attendance...</p>
                 ) : error ? (
-                    <div style={{ textAlign: "center", padding: "3rem", color: "#fca5a5", background: "rgba(239, 68, 68, 0.1)", borderRadius: "8px", border: "1px solid rgba(239, 68, 68, 0.3)" }}>
-                        <p>{error === "Unauthorized" ? "Access Denied: Please sign in to view attendance." : error}</p>
+                    <div
+                        style={{
+                            textAlign: "center",
+                            padding: "3rem",
+                            color: "#fca5a5",
+                            background: "rgba(239, 68, 68, 0.1)",
+                            borderRadius: "8px",
+                            border: "1px solid rgba(239, 68, 68, 0.3)",
+                        }}
+                    >
+                        <p>
+                            {error === "Unauthorized"
+                                ? "Access Denied: Please sign in to view attendance."
+                                : error}
+                        </p>
                     </div>
-                ) : attendance.length === 0 ? (
+                ) : counts.total === 0 ? (
                     <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-muted)" }}>
                         <p>The facility is currently empty.</p>
                     </div>
                 ) : (
-                    <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "0.5rem" }}>
-                        {attendance.map((visit) => (
-                            <li
-                                key={visit.id}
-                                style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    padding: "0.5rem 0.75rem",
-                                    background: "rgba(255, 255, 255, 0.05)",
-                                    borderRadius: "6px",
-                                    border: "1px solid rgba(255, 255, 255, 0.05)",
-                                }}
-                            >
-                                <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", overflow: "hidden" }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                                        <span style={{ fontWeight: 500, fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={visit.participant.name || visit.participant.email}>
-                                            {visit.participant.name || visit.participant.email.split('@')[0]}
-                                        </span>
-                                        {visit.participant.keyholder && (
-                                            <span style={{ fontSize: "0.65rem", background: "rgba(59, 130, 246, 0.2)", color: "#93c5fd", padding: "2px 4px", borderRadius: "4px", flexShrink: 0 }}>
-                                                Key
-                                            </span>
-                                        )}
-                                        {isStudent(visit.participant.dob) && (
-                                            <span style={{ fontSize: "0.65rem", background: "rgba(168, 85, 247, 0.2)", color: "#c084fc", padding: "2px 4px", borderRadius: "4px", flexShrink: 0 }}>
-                                                Student
-                                            </span>
-                                        )}
+                    /* 3-column layout */
+                    <div
+                        style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(3, 1fr)",
+                            gap: "1.5rem",
+                        }}
+                    >
+                        {/* Keyholders column */}
+                        <div>
+                            <div style={columnHeaderStyle("rgba(59, 130, 246, 0.6)")}>
+                                <span style={{ fontSize: "1.25rem" }}>🔑</span>
+                                <div>
+                                    <div style={{ ...columnCountStyle, color: "#60a5fa" }}>
+                                        {counts.keyholders}
                                     </div>
-                                    <div style={{ color: "var(--color-text-muted)", fontSize: "0.75rem" }}>
-                                        {formatTime(visit.arrived)}
+                                    <div style={columnLabelStyle}>Keyholders</div>
+                                </div>
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                                {isFull
+                                    ? keyholderList.map(v => renderPersonCard(v, canCheckoutVisit(v)))
+                                    : householdKeyholders.map(v => renderPersonCard(v, canCheckoutVisit(v)))}
+                            </div>
+                        </div>
+
+                        {/* Volunteers column */}
+                        <div>
+                            <div style={columnHeaderStyle("rgba(16, 185, 129, 0.6)")}>
+                                <span style={{ fontSize: "1.25rem" }}>🤝</span>
+                                <div>
+                                    <div style={{ ...columnCountStyle, color: "#34d399" }}>
+                                        {counts.volunteers}
                                     </div>
+                                    <div style={columnLabelStyle}>Volunteers</div>
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', marginLeft: '0.5rem' }}>
-                                    {(currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember || visit.participant.id === (session?.user as any)?.id || (household?.leads?.some((l:any) => l.participantId === (session?.user as any)?.id) && visit.participant.householdId === currentUserHouseholdId)) && (
-                                        <button
-                                            onClick={() => handleForceCheckout(visit.id)}
-                                            disabled={checkingOut === visit.id}
-                                            style={{
-                                                background: 'rgba(239, 68, 68, 0.2)',
-                                                border: '1px solid rgba(239, 68, 68, 0.4)',
-                                                color: '#fca5a5',
-                                                padding: '0.2rem 0.5rem',
-                                                borderRadius: '4px',
-                                                cursor: 'pointer',
-                                                fontSize: '0.75rem',
-                                                whiteSpace: 'nowrap'
-                                            }}
-                                        >
-                                            {checkingOut === visit.id ? "..." : "Out"}
-                                        </button>
-                                    )}
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                                {isFull
+                                    ? volunteerList.map(v => renderPersonCard(v, canCheckoutVisit(v)))
+                                    : householdVolunteers.map(v => renderPersonCard(v, canCheckoutVisit(v)))}
+                            </div>
+                        </div>
+
+                        {/* Students column */}
+                        <div>
+                            <div style={columnHeaderStyle("rgba(168, 85, 247, 0.6)")}>
+                                <span style={{ fontSize: "1.25rem" }}>🎓</span>
+                                <div>
+                                    <div style={{ ...columnCountStyle, color: "#c084fc" }}>
+                                        {counts.students}
+                                    </div>
+                                    <div style={columnLabelStyle}>Students</div>
                                 </div>
-                            </li>
-                        ))}
-                    </ul>
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                                {isFull
+                                    ? studentList.map(v => renderPersonCard(v, canCheckoutVisit(v)))
+                                    : householdStudents.map(v => renderPersonCard(v, canCheckoutVisit(v)))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Privacy notice for limited access */}
+                {!isFull && counts.total > 0 && (
+                    <div
+                        style={{
+                            marginTop: "1.5rem",
+                            padding: "0.75rem",
+                            background: "rgba(255, 255, 255, 0.03)",
+                            borderRadius: "8px",
+                            textAlign: "center",
+                            fontSize: "0.8rem",
+                            color: "var(--color-text-muted)",
+                        }}
+                    >
+                        🔒 Individual names are only visible to administrators and on the facility kiosk.
+                        {limitedHousehold.length > 0 && " Your household members are shown above."}
+                    </div>
                 )}
             </div>
-        </main >
+        </main>
     );
 }

@@ -23,38 +23,23 @@ export default function Home() {
       const data = await res.json();
       const currentUserId = (session.user as any).id;
 
-      const attendanceList = data.attendance || [];
-      const userActiveVisit = attendanceList.find(
-        (visit: any) => visit.participant.id === currentUserId
-      );
-      setIsCheckedIn(!!userActiveVisit);
+      // Works with both "full" and "limited" access responses
+      if (data.access === "full") {
+        const attendanceList = data.attendance || [];
+        const userActiveVisit = attendanceList.find(
+          (visit: any) => visit.participant.id === currentUserId
+        );
+        setIsCheckedIn(!!userActiveVisit);
+      } else {
+        // Limited access — use self field
+        setIsCheckedIn(data.self !== null && data.self !== undefined);
+      }
 
-      // Analyze safety status if user is checked in
-      if (userActiveVisit) {
-        const keyholdersPresent = attendanceList.filter((v: any) => v.participant.keyholder).length;
-        setIsLastKeyholder(userActiveVisit.participant.keyholder && keyholdersPresent === 1);
-
-        const isStudent = (dob: string | undefined | null) => {
-          if (!dob) return false;
-          const birthDate = new Date(dob);
-          const today = new Date();
-          let age = today.getFullYear() - birthDate.getFullYear();
-          const m = today.getMonth() - birthDate.getMonth();
-          if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-          return age < 18;
-        };
-
-        const activeAdultVisits = attendanceList.filter((v: any) => !isStudent(v.participant.dob));
-        const activeStudentVisits = attendanceList.filter((v: any) => isStudent(v.participant.dob));
-
-        const unaccompaniedStudents = activeStudentVisits.filter((studentVisit: any) => {
-          if (!studentVisit.participant.householdId) return true;
-          return !activeAdultVisits.some(
-            (adultVisit: any) => adultVisit.participant.householdId === studentVisit.participant.householdId
-          );
-        });
-
-        setIsTwoDeepViolation(unaccompaniedStudents.length > 0 && activeAdultVisits.length < 2);
+      // Use server-computed safety flags
+      if (data.safety) {
+        const userIsKeyholder = (session.user as any)?.keyholder;
+        setIsLastKeyholder(data.safety.isLastKeyholder && userIsKeyholder);
+        setIsTwoDeepViolation(data.safety.isTwoDeepViolation);
       } else {
         setIsLastKeyholder(false);
         setIsTwoDeepViolation(false);

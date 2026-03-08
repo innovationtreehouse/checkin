@@ -4,12 +4,25 @@ import { authOptions } from "../auth/[...nextauth]/route";
 import prisma from "@/lib/prisma";
 import { getKioskPublicKey, verifyKioskSignature } from "@/lib/verify-kiosk";
 
+function isStudentByDob(dob: Date | string | null | undefined): boolean {
+    if (!dob) return false;
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age < 18;
+}
+
 export async function GET(req: NextRequest) {
     try {
-        // Allow access if: valid session OR valid kiosk signature
+        // Determine caller identity
         const session = await getServerSession(authOptions);
+        const user = session?.user as any;
         const hasKioskHeaders = req.headers.get("x-kiosk-signature");
         const pubKey = getKioskPublicKey();
+
+        let isKiosk = false;
 
         if (!session && pubKey && hasKioskHeaders) {
             // Kiosk request — verify signature
@@ -24,11 +37,16 @@ export async function GET(req: NextRequest) {
             if (!result.ok) {
                 return NextResponse.json({ error: result.error }, { status: result.status });
             }
+            isKiosk = true;
         } else if (!session && pubKey) {
             // No session and no kiosk headers — reject
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        } else if (!session && !pubKey) {
+            // Dev mode: no pubKey configured, treat as kiosk (allow all)
+            isKiosk = true;
         }
-        // If no pubKey configured, allow all (dev mode)
+
+        // Fetch all active visits (server always needs the full picture)
         const activeVisits = await prisma.visit.findMany({
             where: {
                 departed: null,
@@ -52,7 +70,56 @@ export async function GET(req: NextRequest) {
             },
         });
 
-        return NextResponse.json({ attendance: activeVisits });
+        // Compute category counts
+        const keyholderVisits = activeVisits.filter(v => v.participant.keyholder);
+        const studentVisits = activeVisits.filter(v => isStudentByDob(v.participant.dob));
+        const volunteerVisits = activeVisits.filter(v => !v.participant.keyholder && !isStudentByDob(v.participant.dob));
+
+        const counts = {
+            keyholders: keyholderVisits.length,
+            volunteers: volunteerVisits.length,
+            students: studentVisits.length,
+            total: activeVisits.length,
+        };
+
+        // Compute safety flags (needed for all access levels)
+        const unaccompaniedStudents = studentVisits.filter(sv => {
+            if (!sv.participant.householdId) return true;
+            const adultVisits = activeVisits.filter(v => !isStudentByDob(v.participant.dob));
+            return !adultVisits.some(av => av.participant.householdId === sv.participant.householdId);
+        });
+        const adultsPresent = activeVisits.filter(v => !isStudentByDob(v.participant.dob));
+        const safety = {
+            isLastKeyholder: keyholderVisits.length === 1,
+            isTwoDeepViolation: unaccompaniedStudents.length > 0 && adultsPresent.length < 2,
+        };
+
+        // Determine access level
+        const isAdmin = isKiosk || user?.sysadmin || user?.boardMember || user?.keyholder;
+
+        if (isAdmin) {
+            // Full access: return all visits + counts
+            return NextResponse.json({
+                access: "full",
+                attendance: activeVisits,
+                counts,
+                safety,
+            });
+        }
+
+        // Limited access: counts + household members + self only
+        const selfVisit = user ? activeVisits.find(v => v.participant.id === Number(user.id)) || null : null;
+        const householdVisits = (user?.householdId)
+            ? activeVisits.filter(v => v.participant.householdId === user.householdId)
+            : [];
+
+        return NextResponse.json({
+            access: "limited",
+            counts,
+            safety,
+            self: selfVisit,
+            household: householdVisits,
+        });
     } catch (error) {
         console.error("Attendance fetch error:", error);
         return NextResponse.json(
