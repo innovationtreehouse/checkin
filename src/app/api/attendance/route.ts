@@ -4,6 +4,7 @@ import { authOptions } from "../auth/[...nextauth]/route";
 import prisma from "@/lib/prisma";
 import { getKioskPublicKey, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
+import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 
 export async function GET(req: NextRequest) {
     try {
@@ -111,10 +112,8 @@ export async function DELETE(req: Request) {
             return NextResponse.json({ error: "Forbidden: You are not authorized to check out this user." }, { status: 403 });
         }
 
-        const updatedVisit = await prisma.visit.update({
-            where: { id: visitId },
-            data: { departed: new Date() }
-        });
+        const finalVisits = await processVisitCheckout(visitId, new Date());
+        const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visit;
 
         return NextResponse.json({ success: true, visit: updatedVisit });
     } catch (error) {
@@ -170,10 +169,14 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "User is already checked in" }, { status: 400 });
             }
 
+            const arrivalTime = new Date();
+            const eventId = await findAssociatedEventAt(participant.id, arrivalTime);
+
             const newVisit = await prisma.visit.create({
                 data: {
                     participantId: participant.id,
-                    arrived: new Date()
+                    arrived: arrivalTime,
+                    associatedEventId: eventId
                 }
             });
 

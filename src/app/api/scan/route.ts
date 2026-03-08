@@ -5,6 +5,7 @@ import { sendCheckinNotifications } from "@/lib/notifications";
 import { getFullAttendance } from "@/lib/getFullAttendance";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../auth/[...nextauth]/route";
+import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 
 export async function POST(req: NextRequest) {
     console.log("--> API /api/scan HIT");
@@ -178,10 +179,8 @@ export async function POST(req: NextRequest) {
             }
 
             // User is already checked in, so we Check them Out
-            const updatedVisit = await prisma.visit.update({
-                where: { id: activeVisit.id },
-                data: { departed: new Date() },
-            });
+            const finalVisits = await processVisitCheckout(activeVisit.id, new Date());
+            const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : activeVisit;
 
             // Fire-and-forget: send check-out notifications
 
@@ -214,10 +213,14 @@ export async function POST(req: NextRequest) {
                 }
             }
 
+            const arrivalTime = new Date();
+            const eventId = await findAssociatedEventAt(participant.id, arrivalTime);
+
             const newVisit = await prisma.visit.create({
                 data: {
                     participantId: participant.id,
-                    arrived: new Date(),
+                    arrived: arrivalTime,
+                    associatedEventId: eventId
                 },
             });
 

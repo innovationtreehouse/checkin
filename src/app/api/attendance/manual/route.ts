@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 
 export async function POST(req: NextRequest) {
     try {
@@ -25,13 +26,22 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Departure time must be after arrival time" }, { status: 400 });
         }
 
+        const eventId = await findAssociatedEventAt(userId, arrivalTime);
+
         const visit = await prisma.visit.create({
             data: {
                 participantId: userId,
                 arrived: arrivalTime,
                 departed: departureTime,
+                associatedEventId: eventId
             }
         });
+
+        // If a departure time was provided, we process the checkout logic directly 
+        // to handle any back-to-back event transitions.
+        if (departureTime) {
+             await processVisitCheckout(visit.id, departureTime);
+        }
 
         await prisma.auditLog.create({
             data: {

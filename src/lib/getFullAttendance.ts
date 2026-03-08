@@ -28,6 +28,11 @@ export async function getFullAttendance() {
                     householdId: true,
                 },
             },
+            event: {
+                include: {
+                    program: true
+                }
+            }
         },
         orderBy: { arrived: "desc" },
     });

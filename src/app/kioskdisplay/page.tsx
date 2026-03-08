@@ -20,6 +20,12 @@ type Visit = {
     id: number;
     arrived: string;
     participant: Participant;
+    event?: {
+        program?: {
+            id: number;
+            name: string;
+        }
+    }
 };
 
 type Counts = {
@@ -273,9 +279,29 @@ function KioskDisplayInner() {
                 >
                     {visit.participant.name || visit.participant.email.split("@")[0]}
                 </span>
-                <span style={{ color: "var(--color-text-muted)", fontSize: "0.7rem" }}>
-                    {formatTime(visit.arrived)}
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ color: "var(--color-text-muted)", fontSize: "0.7rem" }}>
+                        {formatTime(visit.arrived)}
+                    </span>
+                    {visit.event?.program?.name && (
+                        <span style={{
+                            fontSize: "0.6rem",
+                            padding: "0.1rem 0.3rem",
+                            borderRadius: "4px",
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                            textOverflow: "ellipsis",
+                            overflow: "hidden",
+                            maxWidth: "100px",
+                            // Generate a consistent hue based on the program name
+                            background: `hsl(${visit.event.program.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 360}, 60%, 20%)`,
+                            color: `hsl(${visit.event.program.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 360}, 80%, 80%)`,
+                            border: `1px solid hsl(${visit.event.program.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 360}, 60%, 30%)`
+                        }} title={visit.event.program.name}>
+                            {visit.event.program.name}
+                        </span>
+                    )}
+                </div>
             </div>
             {showCheckout && (
                 <button
