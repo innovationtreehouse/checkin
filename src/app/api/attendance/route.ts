@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
                 attendance,
                 counts,
                 safety,
+                signedRequest: isKiosk,
             });
         }
 
@@ -65,6 +66,7 @@ export async function GET(req: NextRequest) {
             safety,
             self: selfVisit,
             household: householdVisits,
+            signedRequest: isKiosk,
         });
     } catch (error) {
         console.error("Attendance fetch error:", error);

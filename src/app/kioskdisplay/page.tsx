@@ -69,7 +69,7 @@ const isStudent = (dob: string | undefined | null) => {
 
 function KioskDisplayInner() {
     const searchParams = useSearchParams();
-    const isKioskMode = searchParams.get("mode") === "kiosk";
+    const [isKioskMode, setIsKioskMode] = useState(searchParams.get("mode") === "kiosk");
     const { data: session } = useSession();
     const [data, setData] = useState<AttendanceResponse | null>(null);
     const [loading, setLoading] = useState(true);
@@ -132,11 +132,29 @@ function KioskDisplayInner() {
 
     const fetchAttendance = async () => {
         try {
-            const res = await fetch("/api/attendance");
+            // Check if we are passing signature headers to the API
+            const headers: Record<string, string> = {};
+            const sigParamsUrl = searchParams.get("sig");
+            const tsParamsUrl = searchParams.get("ts");
+            const nonceParamsUrl = searchParams.get("nonce");
+
+            if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
+                headers["x-kiosk-signature"] = sigParamsUrl;
+                headers["x-kiosk-timestamp"] = tsParamsUrl;
+                headers["x-kiosk-nonce"] = nonceParamsUrl;
+            }
+
+            const res = await fetch("/api/attendance", { headers });
             const json = await res.json();
+            
             if (res.ok && (json.access === "full" || json.access === "limited")) {
                 setData(json);
                 setError(null);
+                
+                // If it was a signed request, automatically turn on Kiosk Mode
+                if (json.signedRequest === true) {
+                    setIsKioskMode(true);
+                }
             } else if (!res.ok) {
                 setError(json.error || "Failed to load attendance");
             }
