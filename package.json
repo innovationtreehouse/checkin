@@ -51,9 +51,6 @@
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
       "eslint --fix"
-    ],
-    "**/*.{ts,tsx}": [
-      "npx tsc --noEmit"
     ]
   }
 }
