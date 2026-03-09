@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Empty spreadsheet or no data rows found" }, { status: 400 });
         }
 
-        const headers = rawData[0].map((h: any) => String(h).trim().toLowerCase());
+        const headers = rawData[0].map((h: unknown) => String(h).trim().toLowerCase());
         const rows = rawData.slice(1);
 
         const emailIndex = headers.findIndex(h => h.includes("email") && !h.includes("parent") && !h.includes("household"));
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
         }
 
         let insertedOrUpdatedCount = 0;
-        let errors: string[] = [];
+        const errors: string[] = [];
 
         // Helper: find or create household for a participant
         const ensureHousehold = async (participantId: number, participantName: string): Promise<number> => {
@@ -135,8 +136,16 @@ export async function POST(req: NextRequest) {
 
             let parsedDob: Date | undefined;
             if (dobString) {
-                const d = new Date(dobString);
-                if (!isNaN(d.getTime())) parsedDob = d;
+                // xlsx might parse it as an Excel serial number if no bookType provided, handle it if so
+                if (/^\d+(\.\d+)?$/.test(dobString)) {
+                    // Excel serial number
+                    const serial = parseFloat(dobString);
+                    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+                    parsedDob = new Date(excelEpoch.getTime() + serial * 86400000);
+                } else {
+                    const d = new Date(dobString);
+                    if (!isNaN(d.getTime())) parsedDob = d;
+                }
             }
 
             parsedRows.push({
@@ -228,7 +237,7 @@ export async function POST(req: NextRequest) {
                     await ensureHouseholdMembership(parentHouseholdId);
                 } else {
                     // No email, no parent email — find by name/DOB
-                    let matchQuery: any = { name: pr.fullName };
+                    const matchQuery: { name: string; dob?: Date } = { name: pr.fullName };
                     if (pr.parsedDob) matchQuery.dob = pr.parsedDob;
 
                     let participant = await prisma.participant.findFirst({ where: matchQuery });
@@ -252,9 +261,10 @@ export async function POST(req: NextRequest) {
                 participantByName.set(pr.fullName.toLowerCase(), participantId);
                 insertedOrUpdatedCount++;
 
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error(`Error processing row ${pr.index + 2}:`, err);
-                errors.push(`Row ${pr.index + 2} (${pr.fullName || 'Unknown'}): ${err.message || 'Unknown error'}`);
+                const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+                errors.push(`Row ${pr.index + 2} (${pr.fullName || 'Unknown'}): ${errorMessage}`);
             }
         }
 
@@ -426,9 +436,10 @@ export async function POST(req: NextRequest) {
                         await ensureHouseholdMembership(participant.householdId);
                     }
                 }
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error(`Error in pass 2 for row ${pr.index + 2}:`, err);
-                errors.push(`Row ${pr.index + 2} (${pr.fullName}): Household linking error: ${err.message || 'Unknown error'}`);
+                const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+                errors.push(`Row ${pr.index + 2} (${pr.fullName}): Household linking error: ${errorMessage}`);
             }
         }
 
@@ -438,8 +449,9 @@ export async function POST(req: NextRequest) {
             errors: errors.length > 0 ? errors : undefined
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error in participant bulk import:", error);
-        return NextResponse.json({ error: `Internal server error: ${error.message}` }, { status: 500 });
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        return NextResponse.json({ error: `Internal server error: ${errorMessage}` }, { status: 500 });
     }
 }

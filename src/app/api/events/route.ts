@@ -19,12 +19,13 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        const isSysAdminOrBoard = (session.user as any)?.sysadmin || (session.user as any)?.boardMember;
+        const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
+        const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
         let isLeadMentor = false;
 
         if (programId) {
             const currentProgram = await prisma.program.findUnique({ where: { id: parseInt(programId, 10) } });
-            if (currentProgram && currentProgram.leadMentorId === (session.user as any).id) {
+            if (currentProgram && currentProgram.leadMentorId === user.id) {
                 isLeadMentor = true;
             }
         }
@@ -59,6 +60,7 @@ export async function POST(req: Request) {
             const untilDate = parseISO(recurrence.until.includes("T") ? recurrence.until.split("T")[0] : recurrence.until);
             // Limit recurrence to 365 days maximum to prevent infinite loop errors
             let loopGuard = 0;
+            const recurringGroupId = crypto.randomUUID();
 
             while ((isBefore(currentIterDate, untilDate) || isEqual(currentIterDate, untilDate)) && loopGuard < 365) {
                 const dayOfWeek = getDay(currentIterDate); // 0 = Sun, 1 = Mon ...
@@ -72,7 +74,8 @@ export async function POST(req: Request) {
                         description: description || null,
                         programId: programId ? parseInt(programId, 10) : null,
                         start: startD,
-                        end: endD
+                        end: endD,
+                        recurringGroupId
                     });
                 }
 
@@ -93,7 +96,7 @@ export async function POST(req: Request) {
         // We log the action summary.
         await prisma.auditLog.create({
             data: {
-                actorId: (session.user as any).id,
+                actorId: user.id,
                 action: 'CREATE',
                 tableName: 'Event',
                 affectedEntityId: programId ? parseInt(programId) : 0,
@@ -102,8 +105,9 @@ export async function POST(req: Request) {
         });
 
         return NextResponse.json({ success: true, count: insertedEvents.count });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Event creation error:", error);
-        return NextResponse.json({ error: error.message || "Failed to create event(s)" }, { status: 500 });
+        const err = error as Error;
+        return NextResponse.json({ error: err.message || "Failed to create event(s)" }, { status: 500 });
     }
 }

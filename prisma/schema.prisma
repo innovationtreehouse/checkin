@@ -246,6 +246,9 @@ model Event {
   start       DateTime
   end         DateTime
   description String?
+  
+  attendanceConfirmedAt DateTime?
+  recurringGroupId      String?
 
   program Program? @relation(fields: [programId], references: [id])
   rsvps   RSVP[]

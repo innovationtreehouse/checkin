@@ -75,6 +75,9 @@ describe('Admin Participants API Integration Tests', () => {
         await prisma.participant.deleteMany({
             where: { email: { contains: 'edit-test-user' } }
         });
+        await prisma.participant.deleteMany({
+            where: { email: 'updated-email@example.com' }
+        });
         await prisma.household.deleteMany({
             where: { name: { contains: 'Household' } }
         });
@@ -91,7 +94,7 @@ describe('Admin Participants API Integration Tests', () => {
                  body: JSON.stringify({ name: 'Test', email: 'test@example.com' })
              });
 
-             const res = await POST(req as any);
+             const res = await POST(req as unknown as Parameters<typeof POST>[0]);
              expect(res.status).toBe(403);
         });
 
@@ -105,7 +108,7 @@ describe('Admin Participants API Integration Tests', () => {
                 body: JSON.stringify({ name: 'Test No Email' })
             });
 
-            const res = await POST(req as any);
+            const res = await POST(req as unknown as Parameters<typeof POST>[0]);
             expect(res.status).toBe(400);
             
             const data = await res.json();
@@ -122,7 +125,7 @@ describe('Admin Participants API Integration Tests', () => {
                 body: JSON.stringify({ name: 'Test Invalid Email', email: 'invalid-email' })
             });
 
-            const res = await POST(req as any);
+            const res = await POST(req as unknown as Parameters<typeof POST>[0]);
             expect(res.status).toBe(400);
             
             const data = await res.json();
@@ -139,7 +142,7 @@ describe('Admin Participants API Integration Tests', () => {
                 body: JSON.stringify({ name: 'Duplicate Email Test', email: 'admin-participants-test@example.com' })
             });
 
-            const res = await POST(req as any);
+            const res = await POST(req as unknown as Parameters<typeof POST>[0]);
             expect(res.status).toBe(409);
             
             const data = await res.json();
@@ -156,7 +159,7 @@ describe('Admin Participants API Integration Tests', () => {
                 body: JSON.stringify({ name: 'Lone Adult', email: 'new-lone-participants-test@example.com' })
             });
 
-            const res = await POST(req as any);
+            const res = await POST(req as unknown as Parameters<typeof POST>[0]);
             expect(res.status).toBe(200);
 
             const data = await res.json();
@@ -191,7 +194,7 @@ describe('Admin Participants API Integration Tests', () => {
                 })
             });
 
-            const res = await POST(req as any);
+            const res = await POST(req as unknown as Parameters<typeof POST>[0]);
             expect(res.status).toBe(200);
 
             const data = await res.json();
@@ -219,7 +222,7 @@ describe('Admin Participants API Integration Tests', () => {
                  body: JSON.stringify({ name: 'Hacked Name' })
              });
 
-             const res = await PUT(req as any, { params: Promise.resolve({ id: testUserId.toString() }) });
+             const res = await PUT(req as unknown as Parameters<typeof PUT>[0], { params: Promise.resolve({ id: testUserId.toString() }) });
              expect(res.status).toBe(403);
         });
 
@@ -238,7 +241,7 @@ describe('Admin Participants API Integration Tests', () => {
                 body: JSON.stringify({ name: 'Updated Name', email: 'updated-email@example.com', phone: '5551234567' })
             });
 
-            const res = await PUT(req as any, { params: Promise.resolve({ id: editUser.id.toString() }) });
+            const res = await PUT(req as unknown as Parameters<typeof PUT>[0], { params: Promise.resolve({ id: editUser.id.toString() }) });
             expect(res.status).toBe(200);
 
             const data = await res.json();

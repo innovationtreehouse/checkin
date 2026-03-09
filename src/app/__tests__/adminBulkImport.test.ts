@@ -86,7 +86,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
         });
     });
 
-    const createMockCsvFormData = (data: any[][]) => {
+    const createMockCsvFormData = (data: (string | number | boolean | Date)[][]) => {
         const worksheet = xlsx.utils.aoa_to_sheet(data);
         const workbook = xlsx.utils.book_new();
         xlsx.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
@@ -108,7 +108,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
                  method: 'POST',
              });
 
-             const res = await POST(req as any);
+             const res = await POST(req as unknown as Parameters<typeof POST>[0]);
              expect(res.status).toBe(403);
         });
 
@@ -121,10 +121,10 @@ describe('Admin Bulk Import API Integration Tests', () => {
             const req = new Request('http://localhost:4000/api/admin/participants/import', {
                 method: 'POST',
                 body: formData
-            }) as any;
-            req.formData = jest.fn().mockResolvedValue(formData);
+            }) as unknown as Parameters<typeof POST>[0];
+            (req as unknown as { formData: () => Promise<FormData> }).formData = jest.fn().mockResolvedValue(formData);
 
-            const res = await POST(req as any);
+            const res = await POST(req);
             expect(res.status).toBe(400);
             
             const data = await res.json();
@@ -145,10 +145,10 @@ describe('Admin Bulk Import API Integration Tests', () => {
             const req = new Request('http://localhost:4000/api/admin/participants/import', {
                 method: 'POST',
                 body: formData
-            }) as any;
-            req.formData = jest.fn().mockResolvedValue(formData);
+            }) as unknown as Parameters<typeof POST>[0];
+            (req as unknown as { formData: () => Promise<FormData> }).formData = jest.fn().mockResolvedValue(formData);
 
-            const res = await POST(req as any);
+            const res = await POST(req);
             expect(res.status).toBe(400);
             
             const data = await res.json();
@@ -170,10 +170,10 @@ describe('Admin Bulk Import API Integration Tests', () => {
             const req = new Request('http://localhost:4000/api/admin/participants/import', {
                 method: 'POST',
                 body: formData
-            }) as any;
-            req.formData = jest.fn().mockResolvedValue(formData);
+            }) as unknown as Parameters<typeof POST>[0];
+            (req as unknown as { formData: () => Promise<FormData> }).formData = jest.fn().mockResolvedValue(formData);
 
-            const res = await POST(req as any);
+            const res = await POST(req);
             expect(res.status).toBe(200);
 
             const data = await res.json();
@@ -211,8 +211,11 @@ describe('Admin Bulk Import API Integration Tests', () => {
             const req = new Request('http://localhost:4000/api/admin/participants/import', {
                 method: 'POST',
                 body: formData
-            }) as any;
-            const res = await POST(req as any);
+            }) as unknown as Parameters<typeof POST>[0];
+            (req as unknown as { formData: () => Promise<FormData> }).formData = jest.fn().mockResolvedValue(formData);
+            const res = await POST(req);
+            const data = await res.json();
+            if (data.errors) console.log("Import Errors:", data.errors);
             expect(res.status).toBe(200);
             
             const adult = await prisma.participant.findFirst({ where: { name: 'Adult Import Test' } });
