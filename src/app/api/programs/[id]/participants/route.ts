@@ -35,10 +35,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const currentUserId = (session.user as any).id;
+        const currentUserId = (session.user as { id: number }).id;
         const isSelfEnrollment = currentUserId === participantId;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
-        const isSysAdminOrBoard = (session.user as any)?.sysadmin || (session.user as any)?.boardMember;
+        const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin || (session.user as { sysadmin?: boolean, boardMember?: boolean })?.boardMember;
 
         if (!isSelfEnrollment && !isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Not authorized to enroll this participant" }, { status: 403 });
@@ -56,6 +56,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             // Check Capacity
             if (currentProgram.maxParticipants !== null && currentProgram._count.participants >= currentProgram.maxParticipants) {
                 return NextResponse.json({ error: "Program has reached maximum capacity.", requiresOverride: true }, { status: 400 });
+            }
+
+            // Check Enrollment Status
+            if (currentProgram.enrollmentStatus === 'CLOSED') {
+                return NextResponse.json({ error: "Program enrollment is currently closed.", requiresOverride: true }, { status: 400 });
             }
 
             // Check Age
@@ -132,10 +137,10 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const currentUserId = (session.user as any).id;
+        const currentUserId = (session.user as { id: number }).id;
         const isSelfRemoval = currentUserId === participantId;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
-        const isSysAdminOrBoard = (session.user as any)?.sysadmin || (session.user as any)?.boardMember;
+        const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin || (session.user as { sysadmin?: boolean, boardMember?: boolean })?.boardMember;
 
         if (!isSelfRemoval && !isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Not authorized to remove this participant" }, { status: 403 });

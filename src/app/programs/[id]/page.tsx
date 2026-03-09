@@ -14,6 +14,7 @@ type ProgramDetail = {
     leadMentorId: number | null;
     leadMentor?: { name: string | null; email: string } | null;
     participants: { participantId: number }[];
+    enrollmentStatus: string;
 };
 
 export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id: string }> }) {
@@ -43,7 +44,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             } else {
                 setMessage("Failed to load program details.");
             }
-        } catch (error) {
+        } catch {
             setMessage("Network error.");
         } finally {
             setLoading(false);
@@ -61,7 +62,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         setMessage("");
 
         try {
-            const currentUserId = (session.user as any).id;
+            const currentUserId = (session.user as { id: number }).id;
             const res = await fetch(`/api/programs/${id}/participants`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -110,7 +111,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         </main>
     );
 
-    const isEnrolled = session && program.participants.some(p => p.participantId === (session.user as any)?.id);
+    const isEnrolled = session && program.participants.some(p => p.participantId === (session.user as { id: number })?.id);
 
     return (
         <main className={styles.main}>
@@ -118,7 +119,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
                     <h1 className="text-gradient" style={{ fontSize: '2.5rem', margin: 0 }}>{program.name}</h1>
                     <div style={{ display: 'flex', gap: '1rem' }}>
-                        {(session && ((session.user as any)?.sysadmin || (session.user as any)?.boardMember || (session.user as any)?.id === program.leadMentorId)) && (
+                        {(session && ((session.user as { sysadmin?: boolean, boardMember?: boolean, id: number })?.sysadmin || (session.user as { sysadmin?: boolean, boardMember?: boolean, id: number })?.boardMember || (session.user as { sysadmin?: boolean, boardMember?: boolean, id: number })?.id === program.leadMentorId)) && (
                             <button className="glass-button" onClick={() => router.push(`/admin/programs/${program.id}`)} style={{ padding: '0.5rem 1rem', background: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.4)', color: '#4ade80' }}>
                                 Manage Program
                             </button>
@@ -140,6 +141,14 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                         <div>
                             <strong>Starts:</strong> {program.begin ? formatDate(program.begin) : 'TBD'} <br /><br />
                             <strong>Ends:</strong> {program.end ? formatDate(program.end) : 'Ongoing'}
+                        </div>
+                        <div>
+                            <strong>Enrollment:</strong> {
+                                program.enrollmentStatus === 'OPEN' ? <span style={{ color: '#4ade80' }}>Open</span> :
+                                program.enrollmentStatus === 'CLOSED' ? <span style={{ color: '#f87171' }}>Closed</span> :
+                                program.enrollmentStatus === 'WHITELIST' ? <span style={{ color: '#eab308' }}>Invite Only</span> :
+                                program.enrollmentStatus
+                            }
                         </div>
                     </div>
                 </div>
@@ -166,10 +175,17 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                             <button
                                 className="glass-button primary-button"
                                 onClick={() => handleEnroll(false)}
-                                disabled={enrolling}
-                                style={{ padding: '1rem 3rem', fontSize: '1.2rem', background: 'rgba(56, 189, 248, 0.2)', borderColor: 'rgba(56, 189, 248, 0.5)' }}
+                                disabled={enrolling || program.enrollmentStatus === 'CLOSED'}
+                                style={{ 
+                                    padding: '1rem 3rem', 
+                                    fontSize: '1.2rem', 
+                                    background: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.05)' : 'rgba(56, 189, 248, 0.2)', 
+                                    borderColor: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(56, 189, 248, 0.5)',
+                                    opacity: program.enrollmentStatus === 'CLOSED' ? 0.5 : 1,
+                                    cursor: program.enrollmentStatus === 'CLOSED' ? 'not-allowed' : 'pointer'
+                                }}
                             >
-                                {enrolling ? "Enrolling..." : "Enroll Now"}
+                                {enrolling ? "Enrolling..." : program.enrollmentStatus === 'CLOSED' ? "Enrollment Closed" : "Enroll Now"}
                             </button>
                             {requiresOverride && (
                                 <div style={{ marginTop: '1.5rem', padding: '1.5rem', borderRadius: '8px', background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
