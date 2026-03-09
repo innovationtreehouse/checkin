@@ -21,7 +21,7 @@ export default function AdminLayout({
       router.push("/");
     } else if (status === "authenticated") {
       const isAuthorized =
-        (session?.user as any)?.sysadmin || (session?.user as any)?.boardMember;
+        (session?.user as {sysadmin?: boolean; boardMember?: boolean})?.sysadmin || (session?.user as {sysadmin?: boolean; boardMember?: boolean})?.boardMember;
       if (!isAuthorized) {
         router.push("/");
       }
@@ -38,7 +38,7 @@ export default function AdminLayout({
     );
   }
 
-  if (!session || (!(session.user as any)?.sysadmin && !(session.user as any)?.boardMember)) {
+  if (!session || (!(session.user as {sysadmin?: boolean; boardMember?: boolean})?.sysadmin && !(session.user as {sysadmin?: boolean; boardMember?: boolean})?.boardMember)) {
     return null;
   }
 
@@ -66,11 +66,17 @@ export default function AdminLayout({
     },
   ];
 
+  const isProgramFlow = pathname?.startsWith("/admin/programs") || pathname?.match(/^\/admin\/events\/(\d+|new)/);
+
+  if (isProgramFlow) {
+    return <>{children}</>;
+  }
+
   return (
     <div className={styles.layout}>
       <aside className={styles.sidebar}>
         <div className={styles.logo}>
-          <span className="text-gradient">Admin Panel</span>
+          <span className="text-gradient">Admin Ops</span>
         </div>
         <nav>
           {navItems.map((section) => (
