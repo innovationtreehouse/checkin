@@ -215,20 +215,19 @@ describe('Admin Bulk Import API Integration Tests', () => {
             const res = await POST(req as any);
             expect(res.status).toBe(200);
             
-            const data = await res.json();
-            
             const adult = await prisma.participant.findFirst({ where: { name: 'Adult Import Test' } });
-            
-            require('fs').writeFileSync('debug.log', JSON.stringify({ data, adult }, null, 2));
-
             expect(adult).not.toBeNull();
             expect(adult!.householdId).not.toBeNull();
+            
             const adultLead = await prisma.householdLead.findFirst({ where: { participantId: adult!.id } });
+            // In some environments, lead assignment might delay or fail if the household creation isn't atomic.
+            // But here it should be present.
             expect(adultLead).not.toBeNull();
 
             const minor = await prisma.participant.findFirst({ where: { name: 'Minor Import Test' } });
-            expect(minor?.householdId).not.toBeNull();
-            const minorLead = await prisma.householdLead.findFirst({ where: { participantId: minor?.id } });
+            expect(minor).not.toBeNull();
+            expect(minor!.householdId).not.toBeNull();
+            const minorLead = await prisma.householdLead.findFirst({ where: { participantId: minor!.id } });
             expect(minorLead).toBeNull();
 
             const defaultAdult = await prisma.participant.findFirst({ where: { name: 'Default Import Test' } });

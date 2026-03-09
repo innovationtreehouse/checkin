@@ -3,8 +3,9 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import prisma from "@/lib/prisma";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
+        const { id } = await params;
         const session = await getServerSession(authOptions);
         if (!session?.user) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -15,9 +16,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
-        const participantId = parseInt(params.id);
+        const participantId = parseInt(id);
         if (isNaN(participantId)) {
-            return NextResponse.json({ error: "Invalid participant ID" }, { status: 400 });
+            console.error(`Invalid participant ID from params: ${id}`);
+            return NextResponse.json({ error: `Invalid participant ID: ${id}` }, { status: 400 });
         }
 
         const { householdId, createNew } = await req.json();

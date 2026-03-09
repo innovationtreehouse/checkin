@@ -10,6 +10,25 @@ export default function AdminParticipantsIndex() {
     const [loading, setLoading] = useState(false);
     const router = useRouter();
 
+    useEffect(() => {
+        fetchParticipants();
+    }, []);
+
+    const fetchParticipants = async (query = "") => {
+        setLoading(true);
+        try {
+            const res = await fetch(`/api/admin/participants/search?q=${encodeURIComponent(query)}`);
+            const data = await res.json();
+            if (data.participants) {
+                setResults(data.participants);
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const [assignModalOpen, setAssignModalOpen] = useState(false);
     const [selectedParticipant, setSelectedParticipant] = useState<any>(null);
     const [householdId, setHouseholdId] = useState("");
@@ -17,6 +36,20 @@ export default function AdminParticipantsIndex() {
     const [householdResults, setHouseholdResults] = useState<any[]>([]);
     const [householdSearching, setHouseholdSearching] = useState(false);
     const [assigning, setAssigning] = useState(false);
+    const [showingNewHouseholdConfirm, setShowingNewHouseholdConfirm] = useState(false);
+    const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+
+    // Auto-clear notification
+    useEffect(() => {
+        if (notification) {
+            const timer = setTimeout(() => setNotification(null), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [notification]);
+
+    const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+        setNotification({ message, type });
+    };
 
     // Debounced household search
     useEffect(() => {
@@ -45,6 +78,13 @@ export default function AdminParticipantsIndex() {
     const handleAssignHousehold = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedParticipant) return;
+
+        // If pulling from an existing household into a NEW one, ask for confirmation
+        if (selectedParticipant.household && !householdId && !showingNewHouseholdConfirm) {
+            setShowingNewHouseholdConfirm(true);
+            return;
+        }
+
         setAssigning(true);
         try {
             const res = await fetch(`/api/admin/participants/${selectedParticipant.id}/household`, {
@@ -62,12 +102,15 @@ export default function AdminParticipantsIndex() {
                 setHouseholdId("");
                 setHouseholdSearch("");
                 setSelectedParticipant(null);
+                setShowingNewHouseholdConfirm(false);
+                showNotification("Household assigned successfully!");
             } else {
-                alert("Failed to assign household");
+                const data = await res.json().catch(() => ({}));
+                showNotification(data.error || "Failed to assign household", "error");
             }
         } catch (err) {
             console.error(err);
-            alert("Network error");
+            showNotification("Network error", "error");
         } finally {
             setAssigning(false);
         }
@@ -75,24 +118,31 @@ export default function AdminParticipantsIndex() {
 
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!searchQuery.trim()) return;
-
-        setLoading(true);
-        try {
-            const res = await fetch(`/api/admin/participants/search?q=${encodeURIComponent(searchQuery)}`);
-            const data = await res.json();
-            if (data.participants) {
-                setResults(data.participants);
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
+        fetchParticipants(searchQuery);
     };
 
     return (
-        <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
+        <div style={{ maxWidth: "1000px", margin: "0 auto", position: 'relative' }}>
+            {notification && (
+                <div 
+                    className="glass-container animate-float" 
+                    style={{ 
+                        position: 'fixed', 
+                        top: '20px', 
+                        right: '20px', 
+                        zIndex: 1000, 
+                        background: notification.type === 'error' ? 'rgba(239, 68, 68, 0.9)' : 'rgba(34, 197, 94, 0.9)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        padding: '1rem 2rem',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                        backdropFilter: 'blur(10px)',
+                        color: 'white',
+                        fontWeight: 600
+                    }}
+                >
+                    {notification.message}
+                </div>
+            )}
             <div className="glass-container animate-float" style={{ padding: '2rem', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
                     <h1 className="text-gradient" style={{ marginTop: 0 }}>Participants</h1>
@@ -169,10 +219,72 @@ export default function AdminParticipantsIndex() {
             </div>
 
             {assignModalOpen && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-                    <div className="glass-container" style={{ padding: '2rem', width: '100%', maxWidth: '500px' }}>
+                <div 
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setAssignModalOpen(false);
+                            setSelectedParticipant(null);
+                        }
+                    }}
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100, backdropFilter: 'blur(8px)' }}
+                >
+                    <div className="glass-container" style={{ padding: '2rem', width: '100%', maxWidth: '500px', background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
                         <h2 style={{ marginTop: 0 }}>Assign Household to {selectedParticipant?.name}</h2>
-                        <form onSubmit={handleAssignHousehold}>
+                        
+                        {selectedParticipant?.household && (
+                            <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Current Household: {selectedParticipant.household.name}</div>
+                                <div style={{ fontSize: '0.85rem' }}>
+                                    Members: {selectedParticipant.household.participants
+                                        .filter((p: any) => p.id !== selectedParticipant.id)
+                                        .map((p: any) => p.name || p.email)
+                                        .join(', ') || 'No other members'}
+                                </div>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleAssignHousehold} style={{ position: 'relative' }}>
+                            {showingNewHouseholdConfirm && (
+                                <div style={{ 
+                                    position: 'absolute', 
+                                    top: '-10px', 
+                                    left: '-10px', 
+                                    right: '-10px', 
+                                    bottom: '-10px', 
+                                    background: 'rgba(15, 23, 42, 0.98)', 
+                                    borderRadius: '8px', 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    justifyContent: 'center', 
+                                    alignItems: 'center', 
+                                    padding: '2rem', 
+                                    zIndex: 20, 
+                                    textAlign: 'center',
+                                    border: '1px solid var(--color-danger)'
+                                }}>
+                                    <h3 style={{ color: 'var(--color-danger)', marginTop: 0 }}>Are you sure?</h3>
+                                    <p style={{ fontSize: '0.95rem', marginBottom: '1.5rem' }}>
+                                        This will remove <strong>{selectedParticipant.name}</strong> from their current family household and start a brand new household for them alone.
+                                    </p>
+                                    <div style={{ display: 'flex', gap: '1rem' }}>
+                                        <button 
+                                            type="button" 
+                                            className="glass-button" 
+                                            onClick={() => setShowingNewHouseholdConfirm(false)}
+                                            style={{ minWidth: '100px' }}
+                                        >
+                                            Go Back
+                                        </button>
+                                        <button 
+                                            type="submit" 
+                                            className="glass-button" 
+                                            style={{ minWidth: '100px', background: 'rgba(239, 68, 68, 0.2)', borderColor: 'rgba(239, 68, 68, 0.4)' }}
+                                        >
+                                            Yes, Proceed
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             <div style={{ position: 'relative', background: 'rgba(59, 130, 246, 0.05)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
                                 <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
                                     Search for Existing Household
@@ -224,12 +336,33 @@ export default function AdminParticipantsIndex() {
                                 )}
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
-                                <button type="button" className="glass-button" onClick={() => { setAssignModalOpen(false); setSelectedParticipant(null); setHouseholdSearch(""); setHouseholdId(""); }} disabled={assigning}>
+                                <button type="button" className="glass-button" onClick={() => { setAssignModalOpen(false); setSelectedParticipant(null); setHouseholdSearch(""); setHouseholdId(""); setShowingNewHouseholdConfirm(false); }} disabled={assigning}>
                                     Cancel
                                 </button>
-                                <button type="submit" className="glass-button" disabled={assigning} style={{ background: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.4)' }}>
-                                    {assigning ? "Saving..." : (householdId ? "Add to Household" : "Create New Household")}
-                                </button>
+                                {(!selectedParticipant?.household || selectedParticipant.household.participants.length > 1) && (
+                                    <button 
+                                        type="submit" 
+                                        className="glass-button" 
+                                        disabled={assigning} 
+                                        style={{ background: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.4)' }}
+                                    >
+                                        {assigning ? "Saving..." : (
+                                            householdId ? "Add to Household" : (
+                                                selectedParticipant?.household ? "Pull from household and start a new one" : "Create New Household"
+                                            )
+                                        )}
+                                    </button>
+                                )}
+                                {selectedParticipant?.household && selectedParticipant.household.participants.length === 1 && householdId && (
+                                    <button 
+                                        type="submit" 
+                                        className="glass-button" 
+                                        disabled={assigning} 
+                                        style={{ background: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgba(59, 130, 246, 0.4)' }}
+                                    >
+                                        {assigning ? "Saving..." : "Change Household"}
+                                    </button>
+                                )}
                             </div>
                         </form>
                     </div>

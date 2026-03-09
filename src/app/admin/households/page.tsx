@@ -122,7 +122,19 @@ export default function AdminHouseholdsPage() {
                                                 <span style={{ color: 'gray' }}>No</span>
                                             )}
                                         </td>
-                                        <td style={{ padding: '1rem' }}>
+                                        <td style={{ padding: '1rem', display: 'flex', gap: '0.5rem' }}>
+                                            <button
+                                                className="glass-button"
+                                                onClick={() => router.push(`/admin/participants/new?householdId=${household.id}`)}
+                                                style={{
+                                                    padding: '0.5rem 1rem',
+                                                    fontSize: '0.9rem',
+                                                    background: 'rgba(59, 130, 246, 0.2)',
+                                                    borderColor: 'rgba(59, 130, 246, 0.4)',
+                                                }}
+                                            >
+                                                + Add Participant
+                                            </button>
                                             <button
                                                 className="glass-button"
                                                 onClick={() => toggleMembership(household.id, hasActiveMembership)}

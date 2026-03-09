@@ -66,7 +66,11 @@ export async function GET(request: NextRequest) {
                 memberships: {
                     where: { active: true }
                 },
-                household: true
+                household: {
+                    include: {
+                        participants: true
+                    }
+                }
             }
         });
 

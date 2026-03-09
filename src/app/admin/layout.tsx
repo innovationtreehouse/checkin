@@ -45,14 +45,14 @@ export default function AdminLayout({
   const navItems = [
     {
       title: "Dashboard",
-      links: [{ name: "Overview", href: "/admin", icon: "📊" }],
+      links: [{ name: "Dashboard", href: "/admin", icon: "📊" }],
     },
     {
       title: "Operations",
       links: [
-        { name: "Visits", href: "/admin/events/visits", icon: "🕒" },
-        { name: "Live Logs", href: "/admin/events/badges", icon: "📡" },
-        { name: "Print Badges", href: "/admin/print-badges", icon: "🖨️" },
+        { name: "Visit History", href: "/admin/events/visits", icon: "🕒" },
+        { name: "Raw Badge Events", href: "/admin/events/badges", icon: "📡" },
+        { name: "Print ID Badges", href: "/admin/print-badges", icon: "🖨️" },
         { name: "Participation Trends", href: "/admin/trends", icon: "📈" },
       ],
     },
@@ -60,8 +60,8 @@ export default function AdminLayout({
       title: "People",
       links: [
         { name: "Participants", href: "/admin/participants", icon: "👥" },
-        { name: "Households", href: "/admin/households", icon: "🏠" },
-        { name: "Access Control", href: "/admin/roles", icon: "🔐" },
+        { name: "Manage Memberships", href: "/admin/households", icon: "🏠" },
+        { name: "Role Assignment", href: "/admin/roles", icon: "🔐" },
       ],
     },
   ];

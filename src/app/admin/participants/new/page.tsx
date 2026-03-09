@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import styles from '../../../page.module.css';
 
@@ -13,8 +13,18 @@ type HouseholdOption = {
 };
 
 export default function NewParticipantPage() {
+    return (
+        <Suspense fallback={<main className={styles.main}><div className="glass-container animate-float">Loading...</div></main>}>
+            <NewParticipantForm />
+        </Suspense>
+    );
+}
+
+function NewParticipantForm() {
     const { data: session, status } = useSession();
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const queryHouseholdId = searchParams.get('householdId');
 
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
@@ -55,6 +65,27 @@ export default function NewParticipantPage() {
             }
         }
     }, [status, session, router]);
+
+    // Handle deep linked household
+    useEffect(() => {
+        if (queryHouseholdId && !householdId) {
+            const fetchHousehold = async () => {
+                try {
+                    const res = await fetch(`/api/admin/households?id=${queryHouseholdId}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.household) {
+                            setHouseholdId(data.household.id.toString());
+                            setHouseholdSearch(data.household.name || `Household #${data.household.id}`);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch deep linked household:", err);
+                }
+            };
+            fetchHousehold();
+        }
+    }, [queryHouseholdId, householdId]);
 
     // Debounced household search
     useEffect(() => {

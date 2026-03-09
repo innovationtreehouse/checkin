@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
     const url = new URL(req.url);
+    const id = url.searchParams.get('id');
     const q = url.searchParams.get('q') || '';
 
     if (!session || (!(session.user as any)?.sysadmin && !(session.user as any)?.boardMember)) {
@@ -15,6 +16,19 @@ export async function GET(req: Request) {
     }
 
     try {
+        if (id) {
+            const household = await prisma.household.findUnique({
+                where: { id: parseInt(id) },
+                include: {
+                    participants: {
+                        select: { id: true, name: true, email: true }
+                    },
+                    memberships: true
+                }
+            });
+            return NextResponse.json({ household });
+        }
+
         const whereClause = q ? {
             OR: [
                 { name: { contains: q, mode: 'insensitive' as const } },
