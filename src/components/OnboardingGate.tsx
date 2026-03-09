@@ -35,8 +35,11 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
             const res = await fetch('/api/profile/onboarding-status');
             if (res.ok) {
                 const data = await res.json();
-                setNeedsPhone(data.needsPhone);
-                setNeedsEmergencyContact(data.needsEmergencyContact);
+                
+                if (sessionStorage.getItem('onboarding_skipped') !== 'true') {
+                    setNeedsPhone(data.needsPhone);
+                    setNeedsEmergencyContact(data.needsEmergencyContact);
+                }
             }
         } catch (err) {
             console.error("Failed to check onboarding status", err);
@@ -183,6 +186,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                             type="button"
                             className="glass-button"
                             onClick={() => {
+                                sessionStorage.setItem('onboarding_skipped', 'true');
                                 setNeedsPhone(false);
                                 setNeedsEmergencyContact(false);
                             }}
