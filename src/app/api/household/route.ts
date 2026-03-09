@@ -6,11 +6,11 @@ import prisma from "@/lib/prisma";
 export async function GET(req: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
-        if (!session || !session.user || !(session.user as any).id) {
+        if (!session || !session.user || !(session.user as {id: number}).id) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const userId = (session.user as any).id;
+        const userId = (session.user as {id: number}).id;
 
         // Find the user to get their householdId
         const user = await prisma.participant.findUnique({
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
         if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
         return NextResponse.json({ household: user.household }, { status: 200 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Household GET Error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
@@ -30,11 +30,11 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
-        if (!session || !session.user || !(session.user as any).id) {
+        if (!session || !session.user || !(session.user as {id: number}).id) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const userId = (session.user as any).id;
+        const userId = (session.user as {id: number}).id;
         const user = await prisma.participant.findUnique({ where: { id: userId } });
         if (user?.householdId) {
             return NextResponse.json({ error: "User already belongs to a household" }, { status: 400 });
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
         });
 
         return NextResponse.json({ household }, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Household POST Error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
@@ -89,11 +89,11 @@ export async function PATCH(req: NextRequest) {
     // This endpoint handles adding a new member (dependent or pre-registered adult) to the household
     try {
         const session = await getServerSession(authOptions);
-        if (!session || !session.user || !(session.user as any).id) {
+        if (!session || !session.user || !(session.user as {id: number}).id) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const userId = (session.user as any).id;
+        const userId = (session.user as {id: number}).id;
         const body = await req.json();
         const { memberName, memberEmail, memberDob } = body;
 
@@ -155,7 +155,7 @@ export async function PATCH(req: NextRequest) {
         });
 
         return NextResponse.json({ member: targetMember }, { status: 200 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Household PATCH Error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }

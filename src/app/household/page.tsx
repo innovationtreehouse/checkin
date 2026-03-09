@@ -11,7 +11,16 @@ export default function HouseholdPage() {
     const router = useRouter();
 
     const [loading, setLoading] = useState(true);
-    const [household, setHousehold] = useState<any>(null);
+    const [household, setHousehold] = useState<{
+        id?: number;
+        name?: string;
+        leads?: Array<{ participantId: number }>;
+        participants?: Array<{ id: number; name?: string; email?: string; dob?: string; homeAddress?: string; programVolunteers?: Array<{ id: number; program: { name: string; end?: string }; events?: Array<{ start: string }> }>; programParticipants?: Array<{ id: number; program: { name: string; end?: string }; events?: Array<{ start: string }> }> }>;
+        memberships?: Array<unknown>;
+        emergencyContactName?: string;
+        emergencyContactPhone?: string;
+        address?: string;
+    } | null>(null);
     const [message, setMessage] = useState("");
     const [addingMember, setAddingMember] = useState(false);
 
@@ -30,13 +39,20 @@ export default function HouseholdPage() {
         dob: ""
     });
 
-    const [visits, setVisits] = useState<any[]>([]);
+    const [visits, setVisits] = useState<Array<{
+        id: number;
+        participant?: { name: string };
+        event?: { name: string };
+        arrived: string;
+        departed?: string;
+    }>>([]);
     const [filterDate, setFilterDate] = useState("");
     const [settings, setSettings] = useState({
         emailDependentCheckins: false
     });
     const [emergencyContactName, setEmergencyContactName] = useState("");
     const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
+    const [address, setAddress] = useState("");
     const [savingSettings, setSavingSettings] = useState(false);
 
     useEffect(() => {
@@ -59,6 +75,17 @@ export default function HouseholdPage() {
                 setHousehold(data.household);
                 setEmergencyContactName(data.household?.emergencyContactName || "");
                 setEmergencyContactPhone(data.household?.emergencyContactPhone || "");
+
+                let initialAddress = data.household?.address || "";
+                if (!initialAddress && data.household?.participants && data.household?.leads) {
+                    const leadIds = data.household.leads.map((l: {participantId: number}) => l.participantId);
+                    const leadParticipants = data.household.participants.filter((p: {id: number; name?: string; email?: string; dob?: string; homeAddress?: string}) => leadIds.includes(p.id));
+                    const leadWithAddress = leadParticipants.find((p: {id: number; name?: string; email?: string; dob?: string; homeAddress?: string}) => p.homeAddress && p.homeAddress.trim() !== "");
+                    if (leadWithAddress) {
+                        initialAddress = leadWithAddress.homeAddress;
+                    }
+                }
+                setAddress(initialAddress);
             }
             if (visitRes.ok) {
                 const data = await visitRes.json();
@@ -70,7 +97,7 @@ export default function HouseholdPage() {
                     emailDependentCheckins: data.profile.notificationSettings?.emailDependentCheckins || false
                 });
             }
-        } catch (error) {
+        } catch {
             setMessage("Network error loading household.");
         } finally {
             setLoading(false);
@@ -95,13 +122,14 @@ export default function HouseholdPage() {
                     }
                 })
             });
-            // Save emergency contact to household settings
+            // Save emergency contact and address to household settings
             const householdRes = await fetch('/api/household/settings', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     emergencyContactName,
-                    emergencyContactPhone
+                    emergencyContactPhone,
+                    address
                 })
             });
 
@@ -112,7 +140,7 @@ export default function HouseholdPage() {
             } else {
                 setMessage("Failed to update some settings.");
             }
-        } catch (error) {
+        } catch {
             setMessage("Network error saving settings.");
         } finally {
             setSavingSettings(false);
@@ -135,7 +163,7 @@ export default function HouseholdPage() {
             } else {
                 setMessage("Failed to create household.");
             }
-        } catch (error) {
+        } catch {
             setMessage("Network error creating household.");
         } finally {
             setLoading(false);
@@ -166,7 +194,7 @@ export default function HouseholdPage() {
             } else {
                 setMessage(data.error || "Failed to add member.");
             }
-        } catch (error) {
+        } catch {
             setMessage("Network error adding member.");
         }
     };
@@ -194,7 +222,7 @@ export default function HouseholdPage() {
             } else {
                 setMessage(data.error || "Failed to update member.");
             }
-        } catch (error) {
+        } catch {
             setMessage("Network error updating member.");
         }
     };
@@ -251,7 +279,7 @@ export default function HouseholdPage() {
                         <div style={{ marginBottom: '2rem' }}>
                             <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Household Members</h2>
                             <div className={styles.actionGrid} style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-                                {household.participants?.map((p: any) => (
+                                {household.participants?.map((p: {id: number; name?: string; email?: string; dob?: string; homeAddress?: string}) => (
                                     <div key={p.id} style={{
                                         padding: '1.5rem',
                                         background: 'rgba(255,255,255,0.05)',
@@ -292,9 +320,11 @@ export default function HouseholdPage() {
                                             </form>
                                         ) : (
                                             <>
-                                                <h3 style={{ margin: '0 0 0.5rem 0' }}>{p.name || "Unnamed"}</h3>
-                                                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>{p.email}</p>
-                                                {household.leads?.some((l: any) => l.participantId === p.id) && (
+                                                <div style={{ paddingRight: '3rem' }}>
+                                                    <h3 style={{ margin: '0 0 0.5rem 0', wordBreak: 'break-word' }}>{p.name || "Unnamed"}</h3>
+                                                    <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--color-text-muted)', wordBreak: 'break-word' }}>{p.email}</p>
+                                                </div>
+                                                {household.leads?.some((l: {participantId: number}) => l.participantId === p.id) && (
                                                     <span style={{
                                                         display: 'inline-block',
                                                         marginTop: '0.5rem',
@@ -305,7 +335,7 @@ export default function HouseholdPage() {
                                                         fontSize: '0.75rem'
                                                     }}>Household Lead</span>
                                                 )}
-                                                {household.leads?.some((l: any) => l.participantId === (session?.user as any)?.id) && (
+                                                {household.leads?.some((l: {participantId: number}) => l.participantId === (session?.user as {id: number})?.id) && (
                                                     <button
                                                         onClick={() => {
                                                             setEditingMemberId(p.id);
@@ -392,7 +422,7 @@ export default function HouseholdPage() {
                 )}
             </div>
 
-            {household && household.leads?.some((l: any) => l.participantId === (session?.user as any)?.id) && (
+            {household && household.leads?.some((l: {participantId: number}) => l.participantId === (session?.user as {id: number})?.id) && (
                 <div className="glass-container animate-float" style={{ maxWidth: '800px', marginTop: '2rem' }}>
                     <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Household Settings</h2>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', textAlign: 'left' }}>
@@ -405,12 +435,28 @@ export default function HouseholdPage() {
                             />
                             <span style={{ color: 'var(--color-text)' }}>Email me realtime receipts when my dependents check in/out</span>
                         </label>
+
+                        <div style={{ marginTop: '1rem', padding: '1.5rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: '#60a5fa' }}>Primary Address</h3>
+                            <p style={{ margin: '0 0 1rem 0', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>The main address associated with this household.</p>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--color-primary)' }}>Address</label>
+                                <input
+                                    type="text"
+                                    className="glass-input"
+                                    value={address}
+                                    onChange={(e) => setAddress(e.target.value)}
+                                    placeholder="123 Main St, City, ST 12345"
+                                    style={{ width: '100%', padding: '0.75rem' }}
+                                />
+                            </div>
+                        </div>
                         
                         <div style={{ marginTop: '1rem', padding: '1.5rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
                             <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: '#fcd34d' }}>Emergency Contact</h3>
                             <p style={{ margin: '0 0 1rem 0', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Required for all households. This contact applies to all members of this household.</p>
                             
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--color-primary)' }}>Contact Name</label>
                                     <input

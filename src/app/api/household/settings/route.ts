@@ -6,13 +6,13 @@ import prisma from "@/lib/prisma";
 export async function PATCH(req: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
-        if (!session || !session.user || !(session.user as any).id) {
+        if (!session || !session.user || !(session.user as {id: number}).id) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const userId = (session.user as any).id;
+        const userId = (session.user as {id: number}).id;
         const body = await req.json();
-        const { emergencyContactName, emergencyContactPhone } = body;
+        const { emergencyContactName, emergencyContactPhone, address } = body;
 
         const user = await prisma.participant.findUnique({
             where: { id: userId },
@@ -33,6 +33,7 @@ export async function PATCH(req: NextRequest) {
             data: {
                 emergencyContactName: emergencyContactName !== undefined ? emergencyContactName : undefined,
                 emergencyContactPhone: emergencyContactPhone !== undefined ? emergencyContactPhone : undefined,
+                address: address !== undefined ? address : undefined,
             }
         });
 
@@ -42,13 +43,13 @@ export async function PATCH(req: NextRequest) {
                 action: "EDIT",
                 tableName: "Household",
                 affectedEntityId: user.householdId,
-                newData: JSON.stringify({ emergencyContactName, emergencyContactPhone })
+                newData: JSON.stringify({ emergencyContactName, emergencyContactPhone, address })
             }
         });
 
         return NextResponse.json({ household: updatedHousehold }, { status: 200 });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Household Settings PATCH Error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
