@@ -8,11 +8,12 @@ jest.mock("@/lib/email", () => ({
 
 describe("GET /api/cron/post-event", () => {
     beforeEach(async () => {
-        await prisma.visit.deleteMany({});
-        await prisma.rSVP.deleteMany({});
-        await prisma.event.deleteMany({});
-        await prisma.program.deleteMany({});
-        await prisma.participant.deleteMany({});
+        await prisma.visit.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
+        await prisma.rSVP.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
+        await prisma.event.deleteMany({ where: { name: { startsWith: 'Past Event' } } });
+        await prisma.event.deleteMany({ where: { name: { startsWith: 'Future Event' } } });
+        await prisma.program.deleteMany({ where: { name: 'Test Program' } });
+        await prisma.participant.deleteMany({ where: { email: { contains: 'example.com' } } });
         jest.clearAllMocks();
     });
 
