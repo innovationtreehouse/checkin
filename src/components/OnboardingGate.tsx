@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 
 export default function OnboardingGate({ children }: { children: React.ReactNode }) {
-    const { data: session, status } = useSession();
+    const { status } = useSession();
     const pathname = usePathname();
 
     const [loading, setLoading] = useState(true);
@@ -51,7 +51,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
         setError("");
 
         try {
-            const payload: any = {};
+            const payload: Record<string, string> = {};
             if (needsPhone && phone.trim()) {
                 payload.phone = phone.trim();
             }
@@ -73,7 +73,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                 const data = await res.json();
                 setError(data.error || "Failed to save information");
             }
-        } catch (err) {
+        } catch {
             setError("Network error");
         } finally {
             setSaving(false);
@@ -177,6 +177,26 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                             }}
                         >
                             {saving ? 'Saving...' : 'Save & Continue'}
+                        </button>
+                        
+                        <button
+                            type="button"
+                            className="glass-button"
+                            onClick={() => {
+                                setNeedsPhone(false);
+                                setNeedsEmergencyContact(false);
+                            }}
+                            disabled={saving}
+                            style={{ 
+                                marginTop: '0.5rem', 
+                                background: 'transparent',
+                                borderColor: 'transparent',
+                                color: 'var(--color-text-muted)',
+                                padding: '0.5rem',
+                                fontSize: '0.9rem',
+                            }}
+                        >
+                            Ask me next time
                         </button>
                     </form>
                 </div>
