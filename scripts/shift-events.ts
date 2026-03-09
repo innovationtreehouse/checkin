@@ -1,3 +1,7 @@
+import { config } from 'dotenv';
+config({ path: '.env.local' });
+config(); // Fallback to .env
+
 import prisma from '../src/lib/prisma';
 
 // The amount of hours to shift the events forward. 
