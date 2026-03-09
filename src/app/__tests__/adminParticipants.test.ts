@@ -219,7 +219,7 @@ describe('Admin Participants API Integration Tests', () => {
                  body: JSON.stringify({ name: 'Hacked Name' })
              });
 
-             const res = await PUT(req as any, { params: { id: testUserId.toString() } });
+             const res = await PUT(req as any, { params: Promise.resolve({ id: testUserId.toString() }) });
              expect(res.status).toBe(403);
         });
 
@@ -238,7 +238,7 @@ describe('Admin Participants API Integration Tests', () => {
                 body: JSON.stringify({ name: 'Updated Name', email: 'updated-email@example.com', phone: '5551234567' })
             });
 
-            const res = await PUT(req as any, { params: { id: editUser.id.toString() } });
+            const res = await PUT(req as any, { params: Promise.resolve({ id: editUser.id.toString() }) });
             expect(res.status).toBe(200);
 
             const data = await res.json();

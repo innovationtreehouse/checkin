@@ -15,7 +15,7 @@ describe('AuthProvider', () => {
       </AuthProvider>
     );
 
-    expect(getByTestId('session-provider')).toBeInTheDocument();
-    expect(getByText('Test Child Component')).toBeInTheDocument();
+    expect(getByTestId('session-provider')).toBeDefined();
+    expect(getByText('Test Child Component')).toBeDefined();
   });
 });

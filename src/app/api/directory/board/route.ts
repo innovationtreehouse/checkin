@@ -22,7 +22,9 @@ export async function GET(req: Request) {
                 name: true,
                 email: true,
                 phone: true,
-                roles: true
+                boardMember: true,
+                shopSteward: true,
+                sysadmin: true
             },
             orderBy: { name: 'asc' }
         });

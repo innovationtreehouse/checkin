@@ -83,7 +83,7 @@ describe('Admin Participant Household API Integration Tests', () => {
                 body: JSON.stringify({ householdId: testHouseholdId })
             });
 
-            const res = await POST(req as any, { params: { id: String(testParticipantId) } });
+            const res = await POST(req as any, { params: Promise.resolve({ id: String(testParticipantId) }) });
             expect(res.status).toBe(403);
         });
 
@@ -97,7 +97,7 @@ describe('Admin Participant Household API Integration Tests', () => {
                 body: JSON.stringify({ householdId: testHouseholdId })
             });
 
-            const res = await POST(req as any, { params: { id: String(testParticipantId) } });
+            const res = await POST(req as any, { params: Promise.resolve({ id: String(testParticipantId) }) });
             expect(res.status).toBe(200);
 
             const data = await res.json();
@@ -118,7 +118,7 @@ describe('Admin Participant Household API Integration Tests', () => {
                 body: JSON.stringify({ createNew: true })
             });
 
-            const res = await POST(req as any, { params: { id: String(testParticipantId) } });
+            const res = await POST(req as any, { params: Promise.resolve({ id: String(testParticipantId) }) });
             expect(res.status).toBe(200);
 
             const data = await res.json();
