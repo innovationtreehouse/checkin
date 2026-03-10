@@ -72,6 +72,14 @@ const isStudent = (dob: string | undefined | null) => {
     return age < 18;
 };
 
+type SessionUser = {
+    id: number;
+    sysadmin?: boolean;
+    keyholder?: boolean;
+    boardMember?: boolean;
+    householdId?: number | null;
+};
+
 function KioskDisplayInner() {
     const searchParams = useSearchParams();
     const [isKioskMode, setIsKioskMode] = useState(searchParams.get("mode") === "kiosk");
@@ -80,17 +88,16 @@ function KioskDisplayInner() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [checkingOut, setCheckingOut] = useState<number | null>(null);
-    const [household, setHousehold] = useState<any>(null);
+    const [household, setHousehold] = useState<{ leads: { participantId: number }[], participants: Participant[] } | null>(null);
 
     const [searchQuery, setSearchQuery] = useState("");
-    const [searchResults, setSearchResults] = useState<any[]>([]);
-    const [searching, setSearching] = useState(false);
+    const [searchResults, setSearchResults] = useState<Participant[]>([]);
     const [checkingInId, setCheckingInId] = useState<number | null>(null);
 
-    const currentUserIsSysadmin = (session?.user as any)?.sysadmin || false;
-    const currentUserIsKeyholder = (session?.user as any)?.keyholder || false;
-    const currentUserIsBoardMember = (session?.user as any)?.boardMember || false;
-    const currentUserHouseholdId = (session?.user as any)?.householdId || null;
+    const currentUserIsSysadmin = (session?.user as SessionUser)?.sysadmin || false;
+    const currentUserIsKeyholder = (session?.user as SessionUser)?.keyholder || false;
+    const currentUserIsBoardMember = (session?.user as SessionUser)?.boardMember || false;
+    const currentUserHouseholdId = (session?.user as SessionUser)?.householdId || null;
     const canManuallyCheckInGlobal = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
     const canCheckInHousehold = Boolean(currentUserHouseholdId);
 
@@ -113,87 +120,65 @@ function KioskDisplayInner() {
 
     // Is current user checked in?
     const isCheckedIn = isFull
-        ? fullAttendance.some(v => v.participant.id === (session?.user as any)?.id)
+        ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)
         : limitedSelf !== null;
 
-    const fetchHousehold = async () => {
-        if (!currentUserHouseholdId) return;
-        try {
-            const res = await fetch("/api/household");
-            if (res.ok) {
-                const hData = await res.json();
-                setHousehold(hData.household);
-            }
-        } catch (error) {
-            console.error("Failed to fetch household:", error);
-        }
-    };
-
     useEffect(() => {
+        const fetchHousehold = async () => {
+            if (!currentUserHouseholdId) return;
+            try {
+                const res = await fetch("/api/household");
+                if (res.ok) {
+                    const hData = await res.json();
+                    setHousehold(hData.household);
+                }
+            } catch (error) {
+                console.error("Failed to fetch household:", error);
+            }
+        };
+
         if (canCheckInHousehold) {
             fetchHousehold();
         }
-    }, [canCheckInHousehold]);
-
-    const fetchAttendance = async () => {
-        try {
-            // Check if we are passing signature headers to the API
-            const headers: Record<string, string> = {};
-            const sigParamsUrl = searchParams.get("sig");
-            const tsParamsUrl = searchParams.get("ts");
-            const nonceParamsUrl = searchParams.get("nonce");
-
-            if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
-                headers["x-kiosk-signature"] = sigParamsUrl;
-                headers["x-kiosk-timestamp"] = tsParamsUrl;
-                headers["x-kiosk-nonce"] = nonceParamsUrl;
-            }
-
-            const res = await fetch("/api/attendance", { headers });
-            const json = await res.json();
-            
-            if (res.ok && (json.access === "full" || json.access === "limited")) {
-                setData(json);
-                setError(null);
-                
-                // If it was a signed request, automatically turn on Kiosk Mode
-                if (json.signedRequest === true) {
-                    setIsKioskMode(true);
-                }
-            } else if (!res.ok) {
-                setError(json.error || "Failed to load attendance");
-            }
-        } catch (error) {
-            console.error("Failed to fetch attendance:", error);
-            setError("Network error");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleForceCheckout = async (visitId: number) => {
-        if (!confirm("Are you sure you want to force checkout this user?")) return;
-        setCheckingOut(visitId);
-        try {
-            const res = await fetch("/api/attendance", {
-                method: "DELETE",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ visitId }),
-            });
-            if (res.ok) {
-                fetchAttendance();
-            } else {
-                alert("Failed to force checkout.");
-            }
-        } catch (e) {
-            console.error(e);
-            alert("Network error.");
-        } finally {
-            setCheckingOut(null);
-        }
-    };
+    }, [canCheckInHousehold, currentUserHouseholdId]);
 
     useEffect(() => {
+        const fetchAttendance = async () => {
+            try {
+                // Check if we are passing signature headers to the API
+                const headers: Record<string, string> = {};
+                const sigParamsUrl = searchParams.get("sig");
+                const tsParamsUrl = searchParams.get("ts");
+                const nonceParamsUrl = searchParams.get("nonce");
+
+                if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
+                    headers["x-kiosk-signature"] = sigParamsUrl;
+                    headers["x-kiosk-timestamp"] = tsParamsUrl;
+                    headers["x-kiosk-nonce"] = nonceParamsUrl;
+                }
+
+                const res = await fetch("/api/attendance", { headers });
+                const json = await res.json();
+                
+                if (res.ok && (json.access === "full" || json.access === "limited")) {
+                    setData(json);
+                    setError(null);
+                    
+                    // If it was a signed request, automatically turn on Kiosk Mode
+                    if (json.signedRequest === true) {
+                        setIsKioskMode(true);
+                    }
+                } else if (!res.ok) {
+                    setError(json.error || "Failed to load attendance");
+                }
+            } catch (error) {
+                console.error("Failed to fetch attendance:", error);
+                setError("Network error");
+            } finally {
+                setLoading(false);
+            }
+        };
+
         fetchAttendance();
         const interval = setInterval(fetchAttendance, 60000);
 
@@ -214,7 +199,7 @@ function KioskDisplayInner() {
             clearInterval(interval);
             window.removeEventListener("message", handleMessage);
         };
-    }, []);
+    }, [searchParams]);
 
     useEffect(() => {
         const performSearch = async () => {
@@ -222,13 +207,12 @@ function KioskDisplayInner() {
                 setSearchResults([]);
                 return;
             }
-            setSearching(true);
             try {
                 const res = await fetch(`/api/admin/roles`);
                 if (res.ok) {
                     const data = await res.json();
                     const filtered = data.participants.filter(
-                        (p: any) =>
+                        (p: Participant) =>
                             p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             p.email.toLowerCase().includes(searchQuery.toLowerCase())
                     );
@@ -236,13 +220,53 @@ function KioskDisplayInner() {
                 }
             } catch (error) {
                 console.error("Search error:", error);
-            } finally {
-                setSearching(false);
             }
         };
         const timeoutId = setTimeout(performSearch, 300);
         return () => clearTimeout(timeoutId);
     }, [searchQuery]);
+
+    const handleForceCheckout = async (visitId: number) => {
+        if (!confirm("Are you sure you want to force checkout this user?")) return;
+        setCheckingOut(visitId);
+        try {
+            const res = await fetch("/api/attendance", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ visitId }),
+            });
+            if (res.ok) {
+                // Manually trigger a refresh logic or wait for the interval by changing internal state
+                const fetchAttendance = async () => {
+                    // Check if we are passing signature headers to the API
+                    const headers: Record<string, string> = {};
+                    const sigParamsUrl = searchParams.get("sig");
+                    const tsParamsUrl = searchParams.get("ts");
+                    const nonceParamsUrl = searchParams.get("nonce");
+
+                    if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
+                        headers["x-kiosk-signature"] = sigParamsUrl;
+                        headers["x-kiosk-timestamp"] = tsParamsUrl;
+                        headers["x-kiosk-nonce"] = nonceParamsUrl;
+                    }
+
+                    const attRes = await fetch("/api/attendance", { headers });
+                    const json = await attRes.json();
+                    if (attRes.ok && (json.access === "full" || json.access === "limited")) {
+                        setData(json);
+                    }
+                };
+                fetchAttendance();
+            } else {
+                alert("Failed to force checkout.");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Network error.");
+        } finally {
+            setCheckingOut(null);
+        }
+    };
 
     const handleManualCheckIn = async (participantId: number) => {
         setCheckingInId(participantId);
@@ -255,6 +279,26 @@ function KioskDisplayInner() {
             if (res.ok) {
                 setSearchQuery("");
                 setSearchResults([]);
+                // Manually trigger a refresh logic or wait for the interval by changing internal state
+                const fetchAttendance = async () => {
+                    // Check if we are passing signature headers to the API
+                    const headers: Record<string, string> = {};
+                    const sigParamsUrl = searchParams.get("sig");
+                    const tsParamsUrl = searchParams.get("ts");
+                    const nonceParamsUrl = searchParams.get("nonce");
+
+                    if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
+                        headers["x-kiosk-signature"] = sigParamsUrl;
+                        headers["x-kiosk-timestamp"] = tsParamsUrl;
+                        headers["x-kiosk-nonce"] = nonceParamsUrl;
+                    }
+
+                    const attRes = await fetch("/api/attendance", { headers });
+                    const json = await attRes.json();
+                    if (attRes.ok && (json.access === "full" || json.access === "limited")) {
+                        setData(json);
+                    }
+                };
                 fetchAttendance();
             } else {
                 const d = await res.json();
@@ -358,13 +402,16 @@ function KioskDisplayInner() {
         </div>
     );
 
-    const canCheckoutVisit = (visit: Visit) =>
-        currentUserIsSysadmin ||
-        currentUserIsKeyholder ||
-        currentUserIsBoardMember ||
-        visit.participant.id === (session?.user as any)?.id ||
-        (household?.leads?.some((l: any) => l.participantId === (session?.user as any)?.id) &&
-            visit.participant.householdId === currentUserHouseholdId);
+    const canCheckoutVisit = (visit: Visit): boolean => {
+        return Boolean(
+            currentUserIsSysadmin ||
+            currentUserIsKeyholder ||
+            currentUserIsBoardMember ||
+            visit.participant.id === (session?.user as SessionUser)?.id ||
+            (household?.leads?.some((l: { participantId: number }) => l.participantId === (session?.user as SessionUser)?.id) &&
+                visit.participant.householdId === currentUserHouseholdId)
+        );
+    };
 
     const columnHeaderStyle = (color: string) => ({
         display: "flex",
@@ -396,12 +443,15 @@ function KioskDisplayInner() {
                     <div style={{ marginBottom: "2rem" }}>
                         {!isCheckedIn ? (
                             <button
-                                onClick={() => handleManualCheckIn((session?.user as any)?.id)}
-                                disabled={checkingInId === (session?.user as any)?.id}
+                                onClick={() => {
+                                    const userId = (session?.user as SessionUser)?.id;
+                                    if (userId) handleManualCheckIn(userId);
+                                }}
+                                disabled={checkingInId === (session?.user as SessionUser)?.id}
                                 className="glass-button primary"
                                 style={{ padding: "1rem 2rem", fontSize: "1.1rem", fontWeight: 600, width: "100%" }}
                             >
-                                {checkingInId === (session?.user as any)?.id ? "Checking In..." : "Check Me In"}
+                                {checkingInId === (session?.user as SessionUser)?.id ? "Checking In..." : "Check Me In"}
                             </button>
                         ) : (
                             <div
@@ -461,15 +511,15 @@ function KioskDisplayInner() {
                 {!isKioskMode &&
                     canCheckInHousehold &&
                     household &&
-                    household.leads?.some((l: any) => l.participantId === (session?.user as any)?.id) && (
+                    household.leads?.some((l: { participantId: number }) => l.participantId === (session?.user as SessionUser)?.id) && (
                         <div style={{ marginBottom: "2rem" }}>
                             <h3 style={{ marginBottom: "1rem", color: "var(--color-primary-light)" }}>
                                 Check In Household Members
                             </h3>
                             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                                 {household.participants
-                                    ?.filter((p: any) => !checkedInIds.includes(p.id))
-                                    .map((p: any) => (
+                                    ?.filter((p: Participant) => !checkedInIds.includes(p.id))
+                                    .map((p: Participant) => (
                                         <button
                                             key={p.id}
                                             onClick={() => handleManualCheckIn(p.id)}
@@ -485,7 +535,7 @@ function KioskDisplayInner() {
                                             {checkingInId === p.id ? "..." : <span>{p.name || p.email}</span>}
                                         </button>
                                     ))}
-                                {household.participants?.filter((p: any) => !checkedInIds.includes(p.id)).length ===
+                                {household.participants?.filter((p: Participant) => !checkedInIds.includes(p.id)).length ===
                                     0 && (
                                     <span
                                         style={{

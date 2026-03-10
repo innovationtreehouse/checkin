@@ -6,6 +6,13 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from 'next/link';
 import styles from './NavBar.module.css';
 
+type SessionUser = {
+    sysadmin?: boolean;
+    boardMember?: boolean;
+    shopSteward?: boolean;
+    toolStatuses?: Array<{ level: string }>;
+};
+
 function NavBarInner() {
     const { data: session } = useSession();
     const router = useRouter();
@@ -32,21 +39,21 @@ function NavBarInner() {
                     My Household
                 </Link>
             )}
-            {((session?.user as any)?.sysadmin || (session?.user as any)?.boardMember) && (
+            {(session?.user as SessionUser)?.sysadmin || (session?.user as SessionUser)?.boardMember ? (
                 <Link href="/programs" onClick={closeMobileMenu} style={{ color: pathname === '/programs' ? 'white' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
                     Programs
                 </Link>
-            )}
-            {((session?.user as any)?.sysadmin || (session?.user as any)?.boardMember || (session?.user as any)?.shopSteward || (session?.user as any)?.toolStatuses?.some((ts: any) => ts.level === 'MAY_CERTIFY_OTHERS')) && (
+            ) : null}
+            {(session?.user as SessionUser)?.sysadmin || (session?.user as SessionUser)?.boardMember || (session?.user as SessionUser)?.shopSteward || (session?.user as SessionUser)?.toolStatuses?.some(ts => ts.level === 'MAY_CERTIFY_OTHERS') ? (
                 <Link href="/shop" onClick={closeMobileMenu} style={{ color: pathname === '/shop' ? '#fcd34d' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
                     Shop Ops
                 </Link>
-            )}
-            {((session?.user as any)?.sysadmin || (session?.user as any)?.boardMember) && (
+            ) : null}
+            {(session?.user as SessionUser)?.sysadmin || (session?.user as SessionUser)?.boardMember ? (
                 <Link href="/admin" onClick={closeMobileMenu} style={{ color: pathname === '/admin' ? '#f87171' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
                     Admin Ops
                 </Link>
-            )}
+            ) : null}
         </>
     );
 
