@@ -34,7 +34,7 @@ type ParticipantOption = {
 };
 
 export default function ToolManagementPage() {
-    const { data: session, status } = useSession();
+    const { status } = useSession();
     const router = useRouter();
     const hasFetched = useRef(false);
 
@@ -58,8 +58,8 @@ export default function ToolManagementPage() {
     const LEVEL_RANKS: Record<string, number> = {
         "NONE": 0,
         "BASIC": 1,
-        "DOF": 2,
-        "CERTIFIED": 3,
+        "CERTIFIED": 2,
+        "DOF": 3,
         "MAY_CERTIFY_OTHERS": 4
     };
 
@@ -81,6 +81,7 @@ export default function ToolManagementPage() {
             fetchTools();
             fetchAllParticipants();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [status]);
 
     useEffect(() => {
@@ -200,7 +201,7 @@ export default function ToolManagementPage() {
                 const data = await res.json();
                 setMessage(data.error || "Failed to grant certification.");
             }
-        } catch (error) {
+        } catch (_error) {
             setMessage("Network error.");
         } finally {
             setSaving(false);
@@ -219,10 +220,10 @@ export default function ToolManagementPage() {
 
     const getBadgeStyle = (level: string) => {
         switch (level) {
-            case 'BASIC': return { bg: '#3b82f6', color: '#fff', label: 'Basic' };
-            case 'DOF': return { bg: '#8b5cf6', color: '#fff', label: 'DoF' };
-            case 'CERTIFIED': return { bg: '#22c55e', color: '#000', label: 'Certified' };
-            case 'MAY_CERTIFY_OTHERS': return { bg: '#eab308', color: '#000', label: 'Certifier' };
+            case 'BASIC': return { bg: '#ef4444', color: '#fff', label: 'Basic' }; // Red
+            case 'CERTIFIED': return { bg: '#eab308', color: '#000', label: 'Certified' }; // Yellow
+            case 'DOF': return { bg: '#22c55e', color: '#000', label: 'DoF' }; // Green
+            case 'MAY_CERTIFY_OTHERS': return { bg: '#3b82f6', color: '#fff', label: 'Certifier' }; // Blue
             default: return { bg: 'transparent', color: 'gray', label: '-' };
         }
     };
@@ -390,8 +391,8 @@ export default function ToolManagementPage() {
                                             <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'gray' }}>Level</label>
                                             <select className="glass-input" value={newCertLevel} onChange={e => setNewCertLevel(e.target.value)} required style={{ width: '100%', padding: '0.75rem' }}>
                                                 <option value="BASIC">Basic</option>
-                                                <option value="DOF">DoF</option>
                                                 <option value="CERTIFIED">Certified</option>
+                                                <option value="DOF">DoF</option>
                                                 <option value="MAY_CERTIFY_OTHERS">Certifier</option>
                                             </select>
                                         </div>

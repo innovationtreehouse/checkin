@@ -26,33 +26,46 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const activeVisits = await prisma.visit.findMany({
-            where: {
-                departed: null,
-            },
-            include: {
-                participant: {
-                    select: {
-                        id: true,
-                        email: true,
-                        name: true,
-                        dob: true,
-                        toolStatuses: {
-                            select: {
-                                toolId: true,
-                                level: true
+        const url = new URL(req.url);
+        const limitToPresent = url.searchParams.get("limit_to_present") !== "false";
+
+        let participantsData;
+
+        if (limitToPresent) {
+            const activeVisits = await prisma.visit.findMany({
+                where: { departed: null },
+                include: {
+                    participant: {
+                        select: {
+                            id: true,
+                            email: true,
+                            name: true,
+                            dob: true,
+                            toolStatuses: {
+                                select: { toolId: true, level: true }
                             }
                         }
-                    },
+                    }
                 },
-            },
-            orderBy: {
-                arrived: "desc",
-            },
-        });
+                orderBy: { arrived: "desc" }
+            });
+            participantsData = activeVisits.map(v => v.participant);
+        } else {
+            participantsData = await prisma.participant.findMany({
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    dob: true,
+                    toolStatuses: {
+                        select: { toolId: true, level: true }
+                    }
+                }
+            });
+        }
 
-        const activeVisitsWithAgeCategory = activeVisits.map((visit) => {
-            const dob = visit.participant.dob;
+        const participantsWithAgeCategory = participantsData.map((participant) => {
+            const dob = participant.dob;
             let ageCategory = "ADULT";
 
             if (dob) {
@@ -66,14 +79,12 @@ export async function GET(req: NextRequest) {
                 }
             }
 
-            const participantWithoutDob = visit.participant as Omit<typeof visit.participant, 'dob'>;
-
             return {
-                ...visit,
-                participant: {
-                    ...participantWithoutDob,
-                    ageCategory,
-                },
+                id: participant.id,
+                email: participant.email,
+                name: participant.name,
+                toolStatuses: participant.toolStatuses,
+                ageCategory,
             };
         });
 
@@ -87,7 +98,7 @@ export async function GET(req: NextRequest) {
             }
         });
 
-        return NextResponse.json({ activeVisits: activeVisitsWithAgeCategory, tools });
+        return NextResponse.json({ participants: participantsWithAgeCategory, tools });
     } catch (error) {
         console.error("Certifications fetch error:", error);
         return NextResponse.json(

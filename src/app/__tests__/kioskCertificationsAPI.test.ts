@@ -10,6 +10,7 @@ import { GET } from '@/app/api/kiosk/certifications/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { getKioskPublicKey, verifyKioskSignature } from '@/lib/verify-kiosk';
+import { NextRequest } from 'next/server';
 
 // Mock NextAuth
 jest.mock('next-auth', () => ({
@@ -28,7 +29,6 @@ jest.mock('@/lib/verify-kiosk', () => ({
 describe('Kiosk Certifications API Integration Tests', () => {
     let testUserId: number;
     let toolId: number;
-    let visitId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
@@ -74,10 +74,9 @@ describe('Kiosk Certifications API Integration Tests', () => {
             }
         });
 
-        const visit = await prisma.visit.create({
+        await prisma.visit.create({
             data: { participantId: testUserId, arrived: new Date() }
         });
-        visitId = visit.id;
     });
 
     beforeEach(() => {
@@ -106,7 +105,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
              (getKioskPublicKey as jest.Mock).mockReturnValue('mock-pub-key');
 
              const req = new Request('http://localhost:4000/api/kiosk/certifications', { method: 'GET' });
-             const res = await GET(req as any);
+             const res = await GET(req as unknown as NextRequest);
              expect(res.status).toBe(401);
         });
 
@@ -123,7 +122,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
                  })
              });
 
-             const res = await GET(req as any);
+             const res = await GET(req as unknown as NextRequest);
              expect(res.status).toBe(401);
              const data = await res.json();
              expect(data.error).toBe('Invalid Signature');
@@ -142,18 +141,18 @@ describe('Kiosk Certifications API Integration Tests', () => {
                  })
              });
 
-             const res = await GET(req as any);
+             const res = await GET(req as unknown as NextRequest);
              expect(res.status).toBe(200);
 
              const data = await res.json();
-             expect(Array.isArray(data.activeVisits)).toBe(true);
+             expect(Array.isArray(data.participants)).toBe(true);
              expect(Array.isArray(data.tools)).toBe(true);
              
-             const visitMatches = data.activeVisits.filter((v: any) => v.participantId === testUserId);
+             const visitMatches = data.participants.filter((v: {id: number}) => v.id === testUserId);
              expect(visitMatches.length).toBe(1);
-             expect(visitMatches[0].participant.toolStatuses.some((t: any) => t.toolId === toolId && t.level === 'CERTIFIED')).toBe(true);
+             expect(visitMatches[0].toolStatuses.some((t: {toolId: number, level: string}) => t.toolId === toolId && t.level === 'CERTIFIED')).toBe(true);
              
-             const toolMatches = data.tools.filter((t: any) => t.id === toolId);
+             const toolMatches = data.tools.filter((t: {id: number}) => t.id === toolId);
              expect(toolMatches.length).toBe(1);
              expect(toolMatches[0].name).toBe('Test CNC Router');
         });
@@ -163,11 +162,11 @@ describe('Kiosk Certifications API Integration Tests', () => {
             (getKioskPublicKey as jest.Mock).mockReturnValue('mock-pub-key');
 
             const req = new Request('http://localhost:4000/api/kiosk/certifications', { method: 'GET' });
-            const res = await GET(req as any);
+            const res = await GET(req as unknown as NextRequest);
             expect(res.status).toBe(200);
 
             const data = await res.json();
-            expect(data.activeVisits.length).toBeGreaterThanOrEqual(1);
+            expect(data.participants.length).toBeGreaterThanOrEqual(1);
             expect(data.tools.length).toBeGreaterThanOrEqual(1);
         });
     });
