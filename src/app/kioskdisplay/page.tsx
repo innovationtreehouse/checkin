@@ -191,6 +191,9 @@ function KioskDisplayInner() {
                 // Inline attendance data from signed scan response — update directly, no re-fetch needed
                 setData({ access: "full", attendance: event.data.attendance, counts: event.data.counts, safety: event.data.safety });
                 setLoading(false);
+                if (event.data.signedRequest) {
+                    setIsKioskMode(true);
+                }
             } else if (event.data === "refresh-attendance") {
                 // Fallback: no inline data, re-fetch from server
                 fetchAttendance();
@@ -257,6 +260,9 @@ function KioskDisplayInner() {
                     const json = await attRes.json();
                     if (attRes.ok && (json.access === "full" || json.access === "limited")) {
                         setData(json);
+                        if (json.signedRequest) {
+                            setIsKioskMode(true);
+                        }
                     }
                 };
                 fetchAttendance();
@@ -300,6 +306,9 @@ function KioskDisplayInner() {
                     const json = await attRes.json();
                     if (attRes.ok && (json.access === "full" || json.access === "limited")) {
                         setData(json);
+                        if (json.signedRequest) {
+                            setIsKioskMode(true);
+                        }
                     }
                 };
                 fetchAttendance();

@@ -207,6 +207,7 @@ export async function POST(req: NextRequest) {
                 participant,
                 visit: updatedVisit,
                 facilityClosed,
+                signedRequest: authStatus === "kiosk",
                 ...checkoutAttendance,
             });
         } else {
@@ -251,6 +252,7 @@ export async function POST(req: NextRequest) {
                 type: "checkin",
                 participant,
                 visit: newVisit,
+                signedRequest: authStatus === "kiosk",
                 ...checkinAttendance,
             });
         }
