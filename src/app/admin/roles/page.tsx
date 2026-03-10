@@ -15,6 +15,14 @@ type UserRole = {
     shopSteward: boolean;
 };
 
+type SessionUser = {
+    id: number;
+    sysadmin?: boolean;
+    keyholder?: boolean;
+    boardMember?: boolean;
+    householdId?: number | null;
+};
+
 export default function RoleAssignmentPage() {
     const { data: session, status } = useSession();
     const router = useRouter();
@@ -25,13 +33,13 @@ export default function RoleAssignmentPage() {
     const [savingId, setSavingId] = useState<number | null>(null);
     const [userSearchText, setUserSearchText] = useState("");
 
-    const currentUserIsSysadmin = (session?.user as any)?.sysadmin || false;
+    const currentUserIsSysadmin = (session?.user as SessionUser)?.sysadmin || false;
 
     useEffect(() => {
         if (status === "unauthenticated") {
             router.push('/');
         } else if (status === "authenticated") {
-            const isAuthorized = (session.user as any)?.sysadmin || (session.user as any)?.boardMember;
+            const isAuthorized = (session.user as SessionUser)?.sysadmin || (session.user as SessionUser)?.boardMember;
             if (!isAuthorized) {
                 router.push('/');
             } else {
@@ -49,7 +57,7 @@ export default function RoleAssignmentPage() {
             } else {
                 setMessage("Failed to load user list.");
             }
-        } catch (error) {
+        } catch {
             setMessage("Network error loading users.");
         } finally {
             setLoading(false);
@@ -79,7 +87,7 @@ export default function RoleAssignmentPage() {
                 // Revert optimistic update
                 fetchUsers();
             }
-        } catch (e) {
+        } catch {
             setMessage("Network error updating role.");
             fetchUsers();
         } finally {
@@ -100,8 +108,8 @@ export default function RoleAssignmentPage() {
     if (!session) return null;
 
     const filteredUsers = users.filter(u =>
-    (u.name?.toLowerCase().includes(userSearchText.toLowerCase()) ||
-        u.email?.toLowerCase().includes(userSearchText.toLowerCase()))
+    ((u.name || "").toLowerCase().includes((userSearchText || "").toLowerCase()) ||
+        (u.email || "").toLowerCase().includes((userSearchText || "").toLowerCase()))
     );
 
     return (

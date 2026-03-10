@@ -216,8 +216,8 @@ function KioskDisplayInner() {
                     const data = await res.json();
                     const filtered = data.participants.filter(
                         (p: Participant) =>
-                            p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            p.email.toLowerCase().includes(searchQuery.toLowerCase())
+                            (p.name || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
+                            (p.email || "").toLowerCase().includes((searchQuery || "").toLowerCase())
                     );
                     setSearchResults(filtered);
                 }
@@ -820,7 +820,7 @@ function KioskDisplayInner() {
                                 <p style={{ color: "var(--color-text-muted)", textAlign: "center", padding: "2rem" }}>No one is checked in.</p>
                             ) : (
                                 fullAttendance
-                                    .filter(v => (v.participant.name?.toLowerCase().includes(searchSignOutQuery.toLowerCase()) || v.participant.email.toLowerCase().includes(searchSignOutQuery.toLowerCase())))
+                                    .filter(v => ((v.participant.name || "").toLowerCase().includes((searchSignOutQuery || "").toLowerCase()) || (v.participant.email || "").toLowerCase().includes((searchSignOutQuery || "").toLowerCase())))
                                     .sort((a, b) => (a.participant.name || "").localeCompare(b.participant.name || ""))
                                     .map(v => (
                                         <div key={v.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem", background: "rgba(255,255,255,0.03)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)" }}>
