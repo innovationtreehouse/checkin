@@ -209,12 +209,12 @@ export default function ToolManagementPage() {
     };
 
     const filteredTools = tools.filter(tool =>
-        tool.name.toLowerCase().includes(searchQuery.toLowerCase())
+        (tool.name || "").toLowerCase().includes((searchQuery || "").toLowerCase())
     );
 
     const filteredParticipants = allParticipants.filter(p =>
-        (p.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.email.toLowerCase().includes(searchQuery.toLowerCase())
+        (p.name || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
+        (p.email || "").toLowerCase().includes((searchQuery || "").toLowerCase())
     );
 
     const getBadgeStyle = (level: string) => {
@@ -399,7 +399,7 @@ export default function ToolManagementPage() {
                                             Grant
                                         </button>
                                     </form>
-                                    <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.85rem', color: '#fbbf24' }}>* You must have the 'Certifier' level on this tool, or be an Admin, to successfully grant levels to others.</p>
+                                    <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.85rem', color: '#fbbf24' }}>* You must have the &apos;Certifier&apos; level on this tool, or be an Admin, to successfully grant levels to others.</p>
                                 </div>
 
                                 <div>
