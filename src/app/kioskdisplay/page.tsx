@@ -89,6 +89,8 @@ function KioskDisplayInner() {
     const [error, setError] = useState<string | null>(null);
     const [checkingOut, setCheckingOut] = useState<number | null>(null);
     const [household, setHousehold] = useState<{ leads: { participantId: number }[], participants: Participant[] } | null>(null);
+    const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [searchSignOutQuery, setSearchSignOutQuery] = useState("");
 
     const [searchQuery, setSearchQuery] = useState("");
     const [searchResults, setSearchResults] = useState<Participant[]>([]);
@@ -99,6 +101,7 @@ function KioskDisplayInner() {
     const currentUserIsBoardMember = (session?.user as SessionUser)?.boardMember || false;
     const currentUserHouseholdId = (session?.user as SessionUser)?.householdId || null;
     const canManuallyCheckInGlobal = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
+    const canAdminCheckout = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
     const canCheckInHousehold = Boolean(currentUserHouseholdId);
 
     const isFull = data?.access === "full";
@@ -404,9 +407,6 @@ function KioskDisplayInner() {
 
     const canCheckoutVisit = (visit: Visit): boolean => {
         return Boolean(
-            currentUserIsSysadmin ||
-            currentUserIsKeyholder ||
-            currentUserIsBoardMember ||
             visit.participant.id === (session?.user as SessionUser)?.id ||
             (household?.leads?.some((l: { participantId: number }) => l.participantId === (session?.user as SessionUser)?.id) &&
                 visit.participant.householdId === currentUserHouseholdId)
@@ -484,26 +484,45 @@ function KioskDisplayInner() {
                     <h1 className="text-gradient" style={{ margin: 0 }}>
                         Current Attendance
                     </h1>
-                    <div
-                        style={{
-                            padding: "0.5rem 1rem",
-                            background: "rgba(255,255,255,0.1)",
-                            borderRadius: "20px",
-                            display: "flex",
-                            gap: "8px",
-                            alignItems: "center",
-                        }}
-                    >
-                        <span
+                    <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+                        {!isKioskMode && canAdminCheckout && (
+                            <button
+                                onClick={() => setShowSignOutModal(true)}
+                                style={{
+                                    background: "rgba(239, 68, 68, 0.2)",
+                                    border: "1px solid rgba(239, 68, 68, 0.4)",
+                                    color: "#fca5a5",
+                                    padding: "0.5rem 1rem",
+                                    borderRadius: "20px",
+                                    cursor: "pointer",
+                                    fontWeight: 600,
+                                    fontSize: "0.85rem",
+                                }}
+                            >
+                                Sign out a user
+                            </button>
+                        )}
+                        <div
                             style={{
-                                width: "10px",
-                                height: "10px",
-                                borderRadius: "50%",
-                                background: "#10b981",
-                                display: "inline-block",
+                                padding: "0.5rem 1rem",
+                                background: "rgba(255,255,255,0.1)",
+                                borderRadius: "20px",
+                                display: "flex",
+                                gap: "8px",
+                                alignItems: "center",
                             }}
-                        />
-                        <span>{counts.total} People Present</span>
+                        >
+                            <span
+                                style={{
+                                    width: "10px",
+                                    height: "10px",
+                                    borderRadius: "50%",
+                                    background: "#10b981",
+                                    display: "inline-block",
+                                }}
+                            />
+                            <span>{counts.total} People Present</span>
+                        </div>
                     </div>
                 </div>
 
@@ -767,6 +786,70 @@ function KioskDisplayInner() {
                     </div>
                 )}
             </div>
+
+            {/* Admin Sign Out Modal */}
+            {showSignOutModal && (
+                <div style={{
+                    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+                    background: "rgba(0,0,0,0.8)", zIndex: 1000, display: "flex",
+                    alignItems: "center", justifyContent: "center", padding: "1rem"
+                }} onClick={() => setShowSignOutModal(false)}>
+                    <div style={{
+                        background: "var(--color-bg)", border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: "12px", width: "100%", maxWidth: "600px",
+                        maxHeight: "85vh", display: "flex", flexDirection: "column",
+                        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)"
+                    }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ padding: "1.5rem", borderBottom: "1px solid rgba(255,255,255,0.1)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <h2 style={{ margin: 0, fontSize: "1.25rem" }}>Sign Out A User</h2>
+                            <button onClick={() => setShowSignOutModal(false)} style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer", fontSize: "1.5rem" }}>&times;</button>
+                        </div>
+                        <div style={{ padding: "1rem 1.5rem", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                            <input
+                                type="text"
+                                placeholder="Search checked-in users..."
+                                className="glass-input"
+                                style={{ width: "100%", padding: "0.75rem", background: "rgba(0,0,0,0.2)" }}
+                                value={searchSignOutQuery}
+                                onChange={(e) => setSearchSignOutQuery(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+                        <div style={{ padding: "1rem 1.5rem", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                            {fullAttendance.length === 0 ? (
+                                <p style={{ color: "var(--color-text-muted)", textAlign: "center", padding: "2rem" }}>No one is checked in.</p>
+                            ) : (
+                                fullAttendance
+                                    .filter(v => (v.participant.name?.toLowerCase().includes(searchSignOutQuery.toLowerCase()) || v.participant.email.toLowerCase().includes(searchSignOutQuery.toLowerCase())))
+                                    .sort((a, b) => (a.participant.name || "").localeCompare(b.participant.name || ""))
+                                    .map(v => (
+                                        <div key={v.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem", background: "rgba(255,255,255,0.03)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                                            <div>
+                                                <div style={{ fontWeight: 500 }}>{v.participant.name || v.participant.email.split('@')[0]}</div>
+                                                <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>Arrived: {formatTime(v.arrived)}</div>
+                                            </div>
+                                            <button
+                                                onClick={() => handleForceCheckout(v.id)}
+                                                disabled={checkingOut === v.id}
+                                                style={{
+                                                    background: "rgba(239, 68, 68, 0.2)",
+                                                    border: "1px solid rgba(239, 68, 68, 0.4)",
+                                                    color: "#fca5a5",
+                                                    padding: "0.4rem 1rem",
+                                                    borderRadius: "6px",
+                                                    cursor: "pointer",
+                                                    fontWeight: 600,
+                                                }}
+                                            >
+                                                {checkingOut === v.id ? "Signing Out..." : "Sign Out"}
+                                            </button>
+                                        </div>
+                                    ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }
