@@ -9,6 +9,7 @@ type Participant = {
     id: number;
     email: string;
     name: string | null;
+    ageCategory?: "ADULT" | "STUDENT";
     toolStatuses: {
         toolId: number;
         level: ToolStatusLevel;
@@ -66,6 +67,47 @@ export default function KioskCertificationsDisplay() {
         }
     };
 
+    // Sort users alphabetically by name (fallback to email prefix)
+    const sortAlphabetically = (a: Visit, b: Visit) => {
+        const nameA = a.participant.name || a.participant.email.split('@')[0];
+        const nameB = b.participant.name || b.participant.email.split('@')[0];
+        return nameA.localeCompare(nameB);
+    };
+
+    const adultVisits = activeVisits.filter(v => v.participant.ageCategory === "ADULT").sort(sortAlphabetically);
+    const studentVisits = activeVisits.filter(v => v.participant.ageCategory === "STUDENT").sort(sortAlphabetically);
+
+    // Reusable row render
+    const renderVisitRow = (visit: Visit) => (
+        <tr key={visit.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', transition: 'background-color 0.2s' }}>
+            <td style={{ padding: '0.75rem 1rem', position: 'sticky', left: 0, background: 'rgba(15,23,42,0.95)', zIndex: 5, borderRight: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{visit.participant.name || visit.participant.email.split('@')[0]}</div>
+            </td>
+            {tools.map((tool) => {
+                const status = visit.participant.toolStatuses.find(ts => ts.toolId === tool.id);
+                const bgColor = getColorForLevel(status?.level);
+                return (
+                    <td key={tool.id} style={{ padding: '0', textAlign: 'center', borderRight: '1px solid rgba(255,255,255,0.05)', height: '100%' }}>
+                        <div style={{
+                            width: '40px',
+                            minWidth: '40px',
+                            height: '100%',
+                            minHeight: '48px',
+                            background: bgColor,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            opacity: status ? 0.8 : 1,
+                            transition: 'opacity 0.2s',
+                            margin: '0 auto'
+                        }}>
+                        </div>
+                    </td>
+                );
+            })}
+        </tr>
+    );
+
     return (
         <main className={styles.main} style={{ paddingTop: '2rem' }}>
             <div className="glass-container" style={{ width: "100%", maxWidth: "1200px", padding: "2rem", overflowX: "auto" }}>
@@ -105,51 +147,52 @@ export default function KioskCertificationsDisplay() {
                                     </th>
                                     {tools.map((tool) => (
                                         <th key={tool.id} style={{
-                                            padding: '0.5rem',
                                             borderBottom: '1px solid rgba(255,255,255,0.1)',
                                             borderRight: '1px solid rgba(255,255,255,0.05)',
                                             background: 'rgba(255,255,255,0.02)',
                                             fontSize: '0.875rem',
-                                            writingMode: 'vertical-rl',
-                                            transform: 'rotate(180deg)',
-                                            whiteSpace: 'nowrap',
                                             height: '180px',
-                                            textAlign: 'left'
+                                            width: '40px',
+                                            position: 'relative',
+                                            verticalAlign: 'bottom',
+                                            padding: 0
                                         }}>
-                                            {tool.name}
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: '10px',
+                                                left: '50%',
+                                                transformOrigin: 'bottom left',
+                                                transform: 'translateX(-50%) rotate(-45deg)',
+                                                whiteSpace: 'nowrap',
+                                                width: '10px'
+                                            }}>
+                                                <span style={{ display: 'inline-block', transform: 'translateX(-100%)', paddingRight: '10px' }}>{tool.name}</span>
+                                            </div>
                                         </th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
-                                {activeVisits.map((visit) => (
-                                    <tr key={visit.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', transition: 'background-color 0.2s', ...{ ':hover': { backgroundColor: 'rgba(255,255,255,0.05)' } } as any }}>
-                                        <td style={{ padding: '0.75rem 1rem', position: 'sticky', left: 0, background: 'rgba(15,23,42,0.95)', zIndex: 5, borderRight: '1px solid rgba(255,255,255,0.1)' }}>
-                                            <div style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{visit.participant.name || visit.participant.email.split('@')[0]}</div>
+                                {adultVisits.map(renderVisitRow)}
+                                
+                                {studentVisits.length > 0 && adultVisits.length > 0 && (
+                                    <tr>
+                                        <td colSpan={tools.length + 1} style={{ 
+                                            background: 'rgba(255,255,255,0.1)', 
+                                            padding: '0.4rem 1rem', 
+                                            fontWeight: 'bold',
+                                            color: 'var(--color-primary-light)',
+                                            fontSize: '0.9rem',
+                                            position: 'sticky',
+                                            left: 0,
+                                            zIndex: 5
+                                        }}>
+                                            Students (Under 18)
                                         </td>
-                                        {tools.map((tool) => {
-                                            const status = visit.participant.toolStatuses.find(ts => ts.toolId === tool.id);
-                                            const bgColor = getColorForLevel(status?.level);
-                                            return (
-                                                <td key={tool.id} style={{ padding: '0', textAlign: 'center', borderRight: '1px solid rgba(255,255,255,0.05)', height: '100%' }}>
-                                                    <div style={{
-                                                        width: '100%',
-                                                        height: '100%',
-                                                        minHeight: '48px',
-                                                        background: bgColor,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        opacity: status ? 0.8 : 1,
-                                                        transition: 'opacity 0.2s',
-                                                        ...{ ':hover': { opacity: 1 } } as any
-                                                    }}>
-                                                    </div>
-                                                </td>
-                                            );
-                                        })}
                                     </tr>
-                                ))}
+                                )}
+                                
+                                {studentVisits.map(renderVisitRow)}
                             </tbody>
                         </table>
                     </div>

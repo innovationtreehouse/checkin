@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
                         id: true,
                         email: true,
                         name: true,
+                        dob: true,
                         toolStatuses: {
                             select: {
                                 toolId: true,
@@ -50,6 +51,32 @@ export async function GET(req: NextRequest) {
             },
         });
 
+        const activeVisitsWithAgeCategory = activeVisits.map((visit) => {
+            const dob = visit.participant.dob;
+            let ageCategory = "ADULT";
+
+            if (dob) {
+                const birthDate = new Date(dob);
+                const today = new Date();
+                let age = today.getFullYear() - birthDate.getFullYear();
+                const m = today.getMonth() - birthDate.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+                if (age < 18) {
+                    ageCategory = "STUDENT";
+                }
+            }
+
+            const participantWithoutDob = visit.participant as Omit<typeof visit.participant, 'dob'>;
+
+            return {
+                ...visit,
+                participant: {
+                    ...participantWithoutDob,
+                    ageCategory,
+                },
+            };
+        });
+
         const tools = await prisma.tool.findMany({
             orderBy: {
                 name: "asc"
@@ -60,7 +87,7 @@ export async function GET(req: NextRequest) {
             }
         });
 
-        return NextResponse.json({ activeVisits, tools });
+        return NextResponse.json({ activeVisits: activeVisitsWithAgeCategory, tools });
     } catch (error) {
         console.error("Certifications fetch error:", error);
         return NextResponse.json(
