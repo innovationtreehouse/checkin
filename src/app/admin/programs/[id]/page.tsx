@@ -609,7 +609,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                                                             disabled={saving}
                                                             style={{ cursor: 'pointer' }}
                                                         />
-                                                        Core Staff
+                                                        Core Volunteer
                                                     </label>
                                                 </div>
                                                 <button onClick={() => handleRemoveVolunteer(v.participantId)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.25rem 0.5rem' }}>Remove</button>
@@ -719,7 +719,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                                                             </Link>
                                                         ) : (
                                                             <Link href={`/admin/events/${ev.id}`} style={{ color: '#60a5fa', textDecoration: 'none', whiteSpace: 'nowrap' }}>
-                                                                Attendance &rarr;
+                                                                {isPastEvent ? 'Attendance \u2192' : 'Edit Event \u2192'}
                                                             </Link>
                                                         )}
                                                     </td>
