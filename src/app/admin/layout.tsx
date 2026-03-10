@@ -20,13 +20,15 @@ export default function AdminLayout({
     if (status === "unauthenticated") {
       router.push("/");
     } else if (status === "authenticated") {
-      const isAuthorized =
-        (session?.user as {sysadmin?: boolean; boardMember?: boolean})?.sysadmin || (session?.user as {sysadmin?: boolean; boardMember?: boolean})?.boardMember;
+      const user = session?.user as {sysadmin?: boolean; boardMember?: boolean; keyholder?: boolean};
+      const isAuthorized = user?.sysadmin || user?.boardMember || user?.keyholder;
       if (!isAuthorized) {
         router.push("/");
+      } else if (user?.keyholder && !user?.sysadmin && !user?.boardMember && pathname !== "/admin/emergency-contacts") {
+        router.push("/admin/emergency-contacts");
       }
     }
-  }, [status, session, router]);
+  }, [status, session, router, pathname]);
 
   if (status === "loading") {
     return (
@@ -38,7 +40,8 @@ export default function AdminLayout({
     );
   }
 
-  if (!session || (!(session.user as {sysadmin?: boolean; boardMember?: boolean})?.sysadmin && !(session.user as {sysadmin?: boolean; boardMember?: boolean})?.boardMember)) {
+  const user = session?.user as {sysadmin?: boolean; boardMember?: boolean; keyholder?: boolean};
+  if (!session || (!user?.sysadmin && !user?.boardMember && !user?.keyholder)) {
     return null;
   }
 
@@ -61,6 +64,7 @@ export default function AdminLayout({
       links: [
         { name: "Participants", href: "/admin/participants", icon: "👥" },
         { name: "Manage Memberships", href: "/admin/households", icon: "🏠" },
+        { name: "Emergency Contacts", href: "/admin/emergency-contacts", icon: "🚑" },
         { name: "Role Assignment", href: "/admin/roles", icon: "🔐" },
       ],
     },
@@ -79,26 +83,35 @@ export default function AdminLayout({
           <span className="text-gradient">Admin Ops</span>
         </div>
         <nav>
-          {navItems.map((section) => (
-            <div key={section.title} className={styles.navSection}>
-              <h3 className={styles.sectionTitle}>{section.title}</h3>
-              {section.links.map((link) => {
-                const isActive = pathname === link.href;
-                return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className={`${styles.navLink} ${
-                      isActive ? styles.activeLink : ""
-                    }`}
-                  >
-                    <span className={styles.icon}>{link.icon}</span>
-                    <span className={styles.linkText}>{link.name}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
+          {navItems.map((section) => {
+            const isStrictKeyholder = user?.keyholder && !user?.sysadmin && !user?.boardMember;
+            const filteredLinks = isStrictKeyholder 
+                ? section.links.filter(link => link.href === '/admin/emergency-contacts')
+                : section.links;
+
+            if (filteredLinks.length === 0) return null;
+
+            return (
+                <div key={section.title} className={styles.navSection}>
+                <h3 className={styles.sectionTitle}>{section.title}</h3>
+                {filteredLinks.map((link) => {
+                    const isActive = pathname === link.href;
+                    return (
+                    <Link
+                        key={link.href}
+                        href={link.href}
+                        className={`${styles.navLink} ${
+                        isActive ? styles.activeLink : ""
+                        }`}
+                    >
+                        <span className={styles.icon}>{link.icon}</span>
+                        <span className={styles.linkText}>{link.name}</span>
+                    </Link>
+                    );
+                })}
+                </div>
+            );
+          })}
         </nav>
       </aside>
       <main className={styles.content}>{children}</main>
