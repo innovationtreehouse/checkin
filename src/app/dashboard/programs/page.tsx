@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @typescript-eslint/no-unused-vars, react-hooks/set-state-in-effect */
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';

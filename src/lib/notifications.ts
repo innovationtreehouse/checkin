@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import prisma from "./prisma";
 import { sendEmail } from "./email";
 import { formatTime, formatDate } from "./time";

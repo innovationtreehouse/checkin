@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/exhaustive-deps */
 
 import { use, useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';

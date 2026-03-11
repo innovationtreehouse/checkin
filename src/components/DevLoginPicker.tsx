@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/purity */
 
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";

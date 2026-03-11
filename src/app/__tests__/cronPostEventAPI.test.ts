@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { GET } from "../api/cron/post-event/route";

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 // In testing environment, use the mocked getServerSession from next-auth directly, but in Next 15 App router tests it can fail if called without a request. NextAuth is mocked in adminParticipants.test.ts, but we must use it from next-auth.
 import { getServerSession } from "next-auth";

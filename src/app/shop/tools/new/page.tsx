@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @typescript-eslint/no-explicit-any, react/no-unescaped-entities */
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';

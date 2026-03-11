@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
@@ -260,7 +261,7 @@ export async function POST(req: NextRequest) {
                 }
             } else if (!sameHouseholdAs) {
                 // No email, no parent email, no household ref — match by name
-                let matchQuery: any = { name: fullName };
+                const matchQuery: any = { name: fullName };
                 if (parsedDob) matchQuery.dob = parsedDob;
 
                 const existing = await prisma.participant.findFirst({

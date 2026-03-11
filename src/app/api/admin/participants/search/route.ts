@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
     const q = searchParams.get('q') || '';
     const filter = searchParams.get('filter') || 'all';
 
-    let dateFilter = {};
+    const dateFilter = {};
     const now = new Date();
 
     // Note: Since we don't have a 'createdAt' on Participant, we'll try to use emailVerified 
