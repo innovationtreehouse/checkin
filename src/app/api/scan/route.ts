@@ -9,6 +9,7 @@ import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTra
 import { logBackendError } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
+    const startTime = Date.now();
     console.log("--> API /api/scan HIT");
     try {
         const rawBody = await req.text();
@@ -263,5 +264,15 @@ export async function POST(req: NextRequest) {
             { error: "Internal Server Error while processing scan." },
             { status: 500 }
         );
+    } finally {
+        const durationMs = Date.now() - startTime;
+        console.log(`API /api/scan completed in ${durationMs}ms`);
+        // Fire-and-forget: log system metric
+        prisma.systemMetric.create({
+            data: {
+                metric: "scan_response_time",
+                value: durationMs,
+            }
+        }).catch((err: unknown) => console.error("Failed to log scan_response_time metric:", err));
     }
 }

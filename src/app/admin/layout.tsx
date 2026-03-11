@@ -57,6 +57,7 @@ export default function AdminLayout({
         { name: "Raw Badge Events", href: "/admin/events/badges", icon: "📡" },
         { name: "Print ID Badges", href: "/admin/print-badges", icon: "🖨️" },
         { name: "Participation Trends", href: "/admin/trends", icon: "📈" },
+        { name: "System Health", href: "/admin/systemhealth", icon: "🫀" },
       ],
     },
     {

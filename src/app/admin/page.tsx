@@ -10,6 +10,12 @@ export default function AdminDashboardIndex() {
     const { data: session } = useSession();
     const router = useRouter();
     const [orphans, setOrphans] = useState<any[]>([]);
+    const [systemHealth, setSystemHealth] = useState<{
+        count: number;
+        median: number;
+        p90: number;
+        p99: number;
+    } | null>(null);
 
     useEffect(() => {
         fetch('/api/admin/orphans')

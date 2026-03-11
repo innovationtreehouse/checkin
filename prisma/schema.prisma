@@ -345,3 +345,10 @@ model ErrorLog {
   stack     String?
   context   Json?
 }
+
+model SystemMetric {
+  id        Int      @id @default(autoincrement())
+  timestamp DateTime @default(now())
+  metric    String
+  value     Float
+}
