@@ -724,11 +724,11 @@ function KioskDisplayInner() {
                         }}
                     >
                         {/* Keyholders column */}
-                        <div style={{ 
-                            gridColumn: counts.students > 20 
-                                ? "auto" 
-                                : (counts.keyholders > 10 ? "span 2" : "auto") 
-                        }}>
+                        <div className={
+                            counts.students > 20 
+                                ? "" 
+                                : (counts.keyholders > 10 ? styles.span2IfWide : "")
+                        }>
                             <div style={columnHeaderStyle("rgba(59, 130, 246, 0.6)")}>
                                 <span style={{ fontSize: "1.25rem" }}>🔑</span>
                                 <div>
@@ -746,11 +746,11 @@ function KioskDisplayInner() {
                         </div>
 
                         {/* Volunteers column */}
-                        <div style={{ 
-                            gridColumn: counts.students > 20 
-                                ? "auto" 
-                                : (counts.volunteers > 10 ? "span 2" : "auto") 
-                        }}>
+                        <div className={
+                            counts.students > 20 
+                                ? "" 
+                                : (counts.volunteers > 10 ? styles.span2IfWide : "")
+                        }>
                             <div style={columnHeaderStyle("rgba(16, 185, 129, 0.6)")}>
                                 <span style={{ fontSize: "1.25rem" }}>🤝</span>
                                 <div>
@@ -768,9 +768,9 @@ function KioskDisplayInner() {
                         </div>
 
                         {/* Students column */}
-                        <div style={{ 
-                            gridColumn: counts.students > 20 ? "span 2" : (counts.students > 10 ? "span 2" : "auto") 
-                        }}>
+                        <div className={
+                            counts.students > 20 ? styles.span2IfWide : (counts.students > 10 ? styles.span2IfWide : "")
+                        }>
                             <div style={columnHeaderStyle("rgba(168, 85, 247, 0.6)")}>
                                 <span style={{ fontSize: "1.25rem" }}>🎓</span>
                                 <div>

@@ -11,6 +11,9 @@
   .main {
     padding: 4rem 2rem;
   }
+  .span2IfWide {
+    grid-column: span 2;
+  }
 }
 
 .heroContainer {
