@@ -224,6 +224,18 @@ describe('Shop API Integration Tests', () => {
              expect(data.success).toBe(true);
              expect(data.tool.name).toBe('Shop Test Tool Admin');
         });
+
+        it('should allow shop stewards to create a new tool', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: stewardId, shopSteward: true } });
+
+             const req = createReq('POST', { body: { name: 'Shop Test Tool Steward' } });
+             const res = await postTools(req);
+             expect(res.status).toBe(200);
+             
+             const data = await res.json();
+             expect(data.success).toBe(true);
+             expect(data.tool.name).toBe('Shop Test Tool Steward');
+        });
     });
 
     describe('/api/shop/certifications', () => {

@@ -27,7 +27,8 @@ export default function ShopStewardPage() {
 
     const isSysadmin = (session?.user as any)?.sysadmin;
     const isBoardMember = (session?.user as any)?.boardMember;
-    const isAdmin = isSysadmin || isBoardMember;
+    const isShopSteward = (session?.user as any)?.shopSteward;
+    const isAdmin = isSysadmin || isBoardMember || isShopSteward;
 
     // Certifier check: either Shop Steward, Board Member, Admin, or explicitly has MAY_CERTIFY_OTHERS
     const certs = (session?.user as any)?.toolStatuses || [];
