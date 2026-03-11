@@ -724,7 +724,11 @@ function KioskDisplayInner() {
                         }}
                     >
                         {/* Keyholders column */}
-                        <div style={{ gridColumn: counts.keyholders > 10 ? "span 2" : "auto" }}>
+                        <div style={{ 
+                            gridColumn: counts.students > 20 
+                                ? "auto" 
+                                : (counts.keyholders > 10 ? "span 2" : "auto") 
+                        }}>
                             <div style={columnHeaderStyle("rgba(59, 130, 246, 0.6)")}>
                                 <span style={{ fontSize: "1.25rem" }}>🔑</span>
                                 <div>
@@ -734,7 +738,7 @@ function KioskDisplayInner() {
                                     <div style={columnLabelStyle}>Keyholders</div>
                                 </div>
                             </div>
-                            <div style={{ display: "grid", gridTemplateColumns: counts.keyholders > 10 ? "repeat(2, 1fr)" : "1fr", gap: "0.4rem" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: (counts.keyholders > 10 && counts.students <= 20) ? "repeat(2, 1fr)" : "1fr", gap: "0.4rem" }}>
                                 {isFull
                                     ? keyholderList.map(v => renderPersonCard(v, canCheckoutVisit(v)))
                                     : householdKeyholders.map(v => renderPersonCard(v, canCheckoutVisit(v)))}
@@ -742,7 +746,11 @@ function KioskDisplayInner() {
                         </div>
 
                         {/* Volunteers column */}
-                        <div style={{ gridColumn: counts.volunteers > 10 ? "span 2" : "auto" }}>
+                        <div style={{ 
+                            gridColumn: counts.students > 20 
+                                ? "auto" 
+                                : (counts.volunteers > 10 ? "span 2" : "auto") 
+                        }}>
                             <div style={columnHeaderStyle("rgba(16, 185, 129, 0.6)")}>
                                 <span style={{ fontSize: "1.25rem" }}>🤝</span>
                                 <div>
@@ -752,7 +760,7 @@ function KioskDisplayInner() {
                                     <div style={columnLabelStyle}>Volunteers</div>
                                 </div>
                             </div>
-                            <div style={{ display: "grid", gridTemplateColumns: counts.volunteers > 10 ? "repeat(2, 1fr)" : "1fr", gap: "0.4rem" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: (counts.volunteers > 10 && counts.students <= 20) ? "repeat(2, 1fr)" : "1fr", gap: "0.4rem" }}>
                                 {isFull
                                     ? volunteerList.map(v => renderPersonCard(v, canCheckoutVisit(v)))
                                     : householdVolunteers.map(v => renderPersonCard(v, canCheckoutVisit(v)))}
@@ -760,7 +768,9 @@ function KioskDisplayInner() {
                         </div>
 
                         {/* Students column */}
-                        <div style={{ gridColumn: counts.students > 10 ? "span 2" : "auto" }}>
+                        <div style={{ 
+                            gridColumn: counts.students > 20 ? "span 2" : (counts.students > 10 ? "span 2" : "auto") 
+                        }}>
                             <div style={columnHeaderStyle("rgba(168, 85, 247, 0.6)")}>
                                 <span style={{ fontSize: "1.25rem" }}>🎓</span>
                                 <div>
@@ -770,7 +780,7 @@ function KioskDisplayInner() {
                                     <div style={columnLabelStyle}>Students</div>
                                 </div>
                             </div>
-                            <div style={{ display: "grid", gridTemplateColumns: counts.students > 10 ? "repeat(2, 1fr)" : "1fr", gap: "0.4rem" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: counts.students > 10 ? "repeat(auto-fill, minmax(200px, 1fr))" : "1fr", gap: "0.4rem" }}>
                                 {isFull
                                     ? studentList.map(v => renderPersonCard(v, canCheckoutVisit(v)))
                                     : householdStudents.map(v => renderPersonCard(v, canCheckoutVisit(v)))}
