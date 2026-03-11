@@ -139,7 +139,10 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date) 
         const createdVisits = [];
         let currentIterStart = arrived;
 
-        for (const event of eventsDuringStay) {
+        for (let i = 0; i < eventsDuringStay.length; i++) {
+            const event = eventsDuringStay[i];
+            const nextEvent = eventsDuringStay[i + 1];
+
             // If there's a gap between current time and the event start time,
             // create an unassociated visit for the gap time
             if (currentIterStart < event.start) {
@@ -165,7 +168,12 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date) 
             // Create visit associated with the event
             // The boundaries are constrained by arrival, checkout, and event boundaries
             const eventVisitStart = currentIterStart > event.start ? currentIterStart : event.start;
-            const eventVisitEnd = event.end < checkoutTime ? event.end : checkoutTime;
+            
+            // Check out when the next event starts, or when they physically leave
+            let eventVisitEnd = checkoutTime;
+            if (nextEvent && nextEvent.start < checkoutTime) {
+                eventVisitEnd = nextEvent.start;
+            }
 
             if (eventVisitStart < eventVisitEnd) {
                 createdVisits.push(await tx.visit.create({

@@ -197,7 +197,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             expect(finalVisits[2].associatedEventId).toBe(eventBId);
         });
 
-        it('should not chunk into an event the user is not enrolled in', async () => {
+        it('should continue to chunk into the first event if the user is not enrolled in subsequent events', async () => {
             // Un-enroll user from B so they are ONLY enrolled in A.
             await prisma.programParticipant.deleteMany({
                 where: { participantId, programId: programBId }
@@ -216,18 +216,14 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             const checkoutTime = new Date(`${baseDateString}13:00:00Z`); // Leaves during Event B/C time
             const finalVisits = await processVisitCheckout(visit.id, checkoutTime);
 
-            // Since user is not enrolled in B or C anymore, it should chunk:
-            // 1. Event A (10:30 -> 12:00)
-            // 2. Unassociated gap (12:00 -> 13:00)
+            // Since user is not enrolled in B or C anymore, it should simply extend their stay in A
+            // until checkout time.
             
-            expect(finalVisits.length).toBe(2);
+            expect(finalVisits.length).toBe(1);
 
             expect(finalVisits[0].associatedEventId).toBe(eventAId);
-            expect(finalVisits[0].departed).toEqual(new Date(`${baseDateString}12:00:00Z`));
-
-            expect(finalVisits[1].associatedEventId).toBeNull();
-            expect(finalVisits[1].arrived).toEqual(new Date(`${baseDateString}12:00:00Z`));
-            expect(finalVisits[1].departed).toEqual(checkoutTime);
+            expect(finalVisits[0].arrived).toEqual(arrivalTime);
+            expect(finalVisits[0].departed).toEqual(checkoutTime);
         });
 
         it('should chunk into Event D if user is lead mentor', async () => {
