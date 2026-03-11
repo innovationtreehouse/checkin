@@ -38,7 +38,8 @@ export default function HouseholdPage() {
         name: "",
         email: "",
         dob: "",
-        phone: ""
+        phone: "",
+        isLead: false
     });
 
     const [visits, setVisits] = useState<Array<{
@@ -213,7 +214,8 @@ export default function HouseholdPage() {
                     name: editForm.name,
                     email: editForm.email,
                     dob: editForm.dob,
-                    phone: editForm.phone
+                    phone: editForm.phone,
+                    isLead: editForm.isLead
                 })
             });
 
@@ -366,6 +368,17 @@ export default function HouseholdPage() {
                                                     placeholder="Phone"
                                                     style={{ padding: '0.5rem' }}
                                                 />
+                                                {p.id !== (session?.user as {id: number})?.id && editForm.dob && (new Date().getFullYear() - new Date(editForm.dob).getFullYear() >= 18) && (
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginTop: '0.5rem', fontSize: '0.9rem' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={editForm.isLead}
+                                                            onChange={(e) => setEditForm({ ...editForm, isLead: e.target.checked })}
+                                                            style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ color: 'var(--color-text)' }}>Household Lead</span>
+                                                    </label>
+                                                )}
                                                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
                                                     <button type="submit" style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', border: '1px solid rgba(34, 197, 94, 0.4)', cursor: 'pointer' }}>Save</button>
                                                     <button type="button" onClick={() => setEditingMemberId(null)} style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.1)', color: 'white', border: '1px solid rgba(255, 255, 255, 0.2)', cursor: 'pointer' }}>Cancel</button>
@@ -412,8 +425,15 @@ export default function HouseholdPage() {
                                                 {household.leads?.some((l: {participantId: number}) => l.participantId === (session?.user as {id: number})?.id) && (
                                                     <button
                                                         onClick={() => {
+                                                            const isThisMemberALead = household.leads?.some((l: {participantId: number}) => l.participantId === p.id) || false;
                                                             setEditingMemberId(p.id);
-                                                            setEditForm({ name: p.name || "", email: p.email || "", dob: p.dob ? new Date(p.dob).toISOString().split('T')[0] : "", phone: p.phone || "" });
+                                                            setEditForm({ 
+                                                                name: p.name || "", 
+                                                                email: p.email || "", 
+                                                                dob: p.dob ? new Date(p.dob).toISOString().split('T')[0] : "", 
+                                                                phone: p.phone || "",
+                                                                isLead: isThisMemberALead 
+                                                            });
                                                         }}
                                                         style={{
                                                             position: 'absolute',

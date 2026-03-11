@@ -12,7 +12,7 @@ export async function PATCH(req: NextRequest) {
 
         const userId = (session.user as {id: number}).id;
         const body = await req.json();
-        const { participantId, name, email, dob, phone } = body;
+        const { participantId, name, email, dob, phone, isLead } = body;
 
         if (!participantId) {
             return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
@@ -24,8 +24,8 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
         }
 
-        const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-        if (!isLead && !user.sysadmin) {
+        const isCurrentUserLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
+        if (!isCurrentUserLead && !user.sysadmin) {
             return NextResponse.json({ error: "Only household leads can edit members" }, { status: 403 });
         }
 
@@ -43,6 +43,52 @@ export async function PATCH(req: NextRequest) {
                 phone: phone !== undefined ? (phone === "" ? null : phone) : undefined,
             }
         });
+
+        if (isLead !== undefined && participantId !== userId) {
+            const currentLead = await prisma.householdLead.findUnique({
+                where: {
+                    householdId_participantId: { householdId: user.householdId, participantId }
+                }
+            });
+
+            if (isLead && !currentLead) {
+                await prisma.householdLead.create({
+                    data: {
+                        householdId: user.householdId,
+                        participantId
+                    }
+                });
+                await prisma.auditLog.create({
+                    data: {
+                        actorId: userId,
+                        action: "CREATE",
+                        tableName: "HouseholdLead",
+                        affectedEntityId: user.householdId,
+                        secondaryAffectedEntity: participantId
+                    }
+                });
+            } else if (!isLead && currentLead) {
+                // Ensure we don't delete the last lead
+                const leadCount = await prisma.householdLead.count({ where: { householdId: user.householdId } });
+                if (leadCount > 1) {
+                    await prisma.householdLead.delete({
+                         where: {
+                             householdId_participantId: { householdId: user.householdId, participantId }
+                         }
+                    });
+                    
+                    await prisma.auditLog.create({
+                        data: {
+                            actorId: userId,
+                            action: "DELETE",
+                            tableName: "HouseholdLead",
+                            affectedEntityId: user.householdId,
+                            secondaryAffectedEntity: participantId
+                        }
+                    });
+                }
+            }
+        }
 
         await prisma.auditLog.create({
             data: {

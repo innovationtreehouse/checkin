@@ -239,5 +239,68 @@ describe('Household Member API Integration Tests', () => {
             expect(updatedProfile?.dob).toBeNull();
             expect(updatedProfile?.phone).toBeNull();
         });
+
+        it('should allow a lead to designate another adult as a lead', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testLeadId } });
+
+             const req = new Request('http://localhost:4000/api/household/member', {
+                 method: 'PATCH',
+                 body: JSON.stringify({ 
+                     participantId: testNonLeadId, 
+                     isLead: true
+                 })
+             });
+
+             const res = await PATCH(req as any);
+             expect(res.status).toBe(200);
+
+             // Verify they are now a lead
+             const leadRecord = await prisma.householdLead.findUnique({
+                 where: { householdId_participantId: { householdId: householdId, participantId: testNonLeadId } }
+             });
+             expect(leadRecord).not.toBeNull();
+        });
+
+        it('should allow a lead to remove another lead', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testLeadId } });
+
+             const req = new Request('http://localhost:4000/api/household/member', {
+                 method: 'PATCH',
+                 body: JSON.stringify({ 
+                     participantId: testNonLeadId, 
+                     isLead: false
+                 })
+             });
+
+             const res = await PATCH(req as any);
+             expect(res.status).toBe(200);
+
+             // Verify they are no longer a lead
+             const leadRecord = await prisma.householdLead.findUnique({
+                 where: { householdId_participantId: { householdId: householdId, participantId: testNonLeadId } }
+             });
+             expect(leadRecord).toBeNull();
+        });
+
+        it('should prevent deleting the last lead in a household', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testLeadId } });
+
+             const req = new Request('http://localhost:4000/api/household/member', {
+                 method: 'PATCH',
+                 body: JSON.stringify({ 
+                     participantId: testLeadId, 
+                     isLead: false
+                 })
+             });
+
+             const res = await PATCH(req as any);
+             expect(res.status).toBe(200); // the edit still succeeds technically even if it ignored the lea demotion request since it doesn't hard error it, this is intended
+
+             // Verify they are STILL a lead
+             const leadRecord = await prisma.householdLead.findUnique({
+                 where: { householdId_participantId: { householdId: householdId, participantId: testLeadId } }
+             });
+             expect(leadRecord).not.toBeNull();
+        });
     });
 });
