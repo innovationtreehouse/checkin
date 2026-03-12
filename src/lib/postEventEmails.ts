@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { config } from "@/lib/config";
+import { postEventTemplate } from "@/lib/email-templates/post-event";
 
 interface ProcessPostEventEmailsOptions {
     /**
@@ -80,23 +81,12 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
         const baseUrl = config.baseUrl();
         const eventLink = `${baseUrl}/admin/events/${event.id}`;
 
-        const emailHtml = `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2>Event Completed: ${event.name}</h2>
-                <p>The event <strong>${event.name}</strong> has finished.</p>
-                <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                    <h3 style="margin-top: 0;">Attendance Summary</h3>
-                    <ul style="margin-bottom: 0;">
-                        <li><strong>RSVPs (Attending):</strong> ${attendingRsvps}</li>
-                        <li><strong>Logged Check-ins:</strong> ${actualVisits}</li>
-                    </ul>
-                </div>
-                <p>Please review the automatically gathered attendance data and officially confirm it for our records. You can make any manual adjustments needed before confirming.</p>
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="${eventLink}" style="background-color: #38bdf8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Review & Confirm Attendance</a>
-                </div>
-            </div>
-        `;
+        const emailHtml = postEventTemplate({
+            eventName: event.name,
+            attendingRsvps,
+            actualVisits,
+            eventLink
+        });
 
         const success = await sendEmail(
             recipientEmail,

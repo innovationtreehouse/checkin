@@ -2,6 +2,8 @@
 import prisma from "./prisma";
 import { sendEmail } from "./email";
 import { formatTime, formatDate } from "./time";
+import { checkinReceiptTemplate } from "./email-templates/checkin";
+import { householdMemberTemplate } from "./email-templates/household";
 
 /**
  * Service to handle sending notifications to users via their defined preferences.
@@ -110,13 +112,7 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
         const settings = participant.notificationSettings as any;
         if (settings?.emailCheckinReceipts && participant.email) {
             const subject = `${emoji} ${name} ${action} Innovation Treehouse`;
-            const html = `
-                <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-                    <h2 style="color: #6366f1;">${emoji} Visit ${type === 'checkin' ? 'Started' : 'Ended'}</h2>
-                    <p><strong>${name}</strong> ${action} Innovation Treehouse.</p>
-                    <p style="color: #6b7280;">📅 ${dateStr}<br/>🕐 ${timeStr}</p>
-                </div>
-            `;
+            const html = checkinReceiptTemplate({ name, type, date: dateStr, time: timeStr });
             await sendEmail(participant.email, subject, html);
         }
 
@@ -143,14 +139,13 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
                 const leadSettings = lead.participant.notificationSettings as any;
                 if (leadSettings?.emailDependentCheckins && lead.participant.email) {
                     const subject = `${emoji} ${name} ${action} Innovation Treehouse`;
-                    const html = `
-                        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-                            <h2 style="color: #6366f1;">${emoji} Household Member ${type === 'checkin' ? 'Arrival' : 'Departure'}</h2>
-                            <p>Hi ${lead.participant.name || 'there'},</p>
-                            <p>Your household member <strong>${name}</strong> ${action} Innovation Treehouse.</p>
-                            <p style="color: #6b7280;">📅 ${dateStr}<br/>🕐 ${timeStr}</p>
-                        </div>
-                    `;
+                    const html = householdMemberTemplate({
+                        leadName: lead.participant.name || 'there',
+                        memberName: name,
+                        type,
+                        date: dateStr,
+                        time: timeStr
+                    });
                     await sendEmail(lead.participant.email, subject, html);
                 }
             }

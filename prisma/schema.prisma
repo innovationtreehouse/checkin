@@ -277,6 +277,8 @@ model RawBadgeEvent {
   location      String?
 
   participant Participant @relation(fields: [participantId], references: [id])
+
+  @@index([participantId, time])  // Double-badge detection in /api/scan
 }
 
 model Visit {
@@ -288,6 +290,8 @@ model Visit {
 
   participant Participant @relation(fields: [participantId], references: [id])
   event       Event?      @relation(fields: [associatedEventId], references: [id])
+
+  @@index([participantId, departed])  // Active visits lookup in /api/scan
 }
 
 model AuditLog {
