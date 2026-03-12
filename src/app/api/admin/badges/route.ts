@@ -1,30 +1,25 @@
-/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser, requireAdmin } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 
-export async function GET(req: NextRequest) {
-    try {
-        const user = await getCurrentUser();
-        requireAdmin(user);
-
-        // Fetch raw badge events
-        const badges = await prisma.rawBadgeEvent.findMany({
-            take: 200,
-            orderBy: { time: "desc" },
-            include: {
-                participant: {
-                    select: { name: true, email: true },
+export const GET = withAuth(
+    { roles: ['sysadmin', 'boardMember'] },
+    async () => {
+        try {
+            const badges = await prisma.rawBadgeEvent.findMany({
+                take: 200,
+                orderBy: { time: "desc" },
+                include: {
+                    participant: {
+                        select: { name: true, email: true },
+                    },
                 },
-            },
-        });
+            });
 
-        return NextResponse.json({ badges });
-    } catch (err: any) {
-        if (err.message.includes("Unauthorized")) {
-            return NextResponse.json({ error: err.message }, { status: 403 });
+            return NextResponse.json({ badges });
+        } catch (error) {
+            console.error("Fetch badges error:", error);
+            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
-        console.error("Fetch badges error:", err);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
-}
+);

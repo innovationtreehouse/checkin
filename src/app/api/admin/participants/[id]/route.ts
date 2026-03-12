@@ -1,19 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
-// In testing environment, use the mocked getServerSession from next-auth directly, but in Next 15 App router tests it can fail if called without a request. NextAuth is mocked in adminParticipants.test.ts, but we must use it from next-auth.
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import prisma from "@/lib/prisma";
+import { authenticateRequest } from "@/lib/auth";
 
 export async function PUT(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const session = await getServerSession(authOptions);
-    const user = session?.user as any;
-
-    if (!user || (!user.sysadmin && !user.boardMember)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    const auth = await authenticateRequest(request);
+    if (auth.type !== 'session') {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!auth.user.sysadmin && !auth.user.boardMember) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     try {
@@ -25,7 +24,6 @@ export async function PUT(
 
         const body = await request.json();
         
-        // Build the update object with only provided fields
         const updateData: any = {};
         if (body.name !== undefined) updateData.name = body.name;
         if (body.email !== undefined) updateData.email = body.email;

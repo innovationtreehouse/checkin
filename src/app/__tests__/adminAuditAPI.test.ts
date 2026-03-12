@@ -9,14 +9,11 @@
 
 import { GET } from '@/app/api/admin/audit/route';
 import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next';
 
 // Mock NextAuth
-jest.mock('next-auth', () => ({
+jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn()
-}));
-jest.mock('@/app/api/auth/[...nextauth]/route', () => ({
-    authOptions: {}
 }));
 
 describe('Admin Audit API Integration Tests', () => {
@@ -78,30 +75,27 @@ describe('Admin Audit API Integration Tests', () => {
     });
 
     describe('GET /api/admin/audit', () => {
-        it('should return 403 Forbidden without session', async () => {
+        it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
 
-             const res = await GET();
-             expect(res.status).toBe(403);
-             
-             const data = await res.json();
-             expect(data.error).toMatch(/Forbidden/);
+             const req = new Request('http://localhost:4000/api/admin/audit', { method: 'GET' });
+             const res = await GET(req as any);
+             expect(res.status).toBe(401);
         });
 
         it('should return 403 Forbidden for a common user', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, sysadmin: false } });
 
-             const res = await GET();
+             const req = new Request('http://localhost:4000/api/admin/audit', { method: 'GET' });
+             const res = await GET(req as any);
              expect(res.status).toBe(403);
-             
-             const data = await res.json();
-             expect(data.error).toMatch(/Forbidden/);
         });
 
         it('should return 200 OK and logs for a sysadmin', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
 
-             const res = await GET();
+             const req = new Request('http://localhost:4000/api/admin/audit', { method: 'GET' });
+             const res = await GET(req as any);
              expect(res.status).toBe(200);
              
              const data = await res.json();

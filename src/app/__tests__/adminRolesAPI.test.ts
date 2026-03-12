@@ -7,17 +7,13 @@
  * Tests GET and PATCH /api/admin/roles for fetching and updating user roles
  */
 
-import { GET, PATCH } from '@/app/api/admin/roles/route';
+import { GET, POST } from '@/app/api/admin/roles/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
-}));
-
-jest.mock('@/app/api/auth/[...nextauth]/route', () => ({
-    authOptions: {}
 }));
 
 describe('Admin Roles API Integration Tests', () => {
@@ -108,7 +104,7 @@ describe('Admin Roles API Integration Tests', () => {
 
         it('should return all adult participants for a sysadmin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testSysAdminId }
+                user: { id: testSysAdminId, sysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/admin/roles', { method: 'GET' });
@@ -126,16 +122,16 @@ describe('Admin Roles API Integration Tests', () => {
         });
     });
 
-    describe('PATCH /api/admin/roles', () => {
+    describe('POST /api/admin/roles', () => {
         it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
 
              const req = new Request('http://localhost:4000/api/admin/roles', {
-                 method: 'PATCH',
+                 method: 'POST',
                  body: JSON.stringify({ targetUserId: testTargetUserId, boardMember: true })
              });
 
-             const res = await PATCH(req as any);
+             const res = await POST(req as any);
              expect(res.status).toBe(401);
         });
 
@@ -145,39 +141,39 @@ describe('Admin Roles API Integration Tests', () => {
              });
 
              const req = new Request('http://localhost:4000/api/admin/roles', {
-                 method: 'PATCH',
+                 method: 'POST',
                  body: JSON.stringify({ targetUserId: testTargetUserId, boardMember: true })
              });
 
-             const res = await PATCH(req as any);
+             const res = await POST(req as any);
              expect(res.status).toBe(403);
         });
 
         it('should return 400 Bad Request if targetUserId is missing', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testSysAdminId }
+                user: { id: testSysAdminId, sysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/admin/roles', {
-                method: 'PATCH',
+                method: 'POST',
                 body: JSON.stringify({ boardMember: true })
             });
 
-            const res = await PATCH(req as any);
+            const res = await POST(req as any);
             expect(res.status).toBe(400);
         });
 
         it('should return 403 Forbidden when Board Member tries to grant Sysadmin privileges', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testBoardMemberId }
+                user: { id: testBoardMemberId, boardMember: true }
             });
 
             const req = new Request('http://localhost:4000/api/admin/roles', {
-                method: 'PATCH',
+                method: 'POST',
                 body: JSON.stringify({ targetUserId: testTargetUserId, sysadmin: true })
             });
 
-            const res = await PATCH(req as any);
+            const res = await POST(req as any);
             expect(res.status).toBe(403);
             
             const data = await res.json();
@@ -186,15 +182,15 @@ describe('Admin Roles API Integration Tests', () => {
 
         it('should successfully grant boardMember as a Board Member', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testBoardMemberId }
+                user: { id: testBoardMemberId, boardMember: true }
             });
 
             const req = new Request('http://localhost:4000/api/admin/roles', {
-                method: 'PATCH',
+                method: 'POST',
                 body: JSON.stringify({ targetUserId: testTargetUserId, boardMember: true })
             });
 
-            const res = await PATCH(req as any);
+            const res = await POST(req as any);
             expect(res.status).toBe(200);
 
             const data = await res.json();
@@ -207,15 +203,15 @@ describe('Admin Roles API Integration Tests', () => {
 
         it('should successfully grant sysadmin as a Sysadmin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testSysAdminId }
+                user: { id: testSysAdminId, sysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/admin/roles', {
-                method: 'PATCH',
+                method: 'POST',
                 body: JSON.stringify({ targetUserId: testTargetUserId, sysadmin: true })
             });
 
-            const res = await PATCH(req as any);
+            const res = await POST(req as any);
             expect(res.status).toBe(200);
 
             const data = await res.json();

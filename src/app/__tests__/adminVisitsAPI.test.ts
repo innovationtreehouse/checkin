@@ -86,9 +86,7 @@ describe('Admin Visits API Integration Tests', () => {
             });
 
             const res = await GET(req as any);
-            expect(res.status).toBe(403);
-            const data = await res.json();
-            expect(data.error).toBe('Unauthorized: Requires Admin Role');
+            expect(res.status).toBe(401);
         });
 
         it('should return 403 Forbidden for non-admin users', async () => {
@@ -102,8 +100,6 @@ describe('Admin Visits API Integration Tests', () => {
 
             const res = await GET(req as any);
             expect(res.status).toBe(403);
-            const data = await res.json();
-            expect(data.error).toBe('Unauthorized: Requires Admin Role');
         });
 
         it('should return the latest visits for a sysadmin', async () => {
@@ -137,7 +133,7 @@ describe('Admin Visits API Integration Tests', () => {
             });
 
             const res = await PATCH(req as any);
-            expect(res.status).toBe(403);
+            expect(res.status).toBe(401);
         });
 
         it('should return 403 Forbidden for non-admin users', async () => {

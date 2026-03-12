@@ -1,19 +1,15 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import prisma from "@/lib/prisma";
+import { authenticateRequest } from "@/lib/auth";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-        const session = await getServerSession(authOptions);
-        if (!session?.user) {
+        const auth = await authenticateRequest(req);
+        if (auth.type !== 'session') {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-
-        const user = session.user as any;
-        if (!user.sysadmin && !user.boardMember) {
+        if (!auth.user.sysadmin && !auth.user.boardMember) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
@@ -84,8 +80,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }
 
         return NextResponse.json({ success: true, participant: updatedParticipant });
-    } catch (error: any) {
+    } catch (error) {
         console.error("Error updating participant household:", error);
-        return NextResponse.json({ error: `Internal server error: ${error.message}` }, { status: 500 });
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return NextResponse.json({ error: `Internal server error: ${errorMessage}` }, { status: 500 });
     }
 }

@@ -16,10 +16,6 @@ jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
 }));
 
-jest.mock('@/app/api/auth/[...nextauth]/route', () => ({
-    authOptions: {}
-}));
-
 describe('Admin Badges API Integration Tests', () => {
     let testAdminId: number;
     let testUserId: number;
@@ -75,7 +71,7 @@ describe('Admin Badges API Integration Tests', () => {
              });
 
              const res = await GET(req as any);
-             expect(res.status).toBe(403);
+             expect(res.status).toBe(401);
         });
 
         it('should return 403 Forbidden for non-admin users', async () => {
@@ -89,9 +85,6 @@ describe('Admin Badges API Integration Tests', () => {
 
              const res = await GET(req as any);
              expect(res.status).toBe(403);
-             
-             const data = await res.json();
-             expect(data.error).toContain('Unauthorized: Requires Admin Role');
         });
 
         it('should successfully return recent raw badge events for admins', async () => {

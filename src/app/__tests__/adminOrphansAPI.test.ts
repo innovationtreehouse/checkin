@@ -9,15 +9,11 @@
 
 import { GET } from '@/app/api/admin/orphans/route';
 import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next';
 
 // Mock NextAuth
-jest.mock('next-auth', () => ({
+jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
-}));
-
-jest.mock('@/app/api/auth/[...nextauth]/route', () => ({
-    authOptions: {}
 }));
 
 describe('Admin Orphans API Integration Tests', () => {

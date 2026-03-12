@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import '@testing-library/jest-dom'
 
 // Polyfill text encoding
@@ -39,3 +40,14 @@ jest.mock('next-auth', () => {
     getServerSession: jest.fn(() => Promise.resolve(null)),
   };
 });
+
+// Mock next-auth/next (used by auth.ts authenticateRequest)
+jest.mock('next-auth/next', () => ({
+  getServerSession: jest.fn(() => Promise.resolve(null)),
+}));
+
+// Mock auth-options to prevent cascading ESM imports
+// (GoogleProvider → openid-client → jose uses ESM exports that Jest can't handle)
+jest.mock('@/lib/auth-options', () => ({
+  authOptions: {},
+}));

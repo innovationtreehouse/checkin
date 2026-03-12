@@ -16,10 +16,6 @@ jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
 }));
 
-jest.mock('@/app/api/auth/[...nextauth]/route', () => ({
-    authOptions: {}
-}));
-
 describe('Admin Bulk Import API Integration Tests', () => {
     let testAdminId: number;
     let testUserId: number;

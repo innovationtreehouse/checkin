@@ -1,110 +1,103 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { withAuth } from "@/lib/auth";
 
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getServerSession(authOptions);
-        if (!session || !session.user || !(session.user as any).id) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const GET = withAuth(
+    { roles: ['sysadmin', 'boardMember'] },
+    async () => {
+        try {
+            const eighteenYearsAgo = new Date();
+            eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+
+            const participants = await prisma.participant.findMany({
+                where: {
+                    OR: [
+                        { dob: { lte: eighteenYearsAgo } },
+                        { dob: null }
+                    ]
+                },
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    sysadmin: true,
+                    boardMember: true,
+                    keyholder: true,
+                    shopSteward: true,
+                },
+                orderBy: { name: "asc" },
+            });
+            return NextResponse.json({ participants });
+        } catch (error) {
+            console.error("Error fetching roles:", error);
+            return NextResponse.json({ error: "Internal server error" }, { status: 500 });
         }
-
-        const userId = (session.user as any).id;
-        const currentUser = await prisma.participant.findUnique({ where: { id: userId } });
-
-        if (!currentUser?.sysadmin && !currentUser?.boardMember) {
-            return NextResponse.json({ error: "Forbidden: Requires Sysadmin or Board Member privileges" }, { status: 403 });
-        }
-
-        // Filter out students (under 18)
-        const eighteenYearsAgo = new Date();
-        eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
-
-        // Fetch all adult users with their roles, ordered by name
-        const participants = await prisma.participant.findMany({
-            where: {
-                OR: [
-                    { dob: { lte: eighteenYearsAgo } },
-                    { dob: null, email: { not: null } } // fallback: adults likely have emails, students shouldn't
-                ]
-            },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                sysadmin: true,
-                boardMember: true,
-                keyholder: true,
-                shopSteward: true,
-            },
-            orderBy: {
-                name: 'asc'
-            }
-        });
-
-        return NextResponse.json({ participants }, { status: 200 });
-
-    } catch (error: any) {
-        console.error("Admin Roles GET Error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
-}
+);
 
-export async function PATCH(req: NextRequest) {
-    try {
-        const session = await getServerSession(authOptions);
-        if (!session || !session.user || !(session.user as any).id) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
+export const POST = withAuth(
+    { roles: ['sysadmin', 'boardMember'] },
+    async (req, auth) => {
+        try {
+            const body = await req.json();
+            const { targetUserId, ...roleUpdates } = body;
 
-        const userId = (session.user as any).id;
-        const currentUser = await prisma.participant.findUnique({ where: { id: userId } });
-
-        if (!currentUser?.sysadmin && !currentUser?.boardMember) {
-            return NextResponse.json({ error: "Forbidden: Requires Sysadmin or Board Member privileges" }, { status: 403 });
-        }
-
-        const body = await req.json();
-        const { targetUserId, sysadmin, boardMember, keyholder, shopSteward } = body;
-
-        if (!targetUserId) {
-            return NextResponse.json({ error: "targetUserId is required" }, { status: 400 });
-        }
-
-        // Only sysadmins can grant or revoke sysadmin privileges
-        if (!currentUser.sysadmin && sysadmin !== undefined) {
-            const targetCurrentState = await prisma.participant.findUnique({ where: { id: targetUserId } });
-            if (targetCurrentState?.sysadmin !== sysadmin) {
-                return NextResponse.json({ error: "Only Sysadmins can modify sysadmin privileges" }, { status: 403 });
+            if (!targetUserId) {
+                return NextResponse.json({ error: "Missing 'targetUserId'" }, { status: 400 });
             }
+
+            // Board Members cannot modify sysadmin privileges
+            if (auth.type === 'session' && !auth.user.sysadmin && roleUpdates.sysadmin !== undefined) {
+                return NextResponse.json(
+                    { error: "Only Sysadmins can modify sysadmin privileges" },
+                    { status: 403 }
+                );
+            }
+
+            const allowedFields = ["sysadmin", "boardMember", "keyholder", "shopSteward"];
+            const updateData: any = {};
+            for (const field of allowedFields) {
+                if (roleUpdates[field] !== undefined) {
+                    updateData[field] = Boolean(roleUpdates[field]);
+                }
+            }
+
+            if (Object.keys(updateData).length === 0) {
+                return NextResponse.json({ error: "No valid role fields provided" }, { status: 400 });
+            }
+
+            const updated = await prisma.participant.update({
+                where: { id: targetUserId },
+                data: updateData,
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    sysadmin: true,
+                    boardMember: true,
+                    keyholder: true,
+                    shopSteward: true,
+                },
+            });
+
+            // Log the role change
+            if (auth.type === 'session') {
+                await prisma.auditLog.create({
+                    data: {
+                        actorId: auth.user.id,
+                        action: "EDIT",
+                        tableName: "Participant",
+                        affectedEntityId: targetUserId,
+                        newData: updateData,
+                    },
+                });
+            }
+
+            return NextResponse.json({ message: "Roles updated successfully", user: updated });
+        } catch (error) {
+            console.error("Error updating role:", error);
+            return NextResponse.json({ error: "Internal server error" }, { status: 500 });
         }
-
-        const updatedUser = await prisma.participant.update({
-            where: { id: targetUserId },
-            data: {
-                sysadmin: sysadmin !== undefined ? sysadmin : undefined,
-                boardMember: boardMember !== undefined ? boardMember : undefined,
-                keyholder: keyholder !== undefined ? keyholder : undefined,
-                shopSteward: shopSteward !== undefined ? shopSteward : undefined,
-            }
-        });
-
-        await prisma.auditLog.create({
-            data: {
-                actorId: userId,
-                action: "EDIT",
-                tableName: "Participant.Roles",
-                affectedEntityId: targetUserId,
-                newData: JSON.stringify({ sysadmin, boardMember, keyholder, shopSteward })
-            }
-        });
-
-        return NextResponse.json({ message: "Roles updated successfully", user: updatedUser }, { status: 200 });
-
-    } catch (error: any) {
-        console.error("Admin Roles PATCH Error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
-}
+);

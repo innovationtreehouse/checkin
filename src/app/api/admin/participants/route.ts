@@ -1,17 +1,13 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "../../auth/[...nextauth]/route";
+import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { authenticateRequest } from "@/lib/auth";
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    interface SessionUser {
-        sysadmin?: boolean;
-        boardMember?: boolean;
+export async function POST(req: NextRequest) {
+    const auth = await authenticateRequest(req);
+    if (auth.type !== 'session') {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    if (!session || (!(session.user as SessionUser)?.sysadmin && !(session.user as SessionUser)?.boardMember)) {
+    if (!auth.user.sysadmin && !auth.user.boardMember) {
         return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 });
     }
 
@@ -21,7 +17,6 @@ export async function POST(req: Request) {
 
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-        // Either email, parentEmail, or householdId must be provided
         if (!email && !parentEmail && !householdId) {
             return NextResponse.json({ error: "Email, Parent Email, or Household assignment is required" }, { status: 400 });
         }
@@ -34,7 +29,6 @@ export async function POST(req: Request) {
              return NextResponse.json({ error: "Invalid parent email format" }, { status: 400 });
         }
 
-        // Check if user already exists
         if (email) {
             const existingUser = await prisma.participant.findUnique({
                 where: { email }
@@ -47,14 +41,12 @@ export async function POST(req: Request) {
 
         let householdIdToAssign: number | null = null;
 
-        // Handle parent logic
         if (parentEmail) {
             let parent = await prisma.participant.findUnique({
                 where: { email: parentEmail }
             });
 
             if (!parent) {
-                // Create a placeholder parent if they don't exist
                 parent = await prisma.participant.create({
                     data: {
                         email: parentEmail,
@@ -62,7 +54,6 @@ export async function POST(req: Request) {
                 });
             }
 
-            // Ensure parent has a household
             if (!parent.householdId) {
                 const parentLastName = (parent.name || "").trim().split(/\s+/).pop() || "";
                 const household = await prisma.household.create({
@@ -79,7 +70,6 @@ export async function POST(req: Request) {
                 });
                 householdIdToAssign = household.id;
 
-                // Create a HOUSEHOLD membership
                 await prisma.membership.create({
                     data: {
                         householdId: household.id,
@@ -101,14 +91,12 @@ export async function POST(req: Request) {
             }
         });
 
-        // If an explicit household was provided, use it and skip auto-creation
         if (householdId && !householdIdToAssign) {
             await prisma.participant.update({
                 where: { id: newParticipant.id },
                 data: { householdId: householdId }
             });
         }
-        // If this is a lone adult (no parent email, no explicit household), create their own household
         else if (!parentEmail && !householdId) {
             const lastName = (name || "").trim().split(/\s+/).pop() || "";
             const newHousehold = await prisma.household.create({
@@ -125,7 +113,6 @@ export async function POST(req: Request) {
                 data: { householdId: newHousehold.id }
             });
 
-            // Create a HOUSEHOLD membership
             await prisma.membership.create({
                 data: {
                     householdId: newHousehold.id,

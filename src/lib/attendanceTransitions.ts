@@ -1,6 +1,34 @@
 import prisma from "@/lib/prisma";
 
 /**
+ * Finds all program IDs that a participant is associated with
+ * (as enrolled participant, volunteer, or lead mentor).
+ * Uses Promise.all for parallel queries.
+ */
+async function getRelevantProgramIds(participantId: number): Promise<number[]> {
+    const [participantPrograms, volunteerPrograms, leadPrograms] = await Promise.all([
+        prisma.programParticipant.findMany({
+            where: { participantId },
+            select: { programId: true }
+        }),
+        prisma.programVolunteer.findMany({
+            where: { participantId },
+            select: { programId: true }
+        }),
+        prisma.program.findMany({
+            where: { leadMentorId: participantId },
+            select: { id: true }
+        }),
+    ]);
+
+    return [
+        ...participantPrograms.map(p => p.programId),
+        ...volunteerPrograms.map(v => v.programId),
+        ...leadPrograms.map(p => p.id)
+    ];
+}
+
+/**
  * Finds the most relevant event for a participant at a given time.
  * Logic:
  * 1. Checks what programs the participant is enrolled in (or volunteering for).
@@ -10,27 +38,7 @@ export async function findAssociatedEventAt(participantId: number, targetTime: D
     // A target event can be one that is currently ongoing OR starting within 4 hours of targetTime
     const timePlus4Hours = new Date(targetTime.getTime() + 4 * 60 * 60 * 1000);
 
-    // Find programs participant is enrolled in or volunteering for
-    const participantPrograms = await prisma.programParticipant.findMany({
-        where: { participantId },
-        select: { programId: true }
-    });
-    
-    const volunteerPrograms = await prisma.programVolunteer.findMany({
-        where: { participantId },
-        select: { programId: true }
-    });
-
-    const leadPrograms = await prisma.program.findMany({
-        where: { leadMentorId: participantId },
-        select: { id: true }
-    });
-
-    const relevantProgramIds = [
-        ...participantPrograms.map(p => p.programId),
-        ...volunteerPrograms.map(v => v.programId),
-        ...leadPrograms.map(p => p.id)
-    ];
+    const relevantProgramIds = await getRelevantProgramIds(participantId);
 
     if (relevantProgramIds.length === 0) {
         return null;
@@ -79,27 +87,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date) 
 
     const { participantId, arrived } = originalVisit;
 
-    // Find programs participant is enrolled in or volunteering for
-    const participantPrograms = await prisma.programParticipant.findMany({
-        where: { participantId },
-        select: { programId: true }
-    });
-    
-    const volunteerPrograms = await prisma.programVolunteer.findMany({
-        where: { participantId },
-        select: { programId: true }
-    });
-
-    const leadPrograms = await prisma.program.findMany({
-        where: { leadMentorId: participantId },
-        select: { id: true }
-    });
-
-    const relevantProgramIds = [
-        ...participantPrograms.map(p => p.programId),
-        ...volunteerPrograms.map(v => v.programId),
-        ...leadPrograms.map(p => p.id)
-    ];
+    const relevantProgramIds = await getRelevantProgramIds(participantId);
 
     if (relevantProgramIds.length === 0) {
         // No programs enrolled, just close the visit normally
