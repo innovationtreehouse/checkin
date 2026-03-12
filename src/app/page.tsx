@@ -140,24 +140,40 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Check-in Toggle Button */}
+              {/* Check-in Toggle Button — in production, only privileged users can self-check-in from the web */}
               {isCheckedIn !== null && (
-                <button
-                  className="glass-button"
-                  onClick={handleToggleCheckin}
-                  disabled={loading}
-                  style={{
+                ((session.user as any)?.sysadmin || (session.user as any)?.boardMember || (session.user as any)?.keyholder || process.env.NEXT_PUBLIC_DEV_AUTH) ? (
+                  <button
+                    className="glass-button"
+                    onClick={handleToggleCheckin}
+                    disabled={loading}
+                    style={{
+                      width: '100%',
+                      padding: '1.5rem',
+                      fontSize: '1.25rem',
+                      fontWeight: 'bold',
+                      background: isCheckedIn ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                      borderColor: isCheckedIn ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.4)',
+                      boxShadow: isCheckedIn ? '0 0 15px rgba(239, 68, 68, 0.3)' : '0 0 15px rgba(34, 197, 94, 0.3)',
+                      gridColumn: '1 / -1'
+                    }}>
+                    {loading ? 'Processing...' : isCheckedIn ? 'Check Out' : 'Check In'}
+                  </button>
+                ) : (
+                  <div style={{
                     width: '100%',
-                    padding: '1.5rem',
-                    fontSize: '1.25rem',
-                    fontWeight: 'bold',
-                    background: isCheckedIn ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
-                    borderColor: isCheckedIn ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.4)',
-                    boxShadow: isCheckedIn ? '0 0 15px rgba(239, 68, 68, 0.3)' : '0 0 15px rgba(34, 197, 94, 0.3)',
-                    gridColumn: '1 / -1'
+                    padding: '1.25rem',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '12px',
+                    textAlign: 'center',
+                    gridColumn: '1 / -1',
+                    color: 'var(--color-text-muted)',
+                    fontSize: '0.95rem',
                   }}>
-                  {loading ? 'Processing...' : isCheckedIn ? 'Check Out' : 'Check In'}
-                </button>
+                    📛 Please use the kiosk badge scanner to check in and out.
+                  </div>
+                )
               )}
 
               {/* Board Directory Button for Keyholders/Admins */}

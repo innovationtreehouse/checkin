@@ -32,6 +32,12 @@ export async function POST(req: NextRequest) {
             const isSelf = participantId === Number(user.id);
             const isAdmin = user.sysadmin || user.keyholder || user.boardMember;
 
+            // In production, only privileged users may self-check-in via web.
+            // Everyone else must use the kiosk badge scanner.
+            if (isSelf && !isAdmin && process.env.NODE_ENV === 'production') {
+                return apiError("Please use the kiosk badge scanner to check in.", 403);
+            }
+
             if (!isSelf && !isAdmin) {
                 if (user.householdId && user.householdLead) {
                     pendingHouseholdCheck = true;
