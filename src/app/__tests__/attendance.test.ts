@@ -15,7 +15,7 @@ jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
 }));
 jest.mock('@/lib/verify-kiosk', () => ({
-    getKioskPublicKey: jest.fn().mockReturnValue(Buffer.from('mock-key')),
+    getKioskPublicKeys: jest.fn().mockReturnValue([Buffer.from('mock-key')]),
     verifyKioskSignature: jest.fn()
 }));
 

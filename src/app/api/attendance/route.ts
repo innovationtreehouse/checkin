@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
-import { getKioskPublicKey, verifyKioskSignature } from "@/lib/verify-kiosk";
+import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance, isStudentByDob } from "@/lib/getFullAttendance";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { logBackendError } from "@/lib/logger";
@@ -14,11 +14,11 @@ export async function GET(req: NextRequest) {
         const session = await getServerSession(authOptions);
         const user = session?.user as any;
         const hasKioskHeaders = req.headers.get("x-kiosk-signature");
-        const pubKey = getKioskPublicKey();
+        const pubKeys = getKioskPublicKeys();
 
         let isKiosk = false;
 
-        if (!session && pubKey && hasKioskHeaders) {
+        if (!session && pubKeys.length > 0 && hasKioskHeaders) {
             // Kiosk request — verify signature
             const result = verifyKioskSignature(
                 "GET",
@@ -26,16 +26,16 @@ export async function GET(req: NextRequest) {
                 "",
                 req.headers.get("x-kiosk-timestamp"),
                 req.headers.get("x-kiosk-signature"),
-                pubKey
+                pubKeys
             );
             if (!result.ok) {
                 return NextResponse.json({ error: result.error }, { status: result.status });
             }
             isKiosk = true;
-        } else if (!session && pubKey) {
+        } else if (!session && pubKeys.length > 0) {
             // No session and no kiosk headers — reject
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        } else if (!session && !pubKey) {
+        } else if (!session && pubKeys.length === 0) {
             // Dev mode: no pubKey configured, treat as kiosk (allow all)
             isKiosk = true;
         }

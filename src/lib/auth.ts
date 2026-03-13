@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth-options';
-import { getKioskPublicKey, verifyKioskSignature } from './verify-kiosk';
+import { getKioskPublicKeys, verifyKioskSignature } from './verify-kiosk';
 import { config } from './config';
 import { apiError } from './api-response';
 import type { SessionUser } from '@/types/participant';
@@ -15,20 +15,20 @@ export async function authenticateRequest(
     body?: string
 ): Promise<AuthResult> {
     // 1. Try kiosk signature
-    const pubKey = getKioskPublicKey();
+    const pubKeys = getKioskPublicKeys();
     const hasKioskHeaders = req.headers.get('x-kiosk-signature');
 
-    if (pubKey && hasKioskHeaders) {
+    if (pubKeys.length > 0 && hasKioskHeaders) {
         const method = req.method;
         const path = new URL(req.url).pathname;
         const result = verifyKioskSignature(
             method, path, body || '',
             req.headers.get('x-kiosk-timestamp'),
             req.headers.get('x-kiosk-signature'),
-            pubKey
+            pubKeys
         );
         if (result.ok) return { type: 'kiosk' };
-    } else if (!pubKey && config.isDev) {
+    } else if (pubKeys.length === 0 && config.isDev) {
         // Dev mode: treat as kiosk if no key configured
         if (hasKioskHeaders || !req.headers.get('cookie')) {
             return { type: 'kiosk' };

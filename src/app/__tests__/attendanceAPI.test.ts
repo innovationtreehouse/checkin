@@ -14,7 +14,7 @@ import * as verifyKiosk from '@/lib/verify-kiosk';
 
 // Mock Kiosk util
 jest.mock('@/lib/verify-kiosk', () => ({
-    getKioskPublicKey: jest.fn(),
+    getKioskPublicKeys: jest.fn(),
     verifyKioskSignature: jest.fn()
 }));
 
@@ -147,7 +147,7 @@ describe('General Attendance API Integration Tests', () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
              
              // Mock Kiosk setup enforcing signatures
-             (verifyKiosk.getKioskPublicKey as jest.Mock).mockReturnValue(Buffer.from('mock-public-key'));
+             (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([Buffer.from('mock-public-key')]);
 
              const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
              const res = await GET(req as any);
@@ -159,7 +159,7 @@ describe('General Attendance API Integration Tests', () => {
         it('should reject invalid Kiosk signatures', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
              
-             (verifyKiosk.getKioskPublicKey as jest.Mock).mockReturnValue(Buffer.from('mock-public-key'));
+             (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([Buffer.from('mock-public-key')]);
              (verifyKiosk.verifyKioskSignature as jest.Mock).mockReturnValue({ ok: false, status: 403, error: 'Invalid signature' });
 
              const req = new Request(`http://localhost:4000/api/attendance`, { 

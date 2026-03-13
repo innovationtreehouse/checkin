@@ -10,17 +10,33 @@ import { config } from "./config";
  * Rejects if:
  *  - Missing headers
  *  - Timestamp older than MAX_AGE_SECONDS
- *  - Invalid signature
+ *  - Invalid signature against ALL configured public keys
  *
- * Requires KIOSK_PUBLIC_KEY env var (hex-encoded 32-byte Ed25519 public key).
+ * Supports multiple comma-separated public keys in KIOSK_PUBLIC_KEY env var.
+ * Each key should be a hex-encoded 32-byte Ed25519 public key.
  */
 
 const MAX_AGE_SECONDS = 60;
 
+/**
+ * Parse KIOSK_PUBLIC_KEY env var into an array of Buffers.
+ * Supports comma-separated keys for multiple kiosks / key rotation.
+ * Returns empty array if not configured.
+ */
+export function getKioskPublicKeys(): Buffer[] {
+    const raw = config.kioskPublicKey();
+    if (!raw) return [];
+    return raw
+        .split(",")
+        .map(k => k.trim())
+        .filter(k => k.length > 0)
+        .map(k => Buffer.from(k, "hex"));
+}
+
+/** @deprecated Use getKioskPublicKeys() instead */
 export function getKioskPublicKey(): Buffer | null {
-    const hex = config.kioskPublicKey();
-    if (!hex) return null;
-    return Buffer.from(hex, "hex");
+    const keys = getKioskPublicKeys();
+    return keys.length > 0 ? keys[0] : null;
 }
 
 export type VerifyResult =
@@ -33,11 +49,14 @@ export function verifyKioskSignature(
     body: string,
     timestampHeader: string | null,
     signatureHeader: string | null,
-    publicKey: Buffer
+    publicKeys: Buffer | Buffer[]
 ): VerifyResult {
     if (!timestampHeader || !signatureHeader) {
         return { ok: false, status: 401, error: "Missing kiosk signature headers" };
     }
+
+    // Normalize to array
+    const keys = Array.isArray(publicKeys) ? publicKeys : [publicKeys];
 
     // Check timestamp freshness
     const ts = parseInt(timestampHeader, 10);
@@ -60,31 +79,31 @@ export function verifyKioskSignature(
         return { ok: false, status: 401, error: "Malformed signature" };
     }
 
-    // Verify Ed25519
-    try {
-        const ok = crypto.verify(
-            null, // Ed25519 doesn't use a separate hash algorithm
-            message,
-            {
-                key: crypto.createPublicKey({
-                    key: Buffer.concat([
-                        // Ed25519 DER prefix for a 32-byte public key
-                        Buffer.from("302a300506032b6570032100", "hex"),
-                        publicKey,
-                    ]),
-                    format: "der",
-                    type: "spki",
-                }),
-            },
-            sigBytes
-        );
-        if (!ok) {
-            return { ok: false, status: 401, error: "Invalid signature" };
+    // Try each public key — succeed if ANY matches
+    for (const publicKey of keys) {
+        try {
+            const ok = crypto.verify(
+                null, // Ed25519 doesn't use a separate hash algorithm
+                message,
+                {
+                    key: crypto.createPublicKey({
+                        key: Buffer.concat([
+                            // Ed25519 DER prefix for a 32-byte public key
+                            Buffer.from("302a300506032b6570032100", "hex"),
+                            publicKey,
+                        ]),
+                        format: "der",
+                        type: "spki",
+                    }),
+                },
+                sigBytes
+            );
+            if (ok) return { ok: true };
+        } catch (e) {
+            // Key failed — try next one
+            console.error("Signature verification error with key:", e);
         }
-    } catch (e) {
-        console.error("Signature verification error:", e);
-        return { ok: false, status: 401, error: "Signature verification failed" };
     }
 
-    return { ok: true };
+    return { ok: false, status: 401, error: "Invalid signature" };
 }

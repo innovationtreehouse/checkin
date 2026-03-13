@@ -9,7 +9,7 @@
 import { GET } from '@/app/api/kiosk/certifications/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
-import { getKioskPublicKey, verifyKioskSignature } from '@/lib/verify-kiosk';
+import { getKioskPublicKeys, verifyKioskSignature } from '@/lib/verify-kiosk';
 import { NextRequest } from 'next/server';
 
 // Mock NextAuth
@@ -18,7 +18,7 @@ jest.mock('next-auth/next', () => ({
 }));
 // Mock Kiosk Verification
 jest.mock('@/lib/verify-kiosk', () => ({
-    getKioskPublicKey: jest.fn(),
+    getKioskPublicKeys: jest.fn(),
     verifyKioskSignature: jest.fn()
 }));
 
@@ -98,7 +98,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
     describe('GET /api/kiosk/certifications', () => {
         it('should return 401 Unauthorized without session or Kiosk header', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
-             (getKioskPublicKey as jest.Mock).mockReturnValue('mock-pub-key');
+             (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
 
              const req = new Request('http://localhost:4000/api/kiosk/certifications', { method: 'GET' });
              const res = await GET(req as unknown as NextRequest);
@@ -107,7 +107,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
 
         it('should reject invalid Kiosk signatures', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
-             (getKioskPublicKey as jest.Mock).mockReturnValue('mock-pub-key');
+             (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
              (verifyKioskSignature as jest.Mock).mockReturnValue({ ok: false, status: 401, error: 'Invalid Signature' });
 
              const req = new Request('http://localhost:4000/api/kiosk/certifications', { 
@@ -126,7 +126,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
 
         it('should return active visits and tools if Kiosk signature is valid', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
-             (getKioskPublicKey as jest.Mock).mockReturnValue('mock-pub-key');
+             (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
              (verifyKioskSignature as jest.Mock).mockReturnValue({ ok: true });
 
              const req = new Request('http://localhost:4000/api/kiosk/certifications', { 
@@ -155,7 +155,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
 
         it('should return active visits and tools for authenticated web users', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
-            (getKioskPublicKey as jest.Mock).mockReturnValue('mock-pub-key');
+            (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
 
             const req = new Request('http://localhost:4000/api/kiosk/certifications', { method: 'GET' });
             const res = await GET(req as unknown as NextRequest);
