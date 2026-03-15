@@ -40,7 +40,7 @@ function NavBarInner() {
                     My Household
                 </Link>
             )}
-            {(session?.user as SessionUser)?.sysadmin || (session?.user as SessionUser)?.boardMember ? (
+            {session ? (
                 <Link href="/programs" onClick={closeMobileMenu} style={{ color: pathname === '/programs' ? 'white' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
                     Programs
                 </Link>

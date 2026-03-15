@@ -21,10 +21,14 @@ export default function AdminLayout({
       router.push("/");
     } else if (status === "authenticated") {
       const user = session?.user as {sysadmin?: boolean; boardMember?: boolean; keyholder?: boolean};
-      const isAuthorized = user?.sysadmin || user?.boardMember || user?.keyholder;
-      if (!isAuthorized) {
+      const isAuthorizedGlobalAdmin = user?.sysadmin || user?.boardMember || user?.keyholder;
+      const isProgramFlow = pathname?.startsWith("/admin/programs") || pathname?.match(/^\/admin\/events\/(\d+|new)/);
+
+      if (!isAuthorizedGlobalAdmin && !isProgramFlow) {
+        // Basic participants are NOT allowed in general admin areas
         router.push("/");
-      } else if (user?.keyholder && !user?.sysadmin && !user?.boardMember && pathname !== "/admin/emergency-contacts") {
+      } else if (user?.keyholder && !user?.sysadmin && !user?.boardMember && pathname !== "/admin/emergency-contacts" && !isProgramFlow) {
+        // Keyholders who try to access other admin pages get sent to emergency contacts (unless they are doing program stuff)
         router.push("/admin/emergency-contacts");
       }
     }
@@ -41,7 +45,9 @@ export default function AdminLayout({
   }
 
   const user = session?.user as {sysadmin?: boolean; boardMember?: boolean; keyholder?: boolean};
-  if (!session || (!user?.sysadmin && !user?.boardMember && !user?.keyholder)) {
+  const isProgramFlow = pathname?.startsWith("/admin/programs") || pathname?.match(/^\/admin\/events\/(\d+|new)/);
+
+  if (!session || (!user?.sysadmin && !user?.boardMember && !user?.keyholder && !isProgramFlow)) {
     return null;
   }
 
@@ -65,13 +71,12 @@ export default function AdminLayout({
       links: [
         { name: "Participants", href: "/admin/participants", icon: "👥" },
         { name: "Manage Memberships", href: "/admin/households", icon: "🏠" },
+        { name: "Pending Participants", href: "/admin/programs/pending", icon: "⏳" },
         { name: "Emergency Contacts", href: "/admin/emergency-contacts", icon: "🚑" },
         { name: "Role Assignment", href: "/admin/roles", icon: "🔐" },
       ],
     },
   ];
-
-  const isProgramFlow = pathname?.startsWith("/admin/programs") || pathname?.match(/^\/admin\/events\/(\d+|new)/);
 
   if (isProgramFlow) {
     return <>{children}</>;

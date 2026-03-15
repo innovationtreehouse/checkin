@@ -27,7 +27,7 @@ export default function DevLoginPicker() {
     const [signingIn, setSigningIn] = useState<string | null>(null);
 
     useEffect(() => {
-        fetch("/api/auth/dev-personas")
+        fetch("/api/auth/dev-personas", { cache: "no-store" })
             .then((res) => res.json())
             .then((data) => {
                 setPersonas(data.personas || []);

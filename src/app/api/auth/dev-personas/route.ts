@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/auth/dev-personas
  *
@@ -8,8 +10,8 @@ import prisma from "@/lib/prisma";
  * with their role flags for the dev login picker.
  */
 export async function GET() {
-    // Block in production
-    if (process.env.NODE_ENV === "production") {
+    // Block if dev auth is not explicitly enabled
+    if (!process.env.NEXT_PUBLIC_DEV_AUTH) {
         return NextResponse.json({ error: "Not available" }, { status: 404 });
     }
 

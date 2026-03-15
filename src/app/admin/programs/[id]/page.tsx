@@ -539,6 +539,23 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                                 </label>
                                 <input type="number" className="glass-input" value={maxParticipants} onChange={e => setMaxParticipants(e.target.value)} placeholder="e.g. 20" style={{ width: '100%', padding: '0.75rem' }} />
                             </div>
+                            
+                            <div style={{ display: 'flex', gap: '1rem', gridColumn: '1 / -1', flexWrap: 'wrap' }}>
+                                <div style={{ flex: '1 1 200px', minWidth: '200px' }}>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
+                                        Member Price ($)
+                                        {program.memberPrice !== null && <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: 'var(--color-primary)' }}>(Current: ${program.memberPrice})</span>}
+                                    </label>
+                                    <input type="number" className="glass-input" value={memberPrice} onChange={e => setMemberPrice(e.target.value)} disabled={!isSysAdminOrBoard} style={{ width: '100%', padding: '0.75rem', boxSizing: 'border-box', opacity: !isSysAdminOrBoard ? 0.5 : 1 }} title={!isSysAdminOrBoard ? "Only Board Members can alter program pricing." : ""} />
+                                </div>
+                                <div style={{ flex: '1 1 200px', minWidth: '200px' }}>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
+                                        Non-Member Price ($)
+                                        {program.nonMemberPrice !== null && <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: 'var(--color-primary)' }}>(Current: ${program.nonMemberPrice})</span>}
+                                    </label>
+                                    <input type="number" className="glass-input" value={nonMemberPrice} onChange={e => setNonMemberPrice(e.target.value)} disabled={!isSysAdminOrBoard} style={{ width: '100%', padding: '0.75rem', boxSizing: 'border-box', opacity: !isSysAdminOrBoard ? 0.5 : 1 }} title={!isSysAdminOrBoard ? "Only Board Members can alter program pricing." : ""} />
+                                </div>
+                            </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <input type="checkbox" id="memberOnly" checked={memberOnly} onChange={e => setMemberOnly(e.target.checked)} style={{ width: '1.2rem', height: '1.2rem' }} />

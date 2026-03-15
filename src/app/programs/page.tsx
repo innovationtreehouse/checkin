@@ -32,15 +32,7 @@ export default function PublicProgramsDirectory() {
 
     const isAuthorized = session && ((session.user as any)?.sysadmin || (session.user as any)?.boardMember);
 
-    useEffect(() => {
-        if (status === 'unauthenticated') {
-            // Wait for session to load before redirecting
-            return;
-        }
-        if (status === 'authenticated' && !isAuthorized) {
-            import('next/navigation').then(m => m.redirect('/'));
-        }
-    }, [status, isAuthorized]);
+
 
     useEffect(() => {
         const fetchPrograms = async () => {
