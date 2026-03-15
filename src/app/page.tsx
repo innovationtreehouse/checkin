@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useSession, signIn, signOut } from "next-auth/react";
 import styles from './page.module.css';
 import DevLoginPicker from '@/components/DevLoginPicker';
+import { config } from '@/lib/config';
 
 export default function Home() {
   const router = useRouter();
@@ -104,7 +105,7 @@ export default function Home() {
     <main className={styles.main}>
       <div className={`glass-container animate-float ${styles.heroContainer}`}>
         <h1 className="text-gradient" style={{ fontSize: '3rem', margin: '0 0 1rem 0' }}>
-          CheckMeIn
+          {config.isDev ? 'CMI-dev' : 'CheckMeIn'}
         </h1>
         <p style={{ color: 'var(--color-text-muted)', fontSize: '1.25rem', marginBottom: '2rem' }}>
           The elegant next-generation facility check-in system.
