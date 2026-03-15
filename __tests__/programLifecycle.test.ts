@@ -68,7 +68,8 @@ describe('Program Lifecycle Integration Tests', () => {
                 nonMemberPrice: 100,
                 shopifyProductId: "test-prod",
                 shopifyMemberVariantId: "test-mem-var",
-                shopifyNonMemberVariantId: "test-non-var"
+                shopifyNonMemberVariantId: "test-non-var",
+                enrollmentStatus: "OPEN"
             }
         });
         testProgramId = program.id;
@@ -147,7 +148,7 @@ describe('Program Lifecycle Integration Tests', () => {
         mockGetSession.mockResolvedValue({ user: { id: boardAdminId, boardMember: true } });
 
         // Clean previous runs
-        await prisma.programParticipant.deleteMany({ where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } } });
+        await prisma.programParticipant.deleteMany({ where: { programId: testProgramId, participantId: testParticipantId } });
 
         const req = new Request(`http://localhost/api/programs/${testProgramId}/participants`, {
             method: 'POST',
@@ -167,9 +168,11 @@ describe('Program Lifecycle Integration Tests', () => {
 
     it('Shopify Webhook should mark a PENDING participant as ACTIVE', async () => {
         // 1. Reset user to PENDING state manually to simulate self-enroll flow
-        await prisma.programParticipant.update({
+        // First, recreate or ensure it exists from the previous test
+        await prisma.programParticipant.upsert({
             where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } },
-            data: { status: 'PENDING', pendingSince: new Date() }
+            update: { status: 'PENDING', pendingSince: new Date() },
+            create: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: new Date() }
         });
 
         // 2. Build Shopify webhook payload
@@ -212,9 +215,10 @@ describe('Program Lifecycle Integration Tests', () => {
         const eightDaysAgo = new Date();
         eightDaysAgo.setDate(eightDaysAgo.getDate() - 8);
 
-        await prisma.programParticipant.update({
+        await prisma.programParticipant.upsert({
              where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } },
-             data: { status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: false }
+             update: { status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: false },
+             create: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: false }
         });
 
         let req = new Request(`http://localhost/api/cron/pending-participants`, {
