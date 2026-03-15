@@ -1,11 +1,6 @@
 import prisma from "@/lib/prisma";
 import { isMinor } from "@/lib/time";
 
-/**
- * @deprecated Use isMinor() from @/lib/time instead.
- */
-export const isStudentByDob = isMinor;
-
 export async function getFullAttendance() {
     const activeVisits = await prisma.visit.findMany({
         where: { departed: null },
