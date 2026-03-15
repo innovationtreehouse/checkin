@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const xlsx = require('xlsx');
 const path = require('path');
 

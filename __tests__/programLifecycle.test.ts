@@ -29,7 +29,7 @@ describe('Program Lifecycle Integration Tests', () => {
             data: {
                 name: "Board Tester",
                 email: "board@test.com",
-                authId: "test-auth-board",
+                googleId: "test-auth-board",
                 sysadmin: false,
                 boardMember: true,
                 dob: new Date('1990-01-01')
@@ -42,7 +42,7 @@ describe('Program Lifecycle Integration Tests', () => {
             data: {
                 name: "Mentor Tester",
                 email: "mentor@test.com",
-                authId: "test-auth-mentor",
+                googleId: "test-auth-mentor",
                 dob: new Date('1985-01-01')
             }
         });
@@ -53,7 +53,7 @@ describe('Program Lifecycle Integration Tests', () => {
             data: {
                 name: "Standard Tester",
                 email: "participant@test.com",
-                authId: "test-auth-std",
+                googleId: "test-auth-std",
                 dob: new Date('2000-01-01')
             }
         });
@@ -68,7 +68,8 @@ describe('Program Lifecycle Integration Tests', () => {
                 nonMemberPrice: 100,
                 shopifyProductId: "test-prod",
                 shopifyMemberVariantId: "test-mem-var",
-                shopifyNonMemberVariantId: "test-non-var"
+                shopifyNonMemberVariantId: "test-non-var",
+                enrollmentStatus: "OPEN"
             }
         });
         testProgramId = program.id;
@@ -76,9 +77,15 @@ describe('Program Lifecycle Integration Tests', () => {
 
     afterAll(async () => {
         // Teardown
-        await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
-        await prisma.program.delete({ where: { id: testProgramId } });
-        await prisma.participant.deleteMany({ where: { id: { in: [testParticipantId, leadMentorId, boardAdminId] } } });
+        if (testProgramId !== undefined) {
+            await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
+            await prisma.program.delete({ where: { id: testProgramId } });
+        }
+
+        const participantIds = [testParticipantId, leadMentorId, boardAdminId].filter(id => id !== undefined);
+        if (participantIds.length > 0) {
+            await prisma.participant.deleteMany({ where: { id: { in: participantIds } } });
+        }
     });
 
     beforeEach(() => {
@@ -141,7 +148,7 @@ describe('Program Lifecycle Integration Tests', () => {
         mockGetSession.mockResolvedValue({ user: { id: boardAdminId, boardMember: true } });
 
         // Clean previous runs
-        await prisma.programParticipant.deleteMany({ where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } } });
+        await prisma.programParticipant.deleteMany({ where: { programId: testProgramId, participantId: testParticipantId } });
 
         const req = new Request(`http://localhost/api/programs/${testProgramId}/participants`, {
             method: 'POST',
@@ -161,9 +168,11 @@ describe('Program Lifecycle Integration Tests', () => {
 
     it('Shopify Webhook should mark a PENDING participant as ACTIVE', async () => {
         // 1. Reset user to PENDING state manually to simulate self-enroll flow
-        await prisma.programParticipant.update({
+        // First, recreate or ensure it exists from the previous test
+        await prisma.programParticipant.upsert({
             where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } },
-            data: { status: 'PENDING', pendingSince: new Date() }
+            update: { status: 'PENDING', pendingSince: new Date() },
+            create: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: new Date() }
         });
 
         // 2. Build Shopify webhook payload
@@ -206,9 +215,10 @@ describe('Program Lifecycle Integration Tests', () => {
         const eightDaysAgo = new Date();
         eightDaysAgo.setDate(eightDaysAgo.getDate() - 8);
 
-        await prisma.programParticipant.update({
+        await prisma.programParticipant.upsert({
              where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } },
-             data: { status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: false }
+             update: { status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: false },
+             create: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: false }
         });
 
         let req = new Request(`http://localhost/api/cron/pending-participants`, {

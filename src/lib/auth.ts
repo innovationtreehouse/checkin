@@ -28,7 +28,7 @@ export async function authenticateRequest(
             pubKeys
         );
         if (result.ok) return { type: 'kiosk' };
-    } else if (pubKeys.length === 0 && config.isDev) {
+    } else if (pubKeys.length === 0 && config.isDev && process.env.NODE_ENV !== 'test') {
         // Dev mode: treat as kiosk if no key configured
         if (hasKioskHeaders || !req.headers.get('cookie')) {
             return { type: 'kiosk' };
