@@ -27,11 +27,12 @@ export function formatDateTime(date: Date | string | number | null | undefined, 
 /**
  * Returns true if the person with the given DOB is under 18 years old.
  * Canonical implementation — use this everywhere instead of inline age checks.
+ * Accepts an optional referenceDate to prevent recreating new Date() in loops.
  */
-export function isMinor(dob: Date | string | null | undefined): boolean {
+export function isMinor(dob: Date | string | null | undefined, referenceDate?: Date): boolean {
     if (!dob) return false;
     const birthDate = new Date(dob);
-    const today = new Date();
+    const today = referenceDate || new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const m = today.getMonth() - birthDate.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;

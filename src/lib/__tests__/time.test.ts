@@ -33,3 +33,34 @@ describe('time.ts formatting utilities', () => {
     expect(formatDateTime(null)).toBe('');
   });
 });
+
+describe('isMinor', () => {
+    it('returns true if under 18', () => {
+        const { isMinor } = require('../time');
+        const dob = new Date();
+        dob.setFullYear(dob.getFullYear() - 17);
+        expect(isMinor(dob)).toBe(true);
+    });
+
+    it('returns false if 18 or older', () => {
+        const { isMinor } = require('../time');
+        const dob = new Date();
+        dob.setFullYear(dob.getFullYear() - 18);
+        expect(isMinor(dob)).toBe(false);
+    });
+
+    it('returns false if dob is null', () => {
+        const { isMinor } = require('../time');
+        expect(isMinor(null)).toBe(false);
+    });
+
+    it('respects the referenceDate argument', () => {
+        const { isMinor } = require('../time');
+        const dob = new Date('2010-01-01');
+        const refDateMinor = new Date('2027-12-31');
+        const refDateAdult = new Date('2028-01-01');
+
+        expect(isMinor(dob, refDateMinor)).toBe(true);
+        expect(isMinor(dob, refDateAdult)).toBe(false);
+    });
+});
