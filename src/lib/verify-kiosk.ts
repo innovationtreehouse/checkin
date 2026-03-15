@@ -33,12 +33,6 @@ export function getKioskPublicKeys(): Buffer[] {
         .map(k => Buffer.from(k, "hex"));
 }
 
-/** @deprecated Use getKioskPublicKeys() instead */
-export function getKioskPublicKey(): Buffer | null {
-    const keys = getKioskPublicKeys();
-    return keys.length > 0 ? keys[0] : null;
-}
-
 export type VerifyResult =
     | { ok: true }
     | { ok: false; status: number; error: string };
