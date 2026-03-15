@@ -35,14 +35,14 @@ export async function GET(req: Request) {
         });
 
         let notificationsSent = 0;
-        const notificationPromises = [];
+        const notificationPromises: Promise<void>[] = [];
 
         for (const event of upcomingEvents) {
             for (const rsvp of event.rsvps) {
-                const promise = sendNotification(rsvp.participantId, 'EVENT_STARTING_SOON', {
+                const promise = Promise.resolve(sendNotification(rsvp.participantId, 'EVENT_STARTING_SOON', {
                     eventName: event.name,
                     hours: 2
-                }).then(() => {
+                })).then(() => {
                     notificationsSent++;
                 });
                 notificationPromises.push(promise);
