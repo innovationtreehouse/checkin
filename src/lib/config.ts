@@ -27,7 +27,7 @@ export const config = {
     emailFrom: () => process.env.EMAIL_FROM || 'CheckMeIn <onboarding@resend.dev>',
 
     // App
-    isDev: process.env.NODE_ENV === 'development',
+    isDev: process.env.NODE_ENV !== 'production',
     baseUrl: (): string => {
         if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
         return process.env.NEXTAUTH_URL || 'http://localhost:4000';
