@@ -100,10 +100,13 @@ describe('Cron Nightly API Integration Tests', () => {
     describe('GET /api/cron/nightly', () => {
         it('should force checkout abandoned visits and send post-event emails immediately', async () => {
             const req = new Request('http://localhost:4000/api/cron/nightly', {
-                method: 'GET'
+                method: 'GET',
+                headers: {
+                    'authorization': `Bearer ${process.env.CRON_SECRET}`
+                }
             });
 
-            const res = await GET();
+            const res = await GET(req);
             expect(res.status).toBe(200);
 
             const data = await res.json();

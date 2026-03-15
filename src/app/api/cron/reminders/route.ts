@@ -8,11 +8,12 @@ import { sendNotification } from "@/lib/notifications";
  * GET /api/cron/reminders
  */
 export async function GET(req: Request) {
-    // Basic shared secret check if configured to prevent abuse
-    // const authHeader = req.headers.get('authorization');
-    // if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    //     return new Response('Unauthorized', { status: 401 });
-    // }
+    const authHeader = req.headers.get("authorization");
+
+    // Fail-closed security check
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+        return new Response("Unauthorized", { status: 401 });
+    }
 
     try {
         const now = new Date();

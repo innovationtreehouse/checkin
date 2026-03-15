@@ -3,7 +3,14 @@ import prisma from "@/lib/prisma";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
 
-export async function GET() {
+export async function GET(req: Request) {
+    const authHeader = req.headers.get("authorization");
+
+    // Fail-closed security check
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+        return new Response("Unauthorized", { status: 401 });
+    }
+
     try {
         const now = new Date();
 
