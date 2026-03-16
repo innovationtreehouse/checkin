@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, Suspense, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import styles from "../../page.module.css";
 import { useAutoCycle } from "../../../hooks/useAutoCycle";
@@ -48,7 +48,7 @@ function KioskCertificationsInner() {
         return () => clearInterval(timer);
     }, []);
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         try {
             // Pass kiosk signature headers if present in URL params
             const headers: Record<string, string> = {};
@@ -81,14 +81,13 @@ function KioskCertificationsInner() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [searchParams, limitToPresent]);
 
     useEffect(() => {
         fetchData();
         const interval = setInterval(fetchData, 10000);
         return () => clearInterval(interval);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [fetchData]);
 
     const getColorForLevel = (level: ToolStatusLevel | undefined) => {
         switch (level) {
