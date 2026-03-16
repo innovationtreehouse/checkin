@@ -14,14 +14,8 @@ type ProgramDetail = {
     end: string | null;
     leadMentorId: number | null;
     leadMentor?: { name: string | null; email: string } | null;
-    participants: { participantId: number, status?: string }[];
+    participants: { participantId: number }[];
     enrollmentStatus: string;
-    memberPrice: number | null;
-    nonMemberPrice: number | null;
-    shopifyMemberVariantId: string | null;
-    shopifyNonMemberVariantId: string | null;
-    minAge: number | null;
-    maxAge: number | null;
 };
 
 export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id: string }> }) {
@@ -35,11 +29,6 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     const [message, setMessage] = useState("");
     const [successMessage, setSuccessMessage] = useState("");
     const [requiresOverride, setRequiresOverride] = useState(false);
-
-    const [showEnrollmentSelection, setShowEnrollmentSelection] = useState(false);
-    const [householdMembers, setHouseholdMembers] = useState<{ id: number; name: string | null; dob: string | null }[]>([]);
-    const [selectedParticipantId, setSelectedParticipantId] = useState<number | null>(null);
-    const [loadingHousehold, setLoadingHousehold] = useState(false);
 
     useEffect(() => {
         fetchProgram();
@@ -63,129 +52,31 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         }
     };
 
-    const startEnrollmentProcess = async () => {
+    const handleEnroll = async (override = false) => {
         if (!session) {
+            // Can't enroll without auth, redirect to login/home
             router.push('/');
             return;
         }
-        setShowEnrollmentSelection(true);
-        setLoadingHousehold(true);
+
+        setEnrolling(true);
+        setMessage("");
 
         try {
             const currentUserId = (session.user as { id: number }).id;
-            const res = await fetch(`/api/household`);
-            if (res.ok) {
-                const data = await res.json();
-                if (data.household && data.household.participants) {
-                    setHouseholdMembers(data.household.participants);
-                    const me = data.household.participants.find((p: any) => p.id === currentUserId);
-                    if (me) setSelectedParticipantId(me.id);
-                    else setSelectedParticipantId(data.household.participants[0]?.id || currentUserId);
-                } else {
-                    setHouseholdMembers([{ id: currentUserId, name: "Myself", dob: null }]);
-                    setSelectedParticipantId(currentUserId);
-                }
-            } else {
-                 setHouseholdMembers([{ id: currentUserId, name: "Myself", dob: null }]);
-                 setSelectedParticipantId(currentUserId);
-            }
-        } catch {
-             const currentUserId = (session.user as { id: number }).id;
-             setHouseholdMembers([{ id: currentUserId, name: "Myself", dob: null }]);
-             setSelectedParticipantId(currentUserId);
-        } finally {
-            setLoadingHousehold(false);
-        }
-    };
-
-    const handleRequestPaymentPlan = async () => {
-        if (!session || !selectedParticipantId) return router.push('/');
-        
-        setEnrolling(true);
-        setMessage("");
-
-        try {
-            // First we enroll them (which defaults to PENDING)
-            let res = await fetch(`/api/programs/${id}/participants`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ participantId: selectedParticipantId })
-            });
-
-            if (!res.ok) {
-                const data = await res.json();
-                setMessage(data.error || "Failed to start enrollment.");
-                setEnrolling(false);
-                return;
-            }
-
-            // Then we flag that they requested a payment plan
-            res = await fetch(`/api/programs/${id}/request-payment-plan`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ participantId: selectedParticipantId })
-            });
-
-            if (res.ok) {
-                setSuccessMessage("Requested! Please check your email for communication from the finance committee of the board.");
-                fetchProgram();
-            } else {
-                setMessage("Enrolled as pending, but failed to alert the finance committee. Please email them directly.");
-            }
-        } catch {
-             setMessage("Network error requesting payment plan.");
-        } finally {
-            setEnrolling(false);
-        }
-    };
-
-    const handleEnroll = async (override = false) => {
-        if (!session || !selectedParticipantId) {
-            router.push('/');
-            return;
-        }
-
-        const isPayingOnShopify = !override && (program?.memberPrice || program?.nonMemberPrice);
-
-        setEnrolling(true);
-        setMessage("");
-
-        try {
             const res = await fetch(`/api/programs/${id}/participants`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    participantId: selectedParticipantId,
+                    participantId: currentUserId,
                     override
                 })
             });
 
             if (res.ok) {
-                if (isPayingOnShopify) {
-                    setSuccessMessage("Redirecting to Shopify for secure payment...");
-                    
-                    const userRes = await fetch(`/api/admin/participants/${selectedParticipantId}`);
-                    let isMember = false;
-                    if (userRes.ok) {
-                        const userData = await userRes.json();
-                        isMember = userData.participant?.memberships?.some((m: any) => m.active) || false;
-                    }
-
-                    const variantId = isMember ? program.shopifyMemberVariantId : program.shopifyNonMemberVariantId;
-                    
-                    if (variantId) {
-                        const storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN || 'innovationtreehouse.myshopify.com';
-                        const checkoutUrl = `https://${storeDomain}/cart/${variantId}:1?attributes[CheckMeIn_Account_ID]=${selectedParticipantId}&attributes[Program_ID]=${id}`;
-                        window.location.href = checkoutUrl;
-                    } else {
-                        setSuccessMessage("Enrolled! (Note: No pricing variant configured for this tier)");
-                        fetchProgram();
-                    }
-                } else {
-                    setSuccessMessage("Successfully enrolled!");
-                    setRequiresOverride(false);
-                    fetchProgram(); // refresh
-                }
+                setSuccessMessage("Successfully enrolled!");
+                setRequiresOverride(false);
+                fetchProgram(); // refresh
             } else {
                 const data = await res.json();
                 if (data.requiresOverride) {
@@ -198,7 +89,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         } catch {
             setMessage("Network error during enrollment.");
         } finally {
-            if (!isPayingOnShopify) setEnrolling(false);
+            setEnrolling(false);
         }
     };
 
@@ -220,6 +111,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             </div>
         </main>
     );
+
+    const isEnrolled = session && program.participants.some(p => p.participantId === (session.user as { id: number })?.id);
 
     return (
         <main className={styles.main}>
@@ -258,13 +151,6 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                                 program.enrollmentStatus
                             }
                         </div>
-                        {(program.memberPrice !== null || program.nonMemberPrice !== null) && (
-                            <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                                {program.memberPrice !== null && <div><strong>Member Price:</strong> ${program.memberPrice}</div>}
-                                {program.nonMemberPrice !== null && <div><strong>Non-Member Price:</strong> ${program.nonMemberPrice}</div>}
-                                {(!program.memberPrice && !program.nonMemberPrice) && <div><strong>Cost:</strong> Free</div>}
-                            </div>
-                        )}
                     </div>
                 </div>
 
@@ -281,108 +167,27 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 )}
 
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '3rem' }}>
-                    {!showEnrollmentSelection ? (
-                        <button
-                            className="glass-button primary-button"
-                            onClick={startEnrollmentProcess}
-                            disabled={program.enrollmentStatus === 'CLOSED'}
-                            style={{ 
-                                padding: '1rem 3rem', 
-                                fontSize: '1.2rem', 
-                                background: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.05)' : 'rgba(56, 189, 248, 0.2)', 
-                                borderColor: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(56, 189, 248, 0.5)',
-                                opacity: program.enrollmentStatus === 'CLOSED' ? 0.5 : 1,
-                                cursor: program.enrollmentStatus === 'CLOSED' ? 'not-allowed' : 'pointer'
-                            }}
-                        >
-                            {program.enrollmentStatus === 'CLOSED' ? "Enrollment Closed" : "Enroll"}
-                        </button>
+                    {isEnrolled ? (
+                        <div style={{ padding: '1rem 2rem', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.5)', borderRadius: '8px', color: '#4ade80', fontWeight: 'bold' }}>
+                            You are enrolled in this program.
+                        </div>
                     ) : (
-                        <div style={{ width: '100%', maxWidth: '500px', background: 'rgba(0,0,0,0.2)', padding: '2rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                            <h3 style={{ margin: '0 0 1.5rem 0' }}>Which of your household wants to enroll?</h3>
-                            
-                            {loadingHousehold ? (
-                                <p style={{ color: 'var(--color-text-muted)', textAlign: 'center' }}>Loading household...</p>
-                            ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2rem' }}>
-                                    {householdMembers.map(member => {
-                                        const alreadyEnrolled = program.participants.some(p => p.participantId === member.id);
-                                        
-                                        let ageError: string | null = null;
-                                        if (program.minAge !== null || program.maxAge !== null) {
-                                            if (!member.dob) {
-                                                ageError = "DOB missing";
-                                            } else {
-                                                const ageDifMs = Date.now() - new Date(member.dob).getTime();
-                                                const ageDate = new Date(ageDifMs);
-                                                const age = Math.abs(ageDate.getUTCFullYear() - 1970);
-                                                if (program.minAge !== null && age < program.minAge) ageError = "Too young";
-                                                if (program.maxAge !== null && age > program.maxAge) ageError = "Too old";
-                                            }
-                                        }
-
-                                        const disabled = alreadyEnrolled || ageError !== null;
-
-                                        return (
-                                            <label key={member.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: selectedParticipantId === member.id && !disabled ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.05)', border: `1px solid ${selectedParticipantId === member.id && !disabled ? 'rgba(56, 189, 248, 0.5)' : 'transparent'}`, borderRadius: '8px', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, transition: 'all 0.2s' }}>
-                                                <input 
-                                                    type="radio" 
-                                                    name="enrollMember" 
-                                                    value={member.id} 
-                                                    checked={selectedParticipantId === member.id}
-                                                    onChange={() => { if(!disabled) setSelectedParticipantId(member.id) }}
-                                                    style={{ width: '1.2rem', height: '1.2rem', cursor: disabled ? 'not-allowed' : 'pointer' }}
-                                                    disabled={disabled}
-                                                />
-                                                <span style={{ fontSize: '1.1rem', fontWeight: selectedParticipantId === member.id ? 'bold' : 'normal' }}>
-                                                    {member.name || 'Unnamed Participant'}
-                                                </span>
-                                                {alreadyEnrolled && (
-                                                    <span style={{ fontSize: '0.85rem', color: '#4ade80', marginLeft: 'auto' }}>(Already Enrolled)</span>
-                                                )}
-                                                {!alreadyEnrolled && ageError && (
-                                                    <span style={{ fontSize: '0.85rem', color: '#f87171', marginLeft: 'auto' }}>({ageError})</span>
-                                                )}
-                                            </label>
-                                        );
-                                    })}
-                                </div>
-                            )}
-
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-                                <button
-                                    className="glass-button primary-button"
-                                    onClick={() => handleEnroll(false)}
-                                    disabled={enrolling || !selectedParticipantId || program.participants.some(p => p.participantId === selectedParticipantId) || loadingHousehold}
-                                    style={{ 
-                                        width: '100%',
-                                        padding: '1rem', 
-                                        fontSize: '1.2rem', 
-                                        background: 'rgba(56, 189, 248, 0.2)', 
-                                        borderColor: 'rgba(56, 189, 248, 0.5)',
-                                    }}
-                                >
-                                    {enrolling ? "Processing..." : (program.memberPrice || program.nonMemberPrice) ? "Pay on Shopify" : "Complete Enrollment"}
-                                </button>
-                                
-                                {(program.memberPrice || program.nonMemberPrice) && program.enrollmentStatus !== 'CLOSED' && (
-                                    <button
-                                        onClick={handleRequestPaymentPlan}
-                                        disabled={enrolling || !selectedParticipantId || program.participants.some(p => p.participantId === selectedParticipantId) || loadingHousehold}
-                                        style={{ 
-                                            background: 'none', 
-                                            border: 'none', 
-                                            color: 'var(--color-primary)', 
-                                            textDecoration: 'underline', 
-                                            cursor: 'pointer',
-                                            fontSize: '0.9rem'
-                                        }}
-                                    >
-                                        request a payment plan from the finance committee of the board
-                                    </button>
-                                )}
-                            </div>
-
+                        <>
+                            <button
+                                className="glass-button primary-button"
+                                onClick={() => handleEnroll(false)}
+                                disabled={enrolling || program.enrollmentStatus === 'CLOSED'}
+                                style={{
+                                    padding: '1rem 3rem',
+                                    fontSize: '1.2rem',
+                                    background: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.05)' : 'rgba(56, 189, 248, 0.2)',
+                                    borderColor: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(56, 189, 248, 0.5)',
+                                    opacity: program.enrollmentStatus === 'CLOSED' ? 0.5 : 1,
+                                    cursor: program.enrollmentStatus === 'CLOSED' ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                {enrolling ? "Enrolling..." : program.enrollmentStatus === 'CLOSED' ? "Enrollment Closed" : "Enroll Now"}
+                            </button>
                             {requiresOverride && (
                                 <div style={{ marginTop: '1.5rem', padding: '1.5rem', borderRadius: '8px', background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
                                     <p style={{ color: '#eab308', fontWeight: 'bold', marginBottom: '1rem' }}>Warning: Enrollment rules not met.</p>
@@ -392,13 +197,13 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                                     <button
                                         className="glass-button"
                                         onClick={() => handleEnroll(true)}
-                                        style={{ background: 'rgba(234, 179, 8, 0.2)', color: '#eab308', borderColor: 'rgba(234, 179, 8, 0.5)', width: '100%' }}
+                                        style={{ background: 'rgba(234, 179, 8, 0.2)', color: '#eab308', borderColor: 'rgba(234, 179, 8, 0.5)' }}
                                     >
                                         Force Enroll (Override)
                                     </button>
                                 </div>
                             )}
-                        </div>
+                        </>
                     )}
                 </div>
             </div>

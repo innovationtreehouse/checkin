@@ -45,9 +45,6 @@ type ProgramDetail = {
         attendanceConfirmedAt: string | null;
     }[];
     leadMentor: { name: string | null; email: string } | null;
-    memberPrice: number | null;
-    nonMemberPrice: number | null;
-    shopifyProductId: string | null;
 };
 
 type ParticipantOption = {
@@ -74,8 +71,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     const [enrollmentStatus, setEnrollmentStatus] = useState("CLOSED");
     const [memberOnly, setMemberOnly] = useState(false);
     const [leadMentorIdInput, setLeadMentorIdInput] = useState("");
-    const [memberPrice, setMemberPrice] = useState("");
-    const [nonMemberPrice, setNonMemberPrice] = useState("");
 
     const [newVolId, setNewVolId] = useState("");
 
@@ -189,8 +184,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                 setEnrollmentStatus(data.enrollmentStatus || "CLOSED");
                 setMemberOnly(Boolean(data.memberOnly));
                 setLeadMentorIdInput(data.leadMentorId !== null ? String(data.leadMentorId) : "");
-                setMemberPrice(data.memberPrice !== null ? String(data.memberPrice) : "");
-                setNonMemberPrice(data.nonMemberPrice !== null ? String(data.nonMemberPrice) : "");
                 if (data.leadMentor) {
                     setMentorSearch(`${data.leadMentor.name || 'Unnamed'} (${data.leadMentor.email})`);
                 } else {
@@ -229,9 +222,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                     phase,
                     enrollmentStatus,
                     memberOnly,
-                    leadMentorId: leadMentorIdInput ? parseInt(leadMentorIdInput) : null,
-                    memberPrice: memberPrice ? parseInt(memberPrice) : null,
-                    nonMemberPrice: nonMemberPrice ? parseInt(nonMemberPrice) : null,
+                    leadMentorId: leadMentorIdInput ? parseInt(leadMentorIdInput) : null
                 })
             });
 
@@ -303,14 +294,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     const handleAddParticipant = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newPartId) return;
-
-        // Board member bypass warning
-        const user = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
-        if (user?.sysadmin || user?.boardMember) {
-            if (!confirm("Warning: Adding a participant manually bypasses all payment requirements. Are you sure you wish to proceed?")) {
-                return;
-            }
-        }
 
         setSaving(true);
         setMessage("");
@@ -397,28 +380,9 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         {program.phase === 'RUNNING' && <span style={{ fontSize: '1rem', background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', padding: '0.2rem 0.5rem', borderRadius: '4px', verticalAlign: 'middle', marginLeft: '0.5rem', border: '1px solid rgba(56, 189, 248, 0.4)' }}>Running</span>}
                         {program.phase === 'FINISHED' && <span style={{ fontSize: '1rem', background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', padding: '0.2rem 0.5rem', borderRadius: '4px', verticalAlign: 'middle', marginLeft: '0.5rem', border: '1px solid rgba(16, 185, 129, 0.4)' }}>Finished</span>}
                     </h1>
-                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                        <button 
-                            className="glass-button" 
-                            onClick={() => {
-                                const url = `${window.location.origin}/programs/${program.id}`;
-                                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url)}`;
-                                const link = document.createElement('a');
-                                link.href = qrUrl;
-                                link.download = `QR_${program.name.replace(/[^a-z0-9]/gi, '_')}.png`;
-                                link.target = '_blank';
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
-                            }} 
-                            style={{ padding: '0.5rem 1rem', background: 'rgba(56, 189, 248, 0.2)', borderColor: 'rgba(56, 189, 248, 0.5)' }}
-                        >
-                            <span style={{ marginRight: '0.5rem' }}>📷</span> Download QR
-                        </button>
-                        <button className="glass-button" onClick={() => router.push('/programs')} style={{ padding: '0.5rem 1rem' }}>
-                            &larr; Back to Programs
-                        </button>
-                    </div>
+                    <button className="glass-button" onClick={() => router.push('/programs')} style={{ padding: '0.5rem 1rem' }}>
+                        &larr; Back to Programs
+                    </button>
                 </div>
 
                 <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '2rem' }}>
@@ -462,13 +426,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                                     <div style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>Scheduled Sessions</div>
                                 </div>
                             </div>
-
-                            {/* Optional: Add a subtle status indicator for Shopify */}
-                            {program.shopifyProductId && (
-                                <div style={{ gridColumn: '1 / -1', background: 'rgba(34, 197, 94, 0.1)', padding: '0.75rem', borderRadius: '4px', border: '1px solid rgba(34, 197, 94, 0.3)', color: '#4ade80', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    ✓ Pre-configured for Shopify Checkout (Product ID: {program.shopifyProductId})
-                                </div>
-                            )}
                         </div>
 
 
@@ -581,23 +538,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                                     {program.maxParticipants !== null && <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: 'var(--color-primary)' }}>(Current: {program.maxParticipants})</span>}
                                 </label>
                                 <input type="number" className="glass-input" value={maxParticipants} onChange={e => setMaxParticipants(e.target.value)} placeholder="e.g. 20" style={{ width: '100%', padding: '0.75rem' }} />
-                            </div>
-                            
-                            <div style={{ display: 'flex', gap: '1rem', gridColumn: '1 / -1', flexWrap: 'wrap' }}>
-                                <div style={{ flex: '1 1 200px', minWidth: '200px' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
-                                        Member Price ($)
-                                        {program.memberPrice !== null && <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: 'var(--color-primary)' }}>(Current: ${program.memberPrice})</span>}
-                                    </label>
-                                    <input type="number" className="glass-input" value={memberPrice} onChange={e => setMemberPrice(e.target.value)} disabled={!isSysAdminOrBoard} style={{ width: '100%', padding: '0.75rem', boxSizing: 'border-box', opacity: !isSysAdminOrBoard ? 0.5 : 1 }} title={!isSysAdminOrBoard ? "Only Board Members can alter program pricing." : ""} />
-                                </div>
-                                <div style={{ flex: '1 1 200px', minWidth: '200px' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
-                                        Non-Member Price ($)
-                                        {program.nonMemberPrice !== null && <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: 'var(--color-primary)' }}>(Current: ${program.nonMemberPrice})</span>}
-                                    </label>
-                                    <input type="number" className="glass-input" value={nonMemberPrice} onChange={e => setNonMemberPrice(e.target.value)} disabled={!isSysAdminOrBoard} style={{ width: '100%', padding: '0.75rem', boxSizing: 'border-box', opacity: !isSysAdminOrBoard ? 0.5 : 1 }} title={!isSysAdminOrBoard ? "Only Board Members can alter program pricing." : ""} />
-                                </div>
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -713,13 +653,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                                             </div>
                                         )}
                                     </div>
-                                    {!isSysAdminOrBoard ? (
-                                        <p style={{ color: '#fbbf24', fontSize: '0.9rem', marginTop: '1rem', padding: '0.5rem', background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '4px' }}>
-                                            ⚠️ Program Leads cannot manually enroll participants. Participants must enroll themselves and complete payment via Shopify.
-                                        </p>
-                                    ) : (
-                                        <button type="submit" className="glass-button" disabled={saving || !newPartId} style={{ padding: '0.5rem 1rem' }}>Enroll</button>
-                                    )}
+                                    <button type="submit" className="glass-button" disabled={saving || !newPartId} style={{ padding: '0.5rem 1rem' }}>Enroll</button>
                                 </form>
 
                                 {program.participants.length === 0 ? <p style={{ color: 'gray', margin: 0 }}>No participants yet.</p> :

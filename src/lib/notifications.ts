@@ -108,14 +108,12 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
         const emoji = type === 'checkin' ? '✅' : '👋';
         const name = participant.name || 'A member';
 
-        const emailPromises: Promise<any>[] = [];
-
         // 1. Send receipt to the participant themselves if they opted in
         const settings = participant.notificationSettings as any;
         if (settings?.emailCheckinReceipts && participant.email) {
             const subject = `${emoji} ${name} ${action} Innovation Treehouse`;
             const html = checkinReceiptTemplate({ name, type, date: dateStr, time: timeStr });
-            emailPromises.push(sendEmail(participant.email, subject, html));
+            await sendEmail(participant.email, subject, html);
         }
 
         // 2. Notify household leads if the participant is in a household
@@ -148,13 +146,9 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
                         date: dateStr,
                         time: timeStr
                     });
-                    emailPromises.push(sendEmail(lead.participant.email, subject, html));
+                    await sendEmail(lead.participant.email, subject, html);
                 }
             }
-        }
-
-        if (emailPromises.length > 0) {
-            await Promise.all(emailPromises);
         }
 
     } catch (error) {

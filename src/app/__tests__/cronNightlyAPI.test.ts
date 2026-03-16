@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * @jest-environment node
  */
@@ -98,15 +99,11 @@ describe('Cron Nightly API Integration Tests', () => {
 
     describe('GET /api/cron/nightly', () => {
         it('should force checkout abandoned visits and send post-event emails immediately', async () => {
-            process.env.CRON_SECRET = 'test-secret';
             const req = new Request('http://localhost:4000/api/cron/nightly', {
-                method: 'GET',
-                headers: {
-                    'authorization': 'Bearer test-secret'
-                }
+                method: 'GET'
             });
 
-            const res = await GET(req);
+            const res = await GET();
             expect(res.status).toBe(200);
 
             const data = await res.json();

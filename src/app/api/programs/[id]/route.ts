@@ -121,35 +121,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         }
 
         const body = await req.json();
-        const { name, leadMentorId, begin, end, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice } = body;
-
-        const updateData: any = {
-            ...(name !== undefined && { name }),
-            ...(leadMentorId !== undefined && { leadMentorId }),
-            ...(begin !== undefined && { begin: begin ? new Date(begin) : null }),
-            ...(end !== undefined && { end: end ? new Date(end) : null }),
-            ...(memberOnly !== undefined && { memberOnly }),
-            ...(phase !== undefined && { phase }),
-            ...(enrollmentStatus !== undefined && { enrollmentStatus }),
-            ...(minAge !== undefined && { minAge }),
-            ...(maxAge !== undefined && { maxAge }),
-            ...(maxParticipants !== undefined && { maxParticipants }),
-            ...(leadMentorNotificationSettings !== undefined && { leadMentorNotificationSettings }),
-        };
-
-        // Only allow sysadmin or board to update prices
-        if (isSysAdminOrBoard) {
-            if (memberPrice !== undefined) {
-                updateData.memberPrice = memberPrice ? parseInt(memberPrice, 10) : null;
-            }
-            if (nonMemberPrice !== undefined) {
-                updateData.nonMemberPrice = nonMemberPrice ? parseInt(nonMemberPrice, 10) : null;
-            }
-        }
+        const { name, leadMentorId, begin, end, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings } = body;
 
         const updatedProgram = await prisma.program.update({
             where: { id: programId },
-            data: updateData
+            data: {
+                ...(name !== undefined && { name }),
+                ...(leadMentorId !== undefined && { leadMentorId }),
+                ...(begin !== undefined && { begin: begin ? new Date(begin) : null }),
+                ...(end !== undefined && { end: end ? new Date(end) : null }),
+                ...(memberOnly !== undefined && { memberOnly }),
+                ...(phase !== undefined && { phase }),
+                ...(enrollmentStatus !== undefined && { enrollmentStatus }),
+                ...(minAge !== undefined && { minAge }),
+                ...(maxAge !== undefined && { maxAge }),
+                ...(maxParticipants !== undefined && { maxParticipants }),
+                ...(leadMentorNotificationSettings !== undefined && { leadMentorNotificationSettings }),
+            }
         });
 
         await prisma.auditLog.create({
