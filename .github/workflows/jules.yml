@@ -1,0 +1,44 @@
+name: Jules AI Agent
+
+on:
+  issues:
+    types: [opened, reopened, labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  jules:
+    if: ${{ !github.event.issue.pull_request }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+
+    steps:
+      - name: Run Jules
+        uses: google-labs-code/jules-action@v1.0.0
+        with:
+          prompt: |
+            You are an AI agent for the CheckMeIn project. Before starting, read and follow CONSTITUTION.md. 
+
+            Please diagnose and fix the following GitHub issue:
+
+            Issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}
+
+            ${{ github.event.issue.body }}
+
+            Process:
+            1. **Analysis** - Review the issue and identify the root cause
+            2. **Diagnosis** - Trace the issue through the codebase
+            3. **Fix** - Implement a minimal, targeted fix
+            4. **Testing** - Add tests if appropriate
+            5. **Documentation** - Add comments explaining the fix
+
+            Constraints:
+            - Follow the CONSTITUTION.md guidelines
+            - Keep changes minimal and targeted
+            - All existing tests must pass
+            - In the PR title, include "Fixes #${{ github.event.issue.number }}"
+            - In the PR description, include "Fixes #${{ github.event.issue.number }}" so the issue is automatically linked and closed when the PR is merged
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          starting_branch: 'main'

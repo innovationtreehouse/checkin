@@ -29,6 +29,7 @@ describe('Program Lifecycle Integration Tests', () => {
             data: {
                 name: "Board Tester",
                 email: "board@test.com",
+                googleId: "test-auth-board",
                 sysadmin: false,
                 boardMember: true,
                 dob: new Date('1990-01-01')
@@ -41,6 +42,7 @@ describe('Program Lifecycle Integration Tests', () => {
             data: {
                 name: "Mentor Tester",
                 email: "mentor@test.com",
+                googleId: "test-auth-mentor",
                 dob: new Date('1985-01-01')
             }
         });
@@ -51,6 +53,7 @@ describe('Program Lifecycle Integration Tests', () => {
             data: {
                 name: "Standard Tester",
                 email: "participant@test.com",
+                googleId: "test-auth-std",
                 dob: new Date('2000-01-01')
             }
         });
@@ -165,6 +168,7 @@ describe('Program Lifecycle Integration Tests', () => {
 
     it('Shopify Webhook should mark a PENDING participant as ACTIVE', async () => {
         // 1. Reset user to PENDING state manually to simulate self-enroll flow
+        // First, recreate or ensure it exists from the previous test
         await prisma.programParticipant.upsert({
             where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } },
             update: { status: 'PENDING', pendingSince: new Date() },

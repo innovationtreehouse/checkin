@@ -5,6 +5,7 @@ import { useSession, signIn, signOut } from "next-auth/react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from 'next/link';
 import styles from './NavBar.module.css';
+import { config } from '@/lib/config';
 
 type SessionUser = {
     sysadmin?: boolean;
@@ -98,7 +99,7 @@ function NavBarInner() {
                 <div className={styles.leftSection}>
                     <Link href="/" onClick={closeMobileMenu} style={{ textDecoration: 'none' }}>
                         <h2 className="text-gradient" style={{ margin: 0, fontSize: '1.5rem', cursor: 'pointer' }}>
-                            CheckMeIn
+                            {config.isDev ? 'CMI-dev' : 'CheckMeIn'}
                         </h2>
                     </Link>
                     <div className={styles.navLinks}>
