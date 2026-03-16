@@ -13,3 +13,10 @@ export interface SessionUser {
     householdId?: number;
     householdLead?: boolean;
 }
+
+export interface BoardMember {
+    id: number;
+    name: string | null;
+    email: string;
+    phone: string | null;
+}

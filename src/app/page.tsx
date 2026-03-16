@@ -6,14 +6,7 @@ import { useSession, signIn } from "next-auth/react";
 import styles from './page.module.css';
 import DevLoginPicker from '@/components/DevLoginPicker';
 import { config } from '@/lib/config';
-import type { SessionUser } from '@/types/participant';
-
-interface BoardMember {
-  id: number;
-  name: string | null;
-  email: string;
-  phone: string | null;
-}
+import type { SessionUser, BoardMember } from '@/types/participant';
 
 export default function Home() {
   const router = useRouter();
