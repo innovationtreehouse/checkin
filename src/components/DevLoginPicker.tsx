@@ -1,5 +1,4 @@
 "use client";
-/* eslint-disable react-hooks/purity */
 
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
@@ -25,15 +24,20 @@ export default function DevLoginPicker() {
     const [personas, setPersonas] = useState<Persona[]>([]);
     const [loading, setLoading] = useState(true);
     const [signingIn, setSigningIn] = useState<string | null>(null);
+    const [now, setNow] = useState<number | null>(null);
 
     useEffect(() => {
         fetch("/api/auth/dev-personas", { cache: "no-store" })
             .then((res) => res.json())
             .then((data) => {
                 setPersonas(data.personas || []);
+                setNow(Date.now());
                 setLoading(false);
             })
-            .catch(() => setLoading(false));
+            .catch(() => {
+                setNow(Date.now());
+                setLoading(false);
+            });
     }, []);
 
     const handleLogin = (email: string) => {
@@ -49,9 +53,9 @@ export default function DevLoginPicker() {
         if (p.shopSteward) badges.push({ label: "Shop Steward", color: "#f59e0b" });
         if (p.toolStatuses?.length > 0) badges.push({ label: "Certified", color: "#10b981" });
         if (p.householdId) badges.push({ label: "Household", color: "#6366f1" });
-        if (p.dob) {
+        if (p.dob && now !== null) {
             const age = Math.floor(
-                (Date.now() - new Date(p.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000)
+                (now - new Date(p.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000)
             );
             if (age < 18) badges.push({ label: `Student (${age})`, color: "#ec4899" });
         }
