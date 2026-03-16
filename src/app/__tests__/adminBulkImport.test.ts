@@ -37,7 +37,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
             await prisma.household.deleteMany({
                 where: { name: { contains: 'Household' } }
             });
-        } catch {}
+        } catch (e) {}
 
         // Setup mock database records
         const admin = await prisma.participant.create({
@@ -68,7 +68,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
             await prisma.household.deleteMany({
                 where: { name: { contains: 'Household' } }
             });
-        } catch {}
+        } catch (e) {}
     });
 
     afterEach(async () => {
@@ -85,7 +85,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
             await prisma.household.deleteMany({
                 where: { name: { contains: 'Household' } }
             });
-        } catch {}
+        } catch (e) {}
     });
 
     const createMockCsvFormData = (data: (string | number | boolean | Date)[][]) => {

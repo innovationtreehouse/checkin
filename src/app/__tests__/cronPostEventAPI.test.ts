@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { GET } from "../api/cron/post-event/route";
@@ -57,11 +58,8 @@ describe("GET /api/cron/post-event", () => {
             data: { associatedEventId: event.id, participantId: user.id, arrived: pastStart }
         });
 
-        process.env.CRON_SECRET = 'test-secret';
-        const req = new Request("http://localhost/api/cron/post-event", {
-            headers: { 'authorization': 'Bearer test-secret' }
-        });
-        const res = await GET(req);
+        const req = new Request("http://localhost/api/cron/post-event");
+        const res = await GET();
         expect(res.status).toBe(200);
 
         const data = await res.json();
@@ -99,11 +97,8 @@ describe("GET /api/cron/post-event", () => {
             }
         });
 
-        process.env.CRON_SECRET = 'test-secret';
-        const req = new Request("http://localhost/api/cron/post-event", {
-            headers: { 'authorization': 'Bearer test-secret' }
-        });
-        const res = await GET(req);
+        const req = new Request("http://localhost/api/cron/post-event");
+        const res = await GET();
         
         const data = await res.json();
         expect(data.emailsSent).toBe(0);
@@ -129,11 +124,8 @@ describe("GET /api/cron/post-event", () => {
             }
         });
 
-        process.env.CRON_SECRET = 'test-secret';
-        const req = new Request("http://localhost/api/cron/post-event", {
-            headers: { 'authorization': 'Bearer test-secret' }
-        });
-        const res = await GET(req);
+        const req = new Request("http://localhost/api/cron/post-event");
+        const res = await GET();
         
         const data = await res.json();
         expect(data.emailsSent).toBe(0);
