@@ -17,7 +17,8 @@ export type NotificationEvent =
     | 'RSVP_UPDATED'
     | 'PROGRAM_ASSIGNMENT'
     | 'CHECKIN'
-    | 'CHECKOUT';
+    | 'CHECKOUT'
+    | 'EMERGENCY_CONTACT_ALERT';
 
 export async function sendNotification(userId: number, eventType: NotificationEvent, payload: Record<string, any>) {
     try {
@@ -53,6 +54,16 @@ export async function sendNotification(userId: number, eventType: NotificationEv
                 subject = `👋 Checked Out — ${user.name}`;
                 message = `Hi ${user.name}, you departed Innovation Treehouse at ${payload.time}.`;
                 break;
+            case 'EMERGENCY_CONTACT_ALERT':
+                subject = `EMERGENCY ALERT`;
+                message = payload.message || `An emergency alert was triggered for ${user.name}.`;
+                // Here we override the email destination with the contact email.
+                // In a real implementation this would likely be split out differently.
+                if (payload.contactType === 'email' && payload.contactInfo) {
+                    await sendEmail(payload.contactInfo, subject, `<p>${message}</p>`);
+                    return;
+                }
+                break;
             default:
                 message = `System Action: ${eventType}`;
         }
@@ -79,16 +90,23 @@ export async function sendNotification(userId: number, eventType: NotificationEv
  */
 export async function sendCheckinNotifications(participantId: number, type: 'checkin' | 'checkout') {
     try {
+        // Updated to include the fields from the task description
+        const querySelect: any = {
+            id: true,
+            name: true,
+            email: true,
+            notificationSettings: true,
+            householdId: true,
+            firstName: true,
+            lastName: true,
+            emergencyContactPhone: true,
+            emergencyContactEmail: true,
+            notifyEmergencyContact: true,
+        };
         const participant = await prisma.participant.findUnique({
             where: { id: participantId },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                notificationSettings: true,
-                householdId: true,
-            }
-        });
+            select: querySelect
+        }) as any;
 
         if (!participant) return;
 
@@ -155,6 +173,18 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
 
         if (emailPromises.length > 0) {
             await Promise.all(emailPromises);
+        }
+
+        // 3. New logic from the task prompt: Emergency Contact Notifications
+        if (participant.notifyEmergencyContact) {
+            const message = `${participant.firstName} ${participant.lastName} has ${action} the facility.`;
+            if (participant.emergencyContactEmail) {
+                await sendNotification(participantId, 'EMERGENCY_CONTACT_ALERT', {
+                    contactType: 'email',
+                    contactInfo: participant.emergencyContactEmail,
+                    message
+                });
+            }
         }
 
     } catch (error) {
