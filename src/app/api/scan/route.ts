@@ -13,11 +13,17 @@ export async function POST(req: NextRequest) {
         // 1. Authenticate
         const auth = await authenticateRequest(req, rawBody);
 
-        const body = JSON.parse(rawBody);
+        let body;
+        try {
+            body = JSON.parse(rawBody);
+        } catch (e) {
+            return apiError("Invalid JSON payload.", 400);
+        }
+
         const participantId = body.participantId;
 
-        if (!participantId) {
-            return apiError("participantId is required.", 400);
+        if (!participantId || typeof participantId !== 'number') {
+            return apiError("A valid numeric participantId is required.", 400);
         }
 
         // 2. Authorization
