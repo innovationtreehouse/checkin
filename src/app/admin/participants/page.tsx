@@ -205,7 +205,7 @@ export default function AdminParticipantsIndex() {
             </div>
 
             <div className="glass-container" style={{ padding: '2rem', marginBottom: '2rem' }}>
-                <form onSubmit={handleSearch} style={{ display: 'flex', gap: '1rem' }}>
+                <form onSubmit={handleSearch} style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
                     <input 
                         type="text" 
                         placeholder="Search by name or email..." 
@@ -230,14 +230,14 @@ export default function AdminParticipantsIndex() {
                     {results.length > 0 ? (
                         <div style={{ display: 'grid', gap: '1rem' }}>
                             {results.map(p => (
-                                <div key={p.id} className="glass-container" style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)' }}>
+                                <div key={p.id} className="glass-container" style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', background: 'rgba(255,255,255,0.02)' }}>
                                     <div>
                                         <div style={{ fontWeight: 600 }}>{p.name}</div>
                                         <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
                                             {p.email || 'No email'}{p.phone ? ` • ${p.phone}` : ''}
                                         </div>
                                     </div>
-                                    <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                    <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                                         {p.household?.name || 'No household'}
                                         {!p.household && (
                                             <button 

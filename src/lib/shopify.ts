@@ -1,3 +1,6 @@
+import prisma from "@/lib/prisma";
+import { sendEmail } from "@/lib/email";
+
 export async function createShopifyProgramVariants(name: string, memberPrice: number | null, nonMemberPrice: number | null) {
   const storeDomain = process.env.SHOPIFY_STORE_DOMAIN;
   const accessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
@@ -28,7 +31,9 @@ export async function createShopifyProgramVariants(name: string, memberPrice: nu
     });
 
     if (!productRes.ok) {
-        throw new Error(`Failed to create Shopify product: ${await productRes.text()}`);
+        const errorData = await productRes.text();
+        console.error(`[Shopify API Error] ${productRes.status} ${productRes.statusText}`, errorData);
+        throw new Error(`Shopify API responded with status: ${productRes.status}`);
     }
 
     const productData = await productRes.json();
@@ -89,7 +94,36 @@ export async function createShopifyProgramVariants(name: string, memberPrice: nu
     };
 
   } catch (error) {
-    console.error("Shopify integration error:", error);
+    console.error("[Shopify Error] Failed to create product/variants:", error);
+
+    try {
+        const admins = await prisma.participant.findMany({
+            where: {
+                OR: [{ sysadmin: true }, { boardMember: true }],
+                email: { not: null }
+            },
+            select: { email: true }
+        });
+
+        const emailPromises = admins
+            .map(a => a.email)
+            .filter((e): e is string => typeof e === 'string' && e.length > 0)
+            .map(email =>
+                sendEmail(
+                    email,
+                    "Shopify Integration Error",
+                    `<p>An error occurred in the Shopify integration while creating variants for program: <strong>${name}</strong>.</p><p>Error details:</p><pre>${error instanceof Error ? error.message : String(error)}</pre>`
+                )
+            );
+
+        if (emailPromises.length > 0) {
+            await Promise.all(emailPromises);
+        }
+    } catch (dbError) {
+        console.error("Failed to send Shopify error notifications:", dbError);
+    }
+
+    // We log it but do not crash the app. Admin will need to create variants manually.
     return null;
   }
 }
