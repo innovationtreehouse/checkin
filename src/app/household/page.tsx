@@ -336,38 +336,50 @@ export default function HouseholdPage() {
                                     }}>
                                         {editingMemberId === p.id ? (
                                             <form onSubmit={(e) => handleEditMember(e, p.id)} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', textAlign: 'left' }}>
-                                                <input
-                                                    type="text"
-                                                    className="glass-input"
-                                                    value={editForm.name}
-                                                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                                                    placeholder="Name"
-                                                    style={{ padding: '0.5rem' }}
-                                                    required
-                                                />
-                                                <input
-                                                    type="email"
-                                                    className="glass-input"
-                                                    value={editForm.email}
-                                                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                                                    placeholder="Email"
-                                                    style={{ padding: '0.5rem' }}
-                                                />
-                                                <input
-                                                    type="date"
-                                                    className="glass-input"
-                                                    value={editForm.dob}
-                                                    onChange={(e) => setEditForm({ ...editForm, dob: e.target.value })}
-                                                    style={{ padding: '0.5rem' }}
-                                                />
-                                                <input
-                                                    type="tel"
-                                                    className="glass-input"
-                                                    value={editForm.phone}
-                                                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                                                    placeholder="Phone"
-                                                    style={{ padding: '0.5rem' }}
-                                                />
+                                                <div>
+                                                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', color: 'var(--color-primary)' }}>Name</label>
+                                                    <input
+                                                        type="text"
+                                                        className="glass-input"
+                                                        value={editForm.name}
+                                                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                                        placeholder="Name"
+                                                        style={{ padding: '0.5rem', width: '100%' }}
+                                                        required
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', color: 'var(--color-primary)' }}>Email</label>
+                                                    <input
+                                                        type="email"
+                                                        className="glass-input"
+                                                        value={editForm.email}
+                                                        onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                                                        placeholder="Email"
+                                                        style={{ padding: '0.5rem', width: '100%' }}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', color: 'var(--color-primary)' }}>Date of Birth</label>
+                                                    <input
+                                                        type="date"
+                                                        className="glass-input"
+                                                        value={editForm.dob}
+                                                        onChange={(e) => setEditForm({ ...editForm, dob: e.target.value })}
+                                                        style={{ padding: '0.5rem', width: '100%' }}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', color: 'var(--color-primary)' }}>Phone</label>
+                                                    <input
+                                                        type="tel"
+                                                        className="glass-input"
+                                                        value={editForm.phone}
+                                                        onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                                                        placeholder="Phone"
+                                                        style={{ padding: '0.5rem', width: '100%' }}
+                                                    />
+                                                </div>
                                                 {p.id !== (session?.user as {id: number})?.id && editForm.dob && (new Date().getFullYear() - new Date(editForm.dob).getFullYear() >= 18) && (
                                                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginTop: '0.5rem', fontSize: '0.9rem' }}>
                                                         <input
