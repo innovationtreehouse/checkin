@@ -9,8 +9,6 @@ export const GET = withAuth(
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
             const metrics = await prisma.systemMetric.findMany({
                 where: {
                     metric: "scan_response_time",
@@ -67,8 +65,6 @@ export const GET = withAuth(
                 };
             });
 
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
             prisma.systemMetric
                 .deleteMany({
                     where: {
