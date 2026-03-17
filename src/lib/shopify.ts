@@ -1,12 +1,72 @@
+// Shopify API integration using Client Credentials Grant (post-Jan 2026)
+// Tokens expire after 24 hours and are cached in-memory.
+
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 
+let cachedToken: string | null = null;
+let tokenExpiresAt: number = 0;
+
+/**
+ * Fetches a fresh Admin API access token using the client credentials grant.
+ * Caches the token and refreshes ~5 minutes before expiry.
+ */
+async function getAccessToken(): Promise<string | null> {
+  const storeDomain = process.env.SHOPIFY_STORE_DOMAIN;
+  const clientId = process.env.SHOPIFY_CLIENT_ID;
+  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET;
+
+  if (!storeDomain || !clientId || !clientSecret) {
+    console.warn("Shopify integration is disabled: Missing SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, or SHOPIFY_CLIENT_SECRET in .env");
+    return null;
+  }
+
+  // Return cached token if still valid (with 5-minute buffer)
+  if (cachedToken && Date.now() < tokenExpiresAt - 5 * 60 * 1000) {
+    return cachedToken;
+  }
+
+  try {
+    const res = await fetch(`https://${storeDomain}/admin/oauth/access_token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret,
+      }).toString(),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`Failed to obtain Shopify access token: ${res.status} ${errorText}`);
+      cachedToken = null;
+      return null;
+    }
+
+    const data = await res.json();
+    cachedToken = data.access_token;
+
+    // Tokens last 24 hours; cache for 23 hours 55 minutes
+    tokenExpiresAt = Date.now() + 23 * 60 * 60 * 1000 + 55 * 60 * 1000;
+
+    console.log("[SHOPIFY] Successfully obtained new access token");
+    return cachedToken;
+  } catch (error) {
+    console.error("Failed to fetch Shopify access token:", error);
+    cachedToken = null;
+    return null;
+  }
+}
+
 export async function createShopifyProgramVariants(name: string, memberPrice: number | null, nonMemberPrice: number | null) {
   const storeDomain = process.env.SHOPIFY_STORE_DOMAIN;
-  const accessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+  const accessToken = await getAccessToken();
 
   if (!storeDomain || !accessToken) {
-    console.warn("Shopify integration is disabled: Missing credentials in .env");
+    console.warn("Shopify integration is disabled: Missing credentials or unable to obtain access token");
     return null;
   }
 
@@ -46,7 +106,7 @@ export async function createShopifyProgramVariants(name: string, memberPrice: nu
         variants.push({
             product_id: productId,
             option1: "Member",
-            price: (memberPrice).toFixed(2), // Ensure string format for Shopify
+            price: (memberPrice).toFixed(2),
             requires_shipping: false,
         });
     }
