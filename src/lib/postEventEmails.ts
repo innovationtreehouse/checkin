@@ -64,6 +64,30 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
             break;
         }
 
+        // Extract unique lead mentor IDs
+        const leadMentorIds = Array.from(new Set(
+            finishedEvents
+                .map(event => event.program?.leadMentorId)
+                .filter((id): id is number => id !== null && id !== undefined)
+        ));
+
+        // Batch fetch all lead mentors at once
+        const leadMentorsMap = new Map<number, string | null>();
+        if (leadMentorIds.length > 0) {
+            const leadMentors = await prisma.participant.findMany({
+                where: {
+                    id: { in: leadMentorIds }
+                },
+                select: {
+                    id: true,
+                    email: true
+                }
+            });
+            for (const lead of leadMentors) {
+                leadMentorsMap.set(lead.id, lead.email);
+            }
+        }
+
         for (const event of finishedEvents) {
             processedEventsCount++;
             const program = event.program;
@@ -73,11 +97,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
             let recipientEmail: string | null | undefined = null;
 
             if (leadMentorId) {
-                const lead = await prisma.participant.findUnique({
-                    where: { id: leadMentorId },
-                    select: { email: true }
-                });
-                recipientEmail = lead?.email;
+                recipientEmail = leadMentorsMap.get(leadMentorId);
             } else {
                 // Try to fallback to a core volunteer
                 const coreVolunteer = program.volunteers[0]?.participant;
