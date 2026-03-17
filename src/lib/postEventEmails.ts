@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { config } from "@/lib/config";
@@ -33,18 +34,16 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
 
     while (true) {
         // Find events that have ended before the cutoff, haven't had an email sent yet, and attendance is not confirmed.
-        const finishedEventsData: any = await prisma.event.findMany({
-            where: {
-                end: {
-                    lte: cutoffTime
-                },
-                postEventEmailSent: false,
-                attendanceConfirmedAt: null,
-                programId: {
-                    not: null
-                },
-                ...(cursorId ? { id: { gt: cursorId } } : {})
-            },
+        const whereClause: Prisma.EventWhereInput = {
+            end: { lte: cutoffTime },
+            postEventEmailSent: false,
+            attendanceConfirmedAt: null,
+            programId: { not: null },
+            ...(cursorId ? { id: { gt: cursorId } } : {})
+        };
+
+        const finishedEvents = await prisma.event.findMany({
+            where: whereClause,
             include: {
                 program: {
                     include: {
@@ -61,11 +60,11 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
             orderBy: { id: 'asc' }
         });
 
-        if (finishedEventsData.length === 0) {
+        if (finishedEvents.length === 0) {
             break;
         }
 
-        for (const event of finishedEventsData) {
+        for (const event of finishedEvents) {
             processedEventsCount++;
             const program = event.program;
             if (!program) continue;
@@ -90,7 +89,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
                 continue; // Can't send email if we don't know who to send it to
             }
 
-            const attendingRsvps = event.rsvps.filter((r: any) => r.status === 'ATTENDING').length;
+            const attendingRsvps = event.rsvps.filter(r => r.status === 'ATTENDING').length;
             const actualVisits = event.visits.length;
 
             const baseUrl = config.baseUrl();
@@ -119,7 +118,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
         }
 
         // Update cursor to the last fetched event ID
-        cursorId = finishedEventsData[finishedEventsData.length - 1].id;
+        cursorId = finishedEvents[finishedEvents.length - 1].id;
     }
 
     return { processedEvents: processedEventsCount, emailsSent };
