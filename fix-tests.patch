@@ -1,0 +1,68 @@
+--- src/lib/__tests__/notifications.test.ts
++++ src/lib/__tests__/notifications.test.ts
+@@ -27,15 +27,14 @@
+     let originalConsoleError: typeof console.error;
+-    let sendNotificationSpy: jest.SpyInstance;
+
+     beforeEach(() => {
+         jest.clearAllMocks();
+
+         jest.useFakeTimers();
+         jest.setSystemTime(new Date('2024-03-07T14:30:00Z'));
+
+         originalConsoleError = console.error;
+         console.error = jest.fn();
+-
+-        sendNotificationSpy = jest.spyOn(notificationsModule, 'sendNotification').mockResolvedValue(undefined);
+     });
+
+     afterEach(() => {
+         jest.useRealTimers();
+         console.error = originalConsoleError;
+-        sendNotificationSpy.mockRestore();
+     });
+@@ -69,5 +68,5 @@
+         expect(sendEmail).not.toHaveBeenCalled();
+         expect(prisma.householdLead.findMany).not.toHaveBeenCalled();
+-        expect(sendNotificationSpy).not.toHaveBeenCalled();
++        expect(sendNotification).not.toHaveBeenCalled();
+     });
+
+@@ -88,5 +87,5 @@
+             expect.stringContaining('John Doe')
+         );
+-        expect(sendNotificationSpy).not.toHaveBeenCalled();
++        expect(sendNotification).not.toHaveBeenCalled();
+     });
+
+@@ -128,5 +127,5 @@
+         await sendCheckinNotifications(1, 'checkin');
+
+-        expect(sendNotificationSpy).not.toHaveBeenCalled();
++        expect(sendNotification).not.toHaveBeenCalled();
+     });
+
+@@ -144,6 +143,6 @@
+         await sendCheckinNotifications(1, 'checkin');
+
+-        expect(sendNotificationSpy).toHaveBeenCalledTimes(1);
+-        expect(sendNotificationSpy).toHaveBeenCalledWith(1, 'EMERGENCY_CONTACT_ALERT', {
++        expect(sendNotification).toHaveBeenCalledTimes(1);
++        expect(sendNotification).toHaveBeenCalledWith(1, 'EMERGENCY_CONTACT_ALERT', {
+             contactType: 'email',
+             contactInfo: 'emergency@example.com',
+@@ -164,6 +163,6 @@
+         await sendCheckinNotifications(2, 'checkout');
+
+-        expect(sendNotificationSpy).toHaveBeenCalledTimes(1);
+-        expect(sendNotificationSpy).toHaveBeenCalledWith(2, 'EMERGENCY_CONTACT_ALERT', {
++        expect(sendNotification).toHaveBeenCalledTimes(1);
++        expect(sendNotification).toHaveBeenCalledWith(2, 'EMERGENCY_CONTACT_ALERT', {
+             contactType: 'email',
+             contactInfo: 'emergency2@example.com',
+@@ -183,5 +182,5 @@
+         await sendCheckinNotifications(1, 'checkin');
+
+-        expect(sendNotificationSpy).not.toHaveBeenCalled();
++        expect(sendNotification).not.toHaveBeenCalled();
+     });

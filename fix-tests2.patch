@@ -1,0 +1,23 @@
+--- src/lib/__tests__/notifications.test.ts
++++ src/lib/__tests__/notifications.test.ts
+@@ -27,15 +27,15 @@
+     let originalConsoleError: typeof console.error;
+-    let sendNotificationSpy: jest.SpyInstance;
+
+     beforeEach(() => {
+         jest.clearAllMocks();
+
+         jest.useFakeTimers();
+         jest.setSystemTime(new Date('2024-03-07T14:30:00Z'));
+
+         originalConsoleError = console.error;
+         console.error = jest.fn();
+-
+-        sendNotificationSpy = jest.spyOn(notificationsModule, 'sendNotification').mockResolvedValue(undefined);
+     });
+
+     afterEach(() => {
+         jest.useRealTimers();
+         console.error = originalConsoleError;
+-        sendNotificationSpy.mockRestore();
+     });
