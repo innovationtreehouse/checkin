@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import styles from "../../page.module.css";
 import { useAutoCycle } from "../../../hooks/useAutoCycle";
+import Clock from "../../../components/Clock";
 
 type ToolStatusLevel = "BASIC" | "DOF" | "CERTIFIED" | "MAY_CERTIFY_OTHERS";
 
@@ -40,13 +41,6 @@ function KioskCertificationsInner() {
     const [tools, setTools] = useState<Tool[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [currentTime, setCurrentTime] = useState<Date | null>(null);
-
-    useEffect(() => {
-        setCurrentTime(new Date());
-        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-        return () => clearInterval(timer);
-    }, []);
 
     const fetchData = useCallback(async () => {
         try {
@@ -220,18 +214,14 @@ function KioskCertificationsInner() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><span style={{ width: '12px', height: '12px', background: '#3b82f6', display: 'inline-block', borderRadius: '3px' }}></span> Instructor</div>
                         </div>
                     </div>
-                    {currentTime && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                            {totalPages > 1 && (
-                                <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--color-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
-                                    {currentPage + 1} / {totalPages}
-                                </div>
-                            )}
-                            <div style={{ fontSize: 'clamp(2rem, 5vw, 3.5rem)', fontWeight: 'bold', lineHeight: 1, color: 'var(--color-text-main)', opacity: 0.9, fontVariantNumeric: 'tabular-nums' }}>
-                                {currentTime.toLocaleTimeString("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit" })}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                        {totalPages > 1 && (
+                            <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--color-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                                {currentPage + 1} / {totalPages}
                             </div>
-                        </div>
-                    )}
+                        )}
+                        <Clock />
+                    </div>
                 </div>
 
                 {loading ? (
