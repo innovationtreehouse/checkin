@@ -44,19 +44,31 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const results = await prisma.$transaction(async (tx) => {
             const actions = [];
+
+            // Pre-fetch all overlapping unassociated visits for the participants
+            const overlappingVisits = await tx.visit.findMany({
+                where: {
+                    participantId: { in: participantIds },
+                    associatedEventId: null,
+                    arrived: { lte: event.end },
+                    OR: [
+                        { departed: null },
+                        { departed: { gte: event.start } }
+                    ]
+                }
+            });
+
+            // Map them by participantId for O(1) lookups
+            const visitsByParticipant = new Map();
+            for (const visit of overlappingVisits) {
+                // We just need the first matching unassociated visit for each participant.
+                if (!visitsByParticipant.has(visit.participantId)) {
+                    visitsByParticipant.set(visit.participantId, visit);
+                }
+            }
+
             for (const pId of participantIds) {
-                // Find an existing unassociated visit overlapping with the event, or create one
-                const visit = await tx.visit.findFirst({
-                    where: {
-                        participantId: pId,
-                        associatedEventId: null,
-                        arrived: { lte: event.end },
-                        OR: [
-                            { departed: null },
-                            { departed: { gte: event.start } }
-                        ]
-                    }
-                });
+                const visit = visitsByParticipant.get(pId);
 
                 if (visit) {
                     const updated = await tx.visit.update({
