@@ -2,13 +2,11 @@ name: Jules AI Agent
 
 on:
   issues:
-    types: [opened, reopened, labeled]
-  issue_comment:
-    types: [created]
+    types: [labeled]
 
 jobs:
   jules:
-    if: ${{ !github.event.issue.pull_request }}
+    if: ${{ !github.event.issue.pull_request && github.event.label.name == 'jules' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
