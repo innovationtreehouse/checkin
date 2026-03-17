@@ -112,15 +112,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                     
                     return NextResponse.json({ success: true, count: futureEvents.length });
                 } else if (body.action === 'editTime') {
-                    for (const fe of futureEvents) {
-                        await prisma.event.update({
+                    const updatePromises = futureEvents.map(fe => {
+                        return prisma.event.update({
                             where: { id: fe.id },
                             data: {
                                 start: new Date(fe.start.getTime() + timeShiftStartMs),
                                 end: new Date(fe.end.getTime() + timeShiftEndMs)
                             }
                         });
-                    }
+                    });
+
+                    await prisma.$transaction(updatePromises);
+
                     return NextResponse.json({ success: true, count: futureEvents.length });
                 }
             } else {
