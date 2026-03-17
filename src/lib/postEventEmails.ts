@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { config } from "@/lib/config";
@@ -33,18 +34,16 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
 
     while (true) {
         // Find events that have ended before the cutoff, haven't had an email sent yet, and attendance is not confirmed.
+        const whereClause: Prisma.EventWhereInput = {
+            end: { lte: cutoffTime },
+            postEventEmailSent: false,
+            attendanceConfirmedAt: null,
+            programId: { not: null },
+            ...(cursorId ? { id: { gt: cursorId } } : {})
+        };
+
         const finishedEvents = await prisma.event.findMany({
-            where: {
-                end: {
-                    lte: cutoffTime
-                },
-                postEventEmailSent: false,
-                attendanceConfirmedAt: null,
-                programId: {
-                    not: null
-                },
-                ...(cursorId ? { id: { gt: cursorId } } : {})
-            },
+            where: whereClause,
             include: {
                 program: {
                     include: {
