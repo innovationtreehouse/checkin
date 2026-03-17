@@ -25,6 +25,7 @@ export async function GET(req: Request) {
 
         let kickedCount = 0;
         let warnedCount = 0;
+        const toDelete: { programId: number; participantId: number }[] = [];
 
         for (const record of pendingParticipants) {
             if (!record.pendingSince) continue;
@@ -36,14 +37,10 @@ export async function GET(req: Request) {
             const warningText = `If not paid, your spot in ${record.program.name} will be freed up. If a payment plan is needed, contact the board via finances@innovationtreehouse.org`;
 
             if (diffDays >= 7) {
-                // Delete the participant
-                await prisma.programParticipant.delete({
-                    where: {
-                        programId_participantId: {
-                            programId: record.programId,
-                            participantId: record.participantId
-                        }
-                    }
+                // Collect IDs for batch deletion
+                toDelete.push({
+                    programId: record.programId,
+                    participantId: record.participantId
                 });
 
                 kickedCount++;
@@ -63,6 +60,14 @@ export async function GET(req: Request) {
                 console.log(`[EMAIL DISPATCH] To: ${record.participant.email}, Subject: Reminder: Payment required for ${record.program.name}`);
                 console.log(`[EMAIL DISPATCH] Body: ${warningText}`);
             }
+        }
+
+        if (toDelete.length > 0) {
+            await prisma.programParticipant.deleteMany({
+                where: {
+                    OR: toDelete
+                }
+            });
         }
 
         return NextResponse.json({ success: true, processed: pendingParticipants.length, kicked: kickedCount, warned: warnedCount });
