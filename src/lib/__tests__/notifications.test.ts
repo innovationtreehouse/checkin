@@ -2,12 +2,10 @@ import { sendCheckinNotifications } from '../notifications';
 import { sendEmail } from '../email';
 import prisma from '../prisma';
 
-// 1. We mock sendEmail
 jest.mock('../email', () => ({
     sendEmail: jest.fn().mockResolvedValue(true)
 }));
 
-// 2. We mock Prisma
 jest.mock('../prisma', () => ({
     __esModule: true,
     default: {
@@ -20,7 +18,7 @@ jest.mock('../prisma', () => ({
     }
 }));
 
-// 3. Instead of trying to spy on the internal sendNotification, we mock it globally
+// We globally mock the notifications module's sendNotification
 jest.mock('../notifications', () => {
     const original = jest.requireActual('../notifications');
     return {
@@ -54,6 +52,11 @@ describe('sendCheckinNotifications', () => {
         email: true,
         notificationSettings: true,
         householdId: true,
+        firstName: true,
+        lastName: true,
+        emergencyContactPhone: true,
+        emergencyContactEmail: true,
+        notifyEmergencyContact: true,
     };
 
     it('should do nothing if the participant does not exist', async () => {

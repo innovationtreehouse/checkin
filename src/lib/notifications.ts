@@ -98,7 +98,12 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
                 email: true,
                 notificationSettings: true,
                 householdId: true,
-            }
+                firstName: true,
+                lastName: true,
+                emergencyContactPhone: true,
+                emergencyContactEmail: true,
+                notifyEmergencyContact: true,
+            } as any
         }) as any;
 
         if (!participant) return;
