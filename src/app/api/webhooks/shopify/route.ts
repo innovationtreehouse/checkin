@@ -37,13 +37,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
         }
 
-        let order;
-        try {
-            order = JSON.parse(rawBody);
-        } catch (parseError) {
-            logger.error("Failed to parse Shopify webhook payload:", parseError);
-            return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
-        }
+        const order = JSON.parse(rawBody);
 
         // Iterate through line items to find CheckMeIn_Account_ID and Program_ID
         // We set these custom attributes in the permalink URL:

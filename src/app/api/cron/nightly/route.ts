@@ -28,11 +28,11 @@ export async function GET(req: Request) {
         let boardNotified = false;
 
         if (abandonedVisits.length > 0) {
-            // Force everybody out concurrently
-            await Promise.all(
-                abandonedVisits.map((visit) => processVisitCheckout(visit.id, now))
-            );
-            checkedOutCount += abandonedVisits.length;
+            // Force everybody out
+            for (const visit of abandonedVisits) {
+                await processVisitCheckout(visit.id, now);
+                checkedOutCount++;
+            }
 
             // If at least one was a keyholder, the facility was left "Open". We need to alert the board.
             const abandonedKeyholders = abandonedVisits.filter(v => v.participant.keyholder);

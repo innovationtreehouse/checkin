@@ -90,22 +90,15 @@ export async function sendNotification(userId: number, eventType: NotificationEv
  */
 export async function sendCheckinNotifications(participantId: number, type: 'checkin' | 'checkout') {
     try {
-        // Updated to include the fields from the task description
-        const querySelect: any = {
-            id: true,
-            name: true,
-            email: true,
-            notificationSettings: true,
-            householdId: true,
-            firstName: true,
-            lastName: true,
-            emergencyContactPhone: true,
-            emergencyContactEmail: true,
-            notifyEmergencyContact: true,
-        };
         const participant = await prisma.participant.findUnique({
             where: { id: participantId },
-            select: querySelect
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                notificationSettings: true,
+                householdId: true,
+            }
         }) as any;
 
         if (!participant) return;
@@ -177,12 +170,13 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
 
         // 3. New logic from the task prompt: Emergency Contact Notifications
         if (participant.notifyEmergencyContact) {
-            const message = `${participant.firstName} ${participant.lastName} has ${action} the facility.`;
+            const msgAction = type === 'checkin' ? 'checked in to' : 'checked out of';
+            const emergencyMessage = `${participant.firstName} ${participant.lastName} has ${msgAction} the facility.`;
             if (participant.emergencyContactEmail) {
                 await sendNotification(participantId, 'EMERGENCY_CONTACT_ALERT', {
                     contactType: 'email',
                     contactInfo: participant.emergencyContactEmail,
-                    message
+                    message: emergencyMessage
                 });
             }
         }

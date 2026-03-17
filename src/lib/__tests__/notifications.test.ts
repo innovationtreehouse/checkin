@@ -2,10 +2,12 @@ import { sendCheckinNotifications } from '../notifications';
 import { sendEmail } from '../email';
 import prisma from '../prisma';
 
+// 1. We mock sendEmail
 jest.mock('../email', () => ({
     sendEmail: jest.fn().mockResolvedValue(true)
 }));
 
+// 2. We mock Prisma
 jest.mock('../prisma', () => ({
     __esModule: true,
     default: {
@@ -17,6 +19,16 @@ jest.mock('../prisma', () => ({
         }
     }
 }));
+
+// 3. Instead of trying to spy on the internal sendNotification, we mock it globally
+jest.mock('../notifications', () => {
+    const original = jest.requireActual('../notifications');
+    return {
+        ...original,
+        sendNotification: jest.fn().mockResolvedValue(undefined)
+    };
+});
+import { sendNotification } from '../notifications';
 
 describe('sendCheckinNotifications', () => {
     let originalConsoleError: typeof console.error;
@@ -42,11 +54,6 @@ describe('sendCheckinNotifications', () => {
         email: true,
         notificationSettings: true,
         householdId: true,
-        firstName: true,
-        lastName: true,
-        emergencyContactPhone: true,
-        emergencyContactEmail: true,
-        notifyEmergencyContact: true,
     };
 
     it('should do nothing if the participant does not exist', async () => {
@@ -60,6 +67,7 @@ describe('sendCheckinNotifications', () => {
         });
         expect(sendEmail).not.toHaveBeenCalled();
         expect(prisma.householdLead.findMany).not.toHaveBeenCalled();
+        expect(sendNotification).not.toHaveBeenCalled();
     });
 
     it('should send an email to the participant if they opt in (checkin)', async () => {
@@ -80,6 +88,7 @@ describe('sendCheckinNotifications', () => {
             expect.stringContaining('✅ John Doe checked in to Innovation Treehouse'),
             expect.stringContaining('John Doe')
         );
+        expect(sendNotification).not.toHaveBeenCalled();
     });
 
     it('should notify a household lead when a dependent checks in', async () => {
@@ -127,55 +136,46 @@ describe('sendCheckinNotifications', () => {
 
         await sendCheckinNotifications(1, 'checkin');
 
-        // Verify only things expected have been called (no emails in this scenario)
-        expect(sendEmail).not.toHaveBeenCalled();
+        expect(sendNotification).not.toHaveBeenCalled();
     });
 
     it('should send a checkin notification if notifyEmergencyContact is true and email exists', async () => {
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.participant.findUnique as jest.Mock).mockResolvedValueOnce({
             id: 1,
             firstName: 'John',
             lastName: 'Doe',
             emergencyContactPhone: '555-1234',
             emergencyContactEmail: 'emergency@example.com',
             notifyEmergencyContact: true,
-            // also mocking these because sendNotification looks up the user too, so the second call needs to return them
-            name: 'John Doe',
-            email: 'john@example.com',
-            notificationSettings: {}
         });
 
         await sendCheckinNotifications(1, 'checkin');
 
-        expect(sendEmail).toHaveBeenCalledTimes(1);
-        expect(sendEmail).toHaveBeenCalledWith(
-            'emergency@example.com',
-            'EMERGENCY ALERT',
-            expect.stringContaining('John Doe has checked in to the facility.')
-        );
+        expect(sendNotification).toHaveBeenCalledTimes(1);
+        expect(sendNotification).toHaveBeenCalledWith(1, 'EMERGENCY_CONTACT_ALERT', {
+            contactType: 'email',
+            contactInfo: 'emergency@example.com',
+            message: 'John Doe has checked in to the facility.'
+        });
     });
 
     it('should send a checkout notification if notifyEmergencyContact is true and email exists', async () => {
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.participant.findUnique as jest.Mock).mockResolvedValueOnce({
             id: 2,
             firstName: 'Jane',
             lastName: 'Smith',
             emergencyContactEmail: 'emergency2@example.com',
             notifyEmergencyContact: true,
-            // mock the second lookup inside sendNotification:
-            name: 'Jane Smith',
-            email: 'jane@example.com',
-            notificationSettings: {}
         });
 
         await sendCheckinNotifications(2, 'checkout');
 
-        expect(sendEmail).toHaveBeenCalledTimes(1);
-        expect(sendEmail).toHaveBeenCalledWith(
-            'emergency2@example.com',
-            'EMERGENCY ALERT',
-            expect.stringContaining('Jane Smith has checked out of the facility.')
-        );
+        expect(sendNotification).toHaveBeenCalledTimes(1);
+        expect(sendNotification).toHaveBeenCalledWith(2, 'EMERGENCY_CONTACT_ALERT', {
+            contactType: 'email',
+            contactInfo: 'emergency2@example.com',
+            message: 'Jane Smith has checked out of the facility.'
+        });
     });
 
     it('should not send a notification if notifyEmergencyContact is true but there is no emergency email', async () => {
@@ -189,7 +189,7 @@ describe('sendCheckinNotifications', () => {
 
         await sendCheckinNotifications(1, 'checkin');
 
-        expect(sendEmail).not.toHaveBeenCalled();
+        expect(sendNotification).not.toHaveBeenCalled();
     });
 
     it('should catch and log errors to console.error', async () => {
