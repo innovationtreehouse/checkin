@@ -33,7 +33,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
 
     while (true) {
         // Find events that have ended before the cutoff, haven't had an email sent yet, and attendance is not confirmed.
-        const finishedEvents = await prisma.event.findMany({
+        const finishedEvents: any[] = await prisma.event.findMany({
             where: {
                 end: {
                     lte: cutoffTime
@@ -90,7 +90,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
                 continue; // Can't send email if we don't know who to send it to
             }
 
-            const attendingRsvps = event.rsvps.filter(r => r.status === 'ATTENDING').length;
+            const attendingRsvps = event.rsvps.filter((r: any) => r.status === 'ATTENDING').length;
             const actualVisits = event.visits.length;
 
             const baseUrl = config.baseUrl();

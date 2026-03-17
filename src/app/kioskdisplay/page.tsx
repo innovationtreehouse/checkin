@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import styles from "../page.module.css";
 import { formatTime } from "@/lib/time";
+import Clock from "@/components/Clock";
 
 type Participant = {
     id: number;
@@ -496,6 +497,7 @@ function KioskDisplayInner() {
                         Current Attendance
                     </h1>
                     <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+                        <Clock />
                         {!isKioskMode && canAdminCheckout && (
                             <button
                                 onClick={() => setShowSignOutModal(true)}
