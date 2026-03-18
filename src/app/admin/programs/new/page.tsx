@@ -279,7 +279,7 @@ export default function CreateProgramPage() {
                                 </div>
                             </div>
                             <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Leave prices blank or 0 for a free program. Setting a price automatically creates a checkout flow on Shopify.</p>
-                            {memberPrice && nonMemberPrice && Number(memberPrice) > Number(nonMemberPrice) && (
+                            {Number(memberPrice) > Number(nonMemberPrice) && (
                                 <div style={{ marginTop: '0.5rem', padding: '0.75rem', background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '6px', fontSize: '0.85rem', color: '#eab308' }}>
                                     ⚠️ Member price is higher than non-member price.
                                 </div>
