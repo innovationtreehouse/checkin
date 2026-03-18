@@ -416,7 +416,7 @@ Active visit found: Yes
  POST /api/scan 200 in 205ms (compile: 28ms, render: 177ms)
  GET /api/attendance 200 in 43ms (compile: 15ms, render: 27ms)
  GET /profile 200 in 1524ms (compile: 1336ms, render: 188ms)
-Profile GET Error: Error [PrismaClientValidationError]: 
+Profile GET Error: Error [PrismaClientValidationError]:
 Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["default"].participant.findUnique()` invocation in
 /home/dkay/Projects/treehouse/checkmein/.next/dev/server/chunks/[root-of-the-server]__d1bbedee._.js:296:173
 
@@ -492,7 +492,7 @@ Unknown field `notificationSettings` for select statement on model `Participant`
   clientVersion: '7.4.1'
 }
  GET /api/profile 500 in 1870ms (compile: 495ms, render: 1375ms)
-Profile GET Error: Error [PrismaClientValidationError]: 
+Profile GET Error: Error [PrismaClientValidationError]:
 Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["default"].participant.findUnique()` invocation in
 /home/dkay/Projects/treehouse/checkmein/.next/dev/server/chunks/[root-of-the-server]__d1bbedee._.js:296:173
 
@@ -570,7 +570,7 @@ Unknown field `notificationSettings` for select statement on model `Participant`
  GET /api/profile 500 in 825ms (compile: 10ms, render: 815ms)
  GET /profile 200 in 820ms (compile: 25ms, render: 796ms)
  GET /api/auth/session 200 in 231ms (compile: 158ms, render: 72ms)
-Profile GET Error: Error [PrismaClientValidationError]: 
+Profile GET Error: Error [PrismaClientValidationError]:
 Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["default"].participant.findUnique()` invocation in
 /home/dkay/Projects/treehouse/checkmein/.next/dev/server/chunks/[root-of-the-server]__d1bbedee._.js:296:173
 
@@ -646,7 +646,7 @@ Unknown field `notificationSettings` for select statement on model `Participant`
   clientVersion: '7.4.1'
 }
  GET /api/profile 500 in 980ms (compile: 19ms, render: 962ms)
-Profile PATCH Error: Error [PrismaClientValidationError]: 
+Profile PATCH Error: Error [PrismaClientValidationError]:
 Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["default"].participant.update()` invocation in
 /home/dkay/Projects/treehouse/checkmein/.next/dev/server/chunks/[root-of-the-server]__d1bbedee._.js:359:180
 
@@ -719,7 +719,7 @@ Unknown argument `notificationSettings`. Available options are marked with ?.
  GET /api/attendance 200 in 66ms (compile: 22ms, render: 45ms)
  GET /household 200 in 1453ms (compile: 588ms, render: 865ms)
  GET /api/auth/session 200 in 208ms (compile: 134ms, render: 74ms)
-Profile GET Error: Error [PrismaClientValidationError]: 
+Profile GET Error: Error [PrismaClientValidationError]:
 Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["default"].participant.findUnique()` invocation in
 /home/dkay/Projects/treehouse/checkmein/.next/dev/server/chunks/[root-of-the-server]__d1bbedee._.js:296:173
 
@@ -836,7 +836,7 @@ Active visit found: No
  GET /api/auth/session 200 in 100ms (compile: 14ms, render: 86ms)
  GET /api/attendance 200 in 119ms (compile: 44ms, render: 75ms)
  GET /household 200 in 165ms (compile: 9ms, render: 156ms)
-Profile GET Error: Error [PrismaClientValidationError]: 
+Profile GET Error: Error [PrismaClientValidationError]:
 Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["default"].participant.findUnique()` invocation in
 /home/dkay/Projects/treehouse/checkmein/.next/dev/server/chunks/[root-of-the-server]__d1bbedee._.js:296:173
 
@@ -912,7 +912,7 @@ Unknown field `notificationSettings` for select statement on model `Participant`
   clientVersion: '7.4.1'
 }
  GET /api/profile 500 in 2.1s (compile: 448ms, render: 1658ms)
-Profile GET Error: Error [PrismaClientValidationError]: 
+Profile GET Error: Error [PrismaClientValidationError]:
 Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["default"].participant.findUnique()` invocation in
 /home/dkay/Projects/treehouse/checkmein/.next/dev/server/chunks/[root-of-the-server]__d1bbedee._.js:296:173
 
@@ -1041,7 +1041,7 @@ Active visit found: No
  GET /api/auth/session 200 in 103ms (compile: 25ms, render: 78ms)
  GET /api/attendance 200 in 150ms (compile: 36ms, render: 114ms)
  GET /household 200 in 236ms (compile: 25ms, render: 211ms)
-Profile GET Error: Error [PrismaClientValidationError]: 
+Profile GET Error: Error [PrismaClientValidationError]:
 Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["default"].participant.findUnique()` invocation in
 /home/dkay/Projects/treehouse/checkmein/.next/dev/server/chunks/[root-of-the-server]__d1bbedee._.js:296:173
 
@@ -1119,7 +1119,7 @@ Unknown field `notificationSettings` for select statement on model `Participant`
  GET /api/profile 500 in 1268ms (compile: 58ms, render: 1210ms)
  GET /api/household/visits 200 in 1757ms (compile: 46ms, render: 1711ms)
  GET /api/household 200 in 1931ms (compile: 43ms, render: 1888ms)
-Profile GET Error: Error [PrismaClientValidationError]: 
+Profile GET Error: Error [PrismaClientValidationError]:
 Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["default"].participant.findUnique()` invocation in
 /home/dkay/Projects/treehouse/checkmein/.next/dev/server/chunks/[root-of-the-server]__d1bbedee._.js:296:173
 
@@ -1197,7 +1197,7 @@ Unknown field `notificationSettings` for select statement on model `Participant`
  GET /api/profile 500 in 1842ms (compile: 58ms, render: 1784ms)
  GET /api/household/visits 200 in 1677ms (compile: 1552ms, render: 125ms)
  GET /api/household 200 in 206ms (compile: 71ms, render: 135ms)
-Household POST Error: Error [PrismaClientValidationError]: 
+Household POST Error: Error [PrismaClientValidationError]:
 Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["default"].household.create()` invocation in
 /home/dkay/Projects/treehouse/checkmein/.next/dev/server/chunks/[root-of-the-server]__5cb02410._.js:357:173
 
