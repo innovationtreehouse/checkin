@@ -2,10 +2,11 @@
 
 import { Suspense, useState } from 'react';
 import { useSession, signIn, signOut } from "next-auth/react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from 'next/link';
 import styles from './NavBar.module.css';
 import { config } from '@/lib/config';
+import { useKioskMode } from '@/hooks/useKioskMode';
 
 type SessionUser = {
     sysadmin?: boolean;
@@ -18,14 +19,13 @@ function NavBarInner() {
     const { data: session } = useSession();
     const router = useRouter();
     const pathname = usePathname();
-    const searchParams = useSearchParams();
+    const isKioskMode = useKioskMode();
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
     const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
-    // Hide navbar entirely in kiosk mode (mode=kiosk param or valid cert signature present)
-    const isKioskMode = searchParams.get('mode') === 'kiosk' || searchParams.get('sig');
+    // Hide navbar entirely in kiosk mode (mode=kiosk param, valid cert signature present, or on a kiosk page)
     if (isKioskMode) return null;
 
     // Don't show navigation on the homepage if they aren't signed in

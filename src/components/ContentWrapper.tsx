@@ -1,12 +1,10 @@
 "use client";
 
-import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { useKioskMode } from "@/hooks/useKioskMode";
 
 function ContentWrapperInner({ children }: { children: React.ReactNode }) {
-    const pathname = usePathname();
-    const searchParams = useSearchParams();
-    const isKioskMode = searchParams.get('mode') === 'kiosk' || searchParams.get('sig');
+    const isKioskMode = useKioskMode();
 
     return (
         <div style={{ paddingTop: isKioskMode ? '0px' : '70px', minHeight: '100vh', cursor: isKioskMode ? 'none' : 'auto' }}>
