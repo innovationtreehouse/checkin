@@ -39,14 +39,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const isSelfEnrollment = currentUserId === participantId;
         const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin || (session.user as { sysadmin?: boolean, boardMember?: boolean })?.boardMember;
 
-        if (!isSelfEnrollment && !isSysAdminOrBoard) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to enroll this participant. Program leads cannot manually add participants." }, { status: 403 });
-        }
-
         const participantData = await prisma.participant.findUnique({
             where: { id: participantId },
-            select: { dob: true }
+            select: { dob: true, householdId: true }
         });
+
+        let isHouseholdLead = false;
+        if (participantData?.householdId) {
+            const leadRecord = await prisma.householdLead.findUnique({
+                where: {
+                    householdId_participantId: {
+                        householdId: participantData.householdId,
+                        participantId: currentUserId
+                    }
+                }
+            });
+            isHouseholdLead = !!leadRecord;
+        }
+
+        if (!isSelfEnrollment && !isSysAdminOrBoard && !isHouseholdLead) {
+            return NextResponse.json({ error: "Forbidden: Not authorized to enroll this participant. Program leads cannot manually add participants." }, { status: 403 });
+        }
 
         const override = body.override === true;
 
