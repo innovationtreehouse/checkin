@@ -24,10 +24,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
                     include: { participant: true }
                 },
                 participants: {
-                    include: { 
+                    select: {
+                        participantId: true,
+                        status: true,
+                        pendingSince: true,
                         participant: {
                             include: { household: true }
-                        } 
+                        }
                     }
                 },
                 events: {

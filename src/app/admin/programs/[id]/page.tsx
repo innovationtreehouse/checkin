@@ -22,6 +22,8 @@ type ProgramDetail = {
     memberOnly: boolean;
     participants: {
         participantId: number;
+        status: string;
+        pendingSince: string | null;
         participant: { 
             name: string | null; 
             email: string;
@@ -682,7 +684,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
 
                             {/* Participants Section */}
                             <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '8px' }}>
-                                <h3 style={{ margin: '0 0 1rem 0' }}>Enrolled Participants ({program.participants.length})</h3>
+                                <h3 style={{ margin: '0 0 1rem 0' }}>Active Participants ({program.participants.filter(p => p.status === 'ACTIVE').length})</h3>
 
                                 <form onSubmit={handleAddParticipant} style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                                     <div style={{ flex: 1, minWidth: '200px', position: 'relative' }}>
@@ -722,13 +724,13 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                                     )}
                                 </form>
 
-                                {program.participants.length === 0 ? <p style={{ color: 'gray', margin: 0 }}>No participants yet.</p> :
+                                {program.participants.filter(p => p.status === 'ACTIVE').length === 0 ? <p style={{ color: 'gray', margin: 0 }}>No active participants yet.</p> :
                                     <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                        {program.participants.map(p => (
+                                        {program.participants.filter(p => p.status === 'ACTIVE').map(p => (
                                             <li key={p.participantId} style={{ display: 'flex', flexDirection: 'column', background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1rem', borderRadius: '4px' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                     <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{p.participant.name || 'Unnamed'}</span>
-                                                    <button onClick={() => handleRemoveParticipant(p.participantId)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.25rem 0.5rem' }}>Remove</button>
+                                                    <button onClick={() => handleRemoveParticipant(p.participantId)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '0.25rem 0.5rem' }}>Remove</button>
                                                 </div>
                                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem', fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
                                                     <div><strong>Email:</strong> {p.participant.email}</div>
@@ -738,6 +740,28 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                                                             <strong>Emergency Contact:</strong> {p.participant.household.emergencyContactName || 'N/A'} - {p.participant.household.emergencyContactPhone || 'N/A'}
                                                         </div>
                                                     )}
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                }
+                            </div>
+
+                            {/* Pending Participants Section */}
+                            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '8px' }}>
+                                <h3 style={{ margin: '0 0 1rem 0' }}>Pending Participants ({program.participants.filter(p => p.status === 'PENDING').length})</h3>
+                                {program.participants.filter(p => p.status === 'PENDING').length === 0 ? <p style={{ color: 'gray', margin: 0 }}>No pending participants.</p> :
+                                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        {program.participants.filter(p => p.status === 'PENDING').map(p => (
+                                            <li key={p.participantId} style={{ display: 'flex', flexDirection: 'column', background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1rem', borderRadius: '4px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <span style={{ fontWeight: 'bold', color: '#fbbf24' }}>{p.participant.name || 'Unnamed'}</span>
+                                                    <button onClick={() => handleRemoveParticipant(p.participantId)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '0.25rem 0.5rem' }}>Remove</button>
+                                                </div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem', fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+                                                    <div><strong>Email:</strong> {p.participant.email}</div>
+                                                    <div><strong>Phone:</strong> {p.participant.phone || 'N/A'}</div>
+                                                    <div><strong>Pending Since:</strong> {p.pendingSince ? formatDateTime(p.pendingSince) : 'Unknown'}</div>
                                                 </div>
                                             </li>
                                         ))}
