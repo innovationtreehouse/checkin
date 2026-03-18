@@ -1,14 +1,14 @@
 name: Jules AI Agent
 
-# Trigger only when an issue is labeled
 on:
   issues:
-    types: [labeled]
+    types: [opened, reopened, labeled]
+  issue_comment:
+    types: [created]
 
 jobs:
   jules:
-    # Restrict execution to issues labeled 'jules' and ignore pull requests
-    if: ${{ github.event.label.name == 'jules' && !github.event.issue.pull_request }}
+    if: ${{ !github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
