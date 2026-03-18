@@ -1,0 +1,422 @@
+
+> checkmein@0.1.0 dev
+> next dev -p 4000 -H 0.0.0.0
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:4000
+- Network:       http://0.0.0.0:4000
+
+✓ Starting...
+✓ Ready in 1122ms
+[next-auth][warn][NEXTAUTH_URL]
+https://next-auth.js.org/warnings#nextauth_url
+[next-auth][warn][NO_SECRET]
+https://next-auth.js.org/warnings#no_secret
+[next-auth][warn][DEBUG_ENABLED]
+https://next-auth.js.org/warnings#debug_enabled
+ GET /api/auth/signin 200 in 1320ms (compile: 1269ms, render: 51ms)
+ GET /admin/programs/new 200 in 536ms (compile: 220ms, render: 316ms)
+ GET /api/auth/session 200 in 36ms (compile: 22ms, render: 15ms)
+ GET / 200 in 80ms (compile: 40ms, render: 40ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 688ms (compile: 58ms, render: 629ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 908ms (compile: 226ms, render: 682ms)
+ GET / 200 in 80ms (compile: 5ms, render: 75ms)
+ GET /api/auth/session 200 in 38ms (compile: 24ms, render: 14ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 292ms (compile: 6ms, render: 286ms)
+ GET / 200 in 84ms (compile: 11ms, render: 73ms)
+ GET /api/auth/session 200 in 49ms (compile: 27ms, render: 21ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 323ms (compile: 3ms, render: 319ms)
+ GET /api/auth/providers 200 in 39ms (compile: 19ms, render: 19ms)
+ GET /api/auth/csrf 200 in 12ms (compile: 3ms, render: 9ms)
+[next-auth][error][SIGNIN_OAUTH_ERROR]
+https://next-auth.js.org/errors#signin_oauth_error client_id is required {
+  error: {
+    message: 'client_id is required',
+    stack: 'TypeError: client_id is required\n' +
+      '    at new BaseClient (/app/.next/dev/server/chunks/node_modules_openid-client_d15f72b3._.js:1318:19)\n' +
+      '    at new Client (/app/.next/dev/server/chunks/node_modules_openid-client_d15f72b3._.js:2843:13)\n' +
+      '    at openidClient (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:410:20)\n' +
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n' +
+      '    at async getAuthorizationUrl (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:1764:20)\n' +
+      '    at async Object.signin (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:1846:30)\n' +
+      '    at async AuthHandler (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:3294:36)\n' +
+      '    at async NextAuthRouteHandler (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:3501:30)\n' +
+      '    at async NextAuth._args$ (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:3536:24)\n' +
+      '    at async AppRouteRouteModule.do (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:37866)\n' +
+      '    at async AppRouteRouteModule.handle (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:45156)\n' +
+      '    at async responseGenerator (/app/.next/dev/server/chunks/node_modules_next_0073c1d9._.js:12525:38)\n' +
+      '    at async AppRouteRouteModule.handleResponse (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:1:191938)\n' +
+      '    at async handleResponse (/app/.next/dev/server/chunks/node_modules_next_0073c1d9._.js:12588:32)\n' +
+      '    at async Module.handler (/app/.next/dev/server/chunks/node_modules_next_0073c1d9._.js:12641:13)\n' +
+      '    at async DevServer.renderToResponseWithComponentsImpl (/app/node_modules/next/dist/server/base-server.js:1442:9)\n' +
+      '    at async DevServer.renderPageComponent (/app/node_modules/next/dist/server/base-server.js:1494:24)\n' +
+      '    at async DevServer.renderToResponseImpl (/app/node_modules/next/dist/server/base-server.js:1544:32)\n' +
+      '    at async DevServer.pipeImpl (/app/node_modules/next/dist/server/base-server.js:1038:25)\n' +
+      '    at async NextNodeServer.handleCatchallRenderRequest (/app/node_modules/next/dist/server/next-server.js:395:17)\n' +
+      '    at async DevServer.handleRequestImpl (/app/node_modules/next/dist/server/base-server.js:929:17)\n' +
+      '    at async /app/node_modules/next/dist/server/dev/next-dev-server.js:387:20\n' +
+      '    at async Span.traceAsyncFn (/app/node_modules/next/dist/trace/trace.js:157:20)\n' +
+      '    at async DevServer.handleRequest (/app/node_modules/next/dist/server/dev/next-dev-server.js:383:24)\n' +
+      '    at async invokeRender (/app/node_modules/next/dist/server/lib/router-server.js:248:21)\n' +
+      '    at async handleRequest (/app/node_modules/next/dist/server/lib/router-server.js:447:24)\n' +
+      '    at async requestHandlerImpl (/app/node_modules/next/dist/server/lib/router-server.js:496:13)\n' +
+      '    at async Server.requestListener (/app/node_modules/next/dist/server/lib/start-server.js:226:13)',
+    name: 'TypeError'
+  },
+  providerId: 'google',
+  message: 'client_id is required'
+}
+ POST /api/auth/signin/google 200 in 49ms (compile: 3ms, render: 46ms)
+ GET /admin/programs/new 200 in 87ms (compile: 11ms, render: 76ms)
+ GET /api/auth/session 200 in 48ms (compile: 34ms, render: 14ms)
+ GET / 200 in 62ms (compile: 6ms, render: 56ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 391ms (compile: 12ms, render: 379ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 253ms (compile: 8ms, render: 245ms)
+ GET / 200 in 76ms (compile: 10ms, render: 65ms)
+ GET /api/auth/session 200 in 40ms (compile: 23ms, render: 17ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 302ms (compile: 3ms, render: 299ms)
+ GET /api/auth/providers 200 in 40ms (compile: 23ms, render: 17ms)
+ GET /api/auth/csrf 200 in 11ms (compile: 3ms, render: 8ms)
+[next-auth][error][SIGNIN_OAUTH_ERROR]
+https://next-auth.js.org/errors#signin_oauth_error client_id is required {
+  error: {
+    message: 'client_id is required',
+    stack: 'TypeError: client_id is required\n' +
+      '    at new BaseClient (/app/.next/dev/server/chunks/node_modules_openid-client_d15f72b3._.js:1318:19)\n' +
+      '    at new Client (/app/.next/dev/server/chunks/node_modules_openid-client_d15f72b3._.js:2843:13)\n' +
+      '    at openidClient (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:410:20)\n' +
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n' +
+      '    at async getAuthorizationUrl (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:1764:20)\n' +
+      '    at async Object.signin (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:1846:30)\n' +
+      '    at async AuthHandler (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:3294:36)\n' +
+      '    at async NextAuthRouteHandler (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:3501:30)\n' +
+      '    at async NextAuth._args$ (/app/.next/dev/server/chunks/node_modules_next-auth_b9efd365._.js:3536:24)\n' +
+      '    at async AppRouteRouteModule.do (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:37866)\n' +
+      '    at async AppRouteRouteModule.handle (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:45156)\n' +
+      '    at async responseGenerator (/app/.next/dev/server/chunks/node_modules_next_0073c1d9._.js:12525:38)\n' +
+      '    at async AppRouteRouteModule.handleResponse (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:1:191938)\n' +
+      '    at async handleResponse (/app/.next/dev/server/chunks/node_modules_next_0073c1d9._.js:12588:32)\n' +
+      '    at async Module.handler (/app/.next/dev/server/chunks/node_modules_next_0073c1d9._.js:12641:13)\n' +
+      '    at async DevServer.renderToResponseWithComponentsImpl (/app/node_modules/next/dist/server/base-server.js:1442:9)\n' +
+      '    at async DevServer.renderPageComponent (/app/node_modules/next/dist/server/base-server.js:1494:24)\n' +
+      '    at async DevServer.renderToResponseImpl (/app/node_modules/next/dist/server/base-server.js:1544:32)\n' +
+      '    at async DevServer.pipeImpl (/app/node_modules/next/dist/server/base-server.js:1038:25)\n' +
+      '    at async NextNodeServer.handleCatchallRenderRequest (/app/node_modules/next/dist/server/next-server.js:395:17)\n' +
+      '    at async DevServer.handleRequestImpl (/app/node_modules/next/dist/server/base-server.js:929:17)\n' +
+      '    at async /app/node_modules/next/dist/server/dev/next-dev-server.js:387:20\n' +
+      '    at async Span.traceAsyncFn (/app/node_modules/next/dist/trace/trace.js:157:20)\n' +
+      '    at async DevServer.handleRequest (/app/node_modules/next/dist/server/dev/next-dev-server.js:383:24)\n' +
+      '    at async invokeRender (/app/node_modules/next/dist/server/lib/router-server.js:248:21)\n' +
+      '    at async handleRequest (/app/node_modules/next/dist/server/lib/router-server.js:447:24)\n' +
+      '    at async requestHandlerImpl (/app/node_modules/next/dist/server/lib/router-server.js:496:13)\n' +
+      '    at async Server.requestListener (/app/node_modules/next/dist/server/lib/start-server.js:226:13)',
+    name: 'TypeError'
+  },
+  providerId: 'google',
+  message: 'client_id is required'
+}
+ POST /api/auth/signin/google 200 in 42ms (compile: 5ms, render: 37ms)
+ GET /api/auth/signin 200 in 29ms (compile: 20ms, render: 9ms)
+ GET /admin/programs/new 200 in 60ms (compile: 3ms, render: 57ms)
+ GET /api/auth/session 200 in 35ms (compile: 23ms, render: 12ms)
+ GET / 200 in 44ms (compile: 5ms, render: 38ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 235ms (compile: 8ms, render: 226ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 210ms (compile: 5ms, render: 205ms)
+ GET /api/auth/signin 200 in 49ms (compile: 28ms, render: 21ms)
+ GET /admin/programs/new 200 in 152ms (compile: 6ms, render: 145ms)
+ GET /api/auth/session 200 in 60ms (compile: 37ms, render: 23ms)
+ GET / 200 in 66ms (compile: 8ms, render: 58ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 611ms (compile: 31ms, render: 580ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 938ms (compile: 40ms, render: 898ms)
+ GET /api/auth/signin 200 in 32ms (compile: 19ms, render: 13ms)
+ GET /admin/programs/new 200 in 81ms (compile: 4ms, render: 77ms)
+ GET /api/auth/session 200 in 40ms (compile: 22ms, render: 17ms)
+ GET / 200 in 33ms (compile: 3ms, render: 30ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 327ms (compile: 6ms, render: 321ms)
+⨯ Error [PrismaClientKnownRequestError]:
+Invalid `{imported module ./src/lib/prisma.ts}["default"].participant.findMany()` invocation in
+/app/.next/dev/server/chunks/[root-of-the-server]__dd6df92a._.js:104:170
+
+  101 // Block if dev auth is not explicitly enabled
+  102 if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+  103 ;
+→ 104 const personas = await {imported module ./src/lib/prisma.ts}["default"].participant.findMany(
+Can't reach database server at base
+    at <unknown> (src/app/api/auth/dev-personas/route.ts:18:47)
+    at async GET (src/app/api/auth/dev-personas/route.ts:18:22)
+  16 |     }
+  17 |
+> 18 |     const personas = await prisma.participant.findMany({
+     |                                               ^
+  19 |         where: {
+  20 |             email: { endsWith: "@example.com" },
+  21 |         }, {
+  code: 'P1001',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+ GET /api/auth/dev-personas 500 in 534ms (compile: 11ms, render: 523ms)
