@@ -8,8 +8,7 @@
     "start": "next start -p 4000",
     "lint": "eslint",
     "test": "jest --runInBand --forceExit",
-    "test:ci": "jest --ci --runInBand --forceExit",
-    "prepare": "husky"
+    "test:ci": "jest --ci --runInBand --forceExit"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
@@ -46,20 +45,13 @@
     "dotenv": "^17.3.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
-    "husky": "^9.1.7",
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.2.0",
-    "lint-staged": "^16.3.2",
     "node-mocks-http": "^1.17.2",
     "prisma": "^7.4.1",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
     "typescript": "^5"
-  },
-  "lint-staged": {
-    "*.{js,jsx,ts,tsx}": [
-      "eslint --fix"
-    ]
   }
 }

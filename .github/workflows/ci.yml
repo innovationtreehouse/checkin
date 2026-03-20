@@ -52,6 +52,12 @@ jobs:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
         run: npx prisma db push --accept-data-loss
 
+      - name: Run Linter
+        run: npm run lint
+
+      - name: Run TypeScript Check
+        run: npx tsc --noEmit
+
       - name: Run Jest Tests
         env:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
