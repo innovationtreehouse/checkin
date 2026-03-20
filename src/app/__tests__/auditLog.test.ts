@@ -88,7 +88,7 @@ describe('AuditLog Integration Tests', () => {
     it('should generate an AuditLog when a Program is created', async () => {
         const req = new Request('http://localhost:4000/api/programs', {
             method: 'POST',
-            body: JSON.stringify({ name: 'Audit Test Program', enrollmentStatus: 'OPEN', begin: new Date() })
+            body: JSON.stringify({ name: 'Audit Test Program', enrollmentStatus: 'OPEN', begin: new Date(), leadMentorId: testAdminId })
         });
 
         const res = await createProgram(req);

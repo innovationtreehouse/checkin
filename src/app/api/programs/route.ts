@@ -110,6 +110,11 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Program name is required" }, { status: 400 });
         }
 
+        // Require a lead mentor per issue #77
+        if (!leadMentorId) {
+            return NextResponse.json({ error: "Lead mentor is required" }, { status: 400 });
+        }
+
         const mPrice = memberPrice ? parseInt(memberPrice, 10) : null;
         const nmPrice = nonMemberPrice ? parseInt(nonMemberPrice, 10) : null;
         const maxPart = maxParticipants ? parseInt(maxParticipants, 10) : null;

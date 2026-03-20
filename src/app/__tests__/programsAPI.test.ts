@@ -150,12 +150,23 @@ describe('Programs API Integration Tests', () => {
              expect(data.error).toMatch(/Forbidden/);
         });
 
-        it('should missing required program name', async () => {
+        it('should reject when missing required program name', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
 
              const req = new Request('http://localhost:4000/api/programs', {
                  method: 'POST',
                  body: JSON.stringify({ leadMentorId: leadId })
+             });
+             const res = await POST(req as any);
+             expect(res.status).toBe(400);
+        });
+
+        it('should reject when missing required leadMentorId', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+             const req = new Request('http://localhost:4000/api/programs', {
+                 method: 'POST',
+                 body: JSON.stringify({ name: 'Created API Test Program Missing Mentor', minAge: 12, maxAge: 17 })
              });
              const res = await POST(req as any);
              expect(res.status).toBe(400);
