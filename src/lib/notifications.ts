@@ -17,7 +17,8 @@ export type NotificationEvent =
     | 'RSVP_UPDATED'
     | 'PROGRAM_ASSIGNMENT'
     | 'CHECKIN'
-    | 'CHECKOUT';
+    | 'CHECKOUT'
+    | 'WAITLIST_OFFER';
 
 export async function sendNotification(userId: number, eventType: NotificationEvent, payload: Record<string, any>) {
     try {
@@ -36,6 +37,10 @@ export async function sendNotification(userId: number, eventType: NotificationEv
             case 'PROGRAM_ENROLLMENT':
                 subject = `Confirmed: Enrollment in ${payload.programName}`;
                 message = `Hi ${user.name}, you have been successfully enrolled in ${payload.programName}.`;
+                break;
+            case 'WAITLIST_OFFER':
+                subject = `Program Spot Available: ${payload.programName}`;
+                message = `Hi ${user.name}, a spot has opened up for ${payload.participantName} in ${payload.programName}! You can now enroll and secure your spot at: ${process.env.NEXTAUTH_URL || 'https://checkin.innovationtreehouse.com'}/programs/${payload.programId}`;
                 break;
             case 'EVENT_STARTING_SOON':
                 subject = `Reminder: ${payload.eventName} starts soon!`;

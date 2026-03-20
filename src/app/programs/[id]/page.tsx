@@ -22,6 +22,7 @@ type ProgramDetail = {
     shopifyNonMemberVariantId: string | null;
     minAge: number | null;
     maxAge: number | null;
+    maxParticipants: number | null;
 };
 
 export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id: string }> }) {
@@ -151,17 +152,32 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         setMessage("");
 
         try {
+            const participantRecord = program?.participants.find(p => p.participantId === selectedParticipantId);
+            const isSelectedMemberOffered = participantRecord?.status === 'OFFERED';
+            const isProgramFull = program && program.maxParticipants !== null 
+                ? program.participants.filter(p => p.status === 'ACTIVE' || p.status === 'PENDING').length >= program.maxParticipants 
+                : false;
+            const hasStarted = program && program.begin ? new Date(program.begin) <= new Date() : false;
+            
+            const joiningWaitlist = isProgramFull && !isSelectedMemberOffered && !hasStarted;
+
             const res = await fetch(`/api/programs/${id}/participants`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     participantId: selectedParticipantId,
-                    override
+                    override,
+                    joiningWaitlist
                 })
             });
 
             if (res.ok) {
-                if (isPayingOnShopify) {
+                if (joiningWaitlist) {
+                    setSuccessMessage("Successfully joined the waitlist!");
+                    setRequiresOverride(false);
+                    setShowEnrollmentSelection(false);
+                    fetchProgram(); // refresh
+                } else if (isPayingOnShopify) {
                     setSuccessMessage("Redirecting to Shopify for secure payment...");
                     
                     // Check membership via household data (already fetched)
@@ -281,33 +297,51 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                     </div>
                 )}
 
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '3rem' }}>
-                    {!showEnrollmentSelection ? (
-                        <button
-                            className="glass-button primary-button"
-                            onClick={startEnrollmentProcess}
-                            disabled={program.enrollmentStatus === 'CLOSED'}
-                            style={{ 
-                                padding: '1rem 3rem', 
-                                fontSize: '1.2rem', 
-                                background: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.05)' : 'rgba(56, 189, 248, 0.2)', 
-                                borderColor: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(56, 189, 248, 0.5)',
-                                opacity: program.enrollmentStatus === 'CLOSED' ? 0.5 : 1,
-                                cursor: program.enrollmentStatus === 'CLOSED' ? 'not-allowed' : 'pointer'
-                            }}
-                        >
-                            {program.enrollmentStatus === 'CLOSED' ? "Enrollment Closed" : "Enroll"}
-                        </button>
-                    ) : (
-                        <div style={{ width: '100%', maxWidth: '500px', background: 'rgba(0,0,0,0.2)', padding: '2rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                            <h3 style={{ margin: '0 0 1.5rem 0' }}>Which of your household wants to enroll?</h3>
+                {(() => {
+                    const isProgramFull = program.maxParticipants !== null 
+                        ? program.participants.filter(p => p.status === 'ACTIVE' || p.status === 'PENDING').length >= program.maxParticipants 
+                        : false;
+                    const hasStarted = program.begin ? new Date(program.begin) <= new Date() : false;
+                    const canWaitlist = isProgramFull && !hasStarted;
+                    const hasAnOffer = program.participants.some(p => p.status === 'OFFERED' /* we don't strictly filter by user here to keep the button open */);
+                    const mainButtonDisabled = program.enrollmentStatus === 'CLOSED' || (isProgramFull && hasStarted && !hasAnOffer);
+                    
+                    let mainButtonText = "Enroll";
+                    if (program.enrollmentStatus === 'CLOSED') mainButtonText = "Enrollment Closed";
+                    else if (isProgramFull && hasStarted && !hasAnOffer) mainButtonText = "Program Full";
+                    else if (canWaitlist && !hasAnOffer) mainButtonText = "Join Waitlist";
+
+                    return (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '3rem' }}>
+                            {!showEnrollmentSelection ? (
+                                <button
+                                    className="glass-button primary-button"
+                                    onClick={startEnrollmentProcess}
+                                    disabled={mainButtonDisabled}
+                                    style={{ 
+                                        padding: '1rem 3rem', 
+                                        fontSize: '1.2rem', 
+                                        background: mainButtonDisabled ? 'rgba(56, 189, 248, 0.05)' : 'rgba(56, 189, 248, 0.2)', 
+                                        borderColor: mainButtonDisabled ? 'rgba(56, 189, 248, 0.2)' : 'rgba(56, 189, 248, 0.5)',
+                                        opacity: mainButtonDisabled ? 0.5 : 1,
+                                        cursor: mainButtonDisabled ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    {mainButtonText}
+                                </button>
+                            ) : (
+                                <div style={{ width: '100%', maxWidth: '500px', background: 'rgba(0,0,0,0.2)', padding: '2rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                    <h3 style={{ margin: '0 0 1.5rem 0' }}>Which of your household wants to enroll?</h3>
                             
                             {loadingHousehold ? (
                                 <p style={{ color: 'var(--color-text-muted)', textAlign: 'center' }}>Loading household...</p>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2rem' }}>
                                     {householdMembers.map(member => {
-                                        const alreadyEnrolled = program.participants.some(p => p.participantId === member.id);
+                                        const enrollmentRecord = program.participants.find(p => p.participantId === member.id);
+                                        const alreadyEnrolled = enrollmentRecord && ['ACTIVE', 'PENDING'].includes(enrollmentRecord.status || 'PENDING');
+                                        const isWaitlisted = enrollmentRecord?.status === 'WAITLISTED';
+                                        const isOffered = enrollmentRecord?.status === 'OFFERED';
                                         
                                         let ageError: string | null = null;
                                         if (program.minAge !== null || program.maxAge !== null) {
@@ -322,7 +356,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                                             }
                                         }
 
-                                        const disabled = alreadyEnrolled || ageError !== null;
+                                        const disabled = alreadyEnrolled || isWaitlisted || ageError !== null;
 
                                         return (
                                             <label key={member.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: selectedParticipantId === member.id && !disabled ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.05)', border: `1px solid ${selectedParticipantId === member.id && !disabled ? 'rgba(56, 189, 248, 0.5)' : 'transparent'}`, borderRadius: '8px', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, transition: 'all 0.2s' }}>
@@ -341,7 +375,13 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                                                 {alreadyEnrolled && (
                                                     <span style={{ fontSize: '0.85rem', color: '#4ade80', marginLeft: 'auto' }}>(Already Enrolled)</span>
                                                 )}
-                                                {!alreadyEnrolled && ageError && (
+                                                {isWaitlisted && (
+                                                    <span style={{ fontSize: '0.85rem', color: '#9ca3af', marginLeft: 'auto' }}>(Waitlisted)</span>
+                                                )}
+                                                {isOffered && (
+                                                    <span style={{ fontSize: '0.85rem', color: '#eab308', marginLeft: 'auto' }}>(Spot Offered - You may enroll!)</span>
+                                                )}
+                                                {!alreadyEnrolled && !isWaitlisted && !isOffered && ageError && (
                                                     <span style={{ fontSize: '0.85rem', color: '#f87171', marginLeft: 'auto' }}>({ageError})</span>
                                                 )}
                                             </label>
@@ -351,37 +391,53 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                             )}
 
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-                                <button
-                                    className="glass-button primary-button"
-                                    onClick={() => handleEnroll(false)}
-                                    disabled={enrolling || !selectedParticipantId || program.participants.some(p => p.participantId === selectedParticipantId) || loadingHousehold}
-                                    style={{ 
-                                        width: '100%',
-                                        padding: '1rem', 
-                                        fontSize: '1.2rem', 
-                                        background: 'rgba(56, 189, 248, 0.2)', 
-                                        borderColor: 'rgba(56, 189, 248, 0.5)',
-                                    }}
-                                >
-                                    {enrolling ? "Processing..." : (program.memberPrice || program.nonMemberPrice) ? "Pay on Shopify" : "Complete Enrollment"}
-                                </button>
-                                
-                                {(program.memberPrice || program.nonMemberPrice) && program.enrollmentStatus !== 'CLOSED' && (
-                                    <button
-                                        onClick={handleRequestPaymentPlan}
-                                        disabled={enrolling || !selectedParticipantId || program.participants.some(p => p.participantId === selectedParticipantId) || loadingHousehold}
-                                        style={{ 
-                                            background: 'none', 
-                                            border: 'none', 
-                                            color: 'var(--color-primary)', 
-                                            textDecoration: 'underline', 
-                                            cursor: 'pointer',
-                                            fontSize: '0.9rem'
-                                        }}
-                                    >
-                                        request a payment plan from the finance committee of the board
-                                    </button>
-                                )}
+                                {(() => {
+                                    const participantRecord = program.participants.find(p => p.participantId === selectedParticipantId);
+                                    const isSelectedMemberOffered = participantRecord?.status === 'OFFERED';
+                                    const joiningWaitlist = isProgramFull && !isSelectedMemberOffered && !hasStarted;
+                                    const disableSubmit = enrolling || !selectedParticipantId || (participantRecord && ['ACTIVE', 'PENDING', 'WAITLISTED'].includes(participantRecord.status || 'PENDING')) || loadingHousehold;
+                                    
+                                    let btnText = "Complete Enrollment";
+                                    if (enrolling) btnText = "Processing...";
+                                    else if (joiningWaitlist) btnText = "Join Waitlist";
+                                    else if (program.memberPrice || program.nonMemberPrice) btnText = "Pay on Shopify";
+
+                                    return (
+                                        <>
+                                            <button
+                                                className="glass-button primary-button"
+                                                onClick={() => handleEnroll(false)}
+                                                disabled={disableSubmit}
+                                                style={{ 
+                                                    width: '100%',
+                                                    padding: '1rem', 
+                                                    fontSize: '1.2rem', 
+                                                    background: 'rgba(56, 189, 248, 0.2)', 
+                                                    borderColor: 'rgba(56, 189, 248, 0.5)',
+                                                }}
+                                            >
+                                                {btnText}
+                                            </button>
+                                            
+                                            {(program.memberPrice || program.nonMemberPrice) && program.enrollmentStatus !== 'CLOSED' && !joiningWaitlist && (
+                                                <button
+                                                    onClick={handleRequestPaymentPlan}
+                                                    disabled={disableSubmit}
+                                                    style={{ 
+                                                        background: 'none', 
+                                                        border: 'none', 
+                                                        color: 'var(--color-primary)', 
+                                                        textDecoration: 'underline', 
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.9rem'
+                                                    }}
+                                                >
+                                                    request a payment plan from the finance committee of the board
+                                                </button>
+                                            )}
+                                        </>
+                                    );
+                                })()}
                             </div>
 
                             {requiresOverride && (
@@ -402,6 +458,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                         </div>
                     )}
                 </div>
+            );
+        })()}
             </div>
         </main>
     );

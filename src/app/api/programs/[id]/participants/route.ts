@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { sendNotification } from "@/lib/notifications";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -62,16 +63,36 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         }
 
         const override = body.override === true;
+        const joiningWaitlist = body.joiningWaitlist === true;
 
         if (!isSelfEnrollment && isSysAdminOrBoard && !override) {
              return NextResponse.json({ error: "This bypasses all payment. Are you sure?", requiresOverride: true }, { status: 400 });
         }
 
+        const existingEnrollment = await prisma.programParticipant.findUnique({
+            where: {
+                programId_participantId: {
+                    programId,
+                    participantId
+                }
+            }
+        });
+
+        const isOffered = (existingEnrollment?.status as string) === 'OFFERED';
+
         // Validation Checks
-        if (!override || (!isSysAdminOrBoard)) {
+        if (!override && !isSysAdminOrBoard && !isOffered) {
             // Check Capacity
-            if (currentProgram.maxParticipants !== null && currentProgram._count.participants >= currentProgram.maxParticipants) {
-                return NextResponse.json({ error: "Program has reached maximum capacity.", requiresOverride: true }, { status: 400 });
+            if (!joiningWaitlist && currentProgram.maxParticipants !== null) {
+                const activePendingCount = await prisma.programParticipant.count({
+                    where: {
+                        programId,
+                        status: { in: ['ACTIVE', 'PENDING'] }
+                    }
+                });
+                if (activePendingCount >= currentProgram.maxParticipants) {
+                    return NextResponse.json({ error: "Program has reached maximum capacity.", requiresOverride: true }, { status: 400 });
+                }
             }
 
             // Check Enrollment Status
@@ -96,24 +117,34 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             }
         }
 
-        // Default status is PENDING, unless board is bypassing
-        const initialStatus = (isSysAdminOrBoard && override) ? 'ACTIVE' : 'PENDING';
+        // Default status is PENDING, unless board is bypassing or waitlisting
+        const initialStatus = joiningWaitlist ? 'WAITLISTED' : ((isSysAdminOrBoard && override) ? 'ACTIVE' : 'PENDING');
 
-        const enrollment = await prisma.programParticipant.create({
-            data: {
+        const enrollment = await prisma.programParticipant.upsert({
+            where: {
+                programId_participantId: {
+                    programId,
+                    participantId
+                }
+            },
+            update: {
+                status: initialStatus as any
+            },
+            create: {
                 programId,
                 participantId,
-                status: initialStatus
+                status: initialStatus as any
             }
         });
 
         await prisma.auditLog.create({
             data: {
                 actorId: currentUserId,
-                action: 'CREATE',
+                action: existingEnrollment ? 'EDIT' : 'CREATE',
                 tableName: 'ProgramParticipant',
                 affectedEntityId: participantId,
                 secondaryAffectedEntity: programId,
+                oldData: existingEnrollment ? JSON.stringify(existingEnrollment) : (null as any),
                 newData: JSON.stringify(enrollment)
             }
         });
