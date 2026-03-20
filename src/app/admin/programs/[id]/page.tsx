@@ -353,6 +353,28 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         } catch { }
     };
 
+    const handleOfferSpot = async (participantId: number) => {
+        if (!confirm("Offer this participant a spot in the program? This will send them an email notification and allow them to enroll.")) return;
+        setSaving(true);
+        setMessage("");
+        try {
+            const res = await fetch(`/api/programs/${id}/participants/${participantId}/offer`, {
+                method: 'POST',
+            });
+            if (res.ok) {
+                setMessage("Spot offered successfully! The participant's household lead has been notified.");
+                fetchProgram();
+            } else {
+                const data = await res.json();
+                setMessage(data.error || "Failed to offer spot.");
+            }
+        } catch {
+            setMessage("Network error offering spot.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
     if (loading || status === "loading") {
         return (
             <main className={styles.main}>
@@ -735,27 +757,80 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                                     )}
                                 </form>
 
-                                {activeParticipants.length === 0 ? <p style={{ color: 'gray', margin: 0 }}>No active participants yet.</p> :
-                                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                        {activeParticipants.map(p => (
-                                            <li key={p.participantId} style={{ display: 'flex', flexDirection: 'column', background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1rem', borderRadius: '4px' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{p.participant.name || 'Unnamed'}</span>
-                                                    <button onClick={() => handleRemoveParticipant(p.participantId)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '0.25rem 0.5rem' }}>Remove</button>
-                                                </div>
-                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem', fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
-                                                    <div><strong>Email:</strong> {p.participant.email}</div>
-                                                    <div><strong>Phone:</strong> {p.participant.phone || 'N/A'}</div>
-                                                    <div><strong>Joined:</strong> {p.joinedAt ? formatDateTime(p.joinedAt) : 'N/A'}</div>
-                                                    {p.participant.household && (
-                                                        <div style={{ gridColumn: '1 / -1', background: 'rgba(0,0,0,0.2)', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem' }}>
-                                                            <strong>Emergency Contact:</strong> {p.participant.household.emergencyContactName || 'N/A'} - {p.participant.household.emergencyContactPhone || 'N/A'}
+                                {program.participants.length === 0 ? <p style={{ color: 'gray', margin: 0 }}>No participants yet.</p> :
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                                        {/* Active Participants */}
+                                        <div>
+                                            <h4 style={{ margin: '0 0 1rem 0', color: '#4ade80' }}>Active ({activeParticipants.length})</h4>
+                                            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                {activeParticipants.map(p => (
+                                                    <li key={p.participantId} style={{ display: 'flex', flexDirection: 'column', background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1rem', borderRadius: '4px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{p.participant.name || 'Unnamed'}</span>
+                                                            <button onClick={() => handleRemoveParticipant(p.participantId)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.25rem 0.5rem' }}>Remove</button>
                                                         </div>
-                                                    )}
-                                                </div>
-                                            </li>
-                                        ))}
-                                    </ul>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem', fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+                                                            <div><strong>Email:</strong> {p.participant.email}</div>
+                                                            <div><strong>Phone:</strong> {p.participant.phone || 'N/A'}</div>
+                                                            <div><strong>Joined:</strong> {p.joinedAt ? formatDateTime(p.joinedAt) : 'N/A'}</div>
+                                                            {p.participant.household && (
+                                                                <div style={{ gridColumn: '1 / -1', background: 'rgba(0,0,0,0.2)', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem' }}>
+                                                                    <strong>Emergency:</strong> {p.participant.household.emergencyContactName || 'N/A'} - {p.participant.household.emergencyContactPhone || 'N/A'}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                                {activeParticipants.length === 0 && <p style={{ color: 'gray', fontSize: '0.9rem' }}>None</p>}
+                                            </ul>
+                                        </div>
+
+                                        {/* Pending / Offered Participants */}
+                                        <div>
+                                            <h4 style={{ margin: '0 0 1rem 0', color: '#eab308' }}>Pending ({program.participants.filter(p => p.status === 'PENDING' || p.status === 'OFFERED').length})</h4>
+                                            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                {program.participants.filter(p => p.status === 'PENDING' || p.status === 'OFFERED').map(p => (
+                                                    <li key={p.participantId} style={{ display: 'flex', flexDirection: 'column', background: 'rgba(234, 179, 8, 0.05)', border: '1px solid rgba(234, 179, 8, 0.2)', padding: '0.75rem 1rem', borderRadius: '4px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <span style={{ fontWeight: 'bold', color: '#eab308' }}>
+                                                                {p.participant.name || 'Unnamed'}
+                                                                {p.status === 'OFFERED' && <span style={{ marginLeft: '0.5rem', background: '#eab308', color: 'black', fontSize: '0.7rem', padding: '0.1rem 0.3rem', borderRadius: '4px', fontWeight: 'bold' }}>OFFERED</span>}
+                                                            </span>
+                                                            <button onClick={() => handleRemoveParticipant(p.participantId)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.25rem 0.5rem' }}>Remove</button>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem', fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+                                                            <div><strong>Email:</strong> {p.participant.email}</div>
+                                                            <div><strong>Phone:</strong> {p.participant.phone || 'N/A'}</div>
+                                                            {p.status === 'PENDING' && <div><strong>Pending Since:</strong> {p.pendingSince ? formatDateTime(p.pendingSince) : 'N/A'}</div>}
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                                {program.participants.filter(p => p.status === 'PENDING' || p.status === 'OFFERED').length === 0 && <p style={{ color: 'gray', fontSize: '0.9rem' }}>None</p>}
+                                            </ul>
+                                        </div>
+
+                                        {/* Waitlisted Participants */}
+                                        <div>
+                                            <h4 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>Waitlisted ({program.participants.filter(p => p.status === 'WAITLISTED').length})</h4>
+                                            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                {program.participants.filter(p => p.status === 'WAITLISTED').map(p => (
+                                                    <li key={p.participantId} style={{ display: 'flex', flexDirection: 'column', background: 'rgba(156, 163, 175, 0.05)', border: '1px solid rgba(156, 163, 175, 0.2)', padding: '0.75rem 1rem', borderRadius: '4px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <span style={{ fontWeight: 'bold', color: '#d1d5db' }}>{p.participant.name || 'Unnamed'}</span>
+                                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                                <button onClick={() => handleOfferSpot(p.participantId)} disabled={saving} style={{ background: 'rgba(56, 189, 248, 0.2)', border: '1px solid rgba(56, 189, 248, 0.5)', color: '#38bdf8', cursor: 'pointer', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem' }}>Offer Spot</button>
+                                                                <button onClick={() => handleRemoveParticipant(p.participantId)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.25rem 0.5rem' }}>Remove</button>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem', fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+                                                            <div style={{ gridColumn: '1 / -1' }}><strong>Email:</strong> {p.participant.email}</div>
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                                {program.participants.filter(p => p.status === 'WAITLISTED').length === 0 && <p style={{ color: 'gray', fontSize: '0.9rem' }}>None</p>}
+                                            </ul>
+                                        </div>
+                                    </div>
                                 }
                             </div>
 

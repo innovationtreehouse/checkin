@@ -49,6 +49,8 @@ enum EnrollmentStatus {
 enum ProgramParticipantStatus {
   PENDING
   ACTIVE
+  WAITLISTED
+  OFFERED
 }
 
 model Participant {
