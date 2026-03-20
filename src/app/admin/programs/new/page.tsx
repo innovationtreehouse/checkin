@@ -74,6 +74,13 @@ export default function CreateProgramPage() {
         e.preventDefault();
         if (!name) return;
 
+        // Require a lead mentor per issue #77
+        if (!leadMentorId) {
+            setMessage("Lead mentor is required.");
+            setMessageType("error");
+            return;
+        }
+
         setSaving(true);
         setMessage("");
 
@@ -168,7 +175,7 @@ export default function CreateProgramPage() {
 
                             {/* Lead Mentor Selector */}
                             <div style={{ position: 'relative' }}>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Lead Mentor / Program Coordinator (Optional)</label>
+                                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Lead Mentor / Program Coordinator</label>
                                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                     <input
                                         type="text"
