@@ -99,6 +99,17 @@ function KioskCertificationsInner() {
         }
     };
 
+    // Abbreviate tool name for kiosk: stack words vertically, shorten long words
+    const compactToolName = (name: string) => {
+        const MAX_WORD_LEN = 6;
+        return name.split(/\s+/).map(word => {
+            if (word.length > MAX_WORD_LEN) {
+                return word.slice(0, MAX_WORD_LEN - 1) + '.';
+            }
+            return word;
+        });
+    };
+
     // Sort users alphabetically by first name (fallback to email prefix)
     const sortAlphabetically = (a: Participant, b: Participant) => {
         const nameA = a.name || a.email.split('@')[0];
@@ -133,22 +144,21 @@ function KioskCertificationsInner() {
     } = useAutoCycle({
         items: sortedParticipants,
         intervalMs: 8000,
-        rowHeight: 65,
-        headerHeight: 65
+        rowHeight: 42,
+        headerHeight: 42
     });
 
     // Reusable row render
     const renderVisitRow = (participant: Participant, index: number) => (
         <tr key={participant.id} style={{ borderBottom: index % 2 === 1 ? '3px solid rgba(255,255,255,0.8)' : '1px solid rgba(255,255,255,0.05)', transition: 'background-color 0.2s' }}>
-            <td style={{ padding: isKioskMode ? '1.25rem 1.5rem' : '0.75rem 1rem', position: 'sticky', left: 0, background: 'rgba(15,23,42,0.95)', zIndex: 5, borderRight: '1px solid rgba(255,255,255,0.1)' }}>
+            <td style={{ padding: isKioskMode ? '0.5rem 0.75rem' : '0.75rem 1rem', position: 'sticky', left: 0, background: 'rgba(15,23,42,0.95)', zIndex: 5, borderRight: '1px solid rgba(255,255,255,0.1)' }}>
                 <div style={{ 
-                    fontWeight: isKioskMode ? 800 : 500, 
-                    fontSize: isKioskMode ? '1.8rem' : 'inherit',
-                    letterSpacing: isKioskMode ? '0.02em' : 'normal',
+                    fontWeight: isKioskMode ? 700 : 500, 
+                    fontSize: isKioskMode ? '1.1rem' : 'inherit',
+                    letterSpacing: isKioskMode ? '0.01em' : 'normal',
                     whiteSpace: 'nowrap', 
                     overflow: 'hidden', 
-                    textOverflow: 'ellipsis', 
-                    maxWidth: isKioskMode ? '350px' : '150px' 
+                    textOverflow: 'ellipsis'
                 }}>{participant.name || participant.email.split('@')[0]}</div>
             </td>
             {tools.map((tool) => {
@@ -165,9 +175,8 @@ function KioskCertificationsInner() {
                     <td key={tool.id} style={{ padding: '0', textAlign: 'center', borderRight: '1px solid rgba(255,255,255,0.05)', height: '100%' }}>
                         <div style={{
                             width: '100%',
-                            minWidth: '40px',
                             height: '100%',
-                            minHeight: '48px',
+                            minHeight: isKioskMode ? '36px' : '48px',
                             background: bgColor,
                             display: 'flex',
                             alignItems: 'center',
@@ -196,7 +205,7 @@ function KioskCertificationsInner() {
             boxSizing: 'border-box',
             ...(isKioskMode ? { cursor: 'none' } : {}) 
         }}>
-            <div className="glass-container" style={{ width: "100%", maxWidth: "1200px", margin: "0 auto", padding: "1rem", overflowX: "hidden", flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'hidden', boxSizing: 'border-box' }}>
+            <div className="glass-container" style={{ width: "100%", maxWidth: isKioskMode ? "100%" : "1200px", margin: "0 auto", padding: isKioskMode ? "0.5rem" : "1rem", overflowX: "hidden", flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'hidden', boxSizing: 'border-box' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem', flexShrink: 0 }}>
                     <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
@@ -245,12 +254,12 @@ function KioskCertificationsInner() {
                         <p>No {limitToPresent ? "active participants" : "participants"} found.</p>
                     </div>
                 ) : (
-                    <div ref={containerRef} style={{ flex: 1, overflowX: 'auto', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                        <table style={{ borderCollapse: 'collapse', textAlign: 'left', minWidth: 'max-content', width: '100%' }}>
+                    <div ref={containerRef} style={{ flex: 1, overflowX: 'hidden', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                        <table style={{ borderCollapse: 'collapse', textAlign: 'left', width: '100%', tableLayout: isKioskMode ? 'fixed' : undefined }}>
                             <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                                 <tr>
                                     <th style={{ 
-                                        padding: isKioskMode ? '1.5rem' : '1rem', 
+                                        padding: isKioskMode ? '0.5rem 0.75rem' : '1rem', 
                                         borderBottom: '1px solid rgba(255,255,255,0.1)', 
                                         background: 'rgba(255,255,255,0.05)', 
                                         position: 'sticky', 
@@ -259,11 +268,12 @@ function KioskCertificationsInner() {
                                         backdropFilter: 'blur(10px)', 
                                         borderRight: '1px solid rgba(255,255,255,0.1)', 
                                         verticalAlign: 'bottom', 
-                                        width: isKioskMode ? '350px' : '150px', 
-                                        maxWidth: isKioskMode ? '350px' : '150px',
-                                        fontSize: isKioskMode ? '1.8rem' : 'inherit',
-                                        fontWeight: isKioskMode ? 800 : 'bold',
-                                        letterSpacing: isKioskMode ? '0.02em' : 'normal'
+                                        width: isKioskMode ? '12%' : '150px', 
+                                        maxWidth: isKioskMode ? '200px' : '150px',
+                                        fontSize: isKioskMode ? '1.1rem' : 'inherit',
+                                        fontWeight: isKioskMode ? 700 : 'bold',
+                                        letterSpacing: isKioskMode ? '0.01em' : 'normal',
+                                        overflow: 'hidden', textOverflow: 'ellipsis'
                                     }}>
                                         Participant
                                     </th>
@@ -272,20 +282,29 @@ function KioskCertificationsInner() {
                                             borderBottom: '1px solid rgba(255,255,255,0.1)',
                                             borderRight: '1px solid rgba(255,255,255,0.05)',
                                             background: 'rgba(255,255,255,0.02)',
-                                            fontSize: isKioskMode ? '1.4rem' : '0.875rem',
-                                            fontWeight: isKioskMode ? 800 : 'bold',
-                                            letterSpacing: isKioskMode ? '0.02em' : 'normal',
+                                            fontSize: isKioskMode ? '0.8rem' : '0.875rem',
+                                            fontWeight: isKioskMode ? 700 : 'bold',
+                                            letterSpacing: 'normal',
                                             position: 'relative',
                                             verticalAlign: 'bottom',
-                                            padding: isKioskMode ? '1rem 0.5rem' : '0.5rem',
+                                            padding: isKioskMode ? '0.4rem 0.2rem' : '0.5rem',
                                             textAlign: 'center',
-                                            maxWidth: isKioskMode ? '200px' : '120px',
-                                            minWidth: isKioskMode ? '100px' : '60px',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
                                             whiteSpace: 'normal',
-                                            wordBreak: 'keep-all',
-                                            hyphens: 'none'
+                                            wordBreak: 'break-word',
+                                            hyphens: 'auto',
+                                            lineHeight: 1.2
                                         }}>
-                                            <span>{tool.name}</span>
+                                            {isKioskMode ? (
+                                                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0px', lineHeight: 1.1 }}>
+                                                    {compactToolName(tool.name).map((word, i) => (
+                                                        <span key={i}>{word}</span>
+                                                    ))}
+                                                </span>
+                                            ) : (
+                                                <span>{tool.name}</span>
+                                            )}
                                         </th>
                                     ))}
                                 </tr>
