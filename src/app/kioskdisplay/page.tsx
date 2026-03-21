@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import styles from "../page.module.css";
 import { formatTime } from "@/lib/time";
+import { getKioskDisplayNames } from "@/lib/kiosk-names";
 
 type Participant = {
     id: number;
@@ -333,6 +334,15 @@ function KioskDisplayInner() {
 
     // -- Render helpers --
 
+    // Compute privacy-friendly display names for kiosk mode
+    const kioskDisplayNames = useMemo(() => {
+        if (!isKioskMode) return new Map<number, string>();
+        const allVisits = [...keyholderList, ...volunteerList, ...studentList];
+        return getKioskDisplayNames(
+            allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, email: v.participant.email }))
+        );
+    }, [isKioskMode, keyholderList, volunteerList, studentList]);
+
     const renderPersonCard = (visit: Visit, showCheckout: boolean) => (
         <div
             key={visit.id}
@@ -361,9 +371,9 @@ function KioskDisplayInner() {
                             setSelectedParticipant(visit.participant);
                         }
                     }}
-                    title={visit.participant.name || visit.participant.email}
+                    title={isKioskMode ? (kioskDisplayNames.get(visit.participant.id) || visit.participant.name || visit.participant.email) : (visit.participant.name || visit.participant.email)}
                 >
-                    {visit.participant.name || visit.participant.email.split("@")[0]}
+                    {isKioskMode ? (kioskDisplayNames.get(visit.participant.id) || visit.participant.name || visit.participant.email.split("@")[0]) : (visit.participant.name || visit.participant.email.split("@")[0])}
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <span style={{ color: "var(--color-text-muted)", fontSize: "0.7rem" }}>

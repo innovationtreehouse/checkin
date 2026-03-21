@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, Suspense, useCallback } from "react";
+import { useEffect, useState, Suspense, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import styles from "../../page.module.css";
 import { useAutoCycle } from "../../../hooks/useAutoCycle";
+import { getKioskDisplayNames } from "@/lib/kiosk-names";
 
 type ToolStatusLevel = "BASIC" | "DOF" | "CERTIFIED" | "MAY_CERTIFY_OTHERS";
 
@@ -135,6 +136,12 @@ function KioskCertificationsInner() {
 
     const sortedParticipants = [...participants].sort(sortAlphabetically);
 
+    // Compute privacy-friendly display names (first name only, with disambiguation)
+    const displayNames = useMemo(
+        () => getKioskDisplayNames(sortedParticipants),
+        [sortedParticipants]
+    );
+
     const {
         containerRef,
         visibleItems,
@@ -159,7 +166,7 @@ function KioskCertificationsInner() {
                     whiteSpace: 'nowrap', 
                     overflow: 'hidden', 
                     textOverflow: 'ellipsis'
-                }}>{participant.name || participant.email.split('@')[0]}</div>
+                }}>{displayNames.get(participant.id) || participant.name || participant.email.split('@')[0]}</div>
             </td>
             {tools.map((tool) => {
                 const status = participant.toolStatuses.find(ts => ts.toolId === tool.id);
