@@ -206,6 +206,8 @@ function KioskCertificationsInner() {
             bottom: 0,
             left: 0,
             right: 0,
+            height: '100%',
+            minHeight: 0,
             padding: isKioskMode ? '1.5rem' : '2rem 1rem',
             justifyContent: 'flex-start',
             overflow: 'hidden',
