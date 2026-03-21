@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import styles from "../../page.module.css";
 import { useAutoCycle } from "../../../hooks/useAutoCycle";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
+import { useAutoReload } from "@/hooks/useAutoReload";
 
 type ToolStatusLevel = "BASIC" | "DOF" | "CERTIFIED" | "MAY_CERTIFY_OTHERS";
 
@@ -34,6 +35,7 @@ export default function KioskCertificationsDisplay() {
 }
 
 function KioskCertificationsInner() {
+    useAutoReload();
     const searchParams = useSearchParams();
     const limitToPresent = searchParams.get('limit_to_present') !== 'false';
     const [isKioskMode, setIsKioskMode] = useState(searchParams.get('mode') === 'kiosk' || !!searchParams.get('sig'));

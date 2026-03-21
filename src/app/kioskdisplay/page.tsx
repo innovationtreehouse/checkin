@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import styles from "../page.module.css";
 import { formatTime } from "@/lib/time";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
+import { useAutoReload } from "@/hooks/useAutoReload";
 
 type Participant = {
     id: number;
@@ -82,6 +83,7 @@ type SessionUser = {
 };
 
 function KioskDisplayInner() {
+    useAutoReload();
     const searchParams = useSearchParams();
     const [isKioskMode, setIsKioskMode] = useState(searchParams.get("mode") === "kiosk");
     const { data: session } = useSession();
