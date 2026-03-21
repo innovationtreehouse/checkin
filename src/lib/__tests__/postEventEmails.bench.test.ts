@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { processPostEventEmails } from '../postEventEmails';
 import prisma from '../prisma';
 

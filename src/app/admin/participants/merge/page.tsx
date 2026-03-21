@@ -1,9 +1,8 @@
 "use client";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import styles from "../../../page.module.css";
-
 export default function MergeParticipants() {
     const router = useRouter();
     const [searchA, setSearchA] = useState("");
@@ -74,7 +73,7 @@ export default function MergeParticipants() {
                         setKeepId(sA >= sB ? pA.id : pB.id);
                     }
                 })
-                .catch(e => setError("Failed to analyze participants"))
+                .catch(() => setError("Failed to analyze participants"))
                 .finally(() => setLoading(false));
         } else {
             setAnalyzedA(null);

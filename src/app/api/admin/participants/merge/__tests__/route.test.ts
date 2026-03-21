@@ -1,6 +1,5 @@
 import { POST } from "../route";
 import prisma from "@/lib/prisma";
-import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 
 jest.mock("next-auth/next");
@@ -59,7 +58,7 @@ describe("Merge Participants API", () => {
         const req = new Request("http://localhost/api/admin/participants/merge", {
             method: "POST",
             body: JSON.stringify({ keepId: pKeepId, mergeId: pMergeId })
-        }) as any;
+        }) as unknown as Request;
 
         const res = await POST(req);
         expect(res.status).toBe(200);
@@ -99,7 +98,7 @@ describe("Merge Participants API", () => {
         const req = new Request("http://localhost/api/admin/participants/merge", {
             method: "POST",
             body: JSON.stringify({ keepId: pKeepId, mergeId: pMergeId })
-        }) as any;
+        }) as unknown as Request;
 
         const res = await POST(req);
         expect(res.status).toBe(400);

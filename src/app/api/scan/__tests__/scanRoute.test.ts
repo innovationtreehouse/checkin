@@ -42,7 +42,7 @@ describe('POST /api/scan', () => {
         const req = new Request('http://localhost/api/scan', {
             method: 'POST',
             body: 'not-json'
-        }) as any;
+        }) as unknown as import('next/server').NextRequest;
 
         const res = await POST(req);
         expect(res.status).toBe(400);
@@ -56,7 +56,7 @@ describe('POST /api/scan', () => {
         const req = new Request('http://localhost/api/scan', {
             method: 'POST',
             body: JSON.stringify({ other: 'data' })
-        }) as any;
+        }) as unknown as import('next/server').NextRequest;
 
         const res = await POST(req);
         expect(res.status).toBe(400);
@@ -70,7 +70,7 @@ describe('POST /api/scan', () => {
         const req = new Request('http://localhost/api/scan', {
             method: 'POST',
             body: JSON.stringify({ participantId: '123' })
-        }) as any;
+        }) as unknown as import('next/server').NextRequest;
 
         const res = await POST(req);
         expect(res.status).toBe(400);

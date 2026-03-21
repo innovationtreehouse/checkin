@@ -13,6 +13,7 @@ jest.mock('@/lib/notifications', () => ({
     sendNotification: jest.fn()
 }));
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockGetSession = require('next-auth/next').getServerSession;
 
 describe('Program Lifecycle Integration Tests', () => {

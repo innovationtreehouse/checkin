@@ -35,6 +35,7 @@ export default function PaymentPlansPage() {
         if (status === "unauthenticated") {
             router.push('/');
         } else if (status === "authenticated") {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const user = session.user as any;
             if (!user?.sysadmin && !user?.boardMember) {
                  router.push('/admin'); // Redirect if entirely unauthorized
@@ -97,6 +98,7 @@ export default function PaymentPlansPage() {
 
     if (!session) return null;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const user = session.user as any;
     if (!user.boardMember && !user.sysadmin) {
         return (

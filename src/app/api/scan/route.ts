@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
         let body;
         try {
             body = JSON.parse(rawBody);
-        } catch (e) {
+        } catch {
             return apiError("Invalid JSON payload.", 400);
         }
 

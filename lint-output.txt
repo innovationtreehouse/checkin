@@ -1,0 +1,114 @@
+
+> checkmein@0.1.0 lint
+> eslint
+
+
+/home/dkay/Projects/treehouse/checkin/__tests__/programLifecycle.test.ts
+  16:24  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+
+/home/dkay/Projects/treehouse/checkin/__tests__/programSignupIntegration.test.ts
+   71:24   error  A `require()` style import is forbidden   @typescript-eslint/no-require-imports
+  145:80   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  145:134  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  161:69   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  161:123  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/dkay/Projects/treehouse/checkin/src/app/__tests__/notificationsCheckin.perf.test.ts
+  3:8  warning  'prisma' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/dkay/Projects/treehouse/checkin/src/app/admin/participants/merge/page.tsx
+    5:8    warning  'styles' is defined but never used        @typescript-eslint/no-unused-vars
+   11:46   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   12:46   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   14:34   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   15:34   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   17:48   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   18:48   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   60:43   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   77:24   warning  'e' is defined but never used             @typescript-eslint/no-unused-vars
+  105:21   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  112:97   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  112:114  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  112:136  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  147:29   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  170:64   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  171:115  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  214:66   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  215:80   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/dkay/Projects/treehouse/checkin/src/app/admin/programs/pending/page.tsx
+   38:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  100:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/dkay/Projects/treehouse/checkin/src/app/api/admin/participants/merge/__tests__/route.test.ts
+    3:10  warning  'NextResponse' is defined but never used  @typescript-eslint/no-unused-vars
+   62:15  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  102:15  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/dkay/Projects/treehouse/checkin/src/app/api/admin/participants/merge/route.ts
+   58:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  163:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/dkay/Projects/treehouse/checkin/src/app/api/directory/board/route.ts
+  7:27  warning  'req' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/dkay/Projects/treehouse/checkin/src/app/api/events/mine/route.ts
+  7:27  warning  'req' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/dkay/Projects/treehouse/checkin/src/app/api/programs/[id]/request-payment-plan/route.ts
+  5:10  warning  'sendNotification' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/dkay/Projects/treehouse/checkin/src/app/api/programs/[id]/route.ts
+  124:15   error  'name' is never reassigned. Use 'const' instead                            prefer-const
+  124:35   error  'begin' is never reassigned. Use 'const' instead                           prefer-const
+  124:42   error  'end' is never reassigned. Use 'const' instead                             prefer-const
+  124:47   error  'memberOnly' is never reassigned. Use 'const' instead                      prefer-const
+  124:59   error  'phase' is never reassigned. Use 'const' instead                           prefer-const
+  124:66   error  'enrollmentStatus' is never reassigned. Use 'const' instead                prefer-const
+  124:84   error  'minAge' is never reassigned. Use 'const' instead                          prefer-const
+  124:92   error  'maxAge' is never reassigned. Use 'const' instead                          prefer-const
+  124:100  error  'maxParticipants' is never reassigned. Use 'const' instead                 prefer-const
+  124:117  error  'leadMentorNotificationSettings' is never reassigned. Use 'const' instead  prefer-const
+  133:27   error  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+
+/home/dkay/Projects/treehouse/checkin/src/app/api/scan/__tests__/scanRoute.test.ts
+  45:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  59:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  73:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/dkay/Projects/treehouse/checkin/src/app/api/scan/route.ts
+  19:18  warning  'e' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/dkay/Projects/treehouse/checkin/src/app/api/shop/active/route.ts
+  9:27  warning  'req' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/dkay/Projects/treehouse/checkin/src/app/api/shop/members/route.ts
+  9:27  warning  'req' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/dkay/Projects/treehouse/checkin/src/app/api/shop/tools/route.ts
+  7:27  warning  'req' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/dkay/Projects/treehouse/checkin/src/app/programs/[id]/page.tsx
+   81:69  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  172:83  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/dkay/Projects/treehouse/checkin/src/components/ContentWrapper.tsx
+  7:11  warning  'pathname' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/dkay/Projects/treehouse/checkin/src/lib/__tests__/postEventEmails.bench.test.ts
+   9:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  10:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  11:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  12:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  46:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  51:87  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  54:88  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  57:64  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  61:86  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  65:79  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/dkay/Projects/treehouse/checkin/test-db.js
+  1:26  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+
+✖ 67 problems (55 errors, 12 warnings)
+

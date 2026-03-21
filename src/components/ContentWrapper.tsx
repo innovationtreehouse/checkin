@@ -1,10 +1,10 @@
 "use client";
 
-import { usePathname, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
 function ContentWrapperInner({ children }: { children: React.ReactNode }) {
-    const pathname = usePathname();
+
     const searchParams = useSearchParams();
     const isKioskMode = searchParams.get('mode') === 'kiosk' || searchParams.get('sig');
 

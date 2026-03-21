@@ -55,6 +55,7 @@ export const POST = withAuth(
             }
 
             await prisma.$transaction(async (tx) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const updates: any = {};
                 const fields = ['googleId', 'email', 'phone', 'name', 'dob', 'homeAddress', 'image', 'lastWaiverSign', 'lastBackgroundCheck'];
                 for (const field of fields) {
@@ -160,6 +161,7 @@ export const POST = withAuth(
             });
 
             return NextResponse.json({ success: true });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (error: any) {
             console.error("Merge error:", error);
             return NextResponse.json({ error: error.message || "Failed to merge participants" }, { status: 500 });

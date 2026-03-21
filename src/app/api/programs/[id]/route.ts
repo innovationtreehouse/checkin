@@ -121,7 +121,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         }
 
         const body = await req.json();
-        let { name, leadMentorId, begin, end, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings } = body;
+        let { leadMentorId } = body;
+        const { name, begin, end, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -130,6 +131,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             leadMentorId = parseInt(leadMentorId);
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const updateData: any = {
             ...(name !== undefined && { name }),
             ...(leadMentorId !== undefined && { leadMentorId }),

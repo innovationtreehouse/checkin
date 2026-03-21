@@ -1,6 +1,5 @@
 import { sendCheckinNotifications } from "@/lib/notifications";
 import { sendEmail } from "@/lib/email";
-import prisma from "@/lib/prisma";
 
 jest.mock("@/lib/email", () => ({
     sendEmail: jest.fn().mockImplementation(() => new Promise(resolve => setTimeout(resolve, 50))) // Simulate 50ms delay per email
