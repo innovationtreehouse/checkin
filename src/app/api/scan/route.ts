@@ -69,7 +69,26 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // 4. Record raw badge event
+        // 4. Double scan debounce check (3 seconds)
+        const threeSecondsAgo = new Date(Date.now() - 3000);
+        const recentScan = await prisma.rawBadgeEvent.findFirst({
+            where: {
+                participantId: participant.id,
+                time: {
+                    gte: threeSecondsAgo
+                }
+            }
+        });
+
+        if (recentScan) {
+            // Silently ignore to prevent accidental double-scans without disrupting UI
+            return new Response(JSON.stringify({ type: 'ignored_debounce', message: 'Scan ignored due to debounce.' }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        // 5. Record raw badge event
         await prisma.rawBadgeEvent.create({
             data: {
                 participantId: participant.id,
@@ -77,7 +96,7 @@ export async function POST(req: NextRequest) {
             },
         });
 
-        // 5. Check-in or check-out
+        // 6. Check-in or check-out
         const activeVisit = await prisma.visit.findFirst({
             where: {
                 participantId: participant.id,
