@@ -61,31 +61,33 @@ export async function POST(req: Request) {
         }
 
         if (accountIdStr && programIdStr) {
-            const participantId = parseInt(accountIdStr, 10);
+            const participantIds = accountIdStr.split(',').map((id: string) => parseInt(id.trim(), 10)).filter((id: number) => !isNaN(id));
             const programId = parseInt(programIdStr, 10);
 
-            if (!isNaN(participantId) && !isNaN(programId)) {
-                // Find existing participant
-                const existing = await prisma.programParticipant.findUnique({
-                    where: {
-                        programId_participantId: { programId, participantId }
-                    }
-                });
-
-                if (existing) {
-                    await prisma.programParticipant.update({
+            if (participantIds.length > 0 && !isNaN(programId)) {
+                for (const participantId of participantIds) {
+                    // Find existing participant
+                    const existing = await prisma.programParticipant.findUnique({
                         where: {
                             programId_participantId: { programId, participantId }
-                        },
-                        data: {
-                            status: 'ACTIVE',
-                            pendingSince: null, // clear out the pending timer
                         }
                     });
-                    
-                    logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
-                } else {
-                    logger.warn(`[SHOPIFY WEBHOOK] Participant ${participantId} not found in Program ${programId}. Ignoring payment.`);
+
+                    if (existing) {
+                        await prisma.programParticipant.update({
+                            where: {
+                                programId_participantId: { programId, participantId }
+                            },
+                            data: {
+                                status: 'ACTIVE',
+                                pendingSince: null, // clear out the pending timer
+                            }
+                        });
+                        
+                        logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
+                    } else {
+                        logger.warn(`[SHOPIFY WEBHOOK] Participant ${participantId} not found in Program ${programId}. Ignoring payment.`);
+                    }
                 }
             }
         } else {

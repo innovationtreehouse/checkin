@@ -283,21 +283,55 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '3rem' }}>
                     {!showEnrollmentSelection ? (
-                        <button
-                            className="glass-button primary-button"
-                            onClick={startEnrollmentProcess}
-                            disabled={program.enrollmentStatus === 'CLOSED'}
-                            style={{ 
-                                padding: '1rem 3rem', 
-                                fontSize: '1.2rem', 
-                                background: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.05)' : 'rgba(56, 189, 248, 0.2)', 
-                                borderColor: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(56, 189, 248, 0.5)',
-                                opacity: program.enrollmentStatus === 'CLOSED' ? 0.5 : 1,
-                                cursor: program.enrollmentStatus === 'CLOSED' ? 'not-allowed' : 'pointer'
-                            }}
-                        >
-                            {program.enrollmentStatus === 'CLOSED' ? "Enrollment Closed" : "Enroll"}
-                        </button>
+                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                            {session ? (
+                                <button
+                                    className="glass-button primary-button"
+                                    onClick={startEnrollmentProcess}
+                                    disabled={program.enrollmentStatus === 'CLOSED'}
+                                    style={{ 
+                                        padding: '1rem 3rem', 
+                                        fontSize: '1.2rem', 
+                                        background: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.05)' : 'rgba(56, 189, 248, 0.2)', 
+                                        borderColor: program.enrollmentStatus === 'CLOSED' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(56, 189, 248, 0.5)',
+                                        opacity: program.enrollmentStatus === 'CLOSED' ? 0.5 : 1,
+                                        cursor: program.enrollmentStatus === 'CLOSED' ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    {program.enrollmentStatus === 'CLOSED' ? "Enrollment Closed" : "Enroll"}
+                                </button>
+                            ) : (
+                                <>
+                                    <button
+                                        className="glass-button"
+                                        onClick={() => router.push('/')}
+                                        style={{ 
+                                            padding: '1rem 2rem', 
+                                            fontSize: '1.2rem', 
+                                            background: 'rgba(59, 130, 246, 0.2)', 
+                                            borderColor: 'rgba(59, 130, 246, 0.4)'
+                                        }}
+                                    >
+                                        Log In To Enroll
+                                    </button>
+                                    <button
+                                        className="glass-button primary-button"
+                                        onClick={() => router.push(`/programs/${program.id}/register`)}
+                                        disabled={program.enrollmentStatus === 'CLOSED'}
+                                        style={{ 
+                                            padding: '1rem 2rem', 
+                                            fontSize: '1.2rem', 
+                                            background: program.enrollmentStatus === 'CLOSED' ? 'rgba(34, 197, 94, 0.05)' : 'rgba(34, 197, 94, 0.2)', 
+                                            borderColor: program.enrollmentStatus === 'CLOSED' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(34, 197, 94, 0.5)',
+                                            opacity: program.enrollmentStatus === 'CLOSED' ? 0.5 : 1,
+                                            cursor: program.enrollmentStatus === 'CLOSED' ? 'not-allowed' : 'pointer'
+                                        }}
+                                    >
+                                        {program.enrollmentStatus === 'CLOSED' ? "Registration Closed" : "Register (New User)"}
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     ) : (
                         <div style={{ width: '100%', maxWidth: '500px', background: 'rgba(0,0,0,0.2)', padding: '2rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
                             <h3 style={{ margin: '0 0 1.5rem 0' }}>Which of your household wants to enroll?</h3>

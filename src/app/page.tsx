@@ -220,14 +220,41 @@ export default function Home() {
               )}
             </>
           ) : (
-            <div style={{ textAlign: 'center', width: '100%', gridColumn: '1 / -1' }}>
-              <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>
-                Please sign in to access your dashboard, record attendance, and manage your account.
+            <div style={{ textAlign: 'center', width: '100%', gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+              <p style={{ color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>
+                Explore our upcoming events and sign up, or sign in to access your dashboard.
               </p>
+              
+              <button
+                className="glass-button primary-button"
+                onClick={() => router.push('/programs')}
+                style={{ 
+                  background: 'rgba(34, 197, 94, 0.2)', 
+                  borderColor: 'rgba(34, 197, 94, 0.4)',
+                  padding: '1rem 2rem',
+                  fontSize: '1.2rem',
+                  width: '100%',
+                  maxWidth: '300px'
+                }}
+              >
+                See Public Programs
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%', justifyContent: 'center', margin: '1rem 0' }}>
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)', maxWidth: '100px' }} />
+                <span style={{ color: 'var(--color-text-muted)' }}>OR</span>
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)', maxWidth: '100px' }} />
+              </div>
+
               <button
                 className="glass-button"
                 onClick={() => signIn('google')}
-                style={{ background: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgba(59, 130, 246, 0.4)' }}
+                style={{ 
+                  background: 'rgba(59, 130, 246, 0.2)', 
+                  borderColor: 'rgba(59, 130, 246, 0.4)',
+                  width: '100%',
+                  maxWidth: '300px'
+                }}
               >
                 Sign In To Dashboard
               </button>

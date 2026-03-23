@@ -407,23 +407,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         {program.phase === 'FINISHED' && <span style={{ fontSize: '1rem', background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', padding: '0.2rem 0.5rem', borderRadius: '4px', verticalAlign: 'middle', marginLeft: '0.5rem', border: '1px solid rgba(16, 185, 129, 0.4)' }}>Finished</span>}
                     </h1>
                     <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                        <button 
-                            className="glass-button" 
-                            onClick={() => {
-                                const url = `${window.location.origin}/programs/${program.id}`;
-                                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url)}`;
-                                const link = document.createElement('a');
-                                link.href = qrUrl;
-                                link.download = `QR_${program.name.replace(/[^a-z0-9]/gi, '_')}.png`;
-                                link.target = '_blank';
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
-                            }} 
-                            style={{ padding: '0.5rem 1rem', background: 'rgba(56, 189, 248, 0.2)', borderColor: 'rgba(56, 189, 248, 0.5)' }}
-                        >
-                            <span style={{ marginRight: '0.5rem' }}>📷</span> Download QR
-                        </button>
                         <button className="glass-button" onClick={() => router.push('/programs')} style={{ padding: '0.5rem 1rem' }}>
                             &larr; Back to Programs
                         </button>
@@ -454,6 +437,44 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                 {activeTab === 'general' && (
                     <form onSubmit={handleSaveGeneral}>
                         <div style={{ display: 'grid', gap: '2rem', marginBottom: '2rem' }}>
+                            {/* Public Sign-Up Actions Row */}
+                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                <button 
+                                    type="button"
+                                    className="glass-button" 
+                                    onClick={() => {
+                                        const url = `${window.location.origin}/programs/${program.id}`;
+                                        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url)}`;
+                                        const link = document.createElement('a');
+                                        link.href = qrUrl;
+                                        link.download = `QR_${program.name.replace(/[^a-z0-9]/gi, '_')}.png`;
+                                        link.target = '_blank';
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                    }} 
+                                    style={{ padding: '0.5rem 1rem', background: 'rgba(56, 189, 248, 0.2)', borderColor: 'rgba(56, 189, 248, 0.5)', height: '100%' }}
+                                >
+                                    <span style={{ marginRight: '0.5rem' }}>📷</span> Download QR Code
+                                </button>
+                                <button 
+                                    type="button"
+                                    className="glass-button primary-button" 
+                                    onClick={() => { window.open(`/programs/${program.id}/register`, '_blank'); }} 
+                                    style={{ padding: '0.5rem 1.5rem', background: 'rgba(16, 185, 129, 0.2)', borderColor: 'rgba(16, 185, 129, 0.5)', color: '#34d399', fontSize: '1.1rem', fontWeight: 'bold' }}
+                                >
+                                    🔗 Public Registration Page
+                                </button>
+                                <button 
+                                    type="button"
+                                    className="glass-button" 
+                                    onClick={() => { window.open(`/programs/${program.id}`, '_blank'); }} 
+                                    style={{ padding: '0.5rem 1rem' }}
+                                >
+                                    📄 Public Details Page
+                                </button>
+                            </div>
+
                             {/* Metadata Stats Row */}
                             <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                                 <div style={{ textAlign: 'center' }}>
