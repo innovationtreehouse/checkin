@@ -121,12 +121,15 @@ describe('Individual Program API Integration Tests', () => {
     const createParams = (id: number) => ({ params: Promise.resolve({ id: id.toString() }) });
 
     describe('GET /api/programs/[id]', () => {
-        it('should return 401 Unauthorized without session', async () => {
+        it('should allow unauthenticated users to view public programs', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
 
              const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
-             expect(res.status).toBe(401);
+             expect(res.status).toBe(200);
+             
+             const data = await res.json();
+             expect(data.name).toBe('Public Prog ID API Test');
         });
 
         it('should return 404 Not Found for invalid program ID', async () => {
