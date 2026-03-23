@@ -19,10 +19,11 @@ async function main() {
 
     const boardMember = await prisma.participant.upsert({
         where: { email: 'boardmember@example.com' },
-        update: { name: 'Board Member', sysadmin: true, boardMember: true },
+        update: { name: 'Board Member', phone: '555-555-0001', sysadmin: true, boardMember: true },
         create: {
             email: 'boardmember@example.com',
             name: 'Board Member',
+            phone: '555-555-0001',
             sysadmin: true,
             boardMember: true,
         },
@@ -31,20 +32,22 @@ async function main() {
 
     const parentFamily = await prisma.participant.upsert({
         where: { email: 'parent.family@example.com' },
-        update: { name: 'Parent Family' },
+        update: { name: 'Parent Family', phone: '555-555-0002' },
         create: {
             email: 'parent.family@example.com',
             name: 'Parent Family',
+            phone: '555-555-0002',
         },
     })
     console.log(`✅ parent.family@example.com (id: ${parentFamily.id}) — Household Lead`)
 
     const parent2Family = await prisma.participant.upsert({
         where: { email: 'parent2.family@example.com' },
-        update: { name: 'Parent2 Family' },
+        update: { name: 'Parent2 Family', phone: '555-555-0003' },
         create: {
             email: 'parent2.family@example.com',
             name: 'Parent2 Family',
+            phone: '555-555-0003',
         },
     })
     console.log(`✅ parent2.family@example.com (id: ${parent2Family.id}) — Household Member`)
@@ -66,20 +69,22 @@ async function main() {
 
     const parentFamily2 = await prisma.participant.upsert({
         where: { email: 'parent.family2@example.com' },
-        update: { name: 'Parent Family2' },
+        update: { name: 'Parent Family2', phone: '555-555-0004' },
         create: {
             email: 'parent.family2@example.com',
             name: 'Parent Family2',
+            phone: '555-555-0004',
         },
     })
     console.log(`✅ parent.family2@example.com (id: ${parentFamily2.id}) — Household Lead (Family2)`)
 
     const keyholder1 = await prisma.participant.upsert({
         where: { email: 'keyholder1@example.com' },
-        update: { name: 'Keyholder One', keyholder: true },
+        update: { name: 'Keyholder One', phone: '555-555-0005', keyholder: true },
         create: {
             email: 'keyholder1@example.com',
             name: 'Keyholder One',
+            phone: '555-555-0005',
             keyholder: true,
         },
     })
@@ -87,10 +92,11 @@ async function main() {
 
     const keyholder2 = await prisma.participant.upsert({
         where: { email: 'keyholder2@example.com' },
-        update: { name: 'Keyholder Two', keyholder: true },
+        update: { name: 'Keyholder Two', phone: '555-555-0006', keyholder: true },
         create: {
             email: 'keyholder2@example.com',
             name: 'Keyholder Two',
+            phone: '555-555-0006',
             keyholder: true,
         },
     })
@@ -98,20 +104,22 @@ async function main() {
 
     const certifiedAdult = await prisma.participant.upsert({
         where: { email: 'certified.adult@example.com' },
-        update: { name: 'Certified Adult' },
+        update: { name: 'Certified Adult', phone: '555-555-0007' },
         create: {
             email: 'certified.adult@example.com',
             name: 'Certified Adult',
+            phone: '555-555-0007',
         },
     })
     console.log(`✅ certified.adult@example.com (id: ${certifiedAdult.id}) — Tool Certified`)
 
     const shopSteward = await prisma.participant.upsert({
         where: { email: 'shop.steward@example.com' },
-        update: { name: 'Shop Steward', shopSteward: true },
+        update: { name: 'Shop Steward', phone: '555-555-0008', shopSteward: true },
         create: {
             email: 'shop.steward@example.com',
             name: 'Shop Steward',
+            phone: '555-555-0008',
             shopSteward: true,
         },
     })
