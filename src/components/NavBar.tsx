@@ -33,19 +33,19 @@ function NavBarInner() {
 
     const navLinks = (
         <>
-            <Link href="/kioskdisplay" onClick={closeMobileMenu} style={{ color: pathname === '/kioskdisplay' ? 'white' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
-                Attendance
-            </Link>
+            {session && (
+                <Link href="/kioskdisplay" onClick={closeMobileMenu} style={{ color: pathname === '/kioskdisplay' ? 'white' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
+                    Attendance
+                </Link>
+            )}
             {session && (
                 <Link href="/household" onClick={closeMobileMenu} style={{ color: pathname === '/household' ? 'white' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
                     My Household
                 </Link>
             )}
-            {session ? (
-                <Link href="/programs" onClick={closeMobileMenu} style={{ color: pathname === '/programs' ? 'white' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
-                    Programs
-                </Link>
-            ) : null}
+            <Link href="/programs" onClick={closeMobileMenu} style={{ color: pathname === '/programs' ? 'white' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
+                Programs
+            </Link>
             {(session?.user as SessionUser)?.sysadmin || (session?.user as SessionUser)?.boardMember || (session?.user as SessionUser)?.shopSteward || (session?.user as SessionUser)?.toolStatuses?.some(ts => ts.level === 'MAY_CERTIFY_OTHERS') ? (
                 <Link href="/shop" onClick={closeMobileMenu} style={{ color: pathname === '/shop' ? '#fcd34d' : 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 'bold' }}>
                     Shop Ops
