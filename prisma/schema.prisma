@@ -49,6 +49,16 @@ enum EnrollmentStatus {
 enum ProgramParticipantStatus {
   PENDING
   ACTIVE
+  WAITLISTED
+  OFFERED
+}
+
+enum MembershipApplicationPhase {
+  PENDING_INFO
+  PENDING_AGREEMENT
+  PENDING_PAYMENT
+  PENDING_BG_CHECK
+  APPROVED
 }
 
 model Participant {
@@ -62,11 +72,11 @@ model Participant {
   accounts      Account[]
   sessions      Session[]
 
-  dob                 DateTime?
-  homeAddress         String?
-  lastWaiverSign      DateTime?
-  waiverSignedBy      Int?
-  lastBackgroundCheck DateTime?
+  dob                  DateTime?
+  homeAddress          String?
+  lastWaiverSign       DateTime?
+  waiverSignedBy       Int?
+  lastBackgroundCheck  DateTime?
   notificationSettings Json?
 
   householdId Int?
@@ -77,18 +87,19 @@ model Participant {
   keyholder   Boolean @default(false)
   shopSteward Boolean @default(false)
 
-  toolStatuses        ToolStatus[]
-  householdLeads      HouseholdLead[]
-  memberships         Membership[]         @relation("ParticipantMemberships")
-  corporationLeads    CorporationLead[]
-  corporationMembers  CorporationMember[]
-  programVolunteers   ProgramVolunteer[]
-  programParticipants ProgramParticipant[]
-  feePayments         FeePayment[]
-  rsvps               RSVP[]
-  rawBadgeEvents      RawBadgeEvent[]
-  visits              Visit[]
-  eventsConfirmedBy   Event[]              @relation("EventAttendanceConfirmer")
+  toolStatuses                  ToolStatus[]
+  householdLeads                HouseholdLead[]
+  memberships                   Membership[]                   @relation("ParticipantMemberships")
+  corporationLeads              CorporationLead[]
+  corporationMembers            CorporationMember[]
+  programVolunteers             ProgramVolunteer[]
+  programParticipants           ProgramParticipant[]
+  feePayments                   FeePayment[]
+  rsvps                         RSVP[]
+  rawBadgeEvents                RawBadgeEvent[]
+  visits                        Visit[]
+  eventsConfirmedBy             Event[]                        @relation("EventAttendanceConfirmer")
+  backgroundCheckCertifications BackgroundCheckCertification[]
 }
 
 model Tool {
@@ -110,20 +121,24 @@ model ToolStatus {
 }
 
 model Household {
-  id      Int     @id @default(autoincrement())
-  name    String?
-  address String?
+  id                    Int                        @id @default(autoincrement())
+  name                  String?
+  address               String?
   emergencyContactName  String?
   emergencyContactPhone String?
+  healthInsuranceInfo   String?
+  membershipStatus      MembershipApplicationPhase @default(PENDING_INFO)
 
-  participants Participant[]
-  leads        HouseholdLead[]
-  memberships  Membership[]
+  participants                  Participant[]
+  leads                         HouseholdLead[]
+  memberships                   Membership[]
+  backgroundCheckCertifications BackgroundCheckCertification[]
 }
 
 model HouseholdLead {
   householdId   Int
   participantId Int
+  isPrimary     Boolean @default(false)
 
   household   Household   @relation(fields: [householdId], references: [id])
   participant Participant @relation(fields: [participantId], references: [id])
@@ -180,23 +195,23 @@ model CorporationMember {
 }
 
 model Program {
-  id           Int       @id @default(autoincrement())
-  name            String
-  leadMentorId    Int?
-  begin           DateTime?
-  end             DateTime?
-  phase                        ProgramPhase @default(PLANNING)
-  enrollmentStatus             EnrollmentStatus @default(CLOSED)
-  memberOnly                   Boolean   @default(false)
-  minAge                       Int?
-  maxAge                       Int?
-  maxParticipants              Int?
+  id                             Int              @id @default(autoincrement())
+  name                           String
+  leadMentorId                   Int?
+  begin                          DateTime?
+  end                            DateTime?
+  phase                          ProgramPhase     @default(PLANNING)
+  enrollmentStatus               EnrollmentStatus @default(CLOSED)
+  memberOnly                     Boolean          @default(false)
+  minAge                         Int?
+  maxAge                         Int?
+  maxParticipants                Int?
   leadMentorNotificationSettings Json?
 
-  memberPrice       Int?
-  nonMemberPrice    Int?
-  shopifyProductId  String?
-  shopifyMemberVariantId String?
+  memberPrice               Int?
+  nonMemberPrice            Int?
+  shopifyProductId          String?
+  shopifyMemberVariantId    String?
   shopifyNonMemberVariantId String?
 
   volunteers   ProgramVolunteer[]
@@ -217,11 +232,11 @@ model ProgramVolunteer {
 }
 
 model ProgramParticipant {
-  programId     Int
-  participantId Int
-  status        ProgramParticipantStatus @default(PENDING)
-  paymentPlanRequested Boolean @default(false)
-  pendingSince         DateTime? @default(now())
+  programId            Int
+  participantId        Int
+  status               ProgramParticipantStatus @default(PENDING)
+  paymentPlanRequested Boolean                  @default(false)
+  pendingSince         DateTime?                @default(now())
 
   program     Program     @relation(fields: [programId], references: [id])
   participant Participant @relation(fields: [participantId], references: [id])
@@ -261,12 +276,12 @@ model Event {
   start       DateTime
   end         DateTime
   description String?
-  
-  attendanceConfirmedAt DateTime?
+
+  attendanceConfirmedAt   DateTime?
   attendanceConfirmedById Int?
-  attendanceConfirmedBy Participant? @relation("EventAttendanceConfirmer", fields: [attendanceConfirmedById], references: [id])
-  postEventEmailSent    Boolean      @default(false)
-  recurringGroupId      String?
+  attendanceConfirmedBy   Participant? @relation("EventAttendanceConfirmer", fields: [attendanceConfirmedById], references: [id])
+  postEventEmailSent      Boolean      @default(false)
+  recurringGroupId        String?
 
   program Program? @relation(fields: [programId], references: [id])
   rsvps   RSVP[]
@@ -292,7 +307,7 @@ model RawBadgeEvent {
 
   participant Participant @relation(fields: [participantId], references: [id])
 
-  @@index([participantId, time])  // Double-badge detection in /api/scan
+  @@index([participantId, time]) // Double-badge detection in /api/scan
 }
 
 model Visit {
@@ -305,7 +320,7 @@ model Visit {
   participant Participant @relation(fields: [participantId], references: [id])
   event       Event?      @relation(fields: [associatedEventId], references: [id])
 
-  @@index([participantId, departed])  // Active visits lookup in /api/scan
+  @@index([participantId, departed]) // Active visits lookup in /api/scan
 }
 
 model AuditLog {
@@ -369,4 +384,16 @@ model SystemMetric {
   timestamp DateTime @default(now())
   metric    String
   value     Float
+}
+
+model BackgroundCheckCertification {
+  id            Int      @id @default(autoincrement())
+  householdId   Int
+  certifiedById Int
+  certifiedAt   DateTime @default(now())
+
+  household   Household   @relation(fields: [householdId], references: [id])
+  certifiedBy Participant @relation(fields: [certifiedById], references: [id])
+
+  @@unique([householdId, certifiedById])
 }
