@@ -41,6 +41,11 @@ body {
   width: 100%;
 }
 
+/* Kiosk Mode */
+.kiosk-mode, .kiosk-mode * {
+  cursor: none !important;
+}
+
 /* Base Glass Container */
 .glass-container {
   background: var(--glass-bg);
