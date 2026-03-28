@@ -1,20 +1,28 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 
 function ContentWrapperInner({ children }: { children: React.ReactNode }) {
 
     const searchParams = useSearchParams();
     const isKioskMode = searchParams.get('mode') === 'kiosk' || searchParams.get('sig');
 
+    useEffect(() => {
+        if (isKioskMode) {
+            document.body.classList.add('kiosk-mode');
+        } else {
+            document.body.classList.remove('kiosk-mode');
+        }
+
+        // Cleanup on unmount or when isKioskMode changes
+        return () => {
+            document.body.classList.remove('kiosk-mode');
+        };
+    }, [isKioskMode]);
+
     return (
         <div style={{ paddingTop: isKioskMode ? '0px' : '70px', minHeight: '100vh', cursor: isKioskMode ? 'none' : 'auto' }}>
-            {isKioskMode && (
-                <style dangerouslySetInnerHTML={{ __html: `
-                    body, * { cursor: none !important; }
-                `}} />
-            )}
             {children}
         </div>
     );
