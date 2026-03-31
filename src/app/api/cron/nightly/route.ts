@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import prisma from "@/lib/prisma";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
@@ -7,7 +8,14 @@ export async function GET(req: Request) {
     const authHeader = req.headers.get("authorization");
     const cronSecret = process.env.CRON_SECRET;
 
-    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    if (!cronSecret || !authHeader) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const expectedAuth = Buffer.from(`Bearer ${cronSecret}`);
+    const actualAuth = Buffer.from(authHeader);
+
+    if (actualAuth.length !== expectedAuth.length || !crypto.timingSafeEqual(actualAuth, expectedAuth)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
