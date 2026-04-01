@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 
 /**
@@ -9,7 +10,14 @@ export async function GET(req: Request) {
     const authHeader = req.headers.get("authorization");
     const cronSecret = process.env.CRON_SECRET;
 
-    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    if (!cronSecret || !authHeader) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const expectedHeader = Buffer.from(`Bearer ${cronSecret}`);
+    const actualHeader = Buffer.from(authHeader);
+
+    if (expectedHeader.length !== actualHeader.length || !crypto.timingSafeEqual(expectedHeader, actualHeader)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
