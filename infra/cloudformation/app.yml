@@ -1,0 +1,522 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  checkin – ECR, RDS PostgreSQL, ECS Fargate cluster + service, ALB, IAM roles,
+  Secrets Manager, and GitHub Actions OIDC trust.
+  Requires the vpc.yml stack to be deployed first.
+
+Parameters:
+  AppName:
+    Type: String
+    Default: checkin
+  AppPort:
+    Type: Number
+    Default: 4000
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+
+  # ECS sizing
+  TaskCpu:
+    Type: Number
+    Default: 512
+    Description: Fargate task CPU units (512 = 0.5 vCPU)
+  TaskMemory:
+    Type: Number
+    Default: 1024
+    Description: Fargate task memory in MB
+  DesiredCount:
+    Type: Number
+    Default: 1
+
+  # RDS
+  DBName:
+    Type: String
+    Default: checkmein
+  DBUsername:
+    Type: String
+    Default: checkinapp
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: Master password for the RDS instance (store this securely)
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+
+  # App config — must be supplied at deploy time
+  NextAuthUrl:
+    Type: String
+    Description: >
+      Public URL of the app, e.g. https://checkin.example.com or the ALB DNS name.
+      Can be updated after first deploy once you know the ALB URL.
+    Default: ""
+
+  # Secrets that must be set manually in the AWS console after stack creation.
+  # The stack creates the Secrets Manager entries; you fill in the real values.
+  NextAuthSecret:
+    Type: String
+    NoEcho: true
+    Default: "REPLACE_ME"
+    Description: Random secret for NextAuth session encryption (openssl rand -base64 32)
+  GoogleClientId:
+    Type: String
+    Default: "REPLACE_ME"
+    Description: Google OAuth2 client ID
+  GoogleClientSecret:
+    Type: String
+    NoEcho: true
+    Default: "REPLACE_ME"
+    Description: Google OAuth2 client secret
+  ResendApiKey:
+    Type: String
+    NoEcho: true
+    Default: "REPLACE_ME"
+    Description: Resend transactional email API key
+
+  # GitHub OIDC — for the CD workflow to assume the deploy role
+  GitHubOrg:
+    Type: String
+    Description: GitHub organisation or username that owns the repo
+  GitHubRepo:
+    Type: String
+    Default: checkin
+    Description: GitHub repository name
+
+Resources:
+  # ── ECR ─────────────────────────────────────────────────────────────────────
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref AppName
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 10 sha- tagged images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["sha-"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": { "type": "expire" }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Expire untagged images after 7 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 7
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+
+  # ── RDS PostgreSQL ──────────────────────────────────────────────────────────
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for RDS
+      SubnetIds:
+        - Fn::ImportValue: !Sub "${AppName}-PrivateSubnet1Id"
+        - Fn::ImportValue: !Sub "${AppName}-PrivateSubnet2Id"
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: postgres
+      EngineVersion: "15"
+      AllocatedStorage: "20"
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: false
+      PubliclyAccessible: false
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - Fn::ImportValue: !Sub "${AppName}-RDSSecurityGroupId"
+      BackupRetentionPeriod: 7
+      DeletionProtection: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-db"
+
+  # ── Secrets Manager ─────────────────────────────────────────────────────────
+  SecretDatabaseUrl:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AppName}/database-url"
+      Description: Full PostgreSQL connection string for the app
+      # Constructed automatically from RDS endpoint after stack creation.
+      # The CD workflow injects DATABASE_URL using this secret.
+      SecretString: !Sub
+        - "postgresql://${DBUsername}:${DBPassword}@${Endpoint}/${DBName}?schema=public"
+        - Endpoint: !GetAtt DBInstance.Endpoint.Address
+
+  SecretNextAuthSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AppName}/nextauth-secret"
+      Description: NextAuth.js session encryption secret
+      SecretString: !Ref NextAuthSecret
+
+  SecretGoogleClientId:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AppName}/google-client-id"
+      Description: Google OAuth2 client ID
+      SecretString: !Ref GoogleClientId
+
+  SecretGoogleClientSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AppName}/google-client-secret"
+      Description: Google OAuth2 client secret
+      SecretString: !Ref GoogleClientSecret
+
+  SecretResendApiKey:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AppName}/resend-api-key"
+      Description: Resend transactional email API key
+      SecretString: !Ref ResendApiKey
+
+  # ── IAM ─────────────────────────────────────────────────────────────────────
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-ecs-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref SecretDatabaseUrl
+                  - !Ref SecretNextAuthSecret
+                  - !Ref SecretGoogleClientId
+                  - !Ref SecretGoogleClientSecret
+                  - !Ref SecretResendApiKey
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-ecs-task-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      # Add bucket/queue/etc. permissions here if the app needs them
+
+  # GitHub Actions OIDC provider + deploy role
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea
+
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-github-deploy-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOIDCProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "token.actions.githubusercontent.com:aud": sts.amazonaws.com
+              StringLike:
+                "token.actions.githubusercontent.com:sub":
+                  !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/main"
+      Policies:
+        - PolicyName: ECSDeployPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                Resource: !GetAtt ECRRepository.Arn
+              - Effect: Allow
+                Action:
+                  - ecs:RegisterTaskDefinition
+                  - ecs:DescribeTaskDefinition
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecs:UpdateService
+                  - ecs:DescribeServices
+                  - ecs:RunTask
+                  - ecs:DescribeTasks
+                  - ecs:StopTask
+                Resource: "*"
+                Condition:
+                  ArnLike:
+                    "ecs:cluster": !GetAtt ECSCluster.Arn
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt ECSTaskExecutionRole.Arn
+                  - !GetAtt ECSTaskRole.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt AppLogGroup.Arn
+
+  # ── CloudWatch Logs ──────────────────────────────────────────────────────────
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${AppName}"
+      RetentionInDays: 30
+
+  # ── ALB ─────────────────────────────────────────────────────────────────────
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${AppName}-alb"
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - Fn::ImportValue: !Sub "${AppName}-PublicSubnet1Id"
+        - Fn::ImportValue: !Sub "${AppName}-PublicSubnet2Id"
+      SecurityGroups:
+        - Fn::ImportValue: !Sub "${AppName}-ALBSecurityGroupId"
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${AppName}-tg"
+      Port: !Ref AppPort
+      Protocol: HTTP
+      TargetType: ip
+      VpcId:
+        Fn::ImportValue: !Sub "${AppName}-VpcId"
+      HealthCheckPath: /api/health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      # To enable HTTPS: add an AWS::ElasticLoadBalancingV2::Listener on port 443
+      # with your ACM certificate ARN, then redirect HTTP → HTTPS here.
+
+  # ── ECS ─────────────────────────────────────────────────────────────────────
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${AppName}-cluster"
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  AppTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AppName}-app"
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: app
+          # Image is updated on every deployment by the CD workflow.
+          # The initial placeholder lets the stack deploy before the first push.
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${AppName}:latest"
+          PortMappings:
+            - ContainerPort: !Ref AppPort
+              Protocol: tcp
+          Environment:
+            - Name: NODE_ENV
+              Value: production
+            - Name: PORT
+              Value: !Sub "${AppPort}"
+            - Name: NEXTAUTH_URL
+              Value: !Ref NextAuthUrl
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Ref SecretDatabaseUrl
+            - Name: NEXTAUTH_SECRET
+              ValueFrom: !Ref SecretNextAuthSecret
+            - Name: GOOGLE_CLIENT_ID
+              ValueFrom: !Ref SecretGoogleClientId
+            - Name: GOOGLE_CLIENT_SECRET
+              ValueFrom: !Ref SecretGoogleClientSecret
+            - Name: RESEND_API_KEY
+              ValueFrom: !Ref SecretResendApiKey
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AppLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: app
+          Essential: true
+
+  # Separate task definition used only for running migrations (one-off ECS task)
+  MigrateTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AppName}-migrate"
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: migrate
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${AppName}:latest"
+          Command:
+            - node_modules/.bin/prisma
+            - migrate
+            - deploy
+          Environment:
+            - Name: NODE_ENV
+              Value: production
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Ref SecretDatabaseUrl
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AppLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: migrate
+          Essential: true
+
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: HTTPListener
+    Properties:
+      ServiceName: !Sub "${AppName}-service"
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref AppTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - Fn::ImportValue: !Sub "${AppName}-PrivateSubnet1Id"
+            - Fn::ImportValue: !Sub "${AppName}-PrivateSubnet2Id"
+          SecurityGroups:
+            - Fn::ImportValue: !Sub "${AppName}-ECSSecurityGroupId"
+      LoadBalancers:
+        - ContainerName: app
+          ContainerPort: !Ref AppPort
+          TargetGroupArn: !Ref TargetGroup
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      DeploymentController:
+        Type: ECS
+
+Outputs:
+  ECRRepositoryUri:
+    Value: !GetAtt ECRRepository.RepositoryUri
+    Export:
+      Name: !Sub "${AppName}-ECRRepositoryUri"
+
+  ECSClusterName:
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub "${AppName}-ECSClusterName"
+
+  ECSServiceName:
+    Value: !GetAtt ECSService.Name
+    Export:
+      Name: !Sub "${AppName}-ECSServiceName"
+
+  AppTaskDefinitionFamily:
+    Value: !Sub "${AppName}-app"
+    Export:
+      Name: !Sub "${AppName}-AppTaskFamily"
+
+  MigrateTaskDefinitionFamily:
+    Value: !Sub "${AppName}-migrate"
+    Export:
+      Name: !Sub "${AppName}-MigrateTaskFamily"
+
+  GitHubActionsRoleArn:
+    Value: !GetAtt GitHubActionsDeployRole.Arn
+    Description: ARN to set as AWS_ROLE_ARN in GitHub Actions secrets
+    Export:
+      Name: !Sub "${AppName}-GitHubActionsRoleArn"
+
+  ALBDnsName:
+    Value: !GetAtt LoadBalancer.DNSName
+    Description: >
+      Set this as your DNS CNAME target and update NextAuthUrl / NEXTAUTH_URL
+      in the Secrets Manager secret once the stack is up.
+
+  RDSEndpoint:
+    Value: !GetAtt DBInstance.Endpoint.Address
+    Description: RDS hostname (already embedded in the database-url secret)
+
+  AppLogGroupName:
+    Value: !Ref AppLogGroup
