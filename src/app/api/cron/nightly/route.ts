@@ -2,12 +2,10 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 
 export async function GET(req: Request) {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    if (!isAuthorizedCron(req)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
