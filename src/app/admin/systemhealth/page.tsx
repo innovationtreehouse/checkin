@@ -100,9 +100,17 @@ function SvgLineChart({ data }: { data: DailyStat[] }) {
     );
 }
 
+type UpdateInfo = {
+    updateAvailable: boolean;
+    currentSha: string;
+    latestSha: string;
+    changes?: string[];
+};
+
 export default function SystemHealthPage() {
     const [stats, setStats] = useState<DailyStat[] | null>(null);
     const [loading, setLoading] = useState(true);
+    const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 
     useEffect(() => {
         fetch('/api/admin/system-health')
@@ -114,6 +122,11 @@ export default function SystemHealthPage() {
             })
             .catch(console.error)
             .finally(() => setLoading(false));
+
+        fetch('/api/admin/update-status')
+            .then(res => res.json())
+            .then(setUpdateInfo)
+            .catch(console.error);
     }, []);
 
     return (
@@ -124,6 +137,68 @@ export default function SystemHealthPage() {
                     Monitor the backend performance and round-trip response times for Kiosk functionality.
                 </p>
             </div>
+
+            {updateInfo?.updateAvailable && (
+                <div className="glass-container" style={{
+                    padding: '2rem',
+                    marginBottom: '2rem',
+                    border: '1px solid rgba(59, 130, 246, 0.4)',
+                    boxShadow: '0 8px 32px 0 rgba(59, 130, 246, 0.15)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                            <div style={{
+                                width: '12px',
+                                height: '12px',
+                                background: '#ef4444',
+                                borderRadius: '50%',
+                                boxShadow: '0 0 8px #ef4444'
+                            }}></div>
+                            <h3 style={{ margin: 0, color: 'var(--color-primary)' }}>Update Available</h3>
+                            <span style={{
+                                fontSize: '0.8rem',
+                                background: 'rgba(255,255,255,0.1)',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '4px',
+                                color: 'var(--color-text-muted)'
+                            }}>
+                                {updateInfo.currentSha.substring(0, 7)} → {updateInfo.latestSha.substring(0, 7)}
+                            </span>
+                        </div>
+                        <a
+                            href="https://github.com/innovationtreehouse/checkin"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="glass-button"
+                            style={{
+                                background: 'var(--color-primary)',
+                                color: 'white',
+                                border: 'none',
+                                padding: '0.6rem 1.2rem',
+                                fontSize: '0.9rem'
+                            }}
+                        >
+                            Upgrade Now
+                        </a>
+                    </div>
+
+                    {updateInfo.changes && updateInfo.changes.length > 0 && (
+                        <div style={{ marginTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+                            <p style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Changes in this version:</p>
+                            <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.85rem', color: 'var(--color-text-main)', opacity: 0.8 }}>
+                                {updateInfo.changes.slice(0, 5).map((change, idx) => (
+                                    <li key={idx} style={{ marginBottom: '0.25rem' }}>{change}</li>
+                                ))}
+                                {updateInfo.changes.length > 5 && (
+                                    <li style={{ listStyle: 'none', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                        ...and {updateInfo.changes.length - 5} more changes
+                                    </li>
+                                )}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            )}
 
             <div className="glass-container" style={{ padding: '2rem' }}>
                 <h3 style={{ marginTop: 0, color: 'var(--color-primary)' }}>Badge Scan Response Times (Last 30 Days)</h3>
