@@ -120,3 +120,11 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+/* Kiosk Mode Styles */
+.kiosk-mode {
+  cursor: none !important;
+}
+
+.kiosk-mode * {
+  cursor: none !important;
+}
