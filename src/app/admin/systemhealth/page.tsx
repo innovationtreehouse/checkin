@@ -100,6 +100,132 @@ function SvgLineChart({ data }: { data: DailyStat[] }) {
     );
 }
 
+type GithubCommit = {
+    sha: string;
+    html_url: string;
+    commit: {
+        message: string;
+    };
+};
+
+function SystemVersionBox() {
+    const [currentVersion, setCurrentVersion] = useState<string | null>(null);
+    const [latestVersion, setLatestVersion] = useState<string | null>(null);
+    const [commits, setCommits] = useState<GithubCommit[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        async function checkVersion() {
+            try {
+                const localRes = await fetch('/api/kiosk/version');
+                const localData = await localRes.json();
+                const currentSha = localData.version;
+                setCurrentVersion(currentSha);
+
+                if (currentSha && !currentSha.startsWith('unknown')) {
+                    const ghRes = await fetch('https://api.github.com/repos/innovationtreehouse/checkin/commits/main');
+                    if (!ghRes.ok) throw new Error('Failed to fetch latest version from GitHub');
+
+                    const ghData = await ghRes.json();
+                    const latestSha = ghData.sha;
+                    setLatestVersion(latestSha);
+
+                    if (latestSha && currentSha !== latestSha && !latestSha.startsWith(currentSha)) {
+                        const compRes = await fetch(`https://api.github.com/repos/innovationtreehouse/checkin/compare/${currentSha}...main`);
+                        if (compRes.ok) {
+                            const compData = await compRes.json();
+                            if (compData.commits) {
+                                setCommits(compData.commits);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to check version:", err);
+                setError("Unable to verify updates");
+            } finally {
+                setLoading(false);
+            }
+        }
+        checkVersion();
+    }, []);
+
+    if (loading) {
+        return (
+            <div className="glass-container" style={{ padding: '2rem', marginBottom: '2rem' }}>
+                <h3 style={{ marginTop: 0, color: 'var(--color-primary)' }}>System Version</h3>
+                <p style={{ color: 'var(--color-text-muted)' }}>Checking for updates...</p>
+            </div>
+        );
+    }
+
+    const isMismatch = currentVersion && latestVersion && !latestVersion.startsWith(currentVersion) && currentVersion !== latestVersion;
+
+    return (
+        <div className="glass-container" style={{ padding: '2rem', marginBottom: '2rem' }}>
+            <h3 style={{ marginTop: 0, color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                System Version
+                {isMismatch && <span style={{ width: 12, height: 12, backgroundColor: '#ef4444', borderRadius: '50%', display: 'inline-block', boxShadow: '0 0 8px #ef4444' }} title="Update Available" />}
+            </h3>
+
+            <p style={{ color: 'var(--color-text-muted)', marginBottom: '1rem' }}>
+                Current launched version: <code style={{ color: 'var(--color-text)' }}>{currentVersion?.substring(0, 7) || 'Unknown'}</code>
+            </p>
+
+            {error ? (
+                <p style={{ color: '#facc15', margin: 0 }}>{error}</p>
+            ) : isMismatch ? (
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem', marginTop: '1rem' }}>
+                    <p style={{ color: '#ef4444', fontWeight: 'bold', marginBottom: '1rem' }}>
+                        Update Available! (Latest: <code style={{ color: 'var(--color-text)' }}>{latestVersion?.substring(0, 7)}</code>)
+                    </p>
+
+                    <a
+                        href={`https://github.com/innovationtreehouse/checkin/compare/${currentVersion}...main`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                            display: 'inline-block',
+                            backgroundColor: '#3b82f6',
+                            color: 'white',
+                            padding: '0.5rem 1rem',
+                            borderRadius: '6px',
+                            textDecoration: 'none',
+                            fontWeight: 'bold',
+                            marginBottom: '1.5rem',
+                            transition: 'background-color 0.2s'
+                        }}
+                    >
+                        Upgrade Now
+                    </a>
+
+                    {commits.length > 0 && (
+                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px' }}>
+                            <h4 style={{ marginTop: 0, marginBottom: '0.75rem', color: 'var(--color-text)' }}>Summary of changes:</h4>
+                            <ul style={{ margin: 0, paddingLeft: '1.5rem', color: 'var(--color-text-muted)', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                {commits.map(c => (
+                                    <li key={c.sha}>
+                                        <a href={c.html_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>
+                                            <code>{c.sha.substring(0, 7)}</code>
+                                        </a>
+                                        {' - '}{c.commit.message.split('\n')[0]}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <p style={{ color: '#4ade80', fontWeight: 'bold', margin: 0 }}>
+                    ✓ System is up to date
+                </p>
+            )}
+        </div>
+    );
+}
+
+
 export default function SystemHealthPage() {
     const [stats, setStats] = useState<DailyStat[] | null>(null);
     const [loading, setLoading] = useState(true);
@@ -124,6 +250,8 @@ export default function SystemHealthPage() {
                     Monitor the backend performance and round-trip response times for Kiosk functionality.
                 </p>
             </div>
+
+            <SystemVersionBox />
 
             <div className="glass-container" style={{ padding: '2rem' }}>
                 <h3 style={{ marginTop: 0, color: 'var(--color-primary)' }}>Badge Scan Response Times (Last 30 Days)</h3>
