@@ -1,25 +1,14 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 
 /**
  * Expected to be called by an external CRON trigger (e.g. Vercel Cron or CloudWatch Events)
  * GET /api/cron/reminders
  */
 export async function GET(req: Request) {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || !authHeader) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const expectedHeader = `Bearer ${cronSecret}`;
-    const providedBuffer = Buffer.from(authHeader);
-    const expectedBuffer = Buffer.from(expectedHeader);
-
-    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
+    if (!isAuthorizedCron(req)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
