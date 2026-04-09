@@ -1,0 +1,209 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # allow manual deploys
+
+# Prevent two deploys running in parallel; the second queues behind the first.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  id-token: write  # required for OIDC
+  contents: read
+
+jobs:
+  # ── 1. Tests must pass before any deploy ─────────────────────────────────
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: checkmein_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        env:
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
+        run: npx prisma generate
+
+      - name: Push Prisma Schema
+        env:
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
+        run: npx prisma db push --accept-data-loss
+
+      - name: Run tests
+        env:
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
+        run: npm run test:ci
+
+  # ── 2. Build & push Docker image to ECR ───────────────────────────────────
+  build:
+    name: Build & Push to ECR
+    runs-on: ubuntu-latest
+    needs: test
+    outputs:
+      image-uri: ${{ steps.build-push.outputs.image-uri }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: build-push
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker build -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          echo "image-uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+  # ── 3. Run database migrations (one-off Fargate task) ─────────────────────
+  migrate:
+    name: Run DB Migrations
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Register a fresh migration task definition with the new image
+      - name: Register migration task definition
+        id: register-migrate-td
+        env:
+          IMAGE_URI: ${{ needs.build.outputs.image-uri }}
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          TD=$(aws ecs describe-task-definition \
+            --task-definition checkin-migrate \
+            --query "taskDefinition" \
+            --output json)
+
+          NEW_TD=$(echo "$TD" | \
+            jq --arg img "$IMAGE_URI" \
+               '.containerDefinitions[0].image = $img
+                | del(.taskDefinitionArn, .revision, .status,
+                       .requiresAttributes, .compatibilities,
+                       .registeredAt, .registeredBy)')
+
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TD" \
+            --query "taskDefinition.taskDefinitionArn" \
+            --output text)
+
+          echo "task-def-arn=$ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Run migration task
+        id: run-migrate
+        env:
+          CLUSTER: ${{ secrets.ECS_CLUSTER }}
+          SUBNETS: ${{ secrets.ECS_PRIVATE_SUBNETS }}
+          SG: ${{ secrets.ECS_SECURITY_GROUP }}
+          TASK_DEF: ${{ steps.register-migrate-td.outputs.task-def-arn }}
+        run: |
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --task-definition "$TASK_DEF" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" \
+            --query "tasks[0].taskArn" \
+            --output text)
+
+          echo "Waiting for migration task $TASK_ARN ..."
+          aws ecs wait tasks-stopped \
+            --cluster "$CLUSTER" \
+            --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --query "tasks[0].containers[0].exitCode" \
+            --output text)
+
+          echo "Migration container exited with code: $EXIT_CODE"
+          [ "$EXIT_CODE" = "0" ] || exit 1
+
+  # ── 4. Deploy updated app task definition to ECS ──────────────────────────
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    needs: [build, migrate]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Render task definition with new image
+        id: render-td
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: .aws/task-definition.json
+          container-name: app
+          image: ${{ needs.build.outputs.image-uri }}
+          environment-variables: |
+            NEXTAUTH_URL=${{ secrets.NEXTAUTH_URL }}
+
+      - name: Substitute account/region tokens in task definition
+        env:
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          sed -i \
+            -e "s|<ACCOUNT_ID>|$ACCOUNT_ID|g" \
+            -e "s|<REGION>|$REGION|g" \
+            "${{ steps.render-td.outputs.task-definition }}"
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-td.outputs.task-definition }}
+          service: ${{ secrets.ECS_SERVICE }}
+          cluster: ${{ secrets.ECS_CLUSTER }}
+          wait-for-service-stability: true
