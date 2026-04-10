@@ -131,6 +131,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, certification: upsertedCert });
     } catch (error: unknown) {
         console.error("Certification error:", error);
-        return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to upsert certification" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to upsert certification" }, { status: 500 });
     }
 }

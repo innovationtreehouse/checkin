@@ -199,6 +199,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     } catch (error: any) {
         console.error("Public registration error:", error);
-        return NextResponse.json({ error: error.message || "An error occurred during registration." }, { status: 500 });
+        return NextResponse.json({ error: "An error occurred during registration." }, { status: 500 });
     }
 }

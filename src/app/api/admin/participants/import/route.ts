@@ -447,7 +447,6 @@ export async function POST(req: NextRequest) {
 
     } catch (error: unknown) {
         console.error("Error in participant bulk import:", error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: `Internal server error: ${errorMessage}` }, { status: 500 });
+        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
 }

@@ -7,3 +7,7 @@
 **Vulnerability:** Used `dangerouslySetInnerHTML` to inject CSS dynamically in React components (`src/components/ContentWrapper.tsx`).
 **Learning:** `dangerouslySetInnerHTML` can open up possibilities for XSS, even if it's currently injecting a static or semi-static string. It bypasses React's built-in escaping mechanisms. The project explicitly avoids using `dangerouslySetInnerHTML` for CSS injection in React components, favoring global CSS rules and class toggling on root elements like `body` (from memory).
 **Prevention:** Avoid `dangerouslySetInnerHTML` unless absolutely necessary. Use CSS classes or inline styles with React's `style` prop instead. For global styles, toggle a class on a root element (like `body`) using a `useEffect` hook.
+## 2024-05-24 - Info Leakage in API 500 Errors
+**Vulnerability:** Found multiple API routes returning `error.message` or `String(error)` directly to the client in their 500 error handlers via `NextResponse.json({ error: error.message })`.
+**Learning:** Returning verbose backend errors can leak sensitive internal details, database structures, or infrastructure information to potential attackers, providing a map for further exploits.
+**Prevention:** Catch blocks should log the detailed error internally (`console.error`), but the JSON response sent to the client should use a generic, sanitized string (e.g., "Internal Server Error" or "Failed to update record").
