@@ -165,6 +165,6 @@ export async function POST(req: Request) {
         return NextResponse.json(responseObj);
     } catch (error: unknown) {
         console.error("Program creation error:", error);
-        return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to create program" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to create program" }, { status: 500 });
     }
 }

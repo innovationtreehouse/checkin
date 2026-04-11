@@ -82,7 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ success: true, participant: updatedParticipant });
     } catch (error) {
         console.error("Error updating participant household:", error);
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = "An unexpected error occurred";
         return NextResponse.json({ error: `Internal server error: ${errorMessage}` }, { status: 500 });
     }
 }
