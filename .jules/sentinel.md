@@ -7,3 +7,7 @@
 **Vulnerability:** Used `dangerouslySetInnerHTML` to inject CSS dynamically in React components (`src/components/ContentWrapper.tsx`).
 **Learning:** `dangerouslySetInnerHTML` can open up possibilities for XSS, even if it's currently injecting a static or semi-static string. It bypasses React's built-in escaping mechanisms. The project explicitly avoids using `dangerouslySetInnerHTML` for CSS injection in React components, favoring global CSS rules and class toggling on root elements like `body` (from memory).
 **Prevention:** Avoid `dangerouslySetInnerHTML` unless absolutely necessary. Use CSS classes or inline styles with React's `style` prop instead. For global styles, toggle a class on a root element (like `body`) using a `useEffect` hook.
+## 2024-05-24 - Sensitive Data Exposure in Email Fallback
+**Vulnerability:** The `sendEmail` function in `src/lib/email.ts` logged the entire `html` email body to the server console when `RESEND_API_KEY` was not configured.
+**Learning:** Fallback mechanisms intended for local development can inadvertently leak sensitive information (like password reset tokens or PII) into production logs if environment variables are missing or misconfigured.
+**Prevention:** Never log the complete contents of sensitive communications (like emails or SMS). Log only high-level metadata such as the recipient (`to`) and the `subject` to aid in debugging without exposing the payload.
