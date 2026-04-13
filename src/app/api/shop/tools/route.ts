@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { logBackendError } from "@/lib/logger";
 
 export async function GET() {
     const session = await getServerSession(authOptions);
@@ -22,7 +23,7 @@ export async function GET() {
 
         return NextResponse.json(tools);
     } catch (error) {
-        console.error("Failed to fetch tools:", error);
+        await logBackendError(error, "GET /api/shop/tools");
         return NextResponse.json({ error: "Failed to fetch tools" }, { status: 500 });
     }
 }
@@ -67,7 +68,7 @@ export async function POST(req: Request) {
 
         return NextResponse.json({ success: true, tool: newTool });
     } catch (error: unknown) {
-        console.error("Tool creation error:", error);
-        return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to create tool" }, { status: 500 });
+        await logBackendError(error, "POST /api/shop/tools");
+        return NextResponse.json({ error: "Failed to create tool" }, { status: 500 });
     }
 }

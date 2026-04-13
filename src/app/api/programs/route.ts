@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { createShopifyProgramVariants } from "@/lib/shopify";
+import { logBackendError } from "@/lib/logger";
 
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
@@ -88,7 +89,7 @@ export async function GET(req: Request) {
 
         return NextResponse.json(programs);
     } catch (error) {
-        console.error("Failed to fetch programs:", error);
+        await logBackendError(error, "GET /api/programs");
         return NextResponse.json({ error: "Failed to fetch programs" }, { status: 500 });
     }
 }
@@ -164,7 +165,7 @@ export async function POST(req: Request) {
 
         return NextResponse.json(responseObj);
     } catch (error: unknown) {
-        console.error("Program creation error:", error);
-        return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to create program" }, { status: 500 });
+        await logBackendError(error, "POST /api/programs");
+        return NextResponse.json({ error: "Failed to create program" }, { status: 500 });
     }
 }

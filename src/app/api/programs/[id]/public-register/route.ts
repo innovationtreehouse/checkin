@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
+import { logBackendError } from "@/lib/logger";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -198,7 +199,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         });
 
     } catch (error: any) {
-        console.error("Public registration error:", error);
-        return NextResponse.json({ error: error.message || "An error occurred during registration." }, { status: 500 });
+        await logBackendError(error, "POST /api/programs/[id]/public-register");
+        return NextResponse.json({ error: "An error occurred during registration." }, { status: 500 });
     }
 }
