@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import { Prisma } from '@prisma/client';
 import prisma from "@/lib/prisma";
+import { logBackendError } from "@/lib/logger";
 
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
@@ -42,7 +43,7 @@ export async function GET(req: Request) {
 
         return NextResponse.json(certifications);
     } catch (error) {
-        console.error("Failed to fetch certifications:", error);
+        await logBackendError(error, "GET /api/shop/certifications");
         return NextResponse.json({ error: "Failed to fetch certifications" }, { status: 500 });
     }
 }
@@ -130,7 +131,7 @@ export async function POST(req: Request) {
 
         return NextResponse.json({ success: true, certification: upsertedCert });
     } catch (error: unknown) {
-        console.error("Certification error:", error);
-        return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to upsert certification" }, { status: 500 });
+        await logBackendError(error, "POST /api/shop/certifications");
+        return NextResponse.json({ error: "Failed to upsert certification" }, { status: 500 });
     }
 }

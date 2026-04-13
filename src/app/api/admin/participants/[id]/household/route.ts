@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
+import { logBackendError } from "@/lib/logger";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -81,8 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
         return NextResponse.json({ success: true, participant: updatedParticipant });
     } catch (error) {
-        console.error("Error updating participant household:", error);
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        return NextResponse.json({ error: `Internal server error: ${errorMessage}` }, { status: 500 });
+        await logBackendError(error, "POST /api/admin/participants/[id]/household");
+        return NextResponse.json({ error: `Internal server error` }, { status: 500 });
     }
 }

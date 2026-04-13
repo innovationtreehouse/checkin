@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import * as xlsx from "xlsx";
+import { logBackendError } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
     try {
@@ -446,8 +447,7 @@ export async function POST(req: NextRequest) {
         });
 
     } catch (error: unknown) {
-        console.error("Error in participant bulk import:", error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: `Internal server error: ${errorMessage}` }, { status: 500 });
+        await logBackendError(error, "POST /api/admin/participants/import");
+        return NextResponse.json({ error: `Internal server error` }, { status: 500 });
     }
 }

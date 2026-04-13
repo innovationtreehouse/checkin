@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { logBackendError } from "@/lib/logger";
 
 export const dynamic = 'force-dynamic';
 
@@ -161,8 +162,8 @@ export const POST = withAuth(
 
             return NextResponse.json({ success: true });
         } catch (error: unknown) {
-            console.error("Merge error:", error);
-            return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to merge participants" }, { status: 500 });
+            await logBackendError(error, "POST /api/admin/participants/merge");
+            return NextResponse.json({ error: "Failed to merge participants" }, { status: 500 });
         }
     }
 );
