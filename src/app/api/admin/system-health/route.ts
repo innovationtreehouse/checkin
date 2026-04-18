@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { logBackendError } from "@/lib/logger";
 
 export const GET = withAuth(
     { roles: ['sysadmin', 'boardMember', 'keyholder'] },
@@ -79,8 +80,8 @@ export const GET = withAuth(
                 days: dailyStats
             });
         } catch (error) {
-            console.error("Failed to fetch system health metrics:", error);
-            return NextResponse.json({ error: "Internal Server Error", details: String(error) }, { status: 500 });
+            await logBackendError(error, "GET /api/admin/system-health");
+            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }
 );
