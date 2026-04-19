@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { addDays, parseISO, isBefore, isEqual, getDay, setHours, setMinutes } from 'date-fns';
 import { fromZonedTime } from 'date-fns-tz';
+import { logBackendError } from "@/lib/logger";
 
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
@@ -118,7 +119,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, count: insertedEvents.count });
     } catch (error: unknown) {
         console.error("Event creation error:", error);
-        const err = error as Error;
-        return NextResponse.json({ error: err.message || "Failed to create event(s)" }, { status: 500 });
+        await logBackendError(error, "POST /api/events");
+        return NextResponse.json({ error: "Failed to create event(s)" }, { status: 500 });
     }
 }

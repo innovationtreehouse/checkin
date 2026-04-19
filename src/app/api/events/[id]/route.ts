@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { logBackendError } from "@/lib/logger";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const session = await getServerSession(authOptions);
@@ -38,8 +39,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
         return NextResponse.json(event);
     } catch (error: unknown) {
-        const err = error as Error;
-        return NextResponse.json({ error: err.message || "Failed to fetch event" }, { status: 500 });
+        await logBackendError(error, "GET /api/events/[id]");
+        return NextResponse.json({ error: "Failed to fetch event" }, { status: 500 });
     }
 }
 
@@ -205,7 +206,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 
     } catch (error: unknown) {
-        const err = error as Error;
-        return NextResponse.json({ error: err.message || "Failed to update event" }, { status: 500 });
+        await logBackendError(error, "PATCH /api/events/[id]");
+        return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
     }
 }
