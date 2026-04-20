@@ -118,7 +118,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, count: insertedEvents.count });
     } catch (error: unknown) {
         console.error("Event creation error:", error);
-        const err = error as Error;
-        return NextResponse.json({ error: err.message || "Failed to create event(s)" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to create event(s)" }, { status: 500 });
     }
 }

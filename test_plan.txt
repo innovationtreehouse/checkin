@@ -1,0 +1,6 @@
+1. Modify `src/app/api/events/[id]/route.ts` to remove `err.message` exposure from `NextResponse.json` error responses (lines 42, 209). Replace them with "Failed to fetch event" and "Failed to update event". Securely log the error using `logBackendError` or `console.error`.
+2. Modify `src/app/api/events/route.ts` to remove `err.message` exposure from `NextResponse.json` error response (line 122). Replace it with "Failed to create event(s)". Securely log the error.
+3. Modify `src/app/api/admin/system-health/route.ts` to remove `details: String(error)` exposure from `NextResponse.json` error response (line 83). Securely log the error.
+4. Run tests and linting to ensure everything works correctly.
+5. Pre-commit check.
+6. Commit the changes and open PR.
