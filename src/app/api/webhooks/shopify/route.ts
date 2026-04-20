@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { sendEmail } from "@/lib/email";
 
 // Shopify Webhook for `orders/paid` or `orders/create`
 // Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE
@@ -51,12 +52,14 @@ export async function POST(req: Request) {
         
         let accountIdStr = null;
         let programIdStr = null;
+        let membershipHouseholdIdStr = null;
 
         // Custom attributes in Cart Permalinks are usually mapped to `note_attributes` on the Order
         if (order.note_attributes && Array.isArray(order.note_attributes)) {
             for (const attr of order.note_attributes) {
                 if (attr.name === "CheckMeIn_Account_ID") accountIdStr = attr.value;
                 if (attr.name === "Program_ID") programIdStr = attr.value;
+                if (attr.name === "Membership_Household_ID") membershipHouseholdIdStr = attr.value;
             }
         }
 
@@ -90,8 +93,70 @@ export async function POST(req: Request) {
                     }
                 }
             }
-        } else {
-             logger.info(`[SHOPIFY WEBHOOK] Payload received but missing CheckMeIn_Account_ID or Program_ID attributes. Ignoring.`);
+        } else if (!membershipHouseholdIdStr) {
+             logger.info(`[SHOPIFY WEBHOOK] Payload received but missing identifying attributes. Ignoring.`);
+        }
+
+        if (membershipHouseholdIdStr) {
+            const householdId = parseInt(membershipHouseholdIdStr, 10);
+            if (!isNaN(householdId)) {
+                const household = await prisma.household.findUnique({
+                    where: { id: householdId },
+                    include: { leads: { include: { participant: true } } }
+                });
+
+                if (household) {
+                    const threeYearsAgo = new Date();
+                    threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
+
+                    const needsBgCheck = !household.leads.some(l => 
+                        l.participant.lastBackgroundCheck && 
+                        new Date(l.participant.lastBackgroundCheck) > threeYearsAgo
+                    );
+
+                    const newStatus = needsBgCheck ? 'PENDING_BG_CHECK' : 'APPROVED';
+
+                    await prisma.household.update({
+                        where: { id: householdId },
+                        data: { membershipStatus: newStatus }
+                    });
+
+                    const existingMembership = await prisma.membership.findFirst({
+                        where: { householdId }
+                    });
+                    const externalIdStr = order.id ? String(order.id) : null;
+                    const isActive = newStatus === 'APPROVED';
+
+                    if (existingMembership) {
+                        await prisma.membership.update({
+                            where: { id: existingMembership.id },
+                            data: { active: isActive, type: 'HOUSEHOLD', latestShopifyReceipt: externalIdStr }
+                        });
+                    } else {
+                        await prisma.membership.create({
+                            data: { householdId, type: 'HOUSEHOLD', active: isActive, latestShopifyReceipt: externalIdStr }
+                        });
+                    }
+
+                    if (!isActive) {
+                        const primaryLead = household.leads.find(l => l.isPrimary)?.participant || household.leads[0]?.participant;
+                        if (primaryLead?.email) {
+                            const bgCheckEmailHtml = `
+                                <h2>Background Check Required</h2>
+                                <p>Hi ${primaryLead.name},</p>
+                                <p>Thank you for initiating your membership Application. The next step is to complete a background check for the primary household lead.</p>
+                                <p><a href="https://background-check-provider.example.com/start" style="padding: 10px 20px; background: #3b82f6; color: white; border-radius: 5px; text-decoration: none;">Start Background Check</a></p>
+                                <p>If you have any questions, please contact the board.</p>
+                            `;
+                            // sendEmail is imported from @/lib/email in other files, but here we can just require it or import it at the top.
+                            // I should add import at the top of the file!
+                        }
+                        logger.info(`[SHOPIFY WEBHOOK] Household ${householdId} needs background check. Email dispatch pending.`);
+                    }
+
+                    logger.info(`[SHOPIFY WEBHOOK] Marked household ${householdId} membership status as ${newStatus}`);
+                }
+            }
         }
 
         // Always return 200 OK to Shopify to acknowledge receipt, even if missing attributes.
