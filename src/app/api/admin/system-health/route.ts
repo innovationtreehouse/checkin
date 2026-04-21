@@ -80,7 +80,7 @@ export const GET = withAuth(
             });
         } catch (error) {
             console.error("Failed to fetch system health metrics:", error);
-            return NextResponse.json({ error: "Internal Server Error", details: String(error) }, { status: 500 });
+            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }
 );

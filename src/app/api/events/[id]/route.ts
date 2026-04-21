@@ -38,8 +38,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
         return NextResponse.json(event);
     } catch (error: unknown) {
-        const err = error as Error;
-        return NextResponse.json({ error: err.message || "Failed to fetch event" }, { status: 500 });
+        console.error("Failed to fetch event:", error);
+        return NextResponse.json({ error: "Failed to fetch event" }, { status: 500 });
     }
 }
 
@@ -205,7 +205,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 
     } catch (error: unknown) {
-        const err = error as Error;
-        return NextResponse.json({ error: err.message || "Failed to update event" }, { status: 500 });
+        console.error("Failed to update event:", error);
+        return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
     }
 }
