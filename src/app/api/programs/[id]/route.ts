@@ -7,7 +7,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const { id } = await params;
     const session = await getServerSession(authOptions);
 
-
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
@@ -40,50 +39,68 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        // Apply memberOnly visibility checks
-        if (program.memberOnly) {
-            let canSeeMemberOnly = false;
-            
-            // Check if user is lead mentor
-            const isLeadMentor = session?.user && (session.user as unknown as { id: number }).id === program.leadMentorId;
+        const sessionUser = session?.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean } | undefined;
+        const isSysAdminOrBoard = !!(sessionUser?.sysadmin || sessionUser?.boardMember);
+        const isLeadMentor = !!sessionUser && sessionUser.id === program.leadMentorId;
+        const isCoreVolunteer = !!sessionUser && program.volunteers.some(v => v.participantId === sessionUser.id && v.isCore);
+        const isPrivileged = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
 
-            // Check if user is core volunteer
-            const isCoreVolunteer = session?.user && program.volunteers.some(v => v.participantId === (session.user as unknown as { id: number }).id && v.isCore);
-
-            if (session && session.user) {
-                const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
-                if (user.sysadmin || user.boardMember || isLeadMentor || isCoreVolunteer) {
-                    canSeeMemberOnly = true;
-                } else {
-                    const participant = await prisma.participant.findUnique({
-                        where: { id: user.id },
-                        include: {
-                            memberships: {
-                                where: { active: true }
-                            }
-                        }
-                    });
-                    if (participant && participant.memberships.length > 0) {
-                        canSeeMemberOnly = true;
-                    }
-                }
+        if (program.memberOnly && !isPrivileged) {
+            // Unauthenticated callers: return 404 to avoid existence disclosure
+            if (!sessionUser) {
+                return NextResponse.json({ error: "Program not found" }, { status: 404 });
             }
-
-            if (!canSeeMemberOnly) {
+            const participant = await prisma.participant.findUnique({
+                where: { id: sessionUser.id },
+                include: { memberships: { where: { active: true } } }
+            });
+            const hasActiveMembership = !!(participant && participant.memberships.length > 0);
+            if (!hasActiveMembership) {
                 return NextResponse.json({ error: "Forbidden: Member-Only Program" }, { status: 403 });
             }
         }
 
-        let leadMentor = null;
-        if (program.leadMentorId) {
-            leadMentor = await prisma.participant.findUnique({
+        const leadMentorFull = program.leadMentorId
+            ? await prisma.participant.findUnique({
                 where: { id: program.leadMentorId },
                 select: { id: true, name: true, email: true }
-            });
-        }
-        const programWithMentor = { ...program, leadMentor };
+            })
+            : null;
 
-        return NextResponse.json(programWithMentor);
+        if (isPrivileged) {
+            return NextResponse.json({ ...program, leadMentor: leadMentorFull });
+        }
+
+        const publicShape = {
+            id: program.id,
+            name: program.name,
+            leadMentorId: program.leadMentorId,
+            begin: program.begin,
+            end: program.end,
+            phase: program.phase,
+            enrollmentStatus: program.enrollmentStatus,
+            memberOnly: program.memberOnly,
+            minAge: program.minAge,
+            maxAge: program.maxAge,
+            maxParticipants: program.maxParticipants,
+            memberPrice: program.memberPrice,
+            nonMemberPrice: program.nonMemberPrice,
+            shopifyProductId: program.shopifyProductId,
+            shopifyMemberVariantId: program.shopifyMemberVariantId,
+            shopifyNonMemberVariantId: program.shopifyNonMemberVariantId,
+            leadMentor: leadMentorFull ? { id: leadMentorFull.id, name: leadMentorFull.name } : null,
+            participants: program.participants.map(p => ({
+                participantId: p.participantId,
+                status: p.status,
+            })),
+            fees: program.fees,
+            _count: {
+                participants: program.participants.length,
+                volunteers: program.volunteers.length,
+            },
+        };
+
+        return NextResponse.json(publicShape);
     } catch (error) {
         console.error("Failed to fetch program:", error);
         return NextResponse.json({ error: "Failed to fetch program" }, { status: 500 });
