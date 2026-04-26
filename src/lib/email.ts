@@ -13,7 +13,7 @@ const FROM_ADDRESS = config.emailFrom();
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
     if (!resend) {
         console.log(`[Email (no RESEND_API_KEY)] To: ${to} | Subject: ${subject}`);
-        console.log(`[Email Body]: ${html}`);
+
         return false;
     }
 
