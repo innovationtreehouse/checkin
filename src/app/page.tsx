@@ -143,7 +143,7 @@ export default function Home() {
 
               {/* Check-in Toggle Button — in production, only privileged users can self-check-in from the web */}
               {isCheckedIn !== null && (
-                ((session.user as SessionUser)?.sysadmin || (session.user as SessionUser)?.boardMember || (session.user as SessionUser)?.keyholder || process.env.NEXT_PUBLIC_DEV_AUTH) ? (
+                ((session.user as SessionUser)?.sysadmin || (session.user as SessionUser)?.boardMember || (session.user as SessionUser)?.keyholder || (process.env.NEXT_PUBLIC_DEV_AUTH && process.env.NODE_ENV !== 'production')) ? (
                   <button
                     className="glass-button"
                     onClick={handleToggleCheckin}
@@ -258,7 +258,7 @@ export default function Home() {
               >
                 Sign In To Dashboard
               </button>
-              {process.env.NEXT_PUBLIC_DEV_AUTH && <DevLoginPicker />}
+              {(process.env.NEXT_PUBLIC_DEV_AUTH && process.env.NODE_ENV !== 'production') && <DevLoginPicker />}
             </div>
           )}
         </div>

@@ -58,7 +58,7 @@ export const authOptions: NextAuthOptions = {
                 }
             }
         }),
-        ...(process.env.NEXT_PUBLIC_DEV_AUTH ? [
+        ...((process.env.NEXT_PUBLIC_DEV_AUTH && process.env.NODE_ENV !== 'production') ? [
             CredentialsProvider({
                 name: "Development Mock Auth",
                 credentials: {
