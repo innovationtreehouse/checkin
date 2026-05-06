@@ -10,8 +10,8 @@ export const dynamic = 'force-dynamic';
  * with their role flags for the dev login picker.
  */
 export async function GET() {
-    // Block if dev auth is not explicitly enabled
-    if (!process.env.NEXT_PUBLIC_DEV_AUTH) {
+    // Block if dev auth is not explicitly enabled or if we are in production
+    if (!process.env.NEXT_PUBLIC_DEV_AUTH || process.env.NODE_ENV === 'production') {
         return NextResponse.json({ error: "Not available" }, { status: 404 });
     }
 
