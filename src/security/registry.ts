@@ -228,6 +228,7 @@ defineRoute({
     authorize: { anyRole: ['sysadmin', 'boardMember', 'keyholder'] },
     envelope: null,
     orderedView: [],
+    // Returns 30 days of {date, count, p50, p90, p99} scan-latency buckets computed from SystemMetric — aggregated stats, no row data leaves.
     dangerously_allow_all_data_access: true,
 });
 
@@ -236,6 +237,7 @@ defineRoute({
     authorize: { anyRole: ['sysadmin', 'boardMember'] },
     envelope: null,
     orderedView: [],
+    // Returns period buckets (uniqueVolunteers/uniqueStudents/totalHours/etc.) computed from Visit + Participant joins — counts and sums, no row data leaves.
     dangerously_allow_all_data_access: true,
 });
 
@@ -244,6 +246,7 @@ defineRoute({
     authorize: { anyRole: ['sysadmin', 'boardMember'] },
     envelope: null,
     orderedView: [],
+    // Returns {success, message, errors[]} after bulk xlsx import — operational summary of inserts/updates, not row data.
     dangerously_allow_all_data_access: true,
 });
 
@@ -252,6 +255,7 @@ defineRoute({
     authorize: { anyRole: ['sysadmin', 'boardMember'] },
     envelope: null,
     orderedView: [],
+    // Returns parsed xlsx preview {columns, rows: {data, status, action, warnings}, summary} — derived from uploaded file, not DB rows. Includes admin's own uploaded data only.
     dangerously_allow_all_data_access: true,
 });
 
@@ -369,6 +373,7 @@ defineRoute({
     authorize: 'self',
     envelope: null,
     orderedView: [],
+    // Returns {success: true} after persisting the caller's own phone/emergency-contact fields — write-only ack, no row data leaves.
     dangerously_allow_all_data_access: true,
 });
 
@@ -377,6 +382,7 @@ defineRoute({
     authorize: 'self',
     envelope: null,
     orderedView: [],
+    // Returns onboarding-completion booleans (needsPhone, isLead, needsEmergencyContact) plus the caller's own phone + emergency-contact scalars. authorize: 'self' is the gate; values come from the caller's own Participant/Household row.
     dangerously_allow_all_data_access: true,
 });
 
@@ -399,6 +405,7 @@ defineRoute({
     authorize: 'public',
     envelope: null,
     orderedView: [],
+    // Returns {participants: [{id, email, name, shopSteward, toolStatuses, ageCategory}], tools} — Participant rows augmented with a computed ageCategory derived from dob (which is dropped from the response). Kiosk + session auth grants identical view; no role-tier mapping available, so the stripper would have no scope to apply.
     dangerously_allow_all_data_access: true,
 });
 
@@ -407,6 +414,7 @@ defineRoute({
     authorize: 'public',
     envelope: null,
     orderedView: [],
+    // Returns {version: gitSha} — process-level metadata for cache-busting kiosk clients. No DB access.
     dangerously_allow_all_data_access: true,
 });
 
@@ -417,6 +425,7 @@ defineRoute({
     authorize: 'public',
     envelope: null,
     orderedView: [['anyone', ['public']]],
+    // Returns {status: "ok"} — liveness probe, no DB access, no row data.
     dangerously_allow_all_data_access: true,
 });
 
@@ -427,6 +436,7 @@ defineRoute({
     authorize: 'authenticated',
     envelope: null,
     orderedView: [],
+    // Returns {count: n} from createMany after generating 1..N events from a recurrence rule — operational write summary, no row data leaves. (Returning the inserted rows would require N findUniques after createMany since Prisma createMany doesn't return rows on Postgres.)
     dangerously_allow_all_data_access: true,
 });
 
@@ -466,6 +476,7 @@ defineRoute({
     authorize: 'authenticated',
     envelope: null,
     orderedView: [],
+    // Multi-shape: returns {Event} for single-row edits, {count} for bulk recurring-group edits/cancels, or {success} for single-row cancels. Shape varies by body.action (editTime/cancel/confirmAttendance/manualEditAttendance); the per-action row-level role check is handler-internal.
     dangerously_allow_all_data_access: true,
 });
 
@@ -474,6 +485,7 @@ defineRoute({
     authorize: 'authenticated',
     envelope: null,
     orderedView: [],
+    // Returns {processed: count} after bulk validating attendance for an array of participantIds — operational write summary, no row data leaves. Per-event lead-mentor/admin gate is handler-internal.
     dangerously_allow_all_data_access: true,
 });
 
@@ -497,6 +509,7 @@ defineRoute({
     authorize: 'public',
     envelope: null,
     orderedView: [],
+    // Multi-shape envelope: {access: "full", attendance, counts, safety, signedRequest} for admin/kiosk; {access: "limited", counts, safety, self, household, signedRequest} for everyone else. Per-role filtering happens in-handler (selfVisit / household scope) rather than via the stripper.
     dangerously_allow_all_data_access: true,
 });
 
@@ -519,6 +532,7 @@ defineRoute({
     authorize: 'authenticated',
     envelope: null,
     orderedView: [],
+    // Multi-shape: {Visit} for MANUAL_CHECKIN; {notified: count} or {success: false, message} for TWO_DEEP_VIOLATION board-notification. Shape varies by body.type, and the violation branch returns operational notify counts, not row data.
     dangerously_allow_all_data_access: true,
 });
 
@@ -801,6 +815,7 @@ defineRoute({
     authorize: 'cron',
     envelope: null,
     orderedView: [],
+    // Returns {success, facilityClose: {checkedOutCount, boardNotified}, postEvents: {...}} — operational summary of facility-close + post-event email batches. Consumed by Vercel Cron, never a human.
     dangerously_allow_all_data_access: true,
 });
 
@@ -809,6 +824,7 @@ defineRoute({
     authorize: 'cron',
     envelope: null,
     orderedView: [],
+    // Returns {success, processed, kicked, warned} — counts of pending-status participants kicked/warned for stale enrollments. Operational, no row data.
     dangerously_allow_all_data_access: true,
 });
 
@@ -817,6 +833,7 @@ defineRoute({
     authorize: 'cron',
     envelope: null,
     orderedView: [],
+    // Returns {success, ...emailResult} from processPostEventEmails — counts of post-event emails sent. Operational, no row data.
     dangerously_allow_all_data_access: true,
 });
 
@@ -825,6 +842,7 @@ defineRoute({
     authorize: 'cron',
     envelope: null,
     orderedView: [],
+    // Returns {success, processedEvents, notificationsSent} — counts of upcoming-event reminder notifications fired. Operational, no row data.
     dangerously_allow_all_data_access: true,
 });
 
@@ -838,6 +856,7 @@ defineRoute({
     authorize: 'dev-only',
     envelope: 'personas',
     orderedView: [],
+    // Returns @example.com Participant rows joined with ToolStatus levels — mixed-model shape used by the dev login picker. Gated by NEXT_PUBLIC_DEV_AUTH; never reachable in production builds.
     dangerously_allow_all_data_access: true,
 });
 
@@ -852,6 +871,7 @@ defineRoute({
     authorize: 'public',
     envelope: null,
     orderedView: [],
+    // Returns {success, isFree, checkoutUrl, message} — registration ack with optional Shopify redirect URL. Submitter sees only data they just typed (their own form). No DB rows leave.
     dangerously_allow_all_data_access: true,
 });
 
@@ -867,6 +887,7 @@ defineRoute({
     authorize: { anyOf: ['kiosk', 'authenticated'] },
     envelope: null,
     orderedView: [],
+    // Multi-shape: returns {type: 'checkin' | 'checkout' | 'warning' | 'ignored_debounce', ...} computed across Participant/Visit/Event — branches in processCheckin/processCheckout return per-event payloads with display strings, not raw rows.
     dangerously_allow_all_data_access: true,
 });
 
@@ -880,6 +901,7 @@ defineRoute({
     authorize: { webhook: 'shopify' },
     envelope: null,
     orderedView: [],
+    // Returns {success: true} — Shopify-required 200 acknowledgement after HMAC verification. No DB rows leave.
     dangerously_allow_all_data_access: true,
 });
 
