@@ -2,110 +2,44 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
+export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
+    const programId = parseInt(params.id, 10);
+    if (isNaN(programId)) throw badRequest('Invalid program ID');
 
-    try {
-        const programId = parseInt(id, 10);
-        if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
-        }
+    const program = await prisma.program.findUnique({
+        where: { id: programId },
+        include: {
+            volunteers: { include: { participant: true } },
+            participants: { include: { participant: { include: { household: true } } } },
+            events: { orderBy: { start: 'asc' } },
+            fees: true,
+            leadMentor: true,
+        },
+    });
 
-        const program = await prisma.program.findUnique({
-            where: { id: programId },
-            include: {
-                volunteers: {
-                    include: { participant: true }
-                },
-                participants: {
-                    include: {
-                        participant: {
-                            include: { household: true }
-                        }
-                    }
-                },
-                events: {
-                    orderBy: {
-                        start: 'asc'
-                    }
-                },
-                fees: true
-            }
+    if (!program) throw notFound('Program not found');
+
+    const isSessionUser = auth.type === 'session';
+    const sessionUser = isSessionUser ? auth.user : undefined;
+    const isSysAdminOrBoard = !!(sessionUser?.sysadmin || sessionUser?.boardMember);
+    const isLeadMentor = !!sessionUser && sessionUser.id === program.leadMentorId;
+    const isCoreVolunteer = !!sessionUser && program.volunteers.some(v => v.participantId === sessionUser.id && v.isCore);
+    const isPrivileged = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
+
+    if (program.memberOnly && !isPrivileged) {
+        if (!sessionUser) throw notFound('Program not found');
+        const participant = await prisma.participant.findUnique({
+            where: { id: sessionUser.id },
+            include: { memberships: { where: { active: true } } },
         });
-
-        if (!program) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
-        }
-
-        const sessionUser = session?.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean } | undefined;
-        const isSysAdminOrBoard = !!(sessionUser?.sysadmin || sessionUser?.boardMember);
-        const isLeadMentor = !!sessionUser && sessionUser.id === program.leadMentorId;
-        const isCoreVolunteer = !!sessionUser && program.volunteers.some(v => v.participantId === sessionUser.id && v.isCore);
-        const isPrivileged = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
-
-        if (program.memberOnly && !isPrivileged) {
-            // Unauthenticated callers: return 404 to avoid existence disclosure
-            if (!sessionUser) {
-                return NextResponse.json({ error: "Program not found" }, { status: 404 });
-            }
-            const participant = await prisma.participant.findUnique({
-                where: { id: sessionUser.id },
-                include: { memberships: { where: { active: true } } }
-            });
-            const hasActiveMembership = !!(participant && participant.memberships.length > 0);
-            if (!hasActiveMembership) {
-                return NextResponse.json({ error: "Forbidden: Member-Only Program" }, { status: 403 });
-            }
-        }
-
-        const leadMentorFull = program.leadMentorId
-            ? await prisma.participant.findUnique({
-                where: { id: program.leadMentorId },
-                select: { id: true, name: true, email: true }
-            })
-            : null;
-
-        if (isPrivileged) {
-            return NextResponse.json({ ...program, leadMentor: leadMentorFull });
-        }
-
-        const publicShape = {
-            id: program.id,
-            name: program.name,
-            leadMentorId: program.leadMentorId,
-            begin: program.begin,
-            end: program.end,
-            phase: program.phase,
-            enrollmentStatus: program.enrollmentStatus,
-            memberOnly: program.memberOnly,
-            minAge: program.minAge,
-            maxAge: program.maxAge,
-            maxParticipants: program.maxParticipants,
-            memberPrice: program.memberPrice,
-            nonMemberPrice: program.nonMemberPrice,
-            shopifyProductId: program.shopifyProductId,
-            shopifyMemberVariantId: program.shopifyMemberVariantId,
-            shopifyNonMemberVariantId: program.shopifyNonMemberVariantId,
-            leadMentor: leadMentorFull ? { id: leadMentorFull.id, name: leadMentorFull.name } : null,
-            participants: program.participants.map(p => ({
-                participantId: p.participantId,
-                status: p.status,
-            })),
-            fees: program.fees,
-            _count: {
-                participants: program.participants.length,
-                volunteers: program.volunteers.length,
-            },
-        };
-
-        return NextResponse.json(publicShape);
-    } catch (error) {
-        console.error("Failed to fetch program:", error);
-        return NextResponse.json({ error: "Failed to fetch program" }, { status: 500 });
+        const hasActiveMembership = !!(participant && participant.memberships.length > 0);
+        if (!hasActiveMembership) throw forbidden('Forbidden: Member-Only Program');
     }
-}
+
+    return { Program: program };
+});
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;

@@ -1,46 +1,23 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { handler, notFound, unauthorized } from "@/security/handler";
 
-export const GET = withAuth(
-    {},
-    async (_req, auth) => {
-        try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-            const userId = auth.user.id;
-
-            const profile = await prisma.participant.findUnique({
-                where: { id: userId },
-                select: {
-                    name: true,
-                    email: true,
-                    phone: true,
-                    dob: true,
-                    homeAddress: true,
-                    notificationSettings: true,
-                    visits: {
-                        orderBy: { arrived: 'desc' },
-                        take: 50,
-                        select: {
-                            id: true,
-                            arrived: true,
-                            departed: true,
-                            event: { select: { name: true } }
-                        }
-                    }
-                }
-            });
-            if (!profile) {
-                return NextResponse.json({ error: "Profile not found" }, { status: 404 });
-            }
-
-            return NextResponse.json({ profile }, { status: 200 });
-        } catch (error) {
-            console.error("Profile GET Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-        }
-    }
-);
+export const GET = handler('GET /api/profile', async ({ auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
+    const profile = await prisma.participant.findUnique({
+        where: { id: auth.user.id },
+        include: {
+            visits: {
+                orderBy: { arrived: 'desc' },
+                take: 50,
+                include: { event: true },
+            },
+        },
+    });
+    if (!profile) throw notFound('Profile not found');
+    return { Participant: profile };
+});
 
 export const PATCH = withAuth(
     {},
