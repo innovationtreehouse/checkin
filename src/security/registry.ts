@@ -174,6 +174,46 @@ defineRoute({
     ],
 });
 
+defineRoute({
+    endpoint: 'POST /api/admin/participants',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participant',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PUT /api/admin/participants/[id]',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participant',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/admin/participants/[id]/household',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participant',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/admin/participants/merge',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participant',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({

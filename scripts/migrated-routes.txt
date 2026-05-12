@@ -19,3 +19,7 @@ GET /api/admin/households
 POST /api/admin/households
 GET /api/admin/participants/search
 GET /api/admin/participants/merge/analyze
+POST /api/admin/participants
+PUT /api/admin/participants/[id]
+POST /api/admin/participants/[id]/household
+POST /api/admin/participants/merge
