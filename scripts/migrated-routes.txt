@@ -23,3 +23,7 @@ POST /api/admin/participants
 PUT /api/admin/participants/[id]
 POST /api/admin/participants/[id]/household
 POST /api/admin/participants/merge
+GET /api/admin/system-health
+GET /api/admin/trends
+POST /api/admin/participants/import
+POST /api/admin/participants/import/preview

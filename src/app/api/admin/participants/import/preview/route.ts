@@ -1,7 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { authenticateRequest } from "@/lib/auth";
 import * as xlsx from "xlsx";
+import { handler, badRequest, ApiResponseError } from "@/security/handler";
 
 type RowStatus = "ready" | "update" | "warning" | "error";
 
@@ -22,21 +21,13 @@ interface RowPreview {
     existingParticipant?: { id: number; name: string | null };
 }
 
-export async function POST(req: NextRequest) {
+export const POST = handler('POST /api/admin/participants/import/preview', async ({ req }) => {
     try {
-        const auth = await authenticateRequest(req);
-        if (auth.type !== 'session') {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        if (!auth.user.sysadmin && !auth.user.boardMember) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-        }
-
         const formData = await req.formData();
         const file = formData.get("file") as File;
 
         if (!file) {
-            return NextResponse.json({ error: "No file provided" }, { status: 400 });
+            throw badRequest("No file provided");
         }
 
         const buffer = await file.arrayBuffer();
@@ -48,7 +39,7 @@ export async function POST(req: NextRequest) {
         const rawData = xlsx.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
 
         if (rawData.length < 2) {
-            return NextResponse.json({ error: "Empty spreadsheet or no data rows found" }, { status: 400 });
+            throw badRequest("Empty spreadsheet or no data rows found");
         }
 
         const headers = rawData[0].map((h: unknown) => String(h).trim().toLowerCase());
@@ -63,7 +54,7 @@ export async function POST(req: NextRequest) {
         const sameHouseholdIndex = headers.findIndex(h => h.includes("same household as"));
 
         if (firstNameIndex === -1 || lastNameIndex === -1) {
-            return NextResponse.json({ error: "Missing required 'First Name' or 'Last Name' columns." }, { status: 400 });
+            throw badRequest("Missing required 'First Name' or 'Last Name' columns.");
         }
 
         // Parse all rows first so we can check cross-references
@@ -298,14 +289,14 @@ export async function POST(req: NextRequest) {
             error: previews.filter(p => p.status === "error").length,
         };
 
-        return NextResponse.json({
+        return {
             columns: ["First Name", "Last Name", "Email", "Parent Email", "DOB", "Address", "Same Household As"],
             rows: previews,
             summary,
-        });
-
+        };
     } catch (error) {
+        if (error instanceof ApiResponseError) throw error;
         console.error("Error in participant import preview:", error);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        throw error;
     }
-}
+});

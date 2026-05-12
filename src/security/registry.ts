@@ -214,6 +214,44 @@ defineRoute({
     ],
 });
 
+// ─── Admin routes: raw aggregated/computed responses ──────────────────────
+// These return computed values (percentile stats, parse previews, import
+// counts) rather than model rows. They bypass the field-level stripper via
+// `raw: true`. `authorize` is the only enforcement — only sysadmin / board
+// (and keyholders for system-health) can call them.
+
+defineRoute({
+    endpoint: 'GET /api/admin/system-health',
+    authorize: { anyRole: ['sysadmin', 'boardMember', 'keyholder'] },
+    envelope: null,
+    orderedView: [],
+    raw: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/trends',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: null,
+    orderedView: [],
+    raw: true,
+});
+
+defineRoute({
+    endpoint: 'POST /api/admin/participants/import',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: null,
+    orderedView: [],
+    raw: true,
+});
+
+defineRoute({
+    endpoint: 'POST /api/admin/participants/import/preview',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: null,
+    orderedView: [],
+    raw: true,
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
