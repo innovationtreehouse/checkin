@@ -67,3 +67,9 @@ PATCH /api/programs/[id]/settings
 POST /api/programs/[id]/volunteers
 DELETE /api/programs/[id]/volunteers
 PATCH /api/programs/[id]/volunteers
+GET /api/shop/active
+GET /api/shop/certifications
+POST /api/shop/certifications
+GET /api/shop/members
+GET /api/shop/tools
+POST /api/shop/tools

@@ -715,6 +715,82 @@ defineRoute({
     ],
 });
 
+// ─── Shop ──────────────────────────────────────────────────────────────────
+
+defineRoute({
+    endpoint: 'GET /api/shop/active',
+    // Admits any session; the handler also lets users with a
+    // MAY_CERTIFY_OTHERS tool status through alongside shopSteward / admin.
+    // The framework has no per-tool certifier role so the check is local.
+    authorize: 'authenticated',
+    envelope: 'occupants',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['shopSteward', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/shop/certifications',
+    authorize: 'authenticated',
+    envelope: 'certifications',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['shopSteward', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal', 'their_own:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/shop/certifications',
+    authorize: 'authenticated',
+    envelope: 'certification',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['shopSteward', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal', 'their_own:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/shop/members',
+    authorize: 'authenticated',
+    envelope: 'members',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['shopSteward', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/shop/tools',
+    authorize: 'authenticated',
+    envelope: 'tools',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['shopSteward', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/shop/tools',
+    authorize: { anyRole: ['sysadmin', 'boardMember', 'shopSteward'] },
+    envelope: 'tool',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['shopSteward', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
