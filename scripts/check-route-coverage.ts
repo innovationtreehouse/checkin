@@ -8,6 +8,10 @@
  *   3. Migrated routes (listed in scripts/migrated-routes.txt) must NOT call NextResponse.json / Response.json directly.
  *   4. Calls to third-party hosts (shopify.com, myshopify.com, resend.com, SHOPIFY_STORE_DOMAIN) live only in src/lib/shopify.ts and src/lib/email.ts.
  *   5. src/security/generated/classifications.ts is up to date with prisma/schema.prisma.
+ *   6. (Advisory always.) Every `dangerously_allow_all_data_access: true` in
+ *      the registry is reported by endpoint so each one stays under perpetual
+ *      review — the field-level stripper is bypassed and only `authorize`
+ *      gates access.
  *
  * Uses string/regex parsing — fast, no AST library to load. Trade-off: a
  * sufficiently-obfuscated bypass slips past, but this lint is one layer
@@ -102,6 +106,30 @@ function loadRegisteredEndpoints(): { routes: Set<string>; outbounds: Set<string
     let m: RegExpExecArray | null;
     while ((m = routeRe.exec(content)) !== null) routes.add(m[1]);
     while ((m = outboundRe.exec(content)) !== null) outbounds.add(m[1]);
+
+    // Surface every dangerously_allow_all_data_access use as an advisory
+    // warning so each one stays visible in CI output until the maintainer
+    // explicitly silences it via audit. Split the file at defineRoute /
+    // defineOutbound boundaries so we can attribute the flag to the right
+    // endpoint.
+    const boundaryRe = /\b(?:defineRoute|defineOutbound)\s*\(/g;
+    const positions: number[] = [];
+    while ((m = boundaryRe.exec(content)) !== null) positions.push(m.index);
+    for (let i = 0; i < positions.length; i++) {
+        const start = positions[i];
+        const end = positions[i + 1] ?? content.length;
+        const block = content.slice(start, end);
+        if (!/dangerously_allow_all_data_access\s*:\s*true/.test(block)) continue;
+        const endpointMatch = /endpoint\s*:\s*['"]([^'"]+)['"]/.exec(block);
+        const label = endpointMatch ? endpointMatch[1] : '(unknown route)';
+        report(
+            'warn',
+            'dangerously-allow-all',
+            registryPath,
+            `${label} bypasses the field-level stripper (dangerously_allow_all_data_access: true) — review still required`,
+        );
+    }
+
     return { routes, outbounds };
 }
 
