@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "jest --runInBand --forceExit",
     "test:ci": "jest --ci --runInBand --forceExit",
+    "test:integration": "jest --ci --runInBand --forceExit --testPathIgnorePatterns=/node_modules/ --testRegex \"\\.integration\\.test\\.[jt]sx?$\"",
     "prepare": "husky"
   },
   "prisma": {

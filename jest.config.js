@@ -7,12 +7,19 @@ const createJestConfig = nextJest({
 })
 
 // Add any custom config to be passed to Jest
+// Integration tests (*.integration.test.ts) talk to a real Postgres and are
+// excluded from the default run so `npm run test:ci` works without a DB.
+// Run them with `npm run test:integration` against a live database.
 const customJestConfig = {
     setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
     testEnvironment: 'jest-environment-jsdom',
     moduleNameMapper: {
         '^@/(.*)$': '<rootDir>/src/$1',
     },
+    testPathIgnorePatterns: [
+        '/node_modules/',
+        '\\.integration\\.test\\.[jt]sx?$',
+    ],
 }
 
 module.exports = async () => {
