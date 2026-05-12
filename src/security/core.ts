@@ -94,17 +94,25 @@ export function parseToken(t: string): { scope: Scope; tier: SensitiveTier } | '
 /**
  * Admission gate — who is allowed to *call* the endpoint. Distinct from
  * `orderedView`, which controls *what* they see once admitted.
+ *
+ * Token-secret gates (`cron`, `webhook: 'shopify'`) verify a shared secret
+ * from env vars. `dev-only` requires NEXT_PUBLIC_DEV_AUTH=1. `anyOf` is
+ * OR-of-gates (used by routes that accept either kiosk or session auth).
  */
 export type Authorize =
     | 'public'
     | 'authenticated'
     | 'self'
-    | { anyRole: BusinessRole[] }
+    | 'kiosk'
+    | 'cron'
+    | 'dev-only'
     | 'program-lead-mentor'
     | 'program-core-volunteer'
     | 'household-lead'
     | 'household-member'
-    | 'kiosk';
+    | { anyRole: BusinessRole[] }
+    | { anyOf: Authorize[] }
+    | { webhook: 'shopify' };
 
 /**
  * Response envelope:

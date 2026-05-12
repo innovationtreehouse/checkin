@@ -13,6 +13,8 @@
  *
  * IMPORTANT: This file is CODEOWNERS-gated.
  */
+import crypto from 'node:crypto';
+import type { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import type { AuthResult } from '@/types/auth';
 import type { Authorize, Role, Scope } from './core';
@@ -239,6 +241,9 @@ export interface ResolverContext {
     auth: AuthResult;
     params: Record<string, string>;
     callerContext: CallerContext;
+    req: NextRequest;
+    /** Pre-read body for HMAC-verifying gates (kiosk, webhook). */
+    rawBody?: string;
 }
 
 /**
@@ -250,7 +255,7 @@ export async function resolveAccess(
     authorize: Authorize,
     ctx: ResolverContext,
 ): Promise<{ allowed: boolean }> {
-    const { auth, params, callerContext } = ctx;
+    const { auth, params, callerContext, req, rawBody } = ctx;
     const isAdmin = auth.type === 'session' && (auth.user.sysadmin || auth.user.boardMember);
 
     if (typeof authorize === 'string') {
@@ -262,6 +267,10 @@ export async function resolveAccess(
                 return { allowed: auth.type === 'session' };
             case 'kiosk':
                 return { allowed: auth.type === 'kiosk' };
+            case 'cron':
+                return { allowed: verifyCronBearer(req) };
+            case 'dev-only':
+                return { allowed: !!process.env.NEXT_PUBLIC_DEV_AUTH };
             case 'program-lead-mentor': {
                 const id = parseInt(params.id ?? '', 10);
                 if (isNaN(id)) return { allowed: false };
@@ -284,6 +293,40 @@ export async function resolveAccess(
     } else if ('anyRole' in authorize) {
         if (auth.type !== 'session') return { allowed: false };
         return { allowed: authorize.anyRole.some(r => auth.user[r] === true) };
+    } else if ('anyOf' in authorize) {
+        for (const sub of authorize.anyOf) {
+            const result = await resolveAccess(sub, ctx);
+            if (result.allowed) return { allowed: true };
+        }
+        return { allowed: false };
+    } else if ('webhook' in authorize) {
+        if (authorize.webhook === 'shopify') {
+            return { allowed: verifyShopifyWebhook(req, rawBody) };
+        }
     }
     return { allowed: false };
+}
+
+function verifyCronBearer(req: NextRequest): boolean {
+    const expected = process.env.CRON_SECRET;
+    if (!expected) return false;
+    const header = req.headers.get('authorization');
+    if (!header) return false;
+    const expectedHeader = `Bearer ${expected}`;
+    const a = Buffer.from(header);
+    const b = Buffer.from(expectedHeader);
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+}
+
+function verifyShopifyWebhook(req: NextRequest, rawBody: string | undefined): boolean {
+    const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    if (!secret) return false;
+    const signature = req.headers.get('x-shopify-hmac-sha256');
+    if (!signature || rawBody === undefined) return false;
+    const expected = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('base64');
+    const a = Buffer.from(signature);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
 }
