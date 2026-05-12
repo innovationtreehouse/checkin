@@ -214,18 +214,21 @@ defineRoute({
     ],
 });
 
-// ─── Admin routes: raw aggregated/computed responses ──────────────────────
+// ─── Admin routes: aggregated/computed responses (stripper bypassed) ──────
 // These return computed values (percentile stats, parse previews, import
-// counts) rather than model rows. They bypass the field-level stripper via
-// `raw: true`. `authorize` is the only enforcement — only sysadmin / board
-// (and keyholders for system-health) can call them.
+// counts) rather than model rows, so there's nothing for the field-level
+// stripper to gate. They opt in via `dangerously_allow_all_data_access:
+// true` (snake_case intentional — same trick as React's dangerouslySet-
+// InnerHTML, surfaces the risk in every review). `authorize` is the only
+// enforcement — only sysadmin / board (and keyholders for system-health)
+// can call them.
 
 defineRoute({
     endpoint: 'GET /api/admin/system-health',
     authorize: { anyRole: ['sysadmin', 'boardMember', 'keyholder'] },
     envelope: null,
     orderedView: [],
-    raw: true,
+    dangerously_allow_all_data_access: true,
 });
 
 defineRoute({
@@ -233,7 +236,7 @@ defineRoute({
     authorize: { anyRole: ['sysadmin', 'boardMember'] },
     envelope: null,
     orderedView: [],
-    raw: true,
+    dangerously_allow_all_data_access: true,
 });
 
 defineRoute({
@@ -241,7 +244,7 @@ defineRoute({
     authorize: { anyRole: ['sysadmin', 'boardMember'] },
     envelope: null,
     orderedView: [],
-    raw: true,
+    dangerously_allow_all_data_access: true,
 });
 
 defineRoute({
@@ -249,7 +252,7 @@ defineRoute({
     authorize: { anyRole: ['sysadmin', 'boardMember'] },
     envelope: null,
     orderedView: [],
-    raw: true,
+    dangerously_allow_all_data_access: true,
 });
 
 // ─── Outbound surfaces ─────────────────────────────────────────────────────

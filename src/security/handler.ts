@@ -111,9 +111,9 @@ export function handler<P extends Record<string, string> = Record<string, string
         }
 
         let body: unknown;
-        if (spec.raw) {
-            // Raw route — ship the bag verbatim. `authorize` is the only
-            // enforcement; field-level token grants don't apply.
+        if (spec.dangerously_allow_all_data_access) {
+            // Stripper bypassed — ship the bag verbatim. `authorize` is the
+            // only enforcement; field-level token grants don't apply.
             body = spec.envelope === null ? bag : { [spec.envelope]: bag };
         } else {
             const stripped = stripBag(bag, viewTokens, callerCtx);

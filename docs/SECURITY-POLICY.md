@@ -107,11 +107,11 @@ Schema annotations classify *data*. Registry views grant *access* in the form of
 2. Run `npx prisma generate` and commit the regenerated `src/security/generated/classifications.ts`.
 3. If the field should be exposed: nothing else to do unless its tier isn't already covered. Every existing view that grants `*:<that-tier>` will now expose it automatically. A schema tier change is the policy change; maintainer reviews under CODEOWNERS.
 
-### Aggregated / computed responses (`raw: true`)
+### Aggregated / computed responses — the `dangerously_allow_all_data_access` escape hatch
 
 A few admin endpoints return values that don't correspond to model rows — daily percentile stats, parse previews, import-success counts. The token-grant stripper can't gate fields that aren't model fields.
 
-For these, declare `raw: true` in the registry. The handler ships your return value verbatim (with the envelope applied if set). `authorize` is the only enforcement; `orderedView` is `[]` by convention:
+For these, declare `dangerously_allow_all_data_access: true` in the registry. The handler ships your return value verbatim (with the envelope applied if set). `authorize` is the only enforcement; `orderedView` is `[]` by convention:
 
 ```ts
 defineRoute({
@@ -119,7 +119,7 @@ defineRoute({
     authorize: { anyRole: ['sysadmin', 'boardMember', 'keyholder'] },
     envelope: null,
     orderedView: [],
-    raw: true,
+    dangerously_allow_all_data_access: true,
 });
 
 // In the route file:
@@ -129,7 +129,7 @@ export const GET = handler('GET /api/admin/system-health', async () => {
 });
 ```
 
-Use `raw: true` only for genuinely-computed data. If you're returning Prisma model rows, use the normal token-grant flow so the stripper can enforce per-row scopes.
+The snake_case name is intentional — it stands out against the rest of the codebase so every code review surfaces the risk (same trick React's `dangerouslySetInnerHTML` uses). Use it only for genuinely-computed data. If you're returning Prisma model rows, use the normal token-grant flow so the stripper can enforce per-row scopes.
 
 ### Sending data to a third party
 
