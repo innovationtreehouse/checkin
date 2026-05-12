@@ -7,3 +7,10 @@
 GET /api/profile
 GET /api/programs/[id]
 GET /api/directory/board
+GET /api/admin/audit
+GET /api/admin/badges
+GET /api/admin/orphans
+GET /api/admin/roles
+PATCH /api/admin/roles
+GET /api/admin/visits
+PATCH /api/admin/visits

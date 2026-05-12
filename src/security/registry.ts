@@ -52,6 +52,77 @@ defineRoute({
     ],
 });
 
+// ─── Admin routes ──────────────────────────────────────────────────────────
+
+defineRoute({
+    endpoint: 'GET /api/admin/audit',
+    authorize: { anyRole: ['sysadmin'] },
+    envelope: 'logs',
+    orderedView: [
+        ['sysadmin', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/badges',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'badges',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/orphans',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'orphans',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/roles',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participants',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/admin/roles',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'user',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/visits',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'visits',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/admin/visits',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'visit',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
