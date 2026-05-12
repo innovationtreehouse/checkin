@@ -27,3 +27,11 @@ GET /api/admin/system-health
 GET /api/admin/trends
 POST /api/admin/participants/import
 POST /api/admin/participants/import/preview
+GET /api/household
+POST /api/household
+PATCH /api/household
+POST /api/household/lead
+DELETE /api/household/lead
+PATCH /api/household/member
+PATCH /api/household/settings
+GET /api/household/visits

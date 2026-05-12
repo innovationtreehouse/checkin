@@ -255,6 +255,104 @@ defineRoute({
     dangerously_allow_all_data_access: true,
 });
 
+// ─── Household ─────────────────────────────────────────────────────────────
+
+defineRoute({
+    endpoint: 'GET /api/household',
+    authorize: 'authenticated',
+    envelope: 'household',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal',
+                           'their_households:pii', 'their_households:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/household',
+    authorize: 'authenticated',
+    envelope: 'household',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal',
+                           'their_households:pii', 'their_households:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/household',
+    authorize: 'household-lead',
+    envelope: 'member',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal',
+                           'their_households:pii', 'their_households:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/household/lead',
+    authorize: 'household-lead',
+    envelope: 'lead',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal',
+                           'their_households:pii', 'their_households:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'DELETE /api/household/lead',
+    authorize: 'household-lead',
+    envelope: 'lead',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal',
+                           'their_households:pii', 'their_households:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/household/member',
+    authorize: 'household-lead',
+    envelope: 'member',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal',
+                           'their_households:pii', 'their_households:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/household/settings',
+    authorize: 'household-lead',
+    envelope: 'household',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal',
+                           'their_households:pii', 'their_households:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/household/visits',
+    authorize: 'authenticated',
+    envelope: 'visits',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal',
+                           'their_households:pii', 'their_households:personal', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
