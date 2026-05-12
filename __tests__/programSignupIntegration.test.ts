@@ -219,7 +219,7 @@ describe('Full Program Signup Integration Flow', () => {
             },
             body: webhookPayload,
         });
-        const webhookRes = await ShopifyWebhook(webhookReq);
+        const webhookRes = await ShopifyWebhook(webhookReq as unknown as import("next/server").NextRequest);
         expect(webhookRes.status).toBe(200);
 
         // 9. Final Verification - ACTIVE status

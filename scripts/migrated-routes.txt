@@ -78,3 +78,6 @@ GET /api/cron/pending-participants
 GET /api/cron/post-event
 GET /api/cron/reminders
 GET /api/auth/dev-personas
+POST /api/webhooks/shopify
+POST /api/scan
+POST /api/programs/[id]/public-register

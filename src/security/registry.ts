@@ -841,11 +841,64 @@ defineRoute({
     dangerously_allow_all_data_access: true,
 });
 
+// ─── Public program registration (self-serve enrollment) ──────────────────
+// Anyone can enroll their household into a program by POSTing this form;
+// downstream we may hand them a Shopify checkout URL. Response shape is
+// `{ success, isFree, checkoutUrl, message }` — not model rows — so the
+// stripper is bypassed.
+
+defineRoute({
+    endpoint: 'POST /api/programs/[id]/public-register',
+    authorize: 'public',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+// ─── Scan (kiosk OR session) ───────────────────────────────────────────────
+// Kiosk badge readers and authenticated web sessions both POST here. The
+// `anyOf` gate runs HMAC verification when an x-kiosk-signature header is
+// present (rawBody is consumed there) and falls through to the session
+// auth check otherwise. Response shape varies (checkin/checkout/warning)
+// and is computed from multiple models, so the stripper is bypassed.
+
+defineRoute({
+    endpoint: 'POST /api/scan',
+    authorize: { anyOf: ['kiosk', 'authenticated'] },
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+// ─── Webhooks ──────────────────────────────────────────────────────────────
+// Shopify posts order events here. HMAC-SHA256 over the raw body using
+// SHOPIFY_WEBHOOK_SECRET is verified by the framework. Response is a
+// simple `{ success: true }` acknowledgement.
+
+defineRoute({
+    endpoint: 'POST /api/webhooks/shopify',
+    authorize: { webhook: 'shopify' },
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
     surface: 'shopify.product.create',
     // Program name + prices + maxParticipants — all 'public' tier.
+    tiers: ['public'],
+});
+
+defineOutbound({
+    surface: 'shopify.checkout-url',
+    // No request body crosses the network — we hand a URL to the client
+    // who then redirects. The participant + program IDs travel embedded
+    // in that URL (query string), so we route through outboundCall() to
+    // surface the egress in the policy. Only 'public' tier fields ever
+    // make it into the URL (program.id, program.shopifyNonMemberVariantId,
+    // participant.id).
     tiers: ['public'],
 });
 

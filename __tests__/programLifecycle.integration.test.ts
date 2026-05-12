@@ -199,7 +199,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: payload
         });
 
-        const res = await ShopifyWebhook(req);
+        const res = await ShopifyWebhook(req as unknown as import("next/server").NextRequest);
         expect(res.status).toBe(200);
 
         const dbRecord = await prisma.programParticipant.findUnique({
