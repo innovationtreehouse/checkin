@@ -9,8 +9,10 @@
  *   4. Walk `orderedView` top-to-bottom; pick the first role the caller
  *      satisfies. Its tokens become the view.
  *   5. Run the user fn → ModelBag.
- *   6. Recursively strip the bag: for each row, compute its scopes vs the
- *      caller, then per field check `fieldVisible(tier, tokens, scopes)`.
+ *   6. Recursively strip the bag via stripBag(): for each row, compute its
+ *      scopes vs the caller, then per field check `fieldVisible(tier,
+ *      tokens, scopes)`. The stripper lives in ./stripper so it can be
+ *      unit-tested in isolation.
  *   7. Wrap in envelope, emit.
  *
  * Errors thrown from the user fn are caught:
@@ -23,15 +25,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateRequest } from '@/lib/auth';
 import { apiError } from '@/lib/api-response';
 import type { AuthResult } from '@/types/auth';
-import { getRoute, fieldVisible, type Role, type Tier, type Token } from './core';
-import { classifications, relations } from './generated/classifications';
-import {
-    buildCallerContext,
-    callerHoldsRole,
-    resolveAccess,
-    scopesHeld,
-    type CallerContext,
-} from './access-resolvers';
+import { getRoute, type Role, type Token } from './core';
+import { buildCallerContext, callerHoldsRole, resolveAccess } from './access-resolvers';
+import { stripBag } from './stripper';
 // Side-effect import to register routes/outbounds before handler() is invoked.
 import './registry';
 
@@ -114,14 +110,7 @@ export function handler<P extends Record<string, string> = Record<string, string
             return apiError('Internal Server Error', 500);
         }
 
-        const stripped: Record<string, unknown> = {};
-        for (const [modelName, value] of Object.entries(bag)) {
-            if (!(modelName in classifications)) {
-                console.warn(`[${endpoint}] bag key '${modelName}' is not a known model — dropping`);
-                continue;
-            }
-            stripped[modelName] = stripValue(modelName, value, viewTokens, callerCtx);
-        }
+        const stripped = stripBag(bag, viewTokens, callerCtx);
 
         let body: unknown;
         if (spec.envelope === null) {
@@ -134,47 +123,4 @@ export function handler<P extends Record<string, string> = Record<string, string
         }
         return NextResponse.json(body, { status: 200 });
     };
-}
-
-function stripValue(
-    modelName: string,
-    value: unknown,
-    tokens: readonly Token[],
-    callerCtx: CallerContext,
-): unknown {
-    if (value === null || value === undefined) return value;
-    if (Array.isArray(value)) {
-        return value.map(item => stripValue(modelName, item, tokens, callerCtx));
-    }
-    if (typeof value !== 'object') return value;
-
-    const obj = value as Record<string, unknown>;
-    const tiers = classifications[modelName as keyof typeof classifications] as
-        | Record<string, Tier>
-        | undefined;
-    if (!tiers) return null;
-
-    const scopes = scopesHeld(modelName, obj, callerCtx);
-    const rels = (relations[modelName as keyof typeof relations] ?? {}) as Record<
-        string,
-        { model: string; isList: boolean }
-    >;
-
-    const result: Record<string, unknown> = {};
-    for (const [field, tier] of Object.entries(tiers)) {
-        if (!(field in obj)) continue;
-        if (fieldVisible(tier, tokens, scopes)) {
-            result[field] = obj[field];
-        }
-    }
-
-    if ('_count' in obj && typeof obj._count === 'object' && obj._count !== null) {
-        result._count = obj._count;
-    }
-
-    for (const [relName, relInfo] of Object.entries(rels)) {
-        if (!(relName in obj)) continue;
-        result[relName] = stripValue(relInfo.model, obj[relName], tokens, callerCtx);
-    }
-    return result;
 }
