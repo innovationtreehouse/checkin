@@ -35,3 +35,10 @@ DELETE /api/household/lead
 PATCH /api/household/member
 PATCH /api/household/settings
 GET /api/household/visits
+PATCH /api/profile
+POST /api/profile/onboarding
+GET /api/profile/onboarding-status
+GET /api/profile/visits
+GET /api/kiosk/certifications
+GET /api/kiosk/version
+GET /api/health

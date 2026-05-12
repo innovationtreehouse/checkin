@@ -353,6 +353,73 @@ defineRoute({
     ],
 });
 
+// ─── Profile (remainder) ───────────────────────────────────────────────────
+
+defineRoute({
+    endpoint: 'PATCH /api/profile',
+    authorize: 'self',
+    envelope: 'profile',
+    orderedView: [
+        ['authenticated', ['their_own:pii', 'their_own:personal', 'their_own:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/profile/onboarding',
+    authorize: 'self',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/profile/onboarding-status',
+    authorize: 'self',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/profile/visits',
+    authorize: 'self',
+    envelope: 'visits',
+    orderedView: [
+        ['authenticated', ['their_own:pii', 'their_own:personal', 'their_own:internal', 'public']],
+    ],
+});
+
+// ─── Kiosk ─────────────────────────────────────────────────────────────────
+
+defineRoute({
+    endpoint: 'GET /api/kiosk/certifications',
+    // Admits both authenticated sessions and verified kiosks; the handler
+    // checks auth.type for the OR and throws 401 otherwise. The framework's
+    // single-token authorize model can't express OR-of-auth-types yet.
+    authorize: 'public',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/kiosk/version',
+    authorize: 'public',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+// ─── Health ────────────────────────────────────────────────────────────────
+
+defineRoute({
+    endpoint: 'GET /api/health',
+    authorize: 'public',
+    envelope: null,
+    orderedView: [['anyone', ['public']]],
+    dangerously_allow_all_data_access: true,
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({

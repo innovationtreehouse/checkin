@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
+import { handler } from "@/security/handler";
 
-export async function GET() {
-    return NextResponse.json({ status: "ok" });
-}
+export const GET = handler('GET /api/health', async () => {
+    return { status: "ok" };
+});
