@@ -123,6 +123,57 @@ defineRoute({
     ],
 });
 
+defineRoute({
+    endpoint: 'GET /api/admin/emergency-contacts',
+    authorize: { anyRole: ['sysadmin', 'boardMember', 'keyholder'] },
+    envelope: 'households',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['keyholder',   ['everyones:pii', 'everyones:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/households',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'households',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/admin/households',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'membership',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/participants/search',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participants',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/participants/merge/analyze',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participants',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({

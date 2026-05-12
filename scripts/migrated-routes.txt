@@ -14,3 +14,8 @@ GET /api/admin/roles
 PATCH /api/admin/roles
 GET /api/admin/visits
 PATCH /api/admin/visits
+GET /api/admin/emergency-contacts
+GET /api/admin/households
+POST /api/admin/households
+GET /api/admin/participants/search
+GET /api/admin/participants/merge/analyze
