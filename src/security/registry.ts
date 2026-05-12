@@ -791,6 +791,56 @@ defineRoute({
     ],
 });
 
+// ─── Cron jobs (Bearer CRON_SECRET) ────────────────────────────────────────
+// Operational endpoints invoked by Vercel Cron / CloudWatch Events. They
+// return aggregated counts/markers, not model rows, so the stripper is
+// bypassed; `authorize: 'cron'` (timing-safe Bearer check) is the only gate.
+
+defineRoute({
+    endpoint: 'GET /api/cron/nightly',
+    authorize: 'cron',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/cron/pending-participants',
+    authorize: 'cron',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/cron/post-event',
+    authorize: 'cron',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/cron/reminders',
+    authorize: 'cron',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+// ─── Dev personas (dev-login picker) ───────────────────────────────────────
+// `dev-only` gate passes iff NEXT_PUBLIC_DEV_AUTH is set. The list of
+// @example.com personas is dev-tooling, never shipped to prod, so the
+// stripper is bypassed.
+
+defineRoute({
+    endpoint: 'GET /api/auth/dev-personas',
+    authorize: 'dev-only',
+    envelope: 'personas',
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({

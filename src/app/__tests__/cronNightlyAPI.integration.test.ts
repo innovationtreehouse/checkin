@@ -105,7 +105,7 @@ describe('Cron Nightly API Integration Tests', () => {
                 }
             });
 
-            const res = await GET(req);
+            const res = await GET(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
 
             const data = await res.json();

@@ -73,3 +73,8 @@ POST /api/shop/certifications
 GET /api/shop/members
 GET /api/shop/tools
 POST /api/shop/tools
+GET /api/cron/nightly
+GET /api/cron/pending-participants
+GET /api/cron/post-event
+GET /api/cron/reminders
+GET /api/auth/dev-personas

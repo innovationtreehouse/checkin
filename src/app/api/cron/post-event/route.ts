@@ -1,34 +1,19 @@
-import { NextResponse } from "next/server";
-import crypto from "crypto";
 import { processPostEventEmails } from "@/lib/postEventEmails";
+import { ApiResponseError, handler } from "@/security/handler";
+import { logBackendError } from "@/lib/logger";
 
 /**
  * Expected to be called by an external CRON trigger (e.g. Vercel Cron or CloudWatch Events)
  * GET /api/cron/post-event
  */
-export async function GET(req: Request) {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || !authHeader) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const expectedHeader = `Bearer ${cronSecret}`;
-    const providedBuffer = Buffer.from(authHeader);
-    const expectedBuffer = Buffer.from(expectedHeader);
-
-    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+export const GET = handler('GET /api/cron/post-event', async () => {
     try {
         // By default, this uses the 1-hour delay rule
         const result = await processPostEventEmails({ forceImmediate: false });
-        
-        return NextResponse.json({ success: true, ...result });
-    } catch (error) {
-        console.error("Failed to run cron post-event:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return { success: true, ...result };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "GET /api/cron/post-event");
+        throw err;
     }
-}
+});

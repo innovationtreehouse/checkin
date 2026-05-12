@@ -62,7 +62,7 @@ describe("GET /api/cron/post-event", () => {
         const req = new Request("http://localhost/api/cron/post-event", {
             headers: { 'authorization': 'Bearer test-secret' }
         });
-        const res = await GET(req);
+        const res = await GET(req as unknown as import("next/server").NextRequest);
         expect(res.status).toBe(200);
 
         const data = await res.json();
@@ -104,7 +104,7 @@ describe("GET /api/cron/post-event", () => {
         const req = new Request("http://localhost/api/cron/post-event", {
             headers: { 'authorization': 'Bearer test-secret' }
         });
-        const res = await GET(req);
+        const res = await GET(req as unknown as import("next/server").NextRequest);
         
         const data = await res.json();
         expect(data.emailsSent).toBe(0);
@@ -134,7 +134,7 @@ describe("GET /api/cron/post-event", () => {
         const req = new Request("http://localhost/api/cron/post-event", {
             headers: { 'authorization': 'Bearer test-secret' }
         });
-        const res = await GET(req);
+        const res = await GET(req as unknown as import("next/server").NextRequest);
         
         const data = await res.json();
         expect(data.emailsSent).toBe(0);

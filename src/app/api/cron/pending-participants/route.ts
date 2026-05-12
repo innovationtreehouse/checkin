@@ -1,23 +1,8 @@
-import { NextResponse } from "next/server";
-import crypto from "crypto";
 import prisma from "@/lib/prisma";
+import { ApiResponseError, handler } from "@/security/handler";
+import { logBackendError } from "@/lib/logger";
 
-export async function GET(req: Request) {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || !authHeader) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const expectedHeader = `Bearer ${cronSecret}`;
-    const providedBuffer = Buffer.from(authHeader);
-    const expectedBuffer = Buffer.from(expectedHeader);
-
-    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+export const GET = handler('GET /api/cron/pending-participants', async () => {
     try {
         const now = new Date();
         const pendingParticipants = await prisma.programParticipant.findMany({
@@ -38,7 +23,7 @@ export async function GET(req: Request) {
 
         for (const record of pendingParticipants) {
             if (!record.pendingSince) continue;
-            
+
             const diffTime = Math.abs(now.getTime() - record.pendingSince.getTime());
             const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); // Calculate total full days
 
@@ -79,9 +64,10 @@ export async function GET(req: Request) {
             });
         }
 
-        return NextResponse.json({ success: true, processed: pendingParticipants.length, kicked: kickedCount, warned: warnedCount });
-    } catch (error) {
-        console.error("Cron script error:", error);
-        return NextResponse.json({ error: "Cron Failed" }, { status: 500 });
+        return { success: true, processed: pendingParticipants.length, kicked: kickedCount, warned: warnedCount };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "GET /api/cron/pending-participants");
+        throw err;
     }
-}
+});
