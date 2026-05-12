@@ -1,98 +1,60 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
-import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { logBackendError } from "@/lib/logger";
+import { ApiResponseError, handler, badRequest, forbidden, notFound, unauthorized } from "@/security/handler";
 
-export async function GET(req: NextRequest) {
+export const GET = handler('GET /api/attendance', async ({ auth }) => {
     try {
-        // Determine caller identity
-        const session = await getServerSession(authOptions);
-        const user = session?.user;
-        const hasKioskHeaders = req.headers.get("x-kiosk-signature");
-        const pubKeys = getKioskPublicKeys();
+        if (auth.type !== 'session' && auth.type !== 'kiosk') throw unauthorized();
 
-        let isKiosk = false;
-
-        if (!session && pubKeys.length > 0 && hasKioskHeaders) {
-            // Kiosk request — verify signature
-            const result = verifyKioskSignature(
-                "GET",
-                "/api/attendance",
-                "",
-                req.headers.get("x-kiosk-timestamp"),
-                req.headers.get("x-kiosk-signature"),
-                pubKeys
-            );
-            if (!result.ok) {
-                return NextResponse.json({ error: result.error }, { status: result.status });
-            }
-            isKiosk = true;
-        } else if (!session && pubKeys.length > 0) {
-            // No session and no kiosk headers — reject
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        } else if (!session && pubKeys.length === 0) {
-            // Dev mode: no pubKey configured, treat as kiosk (allow all)
-            isKiosk = true;
-        }
+        const isKiosk = auth.type === 'kiosk';
+        const user = auth.type === 'session' ? auth.user : undefined;
 
         const { attendance, counts, safety } = await getFullAttendance();
 
-        // Determine access level
         const isAdmin = isKiosk || user?.sysadmin || user?.boardMember || user?.keyholder;
 
         if (isAdmin) {
-            // Full access: return all visits + counts
-            return NextResponse.json({
+            return {
                 access: "full",
                 attendance,
                 counts,
                 safety,
                 signedRequest: isKiosk,
-            });
+            };
         }
 
-        // Limited access: counts + household members + self only
         const selfVisit = user ? attendance.find(v => v.participant.id === Number(user.id)) || null : null;
         const householdVisits = (user?.householdId)
             ? attendance.filter(v => v.participant.householdId === user.householdId)
             : [];
 
-        return NextResponse.json({
+        return {
             access: "limited",
             counts,
             safety,
             self: selfVisit,
             household: householdVisits,
             signedRequest: isKiosk,
-        });
-    } catch (error) {
-        console.error("Attendance fetch error:", error);
-        await logBackendError(error, "GET /api/attendance");
-        return NextResponse.json(
-            { error: "Internal Server Error while fetching attendance." },
-            { status: 500 }
-        );
+        };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "GET /api/attendance");
+        throw err;
     }
-}
+});
 
-export async function DELETE(req: Request) {
-    const session = await getServerSession(authOptions);
-    const user = session?.user;
-
-    if (!user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+export const DELETE = handler('DELETE /api/attendance', async ({ req, auth }) => {
     try {
+        if (auth.type !== 'session') throw unauthorized();
+        const user = auth.user;
+
         const body = await req.json();
         const { visitId } = body;
 
         if (!visitId) {
-            return NextResponse.json({ error: "visitId is required" }, { status: 400 });
+            throw badRequest("visitId is required");
         }
 
         const visit = await prisma.visit.findUnique({
@@ -101,68 +63,56 @@ export async function DELETE(req: Request) {
         });
 
         if (!visit) {
-            return NextResponse.json({ error: "Visit not found" }, { status: 404 });
+            throw notFound("Visit not found");
         }
 
-        // Check permissions:
-        // 1. User checking out themselves
-        // 2. User is the household lead checking out a family member
-        // 3. User is an admin (sysadmin, keyholder, board member)
         const isSelf = visit.participantId === Number(user.id);
         const isHouseholdCheckOut = Boolean(user.householdId && visit.participant.householdId === user.householdId && user.householdLead);
         const isAdmin = user.sysadmin || user.keyholder || user.boardMember;
 
         if (!isSelf && !isHouseholdCheckOut && !isAdmin) {
-            return NextResponse.json({ error: "Forbidden: You are not authorized to check out this user." }, { status: 403 });
+            throw forbidden("Forbidden: You are not authorized to check out this user.");
         }
 
         const finalVisits = await processVisitCheckout(visitId, new Date());
         const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visit;
 
-        return NextResponse.json({ success: true, visit: updatedVisit });
-    } catch (error) {
-        console.error("Force checkout error:", error);
-        await logBackendError(error, "DELETE /api/attendance");
-        return NextResponse.json({ error: "Failed to force checkout" }, { status: 500 });
+        return { Visit: updatedVisit };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "DELETE /api/attendance");
+        throw err;
     }
-}
+});
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-    const user = session?.user;
-
-    if (!user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const isAdmin = user.sysadmin || user.keyholder || user.boardMember;
-
+export const POST = handler('POST /api/attendance', async ({ req, auth }) => {
     try {
+        if (auth.type !== 'session') throw unauthorized();
+        const user = auth.user;
+        const isAdmin = user.sysadmin || user.keyholder || user.boardMember;
+
         const body = await req.json();
         const { type, message, participantId } = body;
 
-        // Manual Check-in explicitly via the Dashboard
         if (type === 'MANUAL_CHECKIN') {
             if (!participantId) {
-                return NextResponse.json({ error: "participantId is required" }, { status: 400 });
+                throw badRequest("participantId is required");
             }
 
-            // Verify participant exists
             const participant = await prisma.participant.findUnique({
                 where: { id: participantId }
             });
 
             if (!participant) {
-                return NextResponse.json({ error: "Participant not found" }, { status: 404 });
+                throw notFound("Participant not found");
             }
 
-            // Check Permissions
             const isSelf = participant.id === Number(user.id);
             const isHouseholdCheckIn = Boolean(user.householdId && participant.householdId === user.householdId && user.householdLead);
             if (!isSelf && !isHouseholdCheckIn && !isAdmin) {
-                return NextResponse.json({ error: "Forbidden: You are not authorized to check in this user." }, { status: 403 });
+                throw forbidden("Forbidden: You are not authorized to check in this user.");
             }
 
-            // Verify they aren't already checked in
             const activeVisit = await prisma.visit.findFirst({
                 where: {
                     participantId: participant.id,
@@ -171,7 +121,7 @@ export async function POST(req: Request) {
             });
 
             if (activeVisit) {
-                return NextResponse.json({ error: "User is already checked in" }, { status: 400 });
+                throw badRequest("User is already checked in");
             }
 
             const arrivalTime = new Date();
@@ -185,11 +135,10 @@ export async function POST(req: Request) {
                 }
             });
 
-            return NextResponse.json({ success: true, visit: newVisit });
+            return { Visit: newVisit };
         }
 
         if (type === 'TWO_DEEP_VIOLATION') {
-            // Debounce check: See if we already sent a notification recently (within 5 minutes)
             const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
             const recentLog = await prisma.auditLog.findFirst({
                 where: {
@@ -200,19 +149,17 @@ export async function POST(req: Request) {
             });
 
             if (recentLog) {
-                return NextResponse.json({ success: false, message: "Notification already sent recently." });
+                return { success: false, message: "Notification already sent recently." };
             }
 
-            // Find all board members
             const boardMembers = await prisma.participant.findMany({
                 where: { boardMember: true },
                 select: { email: true, name: true }
             });
 
-            // Log that we sent the notification to prevent spam from multiple kiosks
             await prisma.auditLog.create({
                 data: {
-                    actorId: 0, // System actor
+                    actorId: 0,
                     action: 'CREATE',
                     tableName: 'SYSTEM_NOTIFY',
                     affectedEntityId: 0,
@@ -220,17 +167,16 @@ export async function POST(req: Request) {
                 }
             });
 
-            // In a real app, integrate Resend/SendGrid here using boardMembers.map(m => m.email)
             console.log("CRITICAL NOTIFICATION TO BOARD MEMBERS:", boardMembers.map(m => m.email).join(', '));
             console.log("Message:", message);
 
-            return NextResponse.json({ success: true, notified: boardMembers.length });
+            return { notified: boardMembers.length };
         }
 
-        return NextResponse.json({ error: "Unknown notification type" }, { status: 400 });
-    } catch (error) {
-        console.error("Notification error:", error);
-        await logBackendError(error, "POST /api/attendance");
-        return NextResponse.json({ error: "Failed to process notification" }, { status: 500 });
+        throw badRequest("Unknown notification type");
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "POST /api/attendance");
+        throw err;
     }
-}
+});

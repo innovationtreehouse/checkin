@@ -1,51 +1,37 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { handler, unauthorized } from "@/security/handler";
 
-export async function GET() {
-    const session = await getServerSession(authOptions);
+export const GET = handler('GET /api/events/mine', async ({ auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
+    const userId = auth.user.id;
 
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const enrolledPrograms = await prisma.programParticipant.findMany({
+        where: { participantId: userId },
+        select: { programId: true }
+    });
+    const volunteerPrograms = await prisma.programVolunteer.findMany({
+        where: { participantId: userId },
+        select: { programId: true }
+    });
 
-    try {
-        const userId = session.user.id;
+    const programIds = [
+        ...enrolledPrograms.map(p => p.programId),
+        ...volunteerPrograms.map(p => p.programId)
+    ];
 
-        // Get programs the user is in
-        const enrolledPrograms = await prisma.programParticipant.findMany({
-            where: { participantId: userId },
-            select: { programId: true }
-        });
-        const volunteerPrograms = await prisma.programVolunteer.findMany({
-            where: { participantId: userId },
-            select: { programId: true }
-        });
-
-        const programIds = [
-            ...enrolledPrograms.map(p => p.programId),
-            ...volunteerPrograms.map(p => p.programId)
-        ];
-
-        // Fetch upcoming events for these programs
-        const events = await prisma.event.findMany({
-            where: {
-                programId: { in: programIds },
-                end: { gte: new Date() } // Only upcoming
-            },
-            orderBy: { start: 'asc' },
-            include: {
-                program: { select: { name: true } },
-                rsvps: {
-                    where: { participantId: userId }
-                }
+    const events = await prisma.event.findMany({
+        where: {
+            programId: { in: programIds },
+            end: { gte: new Date() }
+        },
+        orderBy: { start: 'asc' },
+        include: {
+            program: { select: { name: true } },
+            rsvps: {
+                where: { participantId: userId }
             }
-        });
+        }
+    });
 
-        return NextResponse.json(events);
-    } catch (error) {
-        console.error("Failed to fetch user events:", error);
-        return NextResponse.json({ error: "Failed to fetch events" }, { status: 500 });
-    }
-}
+    return { Event: events };
+});

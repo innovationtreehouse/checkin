@@ -420,6 +420,117 @@ defineRoute({
     dangerously_allow_all_data_access: true,
 });
 
+// ─── Events ────────────────────────────────────────────────────────────────
+
+defineRoute({
+    endpoint: 'POST /api/events',
+    authorize: 'authenticated',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/events/mine',
+    authorize: 'authenticated',
+    envelope: null,
+    orderedView: [
+        ['sysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor',    ['their_program_participants:pii',
+                                  'their_program_participants:personal', 'public']],
+        ['programCoreVolunteer', ['their_program_participants:pii',
+                                  'their_program_participants:personal', 'public']],
+        ['authenticated',        ['their_own:pii', 'their_own:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/events/[id]',
+    authorize: 'authenticated',
+    envelope: null,
+    orderedView: [
+        ['sysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor',    ['their_program_participants:pii',
+                                  'their_program_participants:personal',
+                                  'their_program_participants:internal', 'public']],
+        ['programCoreVolunteer', ['their_program_participants:pii',
+                                  'their_program_participants:personal', 'public']],
+        ['authenticated',        ['their_own:pii', 'their_own:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/events/[id]',
+    authorize: 'authenticated',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'POST /api/events/[id]/attendance',
+    authorize: 'authenticated',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/events/[id]/rsvp',
+    authorize: 'authenticated',
+    envelope: 'rsvp',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated', ['their_own:pii', 'their_own:personal', 'public']],
+    ],
+});
+
+// ─── Attendance ────────────────────────────────────────────────────────────
+
+defineRoute({
+    endpoint: 'GET /api/attendance',
+    // Aggregated counts + safety state + filtered visit lists per role; the
+    // shape isn't a ModelBag. authorize gate + handler-internal role checks.
+    authorize: 'public',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'DELETE /api/attendance',
+    authorize: 'authenticated',
+    envelope: 'visit',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['keyholder',     ['everyones:pii', 'everyones:personal', 'public',
+                           'all_current_visitors:pii', 'all_current_visitors:personal']],
+        ['authenticated', ['their_own:pii', 'their_own:personal',
+                           'their_households:pii', 'their_households:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/attendance',
+    authorize: 'authenticated',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'POST /api/attendance/manual',
+    authorize: 'self',
+    envelope: 'visit',
+    orderedView: [
+        ['authenticated', ['their_own:pii', 'their_own:personal', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({

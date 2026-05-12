@@ -9,6 +9,7 @@ import { POST as createProgram } from '@/app/api/programs/route';
 import { PATCH as updateProgramSettings } from '@/app/api/programs/[id]/settings/route';
 import { POST as enrollParticipant } from '@/app/api/programs/[id]/participants/route';
 import { POST as markAttendance } from '@/app/api/events/[id]/attendance/route';
+import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 // Mock NextAuth
@@ -183,7 +184,7 @@ describe('AuditLog Integration Tests', () => {
             body: JSON.stringify({ participantIds: [testParticipantId] })
         });
 
-        const res = await markAttendance(req, { params: Promise.resolve({ id: testEventId.toString() }) });
+        const res = await markAttendance(req as unknown as NextRequest, { params: Promise.resolve({ id: testEventId.toString() }) });
         expect(res.status).toBe(200);
 
         // Verify Audit Log

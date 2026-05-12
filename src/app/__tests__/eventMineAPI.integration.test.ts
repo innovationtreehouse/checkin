@@ -9,6 +9,7 @@
 import { GET } from '@/app/api/events/mine/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { NextRequest } from 'next/server';
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -168,7 +169,7 @@ describe('My Events API Integration Tests', () => {
                  method: 'GET'
              });
 
-             const res = await GET() as Response;
+             const res = await GET(req as unknown as NextRequest) as unknown as Response;
              expect(res.status).toBe(401);
         });
 
@@ -181,7 +182,7 @@ describe('My Events API Integration Tests', () => {
                  method: 'GET'
              });
 
-             const res = await GET() as Response;
+             const res = await GET(req as unknown as NextRequest) as unknown as Response;
              expect(res.status).toBe(200);
 
              const data = await res.json();
@@ -204,7 +205,7 @@ describe('My Events API Integration Tests', () => {
                 method: 'GET'
             });
 
-            const res = await GET() as Response;
+            const res = await GET(req as unknown as NextRequest) as unknown as Response;
             expect(res.status).toBe(200);
 
             const data = await res.json();
@@ -224,7 +225,7 @@ describe('My Events API Integration Tests', () => {
                 method: 'GET'
             });
 
-            const res = await GET() as Response;
+            const res = await GET(req as unknown as NextRequest) as unknown as Response;
             const data = await res.json();
             
             const hasPastEvent = data.some((e: { name: string }) => e.name === 'Mine Test Event Past');
