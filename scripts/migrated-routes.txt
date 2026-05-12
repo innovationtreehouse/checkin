@@ -1,0 +1,9 @@
+# Routes that MUST go through the @/security/handler. Each line is an
+# endpoint key (METHOD + path). The CI lint at scripts/check-route-coverage.ts
+# uses this allowlist to gate the rollout — newly migrated routes are added
+# here, and once every route is listed the file can be deleted.
+#
+# Comment lines and blank lines are ignored.
+GET /api/profile
+GET /api/programs/[id]
+GET /api/directory/board
