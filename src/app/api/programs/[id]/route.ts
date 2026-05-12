@@ -1,8 +1,5 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
-import { handler, notFound, forbidden, badRequest } from "@/security/handler";
+import { handler, notFound, forbidden, badRequest, unauthorized } from "@/security/handler";
 
 export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
     const programId = parseInt(params.id, 10);
@@ -41,77 +38,67 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     return { Program: program };
 });
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
+export const PATCH = handler<{ id: string }>('PATCH /api/programs/[id]', async ({ req, params, auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
 
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const programId = parseInt(params.id, 10);
+    if (isNaN(programId)) {
+        throw badRequest("Invalid program ID");
     }
 
-    try {
-        const programId = parseInt(id, 10);
-        if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
-        }
-
-        const currentProgram = await prisma.program.findUnique({ where: { id: programId } });
-        if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
-        }
-
-        const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
-        const isLeadMentor = currentProgram.leadMentorId === user.id;
-        const isSysAdminOrBoard = user.sysadmin || user.boardMember;
-
-        if (!isLeadMentor && !isSysAdminOrBoard) {
-            return NextResponse.json({ error: "Forbidden: Only Admin, Board Members, or Lead Mentors can edit" }, { status: 403 });
-        }
-
-        const body = await req.json();
-        let { leadMentorId } = body;
-        const { name, begin, end, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings } = body;
-
-        if (body.hasOwnProperty('leadMentorId')) {
-            if (!leadMentorId) {
-                return NextResponse.json({ error: "Lead Mentor is required" }, { status: 400 });
-            }
-            leadMentorId = parseInt(leadMentorId);
-        }
-
-        const updateData: Record<string, unknown> = {
-            ...(name !== undefined && { name }),
-            ...(leadMentorId !== undefined && { leadMentorId }),
-            ...(begin !== undefined && { begin: begin ? new Date(begin) : null }),
-            ...(end !== undefined && { end: end ? new Date(end) : null }),
-            ...(memberOnly !== undefined && { memberOnly }),
-            ...(phase !== undefined && { phase }),
-            ...(enrollmentStatus !== undefined && { enrollmentStatus }),
-            ...(minAge !== undefined && { minAge }),
-            ...(maxAge !== undefined && { maxAge }),
-            ...(maxParticipants !== undefined && { maxParticipants }),
-            ...(leadMentorNotificationSettings !== undefined && { leadMentorNotificationSettings }),
-        };
-
-        const updatedProgram = await prisma.program.update({
-            where: { id: programId },
-            data: updateData
-        });
-
-        await prisma.auditLog.create({
-            data: {
-                actorId: (session.user as unknown as { id: number }).id,
-                action: 'EDIT',
-                tableName: 'Program',
-                affectedEntityId: updatedProgram.id,
-                oldData: JSON.stringify(currentProgram),
-                newData: JSON.stringify(updatedProgram)
-            }
-        });
-
-        return NextResponse.json({ success: true, program: updatedProgram });
-    } catch (error) {
-        console.error("Program update error:", error);
-        return NextResponse.json({ error: "Failed to update program" }, { status: 500 });
+    const currentProgram = await prisma.program.findUnique({ where: { id: programId } });
+    if (!currentProgram) {
+        throw notFound("Program not found");
     }
-}
+
+    const user = auth.user;
+    const isLeadMentor = currentProgram.leadMentorId === user.id;
+    const isSysAdminOrBoard = user.sysadmin || user.boardMember;
+
+    if (!isLeadMentor && !isSysAdminOrBoard) {
+        throw forbidden("Forbidden: Only Admin, Board Members, or Lead Mentors can edit");
+    }
+
+    const body = await req.json();
+    let { leadMentorId } = body;
+    const { name, begin, end, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings } = body;
+
+    if (Object.prototype.hasOwnProperty.call(body, 'leadMentorId')) {
+        if (!leadMentorId) {
+            throw badRequest("Lead Mentor is required");
+        }
+        leadMentorId = parseInt(leadMentorId);
+    }
+
+    const updateData: Record<string, unknown> = {
+        ...(name !== undefined && { name }),
+        ...(leadMentorId !== undefined && { leadMentorId }),
+        ...(begin !== undefined && { begin: begin ? new Date(begin) : null }),
+        ...(end !== undefined && { end: end ? new Date(end) : null }),
+        ...(memberOnly !== undefined && { memberOnly }),
+        ...(phase !== undefined && { phase }),
+        ...(enrollmentStatus !== undefined && { enrollmentStatus }),
+        ...(minAge !== undefined && { minAge }),
+        ...(maxAge !== undefined && { maxAge }),
+        ...(maxParticipants !== undefined && { maxParticipants }),
+        ...(leadMentorNotificationSettings !== undefined && { leadMentorNotificationSettings }),
+    };
+
+    const updatedProgram = await prisma.program.update({
+        where: { id: programId },
+        data: updateData
+    });
+
+    await prisma.auditLog.create({
+        data: {
+            actorId: user.id,
+            action: 'EDIT',
+            tableName: 'Program',
+            affectedEntityId: updatedProgram.id,
+            oldData: JSON.stringify(currentProgram),
+            newData: JSON.stringify(updatedProgram)
+        }
+    });
+
+    return { Program: updatedProgram };
+});

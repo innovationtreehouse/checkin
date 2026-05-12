@@ -6,6 +6,7 @@ import { POST as EnrollParticipant } from '@/app/api/programs/[id]/participants/
 import { POST as ShopifyWebhook } from '@/app/api/webhooks/shopify/route';
 import prisma from '@/lib/prisma';
 import crypto from 'crypto';
+import { NextRequest } from 'next/server';
 
 // Mocking dependencies
 jest.mock('next-auth/next', () => ({
@@ -106,7 +107,7 @@ describe('Full Program Signup Integration Flow', () => {
                 leadMentorId: sysAdminId,
             }),
         });
-        const createProgramRes = await CreateProgram(createProgramReq);
+        const createProgramRes = await CreateProgram(createProgramReq as unknown as NextRequest);
         expect(createProgramRes.status).toBe(200);
         const createProgramData = await createProgramRes.json();
         expect(createProgramData.program.id).toBe(programId);
@@ -123,7 +124,7 @@ describe('Full Program Signup Integration Flow', () => {
                 end: new Date(Date.now() + 86400000 + 3600000).toISOString(),
             }),
         });
-        const addEventRes = await AddEvent(addEventReq, { params: Promise.resolve({ id: String(programId) }) });
+        const addEventRes = await AddEvent(addEventReq as unknown as NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(addEventRes.status).toBe(200);
 
         // 3. SysAdmin publishes the program
@@ -138,7 +139,7 @@ describe('Full Program Signup Integration Flow', () => {
             method: 'POST',
             body: JSON.stringify({ publish: true }),
         });
-        const publishRes = await PublishProgram(publishReq, { params: Promise.resolve({ id: String(programId) }) });
+        const publishRes = await PublishProgram(publishReq as unknown as NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(publishRes.status).toBe(200);
 
         // 4. Lead user creates a household
@@ -190,7 +191,7 @@ describe('Full Program Signup Integration Flow', () => {
             method: 'POST',
             body: JSON.stringify({ participantId: childParticipantId }),
         });
-        const enrollRes = await EnrollParticipant(enrollReq, { params: Promise.resolve({ id: String(programId) }) });
+        const enrollRes = await EnrollParticipant(enrollReq as unknown as NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(enrollRes.status).toBe(200);
 
         // 7. Verify PENDING status
@@ -246,7 +247,7 @@ describe('Full Program Signup Integration Flow', () => {
             method: 'POST',
             body: JSON.stringify({ participantId: childParticipantId }),
         });
-        const enrollRes = await EnrollParticipant(enrollReq, { params: Promise.resolve({ id: String(programId) }) });
+        const enrollRes = await EnrollParticipant(enrollReq as unknown as NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(enrollRes.status).toBe(403);
     });
 });

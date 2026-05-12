@@ -531,6 +531,190 @@ defineRoute({
     ],
 });
 
+// ─── Programs ──────────────────────────────────────────────────────────────
+
+defineRoute({
+    endpoint: 'GET /api/programs',
+    authorize: 'public',
+    envelope: null,
+    orderedView: [
+        ['sysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor',    ['their_program_participants:pii',
+                                  'their_program_participants:personal', 'public']],
+        ['programCoreVolunteer', ['their_program_participants:pii',
+                                  'their_program_participants:personal', 'public']],
+        ['authenticated',        ['their_own:pii', 'their_own:personal', 'public']],
+        ['anyone',               ['public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/programs',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'program',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/programs/payment-plans',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'requests',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/programs/payment-plans',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participant',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/programs/[id]',
+    authorize: 'program-lead-mentor',
+    envelope: 'program',
+    orderedView: [
+        ['sysadmin',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',       ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor', ['their_program_participants:pii',
+                               'their_program_participants:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/programs/[id]/eligible-participants',
+    authorize: 'program-lead-mentor',
+    envelope: 'members',
+    orderedView: [
+        ['sysadmin',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',       ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor', ['everyones:pii', 'everyones:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/programs/[id]/events',
+    authorize: 'program-lead-mentor',
+    envelope: 'event',
+    orderedView: [
+        ['sysadmin',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',       ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor', ['their_program_participants:pii',
+                               'their_program_participants:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/programs/[id]/participants',
+    // Self-enrollment, household-lead enrollment, or admin override; the
+    // handler-internal check enforces the row-level rules.
+    authorize: 'authenticated',
+    envelope: 'enrollment',
+    orderedView: [
+        ['sysadmin',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',       ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated',     ['their_own:pii', 'their_own:personal',
+                               'their_households:pii', 'their_households:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'DELETE /api/programs/[id]/participants',
+    authorize: 'authenticated',
+    envelope: 'enrollment',
+    orderedView: [
+        ['sysadmin',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',       ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor', ['their_program_participants:pii',
+                               'their_program_participants:personal', 'public']],
+        ['authenticated',     ['their_own:pii', 'their_own:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/programs/[id]/publish',
+    authorize: 'program-lead-mentor',
+    envelope: 'program',
+    orderedView: [
+        ['sysadmin',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',       ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor', ['their_program_participants:pii',
+                               'their_program_participants:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/programs/[id]/request-payment-plan',
+    authorize: 'authenticated',
+    envelope: 'participant',
+    orderedView: [
+        ['sysadmin',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',       ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['authenticated',     ['their_own:pii', 'their_own:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/programs/[id]/settings',
+    authorize: 'program-lead-mentor',
+    envelope: 'program',
+    orderedView: [
+        ['sysadmin',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',       ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor', ['their_program_participants:pii',
+                               'their_program_participants:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/programs/[id]/volunteers',
+    authorize: 'program-lead-mentor',
+    envelope: 'assignment',
+    orderedView: [
+        ['sysadmin',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',       ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor', ['their_program_participants:pii',
+                               'their_program_participants:personal',
+                               'their_program_participants:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'DELETE /api/programs/[id]/volunteers',
+    authorize: 'program-lead-mentor',
+    envelope: 'assignment',
+    orderedView: [
+        ['sysadmin',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',       ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor', ['their_program_participants:pii',
+                               'their_program_participants:personal',
+                               'their_program_participants:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/programs/[id]/volunteers',
+    authorize: 'program-lead-mentor',
+    envelope: 'assignment',
+    orderedView: [
+        ['sysadmin',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember',       ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['programLeadMentor', ['their_program_participants:pii',
+                               'their_program_participants:personal',
+                               'their_program_participants:internal', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({

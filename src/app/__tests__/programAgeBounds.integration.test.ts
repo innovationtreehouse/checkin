@@ -10,6 +10,7 @@
 import { POST as enrollParticipant } from '@/app/api/programs/[id]/participants/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { NextRequest } from 'next/server';
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -117,7 +118,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: validUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(200);
 
         const data = await res.json();
@@ -135,7 +136,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: underageUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(400);
 
         const data = await res.json();
@@ -154,7 +155,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: overageUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(400);
 
         const data = await res.json();
@@ -173,7 +174,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: noDobUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(400);
 
         const data = await res.json();
@@ -192,7 +193,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: underageUserId, override: true })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(200);
 
         const data = await res.json();

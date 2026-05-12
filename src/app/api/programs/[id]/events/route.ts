@@ -1,64 +1,45 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { handler, badRequest, notFound, unauthorized } from "@/security/handler";
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
+export const POST = handler<{ id: string }>('POST /api/programs/[id]/events', async ({ req, params, auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
 
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const programId = parseInt(params.id, 10);
+    if (isNaN(programId)) {
+        throw badRequest("Invalid program ID");
     }
 
-    try {
-        const programId = parseInt(id, 10);
-        if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
-        }
-
-        const currentProgram = await prisma.program.findUnique({ where: { id: programId } });
-        if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
-        }
-
-        const isLeadMentor = currentProgram.leadMentorId === session.user.id;
-        const isSysAdminOrBoard = session.user?.sysadmin || session.user?.boardMember;
-
-        if (!isLeadMentor && !isSysAdminOrBoard) {
-            return NextResponse.json({ error: "Forbidden: Only Admin, Board Members, or Lead Mentors can add events" }, { status: 403 });
-        }
-
-        const body = await req.json();
-        const { name, start, end, description } = body;
-
-        if (!name || !start || !end) {
-            return NextResponse.json({ error: "Event name, start, and end are required" }, { status: 400 });
-        }
-
-        const newEvent = await prisma.event.create({
-            data: {
-                programId,
-                name,
-                start: new Date(start),
-                end: new Date(end),
-                description: description || null
-            }
-        });
-
-        await prisma.auditLog.create({
-            data: {
-                actorId: session.user.id,
-                action: 'CREATE',
-                tableName: 'Event',
-                affectedEntityId: newEvent.id,
-                newData: JSON.stringify(newEvent)
-            }
-        });
-
-        return NextResponse.json({ success: true, event: newEvent });
-    } catch (error) {
-        console.error("Event creation error:", error);
-        return NextResponse.json({ error: "Failed to create event" }, { status: 500 });
+    const currentProgram = await prisma.program.findUnique({ where: { id: programId } });
+    if (!currentProgram) {
+        throw notFound("Program not found");
     }
-}
+
+    const body = await req.json();
+    const { name, start, end, description } = body;
+
+    if (!name || !start || !end) {
+        throw badRequest("Event name, start, and end are required");
+    }
+
+    const newEvent = await prisma.event.create({
+        data: {
+            programId,
+            name,
+            start: new Date(start),
+            end: new Date(end),
+            description: description || null
+        }
+    });
+
+    await prisma.auditLog.create({
+        data: {
+            actorId: auth.user.id,
+            action: 'CREATE',
+            tableName: 'Event',
+            affectedEntityId: newEvent.id,
+            newData: JSON.stringify(newEvent)
+        }
+    });
+
+    return { Event: newEvent };
+});
