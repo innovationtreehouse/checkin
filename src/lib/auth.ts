@@ -1,18 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth-options';
 import { getKioskPublicKeys, verifyKioskSignature } from './verify-kiosk';
 import { config } from './config';
-import { apiError } from './api-response';
 import type { SessionUser } from '@/types/participant';
-import type { BusinessRole, AuthResult } from '@/types/auth';
+import type { AuthResult } from '@/types/auth';
 
 /**
  * Authenticate a request — tries kiosk signature first, then session.
+ *
+ * Pass `body` (raw text) for routes whose kiosk-signature covers the body.
+ * The security handler does this automatically for `authorize: 'kiosk'` and
+ * `authorize: { anyOf: [..., 'kiosk', ...] }` routes via ctx.rawBody.
  */
 export async function authenticateRequest(
     req: NextRequest,
-    body?: string
+    body?: string,
 ): Promise<AuthResult> {
     // 1. Try kiosk signature
     const pubKeys = getKioskPublicKeys();
@@ -25,11 +28,11 @@ export async function authenticateRequest(
             method, path, body || '',
             req.headers.get('x-kiosk-timestamp'),
             req.headers.get('x-kiosk-signature'),
-            pubKeys
+            pubKeys,
         );
         if (result.ok) return { type: 'kiosk' };
     } else if (pubKeys.length === 0 && config.isDev && process.env.NODE_ENV !== 'test') {
-        // Dev mode: treat as kiosk if no key configured
+        // Dev mode: treat as kiosk if no key configured.
         if (hasKioskHeaders || !req.headers.get('cookie')) {
             return { type: 'kiosk' };
         }
@@ -42,44 +45,4 @@ export async function authenticateRequest(
     }
 
     return { type: 'unauthenticated' };
-}
-
-/**
- * Higher-order function for route handlers with auth.
- * `roles` uses the actual Prisma business role field names — no abstract groupings.
- *
- * Example usage:
- *   export const GET = withAuth(
- *       { roles: ['sysadmin', 'boardMember'] },
- *       async (req, auth) => { ... }
- *   );
- */
-export function withAuth(
-    options: {
-        roles?: BusinessRole[];
-        allowKiosk?: boolean;
-    },
-    handler: (req: NextRequest, auth: AuthResult) => Promise<NextResponse>
-) {
-    return async (req: NextRequest) => {
-        const auth = await authenticateRequest(req);
-
-        if (auth.type === 'unauthenticated') {
-            return apiError('Unauthorized', 401);
-        }
-
-        if (auth.type === 'kiosk' && !options.allowKiosk) {
-            return apiError('Forbidden', 403);
-        }
-
-        if (options.roles && auth.type === 'session') {
-            const user = auth.user;
-            const hasRole = options.roles.some(role => user[role] === true);
-            if (!hasRole) {
-                return apiError('Forbidden', 403);
-            }
-        }
-
-        return handler(req, auth);
-    };
 }

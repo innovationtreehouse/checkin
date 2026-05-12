@@ -26,7 +26,6 @@
 # The CI lint and the codegen — bypass routes if changed.
 /scripts/check-route-coverage.ts      @dkay
 /scripts/security-generator.js        @dkay
-/scripts/migrated-routes.txt          @dkay
 /scripts/tsconfig.json                @dkay
 
 # Git hooks.

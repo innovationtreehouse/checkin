@@ -2,24 +2,28 @@
 /**
  * CI lint — verifies the security policy layer can't be routed around.
  *
- * Checks (advisory in Sprint 1; flipped to blocking in Sprint 4):
- *   1. Every src/app/api/<x>/route.ts file exports HTTP verbs registered in src/security/registry.ts.
+ * Blocking checks (errors → non-zero exit):
+ *   1. Every src/app/api/<x>/route.ts file exports HTTP verbs registered
+ *      in src/security/registry.ts.
  *   2. Every registry entry corresponds to an existing route file.
- *   3. Migrated routes (listed in scripts/migrated-routes.txt) must NOT call NextResponse.json / Response.json directly.
- *   4. Calls to third-party hosts (shopify.com, myshopify.com, resend.com, SHOPIFY_STORE_DOMAIN) live only in src/lib/shopify.ts and src/lib/email.ts.
- *   5. src/security/generated/classifications.ts is up to date with prisma/schema.prisma.
- *   6. (Advisory always.) Every `dangerously_allow_all_data_access: true` in
- *      the registry is reported by endpoint so each one stays under perpetual
- *      review — the field-level stripper is bypassed and only `authorize`
- *      gates access.
+ *   3. No route file calls NextResponse.json / Response.json directly —
+ *      everything must go through handler(). Allow-listed: api-response.ts
+ *      (the apiError helper) and src/security/handler.ts (the framework).
+ *   4. Calls to third-party hosts (shopify.com, myshopify.com, resend.com,
+ *      SHOPIFY_STORE_DOMAIN) live only in src/lib/shopify.ts and
+ *      src/lib/email.ts.
+ *   5. src/security/generated/classifications.ts is up to date with
+ *      prisma/schema.prisma.
  *
- * Uses string/regex parsing — fast, no AST library to load. Trade-off: a
- * sufficiently-obfuscated bypass slips past, but this lint is one layer
- * among three (CODEOWNERS + contract tests + lint).
+ * Advisory check (always emitted as warnings, never blocks the build):
+ *   6. Every `dangerously_allow_all_data_access: true` in the registry is
+ *      reported by endpoint so each one stays under perpetual review — the
+ *      field-level stripper is bypassed and only `authorize` gates access.
  *
- * Run with: npm run check-route-coverage
- * Exit code in default (advisory) mode: 0 even on errors (warnings printed).
- * Pass --strict to fail the build on any error.
+ * Pass --advisory to demote errors to warnings (useful while iterating
+ * locally on a registry change). The default is blocking.
+ *
+ * Uses string/regex parsing — fast, no AST library to load.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -28,7 +32,7 @@ import { execSync } from 'node:child_process';
 const REPO_ROOT = path.resolve(__dirname, '..');
 const API_DIR = path.join(REPO_ROOT, 'src/app/api');
 const SRC_DIR = path.join(REPO_ROOT, 'src');
-const ADVISORY_MODE = !process.argv.includes('--strict');
+const ADVISORY_MODE = process.argv.includes('--advisory');
 
 const ALLOWED_DIRECT_JSON_FILES = new Set<string>([
     path.join(REPO_ROOT, 'src/lib/api-response.ts'),
@@ -54,17 +58,6 @@ interface Finding {
 const findings: Finding[] = [];
 function report(severity: Finding['severity'], rule: string, file: string, message: string, line?: number) {
     findings.push({ severity, rule, file, line, message });
-}
-
-function loadMigratedRoutes(): Set<string> {
-    const file = path.join(REPO_ROOT, 'scripts/migrated-routes.txt');
-    if (!fs.existsSync(file)) return new Set();
-    return new Set(
-        fs.readFileSync(file, 'utf-8')
-            .split('\n')
-            .map(l => l.trim())
-            .filter(l => l && !l.startsWith('#')),
-    );
 }
 
 function findRouteFiles(dir: string, out: string[] = []): string[] {
@@ -108,10 +101,9 @@ function loadRegisteredEndpoints(): { routes: Set<string>; outbounds: Set<string
     while ((m = outboundRe.exec(content)) !== null) outbounds.add(m[1]);
 
     // Surface every dangerously_allow_all_data_access use as an advisory
-    // warning so each one stays visible in CI output until the maintainer
-    // explicitly silences it via audit. Split the file at defineRoute /
-    // defineOutbound boundaries so we can attribute the flag to the right
-    // endpoint.
+    // warning so each one stays visible in CI output. Split the file at
+    // defineRoute / defineOutbound boundaries so we can attribute the flag
+    // to the right endpoint.
     const boundaryRe = /\b(?:defineRoute|defineOutbound)\s*\(/g;
     const positions: number[] = [];
     while ((m = boundaryRe.exec(content)) !== null) positions.push(m.index);
@@ -155,7 +147,6 @@ function checkGeneratedFileFresh() {
 }
 
 function main() {
-    const migrated = loadMigratedRoutes();
     const { routes: registered } = loadRegisteredEndpoints();
     const routeFiles = findRouteFiles(API_DIR);
 
@@ -165,35 +156,27 @@ function main() {
         const content = fs.readFileSync(file, 'utf-8');
         const verbs = extractExportedVerbs(content);
 
-        const migratedVerbs: string[] = [];
         for (const verb of verbs) {
             const key = `${verb} ${endpointPath}`;
             allRouteEndpoints.add(key);
-            if (migrated.has(key)) migratedVerbs.push(verb);
-            if (migrated.has(key) && !registered.has(key)) {
-                report('error', 'missing-registry', file, `migrated route ${key} not in registry`);
+            if (!registered.has(key)) {
+                report('error', 'missing-registry', file,
+                    `${key} has no registry entry — add a defineRoute({...}) in src/security/registry.ts`);
             }
         }
 
-        const fullyMigrated = verbs.length > 0 && verbs.every(v => migrated.has(`${v} ${endpointPath}`));
-        if (fullyMigrated && !ALLOWED_DIRECT_JSON_FILES.has(file)) {
+        // No route file may call NextResponse.json / Response.json directly —
+        // the handler() owns response emission. Allow-listed: api-response.ts
+        // (apiError helper) and the framework's handler.ts.
+        if (!ALLOWED_DIRECT_JSON_FILES.has(file)) {
             const lines = content.split('\n');
             lines.forEach((line, i) => {
                 if (JSON_CALL_RE.test(line) && !line.trim().startsWith('//')) {
                     report('error', 'direct-json', file,
-                        `migrated route uses ${RegExp.$1}.json() — return ModelBag from handler() body instead`,
+                        `route uses ${RegExp.$1}.json() — return a ModelBag from handler() body instead`,
                         i + 1);
                 }
             });
-        }
-
-        if (verbs.length > 0 && migratedVerbs.length === 0) {
-            report('warn', 'unmigrated', file,
-                `route ${verbs.join('/')} ${endpointPath} has not yet been migrated to handler()`);
-        } else if (verbs.length > migratedVerbs.length) {
-            const unmigrated = verbs.filter(v => !migrated.has(`${v} ${endpointPath}`));
-            report('warn', 'partially-migrated', file,
-                `verbs ${unmigrated.join(',')} of ${endpointPath} not yet migrated`);
         }
     }
 
@@ -233,7 +216,7 @@ function main() {
 
     if (errors.length > 0) {
         if (ADVISORY_MODE) {
-            console.log('(advisory mode — exiting 0; pass --strict to fail the build)');
+            console.log('(advisory mode — exiting 0; default mode would fail the build)');
             process.exit(0);
         }
         process.exit(1);

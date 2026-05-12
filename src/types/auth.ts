@@ -2,7 +2,8 @@ import type { SessionUser } from './participant';
 
 /**
  * Business role field names from the Participant model.
- * Used by withAuth() to check roles directly via user[role] === true.
+ * Used by `defineRoute({ authorize: { anyRole: [...] } })` to check roles
+ * via user[role] === true.
  */
 export type BusinessRole = 'sysadmin' | 'boardMember' | 'keyholder' | 'shopSteward';
 
