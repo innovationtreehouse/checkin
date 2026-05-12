@@ -10,6 +10,7 @@
     "test": "jest --runInBand --forceExit",
     "test:ci": "jest --ci --runInBand --forceExit",
     "test:integration": "jest --ci --runInBand --forceExit --testPathIgnorePatterns=/node_modules/ --testRegex \"\\.integration\\.test\\.[jt]sx?$\"",
+    "check-route-coverage": "ts-node --project scripts/tsconfig.json scripts/check-route-coverage.ts",
     "prepare": "husky"
   },
   "prisma": {
@@ -34,6 +35,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@prisma/generator-helper": "^7.5.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/jest": "^30.0.0",
@@ -55,6 +57,7 @@
     "prisma": "^7.4.1",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.6",
+    "ts-morph": "^25.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5"
   },
