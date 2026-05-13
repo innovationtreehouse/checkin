@@ -918,10 +918,9 @@ defineOutbound({
     // No request body crosses the network — we hand a URL to the client
     // who then redirects. The participant + program IDs travel embedded
     // in that URL (query string), so we route through outboundCall() to
-    // surface the egress in the policy. Only 'public' tier fields ever
-    // make it into the URL (program.id, program.shopifyNonMemberVariantId,
-    // participant.id).
-    tiers: ['public'],
+    // surface the egress in the policy. program.id /
+    // shopifyNonMemberVariantId are 'public'; participant.id is 'pii'.
+    tiers: ['public', 'pii'],
 });
 
 defineOutbound({

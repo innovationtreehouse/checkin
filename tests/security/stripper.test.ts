@@ -146,19 +146,23 @@ describe('stripValue — Participant', () => {
 
     it('strips pii on non-self row (THE buggy-handler case)', () => {
         // Simulates a contributor handler that fetched the wrong row.
+        // id and name are pii, so the stripper blocks them on non-self rows
+        // alongside email/phone — the original PR-#129-class leak is closed
+        // at the field-tier level rather than relying on view discipline.
         const row = { id: 7, name: 'Other', email: 'leaked@x.com', phone: '555' };
         const out = stripValue('Participant', row, tokens, callerCtx) as Record<string, unknown>;
-        expect(out.id).toBe(7);
-        expect(out.name).toBe('Other');
+        expect(out.id).toBeUndefined();
+        expect(out.name).toBeUndefined();
         expect(out.email).toBeUndefined();
         expect(out.phone).toBeUndefined();
     });
 
-    it('public-only view strips even name without "public" token', () => {
-        const row = { id: 5, name: 'Me' };
+    it('public-tier field stripped without "public" token', () => {
+        // boardMember is the lone public-tier field on Participant; id/name/etc.
+        // are pii or stricter and pass through other tokens.
+        const row = { id: 5, boardMember: true };
         const out = stripValue('Participant', row, ['their_own:pii'], callerCtx) as Record<string, unknown>;
-        expect(out.id).toBeUndefined();
-        expect(out.name).toBeUndefined();
+        expect(out.boardMember).toBeUndefined();
     });
 
     it('everyones:pii exposes pii on every row regardless of caller', () => {
@@ -182,13 +186,15 @@ describe('stripValue — Participant', () => {
     });
 
     it('their_households grants household members on self/household rows', () => {
+        // image is personal; homeAddress is now pii so this test uses image
+        // to exercise the their_households:personal grant.
         const homeCtx = ctx({ selfId: 5, householdId: 2 });
-        const sibling = { id: 6, name: 'Sib', householdId: 2, homeAddress: '123 St' };
+        const sibling = { id: 6, name: 'Sib', householdId: 2, image: '/sib.jpg' };
         const out = stripValue('Participant', sibling, ['their_households:personal', 'public'], homeCtx) as Record<string, unknown>;
-        expect(out.homeAddress).toBe('123 St');
-        const stranger = { id: 7, name: 'X', householdId: 99, homeAddress: '456 St' };
+        expect(out.image).toBe('/sib.jpg');
+        const stranger = { id: 7, name: 'X', householdId: 99, image: '/x.jpg' };
         const out2 = stripValue('Participant', stranger, ['their_households:personal', 'public'], homeCtx) as Record<string, unknown>;
-        expect(out2.homeAddress).toBeUndefined();
+        expect(out2.image).toBeUndefined();
     });
 });
 
@@ -213,9 +219,11 @@ describe('stripValue — arrays', () => {
             { id: 7, name: 'them', email: 'them@x.com' },
         ];
         const out = stripValue('Participant', rows, tokens, callerCtx) as Record<string, unknown>[];
+        // Self row sees its own pii (email, name); other row sees neither.
         expect(out[0].email).toBe('me@x.com');
+        expect(out[0].name).toBe('me');
         expect(out[1].email).toBeUndefined();
-        expect(out[1].name).toBe('them');
+        expect(out[1].name).toBeUndefined();
     });
 });
 
@@ -281,8 +289,10 @@ describe('stripValue — edge cases', () => {
 
 describe('stripBag', () => {
     it('drops unknown-model bag entries with a warn', () => {
-        const out = stripBag({ Participant: { id: 5, name: 'Me' }, NotAModel: { foo: 'bar' } }, ['public'], ctx({ selfId: 5 }));
-        expect(out.Participant).toEqual({ id: 5, name: 'Me' });
+        // Tool fields are all public; used here to keep the test focused on
+        // unknown-model dropping rather than tier semantics.
+        const out = stripBag({ Tool: { id: 1, name: 'Saw' }, NotAModel: { foo: 'bar' } }, ['public'], ctx({ selfId: 5 }));
+        expect(out.Tool).toEqual({ id: 1, name: 'Saw' });
         expect(out.NotAModel).toBeUndefined();
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("'NotAModel'"));
     });

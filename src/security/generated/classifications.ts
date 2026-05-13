@@ -3,20 +3,20 @@
 
 export const classifications = {
     Participant: {
-        id: 'public',
+        id: 'pii',
         googleId: 'pii',
         email: 'pii',
         phone: 'pii',
-        name: 'public',
+        name: 'pii',
         emailVerified: 'internal',
-        image: 'public',
+        image: 'personal',
         dob: 'pii',
-        homeAddress: 'personal',
+        homeAddress: 'pii',
         lastWaiverSign: 'internal',
         waiverSignedBy: 'internal',
         lastBackgroundCheck: 'internal',
-        notificationSettings: 'personal',
-        householdId: 'public',
+        notificationSettings: 'internal',
+        householdId: 'personal',
         sysadmin: 'internal',
         boardMember: 'public',
         keyholder: 'internal',
@@ -28,7 +28,7 @@ export const classifications = {
         safetyGuide: 'public',
     },
     ToolStatus: {
-        userId: 'public',
+        userId: 'pii',
         toolId: 'public',
         level: 'internal',
     },
@@ -40,8 +40,8 @@ export const classifications = {
         emergencyContactPhone: 'personal',
     },
     HouseholdLead: {
-        householdId: 'public',
-        participantId: 'public',
+        householdId: 'personal',
+        participantId: 'pii',
     },
     Membership: {
         id: 'public',
@@ -50,8 +50,8 @@ export const classifications = {
         active: 'public',
         latestShopifyReceipt: 'personal',
         latestDocusign: 'personal',
-        householdId: 'public',
-        volunteerId: 'public',
+        householdId: 'personal',
+        volunteerId: 'pii',
         corporateId: 'public',
     },
     Corporation: {
@@ -61,16 +61,16 @@ export const classifications = {
     },
     CorporationLead: {
         corporationId: 'public',
-        participantId: 'public',
+        participantId: 'pii',
     },
     CorporationMember: {
         corporationId: 'public',
-        participantId: 'public',
+        participantId: 'pii',
     },
     Program: {
         id: 'public',
         name: 'public',
-        leadMentorId: 'public',
+        leadMentorId: 'pii',
         begin: 'public',
         end: 'public',
         phase: 'public',
@@ -88,12 +88,12 @@ export const classifications = {
     },
     ProgramVolunteer: {
         programId: 'public',
-        participantId: 'public',
+        participantId: 'pii',
         isCore: 'internal',
     },
     ProgramParticipant: {
         programId: 'public',
-        participantId: 'public',
+        participantId: 'pii',
         status: 'public',
         paymentPlanRequested: 'personal',
         pendingSince: 'internal',
@@ -107,7 +107,7 @@ export const classifications = {
     },
     FeePayment: {
         feeId: 'public',
-        participantId: 'public',
+        participantId: 'pii',
         paidOn: 'personal',
         shopifyLink: 'personal',
         quickBooksInvoice: 'personal',
@@ -127,7 +127,7 @@ export const classifications = {
     },
     RSVP: {
         eventId: 'public',
-        participantId: 'public',
+        participantId: 'pii',
         status: 'public',
     },
     RawBadgeEvent: {
@@ -138,7 +138,7 @@ export const classifications = {
     },
     Visit: {
         id: 'public',
-        participantId: 'public',
+        participantId: 'pii',
         arrived: 'personal',
         departed: 'personal',
         associatedEventId: 'public',

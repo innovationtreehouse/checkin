@@ -57,7 +57,7 @@ enum ProgramParticipantStatus {
 }
 
 model Participant {
-  /// @sensitivity:public
+  /// @sensitivity:pii
   id            Int       @id @default(autoincrement())
   /// @sensitivity:pii
   googleId      String?   @unique
@@ -65,18 +65,18 @@ model Participant {
   email         String?   @unique
   /// @sensitivity:pii
   phone         String?
-  /// @sensitivity:public
+  /// @sensitivity:pii
   name          String?
   /// @sensitivity:internal
   emailVerified DateTime?
-  /// @sensitivity:public
+  /// @sensitivity:personal
   image         String?
   accounts      Account[]
   sessions      Session[]
 
   /// @sensitivity:pii
   dob                 DateTime?
-  /// @sensitivity:personal
+  /// @sensitivity:pii
   homeAddress         String?
   /// @sensitivity:internal
   lastWaiverSign      DateTime?
@@ -84,10 +84,10 @@ model Participant {
   waiverSignedBy      Int?
   /// @sensitivity:internal
   lastBackgroundCheck DateTime?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   notificationSettings Json?
 
-  /// @sensitivity:public
+  /// @sensitivity:personal
   householdId Int?
   household   Household? @relation(fields: [householdId], references: [id])
 
@@ -126,7 +126,7 @@ model Tool {
 }
 
 model ToolStatus {
-  /// @sensitivity:public
+  /// @sensitivity:pii
   userId Int
   /// @sensitivity:public
   toolId Int
@@ -157,9 +157,9 @@ model Household {
 }
 
 model HouseholdLead {
-  /// @sensitivity:public
+  /// @sensitivity:personal
   householdId   Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
 
   household   Household   @relation(fields: [householdId], references: [id])
@@ -182,11 +182,11 @@ model Membership {
   /// @sensitivity:personal
   latestDocusign       String?
 
-  /// @sensitivity:public
+  /// @sensitivity:personal
   householdId Int?
   household   Household? @relation(fields: [householdId], references: [id])
 
-  /// @sensitivity:public
+  /// @sensitivity:pii
   volunteerId Int?
   volunteer   Participant? @relation("ParticipantMemberships", fields: [volunteerId], references: [id])
 
@@ -211,7 +211,7 @@ model Corporation {
 model CorporationLead {
   /// @sensitivity:public
   corporationId Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
@@ -223,7 +223,7 @@ model CorporationLead {
 model CorporationMember {
   /// @sensitivity:public
   corporationId Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
@@ -237,7 +237,7 @@ model Program {
   id           Int       @id @default(autoincrement())
   /// @sensitivity:public
   name            String
-  /// @sensitivity:public
+  /// @sensitivity:pii
   leadMentorId    Int?
   leadMentor      Participant? @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
   /// @sensitivity:public
@@ -279,7 +279,7 @@ model Program {
 model ProgramVolunteer {
   /// @sensitivity:public
   programId     Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
   /// @sensitivity:internal
   isCore        Boolean @default(false)
@@ -293,7 +293,7 @@ model ProgramVolunteer {
 model ProgramParticipant {
   /// @sensitivity:public
   programId     Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
   /// @sensitivity:public
   status        ProgramParticipantStatus @default(PENDING)
@@ -327,7 +327,7 @@ model Fee {
 model FeePayment {
   /// @sensitivity:public
   feeId             Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId     Int
   /// @sensitivity:personal
   paidOn            DateTime? @default(now())
@@ -376,7 +376,7 @@ model Event {
 model RSVP {
   /// @sensitivity:public
   eventId       Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
   /// @sensitivity:public
   status        RSVPStatus
@@ -405,7 +405,7 @@ model RawBadgeEvent {
 model Visit {
   /// @sensitivity:public
   id                Int       @id @default(autoincrement())
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId     Int
   /// @sensitivity:personal
   arrived           DateTime
