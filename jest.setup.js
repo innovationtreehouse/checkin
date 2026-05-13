@@ -51,3 +51,38 @@ jest.mock('next-auth/next', () => ({
 jest.mock('@/lib/auth-options', () => ({
   authOptions: {},
 }));
+
+// Default safety net for `@/lib/prisma`: in unit tests we should never hit a
+// real database. Suites that legitimately need DB behavior live in
+// *.integration.test.ts (excluded from `npm run test:ci`). Suites that need
+// fine-grained Prisma mocks should `jest.mock('@/lib/prisma', ...)` themselves;
+// that per-file mock will override this default. Tests that monkey-patch
+// methods on the default mock (e.g. `prisma.event.findMany = jest.fn()`) work
+// because each model is a real object that accepts assignment.
+jest.mock('@/lib/prisma', () => {
+  const rejectFn = () => () => Promise.reject(new Error(
+    'Unit tests must not call the real Prisma client. ' +
+    "Either jest.mock('@/lib/prisma', ...) in this test, " +
+    'or rename the file to *.integration.test.ts and run `npm run test:integration`.'
+  ));
+  const models = new Map();
+  const handler = {
+    get(_target, prop) {
+      if (!models.has(prop)) {
+        // Each method access on an unset key returns a rejecting function so
+        // accidental calls fail loudly; explicit assignment overrides it.
+        models.set(prop, new Proxy({}, {
+          get(modelTarget, methodProp) {
+            if (methodProp in modelTarget) return modelTarget[methodProp];
+            return rejectFn();
+          },
+        }));
+      }
+      return models.get(prop);
+    },
+  };
+  return {
+    __esModule: true,
+    default: new Proxy({}, handler),
+  };
+});
