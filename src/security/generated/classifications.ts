@@ -132,15 +132,15 @@ export const classifications = {
     },
     RawBadgeEvent: {
         id: 'internal',
-        participantId: 'internal',
-        time: 'personal',
-        location: 'personal',
+        participantId: 'pii',
+        time: 'internal',
+        location: 'internal',
     },
     Visit: {
-        id: 'public',
+        id: 'personal',
         participantId: 'pii',
-        arrived: 'personal',
-        departed: 'personal',
+        arrived: 'internal',
+        departed: 'internal',
         associatedEventId: 'public',
     },
     AuditLog: {

@@ -390,11 +390,11 @@ model RSVP {
 model RawBadgeEvent {
   /// @sensitivity:internal
   id            Int      @id @default(autoincrement())
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   participantId Int
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   time          DateTime @default(now())
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   location      String?
 
   participant Participant @relation(fields: [participantId], references: [id])
@@ -403,13 +403,13 @@ model RawBadgeEvent {
 }
 
 model Visit {
-  /// @sensitivity:public
+  /// @sensitivity:personal
   id                Int       @id @default(autoincrement())
   /// @sensitivity:pii
   participantId     Int
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   arrived           DateTime
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   departed          DateTime?
   /// @sensitivity:public
   associatedEventId Int?
