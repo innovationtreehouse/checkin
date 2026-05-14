@@ -156,7 +156,7 @@ export const classifications = {
     },
     Account: {
         id: 'internal',
-        userId: 'internal',
+        userId: 'pii',
         type: 'internal',
         provider: 'internal',
         providerAccountId: 'internal',
@@ -171,7 +171,7 @@ export const classifications = {
     Session: {
         id: 'internal',
         sessionToken: 'secret',
-        userId: 'internal',
+        userId: 'pii',
         expires: 'internal',
     },
     VerificationToken: {

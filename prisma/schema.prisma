@@ -444,7 +444,7 @@ model AuditLog {
 model Account {
   /// @sensitivity:internal
   id                String  @id @default(cuid())
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   userId            Int     @map("participant_id")
   /// @sensitivity:internal
   type              String
@@ -477,7 +477,7 @@ model Session {
   id           String      @id @default(cuid())
   /// @sensitivity:secret
   sessionToken String      @unique
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   userId       Int         @map("participant_id")
   /// @sensitivity:internal
   expires      DateTime
