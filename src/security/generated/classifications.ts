@@ -23,13 +23,13 @@ export const classifications = {
         shopSteward: 'internal',
     },
     Tool: {
-        id: 'public',
-        name: 'public',
-        safetyGuide: 'public',
+        id: 'internal',
+        name: 'internal',
+        safetyGuide: 'internal',
     },
     ToolStatus: {
         userId: 'pii',
-        toolId: 'public',
+        toolId: 'internal',
         level: 'internal',
     },
     Household: {

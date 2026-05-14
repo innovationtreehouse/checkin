@@ -290,10 +290,10 @@ describe('stripValue — edge cases', () => {
 
 describe('stripBag', () => {
     it('drops unknown-model bag entries with a warn', () => {
-        // Tool fields are all public; used here to keep the test focused on
+        // Fee fields are all public; used here to keep the test focused on
         // unknown-model dropping rather than tier semantics.
-        const out = stripBag({ Tool: { id: 1, name: 'Saw' }, NotAModel: { foo: 'bar' } }, ['public'], ctx({ selfId: 5 }));
-        expect(out.Tool).toEqual({ id: 1, name: 'Saw' });
+        const out = stripBag({ Fee: { id: 1, name: 'Materials' }, NotAModel: { foo: 'bar' } }, ['public'], ctx({ selfId: 5 }));
+        expect(out.Fee).toEqual({ id: 1, name: 'Materials' });
         expect(out.NotAModel).toBeUndefined();
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("'NotAModel'"));
     });

@@ -116,11 +116,11 @@ model Participant {
 }
 
 model Tool {
-  /// @sensitivity:public
+  /// @sensitivity:internal
   id           Int          @id @default(autoincrement())
-  /// @sensitivity:public
+  /// @sensitivity:internal
   name         String
-  /// @sensitivity:public
+  /// @sensitivity:internal
   safetyGuide  String?
   toolStatuses ToolStatus[]
 }
@@ -128,7 +128,7 @@ model Tool {
 model ToolStatus {
   /// @sensitivity:pii
   userId Int
-  /// @sensitivity:public
+  /// @sensitivity:internal
   toolId Int
   /// @sensitivity:internal
   level  ToolLevel
