@@ -329,13 +329,13 @@ model FeePayment {
   feeId             Int
   /// @sensitivity:pii
   participantId     Int
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   paidOn            DateTime? @default(now())
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   shopifyLink       String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   quickBooksInvoice String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   customNote        String?
 
   fee         Fee         @relation(fields: [feeId], references: [id])

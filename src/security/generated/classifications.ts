@@ -108,10 +108,10 @@ export const classifications = {
     FeePayment: {
         feeId: 'public',
         participantId: 'pii',
-        paidOn: 'personal',
-        shopifyLink: 'personal',
-        quickBooksInvoice: 'personal',
-        customNote: 'personal',
+        paidOn: 'internal',
+        shopifyLink: 'internal',
+        quickBooksInvoice: 'internal',
+        customNote: 'internal',
     },
     Event: {
         id: 'public',
