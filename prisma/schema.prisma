@@ -140,15 +140,15 @@ model ToolStatus {
 }
 
 model Household {
-  /// @sensitivity:public
+  /// @sensitivity:personal
   id      Int     @id @default(autoincrement())
-  /// @sensitivity:public
+  /// @sensitivity:pii
   name    String?
-  /// @sensitivity:personal
+  /// @sensitivity:pii
   address String?
-  /// @sensitivity:personal
+  /// @sensitivity:pii
   emergencyContactName  String?
-  /// @sensitivity:personal
+  /// @sensitivity:pii
   emergencyContactPhone String?
 
   participants Participant[]

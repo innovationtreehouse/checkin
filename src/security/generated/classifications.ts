@@ -33,11 +33,11 @@ export const classifications = {
         level: 'internal',
     },
     Household: {
-        id: 'public',
-        name: 'public',
-        address: 'personal',
-        emergencyContactName: 'personal',
-        emergencyContactPhone: 'personal',
+        id: 'personal',
+        name: 'pii',
+        address: 'pii',
+        emergencyContactName: 'pii',
+        emergencyContactPhone: 'pii',
     },
     HouseholdLead: {
         householdId: 'personal',

@@ -59,7 +59,7 @@ export const POST = handler('POST /api/household', async ({ auth }) => {
         }
     });
 
-    return { Household: household };
+    return { household };
 });
 
 export const PATCH = handler('PATCH /api/household', async ({ req, auth }) => {

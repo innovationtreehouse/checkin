@@ -230,7 +230,8 @@ describe('stripValue — arrays', () => {
 describe('stripValue — nested relations', () => {
     it('recursively strips household relation on a Participant', () => {
         const callerCtx = ctx({ selfId: 5, householdId: 2 });
-        const tokens = ['their_own:pii', 'public'] as const; // no household:personal granted
+        // their_households:personal grants id (personal) but not name/address (pii).
+        const tokens = ['their_own:pii', 'their_households:personal', 'public'] as const;
         const row = {
             id: 5,
             name: 'Me',
@@ -241,13 +242,13 @@ describe('stripValue — nested relations', () => {
         expect(out.email).toBe('me@x.com');
         const household = out.household as Record<string, unknown>;
         expect(household.id).toBe(2);
-        expect(household.name).toBe('Home');
-        expect(household.address).toBeUndefined(); // personal — no token grants it
+        expect(household.name).toBeUndefined(); // pii — needs their_households:pii
+        expect(household.address).toBeUndefined(); // pii — needs their_households:pii
     });
 
-    it('grants household.address when their_households:personal is in the view', () => {
+    it('grants household.address when their_households:pii is in the view', () => {
         const callerCtx = ctx({ selfId: 5, householdId: 2 });
-        const tokens = ['their_own:pii', 'their_households:personal', 'public'] as const;
+        const tokens = ['their_own:pii', 'their_households:pii', 'public'] as const;
         const row = {
             id: 5,
             email: 'me@x.com',
@@ -303,7 +304,7 @@ describe('stripBag', () => {
                 Participant: { id: 5, name: 'Me', email: 'me@x.com' },
                 Household: { id: 2, name: 'Home', address: 'street' },
             },
-            ['their_own:pii', 'their_households:personal', 'public'],
+            ['their_own:pii', 'their_households:pii', 'their_households:personal', 'public'],
             ctx({ selfId: 5, householdId: 2 }),
         );
         expect((out.Participant as Record<string, unknown>).email).toBe('me@x.com');

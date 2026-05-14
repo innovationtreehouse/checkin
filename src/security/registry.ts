@@ -276,13 +276,18 @@ defineRoute({
 defineRoute({
     endpoint: 'POST /api/household',
     authorize: 'authenticated',
-    envelope: 'household',
-    orderedView: [
-        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
-        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
-        ['authenticated', ['their_own:pii', 'their_own:personal',
-                           'their_households:pii', 'their_households:personal', 'public']],
-    ],
+    envelope: null,
+    orderedView: [],
+    // Write-only ack: returns {household: <just-created household>} for
+    // the caller's own create. The session's householdId hasn't been
+    // refreshed yet within this request, so the stripper's
+    // `their_households` scope can't recognize the row as the caller's
+    // own — without this bypass, the id (personal) and name/address (pii)
+    // get stripped out of the response to the very user who just created
+    // them. The handler gates creation on the caller having no existing
+    // household and connects them as participant + lead, so the returned
+    // row is by construction owned by the caller.
+    dangerously_allow_all_data_access: true,
 });
 
 defineRoute({
