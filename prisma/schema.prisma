@@ -295,7 +295,7 @@ model ProgramParticipant {
   programId     Int
   /// @sensitivity:pii
   participantId Int
-  /// @sensitivity:public
+  /// @sensitivity:internal
   status        ProgramParticipantStatus @default(PENDING)
   /// @sensitivity:personal
   paymentPlanRequested Boolean @default(false)

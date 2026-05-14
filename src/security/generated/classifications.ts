@@ -94,7 +94,7 @@ export const classifications = {
     ProgramParticipant: {
         programId: 'public',
         participantId: 'pii',
-        status: 'public',
+        status: 'internal',
         paymentPlanRequested: 'personal',
         pendingSince: 'internal',
     },
