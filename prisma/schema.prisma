@@ -198,9 +198,9 @@ model Membership {
 model Corporation {
   /// @sensitivity:public
   id           Int     @id @default(autoincrement())
-  /// @sensitivity:pii
+  /// @sensitivity:internal
   primaryEmail String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   address      String?
 
   leads       CorporationLead[]

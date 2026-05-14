@@ -56,8 +56,8 @@ export const classifications = {
     },
     Corporation: {
         id: 'public',
-        primaryEmail: 'pii',
-        address: 'personal',
+        primaryEmail: 'internal',
+        address: 'internal',
     },
     CorporationLead: {
         corporationId: 'public',
