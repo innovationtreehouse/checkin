@@ -128,7 +128,7 @@ export const classifications = {
     RSVP: {
         eventId: 'public',
         participantId: 'pii',
-        status: 'public',
+        status: 'personal',
     },
     RawBadgeEvent: {
         id: 'internal',

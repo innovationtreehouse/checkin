@@ -378,7 +378,7 @@ model RSVP {
   eventId       Int
   /// @sensitivity:pii
   participantId Int
-  /// @sensitivity:public
+  /// @sensitivity:personal
   status        RSVPStatus
 
   event       Event       @relation(fields: [eventId], references: [id])
