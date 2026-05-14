@@ -169,17 +169,17 @@ model HouseholdLead {
 }
 
 model Membership {
-  /// @sensitivity:public
+  /// @sensitivity:internal
   id                   Int            @id @default(autoincrement())
-  /// @sensitivity:public
+  /// @sensitivity:internal
   since                DateTime       @default(now())
-  /// @sensitivity:public
+  /// @sensitivity:internal
   type                 MembershipType
-  /// @sensitivity:public
+  /// @sensitivity:internal
   active               Boolean        @default(true)
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   latestShopifyReceipt String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   latestDocusign       String?
 
   /// @sensitivity:personal
