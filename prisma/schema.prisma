@@ -425,15 +425,15 @@ model AuditLog {
   id                      Int         @id @default(autoincrement())
   /// @sensitivity:internal
   time                    DateTime    @default(now())
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   actorId                 Int
   /// @sensitivity:internal
   action                  AuditAction
   /// @sensitivity:internal
   tableName               String
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   affectedEntityId        Int
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   secondaryAffectedEntity Int?
   /// @sensitivity:internal
   oldData                 Json?
