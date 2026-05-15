@@ -12,3 +12,8 @@
 **Vulnerability:** The application was using the feature flag `NEXT_PUBLIC_DEV_AUTH` to enable development-only personas and login mechanisms. If this flag were accidentally set to `true` in a production environment (e.g. through misconfiguration in Vercel), it would expose mock administrative users and allow unauthorized login without a password.
 **Learning:** Development feature flags that bypass authentication or authorization are dangerous. They must never be trusted solely by their value in environment variables.
 **Prevention:** Always pair development-only feature flags (like `NEXT_PUBLIC_DEV_AUTH`) with a strict environment assertion: `process.env.NODE_ENV !== 'production'`. This provides defense-in-depth, guaranteeing that even if a flag is misconfigured, the potentially dangerous feature cannot be enabled in the production build.
+
+## 2024-05-24 - Sensitive Data Exposure in Email Logging
+**Vulnerability:** The application logged the entire raw HTML body of emails to the console when running without a Resend API key.
+**Learning:** Email bodies often contain highly sensitive data, such as Personally Identifiable Information (PII), password reset links, or magic login URLs. Logging this data to the console exposes it to server logs and any third-party logging services, creating a severe data leak risk.
+**Prevention:** To prevent sensitive information leakage, the `sendEmail` utility in `src/lib/email.ts` must never log the `html` email body to the console; log only high-level metadata like recipient (`to`) and `subject` for troubleshooting purposes in the absence of a configured `RESEND_API_KEY`.

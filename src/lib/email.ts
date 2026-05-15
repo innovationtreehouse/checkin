@@ -13,7 +13,12 @@ const FROM_ADDRESS = config.emailFrom();
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
     if (!resend) {
         console.log(`[Email (no RESEND_API_KEY)] To: ${to} | Subject: ${subject}`);
-        console.log(`[Email Body]: ${html}`);
+        // SECURITY: Do not log the raw `html` body to the console in production to prevent
+        // sensitive data (e.g., magic links, PII) from leaking into server logs.
+        // We only allow this logging in development mode for debugging.
+        if (process.env.NODE_ENV === 'development') {
+            console.log(`[Email Body]: ${html}`);
+        }
         return false;
     }
 
