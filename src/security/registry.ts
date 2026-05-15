@@ -52,6 +52,209 @@ defineRoute({
     ],
 });
 
+// ─── Admin routes ──────────────────────────────────────────────────────────
+
+defineRoute({
+    endpoint: 'GET /api/admin/audit',
+    authorize: { anyRole: ['sysadmin'] },
+    envelope: 'logs',
+    orderedView: [
+        ['sysadmin', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/badges',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'badges',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/orphans',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'orphans',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/roles',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participants',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/admin/roles',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'user',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/visits',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'visits',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PATCH /api/admin/visits',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'visit',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/emergency-contacts',
+    authorize: { anyRole: ['sysadmin', 'boardMember', 'keyholder'] },
+    envelope: 'households',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['keyholder',   ['everyones:pii', 'everyones:personal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/households',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'households',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/admin/households',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'membership',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/participants/search',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participants',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/participants/merge/analyze',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participants',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/admin/participants',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participant',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'PUT /api/admin/participants/[id]',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participant',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/admin/participants/[id]/household',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participant',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'POST /api/admin/participants/merge',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'participant',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+// ─── Admin routes: aggregated/computed responses (stripper bypassed) ──────
+// These return computed values (percentile stats, parse previews, import
+// counts) rather than model rows, so there's nothing for the field-level
+// stripper to gate. They opt in via `dangerously_allow_all_data_access:
+// true` (snake_case intentional — same trick as React's dangerouslySet-
+// InnerHTML, surfaces the risk in every review). `authorize` is the only
+// enforcement — only sysadmin / board (and keyholders for system-health)
+// can call them.
+
+defineRoute({
+    endpoint: 'GET /api/admin/system-health',
+    authorize: { anyRole: ['sysadmin', 'boardMember', 'keyholder'] },
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/admin/trends',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'POST /api/admin/participants/import',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'POST /api/admin/participants/import/preview',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({

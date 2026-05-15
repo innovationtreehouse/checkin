@@ -124,8 +124,27 @@ export interface RouteSpec {
      * and uses the first role the caller satisfies. Order matters and is
      * part of the policy — a CODEOWNERS reviewer should treat reorders as
      * meaningful.
+     *
+     * For `dangerously_allow_all_data_access: true` routes, pass `[]` — the
+     * field-level stripper is bypassed so token grants don't apply.
+     * `authorize` is the only enforcement.
      */
     orderedView: readonly OrderedViewEntry[];
+    /**
+     * Bypass the stripper. The handler's return value is shipped verbatim
+     * (with envelope wrapping if specified) and `orderedView` is ignored.
+     *
+     * Use only when the response is aggregated or computed data that does
+     * NOT correspond to model rows (e.g., daily percentile stats, parse
+     * previews, import success counts).
+     *
+     * The snake_case name is intentional — it stands out against the
+     * camelCase codebase so every code review surfaces the risk, the same
+     * trick React's `dangerouslySetInnerHTML` uses. The declaration lives
+     * in this CODEOWNERS-gated file, so a contributor cannot silently
+     * bypass the stripper without maintainer review.
+     */
+    dangerously_allow_all_data_access?: boolean;
 }
 
 /**

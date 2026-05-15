@@ -1,102 +1,79 @@
-import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { withAuth } from "@/lib/auth";
+import { handler, badRequest, forbidden, unauthorized } from "@/security/handler";
 
-export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
-    async () => {
-        try {
-            const eighteenYearsAgo = new Date();
-            eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+export const GET = handler('GET /api/admin/roles', async () => {
+    const eighteenYearsAgo = new Date();
+    eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 
-            const participants = await prisma.participant.findMany({
-                where: {
-                    OR: [
-                        { dob: { lte: eighteenYearsAgo } },
-                        { dob: null }
-                    ]
-                },
-                select: {
-                    id: true,
-                    email: true,
-                    name: true,
-                    sysadmin: true,
-                    boardMember: true,
-                    keyholder: true,
-                    shopSteward: true,
-                },
-                orderBy: { name: "asc" },
-            });
-            return NextResponse.json({ participants });
-        } catch (error) {
-            console.error("Error fetching roles:", error);
-            return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    const participants = await prisma.participant.findMany({
+        where: {
+            OR: [
+                { dob: { lte: eighteenYearsAgo } },
+                { dob: null }
+            ]
+        },
+        select: {
+            id: true,
+            email: true,
+            name: true,
+            sysadmin: true,
+            boardMember: true,
+            keyholder: true,
+            shopSteward: true,
+        },
+        orderBy: { name: "asc" },
+    });
+    return { Participant: participants };
+});
+
+export const PATCH = handler('PATCH /api/admin/roles', async ({ req, auth }) => {
+    const body = await req.json();
+    const { targetUserId, ...roleUpdates } = body;
+
+    if (!targetUserId) throw badRequest("Missing 'targetUserId'");
+
+    if (auth.type !== 'session') throw unauthorized();
+
+    // Board Members cannot modify sysadmin privileges
+    if (!auth.user.sysadmin && roleUpdates.sysadmin !== undefined) {
+        throw forbidden("Only Sysadmins can modify sysadmin privileges");
+    }
+
+    const allowedFields = ["sysadmin", "boardMember", "keyholder", "shopSteward"];
+    const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
+    for (const field of allowedFields) {
+        if (roleUpdates[field] !== undefined) {
+            updateData[field] = Boolean(roleUpdates[field]);
         }
     }
-);
 
-export const PATCH = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
-    async (req, auth) => {
-        try {
-            const body = await req.json();
-            const { targetUserId, ...roleUpdates } = body;
-
-            if (!targetUserId) {
-                return NextResponse.json({ error: "Missing 'targetUserId'" }, { status: 400 });
-            }
-
-            // Board Members cannot modify sysadmin privileges
-            if (auth.type === 'session' && !auth.user.sysadmin && roleUpdates.sysadmin !== undefined) {
-                return NextResponse.json(
-                    { error: "Only Sysadmins can modify sysadmin privileges" },
-                    { status: 403 }
-                );
-            }
-
-            const allowedFields = ["sysadmin", "boardMember", "keyholder", "shopSteward"];
-            const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
-            for (const field of allowedFields) {
-                if (roleUpdates[field] !== undefined) {
-                    updateData[field] = Boolean(roleUpdates[field]);
-                }
-            }
-
-            if (Object.keys(updateData).length === 0) {
-                return NextResponse.json({ error: "No valid role fields provided" }, { status: 400 });
-            }
-
-            const updated = await prisma.participant.update({
-                where: { id: targetUserId },
-                data: updateData,
-                select: {
-                    id: true,
-                    email: true,
-                    name: true,
-                    sysadmin: true,
-                    boardMember: true,
-                    keyholder: true,
-                    shopSteward: true,
-                },
-            });
-
-            // Log the role change
-            if (auth.type === 'session') {
-                await prisma.auditLog.create({
-                    data: {
-                        actorId: auth.user.id,
-                        action: "EDIT",
-                        tableName: "Participant",
-                        affectedEntityId: targetUserId,
-                        newData: updateData,
-                    },
-                });
-            }
-
-            return NextResponse.json({ message: "Roles updated successfully", user: updated });
-        } catch (error) {
-            console.error("Error updating role:", error);
-            return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-        }
+    if (Object.keys(updateData).length === 0) {
+        throw badRequest("No valid role fields provided");
     }
-);
+
+    const updated = await prisma.participant.update({
+        where: { id: targetUserId },
+        data: updateData,
+        select: {
+            id: true,
+            email: true,
+            name: true,
+            sysadmin: true,
+            boardMember: true,
+            keyholder: true,
+            shopSteward: true,
+        },
+    });
+
+    await prisma.auditLog.create({
+        data: {
+            actorId: auth.user.id,
+            action: "EDIT",
+            tableName: "Participant",
+            affectedEntityId: targetUserId,
+            newData: updateData,
+        },
+    });
+
+    return { Participant: updated };
+});

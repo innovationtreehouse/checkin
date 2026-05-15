@@ -110,16 +110,21 @@ export function handler<P extends Record<string, string> = Record<string, string
             return apiError('Internal Server Error', 500);
         }
 
-        const stripped = stripBag(bag, viewTokens, callerCtx);
-
         let body: unknown;
-        if (spec.envelope === null) {
-            const keys = Object.keys(stripped);
-            body = keys.length === 1 ? stripped[keys[0]] : stripped;
+        if (spec.dangerously_allow_all_data_access) {
+            // Stripper bypassed — ship the bag verbatim. `authorize` is the
+            // only enforcement; field-level token grants don't apply.
+            body = spec.envelope === null ? bag : { [spec.envelope]: bag };
         } else {
-            const keys = Object.keys(stripped);
-            const payload = keys.length === 1 ? stripped[keys[0]] : stripped;
-            body = { [spec.envelope]: payload };
+            const stripped = stripBag(bag, viewTokens, callerCtx);
+            if (spec.envelope === null) {
+                const keys = Object.keys(stripped);
+                body = keys.length === 1 ? stripped[keys[0]] : stripped;
+            } else {
+                const keys = Object.keys(stripped);
+                const payload = keys.length === 1 ? stripped[keys[0]] : stripped;
+                body = { [spec.envelope]: payload };
+            }
         }
         return NextResponse.json(body, { status: 200 });
     };

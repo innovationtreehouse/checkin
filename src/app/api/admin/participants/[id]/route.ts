@@ -1,59 +1,28 @@
-import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { authenticateRequest } from "@/lib/auth";
+import { handler, badRequest } from "@/security/handler";
 
-export async function PUT(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const auth = await authenticateRequest(request);
-    if (auth.type !== 'session') {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!auth.user.sysadmin && !auth.user.boardMember) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export const PUT = handler<{ id: string }>('PUT /api/admin/participants/[id]', async ({ req, params }) => {
+    const id = parseInt(params.id, 10);
+    if (isNaN(id)) throw badRequest("Invalid participant ID");
+
+    const body = await req.json();
+
+    const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
+    if (body.name !== undefined) updateData.name = body.name;
+    if (body.email !== undefined) updateData.email = body.email;
+    if (body.phone !== undefined) updateData.phone = body.phone;
+
+    if (Object.keys(updateData).length === 0) {
+        throw badRequest("No fields to update provided");
     }
 
-    try {
-        const resolvedParams = await params;
-        const id = parseInt(resolvedParams.id, 10);
-        if (isNaN(id)) {
-            return NextResponse.json({ error: "Invalid participant ID" }, { status: 400 });
+    const updatedParticipant = await prisma.participant.update({
+        where: { id },
+        data: updateData,
+        include: {
+            household: true
         }
+    });
 
-        const body = await request.json();
-        
-        const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
-        if (body.name !== undefined) updateData.name = body.name;
-        if (body.email !== undefined) updateData.email = body.email;
-        if (body.phone !== undefined) updateData.phone = body.phone;
-
-        if (Object.keys(updateData).length === 0) {
-            return NextResponse.json({ error: "No fields to update provided" }, { status: 400 });
-        }
-
-        const updatedParticipant = await prisma.participant.update({
-            where: { id },
-            data: updateData,
-            include: {
-                household: true
-            }
-        });
-
-        const formatted = {
-            id: updatedParticipant.id,
-            name: updatedParticipant.name,
-            email: updatedParticipant.email,
-            phone: updatedParticipant.phone,
-            boardMember: updatedParticipant.boardMember,
-            shopSteward: updatedParticipant.shopSteward,
-            keyholder: updatedParticipant.keyholder,
-            household: updatedParticipant.household,
-        };
-
-        return NextResponse.json({ participant: formatted });
-    } catch (error) {
-        console.error("Failed to update participant:", error);
-        return NextResponse.json({ error: "Failed to update participant" }, { status: 500 });
-    }
-}
+    return { Participant: updatedParticipant };
+});

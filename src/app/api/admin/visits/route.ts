@@ -1,64 +1,43 @@
-import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { withAuth } from "@/lib/auth";
+import { handler, badRequest, unauthorized } from "@/security/handler";
 
-export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
-    async () => {
-        try {
-            const visits = await prisma.visit.findMany({
-                take: 50,
-                orderBy: { arrived: "desc" },
-                include: {
-                    participant: {
-                        select: { email: true, name: true, sysadmin: true, keyholder: true },
-                    },
-                },
-            });
+export const GET = handler('GET /api/admin/visits', async () => {
+    const visits = await prisma.visit.findMany({
+        take: 50,
+        orderBy: { arrived: "desc" },
+        include: {
+            participant: {
+                select: { email: true, name: true, sysadmin: true, keyholder: true },
+            },
+        },
+    });
+    return { Visit: visits };
+});
 
-            return NextResponse.json({ visits });
-        } catch (error) {
-            console.error("Fetch visits error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-        }
-    }
-);
+export const PATCH = handler('PATCH /api/admin/visits', async ({ req, auth }) => {
+    const { visitId, arrived, departed } = await req.json();
 
-export const PATCH = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
-    async (req, auth) => {
-        try {
-            const { visitId, arrived, departed } = await req.json();
+    if (!visitId) throw badRequest("visitId is required.");
 
-            if (!visitId) {
-                return NextResponse.json({ error: "visitId is required." }, { status: 400 });
-            }
+    const updatedVisit = await prisma.visit.update({
+        where: { id: visitId },
+        data: {
+            ...(arrived ? { arrived: new Date(arrived) } : {}),
+            ...(departed ? { departed: new Date(departed) } : {}),
+        },
+    });
 
-            const updatedVisit = await prisma.visit.update({
-                where: { id: visitId },
-                data: {
-                    ...(arrived ? { arrived: new Date(arrived) } : {}),
-                    ...(departed ? { departed: new Date(departed) } : {}),
-                },
-            });
+    // Log the manual edit in the audit trail
+    if (auth.type !== 'session') throw unauthorized();
+    await prisma.auditLog.create({
+        data: {
+            actorId: auth.user.id,
+            action: "EDIT",
+            tableName: "Visit",
+            affectedEntityId: visitId,
+            newData: JSON.parse(JSON.stringify(updatedVisit)),
+        },
+    });
 
-            // Log the manual edit in the audit trail
-            if (auth.type === 'session') {
-                await prisma.auditLog.create({
-                    data: {
-                        actorId: auth.user.id,
-                        action: "EDIT",
-                        tableName: "Visit",
-                        affectedEntityId: visitId,
-                        newData: JSON.parse(JSON.stringify(updatedVisit)),
-                    },
-                });
-            }
-
-            return NextResponse.json({ visit: updatedVisit });
-        } catch (error) {
-            console.error("Update visit error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-        }
-    }
-);
+    return { Visit: updatedVisit };
+});
