@@ -93,11 +93,9 @@ Schema annotations classify *data*. Registry views grant *access* in the form of
     });
     ```
 
-3. Add the endpoint key to `scripts/migrated-routes.txt`.
-
-4. Open the PR. CI will:
+3. Open the PR. CI will:
     - Run `prisma generate` and assert no diff in `src/security/generated/`.
-    - Run the route-coverage lint.
+    - Run the route-coverage lint (blocking — any registry/route mismatch fails the build). Pass `--advisory` locally if you need to iterate without commit-time failures.
     - Run the contract test against every (endpoint, role) pair.
     - Run the existing suite.
 
