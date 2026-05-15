@@ -146,19 +146,23 @@ describe('stripValue — Participant', () => {
 
     it('strips pii on non-self row (THE buggy-handler case)', () => {
         // Simulates a contributor handler that fetched the wrong row.
+        // id and name are pii, so the stripper blocks them on non-self rows
+        // alongside email/phone — the original PR-#129-class leak is closed
+        // at the field-tier level rather than relying on view discipline.
         const row = { id: 7, name: 'Other', email: 'leaked@x.com', phone: '555' };
         const out = stripValue('Participant', row, tokens, callerCtx) as Record<string, unknown>;
-        expect(out.id).toBe(7);
-        expect(out.name).toBe('Other');
+        expect(out.id).toBeUndefined();
+        expect(out.name).toBeUndefined();
         expect(out.email).toBeUndefined();
         expect(out.phone).toBeUndefined();
     });
 
-    it('public-only view strips even name without "public" token', () => {
-        const row = { id: 5, name: 'Me' };
+    it('public-tier field stripped without "public" token', () => {
+        // boardMember is the lone public-tier field on Participant; id/name/etc.
+        // are pii or stricter and pass through other tokens.
+        const row = { id: 5, boardMember: true };
         const out = stripValue('Participant', row, ['their_own:pii'], callerCtx) as Record<string, unknown>;
-        expect(out.id).toBeUndefined();
-        expect(out.name).toBeUndefined();
+        expect(out.boardMember).toBeUndefined();
     });
 
     it('everyones:pii exposes pii on every row regardless of caller', () => {
@@ -182,13 +186,15 @@ describe('stripValue — Participant', () => {
     });
 
     it('their_households grants household members on self/household rows', () => {
+        // image is personal; homeAddress is now pii so this test uses image
+        // to exercise the their_households:personal grant.
         const homeCtx = ctx({ selfId: 5, householdId: 2 });
-        const sibling = { id: 6, name: 'Sib', householdId: 2, homeAddress: '123 St' };
+        const sibling = { id: 6, name: 'Sib', householdId: 2, image: '/sib.jpg' };
         const out = stripValue('Participant', sibling, ['their_households:personal', 'public'], homeCtx) as Record<string, unknown>;
-        expect(out.homeAddress).toBe('123 St');
-        const stranger = { id: 7, name: 'X', householdId: 99, homeAddress: '456 St' };
+        expect(out.image).toBe('/sib.jpg');
+        const stranger = { id: 7, name: 'X', householdId: 99, image: '/x.jpg' };
         const out2 = stripValue('Participant', stranger, ['their_households:personal', 'public'], homeCtx) as Record<string, unknown>;
-        expect(out2.homeAddress).toBeUndefined();
+        expect(out2.image).toBeUndefined();
     });
 });
 
@@ -213,16 +219,19 @@ describe('stripValue — arrays', () => {
             { id: 7, name: 'them', email: 'them@x.com' },
         ];
         const out = stripValue('Participant', rows, tokens, callerCtx) as Record<string, unknown>[];
+        // Self row sees its own pii (email, name); other row sees neither.
         expect(out[0].email).toBe('me@x.com');
+        expect(out[0].name).toBe('me');
         expect(out[1].email).toBeUndefined();
-        expect(out[1].name).toBe('them');
+        expect(out[1].name).toBeUndefined();
     });
 });
 
 describe('stripValue — nested relations', () => {
     it('recursively strips household relation on a Participant', () => {
         const callerCtx = ctx({ selfId: 5, householdId: 2 });
-        const tokens = ['their_own:pii', 'public'] as const; // no household:personal granted
+        // their_households:personal grants id (personal) but not name/address (pii).
+        const tokens = ['their_own:pii', 'their_households:personal', 'public'] as const;
         const row = {
             id: 5,
             name: 'Me',
@@ -233,13 +242,13 @@ describe('stripValue — nested relations', () => {
         expect(out.email).toBe('me@x.com');
         const household = out.household as Record<string, unknown>;
         expect(household.id).toBe(2);
-        expect(household.name).toBe('Home');
-        expect(household.address).toBeUndefined(); // personal — no token grants it
+        expect(household.name).toBeUndefined(); // pii — needs their_households:pii
+        expect(household.address).toBeUndefined(); // pii — needs their_households:pii
     });
 
-    it('grants household.address when their_households:personal is in the view', () => {
+    it('grants household.address when their_households:pii is in the view', () => {
         const callerCtx = ctx({ selfId: 5, householdId: 2 });
-        const tokens = ['their_own:pii', 'their_households:personal', 'public'] as const;
+        const tokens = ['their_own:pii', 'their_households:pii', 'public'] as const;
         const row = {
             id: 5,
             email: 'me@x.com',
@@ -281,8 +290,10 @@ describe('stripValue — edge cases', () => {
 
 describe('stripBag', () => {
     it('drops unknown-model bag entries with a warn', () => {
-        const out = stripBag({ Participant: { id: 5, name: 'Me' }, NotAModel: { foo: 'bar' } }, ['public'], ctx({ selfId: 5 }));
-        expect(out.Participant).toEqual({ id: 5, name: 'Me' });
+        // Fee fields are all public; used here to keep the test focused on
+        // unknown-model dropping rather than tier semantics.
+        const out = stripBag({ Fee: { id: 1, name: 'Materials' }, NotAModel: { foo: 'bar' } }, ['public'], ctx({ selfId: 5 }));
+        expect(out.Fee).toEqual({ id: 1, name: 'Materials' });
         expect(out.NotAModel).toBeUndefined();
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("'NotAModel'"));
     });
@@ -293,7 +304,7 @@ describe('stripBag', () => {
                 Participant: { id: 5, name: 'Me', email: 'me@x.com' },
                 Household: { id: 2, name: 'Home', address: 'street' },
             },
-            ['their_own:pii', 'their_households:personal', 'public'],
+            ['their_own:pii', 'their_households:pii', 'their_households:personal', 'public'],
             ctx({ selfId: 5, householdId: 2 }),
         );
         expect((out.Participant as Record<string, unknown>).email).toBe('me@x.com');

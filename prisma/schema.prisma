@@ -57,7 +57,7 @@ enum ProgramParticipantStatus {
 }
 
 model Participant {
-  /// @sensitivity:public
+  /// @sensitivity:pii
   id            Int       @id @default(autoincrement())
   /// @sensitivity:pii
   googleId      String?   @unique
@@ -65,18 +65,18 @@ model Participant {
   email         String?   @unique
   /// @sensitivity:pii
   phone         String?
-  /// @sensitivity:public
+  /// @sensitivity:pii
   name          String?
   /// @sensitivity:internal
   emailVerified DateTime?
-  /// @sensitivity:public
+  /// @sensitivity:personal
   image         String?
   accounts      Account[]
   sessions      Session[]
 
   /// @sensitivity:pii
   dob                 DateTime?
-  /// @sensitivity:personal
+  /// @sensitivity:pii
   homeAddress         String?
   /// @sensitivity:internal
   lastWaiverSign      DateTime?
@@ -84,10 +84,10 @@ model Participant {
   waiverSignedBy      Int?
   /// @sensitivity:internal
   lastBackgroundCheck DateTime?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   notificationSettings Json?
 
-  /// @sensitivity:public
+  /// @sensitivity:personal
   householdId Int?
   household   Household? @relation(fields: [householdId], references: [id])
 
@@ -116,19 +116,19 @@ model Participant {
 }
 
 model Tool {
-  /// @sensitivity:public
+  /// @sensitivity:internal
   id           Int          @id @default(autoincrement())
-  /// @sensitivity:public
+  /// @sensitivity:internal
   name         String
-  /// @sensitivity:public
+  /// @sensitivity:internal
   safetyGuide  String?
   toolStatuses ToolStatus[]
 }
 
 model ToolStatus {
-  /// @sensitivity:public
+  /// @sensitivity:pii
   userId Int
-  /// @sensitivity:public
+  /// @sensitivity:internal
   toolId Int
   /// @sensitivity:internal
   level  ToolLevel
@@ -140,15 +140,15 @@ model ToolStatus {
 }
 
 model Household {
-  /// @sensitivity:public
+  /// @sensitivity:personal
   id      Int     @id @default(autoincrement())
-  /// @sensitivity:public
+  /// @sensitivity:pii
   name    String?
-  /// @sensitivity:personal
+  /// @sensitivity:pii
   address String?
-  /// @sensitivity:personal
+  /// @sensitivity:pii
   emergencyContactName  String?
-  /// @sensitivity:personal
+  /// @sensitivity:pii
   emergencyContactPhone String?
 
   participants Participant[]
@@ -157,9 +157,9 @@ model Household {
 }
 
 model HouseholdLead {
-  /// @sensitivity:public
+  /// @sensitivity:personal
   householdId   Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
 
   household   Household   @relation(fields: [householdId], references: [id])
@@ -169,24 +169,24 @@ model HouseholdLead {
 }
 
 model Membership {
-  /// @sensitivity:public
+  /// @sensitivity:internal
   id                   Int            @id @default(autoincrement())
-  /// @sensitivity:public
+  /// @sensitivity:internal
   since                DateTime       @default(now())
-  /// @sensitivity:public
+  /// @sensitivity:internal
   type                 MembershipType
-  /// @sensitivity:public
+  /// @sensitivity:internal
   active               Boolean        @default(true)
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   latestShopifyReceipt String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   latestDocusign       String?
 
-  /// @sensitivity:public
+  /// @sensitivity:personal
   householdId Int?
   household   Household? @relation(fields: [householdId], references: [id])
 
-  /// @sensitivity:public
+  /// @sensitivity:pii
   volunteerId Int?
   volunteer   Participant? @relation("ParticipantMemberships", fields: [volunteerId], references: [id])
 
@@ -198,9 +198,9 @@ model Membership {
 model Corporation {
   /// @sensitivity:public
   id           Int     @id @default(autoincrement())
-  /// @sensitivity:pii
+  /// @sensitivity:internal
   primaryEmail String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   address      String?
 
   leads       CorporationLead[]
@@ -211,7 +211,7 @@ model Corporation {
 model CorporationLead {
   /// @sensitivity:public
   corporationId Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
@@ -223,7 +223,7 @@ model CorporationLead {
 model CorporationMember {
   /// @sensitivity:public
   corporationId Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
@@ -237,7 +237,7 @@ model Program {
   id           Int       @id @default(autoincrement())
   /// @sensitivity:public
   name            String
-  /// @sensitivity:public
+  /// @sensitivity:pii
   leadMentorId    Int?
   leadMentor      Participant? @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
   /// @sensitivity:public
@@ -279,7 +279,7 @@ model Program {
 model ProgramVolunteer {
   /// @sensitivity:public
   programId     Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
   /// @sensitivity:internal
   isCore        Boolean @default(false)
@@ -293,9 +293,9 @@ model ProgramVolunteer {
 model ProgramParticipant {
   /// @sensitivity:public
   programId     Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
-  /// @sensitivity:public
+  /// @sensitivity:internal
   status        ProgramParticipantStatus @default(PENDING)
   /// @sensitivity:personal
   paymentPlanRequested Boolean @default(false)
@@ -327,15 +327,15 @@ model Fee {
 model FeePayment {
   /// @sensitivity:public
   feeId             Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId     Int
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   paidOn            DateTime? @default(now())
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   shopifyLink       String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   quickBooksInvoice String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   customNote        String?
 
   fee         Fee         @relation(fields: [feeId], references: [id])
@@ -376,9 +376,9 @@ model Event {
 model RSVP {
   /// @sensitivity:public
   eventId       Int
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId Int
-  /// @sensitivity:public
+  /// @sensitivity:personal
   status        RSVPStatus
 
   event       Event       @relation(fields: [eventId], references: [id])
@@ -390,11 +390,11 @@ model RSVP {
 model RawBadgeEvent {
   /// @sensitivity:internal
   id            Int      @id @default(autoincrement())
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   participantId Int
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   time          DateTime @default(now())
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   location      String?
 
   participant Participant @relation(fields: [participantId], references: [id])
@@ -403,13 +403,13 @@ model RawBadgeEvent {
 }
 
 model Visit {
-  /// @sensitivity:public
+  /// @sensitivity:personal
   id                Int       @id @default(autoincrement())
-  /// @sensitivity:public
+  /// @sensitivity:pii
   participantId     Int
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   arrived           DateTime
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   departed          DateTime?
   /// @sensitivity:public
   associatedEventId Int?
@@ -425,15 +425,15 @@ model AuditLog {
   id                      Int         @id @default(autoincrement())
   /// @sensitivity:internal
   time                    DateTime    @default(now())
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   actorId                 Int
   /// @sensitivity:internal
   action                  AuditAction
   /// @sensitivity:internal
   tableName               String
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   affectedEntityId        Int
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   secondaryAffectedEntity Int?
   /// @sensitivity:internal
   oldData                 Json?
@@ -444,7 +444,7 @@ model AuditLog {
 model Account {
   /// @sensitivity:internal
   id                String  @id @default(cuid())
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   userId            Int     @map("participant_id")
   /// @sensitivity:internal
   type              String
@@ -477,7 +477,7 @@ model Session {
   id           String      @id @default(cuid())
   /// @sensitivity:secret
   sessionToken String      @unique
-  /// @sensitivity:internal
+  /// @sensitivity:pii
   userId       Int         @map("participant_id")
   /// @sensitivity:internal
   expires      DateTime
