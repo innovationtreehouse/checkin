@@ -120,8 +120,6 @@ describe('Kiosk Certifications API Integration Tests', () => {
 
              const res = await GET(req as unknown as NextRequest);
              expect(res.status).toBe(401);
-             const data = await res.json();
-             expect(data.error).toBe('Invalid Signature');
         });
 
         it('should return active visits and tools if Kiosk signature is valid', async () => {

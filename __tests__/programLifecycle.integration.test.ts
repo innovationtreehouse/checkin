@@ -3,6 +3,7 @@ import { POST as ShopifyWebhook } from '@/app/api/webhooks/shopify/route';
 import { GET as CronPending } from '@/app/api/cron/pending-participants/route';
 import prisma from '@/lib/prisma';
 import crypto from 'crypto';
+import { NextRequest } from 'next/server';
 
 // Generic mock implementation
 jest.mock('next-auth/next', () => ({
@@ -102,7 +103,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId })
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(200);
 
         const data = await res.json();
@@ -126,7 +127,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId }) // Adding someone else
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(403);
     });
 
@@ -138,7 +139,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId }) // No override flag
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(400);
         
         const data = await res.json();
@@ -156,7 +157,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId, override: true })
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(200);
 
         const dbRecord = await prisma.programParticipant.findUnique({

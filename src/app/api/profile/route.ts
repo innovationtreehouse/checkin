@@ -1,6 +1,4 @@
-import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { withAuth } from "@/lib/auth";
 import { handler, notFound, unauthorized } from "@/security/handler";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
@@ -19,50 +17,40 @@ export const GET = handler('GET /api/profile', async ({ auth }) => {
     return { Participant: profile };
 });
 
-export const PATCH = withAuth(
-    {},
-    async (req, auth) => {
-        try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-            const userId = auth.user.id;
+export const PATCH = handler('PATCH /api/profile', async ({ req, auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
+    const userId = auth.user.id;
 
-            const body = await req.json();
-            const { name, phone, dob, homeAddress, notificationSettings } = body;
+    const body = await req.json();
+    const { name, phone, dob, homeAddress, notificationSettings } = body;
 
-            const updatedProfile = await prisma.participant.update({
-                where: { id: userId },
-                data: {
-                    name: name !== undefined ? name : undefined,
-                    phone: phone !== undefined ? phone : undefined,
-                    dob: dob ? new Date(dob) : undefined,
-                    homeAddress: homeAddress !== undefined ? homeAddress : undefined,
-                    notificationSettings: notificationSettings !== undefined ? notificationSettings : undefined,
-                },
-                select: {
-                    name: true,
-                    email: true,
-                    phone: true,
-                    dob: true,
-                    homeAddress: true,
-                    notificationSettings: true,
-                }
-            });
+    const updatedProfile = await prisma.participant.update({
+        where: { id: userId },
+        data: {
+            name: name !== undefined ? name : undefined,
+            phone: phone !== undefined ? phone : undefined,
+            dob: dob ? new Date(dob) : undefined,
+            homeAddress: homeAddress !== undefined ? homeAddress : undefined,
+            notificationSettings: notificationSettings !== undefined ? notificationSettings : undefined,
+        },
+    });
 
-            await prisma.auditLog.create({
-                data: {
-                    actorId: userId,
-                    action: "EDIT",
-                    tableName: "Participant",
-                    affectedEntityId: userId,
-                    newData: JSON.stringify(updatedProfile),
-                }
-            });
+    await prisma.auditLog.create({
+        data: {
+            actorId: userId,
+            action: "EDIT",
+            tableName: "Participant",
+            affectedEntityId: userId,
+            newData: JSON.stringify({
+                name: updatedProfile.name,
+                email: updatedProfile.email,
+                phone: updatedProfile.phone,
+                dob: updatedProfile.dob,
+                homeAddress: updatedProfile.homeAddress,
+                notificationSettings: updatedProfile.notificationSettings,
+            }),
+        },
+    });
 
-            return NextResponse.json({ profile: updatedProfile }, { status: 200 });
-
-        } catch (error) {
-            console.error("Profile PATCH Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-        }
-    }
-);
+    return { Participant: updatedProfile };
+});

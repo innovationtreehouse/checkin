@@ -1,23 +1,17 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import { Prisma } from '@prisma/client';
 import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
+import { ApiResponseError, handler, badRequest, forbidden, unauthorized } from "@/security/handler";
 
-export async function GET(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+export const GET = handler('GET /api/shop/certifications', async ({ req, auth }) => {
     try {
+        if (auth.type !== 'session') throw unauthorized();
+
         const { searchParams } = new URL(req.url);
         const participantIdParam = searchParams.get('participantId');
         const toolIdParam = searchParams.get('toolId');
 
-        let targetUserId = session.user.id;
+        let targetUserId = auth.user.id;
 
         if (participantIdParam) {
             targetUserId = parseInt(participantIdParam, 10);
@@ -26,10 +20,8 @@ export async function GET(req: Request) {
         let whereClause: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
 
         if (toolIdParam) {
-            // If checking who is certified on a tool
             whereClause = { toolId: parseInt(toolIdParam, 10) };
         } else {
-            // Looking up a specific person's certifications
             whereClause = { userId: targetUserId };
         }
 
@@ -41,40 +33,36 @@ export async function GET(req: Request) {
             }
         });
 
-        return NextResponse.json(certifications);
-    } catch (error) {
-        await logBackendError(error, "GET /api/shop/certifications");
-        return NextResponse.json({ error: "Failed to fetch certifications" }, { status: 500 });
+        return { ToolStatus: certifications };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "GET /api/shop/certifications");
+        throw err;
     }
-}
+});
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+export const POST = handler('POST /api/shop/certifications', async ({ req, auth }) => {
     try {
+        if (auth.type !== 'session') throw unauthorized();
+
         const body = await req.json();
         const { participantId, toolId, level } = body;
 
         if (!participantId || !toolId || !level) {
-            return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+            throw badRequest("Missing required fields");
         }
 
         const validLevels = ["BASIC", "DOF", "CERTIFIED", "MAY_CERTIFY_OTHERS"];
         if (!validLevels.includes(level)) {
-            return NextResponse.json({ error: "Invalid certification level" }, { status: 400 });
+            throw badRequest("Invalid certification level");
         }
 
-        const currentUserId = session.user.id;
-        const isSysAdminOrBoard = session.user?.sysadmin || session.user?.boardMember;
+        const currentUserId = auth.user.id;
+        const isSysAdminOrBoard = auth.user.sysadmin || auth.user.boardMember;
 
-        let hasCertifierPermission = isSysAdminOrBoard;
+        let hasCertifierPermission = !!isSysAdminOrBoard;
 
         if (!hasCertifierPermission) {
-            // Check if user is a certifier for this specific tool
             const currentUserStatus = await prisma.toolStatus.findUnique({
                 where: {
                     userId_toolId: {
@@ -90,7 +78,7 @@ export async function POST(req: Request) {
         }
 
         if (!hasCertifierPermission) {
-            return NextResponse.json({ error: "Forbidden: You are not authorized to certify users on this tool" }, { status: 403 });
+            throw forbidden("Forbidden: You are not authorized to certify users on this tool");
         }
 
         const tId = parseInt(toolId, 10);
@@ -129,9 +117,10 @@ export async function POST(req: Request) {
             }
         });
 
-        return NextResponse.json({ success: true, certification: upsertedCert });
-    } catch (error: unknown) {
-        await logBackendError(error, "POST /api/shop/certifications");
-        return NextResponse.json({ error: "Failed to upsert certification" }, { status: 500 });
+        return { ToolStatus: upsertedCert };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "POST /api/shop/certifications");
+        throw err;
     }
-}
+});

@@ -1,30 +1,25 @@
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
-import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { logBackendError } from "@/lib/logger";
+import { ApiResponseError, handler, badRequest, unauthorized } from "@/security/handler";
 
-export async function POST(req: NextRequest) {
+export const POST = handler('POST /api/attendance/manual', async ({ req, auth }) => {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session || !session.user || !session.user.id) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
+        if (auth.type !== 'session') throw unauthorized();
+        const userId = auth.user.id;
 
-        const userId = session.user.id;
         const body = await req.json();
         const { arrived, departed } = body;
 
         if (!arrived) {
-            return NextResponse.json({ error: "Arrival time is required" }, { status: 400 });
+            throw badRequest("Arrival time is required");
         }
 
         const arrivalTime = new Date(arrived);
         const departureTime = departed ? new Date(departed) : null;
 
         if (departureTime && departureTime <= arrivalTime) {
-            return NextResponse.json({ error: "Departure time must be after arrival time" }, { status: 400 });
+            throw badRequest("Departure time must be after arrival time");
         }
 
         const eventId = await findAssociatedEventAt(userId, arrivalTime);
@@ -38,10 +33,8 @@ export async function POST(req: NextRequest) {
             }
         });
 
-        // If a departure time was provided, we process the checkout logic directly 
-        // to handle any back-to-back event transitions.
         if (departureTime) {
-             await processVisitCheckout(visit.id, departureTime);
+            await processVisitCheckout(visit.id, departureTime);
         }
 
         await prisma.auditLog.create({
@@ -54,10 +47,10 @@ export async function POST(req: NextRequest) {
             }
         });
 
-        return NextResponse.json({ message: "Manual visit recorded successfully.", visit }, { status: 201 });
-    } catch (error: unknown) {
-        console.error("Manual Attendance POST Error:", error);
-        await logBackendError(error, "POST /api/attendance/manual");
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return { Visit: visit };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "POST /api/attendance/manual");
+        throw err;
     }
-}
+});

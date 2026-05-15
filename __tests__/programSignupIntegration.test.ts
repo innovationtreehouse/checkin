@@ -6,6 +6,7 @@ import { POST as EnrollParticipant } from '@/app/api/programs/[id]/participants/
 import { POST as ShopifyWebhook } from '@/app/api/webhooks/shopify/route';
 import prisma from '@/lib/prisma';
 import crypto from 'crypto';
+import { NextRequest } from 'next/server';
 
 // Mocking dependencies
 jest.mock('next-auth/next', () => ({
@@ -37,7 +38,14 @@ jest.mock('@/lib/prisma', () => ({
     program: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn(),
+    },
+    programVolunteer: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    visit: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
     event: {
       create: jest.fn(),
@@ -99,7 +107,7 @@ describe('Full Program Signup Integration Flow', () => {
                 leadMentorId: sysAdminId,
             }),
         });
-        const createProgramRes = await CreateProgram(createProgramReq);
+        const createProgramRes = await CreateProgram(createProgramReq as unknown as NextRequest);
         expect(createProgramRes.status).toBe(200);
         const createProgramData = await createProgramRes.json();
         expect(createProgramData.program.id).toBe(programId);
@@ -116,7 +124,7 @@ describe('Full Program Signup Integration Flow', () => {
                 end: new Date(Date.now() + 86400000 + 3600000).toISOString(),
             }),
         });
-        const addEventRes = await AddEvent(addEventReq, { params: Promise.resolve({ id: String(programId) }) });
+        const addEventRes = await AddEvent(addEventReq as unknown as NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(addEventRes.status).toBe(200);
 
         // 3. SysAdmin publishes the program
@@ -131,7 +139,7 @@ describe('Full Program Signup Integration Flow', () => {
             method: 'POST',
             body: JSON.stringify({ publish: true }),
         });
-        const publishRes = await PublishProgram(publishReq, { params: Promise.resolve({ id: String(programId) }) });
+        const publishRes = await PublishProgram(publishReq as unknown as NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(publishRes.status).toBe(200);
 
         // 4. Lead user creates a household
@@ -143,14 +151,14 @@ describe('Full Program Signup Integration Flow', () => {
         const createHouseholdReq = new Request('http://localhost/api/household', {
             method: 'POST',
         });
-        // @ts-expect-error - Mocking auth session internally used via second argument
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const createHouseholdRes = await CreateHousehold(createHouseholdReq as any, { type: 'session', user: { id: leadUserId } } as any);
-        expect(createHouseholdRes.status).toBe(201);
+        const createHouseholdRes = await CreateHousehold(createHouseholdReq as any);
+        expect(createHouseholdRes.status).toBe(200);
         const createHouseholdData = await createHouseholdRes.json();
         expect(createHouseholdData.household.id).toBe(householdId);
 
         // 5. Lead user adds a child member to the household
+        mockGetSession.mockResolvedValue({ user: { id: leadUserId, householdLead: true, householdId } });
         (prisma.participant.findUnique as jest.Mock).mockResolvedValueOnce({ id: leadUserId, householdId, householdLeads: [{ householdId, participantId: leadUserId }] });
         (prisma.participant.create as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId });
 
@@ -161,9 +169,8 @@ describe('Full Program Signup Integration Flow', () => {
                 memberDob: '2015-01-01',
             }),
         });
-        // @ts-expect-error - Mocking auth session internally used via second argument
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const addChildRes = await AddHouseholdMember(addChildReq as any, { type: 'session', user: { id: leadUserId } } as any);
+        const addChildRes = await AddHouseholdMember(addChildReq as any);
         expect(addChildRes.status).toBe(200);
         const addChildData = await addChildRes.json();
         expect(addChildData.member.id).toBe(childParticipantId);
@@ -184,7 +191,7 @@ describe('Full Program Signup Integration Flow', () => {
             method: 'POST',
             body: JSON.stringify({ participantId: childParticipantId }),
         });
-        const enrollRes = await EnrollParticipant(enrollReq, { params: Promise.resolve({ id: String(programId) }) });
+        const enrollRes = await EnrollParticipant(enrollReq as unknown as NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(enrollRes.status).toBe(200);
 
         // 7. Verify PENDING status
@@ -240,7 +247,7 @@ describe('Full Program Signup Integration Flow', () => {
             method: 'POST',
             body: JSON.stringify({ participantId: childParticipantId }),
         });
-        const enrollRes = await EnrollParticipant(enrollReq, { params: Promise.resolve({ id: String(programId) }) });
+        const enrollRes = await EnrollParticipant(enrollReq as unknown as NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(enrollRes.status).toBe(403);
     });
 });

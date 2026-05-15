@@ -1,109 +1,94 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { handler, badRequest, forbidden, notFound, unauthorized } from "@/security/handler";
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
+export const POST = handler<{ id: string }>('POST /api/events/[id]/attendance', async ({ req, params, auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
 
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const eventId = parseInt(params.id, 10);
+    if (isNaN(eventId)) {
+        throw badRequest("Invalid event ID");
     }
 
-    try {
-        const eventId = parseInt(id, 10);
-        if (isNaN(eventId)) {
-            return NextResponse.json({ error: "Invalid event ID" }, { status: 400 });
-        }
+    const event = await prisma.event.findUnique({
+        where: { id: eventId },
+        include: { program: true }
+    });
 
-        const event = await prisma.event.findUnique({
-            where: { id: eventId },
-            include: { program: true }
-        });
-
-        if (!event) {
-            return NextResponse.json({ error: "Event not found" }, { status: 404 });
-        }
-
-        const currentUserId = session.user.id;
-        const isLeadMentor = event.program?.leadMentorId === currentUserId;
-        const isSysAdminOrBoardOrKeyholder = session.user?.sysadmin || session.user?.boardMember || session.user?.keyholder;
-
-        if (!isLeadMentor && !isSysAdminOrBoardOrKeyholder) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to validate attendance" }, { status: 403 });
-        }
-
-        const body = await req.json();
-        const { participantIds } = body; // Array of participant IDs who actually attended
-
-        if (!Array.isArray(participantIds)) {
-            return NextResponse.json({ error: "participantIds array is required" }, { status: 400 });
-        }
-
-        const results = await prisma.$transaction(async (tx) => {
-            const actions = [];
-
-            // Pre-fetch all overlapping unassociated visits for the participants
-            const overlappingVisits = await tx.visit.findMany({
-                where: {
-                    participantId: { in: participantIds },
-                    associatedEventId: null,
-                    arrived: { lte: event.end },
-                    OR: [
-                        { departed: null },
-                        { departed: { gte: event.start } }
-                    ]
-                }
-            });
-
-            // Map them by participantId for O(1) lookups
-            const visitsByParticipant = new Map();
-            for (const visit of overlappingVisits) {
-                // We just need the first matching unassociated visit for each participant.
-                if (!visitsByParticipant.has(visit.participantId)) {
-                    visitsByParticipant.set(visit.participantId, visit);
-                }
-            }
-
-            for (const pId of participantIds) {
-                const visit = visitsByParticipant.get(pId);
-
-                if (visit) {
-                    const updated = await tx.visit.update({
-                        where: { id: visit.id },
-                        data: { associatedEventId: eventId }
-                    });
-                    actions.push(updated);
-                } else {
-                    // Create a synthetic visit since they were marked attended but didn't badge in
-                    const newVisit = await tx.visit.create({
-                        data: {
-                            participantId: pId,
-                            associatedEventId: eventId,
-                            arrived: event.start,
-                            departed: event.end
-                        }
-                    });
-                    actions.push(newVisit);
-                }
-            }
-            return actions;
-        });
-
-        await prisma.auditLog.create({
-            data: {
-                actorId: currentUserId,
-                action: 'EDIT',
-                tableName: 'Visit',
-                affectedEntityId: eventId,
-                newData: JSON.stringify({ validatedParticipants: participantIds })
-            }
-        });
-
-        return NextResponse.json({ success: true, processed: results.length });
-    } catch (error) {
-        console.error("Attendance validation error:", error);
-        return NextResponse.json({ error: "Failed to validate attendance" }, { status: 500 });
+    if (!event) {
+        throw notFound("Event not found");
     }
-}
+
+    const user = auth.user;
+    const currentUserId = user.id;
+    const isLeadMentor = event.program?.leadMentorId === currentUserId;
+    const isSysAdminOrBoardOrKeyholder = user.sysadmin || user.boardMember || user.keyholder;
+
+    if (!isLeadMentor && !isSysAdminOrBoardOrKeyholder) {
+        throw forbidden("Forbidden: Not authorized to validate attendance");
+    }
+
+    const body = await req.json();
+    const { participantIds } = body;
+
+    if (!Array.isArray(participantIds)) {
+        throw badRequest("participantIds array is required");
+    }
+
+    const results = await prisma.$transaction(async (tx) => {
+        const actions = [];
+
+        const overlappingVisits = await tx.visit.findMany({
+            where: {
+                participantId: { in: participantIds },
+                associatedEventId: null,
+                arrived: { lte: event.end },
+                OR: [
+                    { departed: null },
+                    { departed: { gte: event.start } }
+                ]
+            }
+        });
+
+        const visitsByParticipant = new Map();
+        for (const visit of overlappingVisits) {
+            if (!visitsByParticipant.has(visit.participantId)) {
+                visitsByParticipant.set(visit.participantId, visit);
+            }
+        }
+
+        for (const pId of participantIds) {
+            const visit = visitsByParticipant.get(pId);
+
+            if (visit) {
+                const updated = await tx.visit.update({
+                    where: { id: visit.id },
+                    data: { associatedEventId: eventId }
+                });
+                actions.push(updated);
+            } else {
+                const newVisit = await tx.visit.create({
+                    data: {
+                        participantId: pId,
+                        associatedEventId: eventId,
+                        arrived: event.start,
+                        departed: event.end
+                    }
+                });
+                actions.push(newVisit);
+            }
+        }
+        return actions;
+    });
+
+    await prisma.auditLog.create({
+        data: {
+            actorId: currentUserId,
+            action: 'EDIT',
+            tableName: 'Visit',
+            affectedEntityId: eventId,
+            newData: JSON.stringify({ validatedParticipants: participantIds })
+        }
+    });
+
+    return { processed: results.length };
+});

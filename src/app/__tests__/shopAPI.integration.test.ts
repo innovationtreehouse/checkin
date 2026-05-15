@@ -12,6 +12,9 @@ import { GET as getTools, POST as postTools } from '@/app/api/shop/tools/route';
 import { GET as getCerts, POST as postCerts } from '@/app/api/shop/certifications/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { NextRequest } from 'next/server';
+
+const dummyReq = (path = '/api/shop') => ({ url: `http://localhost${path}`, method: 'GET', headers: new Headers() } as unknown as NextRequest);
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -140,14 +143,14 @@ describe('Shop API Integration Tests', () => {
         it('should return 403 for common users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             const res = await getActive() as Response;
+             const res = await getActive(dummyReq('/api/shop/active')) as unknown as Response;
              expect(res.status).toBe(403);
         });
 
         it('should return 200 and active occupants for standard shop steward', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: stewardId, shopSteward: true } });
 
-             const res = await getActive() as Response;
+             const res = await getActive(dummyReq('/api/shop/active')) as unknown as Response;
              expect(res.status).toBe(200);
              const data = await res.json();
              
@@ -162,7 +165,7 @@ describe('Shop API Integration Tests', () => {
                  user: { id: certifierId, toolStatuses: [{ level: 'MAY_CERTIFY_OTHERS' }] }
              });
 
-             const res = await getActive() as Response;
+             const res = await getActive(dummyReq('/api/shop/active')) as unknown as Response;
              expect(res.status).toBe(200);
         });
     });
@@ -171,14 +174,14 @@ describe('Shop API Integration Tests', () => {
         it('should return 403 for common users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             const res = await getMembers() as Response;
+             const res = await getMembers(dummyReq('/api/shop/members')) as unknown as Response;
              expect(res.status).toBe(403);
         });
 
         it('should return 200 and members for an admin', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
 
-             const res = await getMembers() as Response;
+             const res = await getMembers(dummyReq('/api/shop/members')) as unknown as Response;
              expect(res.status).toBe(200);
              const data = await res.json();
              
@@ -192,7 +195,7 @@ describe('Shop API Integration Tests', () => {
         it('should allow anyone authenticated to GET tool list', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             const res = await getTools() as Response;
+             const res = await getTools(dummyReq('/api/shop/tools')) as unknown as Response;
              expect(res.status).toBe(200);
              const data = await res.json();
              expect(Array.isArray(data)).toBe(true);
@@ -203,7 +206,7 @@ describe('Shop API Integration Tests', () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
              const req = createReq('POST', { body: { name: 'Shop Test Tool Beta' } });
-             const res = await postTools(req) as Response;
+             const res = await postTools(req as unknown as NextRequest) as unknown as Response;
              expect(res.status).toBe(403);
         });
 
@@ -211,7 +214,7 @@ describe('Shop API Integration Tests', () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
 
              const req = createReq('POST', { body: { name: 'Shop Test Tool Admin' } });
-             const res = await postTools(req) as Response;
+             const res = await postTools(req as unknown as NextRequest) as unknown as Response;
              expect(res.status).toBe(200);
              
              const data = await res.json();
@@ -223,7 +226,7 @@ describe('Shop API Integration Tests', () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: stewardId, shopSteward: true } });
 
              const req = createReq('POST', { body: { name: 'Shop Test Tool Steward' } });
-             const res = await postTools(req) as Response;
+             const res = await postTools(req as unknown as NextRequest) as unknown as Response;
              expect(res.status).toBe(200);
              
              const data = await res.json();
@@ -237,7 +240,7 @@ describe('Shop API Integration Tests', () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
              const req = createReq('GET', { searchParams: `toolId=${mockToolId}` });
-             const res = await getCerts(req) as Response;
+             const res = await getCerts(req as unknown as NextRequest) as unknown as Response;
              expect(res.status).toBe(200);
              
              const data = await res.json();
@@ -251,7 +254,7 @@ describe('Shop API Integration Tests', () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
              const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'BASIC' } });
-             const res = await postCerts(req) as Response;
+             const res = await postCerts(req as unknown as NextRequest) as unknown as Response;
              expect(res.status).toBe(403);
         });
 
@@ -259,7 +262,7 @@ describe('Shop API Integration Tests', () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: certifierId } });
 
              const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'BASIC' } });
-             const res = await postCerts(req) as Response;
+             const res = await postCerts(req as unknown as NextRequest) as unknown as Response;
              expect(res.status).toBe(200);
              
              const data = await res.json();

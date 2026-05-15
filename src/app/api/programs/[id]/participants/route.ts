@@ -1,196 +1,174 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
+import { handler, badRequest, forbidden, notFound, unauthorized } from "@/security/handler";
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
+export const POST = handler<{ id: string }>('POST /api/programs/[id]/participants', async ({ req, params, auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
 
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const programId = parseInt(params.id, 10);
+    if (isNaN(programId)) {
+        throw badRequest("Invalid program ID");
     }
 
-    try {
-        const programId = parseInt(id, 10);
-        if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
-        }
+    const body = await req.json();
+    const { participantId } = body;
 
-        const body = await req.json();
-        const { participantId } = body;
-
-        if (!participantId) {
-            return NextResponse.json({ error: "participantId is required" }, { status: 400 });
-        }
-
-        const currentProgram = await prisma.program.findUnique({
-            where: { id: programId },
-            include: {
-                _count: { select: { participants: true } }
-            }
-        });
-        if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
-        }
-
-        const currentUserId = (session.user as { id: number }).id;
-        const isSelfEnrollment = currentUserId === participantId;
-        const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin || (session.user as { sysadmin?: boolean, boardMember?: boolean })?.boardMember;
-
-        const participantData = await prisma.participant.findUnique({
-            where: { id: participantId },
-            select: { dob: true, householdId: true }
-        });
-
-        let isHouseholdLead = false;
-        if (participantData?.householdId) {
-            const leadRecord = await prisma.householdLead.findUnique({
-                where: {
-                    householdId_participantId: {
-                        householdId: participantData.householdId,
-                        participantId: currentUserId
-                    }
-                }
-            });
-            isHouseholdLead = !!leadRecord;
-        }
-
-        if (!isSelfEnrollment && !isSysAdminOrBoard && !isHouseholdLead) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to enroll this participant. Program leads cannot manually add participants." }, { status: 403 });
-        }
-
-        const override = body.override === true;
-
-        if (!isSelfEnrollment && isSysAdminOrBoard && !override) {
-             return NextResponse.json({ error: "This bypasses all payment. Are you sure?", requiresOverride: true }, { status: 400 });
-        }
-
-        // Validation Checks
-        if (!override || (!isSysAdminOrBoard)) {
-            // Check Capacity
-            if (currentProgram.maxParticipants !== null && currentProgram._count.participants >= currentProgram.maxParticipants) {
-                return NextResponse.json({ error: "Program has reached maximum capacity.", requiresOverride: true }, { status: 400 });
-            }
-
-            // Check Enrollment Status
-            if (currentProgram.enrollmentStatus === 'CLOSED') {
-                return NextResponse.json({ error: "Program enrollment is currently closed.", requiresOverride: true }, { status: 400 });
-            }
-
-            // Check Age
-            if (currentProgram.minAge !== null || currentProgram.maxAge !== null) {
-                if (!participantData?.dob) {
-                    return NextResponse.json({ error: "Participant Date of Birth is missing.", requiresOverride: true }, { status: 400 });
-                }
-                const ageDifMs = Date.now() - new Date(participantData.dob).getTime();
-                const ageDate = new Date(ageDifMs);
-                const age = Math.abs(ageDate.getUTCFullYear() - 1970);
-                if (currentProgram.minAge !== null && age < currentProgram.minAge) {
-                    return NextResponse.json({ error: `Participant must be at least ${currentProgram.minAge} years old.`, requiresOverride: true }, { status: 400 });
-                }
-                if (currentProgram.maxAge !== null && age > currentProgram.maxAge) {
-                    return NextResponse.json({ error: `Participant maximum age is ${currentProgram.maxAge} years old.`, requiresOverride: true }, { status: 400 });
-                }
-            }
-        }
-
-        const isFree = currentProgram.memberPrice === null && currentProgram.nonMemberPrice === null;
-        
-        // Default status is PENDING, unless board is bypassing or the program is free
-        const initialStatus = ((isSysAdminOrBoard && override) || isFree) ? 'ACTIVE' : 'PENDING';
-
-        const enrollment = await prisma.programParticipant.create({
-            data: {
-                programId,
-                participantId,
-                status: initialStatus
-            }
-        });
-
-        await prisma.auditLog.create({
-            data: {
-                actorId: currentUserId,
-                action: 'CREATE',
-                tableName: 'ProgramParticipant',
-                affectedEntityId: participantId,
-                secondaryAffectedEntity: programId,
-                newData: JSON.stringify(enrollment)
-            }
-        });
-
-        // Trigger notification
-        await sendNotification(participantId, 'PROGRAM_ENROLLMENT', { programName: currentProgram.name });
-
-        return NextResponse.json({ success: true, enrollment });
-    } catch (error) {
-        console.error("Enrollment creation error:", error);
-        return NextResponse.json({ error: "Failed to enroll participant" }, { status: 500 });
-    }
-}
-
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!participantId) {
+        throw badRequest("participantId is required");
     }
 
-    try {
-        const programId = parseInt(id, 10);
-        if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
+    const currentProgram = await prisma.program.findUnique({
+        where: { id: programId },
+        include: {
+            _count: { select: { participants: true } }
         }
+    });
+    if (!currentProgram) {
+        throw notFound("Program not found");
+    }
 
-        const body = await req.json();
-        const { participantId } = body;
+    const currentUserId = auth.user.id;
+    const isSelfEnrollment = currentUserId === participantId;
+    const isSysAdminOrBoard = auth.user.sysadmin || auth.user.boardMember;
 
-        if (!participantId) {
-            return NextResponse.json({ error: "participantId is required" }, { status: 400 });
-        }
+    const participantData = await prisma.participant.findUnique({
+        where: { id: participantId },
+        select: { dob: true, householdId: true }
+    });
 
-        const currentProgram = await prisma.program.findUnique({
-            where: { id: programId }
-        });
-
-        if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
-        }
-
-        const currentUserId = (session.user as { id: number }).id;
-        const isSelfRemoval = currentUserId === participantId;
-        const isLeadMentor = currentProgram.leadMentorId === currentUserId;
-        const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin || (session.user as { sysadmin?: boolean, boardMember?: boolean })?.boardMember;
-
-        if (!isSelfRemoval && !isLeadMentor && !isSysAdminOrBoard) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to remove this participant" }, { status: 403 });
-        }
-
-        const enrollment = await prisma.programParticipant.delete({
+    let isHouseholdLead = false;
+    if (participantData?.householdId) {
+        const leadRecord = await prisma.householdLead.findUnique({
             where: {
-                programId_participantId: {
-                    programId,
-                    participantId
+                householdId_participantId: {
+                    householdId: participantData.householdId,
+                    participantId: currentUserId
                 }
             }
         });
-
-        await prisma.auditLog.create({
-            data: {
-                actorId: currentUserId,
-                action: 'DELETE',
-                tableName: 'ProgramParticipant',
-                affectedEntityId: participantId,
-                secondaryAffectedEntity: programId,
-                oldData: JSON.stringify(enrollment)
-            }
-        });
-
-        return NextResponse.json({ success: true, enrollment });
-    } catch (error) {
-        console.error("Enrollment deletion error:", error);
-        return NextResponse.json({ error: "Failed to remove participant" }, { status: 500 });
+        isHouseholdLead = !!leadRecord;
     }
-}
+
+    if (!isSelfEnrollment && !isSysAdminOrBoard && !isHouseholdLead) {
+        throw forbidden("Forbidden: Not authorized to enroll this participant. Program leads cannot manually add participants.");
+    }
+
+    const override = body.override === true;
+
+    // NOTE: The original endpoint returned 400 with { error, requiresOverride: true }
+    // so the frontend could show an "Are you sure?" override toggle. The new
+    // handler() error envelope only carries a status + message, so the
+    // requiresOverride hint is no longer transmitted. Frontend users will see
+    // the message but won't get a pre-populated override checkbox; they must
+    // know to retry with override=true. Flagged for design review.
+    if (!isSelfEnrollment && isSysAdminOrBoard && !override) {
+        throw badRequest("This bypasses all payment. Re-submit with override=true to proceed.");
+    }
+
+    if (!override || (!isSysAdminOrBoard)) {
+        if (currentProgram.maxParticipants !== null && currentProgram._count.participants >= currentProgram.maxParticipants) {
+            throw badRequest("Program has reached maximum capacity.");
+        }
+
+        if (currentProgram.enrollmentStatus === 'CLOSED') {
+            throw badRequest("Program enrollment is currently closed.");
+        }
+
+        if (currentProgram.minAge !== null || currentProgram.maxAge !== null) {
+            if (!participantData?.dob) {
+                throw badRequest("Participant Date of Birth is missing.");
+            }
+            const ageDifMs = Date.now() - new Date(participantData.dob).getTime();
+            const ageDate = new Date(ageDifMs);
+            const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+            if (currentProgram.minAge !== null && age < currentProgram.minAge) {
+                throw badRequest(`Participant must be at least ${currentProgram.minAge} years old.`);
+            }
+            if (currentProgram.maxAge !== null && age > currentProgram.maxAge) {
+                throw badRequest(`Participant maximum age is ${currentProgram.maxAge} years old.`);
+            }
+        }
+    }
+
+    const isFree = currentProgram.memberPrice === null && currentProgram.nonMemberPrice === null;
+
+    const initialStatus = ((isSysAdminOrBoard && override) || isFree) ? 'ACTIVE' : 'PENDING';
+
+    const enrollment = await prisma.programParticipant.create({
+        data: {
+            programId,
+            participantId,
+            status: initialStatus
+        }
+    });
+
+    await prisma.auditLog.create({
+        data: {
+            actorId: currentUserId,
+            action: 'CREATE',
+            tableName: 'ProgramParticipant',
+            affectedEntityId: participantId,
+            secondaryAffectedEntity: programId,
+            newData: JSON.stringify(enrollment)
+        }
+    });
+
+    await sendNotification(participantId, 'PROGRAM_ENROLLMENT', { programName: currentProgram.name });
+
+    return { ProgramParticipant: enrollment };
+});
+
+export const DELETE = handler<{ id: string }>('DELETE /api/programs/[id]/participants', async ({ req, params, auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
+
+    const programId = parseInt(params.id, 10);
+    if (isNaN(programId)) {
+        throw badRequest("Invalid program ID");
+    }
+
+    const body = await req.json();
+    const { participantId } = body;
+
+    if (!participantId) {
+        throw badRequest("participantId is required");
+    }
+
+    const currentProgram = await prisma.program.findUnique({
+        where: { id: programId }
+    });
+
+    if (!currentProgram) {
+        throw notFound("Program not found");
+    }
+
+    const currentUserId = auth.user.id;
+    const isSelfRemoval = currentUserId === participantId;
+    const isLeadMentor = currentProgram.leadMentorId === currentUserId;
+    const isSysAdminOrBoard = auth.user.sysadmin || auth.user.boardMember;
+
+    if (!isSelfRemoval && !isLeadMentor && !isSysAdminOrBoard) {
+        throw forbidden("Forbidden: Not authorized to remove this participant");
+    }
+
+    const enrollment = await prisma.programParticipant.delete({
+        where: {
+            programId_participantId: {
+                programId,
+                participantId
+            }
+        }
+    });
+
+    await prisma.auditLog.create({
+        data: {
+            actorId: currentUserId,
+            action: 'DELETE',
+            tableName: 'ProgramParticipant',
+            affectedEntityId: participantId,
+            secondaryAffectedEntity: programId,
+            oldData: JSON.stringify(enrollment)
+        }
+    });
+
+    return { ProgramParticipant: enrollment };
+});

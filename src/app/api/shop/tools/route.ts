@@ -1,17 +1,11 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
+import { ApiResponseError, handler, badRequest, forbidden, unauthorized } from "@/security/handler";
 
-export async function GET() {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+export const GET = handler('GET /api/shop/tools', async ({ auth }) => {
     try {
+        if (auth.type !== 'session') throw unauthorized();
+
         const tools = await prisma.tool.findMany({
             orderBy: { name: 'asc' },
             include: {
@@ -21,32 +15,29 @@ export async function GET() {
             }
         });
 
-        return NextResponse.json(tools);
-    } catch (error) {
-        await logBackendError(error, "GET /api/shop/tools");
-        return NextResponse.json({ error: "Failed to fetch tools" }, { status: 500 });
+        return { Tool: tools };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "GET /api/shop/tools");
+        throw err;
     }
-}
+});
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const isAuthorized = session.user?.sysadmin || session.user?.boardMember || session.user?.shopSteward;
-
-    if (!isAuthorized) {
-        return NextResponse.json({ error: "Forbidden: Only admins, board members, and shop stewards can create tools" }, { status: 403 });
-    }
-
+export const POST = handler('POST /api/shop/tools', async ({ req, auth }) => {
     try {
+        if (auth.type !== 'session') throw unauthorized();
+
+        const isAuthorized = auth.user.sysadmin || auth.user.boardMember || auth.user.shopSteward;
+
+        if (!isAuthorized) {
+            throw forbidden("Forbidden: Only admins, board members, and shop stewards can create tools");
+        }
+
         const body = await req.json();
         const { name, safetyGuide } = body;
 
         if (!name) {
-            return NextResponse.json({ error: "Tool name is required" }, { status: 400 });
+            throw badRequest("Tool name is required");
         }
 
         const newTool = await prisma.tool.create({
@@ -58,7 +49,7 @@ export async function POST(req: Request) {
 
         await prisma.auditLog.create({
             data: {
-                actorId: session.user.id,
+                actorId: auth.user.id,
                 action: 'CREATE',
                 tableName: 'Tool',
                 affectedEntityId: newTool.id,
@@ -66,9 +57,10 @@ export async function POST(req: Request) {
             }
         });
 
-        return NextResponse.json({ success: true, tool: newTool });
-    } catch (error: unknown) {
-        await logBackendError(error, "POST /api/shop/tools");
-        return NextResponse.json({ error: "Failed to create tool" }, { status: 500 });
+        return { Tool: newTool };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "POST /api/shop/tools");
+        throw err;
     }
-}
+});

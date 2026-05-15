@@ -1,85 +1,72 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { handler, badRequest, forbidden, notFound, unauthorized } from "@/security/handler";
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
+export const PATCH = handler<{ id: string }>('PATCH /api/events/[id]/rsvp', async ({ req, params, auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
 
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const eventId = parseInt(params.id, 10);
+    if (isNaN(eventId)) {
+        throw badRequest("Invalid event ID");
     }
 
-    try {
-        const eventId = parseInt(id, 10);
-        if (isNaN(eventId)) {
-            return NextResponse.json({ error: "Invalid event ID" }, { status: 400 });
-        }
+    const body = await req.json();
+    const { status } = body;
 
-        const body = await req.json();
-        const { status } = body;
+    const validStatuses = ["ATTENDING", "NOT_ATTENDING", "NO_RESPONSE", "MAYBE"];
+    if (!status || !validStatuses.includes(status)) {
+        throw badRequest("Invalid RSVP status");
+    }
 
-        const validStatuses = ["ATTENDING", "NOT_ATTENDING", "NO_RESPONSE", "MAYBE"];
-        if (!status || !validStatuses.includes(status)) {
-            return NextResponse.json({ error: "Invalid RSVP status" }, { status: 400 });
-        }
+    const currentUserId = auth.user.id;
 
-        const currentUserId = session.user.id;
+    const event = await prisma.event.findUnique({
+        where: { id: eventId },
+        include: { program: true }
+    });
 
-        // Verify the event exists and the user is enrolled in the program (if applicable)
-        const event = await prisma.event.findUnique({
-            where: { id: eventId },
-            include: { program: true }
-        });
+    if (!event) {
+        throw notFound("Event not found");
+    }
 
-        if (!event) {
-            return NextResponse.json({ error: "Event not found" }, { status: 404 });
-        }
-
-        if (event.programId) {
-            const isEnrolled = await prisma.programParticipant.findUnique({
-                where: {
-                    programId_participantId: {
-                        programId: event.programId,
-                        participantId: currentUserId
-                    }
-                }
-            });
-            const isVolunteer = await prisma.programVolunteer.findUnique({
-                where: {
-                    programId_participantId: {
-                        programId: event.programId,
-                        participantId: currentUserId
-                    }
-                }
-            });
-
-            if (!isEnrolled && !isVolunteer) {
-                return NextResponse.json({ error: "Forbidden: You are not a participant of this program" }, { status: 403 });
-            }
-        }
-
-        const rsvp = await prisma.rSVP.upsert({
+    if (event.programId) {
+        const isEnrolled = await prisma.programParticipant.findUnique({
             where: {
-                eventId_participantId: {
-                    eventId,
+                programId_participantId: {
+                    programId: event.programId,
                     participantId: currentUserId
                 }
-            },
-            update: {
-                status: status as 'ATTENDING' | 'NOT_ATTENDING' | 'NO_RESPONSE' | 'MAYBE'
-            },
-            create: {
-                eventId,
-                participantId: currentUserId,
-                status: status as 'ATTENDING' | 'NOT_ATTENDING' | 'NO_RESPONSE' | 'MAYBE'
+            }
+        });
+        const isVolunteer = await prisma.programVolunteer.findUnique({
+            where: {
+                programId_participantId: {
+                    programId: event.programId,
+                    participantId: currentUserId
+                }
             }
         });
 
-        return NextResponse.json({ success: true, rsvp });
-    } catch (error) {
-        console.error("RSVP update error:", error);
-        return NextResponse.json({ error: "Failed to update RSVP" }, { status: 500 });
+        if (!isEnrolled && !isVolunteer) {
+            throw forbidden("Forbidden: You are not a participant of this program");
+        }
     }
-}
+
+    const rsvp = await prisma.rSVP.upsert({
+        where: {
+            eventId_participantId: {
+                eventId,
+                participantId: currentUserId
+            }
+        },
+        update: {
+            status: status as 'ATTENDING' | 'NOT_ATTENDING' | 'NO_RESPONSE' | 'MAYBE'
+        },
+        create: {
+            eventId,
+            participantId: currentUserId,
+            status: status as 'ATTENDING' | 'NOT_ATTENDING' | 'NO_RESPONSE' | 'MAYBE'
+        }
+    });
+
+    return { RSVP: rsvp };
+});

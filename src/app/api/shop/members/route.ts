@@ -1,50 +1,42 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { handler, forbidden, unauthorized } from "@/security/handler";
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-    const session = await getServerSession(authOptions);
+export const GET = handler('GET /api/shop/members', async ({ auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
 
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const userWithCerts = await prisma.participant.findUnique({
+        where: { id: auth.user.id },
+        select: { toolStatuses: { select: { level: true } } }
+    });
+    const hasCertifierAuth = (userWithCerts?.toolStatuses || []).some(ts => ts.level === 'MAY_CERTIFY_OTHERS');
 
-    const certs = session.user?.toolStatuses || [];
-    const hasCertifierAuth = certs.some((ts: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => ts.level === 'MAY_CERTIFY_OTHERS');
-
-    const isAuthorized = session.user?.sysadmin ||
-        session.user?.boardMember ||
-        session.user?.shopSteward ||
+    const isAuthorized = auth.user.sysadmin ||
+        auth.user.boardMember ||
+        auth.user.shopSteward ||
         hasCertifierAuth;
 
     if (!isAuthorized) {
-        return NextResponse.json({ error: "Forbidden: Requires Shop Steward, Admin, or Certifier role" }, { status: 403 });
+        throw forbidden("Forbidden: Requires Shop Steward, Admin, or Certifier role");
     }
 
-    try {
-        const members = await prisma.participant.findMany({
-            where: {
-                OR: [
-                    { household: { memberships: { some: { active: true } } } },
-                    { memberships: { some: { active: true } } }
-                ]
-            },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-            },
-            orderBy: {
-                name: 'asc'
-            }
-        });
+    const members = await prisma.participant.findMany({
+        where: {
+            OR: [
+                { household: { memberships: { some: { active: true } } } },
+                { memberships: { some: { active: true } } }
+            ]
+        },
+        select: {
+            id: true,
+            name: true,
+            email: true,
+        },
+        orderBy: {
+            name: 'asc'
+        }
+    });
 
-        return NextResponse.json({ members });
-    } catch (error) {
-        console.error("Failed to fetch shop members:", error);
-        return NextResponse.json({ error: "Failed to fetch members" }, { status: 500 });
-    }
-}
+    return { Participant: members };
+});
