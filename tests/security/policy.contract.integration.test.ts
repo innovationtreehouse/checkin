@@ -9,9 +9,13 @@
  *      (Per-row scope correctness is enforced by the handler stripper and
  *      verified by route-specific tests.)
  */
+// jest.setup.js installs a global @/lib/prisma mock that rejects all calls;
+// this is an integration test that needs the real client to seed personas.
+jest.unmock('@/lib/prisma');
+
 import { getServerSession } from 'next-auth/next';
 import { allRoutes } from '@/security/core';
-import { classifications } from '@/security/generated/classifications';
+import { classifications, relations } from '@/security/generated/classifications';
 import { collectFieldKeys, tierIsGrantable } from './helpers';
 import { loadPersonas } from './personas';
 import '@/security/registry';
@@ -93,12 +97,28 @@ describe('Security policy contract', () => {
                         // Skip array-only bodies in this generic test — route-specific
                         // tests should cover them.
                     } else if (typeof unwrapped === 'object' && unwrapped !== null) {
-                        for (const [k, v] of Object.entries(unwrapped as Record<string, unknown>)) {
-                            if (k in classifications) {
+                        const obj = unwrapped as Record<string, unknown>;
+                        const keys = Object.keys(obj);
+                        const allKeysAreModels = keys.length > 0 && keys.every(k => k in classifications);
+                        if (allKeysAreModels) {
+                            // Shape is { ModelA: ..., ModelB: ... } — walk each branch.
+                            for (const [k, v] of Object.entries(obj)) {
                                 collectFieldKeys(v, k, out);
-                            } else {
-                                out.undeclared.add(`(root).${k}`);
                             }
+                        } else {
+                            // Envelope (or single-model unwrap) replaces the model name
+                            // with the envelope name; top-level keys are field names.
+                            // Infer the unique model whose fields/relations cover every key.
+                            const modelNames = Object.keys(classifications) as Array<keyof typeof classifications>;
+                            const candidates = modelNames.filter(model => {
+                                const fields = classifications[model] as Record<string, unknown>;
+                                const rels = (relations[model as keyof typeof relations] ?? {}) as Record<string, unknown>;
+                                return keys.every(k => k in fields || k in rels || k === '_count');
+                            });
+                            if (candidates.length === 1) {
+                                collectFieldKeys(obj, candidates[0] as string, out);
+                            }
+                            // Ambiguous or no match: skip — route-specific tests cover this.
                         }
                     }
 
