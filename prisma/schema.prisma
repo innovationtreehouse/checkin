@@ -3,6 +3,11 @@ generator client {
   binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
+generator security {
+  provider = "node scripts/security-generator.js"
+  output   = "../src/security/generated/classifications.ts"
+}
+
 datasource db {
   provider = "postgresql"
 }
@@ -52,29 +57,47 @@ enum ProgramParticipantStatus {
 }
 
 model Participant {
+  /// @sensitivity:public
   id            Int       @id @default(autoincrement())
+  /// @sensitivity:pii
   googleId      String?   @unique
+  /// @sensitivity:pii
   email         String?   @unique
+  /// @sensitivity:pii
   phone         String?
+  /// @sensitivity:public
   name          String?
+  /// @sensitivity:internal
   emailVerified DateTime?
+  /// @sensitivity:public
   image         String?
   accounts      Account[]
   sessions      Session[]
 
+  /// @sensitivity:pii
   dob                 DateTime?
+  /// @sensitivity:personal
   homeAddress         String?
+  /// @sensitivity:internal
   lastWaiverSign      DateTime?
+  /// @sensitivity:internal
   waiverSignedBy      Int?
+  /// @sensitivity:internal
   lastBackgroundCheck DateTime?
+  /// @sensitivity:personal
   notificationSettings Json?
 
+  /// @sensitivity:public
   householdId Int?
   household   Household? @relation(fields: [householdId], references: [id])
 
+  /// @sensitivity:internal
   sysadmin    Boolean @default(false)
+  /// @sensitivity:public
   boardMember Boolean @default(false)
+  /// @sensitivity:internal
   keyholder   Boolean @default(false)
+  /// @sensitivity:internal
   shopSteward Boolean @default(false)
 
   toolStatuses        ToolStatus[]
@@ -84,6 +107,7 @@ model Participant {
   corporationMembers  CorporationMember[]
   programVolunteers   ProgramVolunteer[]
   programParticipants ProgramParticipant[]
+  programsLed         Program[]            @relation("ProgramLeadMentor")
   feePayments         FeePayment[]
   rsvps               RSVP[]
   rawBadgeEvents      RawBadgeEvent[]
@@ -92,15 +116,21 @@ model Participant {
 }
 
 model Tool {
+  /// @sensitivity:public
   id           Int          @id @default(autoincrement())
+  /// @sensitivity:public
   name         String
+  /// @sensitivity:public
   safetyGuide  String?
   toolStatuses ToolStatus[]
 }
 
 model ToolStatus {
+  /// @sensitivity:public
   userId Int
+  /// @sensitivity:public
   toolId Int
+  /// @sensitivity:internal
   level  ToolLevel
 
   user Participant @relation(fields: [userId], references: [id])
@@ -110,10 +140,15 @@ model ToolStatus {
 }
 
 model Household {
+  /// @sensitivity:public
   id      Int     @id @default(autoincrement())
+  /// @sensitivity:public
   name    String?
+  /// @sensitivity:personal
   address String?
+  /// @sensitivity:personal
   emergencyContactName  String?
+  /// @sensitivity:personal
   emergencyContactPhone String?
 
   participants Participant[]
@@ -122,7 +157,9 @@ model Household {
 }
 
 model HouseholdLead {
+  /// @sensitivity:public
   householdId   Int
+  /// @sensitivity:public
   participantId Int
 
   household   Household   @relation(fields: [householdId], references: [id])
@@ -132,26 +169,38 @@ model HouseholdLead {
 }
 
 model Membership {
+  /// @sensitivity:public
   id                   Int            @id @default(autoincrement())
+  /// @sensitivity:public
   since                DateTime       @default(now())
+  /// @sensitivity:public
   type                 MembershipType
+  /// @sensitivity:public
   active               Boolean        @default(true)
+  /// @sensitivity:personal
   latestShopifyReceipt String?
+  /// @sensitivity:personal
   latestDocusign       String?
 
+  /// @sensitivity:public
   householdId Int?
   household   Household? @relation(fields: [householdId], references: [id])
 
+  /// @sensitivity:public
   volunteerId Int?
   volunteer   Participant? @relation("ParticipantMemberships", fields: [volunteerId], references: [id])
 
+  /// @sensitivity:public
   corporateId Int?
   corporate   Corporation? @relation(fields: [corporateId], references: [id])
 }
 
 model Corporation {
+  /// @sensitivity:public
   id           Int     @id @default(autoincrement())
+  /// @sensitivity:pii
   primaryEmail String?
+  /// @sensitivity:personal
   address      String?
 
   leads       CorporationLead[]
@@ -160,7 +209,9 @@ model Corporation {
 }
 
 model CorporationLead {
+  /// @sensitivity:public
   corporationId Int
+  /// @sensitivity:public
   participantId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
@@ -170,7 +221,9 @@ model CorporationLead {
 }
 
 model CorporationMember {
+  /// @sensitivity:public
   corporationId Int
+  /// @sensitivity:public
   participantId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
@@ -180,23 +233,41 @@ model CorporationMember {
 }
 
 model Program {
+  /// @sensitivity:public
   id           Int       @id @default(autoincrement())
+  /// @sensitivity:public
   name            String
+  /// @sensitivity:public
   leadMentorId    Int?
+  leadMentor      Participant? @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
+  /// @sensitivity:public
   begin           DateTime?
+  /// @sensitivity:public
   end             DateTime?
+  /// @sensitivity:public
   phase                        ProgramPhase @default(PLANNING)
+  /// @sensitivity:public
   enrollmentStatus             EnrollmentStatus @default(CLOSED)
+  /// @sensitivity:public
   memberOnly                   Boolean   @default(false)
+  /// @sensitivity:public
   minAge                       Int?
+  /// @sensitivity:public
   maxAge                       Int?
+  /// @sensitivity:public
   maxParticipants              Int?
+  /// @sensitivity:personal
   leadMentorNotificationSettings Json?
 
+  /// @sensitivity:public
   memberPrice       Int?
+  /// @sensitivity:public
   nonMemberPrice    Int?
+  /// @sensitivity:public
   shopifyProductId  String?
+  /// @sensitivity:public
   shopifyMemberVariantId String?
+  /// @sensitivity:public
   shopifyNonMemberVariantId String?
 
   volunteers   ProgramVolunteer[]
@@ -206,8 +277,11 @@ model Program {
 }
 
 model ProgramVolunteer {
+  /// @sensitivity:public
   programId     Int
+  /// @sensitivity:public
   participantId Int
+  /// @sensitivity:internal
   isCore        Boolean @default(false)
 
   program     Program     @relation(fields: [programId], references: [id])
@@ -217,10 +291,15 @@ model ProgramVolunteer {
 }
 
 model ProgramParticipant {
+  /// @sensitivity:public
   programId     Int
+  /// @sensitivity:public
   participantId Int
+  /// @sensitivity:public
   status        ProgramParticipantStatus @default(PENDING)
+  /// @sensitivity:personal
   paymentPlanRequested Boolean @default(false)
+  /// @sensitivity:internal
   pendingSince         DateTime? @default(now())
 
   program     Program     @relation(fields: [programId], references: [id])
@@ -230,10 +309,15 @@ model ProgramParticipant {
 }
 
 model Fee {
+  /// @sensitivity:public
   id             Int    @id @default(autoincrement())
+  /// @sensitivity:public
   programId      Int
+  /// @sensitivity:public
   name           String
+  /// @sensitivity:public
   nonMemberPrice Int
+  /// @sensitivity:public
   memberPrice    Int
 
   program  Program      @relation(fields: [programId], references: [id])
@@ -241,11 +325,17 @@ model Fee {
 }
 
 model FeePayment {
+  /// @sensitivity:public
   feeId             Int
+  /// @sensitivity:public
   participantId     Int
+  /// @sensitivity:personal
   paidOn            DateTime? @default(now())
+  /// @sensitivity:personal
   shopifyLink       String?
+  /// @sensitivity:personal
   quickBooksInvoice String?
+  /// @sensitivity:personal
   customNote        String?
 
   fee         Fee         @relation(fields: [feeId], references: [id])
@@ -255,17 +345,27 @@ model FeePayment {
 }
 
 model Event {
+  /// @sensitivity:public
   id          Int      @id @default(autoincrement())
+  /// @sensitivity:public
   programId   Int?
+  /// @sensitivity:public
   name        String
+  /// @sensitivity:public
   start       DateTime
+  /// @sensitivity:public
   end         DateTime
+  /// @sensitivity:public
   description String?
-  
+
+  /// @sensitivity:internal
   attendanceConfirmedAt DateTime?
+  /// @sensitivity:internal
   attendanceConfirmedById Int?
   attendanceConfirmedBy Participant? @relation("EventAttendanceConfirmer", fields: [attendanceConfirmedById], references: [id])
+  /// @sensitivity:internal
   postEventEmailSent    Boolean      @default(false)
+  /// @sensitivity:public
   recurringGroupId      String?
 
   program Program? @relation(fields: [programId], references: [id])
@@ -274,8 +374,11 @@ model Event {
 }
 
 model RSVP {
+  /// @sensitivity:public
   eventId       Int
+  /// @sensitivity:public
   participantId Int
+  /// @sensitivity:public
   status        RSVPStatus
 
   event       Event       @relation(fields: [eventId], references: [id])
@@ -285,9 +388,13 @@ model RSVP {
 }
 
 model RawBadgeEvent {
+  /// @sensitivity:internal
   id            Int      @id @default(autoincrement())
+  /// @sensitivity:internal
   participantId Int
+  /// @sensitivity:personal
   time          DateTime @default(now())
+  /// @sensitivity:personal
   location      String?
 
   participant Participant @relation(fields: [participantId], references: [id])
@@ -296,10 +403,15 @@ model RawBadgeEvent {
 }
 
 model Visit {
+  /// @sensitivity:public
   id                Int       @id @default(autoincrement())
+  /// @sensitivity:public
   participantId     Int
+  /// @sensitivity:personal
   arrived           DateTime
+  /// @sensitivity:personal
   departed          DateTime?
+  /// @sensitivity:public
   associatedEventId Int?
 
   participant Participant @relation(fields: [participantId], references: [id])
@@ -309,29 +421,50 @@ model Visit {
 }
 
 model AuditLog {
+  /// @sensitivity:internal
   id                      Int         @id @default(autoincrement())
+  /// @sensitivity:internal
   time                    DateTime    @default(now())
+  /// @sensitivity:internal
   actorId                 Int
+  /// @sensitivity:internal
   action                  AuditAction
+  /// @sensitivity:internal
   tableName               String
+  /// @sensitivity:internal
   affectedEntityId        Int
+  /// @sensitivity:internal
   secondaryAffectedEntity Int?
+  /// @sensitivity:internal
   oldData                 Json?
+  /// @sensitivity:internal
   newData                 Json?
 }
 
 model Account {
+  /// @sensitivity:internal
   id                String  @id @default(cuid())
+  /// @sensitivity:internal
   userId            Int     @map("participant_id")
+  /// @sensitivity:internal
   type              String
+  /// @sensitivity:internal
   provider          String
+  /// @sensitivity:internal
   providerAccountId String
+  /// @sensitivity:secret
   refresh_token     String? @db.Text
+  /// @sensitivity:secret
   access_token      String? @db.Text
+  /// @sensitivity:internal
   expires_at        Int?
+  /// @sensitivity:internal
   token_type        String?
+  /// @sensitivity:internal
   scope             String?
+  /// @sensitivity:secret
   id_token          String? @db.Text
+  /// @sensitivity:internal
   session_state     String?
 
   user Participant @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -340,33 +473,50 @@ model Account {
 }
 
 model Session {
+  /// @sensitivity:internal
   id           String      @id @default(cuid())
+  /// @sensitivity:secret
   sessionToken String      @unique
+  /// @sensitivity:internal
   userId       Int         @map("participant_id")
+  /// @sensitivity:internal
   expires      DateTime
   user         Participant @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {
+  /// @sensitivity:internal
   identifier String
+  /// @sensitivity:secret
   token      String   @unique
+  /// @sensitivity:internal
   expires    DateTime
 
   @@unique([identifier, token])
 }
 
 model ErrorLog {
+  /// @sensitivity:internal
   id        Int      @id @default(autoincrement())
+  /// @sensitivity:internal
   createdAt DateTime @default(now())
+  /// @sensitivity:internal
   route     String?
+  /// @sensitivity:internal
   message   String
+  /// @sensitivity:internal
   stack     String?
+  /// @sensitivity:internal
   context   Json?
 }
 
 model SystemMetric {
+  /// @sensitivity:internal
   id        Int      @id @default(autoincrement())
+  /// @sensitivity:internal
   timestamp DateTime @default(now())
+  /// @sensitivity:internal
   metric    String
+  /// @sensitivity:internal
   value     Float
 }

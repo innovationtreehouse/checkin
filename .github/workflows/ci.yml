@@ -52,7 +52,22 @@ jobs:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
         run: npx prisma db push --accept-data-loss
 
+      - name: Verify security classifications are up to date
+        env:
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
+        run: |
+          npx prisma generate
+          git diff --exit-code src/security/generated/ || (echo 'src/security/generated/ is stale; run prisma generate locally and commit' && exit 1)
+
+      - name: Check route coverage (security policy lint)
+        run: npm run check-route-coverage
+
       - name: Run Jest Tests
         env:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
         run: npm run test:ci
+
+      - name: Run security policy contract tests
+        env:
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
+        run: npx jest tests/security/policy.contract.integration.test.ts --runInBand --forceExit --testPathIgnorePatterns=/node_modules/
