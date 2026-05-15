@@ -32,22 +32,37 @@ import { stripBag } from './stripper';
 import './registry';
 
 export class ApiResponseError extends Error {
-    constructor(public readonly status: number, message: string) {
+    constructor(
+        public readonly status: number,
+        message: string,
+        public readonly payload?: Record<string, unknown>,
+    ) {
         super(message);
         this.name = 'ApiResponseError';
     }
 }
 
-export const notFound = (message = 'Not found') => new ApiResponseError(404, message);
-export const forbidden = (message = 'Forbidden') => new ApiResponseError(403, message);
-export const badRequest = (message = 'Bad request') => new ApiResponseError(400, message);
-export const unauthorized = (message = 'Unauthorized') => new ApiResponseError(401, message);
+export const notFound = (message = 'Not found', payload?: Record<string, unknown>) =>
+    new ApiResponseError(404, message, payload);
+export const forbidden = (message = 'Forbidden', payload?: Record<string, unknown>) =>
+    new ApiResponseError(403, message, payload);
+export const badRequest = (message = 'Bad request', payload?: Record<string, unknown>) =>
+    new ApiResponseError(400, message, payload);
+export const unauthorized = (message = 'Unauthorized', payload?: Record<string, unknown>) =>
+    new ApiResponseError(401, message, payload);
 
 export interface HandlerContext<P = Record<string, string>> {
     req: NextRequest;
     auth: AuthResult;
     params: P;
     role: Role;
+    /**
+     * Pre-read raw request body. Populated only for routes whose `authorize`
+     * needs HMAC verification (kiosk or webhook). For routes that don't,
+     * this is undefined and fn should read the body itself via `req.text()`,
+     * `req.json()`, or `req.formData()`.
+     */
+    rawBody?: string;
 }
 
 export type ModelBag = Record<string, unknown>;
@@ -70,13 +85,23 @@ export function handler<P extends Record<string, string> = Record<string, string
         }
 
         const params = (ctx?.params ? await ctx.params : ({} as P)) ?? ({} as P);
-        const auth = await authenticateRequest(req);
+
+        // Conditionally read the raw body — needed only for HMAC-verifying
+        // auth types (kiosk, webhook). For routes that don't, fn reads the
+        // body itself when it needs to.
+        const rawBody = needsRawBodyForAuth(spec.authorize)
+            ? await req.text()
+            : undefined;
+
+        const auth = await authenticateRequest(req, rawBody);
         const callerCtx = await buildCallerContext(auth);
 
         const { allowed } = await resolveAccess(spec.authorize, {
             auth,
             params,
             callerContext: callerCtx,
+            req,
+            rawBody,
         });
         if (!allowed) {
             return apiError(
@@ -103,9 +128,9 @@ export function handler<P extends Record<string, string> = Record<string, string
 
         let bag: ModelBag;
         try {
-            bag = await fn({ req, auth, params, role: chosenRole });
+            bag = await fn({ req, auth, params, role: chosenRole, rawBody });
         } catch (err) {
-            if (err instanceof ApiResponseError) return apiError(err.message, err.status);
+            if (err instanceof ApiResponseError) return apiError(err.message, err.status, err.payload);
             console.error(`[${endpoint}] handler error:`, err);
             return apiError('Internal Server Error', 500);
         }
@@ -128,4 +153,17 @@ export function handler<P extends Record<string, string> = Record<string, string
         }
         return NextResponse.json(body, { status: 200 });
     };
+}
+
+/**
+ * Returns true if the authorize gate verifies HMAC over the request body
+ * (kiosk signature, webhook signature, or any anyOf alternative that does).
+ * For these, the handler reads the body once up front so both the auth
+ * verifier and the route fn see the same bytes.
+ */
+function needsRawBodyForAuth(a: import('./core').Authorize): boolean {
+    if (typeof a === 'string') return a === 'kiosk';
+    if ('webhook' in a) return true;
+    if ('anyOf' in a) return a.anyOf.some(needsRawBodyForAuth);
+    return false;
 }

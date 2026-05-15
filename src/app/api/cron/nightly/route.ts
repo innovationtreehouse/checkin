@@ -1,25 +1,10 @@
-import { NextResponse } from "next/server";
-import crypto from "crypto";
 import prisma from "@/lib/prisma";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
+import { ApiResponseError, handler } from "@/security/handler";
+import { logBackendError } from "@/lib/logger";
 
-export async function GET(req: Request) {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || !authHeader) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const expectedHeader = `Bearer ${cronSecret}`;
-    const providedBuffer = Buffer.from(authHeader);
-    const expectedBuffer = Buffer.from(expectedHeader);
-
-    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+export const GET = handler('GET /api/cron/nightly', async () => {
     try {
         const now = new Date();
 
@@ -45,7 +30,7 @@ export async function GET(req: Request) {
 
             // If at least one was a keyholder, the facility was left "Open". We need to alert the board.
             const abandonedKeyholders = abandonedVisits.filter(v => v.participant.keyholder);
-            
+
             if (abandonedKeyholders.length > 0) {
                 const boardMembers = await prisma.participant.findMany({
                     where: { boardMember: true },
@@ -57,7 +42,7 @@ export async function GET(req: Request) {
                 // System Audit Log for the violation
                 await prisma.auditLog.create({
                     data: {
-                        actorId: 0, 
+                        actorId: 0,
                         action: 'CREATE',
                         tableName: 'SYSTEM_NOTIFY',
                         affectedEntityId: 0,
@@ -67,7 +52,7 @@ export async function GET(req: Request) {
 
                 console.log(`CRITICAL NOTIFICATION TO BOARD MEMBERS (${boardMembers.map(m => m.email).join(', ')}):`);
                 console.log(`Facility was auto-closed by the nightly cron. The following keyholders failed to badge out: ${keyholderNames}`);
-                
+
                 boardNotified = true;
             }
         }
@@ -75,17 +60,17 @@ export async function GET(req: Request) {
         // 2. Process all pending post-event emails immediately, regardless of 1-hour delay
         const emailResult = await processPostEventEmails({ forceImmediate: true });
 
-        return NextResponse.json({ 
-            success: true, 
+        return {
+            success: true,
             facilityClose: {
                 checkedOutCount,
                 boardNotified
             },
             postEvents: emailResult
-        });
-
-    } catch (error) {
-        console.error("Failed to run nightly cron:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "GET /api/cron/nightly");
+        throw err;
     }
-}
+});

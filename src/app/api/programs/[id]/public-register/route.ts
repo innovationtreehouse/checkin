@@ -1,15 +1,16 @@
-import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { logBackendError } from "@/lib/logger";
+import { buildShopifyCheckoutUrl } from "@/lib/shopify";
+import { ApiResponseError, badRequest, handler, notFound } from "@/security/handler";
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
+export const POST = handler<{ id: string }>('POST /api/programs/[id]/public-register', async ({ req, params }) => {
+    const { id } = params;
 
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
+            throw badRequest("Invalid program ID");
         }
 
         const currentProgram = await prisma.program.findUnique({
@@ -20,75 +21,75 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         });
 
         if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
+            throw notFound("Program not found");
         }
 
         const body = await req.json();
         const { parents, emergencyContact, participants } = body;
 
         if (!parents || parents.length === 0 || !parents[0].name || !parents[0].email || !parents[0].phone) {
-            return NextResponse.json({ error: "Primary parent/guardian information is required." }, { status: 400 });
+            throw badRequest("Primary parent/guardian information is required.");
         }
         if (!emergencyContact || !emergencyContact.name || !emergencyContact.phone) {
-            return NextResponse.json({ error: "Emergency contact is required." }, { status: 400 });
+            throw badRequest("Emergency contact is required.");
         }
         if (!participants || participants.length === 0) {
-            return NextResponse.json({ error: "At least one participant is required." }, { status: 400 });
+            throw badRequest("At least one participant is required.");
         }
 
         // Validate Emergency Contact phone doesn't match parents
-        const parentPhones = parents.map((p: any) => p.phone && p.phone.replace(/\D/g, '')).filter(Boolean);
+        const parentPhones = parents.map((p: { phone?: string }) => p.phone && p.phone.replace(/\D/g, '')).filter(Boolean);
         const emergencyPhone = emergencyContact.phone.replace(/\D/g, '');
         if (parentPhones.includes(emergencyPhone)) {
-             return NextResponse.json({ error: "Emergency contact phone must be different from parent/guardian phone numbers." }, { status: 400 });
+            throw badRequest("Emergency contact phone must be different from parent/guardian phone numbers.");
         }
 
         // Check for existing emails to prevent Unique Constraint violations
-        const emailsToCheck = parents.map((p: any) => p.email).filter(Boolean);
+        const emailsToCheck = parents.map((p: { email?: string }) => p.email).filter(Boolean);
         if (emailsToCheck.length > 0) {
             const existingUsers = await prisma.participant.findMany({
                 where: { email: { in: emailsToCheck } }
             });
             if (existingUsers.length > 0) {
-                return NextResponse.json({ error: "An account with that email already exists. Please log in to enroll." }, { status: 400 });
+                throw badRequest("An account with that email already exists. Please log in to enroll.");
             }
         }
 
         // Check Capacity
         if (currentProgram.maxParticipants !== null && currentProgram._count.participants + participants.length > currentProgram.maxParticipants) {
-            return NextResponse.json({ error: `Not enough open spots. Only ${currentProgram.maxParticipants - currentProgram._count.participants} spots left.` }, { status: 400 });
+            throw badRequest(`Not enough open spots. Only ${currentProgram.maxParticipants - currentProgram._count.participants} spots left.`);
         }
 
         // Check Enrollment Status
         if (currentProgram.enrollmentStatus === 'CLOSED') {
-            return NextResponse.json({ error: "Program enrollment is currently closed." }, { status: 400 });
+            throw badRequest("Program enrollment is currently closed.");
         }
 
         // Check Age constraints
         if (currentProgram.minAge !== null || currentProgram.maxAge !== null) {
             for (const p of participants) {
-                const isMatchingParent = parents.some((parent: any) => parent.name.toLowerCase().trim() === p.name.toLowerCase().trim());
+                const isMatchingParent = parents.some((parent: { name: string }) => parent.name.toLowerCase().trim() === p.name.toLowerCase().trim());
                 if (isMatchingParent) {
                     // It's an adult parent. Assume they are over 18.
-                    const age = 30; 
+                    const age = 30;
                     if (currentProgram.minAge !== null && age < currentProgram.minAge) {
-                        return NextResponse.json({ error: `Participant ${p.name} does not meet minimum age restriction.` }, { status: 400 });
+                        throw badRequest(`Participant ${p.name} does not meet minimum age restriction.`);
                     }
                     if (currentProgram.maxAge !== null && age > currentProgram.maxAge) {
-                        return NextResponse.json({ error: `Participant ${p.name} exceeds maximum age restriction.` }, { status: 400 });
+                        throw badRequest(`Participant ${p.name} exceeds maximum age restriction.`);
                     }
                 } else {
                     if (!p.dob) {
-                        return NextResponse.json({ error: `Date of Birth is required for participant ${p.name} to verify age constraints.` }, { status: 400 });
+                        throw badRequest(`Date of Birth is required for participant ${p.name} to verify age constraints.`);
                     }
                     const ageDifMs = Date.now() - new Date(p.dob).getTime();
                     const ageDate = new Date(ageDifMs);
                     const age = Math.abs(ageDate.getUTCFullYear() - 1970);
                     if (currentProgram.minAge !== null && age < currentProgram.minAge) {
-                        return NextResponse.json({ error: `Participant ${p.name} must be at least ${currentProgram.minAge} years old.` }, { status: 400 });
+                        throw badRequest(`Participant ${p.name} must be at least ${currentProgram.minAge} years old.`);
                     }
                     if (currentProgram.maxAge !== null && age > currentProgram.maxAge) {
-                        return NextResponse.json({ error: `Participant maximum age is ${currentProgram.maxAge} years old for ${p.name}.` }, { status: 400 });
+                        throw badRequest(`Participant maximum age is ${currentProgram.maxAge} years old for ${p.name}.`);
                     }
                 }
             }
@@ -133,10 +134,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
             // 3. Create Participants & Enrollments
             const enrolledParticipantIds: number[] = [];
-            
+
             for (const p of participants) {
                 let participantId: number;
-                
+
                 const matchedParent = createdParents.find(cp => cp.name && cp.name.toLowerCase().trim() === p.name.toLowerCase().trim());
 
                 if (matchedParent) {
@@ -182,24 +183,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             await sendNotification(participantId, 'PROGRAM_ENROLLMENT', { programName: currentProgram.name }).catch(e => console.error(e));
         }
 
-        // 5. Build Checkout URL if not free
-        let checkoutUrl = null;
+        // 5. Build Checkout URL if not free (via gateway → src/lib/shopify.ts)
+        let checkoutUrl: string | null = null;
         if (!isFree && currentProgram.shopifyNonMemberVariantId) {
-            const storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
-            const accountIdsStr = result.enrolledParticipantIds.join(',');
-            const quantity = result.enrolledParticipantIds.length;
-            checkoutUrl = `https://${storeDomain}/cart/${currentProgram.shopifyNonMemberVariantId}:${quantity}?attributes[CheckMeIn_Account_ID]=${accountIdsStr}&attributes[Program_ID]=${programId}`;
+            checkoutUrl = await buildShopifyCheckoutUrl({
+                variantId: currentProgram.shopifyNonMemberVariantId,
+                quantity: result.enrolledParticipantIds.length,
+                participantIds: result.enrolledParticipantIds,
+                programId,
+            });
         }
 
-        return NextResponse.json({ 
-            success: true, 
+        return {
+            success: true,
             isFree,
             checkoutUrl,
-            message: isFree ? "Enrollment complete." : "Redirecting to Shopify for payment."
-        });
-
-    } catch (error: any) {
-        await logBackendError(error, "POST /api/programs/[id]/public-register");
-        return NextResponse.json({ error: "An error occurred during registration." }, { status: 500 });
+            message: isFree ? "Enrollment complete." : "Redirecting to Shopify for payment.",
+        };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "POST /api/programs/[id]/public-register");
+        throw err;
     }
-}
+});

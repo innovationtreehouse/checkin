@@ -1,37 +1,30 @@
-import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
-import { authenticateRequest } from "@/lib/auth";
-import { apiError } from "@/lib/api-response";
 import { processCheckin, processCheckout } from "@/lib/scan-service";
 import { logBackendError } from "@/lib/logger";
+import { ApiResponseError, badRequest, forbidden, handler, notFound } from "@/security/handler";
 
-export async function POST(req: NextRequest) {
+// Admits either a verified kiosk badge scan or an authenticated session.
+// The framework's `anyOf: ['kiosk', 'authenticated']` gate runs HMAC for
+// the kiosk path, so `ctx.rawBody` is already populated with the verified
+// bytes — DO NOT call `req.text()` here, parse JSON from rawBody instead.
+export const POST = handler('POST /api/scan', async ({ auth, rawBody }) => {
     const startTime = Date.now();
     try {
-        const rawBody = await req.text();
-
-        // 1. Authenticate
-        const auth = await authenticateRequest(req, rawBody);
-
         let body;
         try {
-            body = JSON.parse(rawBody);
+            body = JSON.parse(rawBody!);
         } catch {
-            return apiError("Invalid JSON payload.", 400);
+            throw badRequest("Invalid JSON payload.");
         }
 
         const participantId = body.participantId;
 
         if (!participantId || typeof participantId !== 'number') {
-            return apiError("A valid numeric participantId is required.", 400);
+            throw badRequest("A valid numeric participantId is required.");
         }
 
-        // 2. Authorization
-        if (auth.type === 'unauthenticated') {
-            return apiError("Unauthorized: Missing kiosk signature or invalid session", 401);
-        }
-
-        // Web session: check if user can scan this participant
+        // Authorization (the framework already admitted us as kiosk or session;
+        // these checks add the row-level rules the gate can't express).
         let pendingHouseholdCheck = false;
         if (auth.type === 'session') {
             const user = auth.user;
@@ -41,35 +34,35 @@ export async function POST(req: NextRequest) {
             // In production, only privileged users may self-check-in via web.
             // Everyone else must use the kiosk badge scanner.
             if (isSelf && !isAdmin && process.env.NODE_ENV === 'production') {
-                return apiError("Please use the kiosk badge scanner to check in.", 403);
+                throw forbidden("Please use the kiosk badge scanner to check in.");
             }
 
             if (!isSelf && !isAdmin) {
                 if (user.householdId && user.householdLead) {
                     pendingHouseholdCheck = true;
                 } else {
-                    return apiError("Forbidden: You are not authorized to scan this user.", 403);
+                    throw forbidden("Forbidden: You are not authorized to scan this user.");
                 }
             }
         }
 
-        // 3. Lookup participant
+        // Lookup participant
         const participant = await prisma.participant.findUnique({
             where: { id: participantId },
         });
 
         if (!participant) {
-            return apiError(`Participant ${participantId} not found.`, 404);
+            throw notFound(`Participant ${participantId} not found.`);
         }
 
         // Household lead check: verify participant is in the same household
         if (pendingHouseholdCheck && auth.type === 'session') {
             if (participant.householdId !== auth.user.householdId) {
-                return apiError("Forbidden: You are not authorized to scan this user.", 403);
+                throw forbidden("Forbidden: You are not authorized to scan this user.");
             }
         }
 
-        // 4. Double scan debounce check (3 seconds)
+        // Double scan debounce check (3 seconds)
         const threeSecondsAgo = new Date(Date.now() - 3000);
         const recentScan = await prisma.rawBadgeEvent.findFirst({
             where: {
@@ -82,13 +75,10 @@ export async function POST(req: NextRequest) {
 
         if (recentScan) {
             // Silently ignore to prevent accidental double-scans without disrupting UI
-            return new Response(JSON.stringify({ type: 'ignored_debounce', message: 'Scan ignored due to debounce.' }), {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return { type: 'ignored_debounce', message: 'Scan ignored due to debounce.' };
         }
 
-        // 5. Record raw badge event
+        // Record raw badge event
         await prisma.rawBadgeEvent.create({
             data: {
                 participantId: participant.id,
@@ -96,7 +86,7 @@ export async function POST(req: NextRequest) {
             },
         });
 
-        // 6. Check-in or check-out
+        // Check-in or check-out
         const activeVisit = await prisma.visit.findFirst({
             where: {
                 participantId: participant.id,
@@ -112,10 +102,11 @@ export async function POST(req: NextRequest) {
         } else {
             return await processCheckin(participant, authType);
         }
-    } catch (error) {
-        console.error("Scan processing error:", error);
-        await logBackendError(error, "POST /api/scan");
-        return apiError("Internal Server Error while processing scan.", 500);
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        console.error("Scan processing error:", err);
+        await logBackendError(err, "POST /api/scan");
+        throw err;
     } finally {
         const durationMs = Date.now() - startTime;
         prisma.systemMetric.create({
@@ -125,4 +116,4 @@ export async function POST(req: NextRequest) {
             }
         }).catch((err: unknown) => console.error("Failed to log scan_response_time metric:", err));
     }
-}
+});

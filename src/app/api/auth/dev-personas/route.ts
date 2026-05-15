@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { handler } from "@/security/handler";
 
 export const dynamic = 'force-dynamic';
 
@@ -8,13 +8,12 @@ export const dynamic = 'force-dynamic';
  *
  * Dev-only endpoint that returns all @example.com participants
  * with their role flags for the dev login picker.
+ *
+ * Gated by `authorize: 'dev-only'` — the framework returns 403 when
+ * NEXT_PUBLIC_DEV_AUTH is unset. (The original handler returned 404
+ * for the same condition; the frontend treats both identically.)
  */
-export async function GET() {
-    // Block if dev auth is not explicitly enabled
-    if (!process.env.NEXT_PUBLIC_DEV_AUTH) {
-        return NextResponse.json({ error: "Not available" }, { status: 404 });
-    }
-
+export const GET = handler('GET /api/auth/dev-personas', async () => {
     const personas = await prisma.participant.findMany({
         where: {
             email: { endsWith: "@example.com" },
@@ -39,5 +38,5 @@ export async function GET() {
         orderBy: { id: "asc" },
     });
 
-    return NextResponse.json({ personas });
-}
+    return personas as unknown as Record<string, unknown>;
+});

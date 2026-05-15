@@ -1,28 +1,13 @@
-import { NextResponse } from "next/server";
-import crypto from "crypto";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
+import { ApiResponseError, handler } from "@/security/handler";
+import { logBackendError } from "@/lib/logger";
 
 /**
  * Expected to be called by an external CRON trigger (e.g. Vercel Cron or CloudWatch Events)
  * GET /api/cron/reminders
  */
-export async function GET(req: Request) {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || !authHeader) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const expectedHeader = `Bearer ${cronSecret}`;
-    const providedBuffer = Buffer.from(authHeader);
-    const expectedBuffer = Buffer.from(expectedHeader);
-
-    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+export const GET = handler('GET /api/cron/reminders', async () => {
     try {
         const now = new Date();
         const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
@@ -60,9 +45,10 @@ export async function GET(req: Request) {
 
         await Promise.all(notificationPromises);
 
-        return NextResponse.json({ success: true, processedEvents: upcomingEvents.length, notificationsSent });
-    } catch (error) {
-        console.error("Failed to run cron reminders:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return { success: true, processedEvents: upcomingEvents.length, notificationsSent };
+    } catch (err) {
+        if (err instanceof ApiResponseError) throw err;
+        await logBackendError(err, "GET /api/cron/reminders");
+        throw err;
     }
-}
+});

@@ -791,11 +791,114 @@ defineRoute({
     ],
 });
 
+// ─── Cron jobs (Bearer CRON_SECRET) ────────────────────────────────────────
+// Operational endpoints invoked by Vercel Cron / CloudWatch Events. They
+// return aggregated counts/markers, not model rows, so the stripper is
+// bypassed; `authorize: 'cron'` (timing-safe Bearer check) is the only gate.
+
+defineRoute({
+    endpoint: 'GET /api/cron/nightly',
+    authorize: 'cron',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/cron/pending-participants',
+    authorize: 'cron',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/cron/post-event',
+    authorize: 'cron',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+defineRoute({
+    endpoint: 'GET /api/cron/reminders',
+    authorize: 'cron',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+// ─── Dev personas (dev-login picker) ───────────────────────────────────────
+// `dev-only` gate passes iff NEXT_PUBLIC_DEV_AUTH is set. The list of
+// @example.com personas is dev-tooling, never shipped to prod, so the
+// stripper is bypassed.
+
+defineRoute({
+    endpoint: 'GET /api/auth/dev-personas',
+    authorize: 'dev-only',
+    envelope: 'personas',
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+// ─── Public program registration (self-serve enrollment) ──────────────────
+// Anyone can enroll their household into a program by POSTing this form;
+// downstream we may hand them a Shopify checkout URL. Response shape is
+// `{ success, isFree, checkoutUrl, message }` — not model rows — so the
+// stripper is bypassed.
+
+defineRoute({
+    endpoint: 'POST /api/programs/[id]/public-register',
+    authorize: 'public',
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+// ─── Scan (kiosk OR session) ───────────────────────────────────────────────
+// Kiosk badge readers and authenticated web sessions both POST here. The
+// `anyOf` gate runs HMAC verification when an x-kiosk-signature header is
+// present (rawBody is consumed there) and falls through to the session
+// auth check otherwise. Response shape varies (checkin/checkout/warning)
+// and is computed from multiple models, so the stripper is bypassed.
+
+defineRoute({
+    endpoint: 'POST /api/scan',
+    authorize: { anyOf: ['kiosk', 'authenticated'] },
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
+// ─── Webhooks ──────────────────────────────────────────────────────────────
+// Shopify posts order events here. HMAC-SHA256 over the raw body using
+// SHOPIFY_WEBHOOK_SECRET is verified by the framework. Response is a
+// simple `{ success: true }` acknowledgement.
+
+defineRoute({
+    endpoint: 'POST /api/webhooks/shopify',
+    authorize: { webhook: 'shopify' },
+    envelope: null,
+    orderedView: [],
+    dangerously_allow_all_data_access: true,
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
     surface: 'shopify.product.create',
     // Program name + prices + maxParticipants — all 'public' tier.
+    tiers: ['public'],
+});
+
+defineOutbound({
+    surface: 'shopify.checkout-url',
+    // No request body crosses the network — we hand a URL to the client
+    // who then redirects. The participant + program IDs travel embedded
+    // in that URL (query string), so we route through outboundCall() to
+    // surface the egress in the policy. Only 'public' tier fields ever
+    // make it into the URL (program.id, program.shopifyNonMemberVariantId,
+    // participant.id).
     tiers: ['public'],
 });
 

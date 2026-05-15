@@ -3,6 +3,7 @@
 
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { outboundCall } from "@/security/outbound";
 
 let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
@@ -232,4 +233,43 @@ export async function createShopifyProgramVariants(name: string, memberPrice: nu
     // We log it but do not crash the app. Admin will need to create variants manually.
     return null;
   }
+}
+
+/**
+ * Build the Shopify cart-permalink URL we redirect a registrant to when
+ * a program isn't free. The URL embeds the program ID and the list of
+ * participant IDs so that, after payment, our /api/webhooks/shopify
+ * handler can mark the right ProgramParticipant rows as ACTIVE.
+ *
+ * The third-party domain only ever sees IDs (no PII), but because the
+ * URL is the egress surface we route through outboundCall() to keep the
+ * gateway as the single accounting point for "data destined for Shopify."
+ * The `send` callback constructs and returns the URL string — no actual
+ * network call is made; the client follows the redirect.
+ */
+export async function buildShopifyCheckoutUrl(args: {
+    variantId: string;
+    quantity: number;
+    participantIds: number[];
+    programId: number;
+}): Promise<string | null> {
+    const storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+    if (!storeDomain) return null;
+
+    // We pass the relevant rows as a typed bag so the outbound stripper
+    // can see "this is a Program + Participants payload" — even though
+    // only IDs (public tier) end up on the wire.
+    return outboundCall(
+        'shopify.checkout-url',
+        {
+            Program: { id: args.programId },
+            Participant: args.participantIds.map(id => ({ id })),
+        },
+        async () => {
+            const accountIdsStr = args.participantIds.join(',');
+            return `https://${storeDomain}/cart/${args.variantId}:${args.quantity}` +
+                `?attributes[CheckMeIn_Account_ID]=${accountIdsStr}` +
+                `&attributes[Program_ID]=${args.programId}`;
+        },
+    );
 }

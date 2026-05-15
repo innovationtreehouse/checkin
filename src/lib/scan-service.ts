@@ -1,13 +1,16 @@
 import prisma from "@/lib/prisma";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { sendCheckinNotifications } from "@/lib/notifications";
-import { apiError, apiJson } from "@/lib/api-response";
+import { ApiResponseError, badRequest, forbidden } from "@/security/handler";
 import type { Participant } from "@prisma/client";
 
 /**
  * Process a check-in for a participant who has no active visit.
+ *
+ * Returns the response bag. Throws ApiResponseError to surface 4xx
+ * conditions (handler() maps these to the right HTTP status).
  */
-export async function processCheckin(participant: Participant, authType: string) {
+export async function processCheckin(participant: Participant, authType: string): Promise<Record<string, unknown>> {
     // Non-keyholders require an open facility (at least 1 keyholder present)
     if (!participant.keyholder) {
         const activeKeyholders = await prisma.visit.count({
@@ -18,7 +21,7 @@ export async function processCheckin(participant: Participant, authType: string)
         });
 
         if (activeKeyholders === 0) {
-            return apiError("Facility is closed. A Keyholder must check in first.", 403);
+            throw forbidden("Facility is closed. A Keyholder must check in first.");
         }
     }
 
@@ -38,24 +41,31 @@ export async function processCheckin(participant: Participant, authType: string)
         console.error('Checkin notification error:', err)
     );
 
-    return apiJson({
+    return {
         message: "Checked in successfully",
         type: "checkin" as const,
         participant,
         visit: newVisit,
         signedRequest: authType === "kiosk",
-    });
+    };
 }
 
 /**
  * Process a check-out for a participant who has an active visit.
  * Handles last-keyholder logic and facility closure.
+ *
+ * Returns the response bag. Throws ApiResponseError to surface 4xx
+ * conditions (handler() maps these to the right HTTP status). The
+ * last-keyholder warning is a 400 with the warning text in `error`
+ * plus `type: "warning"` in the body — preserved here via
+ * `badRequest(msg, { type: "warning" })` so the framework emits
+ * `{ error, details: { type: "warning" } }`.
  */
 export async function processCheckout(
     participant: Participant,
     activeVisitId: number,
     authType: string
-) {
+): Promise<Record<string, unknown>> {
     let facilityClosed = false;
 
     if (participant.keyholder) {
@@ -94,10 +104,10 @@ export async function processCheckout(
 
                 if (!confirmForceClose) {
                     const names = remainingUsers.map(u => u.participant.name || u.participant.email).join(", ");
-                    return apiJson({
-                        error: `Warning! You are the last keyholder, but others are here:\n${names}\n\nBadge again within 10 seconds to confirm you've checked them and close the facility.`,
-                        type: "warning" as const
-                    }, 400);
+                    throw badRequest(
+                        `Warning! You are the last keyholder, but others are here:\n${names}\n\nBadge again within 10 seconds to confirm you've checked them and close the facility.`,
+                        { type: "warning" },
+                    );
                 }
             }
 
@@ -119,12 +129,15 @@ export async function processCheckout(
     const finalVisits = await processVisitCheckout(activeVisitId, new Date());
     const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : null;
 
-    return apiJson({
+    return {
         message: facilityClosed ? "Checked out and Facility closed" : "Checked out successfully",
         type: "checkout" as const,
         participant,
         visit: updatedVisit,
         facilityClosed,
         signedRequest: authType === "kiosk",
-    });
+    };
 }
+
+// Re-export so callers don't have to import from both modules.
+export { ApiResponseError };

@@ -199,7 +199,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: payload
         });
 
-        const res = await ShopifyWebhook(req);
+        const res = await ShopifyWebhook(req as unknown as import("next/server").NextRequest);
         expect(res.status).toBe(200);
 
         const dbRecord = await prisma.programParticipant.findUnique({
@@ -227,7 +227,7 @@ describe('Program Lifecycle Integration Tests', () => {
             headers: { 'authorization': `Bearer cron_test_secret` }
         });
 
-        let res = await CronPending(req);
+        let res = await CronPending(req as unknown as import("next/server").NextRequest);
         let data = await res.json();
         
         expect(res.status).toBe(200);
@@ -248,7 +248,7 @@ describe('Program Lifecycle Integration Tests', () => {
             headers: { 'authorization': `Bearer cron_test_secret` }
         });
 
-        res = await CronPending(req);
+        res = await CronPending(req as unknown as import("next/server").NextRequest);
         data = await res.json();
         expect(res.status).toBe(200);
         expect(data.kicked).toBe(0); // Should be saved!
