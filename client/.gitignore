@@ -1,0 +1,10 @@
+# Private key - NEVER commit
+client.key
+config.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
