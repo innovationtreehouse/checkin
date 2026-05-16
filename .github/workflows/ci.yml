@@ -4,9 +4,13 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'client/**'
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - 'client/**'
   merge_group:
 
 jobs:
