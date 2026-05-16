@@ -18,7 +18,11 @@ const customJestConfig = {
     },
     testPathIgnorePatterns: [
         '/node_modules/',
+        '/.claude/worktrees/',
         '\\.integration\\.test\\.[jt]sx?$',
+    ],
+    modulePathIgnorePatterns: [
+        '<rootDir>/.claude/worktrees/',
     ],
 }
 

@@ -2,6 +2,11 @@
 
 A member check-in and program management system built with Next.js, Prisma, and PostgreSQL.
 
+## Repository layout
+
+- **`/`** — Next.js + Prisma backend (this README's "Local Setup" applies here)
+- **`client/`** — Python kiosk client that runs on Raspberry Pi devices at the facility entrance. See [`client/README.md`](client/README.md).
+
 ## Local Setup
 
 Follow the guide for your operating system:
