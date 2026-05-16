@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CheckMeIn Kiosk — start script for Raspberry Pi
-# Run this from the checkin-client directory.
+# Run this from the client/ directory of the checkin monorepo.
 set -e
 
 # Ensure we're in the script's directory
@@ -8,7 +8,9 @@ cd "$(dirname "$0")"
 
 while true; do
   echo "Pulling latest changes from git..."
-  git pull origin master || true
+  # Pull from the monorepo root: this script lives in client/ inside the
+  # `checkin` monorepo, so .git is one level up. -C makes the target explicit.
+  git -C "$(git rev-parse --show-toplevel)" pull origin main || true
 
   # Start the client backend
   echo "Starting kiosk client..."

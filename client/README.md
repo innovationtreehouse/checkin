@@ -51,7 +51,7 @@ LightDM auto-login → Openbox X session → autostart runs kiosk.sh
    Then edit `~/.config/openbox/autostart` — replace any `chromium-browser`/`chromium` line at the end with:
    ```bash
    # Start kiosk client + Chromium (reads port from config.json)
-   cd ~/checkin-client && ./kiosk.sh &
+   cd ~/checkin/client && ./kiosk.sh &
    ```
 
 3. **`/etc/xdg/openbox/autostart`** — comment out any direct `chromium` line (the user autostart overrides it, but both files are sourced):
@@ -110,5 +110,6 @@ When `usb_device` is empty in `config.json`, the client reads participant IDs fr
 - `client.py` — Main process (signing proxy server + scan listener + flash overlay)
 - `generate_keys.py` — One-time Ed25519 keypair generator
 - `kiosk.sh` — Pi startup script (launches client.py, reads port from config, opens Chromium)
+- `migrate.sh` — One-time migration script for Pis on the old standalone `checkin-client` repo
 - `config.json` — Runtime configuration (not committed)
 - `client.key` — Ed25519 private key (not committed)
