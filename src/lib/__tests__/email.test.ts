@@ -1,4 +1,4 @@
-import { sendEmail } from '../email.ts';
+import { sendEmail } from '../email';
 jest.mock('resend');
 jest.mock('../config.ts', () => ({
     config: {
@@ -6,6 +6,11 @@ jest.mock('../config.ts', () => ({
         emailFrom: () => 'test@test.com'
     }
 }));
+
+// process.env.NODE_ENV is typed read-only; tests need to vary it at runtime
+const setNodeEnv = (value: string | undefined) => {
+    Object.defineProperty(process.env, 'NODE_ENV', { value, configurable: true });
+};
 
 describe('Email Logging Security', () => {
     let originalConsoleLog: (...data: unknown[]) => void;
@@ -19,11 +24,11 @@ describe('Email Logging Security', () => {
 
     afterEach(() => {
         console.log = originalConsoleLog;
-        process.env.NODE_ENV = originalEnv;
+        setNodeEnv(originalEnv);
     });
 
     it('should not log email body in production', async () => {
-        process.env.NODE_ENV = 'production';
+        setNodeEnv('production');
         const html = 'Sensitive Information <a href="reset">Link</a>';
 
         await sendEmail('test@test.com', 'Test Subject', html);
@@ -33,7 +38,7 @@ describe('Email Logging Security', () => {
     });
 
     it('should log email body in development', async () => {
-        process.env.NODE_ENV = 'development';
+        setNodeEnv('development');
         const html = 'Development Body';
 
         await sendEmail('test@test.com', 'Test Subject', html);
