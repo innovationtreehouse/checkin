@@ -33,14 +33,9 @@ describe('Admin Households API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-households-api-test@example.com', name: 'Admin Households Test', sysadmin: true }
+            data: { email: 'admin-households-api-test@example.com', name: 'Admin Households Test', sysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
-
-        const user = await prisma.participant.create({
-            data: { email: 'user-households-api-test@example.com', name: 'User Households Test' }
-        });
-        testUserId = user.id;
 
         const household1 = await prisma.household.create({
             data: { name: 'Households API Test 1' }
@@ -51,12 +46,12 @@ describe('Admin Households API Integration Tests', () => {
             data: { name: 'Households API Test 2' }
         });
         testHousehold2Id = household2.id;
-        
+
         // Add user to household 2 for search testing
-        await prisma.participant.update({
-            where: { id: testUserId },
-            data: { householdId: testHousehold2Id }
+        const user = await prisma.participant.create({
+            data: { email: 'user-households-api-test@example.com', name: 'User Households Test', householdId: testHousehold2Id }
         });
+        testUserId = user.id;
 
         // Create an existing membership for household 2
         await prisma.membership.create({

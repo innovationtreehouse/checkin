@@ -22,17 +22,17 @@ describe('Cron Nightly API Integration Tests', () => {
 
         // Setup Users
         const board = await prisma.participant.create({
-            data: { email: 'board-nightly@example.com', name: 'Board Member', boardMember: true }
+            data: { email: 'board-nightly@example.com', name: 'Board Member', boardMember: true, household: { create: {} } }
         });
         boardMemberId = board.id;
 
         const keyholder = await prisma.participant.create({
-            data: { email: 'keyholder-nightly@example.com', name: 'Forgetful Keyholder', keyholder: true }
+            data: { email: 'keyholder-nightly@example.com', name: 'Forgetful Keyholder', keyholder: true, household: { create: {} } }
         });
         keyholderId = keyholder.id;
 
         const normalUser = await prisma.participant.create({
-            data: { email: 'user-nightly@example.com', name: 'Normal User' }
+            data: { email: 'user-nightly@example.com', name: 'Normal User', household: { create: {} } }
         });
         normalUserId = normalUser.id;
 
@@ -86,8 +86,18 @@ describe('Cron Nightly API Integration Tests', () => {
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Test Event - Nightly' } } });
         await prisma.program.deleteMany({ where: { name: 'Nightly Test Program' } });
         await prisma.auditLog.deleteMany();
+
+        // RESTRICT: delete participants before their (auto-created) households.
+        const householdIds = (await prisma.participant.findMany({
+            where: { email: { contains: '-nightly@' } },
+            select: { householdId: true }
+        })).map(p => p.householdId);
+
         await prisma.participant.deleteMany({
             where: { email: { contains: '-nightly@' } }
+        });
+        await prisma.household.deleteMany({
+            where: { id: { in: householdIds } }
         });
     }
 

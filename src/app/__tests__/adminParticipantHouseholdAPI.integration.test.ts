@@ -27,12 +27,12 @@ describe('Admin Participant Household API Integration Tests', () => {
         });
 
         const admin = await prisma.participant.create({
-            data: { email: 'admin-household-api-test@example.com', name: 'Admin Test', sysadmin: true }
+            data: { email: 'admin-household-api-test@example.com', name: 'Admin Test', sysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.participant.create({
-            data: { email: 'user-household-api-test@example.com', name: 'User Test' }
+            data: { email: 'user-household-api-test@example.com', name: 'User Test', household: { create: {} } }
         });
         testUserId = user.id;
 
@@ -55,7 +55,7 @@ describe('Admin Participant Household API Integration Tests', () => {
 
     beforeEach(async () => {
         const participant = await prisma.participant.create({
-            data: { email: 'subject-household-api-test@example.com', name: 'Subject Test' }
+            data: { email: 'subject-household-api-test@example.com', name: 'Subject Test', household: { create: {} } }
         });
         testParticipantId = participant.id;
     });

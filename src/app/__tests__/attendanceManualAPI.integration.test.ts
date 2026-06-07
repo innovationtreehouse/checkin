@@ -16,6 +16,7 @@ jest.mock('next-auth/next', () => ({
 }));
 describe('Manual Attendance API Integration Tests', () => {
     let testUserId: number;
+    let testHouseholdId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
@@ -40,9 +41,10 @@ describe('Manual Attendance API Integration Tests', () => {
 
         // Setup mock database records
         const user = await prisma.participant.create({
-            data: { email: 'user-manual-attendance-test@example.com', name: 'User Manual Attendance Test' }
+            data: { email: 'user-manual-attendance-test@example.com', name: 'User Manual Attendance Test', household: { create: {} } }
         });
         testUserId = user.id;
+        testHouseholdId = user.householdId;
     });
 
     afterAll(async () => {
@@ -55,6 +57,9 @@ describe('Manual Attendance API Integration Tests', () => {
         });
         await prisma.participant.deleteMany({
             where: { id: testUserId }
+        });
+        await prisma.household.deleteMany({
+            where: { id: testHouseholdId }
         });
     });
 

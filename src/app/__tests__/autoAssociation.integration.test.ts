@@ -16,6 +16,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
     let eventDId: number; // 2pm - 4pm
     
     let participantId: number;
+    let householdId: number;
     const baseDateString = '2026-03-09T';
 
     beforeAll(async () => {
@@ -30,9 +31,10 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
 
         // Setup User
         const user = await prisma.participant.create({
-            data: { email: 'auto-assoc-test@example.com', name: 'Auto Assoc Tester' }
+            data: { email: 'auto-assoc-test@example.com', name: 'Auto Assoc Tester', household: { create: {} } }
         });
         participantId = user.id;
+        householdId = user.householdId;
 
         // Setup Programs
         const progA = await prisma.program.create({ data: { name: 'Program A' } });
@@ -108,6 +110,9 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
         await prisma.program.deleteMany();
         await prisma.participant.deleteMany({
             where: { id: participantId }
+        });
+        await prisma.household.deleteMany({
+            where: { id: householdId }
         });
     });
 

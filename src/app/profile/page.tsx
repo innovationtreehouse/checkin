@@ -20,7 +20,6 @@ export default function ProfilePage() {
         email: "",
         phone: "",
         dob: "",
-        homeAddress: "",
         emailCheckinReceipts: false,
         emailNewsletter: false,
         notifyNewPrograms: true,
@@ -49,7 +48,6 @@ export default function ProfilePage() {
                     email: data.profile.email || "",
                     phone: data.profile.phone || "",
                     dob: data.profile.dob ? new Date(data.profile.dob).toISOString().split('T')[0] : "",
-                    homeAddress: data.profile.homeAddress || "",
                     emailCheckinReceipts: settings.emailCheckinReceipts || false,
                     emailNewsletter: settings.emailNewsletter || false,
                     notifyNewPrograms: settings.notifyNewPrograms !== undefined ? settings.notifyNewPrograms : true,
@@ -90,7 +88,6 @@ export default function ProfilePage() {
                     name: form.name,
                     phone: form.phone,
                     dob: form.dob || null,
-                    homeAddress: form.homeAddress,
                     notificationSettings: {
                         emailCheckinReceipts: form.emailCheckinReceipts,
                         emailNewsletter: form.emailNewsletter,
@@ -185,17 +182,9 @@ export default function ProfilePage() {
                         />
                     </div>
 
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--color-primary)' }}>Home Address</label>
-                        <textarea
-                            className="glass-input"
-                            value={form.homeAddress}
-                            onChange={(e) => setForm({ ...form, homeAddress: e.target.value })}
-                            placeholder="123 Main St..."
-                            rows={3}
-                            style={{ resize: 'vertical' }}
-                        />
-                    </div>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                        Your address is managed on the <a href="/household" style={{ color: 'var(--color-primary)' }}>Household</a> page.
+                    </p>
 
                     <button type="submit" className="glass-button" disabled={saving} style={{ marginTop: '1rem', background: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
                         {saving ? 'Saving...' : 'Save Profile & Settings'}

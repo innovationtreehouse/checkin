@@ -17,6 +17,7 @@ jest.mock('@/lib/notifications', () => ({
 
 describe('Cron Reminders API Integration Tests', () => {
     let testUserId: number;
+    let testHouseholdId: number;
     let upcomingEventId: number;
     let pastEventId: number;
     let farFutureEventId: number;
@@ -44,9 +45,10 @@ describe('Cron Reminders API Integration Tests', () => {
 
         // Setup mock database records
         const user = await prisma.participant.create({
-            data: { email: 'user-cron-reminders-test@example.com', name: 'User Cron Reminders Test' }
+            data: { email: 'user-cron-reminders-test@example.com', name: 'User Cron Reminders Test', household: { create: {} } }
         });
         testUserId = user.id;
+        testHouseholdId = user.householdId;
 
         const now = new Date();
         const twoHoursFiveMinsFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000 + 5 * 60 * 1000);
@@ -108,6 +110,9 @@ describe('Cron Reminders API Integration Tests', () => {
         });
         await prisma.participant.deleteMany({
             where: { id: testUserId }
+        });
+        await prisma.household.deleteMany({
+            where: { id: testHouseholdId }
         });
     });
 

@@ -41,12 +41,12 @@ describe('Admin Bulk Import API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-import-test@example.com', name: 'Admin Import Test', sysadmin: true }
+            data: { email: 'admin-import-test@example.com', name: 'Admin Import Test', sysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.participant.create({
-            data: { email: 'user-import-test@example.com', name: 'User Import Test' }
+            data: { email: 'user-import-test@example.com', name: 'User Import Test', household: { create: {} } }
         });
         testUserId = user.id;
     });

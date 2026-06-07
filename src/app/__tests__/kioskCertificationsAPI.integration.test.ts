@@ -24,21 +24,23 @@ jest.mock('@/lib/verify-kiosk', () => ({
 
 describe('Kiosk Certifications API Integration Tests', () => {
     let testUserId: number;
+    let testHouseholdId: number;
     let toolId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
         const existingUsers = await prisma.participant.findMany({
             where: { email: { contains: 'certifications-api-test' } },
-            select: { id: true }
+            select: { id: true, householdId: true }
         });
-        
+
         const existingUserIds = existingUsers.map(u => u.id);
-        
+        const existingHouseholdIds = existingUsers.map(u => u.householdId).filter((id): id is number => id !== null);
+
         await prisma.visit.deleteMany({
             where: { participantId: { in: existingUserIds } }
         });
-        
+
         await prisma.toolStatus.deleteMany({
             where: { userId: { in: existingUserIds } }
         });
@@ -46,16 +48,22 @@ describe('Kiosk Certifications API Integration Tests', () => {
         await prisma.tool.deleteMany({
             where: { name: 'Test CNC Router' }
         });
-        
+
+        // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
             where: { email: { contains: 'certifications-api-test' } }
         });
 
+        await prisma.household.deleteMany({
+            where: { id: { in: existingHouseholdIds } }
+        });
+
         // Setup mock database records
         const user = await prisma.participant.create({
-            data: { email: 'user-certifications-api-test@example.com', name: 'User Kiosk Test' }
+            data: { email: 'user-certifications-api-test@example.com', name: 'User Kiosk Test', household: { create: {} } }
         });
         testUserId = user.id;
+        testHouseholdId = user.householdId;
 
         const tool = await prisma.tool.create({
             data: { name: 'Test CNC Router' }
@@ -89,6 +97,10 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
         await prisma.participant.deleteMany({
             where: { id: testUserId }
+        });
+        // RESTRICT: delete the household only after its participant is gone
+        await prisma.household.deleteMany({
+            where: { id: testHouseholdId }
         });
         await prisma.tool.deleteMany({
             where: { id: toolId }

@@ -37,13 +37,13 @@ describe('Admin Audit API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-audit-api-test@example.com', name: 'Admin', sysadmin: true }
+            data: { email: 'admin-audit-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Common User
         const commonUser = await prisma.participant.create({
-            data: { email: 'common-audit-api-test@example.com', name: 'Common' }
+            data: { email: 'common-audit-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
 

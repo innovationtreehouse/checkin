@@ -55,32 +55,34 @@ describe('Program Participants API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-partic-api-test@example.com', name: 'Admin', sysadmin: true }
+            data: { email: 'admin-partic-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Lead
         const lead = await prisma.participant.create({
-            data: { email: 'lead-partic-api-test@example.com', name: 'Lead' }
+            data: { email: 'lead-partic-api-test@example.com', name: 'Lead', household: { create: {} } }
         });
         leadId = lead.id;
 
         // Create Common User (25 years old)
         const commonUser = await prisma.participant.create({
-            data: { 
-                email: 'common-partic-api-test@example.com', 
+            data: {
+                email: 'common-partic-api-test@example.com',
                 name: 'Common',
-                dob: new Date(Date.now() - (25 * 31556952000))
+                dob: new Date(Date.now() - (25 * 31556952000)),
+                household: { create: {} }
             }
         });
         commonId = commonUser.id;
 
         // Create Other User (underage: 10 years old)
         const otherUser = await prisma.participant.create({
-            data: { 
-                email: 'other-partic-api-test@example.com', 
+            data: {
+                email: 'other-partic-api-test@example.com',
                 name: 'Other Underage',
-                dob: new Date(Date.now() - (10 * 31556952000))
+                dob: new Date(Date.now() - (10 * 31556952000)),
+                household: { create: {} }
             }
         });
         otherId = otherUser.id;

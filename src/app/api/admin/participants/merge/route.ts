@@ -57,7 +57,7 @@ export const POST = withAuth(
 
             await prisma.$transaction(async (tx) => {
                 const updates: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
-                const fields = ['googleId', 'email', 'phone', 'name', 'dob', 'homeAddress', 'image', 'lastWaiverSign', 'lastBackgroundCheck'];
+                const fields = ['googleId', 'email', 'phone', 'name', 'dob', 'image', 'lastWaiverSign', 'lastBackgroundCheck'];
                 for (const field of fields) {
                     const keepVal = keepParticipant[field as keyof typeof keepParticipant];
                     const mergeVal = mergeParticipant[field as keyof typeof mergeParticipant];
@@ -148,6 +148,9 @@ export const POST = withAuth(
                     where: { participantId: mergeId }
                 });
 
+                // householdId stays pointing at the old household: every
+                // participant must belong to a household, and merged-away
+                // records are tombstoned rather than deleted.
                 await tx.participant.update({
                     where: { id: mergeId },
                     data: {
@@ -155,7 +158,6 @@ export const POST = withAuth(
                         email: `merged-${mergeId}@deleted.checkme.in`,
                         phone: null,
                         name: `${mergeParticipant.name || 'Unknown'} (Merged into ${keepId})`,
-                        householdId: null,
                     }
                 });
             });

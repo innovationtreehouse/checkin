@@ -46,27 +46,27 @@ describe('Program Age Bounds Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-age-test@example.com', name: 'Admin Age Test', sysadmin: true }
+            data: { email: 'admin-age-test@example.com', name: 'Admin Age Test', sysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
         const pValid = await prisma.participant.create({
-            data: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dob: dob16 }
+            data: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dob: dob16, household: { create: {} } }
         });
         validUserId = pValid.id;
 
         const pUnder = await prisma.participant.create({
-            data: { email: 'underage-test@example.com', name: 'Underage Test', dob: dob12 }
+            data: { email: 'underage-test@example.com', name: 'Underage Test', dob: dob12, household: { create: {} } }
         });
         underageUserId = pUnder.id;
 
         const pOver = await prisma.participant.create({
-            data: { email: 'overage-test@example.com', name: 'Overage Test', dob: dob20 }
+            data: { email: 'overage-test@example.com', name: 'Overage Test', dob: dob20, household: { create: {} } }
         });
         overageUserId = pOver.id;
 
         const pNoDob = await prisma.participant.create({
-            data: { email: 'no-dob-test@example.com', name: 'No DOB Test' }
+            data: { email: 'no-dob-test@example.com', name: 'No DOB Test', household: { create: {} } }
         });
         noDobUserId = pNoDob.id;
 

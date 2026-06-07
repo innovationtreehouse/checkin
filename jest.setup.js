@@ -60,6 +60,12 @@ jest.mock('@/lib/auth-options', () => ({
 // methods on the default mock (e.g. `prisma.event.findMany = jest.fn()`) work
 // because each model is a real object that accepts assignment.
 jest.mock('@/lib/prisma', () => {
+  // Integration tests (*.integration.test.ts via `npm run test:integration`)
+  // talk to the real database — give them the real client.
+  const { testPath } = expect.getState();
+  if (testPath && /\.integration\.test\.[jt]sx?$/.test(testPath)) {
+    return jest.requireActual('@/lib/prisma');
+  }
   const rejectFn = () => () => Promise.reject(new Error(
     'Unit tests must not call the real Prisma client. ' +
     "Either jest.mock('@/lib/prisma', ...) in this test, " +

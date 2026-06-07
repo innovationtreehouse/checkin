@@ -11,8 +11,8 @@ A member check-in and program management system built with Next.js, Prisma, and 
 
 Follow the guide for your operating system:
 
-- **[macOS Setup Guide](SETUP_MACOS.md)** — Install and run on a MacBook (Intel or Apple Silicon)
-- **[Linux Setup Guide](SETUP_LINUX.md)** — Install and run on Ubuntu/Debian, Fedora, or Arch
+- **[macOS Setup Guide](docs/setup/SETUP_MACOS.md)** — Install and run on a MacBook (Intel or Apple Silicon)
+- **[Linux Setup Guide](docs/setup/SETUP_LINUX.md)** — Install and run on Ubuntu/Debian, Fedora, or Arch
 
 ## Quick Start (if prerequisites are already installed)
 

@@ -16,11 +16,18 @@ describe("Merge Participants API", () => {
             user: { email: "admin@checkme.in", sysadmin: true }
         });
 
+        // Create a household for the participants (every participant must belong to one)
+        const hh = await prisma.household.create({
+            data: { name: "Merge Test Household" }
+        });
+        householdId = hh.id;
+
         // Create two participants
         const pKeep = await prisma.participant.create({
             data: {
                 name: "Keep User",
                 email: "keep@example.com",
+                householdId: hh.id,
             }
         });
         pKeepId = pKeep.id;
@@ -29,7 +36,8 @@ describe("Merge Participants API", () => {
             data: {
                 name: "Merge User",
                 email: "merge@example.com",
-                phone: "123-456-7890"
+                phone: "123-456-7890",
+                householdId: hh.id,
             }
         });
         pMergeId = pMerge.id;
@@ -82,17 +90,9 @@ describe("Merge Participants API", () => {
     });
 
     it("should fail to merge if merged user is the lead of a household with other members", async () => {
-        // Create household
-        const hh = await prisma.household.create({
-            data: { name: "Test Household" }
-        });
-        householdId = hh.id;
-
-        // Assign both users to it, make merge user the lead
-        await prisma.participant.update({ where: { id: pMergeId }, data: { householdId: hh.id } });
-        await prisma.participant.update({ where: { id: pKeepId }, data: { householdId: hh.id } });
+        // Both users already share a household (from beforeEach); make merge user the lead
         await prisma.householdLead.create({
-            data: { householdId: hh.id, participantId: pMergeId }
+            data: { householdId, participantId: pMergeId }
         });
 
         const req = new Request("http://localhost/api/admin/participants/merge", {

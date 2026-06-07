@@ -183,12 +183,12 @@ describe('stripValue — Participant', () => {
 
     it('their_households grants household members on self/household rows', () => {
         const homeCtx = ctx({ selfId: 5, householdId: 2 });
-        const sibling = { id: 6, name: 'Sib', householdId: 2, homeAddress: '123 St' };
+        const sibling = { id: 6, name: 'Sib', householdId: 2, notificationSettings: { emailNewsletter: true } };
         const out = stripValue('Participant', sibling, ['their_households:personal', 'public'], homeCtx) as Record<string, unknown>;
-        expect(out.homeAddress).toBe('123 St');
-        const stranger = { id: 7, name: 'X', householdId: 99, homeAddress: '456 St' };
+        expect(out.notificationSettings).toEqual({ emailNewsletter: true });
+        const stranger = { id: 7, name: 'X', householdId: 99, notificationSettings: { emailNewsletter: true } };
         const out2 = stripValue('Participant', stranger, ['their_households:personal', 'public'], homeCtx) as Record<string, unknown>;
-        expect(out2.homeAddress).toBeUndefined();
+        expect(out2.notificationSettings).toBeUndefined();
     });
 });
 

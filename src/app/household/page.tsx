@@ -16,7 +16,7 @@ export default function HouseholdPage() {
         id?: number;
         name?: string;
         leads?: Array<{ participantId: number }>;
-        participants?: Array<{ id: number; name?: string; email?: string; dob?: string; phone?: string; homeAddress?: string; programVolunteers?: Array<{ id: number; program: { name: string; end?: string }; events?: Array<{ start: string }> }>; programParticipants?: Array<{ id: number; program: { name: string; end?: string }; events?: Array<{ start: string }> }> }>;
+        participants?: Array<{ id: number; name?: string; email?: string; dob?: string; phone?: string; programVolunteers?: Array<{ id: number; program: { name: string; end?: string }; events?: Array<{ start: string }> }>; programParticipants?: Array<{ id: number; program: { name: string; end?: string }; events?: Array<{ start: string }> }> }>;
         memberships?: Array<unknown>;
         emergencyContactName?: string;
         emergencyContactPhone?: string;
@@ -79,16 +79,7 @@ export default function HouseholdPage() {
                 setEmergencyContactName(data.household?.emergencyContactName || "");
                 setEmergencyContactPhone(data.household?.emergencyContactPhone || "");
 
-                let initialAddress = data.household?.address || "";
-                if (!initialAddress && data.household?.participants && data.household?.leads) {
-                    const leadIds = data.household.leads.map((l: {participantId: number}) => l.participantId);
-                    const leadParticipants = data.household.participants.filter((p: {id: number; name?: string; email?: string; dob?: string; homeAddress?: string}) => leadIds.includes(p.id));
-                    const leadWithAddress = leadParticipants.find((p: {id: number; name?: string; email?: string; dob?: string; homeAddress?: string}) => p.homeAddress && p.homeAddress.trim() !== "");
-                    if (leadWithAddress) {
-                        initialAddress = leadWithAddress.homeAddress;
-                    }
-                }
-                setAddress(initialAddress);
+                setAddress(data.household?.address || "");
             }
             if (visitRes.ok) {
                 const data = await visitRes.json();
@@ -326,7 +317,7 @@ export default function HouseholdPage() {
                                         // Final fallback to name
                                         return (a.name || "").localeCompare(b.name || "");
                                     })
-                                    .map((p: {id: number; name?: string; email?: string; dob?: string; phone?: string; homeAddress?: string}) => (
+                                    .map((p: {id: number; name?: string; email?: string; dob?: string; phone?: string}) => (
                                     <div key={p.id} style={{
                                         padding: '1.5rem',
                                         background: 'rgba(255,255,255,0.05)',

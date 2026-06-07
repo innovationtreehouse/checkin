@@ -42,12 +42,12 @@ describe('AuditLog Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-audit-test@example.com', name: 'Admin Test', sysadmin: true }
+            data: { email: 'admin-audit-test@example.com', name: 'Admin Test', sysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
         const participant = await prisma.participant.create({
-            data: { email: 'participant-audit-test@example.com', name: 'Participant Test' }
+            data: { email: 'participant-audit-test@example.com', name: 'Participant Test', household: { create: {} } }
         });
         testParticipantId = participant.id;
     });
@@ -70,8 +70,18 @@ describe('AuditLog Integration Tests', () => {
             await prisma.auditLog.deleteMany({
                 where: { actorId: { in: actorIds } }
             });
+
+            // RESTRICT: delete participants before their households.
+            const householdIds = (await prisma.participant.findMany({
+                where: { id: { in: actorIds } },
+                select: { householdId: true }
+            })).map(p => p.householdId);
+
             await prisma.participant.deleteMany({
                 where: { id: { in: actorIds } }
+            });
+            await prisma.household.deleteMany({
+                where: { id: { in: householdIds } }
             });
         }
     });

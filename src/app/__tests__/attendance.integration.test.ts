@@ -23,6 +23,7 @@ describe('Attendance API Integration Tests', () => {
     let testParticipantId: number;
     let testHouseholdMemberId: number;
     let testHouseholdId: number;
+    let testAdminHouseholdId: number;
     let activeVisitId: number;
 
     beforeAll(async () => {
@@ -43,9 +44,10 @@ describe('Attendance API Integration Tests', () => {
         testHouseholdId = household.id;
 
         const admin = await prisma.participant.create({
-            data: { email: 'admin-attendance-test@example.com', name: 'Admin Test', sysadmin: true }
+            data: { email: 'admin-attendance-test@example.com', name: 'Admin Test', sysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
+        testAdminHouseholdId = admin.householdId;
 
         const participant = await prisma.participant.create({
             data: { 
@@ -86,7 +88,7 @@ describe('Attendance API Integration Tests', () => {
             where: { id: { in: [testAdminId, testParticipantId, testHouseholdMemberId] } }
         });
         await prisma.household.deleteMany({
-            where: { id: testHouseholdId }
+            where: { id: { in: [testHouseholdId, testAdminHouseholdId] } }
         });
     });
 
