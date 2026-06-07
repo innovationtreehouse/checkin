@@ -82,8 +82,8 @@ export default function ShopStewardPage() {
                             style={{ background: 'rgba(234, 179, 8, 0.2)', borderColor: 'rgba(234, 179, 8, 0.4)', padding: '2.5rem', fontSize: '1.25rem', flexDirection: 'column', gridColumn: isAdmin ? 'span 1' : '1 / -1' }}
                         >
                             <span style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>&#128203;</span>
-                            <strong>Manage Certifications</strong>
-                            <p style={{ margin: '0.5rem 0 0 0', fontSize: '1rem', color: 'var(--color-text)' }}>Review master tool lists and grant safety clearance levels to fellow members.</p>
+                            <strong>Manage Tools &amp; Certifications</strong>
+                            <p style={{ margin: '0.5rem 0 0 0', fontSize: '1rem', color: 'var(--color-text)' }}>Browse all tools and safety guides, drill into certifications by tool or person, and grant clearance levels.</p>
                         </button>
                     )}
 
