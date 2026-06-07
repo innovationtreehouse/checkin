@@ -16,6 +16,23 @@ export async function GET(req: Request) {
         const { searchParams } = new URL(req.url);
         const participantIdParam = searchParams.get('participantId');
         const toolIdParam = searchParams.get('toolId');
+        const allParam = searchParams.get('all');
+
+        // ?all=true returns every assignment — admin/shop steward only
+        if (allParam === 'true') {
+            const isAuthorized = session.user?.sysadmin || session.user?.boardMember || session.user?.shopSteward;
+            if (!isAuthorized) {
+                return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            }
+            const certifications = await prisma.toolStatus.findMany({
+                orderBy: [{ tool: { name: 'asc' } }, { user: { name: 'asc' } }],
+                include: {
+                    tool: true,
+                    user: { select: { id: true, name: true, email: true } },
+                },
+            });
+            return NextResponse.json(certifications);
+        }
 
         let targetUserId = session.user.id;
 
