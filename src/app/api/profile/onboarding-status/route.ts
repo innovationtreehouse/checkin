@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuth } from "@/lib/auth";
+import { isMinor } from "@/lib/time";
 
 export const GET = withAuth(
     {},
@@ -21,7 +22,8 @@ export const GET = withAuth(
                 return NextResponse.json({ error: "Participant not found" }, { status: 404 });
             }
 
-            const needsPhone = !user.phone;
+            // Minors are never required to provide a phone number (issue #169)
+            const needsPhone = !user.phone && !isMinor(user.dob);
             const isLead = user.householdId && user.householdLeads.some((lead: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => lead.householdId === user.householdId);
             
             const needsEmergencyContact = isLead && (!user.household?.emergencyContactName || !user.household?.emergencyContactPhone);
