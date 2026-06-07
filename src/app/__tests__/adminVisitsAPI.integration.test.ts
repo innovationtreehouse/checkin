@@ -43,14 +43,14 @@ describe('Admin Visits API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-visits-api-test@example.com', name: 'Admin Visits Test', sysadmin: true }
+            data: { email: 'admin-visits-api-test@example.com', name: 'Admin Visits Test', sysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
         const checkAdmin = await prisma.participant.findUnique({ where: { id: testAdminId } });
         console.log("Check Admin:", checkAdmin);
 
         const user = await prisma.participant.create({
-            data: { email: 'user-visits-api-test@example.com', name: 'User Visits Test' }
+            data: { email: 'user-visits-api-test@example.com', name: 'User Visits Test', household: { create: {} } }
         });
         testUserId = user.id;
 

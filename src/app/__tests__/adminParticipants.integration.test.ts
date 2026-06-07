@@ -33,12 +33,12 @@ describe('Admin Participants API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-participants-test@example.com', name: 'Admin Test', sysadmin: true }
+            data: { email: 'admin-participants-test@example.com', name: 'Admin Test', sysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.participant.create({
-            data: { email: 'user-participants-test@example.com', name: 'User Test' }
+            data: { email: 'user-participants-test@example.com', name: 'User Test', household: { create: {} } }
         });
         testUserId = user.id;
     });
@@ -74,8 +74,10 @@ describe('Admin Participants API Integration Tests', () => {
         await prisma.participant.deleteMany({
             where: { email: 'updated-email@example.com' }
         });
+        // Only sweep households the deletions above emptied — the name filter
+        // alone also matches other data's households, and the FK is RESTRICT.
         await prisma.household.deleteMany({
-            where: { name: { contains: 'Household' } }
+            where: { name: { contains: 'Household' }, participants: { none: {} } }
         });
     });
 
@@ -229,7 +231,7 @@ describe('Admin Participants API Integration Tests', () => {
 
             // Create a disposable user just for this edit test
             const editUser = await prisma.participant.create({
-                data: { email: 'edit-test-user@example.com', name: 'Original Name' }
+                data: { email: 'edit-test-user@example.com', name: 'Original Name', household: { create: {} } }
             });
 
             const req = new Request(`http://localhost:4000/api/admin/participants/${editUser.id}`, {

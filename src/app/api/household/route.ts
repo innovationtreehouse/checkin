@@ -42,7 +42,7 @@ export const POST = withAuth(
             const household = await prisma.household.create({
                 data: {
                     name: householdName,
-                    address: user?.homeAddress || "",
+                    address: "",
                     leads: {
                         create: { participantId: userId }
                     },

@@ -39,27 +39,27 @@ describe('Event Attendance API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-event-attendance-test@example.com', name: 'Admin Att Test', sysadmin: true }
+            data: { email: 'admin-event-attendance-test@example.com', name: 'Admin Att Test', sysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.participant.create({
-            data: { email: 'user-event-attendance-test@example.com', name: 'User Att Test' }
+            data: { email: 'user-event-attendance-test@example.com', name: 'User Att Test', household: { create: {} } }
         });
         testUserId = user.id;
 
         const mentor = await prisma.participant.create({
-            data: { email: 'mentor-event-attendance-test@example.com', name: 'Mentor Att Test' }
+            data: { email: 'mentor-event-attendance-test@example.com', name: 'Mentor Att Test', household: { create: {} } }
         });
         testLeadMentorId = mentor.id;
 
         const participant1 = await prisma.participant.create({
-            data: { email: 'p1-event-attendance-test@example.com', name: 'P1 Att Test' }
+            data: { email: 'p1-event-attendance-test@example.com', name: 'P1 Att Test', household: { create: {} } }
         });
         testParticipant1Id = participant1.id;
 
         const participant2 = await prisma.participant.create({
-            data: { email: 'p2-event-attendance-test@example.com', name: 'P2 Att Test' }
+            data: { email: 'p2-event-attendance-test@example.com', name: 'P2 Att Test', household: { create: {} } }
         });
         testParticipant2Id = participant2.id;
 
@@ -100,8 +100,19 @@ describe('Event Attendance API Integration Tests', () => {
         await prisma.program.deleteMany({
             where: { id: testProgramId }
         });
+        const participantIds = [testAdminId, testUserId, testLeadMentorId, testParticipant1Id, testParticipant2Id];
+
+        // RESTRICT: delete participants before their (auto-created) households.
+        const householdIds = (await prisma.participant.findMany({
+            where: { id: { in: participantIds } },
+            select: { householdId: true }
+        })).map(p => p.householdId);
+
         await prisma.participant.deleteMany({
-            where: { id: { in: [testAdminId, testUserId, testLeadMentorId, testParticipant1Id, testParticipant2Id] } }
+            where: { id: { in: participantIds } }
+        });
+        await prisma.household.deleteMany({
+            where: { id: { in: householdIds } }
         });
     });
 

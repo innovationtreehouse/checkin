@@ -38,7 +38,7 @@ Schema annotations classify *data*. Registry views grant *access* in the form of
 |---|---|
 | `public` | Anyone can see it (Participant.name, Program prices, public roles) |
 | `pii` | Personally identifying (email, phone, dob, googleId) |
-| `personal` | Private but not identifying (homeAddress, emergency contacts) |
+| `personal` | Private but not identifying (Household.address, emergency contacts) |
 | `internal` | Role/audit metadata (sysadmin flag, lastBackgroundCheck, audit logs) |
 | `secret` | Cryptographic — never returned to any client (oauth tokens) |
 

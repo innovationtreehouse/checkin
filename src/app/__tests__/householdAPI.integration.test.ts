@@ -43,23 +43,19 @@ describe('Household API Integration Tests', () => {
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: existingUserIds } }
         });
-        
-        await prisma.participant.updateMany({
-            where: { id: { in: existingUserIds } },
-            data: { householdId: null }
-        });
 
+        // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
             where: { id: { in: existingUserIds } }
         });
-        
+
         await prisma.household.deleteMany({
             where: { id: { in: existingHouseholdIds } }
         });
 
         // Setup mock database records
         const userWithoutHousehold = await prisma.participant.create({
-            data: { email: 'nohouse-user-household-api-test@example.com', name: 'No House User' }
+            data: { email: 'nohouse-user-household-api-test@example.com', name: 'No House User', household: { create: {} } }
         });
         testNoHouseId = userWithoutHousehold.id;
 
@@ -101,39 +97,34 @@ describe('Household API Integration Tests', () => {
         });
         const currentIds = [testUserId, testMemberId, testNoHouseId, testOtherHouseUserId, ...(newDobs.map(u => u.id))];
 
+        // Collect every household referenced by the test participants (incl. the no-house user's own household)
+        const participants = await prisma.participant.findMany({
+            where: { id: { in: currentIds } },
+            select: { householdId: true }
+        });
+        const validHouseholdIds = [...new Set([
+            householdId,
+            otherHouseholdId,
+            ...participants.map(p => p.householdId)
+        ])].filter((id): id is number => id !== undefined && id !== null);
+
         await prisma.householdLead.deleteMany({
             where: { participantId: { in: currentIds } }
         });
-        
-        const validHouseholdIds = [householdId, otherHouseholdId].filter(id => id !== undefined);
+
         await prisma.membership.deleteMany({
             where: { householdId: { in: validHouseholdIds } }
         });
-        
+
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: currentIds } }
         });
-        
-        await prisma.participant.updateMany({
-            where: { id: { in: currentIds } },
-            data: { householdId: null }
-        });
 
-        // Delete any households created by test (from NO house user)
-        const checkNoHouseUser = await prisma.participant.findUnique({
-            where: { id: testNoHouseId },
-            include: { household: true }
-        });
-        if (checkNoHouseUser?.householdId) {
-            await prisma.membership.deleteMany({ where: { householdId: checkNoHouseUser.householdId } });
-            await prisma.participant.updateMany({ where: { householdId: checkNoHouseUser.householdId }, data: { householdId: null } });
-            await prisma.household.deleteMany({ where: { id: checkNoHouseUser.householdId } });
-        }
-
+        // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
             where: { id: { in: currentIds } }
         });
-        
+
         if (validHouseholdIds.length > 0) {
             await prisma.household.deleteMany({
                 where: { id: { in: validHouseholdIds } }
@@ -178,23 +169,17 @@ describe('Household API Integration Tests', () => {
             expect(data.error).toBe('User already belongs to a household');
         });
 
-        it('should create a new household for a user without one', async () => {
+        it('should block creation since every participant now belongs to a household', async () => {
+            // householdId is now a required FK, so a household-less participant cannot exist and the
+            // create-household happy path is unreachable: the route always returns the 400 guard.
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testNoHouseId } });
 
             const req = new Request('http://localhost:4000/api/household', { method: 'POST' });
             const res = await POST(req as unknown as import("next/server").NextRequest);
-            
-            expect(res.status).toBe(201);
+
+            expect(res.status).toBe(400);
             const data = await res.json();
-            
-            expect(data.household).toBeDefined();
-            expect(data.household.name).toBe('User Household');
-
-            // Verify they are lead
-            const isLead = data.household.leads.some((l: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => l.participantId === testNoHouseId);
-            expect(isLead).toBe(true);
-
-            // Need to clean this newly created household up in afterAll, already handled
+            expect(data.error).toBe('User already belongs to a household');
         });
     });
 

@@ -51,30 +51,52 @@ export async function POST(req: NextRequest) {
         let insertedOrUpdatedCount = 0;
         const errors: string[] = [];
 
-        // Helper: find or create household for a participant
-        const ensureHousehold = async (participantId: number, participantName: string): Promise<number> => {
+        // Helper: look up a participant's household. Every participant has one
+        // (householdId is a required FK).
+        const ensureHousehold = async (participantId: number): Promise<number> => {
             const participant = await prisma.participant.findUnique({ where: { id: participantId } });
-            if (participant?.householdId) {
-                return participant.householdId;
-            }
+            if (!participant) throw new Error(`Participant ${participantId} not found`);
+            return participant.householdId;
+        };
 
-            const newHousehold = await prisma.household.create({
+        // Helper: create a participant together with their own new household.
+        // Adults (no DOB, or 18+) lead the household.
+        const createParticipantWithHousehold = async (data: {
+            email?: string;
+            name: string;
+            dob?: Date;
+            address?: string;
+        }) => {
+            const isAdult = !data.dob || (new Date().getFullYear() - data.dob.getFullYear()) >= 18;
+            const participant = await prisma.participant.create({
                 data: {
-                    name: `${participantName}'s Household`,
-                    leads: {
+                    ...(data.email && { email: data.email }),
+                    name: data.name,
+                    dob: data.dob,
+                    household: {
                         create: {
-                            participantId: participantId
+                            name: `${data.name}'s Household`,
+                            ...(data.address && { address: data.address }),
                         }
                     }
                 }
             });
+            if (isAdult) {
+                await prisma.householdLead.create({
+                    data: { householdId: participant.householdId, participantId: participant.id }
+                });
+            }
+            return participant;
+        };
 
-            await prisma.participant.update({
-                where: { id: participantId },
-                data: { householdId: newHousehold.id }
+        // Helper: addresses live on the household, not the participant.
+        // A CSV address overwrites the row's household address when provided.
+        const applyAddressToHousehold = async (householdId: number, address: string) => {
+            if (!address) return;
+            await prisma.household.update({
+                where: { id: householdId },
+                data: { address }
             });
-
-            return newHousehold.id;
         };
 
         // Helper: ensure a HOUSEHOLD membership exists for a household
@@ -175,36 +197,31 @@ export async function POST(req: NextRequest) {
                             data: {
                                 name: pr.fullName,
                                 dob: pr.parsedDob ?? participant.dob,
-                                homeAddress: pr.address || participant.homeAddress
                             }
                         });
+                        await applyAddressToHousehold(participant.householdId, pr.address);
                     } else {
-                        participant = await prisma.participant.create({
-                            data: {
-                                email: pr.email,
-                                name: pr.fullName,
-                                dob: pr.parsedDob,
-                                homeAddress: pr.address
-                            }
+                        participant = await createParticipantWithHousehold({
+                            email: pr.email,
+                            name: pr.fullName,
+                            dob: pr.parsedDob,
+                            address: pr.address,
                         });
                     }
                     participantId = participant.id;
                     participantByEmail.set(pr.email.toLowerCase(), participantId);
                 } else if (pr.parentEmail) {
-                    // Ensure parent exists
+                    // Ensure parent exists (new parents get their own household)
                     let parent = await prisma.participant.findUnique({ where: { email: pr.parentEmail } });
                     if (!parent) {
-                        parent = await prisma.participant.create({
-                            data: {
-                                email: pr.parentEmail,
-                                name: pr.parentEmail.split('@')[0],
-                            }
+                        parent = await createParticipantWithHousehold({
+                            email: pr.parentEmail,
+                            name: pr.parentEmail.split('@')[0],
                         });
                         participantByEmail.set(pr.parentEmail.toLowerCase(), parent.id);
                     }
 
-                    // Ensure parent has a household
-                    const parentHouseholdId = await ensureHousehold(parent.id, parent.name || 'Unnamed');
+                    const parentHouseholdId = await ensureHousehold(parent.id);
 
                     // Find or create child in that household
                     let participant = await prisma.participant.findFirst({
@@ -215,7 +232,6 @@ export async function POST(req: NextRequest) {
                             where: { id: participant.id },
                             data: {
                                 dob: pr.parsedDob ?? participant.dob,
-                                homeAddress: pr.address || participant.homeAddress
                             }
                         });
                     } else {
@@ -223,12 +239,12 @@ export async function POST(req: NextRequest) {
                             data: {
                                 name: pr.fullName,
                                 dob: pr.parsedDob,
-                                homeAddress: pr.address,
                                 householdId: parentHouseholdId
                             }
                         });
                     }
                     participantId = participant.id;
+                    await applyAddressToHousehold(parentHouseholdId, pr.address);
 
                     // Ensure membership
                     await ensureHouseholdMembership(parentHouseholdId);
@@ -239,17 +255,12 @@ export async function POST(req: NextRequest) {
 
                     let participant = await prisma.participant.findFirst({ where: matchQuery });
                     if (participant) {
-                        participant = await prisma.participant.update({
-                            where: { id: participant.id },
-                            data: { homeAddress: pr.address || participant.homeAddress }
-                        });
+                        await applyAddressToHousehold(participant.householdId, pr.address);
                     } else {
-                        participant = await prisma.participant.create({
-                            data: {
-                                name: pr.fullName,
-                                dob: pr.parsedDob,
-                                homeAddress: pr.address
-                            }
+                        participant = await createParticipantWithHousehold({
+                            name: pr.fullName,
+                            dob: pr.parsedDob,
+                            address: pr.address,
                         });
                     }
                     participantId = participant.id;
@@ -275,34 +286,31 @@ export async function POST(req: NextRequest) {
             if (trimmed.includes('@')) {
                 const batchId = participantByEmail.get(trimmed.toLowerCase());
                 if (batchId) {
-                    const hhId = await ensureHousehold(batchId, trimmed);
+                    const hhId = await ensureHousehold(batchId);
                     return { householdId: hhId, refParticipantId: batchId };
                 }
                 const byEmail = await prisma.participant.findUnique({
                     where: { email: trimmed },
-                    select: { id: true, name: true }
+                    select: { id: true, householdId: true }
                 });
                 if (byEmail) {
-                    const hhId = await ensureHousehold(byEmail.id, byEmail.name || 'Unnamed');
-                    return { householdId: hhId, refParticipantId: byEmail.id };
+                    return { householdId: byEmail.householdId, refParticipantId: byEmail.id };
                 }
             }
 
             // Try by name (check batch first, then DB)
             const batchId = participantByName.get(trimmed.toLowerCase());
             if (batchId) {
-                const p = await prisma.participant.findUnique({ where: { id: batchId }, select: { name: true } });
-                const hhId = await ensureHousehold(batchId, p?.name || trimmed);
+                const hhId = await ensureHousehold(batchId);
                 return { householdId: hhId, refParticipantId: batchId };
             }
 
             const byName = await prisma.participant.findFirst({
                 where: { name: { equals: trimmed, mode: 'insensitive' } },
-                select: { id: true, name: true }
+                select: { id: true, householdId: true }
             });
             if (byName) {
-                const hhId = await ensureHousehold(byName.id, byName.name || 'Unnamed');
-                return { householdId: hhId, refParticipantId: byName.id };
+                return { householdId: byName.householdId, refParticipantId: byName.id };
             }
 
             return null;
@@ -332,52 +340,45 @@ export async function POST(req: NextRequest) {
                         const sourceHouseholdId = participant?.householdId;
 
                         // If they are already in the target household, do nothing
-                        if (sourceHouseholdId === targetHouseholdId) {
+                        if (sourceHouseholdId === targetHouseholdId || !sourceHouseholdId) {
                             continue;
                         }
 
-                        // If they have a household, we must merge the ENTIRE source household into the target
-                        if (sourceHouseholdId) {
-                            // Move all participants from source to target
-                            await prisma.participant.updateMany({
-                                where: { householdId: sourceHouseholdId },
-                                data: { householdId: targetHouseholdId }
-                            });
+                        // Merge the ENTIRE source household into the target.
+                        // Move all participants from source to target
+                        await prisma.participant.updateMany({
+                            where: { householdId: sourceHouseholdId },
+                            data: { householdId: targetHouseholdId }
+                        });
 
-                            // Move all leads from source to target
-                            const sourceLeads = await prisma.householdLead.findMany({
-                                where: { householdId: sourceHouseholdId }
-                            });
+                        // Move all leads from source to target
+                        const sourceLeads = await prisma.householdLead.findMany({
+                            where: { householdId: sourceHouseholdId }
+                        });
 
-                            for (const lead of sourceLeads) {
-                                await prisma.householdLead.upsert({
-                                    where: {
-                                        householdId_participantId: {
-                                            householdId: targetHouseholdId,
-                                            participantId: lead.participantId
-                                        }
-                                    },
-                                    update: {},
-                                    create: {
+                        for (const lead of sourceLeads) {
+                            await prisma.householdLead.upsert({
+                                where: {
+                                    householdId_participantId: {
                                         householdId: targetHouseholdId,
                                         participantId: lead.participantId
                                     }
-                                });
-                            }
-
-                            // Delete memberships and leads from the old source household
-                            await prisma.membership.deleteMany({ where: { householdId: sourceHouseholdId } });
-                            await prisma.householdLead.deleteMany({ where: { householdId: sourceHouseholdId } });
-
-                            // Finally delete the source household
-                            await prisma.household.delete({ where: { id: sourceHouseholdId } });
-                        } else {
-                            // They don't have a household yet, just add them to the target
-                            await prisma.participant.update({
-                                where: { id: participantId },
-                                data: { householdId: targetHouseholdId }
+                                },
+                                update: {},
+                                create: {
+                                    householdId: targetHouseholdId,
+                                    participantId: lead.participantId
+                                }
                             });
                         }
+
+                        // Delete memberships and leads from the old source household
+                        await prisma.membership.deleteMany({ where: { householdId: sourceHouseholdId } });
+                        await prisma.householdLead.deleteMany({ where: { householdId: sourceHouseholdId } });
+
+                        // Finally delete the source household (empty now, so the
+                        // RESTRICT FK allows it)
+                        await prisma.household.delete({ where: { id: sourceHouseholdId } });
 
                         // If the row that initiated the merge is an adult with an email, ensure they are a lead
                         if (pr.email) {
@@ -401,35 +402,11 @@ export async function POST(req: NextRequest) {
                         errors.push(`Row ${pr.index + 2} (${pr.fullName}): Could not find participant "${pr.sameHouseholdAs}" for household association`);
                     }
                 }
-                // For adults with email who didn't use "Same Household As" or "Parent Email",
-                // ensure they have their own household, OR fallback for anyone who still has no household.
+                // Every participant got a household in pass 1 (or already had
+                // one) — just make sure the membership exists.
                 else {
                     const participant = await prisma.participant.findUnique({ where: { id: participantId } });
-                    if (participant && !participant.householdId) {
-                        const isAdult = !participant.dob || (new Date().getFullYear() - participant.dob.getFullYear()) >= 18;
-                        const newHousehold = await prisma.household.create({
-                            data: {
-                                name: `${pr.fullName}'s Household`,
-                            }
-                        });
-
-                        // Only assign them as lead if they are an adult
-                        if (isAdult) {
-                            await prisma.householdLead.create({
-                                data: {
-                                    householdId: newHousehold.id,
-                                    participantId: participant.id
-                                }
-                            });
-                        }
-
-                        await prisma.participant.update({
-                            where: { id: participant.id },
-                            data: { householdId: newHousehold.id }
-                        });
-
-                        await ensureHouseholdMembership(newHousehold.id);
-                    } else if (participant?.householdId) {
+                    if (participant) {
                         await ensureHouseholdMembership(participant.householdId);
                     }
                 }

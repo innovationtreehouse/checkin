@@ -44,16 +44,12 @@ describe('Household Lead API Integration Tests', () => {
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: existingUserIds } }
         });
-        
-        await prisma.participant.updateMany({
-            where: { id: { in: existingUserIds } },
-            data: { householdId: null }
-        });
 
+        // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
             where: { id: { in: existingUserIds } }
         });
-        
+
         await prisma.household.deleteMany({
             where: { id: { in: existingHouseholdIds } }
         });
@@ -118,16 +114,12 @@ describe('Household Lead API Integration Tests', () => {
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: currentIds } }
         });
-        
-        await prisma.participant.updateMany({
-            where: { id: { in: currentIds } },
-            data: { householdId: null }
-        });
 
+        // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
             where: { id: { in: currentIds } }
         });
-        
+
         await prisma.household.deleteMany({
             where: { id: { in: validHouseholdIds } }
         });

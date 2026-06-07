@@ -14,7 +14,29 @@ async function main() {
     console.log("🌱 Seeding database with debug personas...\n")
 
     // ──────────────────────────────────────────────
-    // 1. Create all 9 participant personas
+    // 1. Households (participants require one, so these come first)
+    // ──────────────────────────────────────────────
+    console.log("🏠 Setting up households...")
+
+    // Household 1: "Family" — parent, parent2, child
+    let household1 = await prisma.household.findFirst({ where: { name: 'Family' } })
+    if (!household1) {
+        household1 = await prisma.household.create({
+            data: { name: 'Family', address: '123 Maker Lane' },
+        })
+    }
+
+    // Household 2: "Family2" — single parent
+    let household2 = await prisma.household.findFirst({ where: { name: 'Family2' } })
+    if (!household2) {
+        household2 = await prisma.household.create({
+            data: { name: 'Family2', address: '456 Workshop Drive' },
+        })
+    }
+
+    // ──────────────────────────────────────────────
+    // 2. Create all 9 participant personas
+    //    (solo personas get a single-person household of their own)
     // ──────────────────────────────────────────────
 
     const boardMember = await prisma.participant.upsert({
@@ -26,6 +48,7 @@ async function main() {
             phone: '555-555-0001',
             sysadmin: true,
             boardMember: true,
+            household: { create: { name: 'Board Member Household' } },
         },
     })
     console.log(`✅ boardmember@example.com (id: ${boardMember.id}) — Sysadmin, Board Member`)
@@ -37,6 +60,7 @@ async function main() {
             email: 'parent.family@example.com',
             name: 'Parent Family',
             phone: '555-555-0002',
+            householdId: household1.id,
         },
     })
     console.log(`✅ parent.family@example.com (id: ${parentFamily.id}) — Household Lead`)
@@ -48,6 +72,7 @@ async function main() {
             email: 'parent2.family@example.com',
             name: 'Parent2 Family',
             phone: '555-555-0003',
+            householdId: household1.id,
         },
     })
     console.log(`✅ parent2.family@example.com (id: ${parent2Family.id}) — Household Member`)
@@ -63,6 +88,7 @@ async function main() {
             email: 'child.family@example.com',
             name: 'Child Family',
             dob: childDob,
+            householdId: household1.id,
         },
     })
     console.log(`✅ child.family@example.com (id: ${childFamily.id}) — Minor (age 10)`)
@@ -74,6 +100,7 @@ async function main() {
             email: 'parent.family2@example.com',
             name: 'Parent Family2',
             phone: '555-555-0004',
+            householdId: household2.id,
         },
     })
     console.log(`✅ parent.family2@example.com (id: ${parentFamily2.id}) — Household Lead (Family2)`)
@@ -86,6 +113,7 @@ async function main() {
             name: 'Keyholder One',
             phone: '555-555-0005',
             keyholder: true,
+            household: { create: { name: 'Keyholder One Household' } },
         },
     })
     console.log(`✅ keyholder1@example.com (id: ${keyholder1.id}) — Keyholder`)
@@ -98,6 +126,7 @@ async function main() {
             name: 'Keyholder Two',
             phone: '555-555-0006',
             keyholder: true,
+            household: { create: { name: 'Keyholder Two Household' } },
         },
     })
     console.log(`✅ keyholder2@example.com (id: ${keyholder2.id}) — Keyholder`)
@@ -109,6 +138,7 @@ async function main() {
             email: 'certified.adult@example.com',
             name: 'Certified Adult',
             phone: '555-555-0007',
+            household: { create: { name: 'Certified Adult Household' } },
         },
     })
     console.log(`✅ certified.adult@example.com (id: ${certifiedAdult.id}) — Tool Certified`)
@@ -121,24 +151,16 @@ async function main() {
             name: 'Shop Steward',
             phone: '555-555-0008',
             shopSteward: true,
+            household: { create: { name: 'Shop Steward Household' } },
         },
     })
     console.log(`✅ shop.steward@example.com (id: ${shopSteward.id}) — Shop Steward`)
 
     // ──────────────────────────────────────────────
-    // 2. Households
+    // 3. Household assignments & leads
     // ──────────────────────────────────────────────
-    console.log("\n🏠 Setting up households...")
 
-    // Household 1: "Family" — parent, parent2, child
-    let household1 = await prisma.household.findFirst({ where: { name: 'Family' } })
-    if (!household1) {
-        household1 = await prisma.household.create({
-            data: { name: 'Family', address: '123 Maker Lane' },
-        })
-    }
-
-    // Assign members to household
+    // Assign members to household (covers pre-existing participants on re-seed)
     await prisma.participant.update({
         where: { id: parentFamily.id },
         data: { householdId: household1.id },
@@ -168,14 +190,6 @@ async function main() {
     })
     console.log(`✅ Household "Family" (id: ${household1.id}) — parent, parent2, child`)
 
-    // Household 2: "Family2" — single parent
-    let household2 = await prisma.household.findFirst({ where: { name: 'Family2' } })
-    if (!household2) {
-        household2 = await prisma.household.create({
-            data: { name: 'Family2', address: '456 Workshop Drive' },
-        })
-    }
-
     await prisma.participant.update({
         where: { id: parentFamily2.id },
         data: { householdId: household2.id },
@@ -197,7 +211,7 @@ async function main() {
     console.log(`✅ Household "Family2" (id: ${household2.id}) — single parent`)
 
     // ──────────────────────────────────────────────
-    // 3. Tools & Certifications
+    // 4. Tools & Certifications
     // ──────────────────────────────────────────────
     console.log("\n🔧 Setting up tools and certifications...")
 
@@ -247,7 +261,7 @@ async function main() {
     console.log(`✅ certified.adult has CERTIFIED on both tools`)
 
     // ──────────────────────────────────────────────
-    // 4. Sample Program
+    // 5. Sample Program
     // ──────────────────────────────────────────────
     console.log("\n📋 Setting up sample program...")
 

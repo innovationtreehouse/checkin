@@ -27,7 +27,7 @@ export const PATCH = withAuth(
             const userId = auth.user.id;
 
             const body = await req.json();
-            const { name, phone, dob, homeAddress, notificationSettings } = body;
+            const { name, phone, dob, notificationSettings } = body;
 
             const updatedProfile = await prisma.participant.update({
                 where: { id: userId },
@@ -35,7 +35,6 @@ export const PATCH = withAuth(
                     name: name !== undefined ? name : undefined,
                     phone: phone !== undefined ? phone : undefined,
                     dob: dob ? new Date(dob) : undefined,
-                    homeAddress: homeAddress !== undefined ? homeAddress : undefined,
                     notificationSettings: notificationSettings !== undefined ? notificationSettings : undefined,
                 },
                 select: {
@@ -43,7 +42,6 @@ export const PATCH = withAuth(
                     email: true,
                     phone: true,
                     dob: true,
-                    homeAddress: true,
                     notificationSettings: true,
                 }
             });

@@ -52,7 +52,7 @@ describe('Public Program Registration API Integration Tests', () => {
 
         // Create an existing user to test unique email constraints
         const existingUser = await prisma.participant.create({
-            data: { email: 'existing-user-test@example.com', name: 'Existing User' }
+            data: { email: 'existing-user-test@example.com', name: 'Existing User', household: { create: {} } }
         });
         existingParticipantId = existingUser.id;
 
@@ -134,6 +134,18 @@ describe('Public Program Registration API Integration Tests', () => {
         }
 
         if (householdIds.length > 0) {
+            // Children registered into these households have no email, so the
+            // lookup above misses them — remove all remaining members before
+            // the household itself (the FK is RESTRICT).
+            await prisma.householdLead.deleteMany({
+                where: { householdId: { in: householdIds } }
+            });
+            await prisma.programParticipant.deleteMany({
+                where: { participant: { householdId: { in: householdIds } } }
+            });
+            await prisma.participant.deleteMany({
+                where: { householdId: { in: householdIds } }
+            });
             await prisma.household.deleteMany({
                 where: { id: { in: householdIds } }
             });

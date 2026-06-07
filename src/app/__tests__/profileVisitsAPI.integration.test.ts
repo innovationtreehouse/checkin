@@ -16,29 +16,37 @@ jest.mock('next-auth/next', () => ({
 }));
 describe('Profile Visits API Integration Tests', () => {
     let testUserId: number;
+    let testHouseholdId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
         const existingUsers = await prisma.participant.findMany({
             where: { email: { contains: 'profile-visits-api-test' } },
-            select: { id: true }
+            select: { id: true, householdId: true }
         });
-        
+
         const existingUserIds = existingUsers.map(u => u.id);
-        
+        const existingHouseholdIds = existingUsers.map(u => u.householdId).filter((id): id is number => id !== null);
+
         await prisma.visit.deleteMany({
             where: { participantId: { in: existingUserIds } }
         });
-        
+
+        // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
+        await prisma.household.deleteMany({
+            where: { id: { in: existingHouseholdIds } }
+        });
+
         // Setup mock database records
         const user = await prisma.participant.create({
-            data: { email: 'user-profile-visits-test@example.com', name: 'Profile Visits Tester' }
+            data: { email: 'user-profile-visits-test@example.com', name: 'Profile Visits Tester', household: { create: {} } }
         });
         testUserId = user.id;
+        testHouseholdId = user.householdId;
 
         const now = new Date();
 
@@ -56,9 +64,14 @@ describe('Profile Visits API Integration Tests', () => {
         await prisma.visit.deleteMany({
             where: { participantId: testUserId }
         });
-        
+
         await prisma.participant.deleteMany({
             where: { id: testUserId }
+        });
+
+        // RESTRICT: delete the household only after its participant is gone
+        await prisma.household.deleteMany({
+            where: { id: testHouseholdId }
         });
     });
 

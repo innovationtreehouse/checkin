@@ -45,19 +45,19 @@ describe('Program Events API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-events-api-test@example.com', name: 'Admin', sysadmin: true }
+            data: { email: 'admin-events-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Lead
         const lead = await prisma.participant.create({
-            data: { email: 'lead-events-api-test@example.com', name: 'Lead' }
+            data: { email: 'lead-events-api-test@example.com', name: 'Lead', household: { create: {} } }
         });
         leadId = lead.id;
 
         // Create Common User
         const commonUser = await prisma.participant.create({
-            data: { email: 'common-events-api-test@example.com', name: 'Common' }
+            data: { email: 'common-events-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
 

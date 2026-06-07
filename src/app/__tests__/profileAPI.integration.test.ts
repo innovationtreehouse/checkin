@@ -16,38 +16,46 @@ jest.mock('next-auth/next', () => ({
 }));
 describe('Profile API Integration Tests', () => {
     let testUserId: number;
+    let testHouseholdId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
         const existingUsers = await prisma.participant.findMany({
             where: { email: { contains: 'profile-api-test' } },
-            select: { id: true }
+            select: { id: true, householdId: true }
         });
-        
+
         const existingUserIds = existingUsers.map(u => u.id);
-        
+        const existingHouseholdIds = existingUsers.map(u => u.householdId).filter((id): id is number => id !== null);
+
         await prisma.visit.deleteMany({
             where: { participantId: { in: existingUserIds } }
         });
-        
+
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: existingUserIds } }
         });
-        
+
+        // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
+        await prisma.household.deleteMany({
+            where: { id: { in: existingHouseholdIds } }
+        });
+
         // Setup mock database records
         const user = await prisma.participant.create({
-            data: { 
-                email: 'user-profile-api-test@example.com', 
+            data: {
+                email: 'user-profile-api-test@example.com',
                 name: 'Profile Tester',
                 dob: new Date('1990-01-01'),
-                homeAddress: '123 Maker Way'
+                household: { create: {} }
             }
         });
         testUserId = user.id;
+        testHouseholdId = user.householdId;
 
         // Create visits for history testing
         await prisma.visit.createMany({
@@ -62,13 +70,18 @@ describe('Profile API Integration Tests', () => {
         await prisma.visit.deleteMany({
             where: { participantId: testUserId }
         });
-        
+
         await prisma.auditLog.deleteMany({
             where: { actorId: testUserId }
         });
-        
+
         await prisma.participant.deleteMany({
             where: { id: testUserId }
+        });
+
+        // RESTRICT: delete the household only after its participant is gone
+        await prisma.household.deleteMany({
+            where: { id: testHouseholdId }
         });
     });
 
@@ -99,8 +112,7 @@ describe('Profile API Integration Tests', () => {
              const data = await res.json();
              expect(data.profile).toBeDefined();
              expect(data.profile.name).toBe('Profile Tester');
-             expect(data.profile.homeAddress).toBe('123 Maker Way');
-             
+
              expect(Array.isArray(data.profile.visits)).toBe(true);
              expect(data.profile.visits.length).toBe(2);
         });
@@ -123,18 +135,16 @@ describe('Profile API Integration Tests', () => {
 
             const req = new Request('http://localhost:4000/api/profile', {
                 method: 'PATCH',
-                body: JSON.stringify({ 
-                    name: 'Updated Profile Tester',
-                    homeAddress: '456 Innovation Blvd'
+                body: JSON.stringify({
+                    name: 'Updated Profile Tester'
                 })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
-            
+
             const data = await res.json();
             expect(data.profile.name).toBe('Updated Profile Tester');
-            expect(data.profile.homeAddress).toBe('456 Innovation Blvd');
 
             // Verify Audit Trail is populated
             const auditLogs = await prisma.auditLog.findMany({

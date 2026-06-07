@@ -45,16 +45,12 @@ describe('Household Visits API Integration Tests', () => {
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: existingUserIds } }
         });
-        
-        await prisma.participant.updateMany({
-            where: { id: { in: existingUserIds } },
-            data: { householdId: null }
-        });
 
+        // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
             where: { id: { in: existingUserIds } }
         });
-        
+
         await prisma.household.deleteMany({
             where: { id: { in: existingHouseholdIds } }
         });
@@ -87,8 +83,9 @@ describe('Household Visits API Integration Tests', () => {
         });
         testOtherHouseUserId = otherUser.id;
 
+        // Every participant now belongs to a household; this user's own household simply has no visits.
         const noHouseUser = await prisma.participant.create({
-            data: { email: 'nohouse-visits-api-test@example.com', name: 'No House User' }
+            data: { email: 'nohouse-visits-api-test@example.com', name: 'No House User', household: { create: {} } }
         });
         testNoHouseId = noHouseUser.id;
 
@@ -133,16 +130,12 @@ describe('Household Visits API Integration Tests', () => {
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: currentIds } }
         });
-        
-        await prisma.participant.updateMany({
-            where: { id: { in: currentIds } },
-            data: { householdId: null }
-        });
 
+        // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
             where: { id: { in: currentIds } }
         });
-        
+
         if (validHouseholdIds.length > 0) {
             await prisma.household.deleteMany({
                 where: { id: { in: validHouseholdIds } }
@@ -159,7 +152,7 @@ describe('Household Visits API Integration Tests', () => {
              expect(res.status).toBe(401);
         });
 
-        it('should return empty visits array if user has no household', async () => {
+        it('should return empty visits array if the user\'s household has no visits', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testNoHouseId } });
 
             const req = new Request('http://localhost:4000/api/household/visits', { method: 'GET' });

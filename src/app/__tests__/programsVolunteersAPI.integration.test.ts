@@ -49,27 +49,27 @@ describe('Program Volunteers API Integration Tests', () => {
 
         // Create Roles
         const admin = await prisma.participant.create({
-            data: { email: 'admin-volun-api-test@example.com', name: 'Admin', sysadmin: true }
+            data: { email: 'admin-volun-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         const lead = await prisma.participant.create({
-            data: { email: 'lead-volun-api-test@example.com', name: 'Lead' }
+            data: { email: 'lead-volun-api-test@example.com', name: 'Lead', household: { create: {} } }
         });
         leadId = lead.id;
 
         const commonUser = await prisma.participant.create({
-            data: { email: 'common-volun-api-test@example.com', name: 'Common' }
+            data: { email: 'common-volun-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
 
         const candidate = await prisma.participant.create({
-            data: { email: 'candidate-volun-api-test@example.com', name: 'Candidate' }
+            data: { email: 'candidate-volun-api-test@example.com', name: 'Candidate', household: { create: {} } }
         });
         candidateId = candidate.id;
 
         const existingVol = await prisma.participant.create({
-            data: { email: 'existing-volun-api-test@example.com', name: 'Existing Volunteer' }
+            data: { email: 'existing-volun-api-test@example.com', name: 'Existing Volunteer', household: { create: {} } }
         });
         existingVolunteerId = existingVol.id;
 

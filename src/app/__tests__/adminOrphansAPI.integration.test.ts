@@ -18,10 +18,11 @@ jest.mock('next-auth/next', () => ({
 describe('Admin Orphans API Integration Tests', () => {
     let testAdminId: number;
     let testUserId: number;
-    let testStudentNoHouseholdId: number;
+    let testStudentSoloHouseholdId: number;
     let testStudentHouseholdNoAdultsId: number;
     let testStudentHouseholdAdultNoGoogleIdId: number;
     let testStudentHouseholdAdultHasGoogleIdId: number;
+    let testHousehold0Id: number;
     let testHousehold1Id: number;
     let testHousehold2Id: number;
     let testHousehold3Id: number;
@@ -38,12 +39,12 @@ describe('Admin Orphans API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-orphans-api-test@example.com', name: 'Admin Orphans Test', sysadmin: true }
+            data: { email: 'admin-orphans-api-test@example.com', name: 'Admin Orphans Test', sysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.participant.create({
-            data: { email: 'user-orphans-api-test@example.com', name: 'User Orphans Test', sysadmin: false }
+            data: { email: 'user-orphans-api-test@example.com', name: 'User Orphans Test', sysadmin: false, household: { create: {} } }
         });
         testUserId = user.id;
 
@@ -51,11 +52,13 @@ describe('Admin Orphans API Integration Tests', () => {
         const tenYearsAgo = new Date(now.getFullYear() - 10, now.getMonth(), now.getDate());
         const twentyYearsAgo = new Date(now.getFullYear() - 20, now.getMonth(), now.getDate());
 
-        // 1. Student with no household
+        // 1. Student alone in their own household (no adults at all)
+        const household0 = await prisma.household.create({ data: { name: 'Orphans API Test HH 0' } });
+        testHousehold0Id = household0.id;
         const student1 = await prisma.participant.create({
-            data: { email: 'student1-orphans-api-test@example.com', name: 'Student No Household Test', dob: tenYearsAgo }
+            data: { email: 'student1-orphans-api-test@example.com', name: 'Student Solo Household Test', dob: tenYearsAgo, householdId: testHousehold0Id }
         });
-        testStudentNoHouseholdId = student1.id;
+        testStudentSoloHouseholdId = student1.id;
 
         // 2. Student in a household with no adults
         const household1 = await prisma.household.create({ data: { name: 'Orphans API Test HH 1' } });
@@ -99,7 +102,7 @@ describe('Admin Orphans API Integration Tests', () => {
             where: { email: { contains: 'orphans-api-test' } }
         });
         await prisma.household.deleteMany({
-            where: { id: { in: [testHousehold1Id, testHousehold2Id, testHousehold3Id] } }
+            where: { id: { in: [testHousehold0Id, testHousehold1Id, testHousehold2Id, testHousehold3Id] } }
         });
     });
 
@@ -132,7 +135,7 @@ describe('Admin Orphans API Integration Tests', () => {
             const orphanIds = data.orphans.map((o: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => o.id);
 
             // Should be orphans
-            expect(orphanIds).toContain(testStudentNoHouseholdId);
+            expect(orphanIds).toContain(testStudentSoloHouseholdId);
             expect(orphanIds).toContain(testStudentHouseholdNoAdultsId);
             expect(orphanIds).toContain(testStudentHouseholdAdultNoGoogleIdId);
 

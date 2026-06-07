@@ -13,11 +13,39 @@ const prismaAdapterClient = {
     user: prismaAdapterCore.participant,
 };
 
+// Every participant must belong to a household (Participant.householdId is
+// required), so new sign-ups get a single-person household they lead.
+async function createParticipantWithHousehold(data: {
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
+    googleId?: string | null;
+    emailVerified?: Date | null;
+}) {
+    return prisma.$transaction(async (tx) => {
+        const household = await tx.household.create({
+            data: { name: data.name ?? data.email ?? null },
+        });
+        const participant = await tx.participant.create({
+            data: { ...data, householdId: household.id },
+        });
+        await tx.householdLead.create({
+            data: { householdId: household.id, participantId: participant.id },
+        });
+        return participant;
+    });
+}
+
 // Wrap the adapter so `getUser` can handle string IDs from CredentialsProvider.
 // NextAuth always coerces IDs to strings, but our Participant.id is an Int.
+// `createUser` is overridden so first sign-in also creates the household.
 const baseAdapter = PrismaAdapter(prismaAdapterClient) as unknown as Record<string, unknown>;
 const patchedAdapter = {
     ...baseAdapter,
+    createUser: async (user: Parameters<typeof createParticipantWithHousehold>[0]) => {
+        const created = await createParticipantWithHousehold(user);
+        return { ...created, id: String(created.id), email: created.email || "" };
+    },
     getUser: async (id: string) => {
         const numericId = parseInt(id, 10);
         if (isNaN(numericId)) return null;
@@ -72,11 +100,9 @@ export const authOptions: NextAuthOptions = {
                     });
 
                     if (!dbParticipant) {
-                        dbParticipant = await prisma.participant.create({
-                            data: {
-                                email: credentials.email,
-                                name: "Mock User - " + credentials.email.split('@')[0],
-                            }
+                        dbParticipant = await createParticipantWithHousehold({
+                            email: credentials.email,
+                            name: "Mock User - " + credentials.email.split('@')[0],
                         });
                     }
 

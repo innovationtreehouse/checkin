@@ -13,12 +13,14 @@ describe("sendCheckinNotifications()", () => {
     let householdId: number;
 
     beforeEach(async () => {
-        // Clean up
+        // Clean up (participants before households — the FK is RESTRICT)
         await prisma.visit.deleteMany();
         await prisma.householdLead.deleteMany();
-        await prisma.household.deleteMany();
         await prisma.participant.deleteMany({
             where: { email: { contains: "notify-test" } }
+        });
+        await prisma.household.deleteMany({
+            where: { participants: { none: {} } }
         });
         jest.clearAllMocks();
 
@@ -62,9 +64,11 @@ describe("sendCheckinNotifications()", () => {
     afterAll(async () => {
         await prisma.visit.deleteMany();
         await prisma.householdLead.deleteMany();
-        await prisma.household.deleteMany();
         await prisma.participant.deleteMany({
             where: { email: { contains: "notify-test" } }
+        });
+        await prisma.household.deleteMany({
+            where: { participants: { none: {} } }
         });
     });
 

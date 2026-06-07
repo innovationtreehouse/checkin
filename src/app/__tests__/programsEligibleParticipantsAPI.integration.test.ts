@@ -57,27 +57,28 @@ describe('Eligible Participants API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-elig-api-test@example.com', name: 'Admin', sysadmin: true }
+            data: { email: 'admin-elig-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Lead
         const lead = await prisma.participant.create({
-            data: { email: 'lead-elig-api-test@example.com', name: 'Lead' }
+            data: { email: 'lead-elig-api-test@example.com', name: 'Lead', household: { create: {} } }
         });
         leadId = lead.id;
 
         // Create Common User
         const commonUser = await prisma.participant.create({
-            data: { email: 'common-elig-api-test@example.com', name: 'Common' }
+            data: { email: 'common-elig-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
 
         // Create Active Member
         const activeMember = await prisma.participant.create({
-            data: { 
-                email: 'active-member-elig-api-test@example.com', 
+            data: {
+                email: 'active-member-elig-api-test@example.com',
                 name: 'Active Member Candidate',
+                household: { create: {} },
                 memberships: {
                     create: {
                         type: 'HOUSEHOLD',
@@ -115,9 +116,10 @@ describe('Eligible Participants API Integration Tests', () => {
 
         // Create Non-Member
         const nonMember = await prisma.participant.create({
-            data: { 
-                email: 'non-member-elig-api-test@example.com', 
-                name: 'Non Member Candidate'
+            data: {
+                email: 'non-member-elig-api-test@example.com',
+                name: 'Non Member Candidate',
+                household: { create: {} }
             }
         });
         nonMemberId = nonMember.id;
@@ -135,9 +137,10 @@ describe('Eligible Participants API Integration Tests', () => {
 
         // Create already enrolled participant for public program
         const alreadyEnrolled = await prisma.participant.create({
-            data: { 
-                email: 'enrolled-elig-api-test@example.com', 
+            data: {
+                email: 'enrolled-elig-api-test@example.com',
                 name: 'Already Enrolled Candidate',
+                household: { create: {} },
                 programParticipants: {
                     create: {
                         programId: publicProgramId

@@ -39,12 +39,12 @@ describe('Event RSVP API Integration Tests', () => {
 
         // Setup mock database records
         const user = await prisma.participant.create({
-            data: { email: 'enrolled-user-rsvp-test@example.com', name: 'Enrolled RSVP Test' }
+            data: { email: 'enrolled-user-rsvp-test@example.com', name: 'Enrolled RSVP Test', household: { create: {} } }
         });
         testUserId = user.id;
 
         const unenrolledUser = await prisma.participant.create({
-            data: { email: 'unenrolled-user-rsvp-test@example.com', name: 'Unenrolled RSVP Test' }
+            data: { email: 'unenrolled-user-rsvp-test@example.com', name: 'Unenrolled RSVP Test', household: { create: {} } }
         });
         testUnenrolledUserId = unenrolledUser.id;
 
@@ -95,8 +95,17 @@ describe('Event RSVP API Integration Tests', () => {
         await prisma.program.deleteMany({
             where: { id: testProgramId }
         });
+        // RESTRICT: delete participants before their (auto-created) households.
+        const householdIds = (await prisma.participant.findMany({
+            where: { id: { in: [testUserId, testUnenrolledUserId] } },
+            select: { householdId: true }
+        })).map(p => p.householdId);
+
         await prisma.participant.deleteMany({
             where: { id: { in: [testUserId, testUnenrolledUserId] } }
+        });
+        await prisma.household.deleteMany({
+            where: { id: { in: householdIds } }
         });
     });
 

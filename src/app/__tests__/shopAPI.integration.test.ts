@@ -28,12 +28,16 @@ describe('Shop API Integration Tests', () => {
         // Clean up any leaked state
         const existingUsers = await prisma.participant.findMany({
             where: { email: { contains: 'shop-api-test' } },
-            select: { id: true }
+            select: { id: true, householdId: true }
         });
         const existingUserIds = existingUsers.map(u => u.id);
-        
+        const existingHouseholdIds = existingUsers.map(u => u.householdId).filter((id): id is number => id !== null);
+
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: existingUserIds } }
+        });
+        await prisma.membership.deleteMany({
+            where: { volunteerId: { in: existingUserIds } }
         });
         await prisma.toolStatus.deleteMany({
             where: { userId: { in: existingUserIds } }
@@ -41,8 +45,12 @@ describe('Shop API Integration Tests', () => {
         await prisma.visit.deleteMany({
             where: { participantId: { in: existingUserIds } }
         });
+        // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
             where: { id: { in: existingUserIds } }
+        });
+        await prisma.household.deleteMany({
+            where: { id: { in: existingHouseholdIds } }
         });
 
         await prisma.toolStatus.deleteMany({
@@ -54,21 +62,22 @@ describe('Shop API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-shop-api-test@example.com', name: 'Admin', sysadmin: true }
+            data: { email: 'admin-shop-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Steward
         const steward = await prisma.participant.create({
-            data: { email: 'steward-shop-api-test@example.com', name: 'Steward', shopSteward: true }
+            data: { email: 'steward-shop-api-test@example.com', name: 'Steward', shopSteward: true, household: { create: {} } }
         });
         stewardId = steward.id;
 
         // Create Common User
         const commonUser = await prisma.participant.create({
-            data: { 
-                email: 'common-shop-api-test@example.com', 
+            data: {
+                email: 'common-shop-api-test@example.com',
                 name: 'Common',
+                household: { create: {} },
                 memberships: { create: { type: 'VOLUNTEER', active: true } }
             }
         });
@@ -81,9 +90,10 @@ describe('Shop API Integration Tests', () => {
 
         // Create Certifier (A user who has MAY_CERTIFY_OTHERS on a tool)
         const certifier = await prisma.participant.create({
-            data: { 
-                email: 'certifier-shop-api-test@example.com', 
+            data: {
+                email: 'certifier-shop-api-test@example.com',
                 name: 'Certifier',
+                household: { create: {} },
                 toolStatuses: {
                     create: { toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' }
                 }
@@ -101,6 +111,12 @@ describe('Shop API Integration Tests', () => {
         const existingUserIds = [adminId, stewardId, certifierId, commonId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
+            const participants = await prisma.participant.findMany({
+                where: { id: { in: existingUserIds } },
+                select: { householdId: true }
+            });
+            const householdIds = participants.map(p => p.householdId).filter((id): id is number => id !== null);
+
             await prisma.membership.deleteMany({
                 where: { volunteerId: { in: existingUserIds } }
             });
@@ -113,9 +129,15 @@ describe('Shop API Integration Tests', () => {
             await prisma.visit.deleteMany({
                 where: { participantId: { in: existingUserIds } }
             });
+            // RESTRICT: delete participants before their households
             await prisma.participant.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
+            if (householdIds.length > 0) {
+                await prisma.household.deleteMany({
+                    where: { id: { in: householdIds } }
+                });
+            }
         }
         await prisma.toolStatus.deleteMany({
             where: { tool: { name: { contains: 'Shop Test Tool' } } }

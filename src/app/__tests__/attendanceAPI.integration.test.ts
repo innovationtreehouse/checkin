@@ -46,37 +46,44 @@ describe('General Attendance API Integration Tests', () => {
             where: { participantId: { in: existingUserIds } }
         });
 
-        await prisma.household.deleteMany({
-             where: { participants: { some: { id: { in: existingUserIds } } } }
-        });
-        
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: existingUserIds } }
         });
-        
+
+        // Capture households before participants are removed (RESTRICT requires
+        // participants to be deleted before their household).
+        const existingHouseholdIds = (await prisma.participant.findMany({
+            where: { id: { in: existingUserIds } },
+            select: { householdId: true }
+        })).map(p => p.householdId);
+
         await prisma.participant.deleteMany({
             where: { id: { in: existingUserIds } }
         });
-        
+
+        await prisma.household.deleteMany({
+            where: { id: { in: existingHouseholdIds } }
+        });
+
         await prisma.auditLog.deleteMany({
             where: { tableName: 'SYSTEM_NOTIFY' }
         });
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-attend-api-test@example.com', name: 'Admin', sysadmin: true }
+            data: { email: 'admin-attend-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Board Member
         const boardMember = await prisma.participant.create({
-            data: { email: 'board-attend-api-test@example.com', name: 'Board Member', boardMember: true }
+            data: { email: 'board-attend-api-test@example.com', name: 'Board Member', boardMember: true, household: { create: {} } }
         });
         boardMemberId = boardMember.id;
 
         // Create Common User
         const commonUser = await prisma.participant.create({
-            data: { email: 'common-attend-api-test@example.com', name: 'Common' }
+            data: { email: 'common-attend-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
 
@@ -126,14 +133,21 @@ describe('General Attendance API Integration Tests', () => {
             await prisma.visit.deleteMany({
                 where: { participantId: { in: existingUserIds } }
             });
-            await prisma.household.deleteMany({
-                 where: { participants: { some: { id: { in: existingUserIds } } } }
-            });
             await prisma.auditLog.deleteMany({
                 where: { actorId: { in: existingUserIds } }
             });
+
+            // RESTRICT: delete participants before their households.
+            const existingHouseholdIds = (await prisma.participant.findMany({
+                where: { id: { in: existingUserIds } },
+                select: { householdId: true }
+            })).map(p => p.householdId);
+
             await prisma.participant.deleteMany({
                 where: { id: { in: existingUserIds } }
+            });
+            await prisma.household.deleteMany({
+                where: { id: { in: existingHouseholdIds } }
             });
         }
         await prisma.auditLog.deleteMany({

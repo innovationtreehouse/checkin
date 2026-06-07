@@ -48,27 +48,28 @@ describe('Individual Program API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-prog-id-api-test@example.com', name: 'Admin', sysadmin: true }
+            data: { email: 'admin-prog-id-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Lead
         const lead = await prisma.participant.create({
-            data: { email: 'lead-prog-id-api-test@example.com', name: 'Lead' }
+            data: { email: 'lead-prog-id-api-test@example.com', name: 'Lead', household: { create: {} } }
         });
         leadId = lead.id;
 
         // Create Common User (no membership)
         const commonUser = await prisma.participant.create({
-            data: { email: 'common-prog-id-api-test@example.com', name: 'Common' }
+            data: { email: 'common-prog-id-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
 
         // Create Member User (active membership)
         const memberUser = await prisma.participant.create({
-            data: { 
-                email: 'member-prog-id-api-test@example.com', 
+            data: {
+                email: 'member-prog-id-api-test@example.com',
                 name: 'Member',
+                household: { create: {} },
                 memberships: {
                     create: {
                         type: 'HOUSEHOLD',

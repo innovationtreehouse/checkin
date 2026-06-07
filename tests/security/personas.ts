@@ -24,7 +24,12 @@ async function ensure(
     let p = await prisma.participant.findUnique({ where: { email } });
     if (!p) {
         p = await prisma.participant.create({
-            data: { email, name: mutate.name ?? emailSuffix, ...mutate },
+            data: {
+                email,
+                name: mutate.name ?? emailSuffix,
+                ...mutate,
+                household: { create: { name: `${mutate.name ?? emailSuffix} Household` } },
+            },
         });
     } else {
         p = await prisma.participant.update({ where: { id: p.id }, data: mutate });

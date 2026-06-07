@@ -76,8 +76,6 @@ model Participant {
 
   /// @sensitivity:pii
   dob                 DateTime?
-  /// @sensitivity:personal
-  homeAddress         String?
   /// @sensitivity:internal
   lastWaiverSign      DateTime?
   /// @sensitivity:internal
@@ -88,8 +86,8 @@ model Participant {
   notificationSettings Json?
 
   /// @sensitivity:public
-  householdId Int?
-  household   Household? @relation(fields: [householdId], references: [id])
+  householdId Int
+  household   Household @relation(fields: [householdId], references: [id])
 
   /// @sensitivity:internal
   sysadmin    Boolean @default(false)

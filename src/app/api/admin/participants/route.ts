@@ -40,6 +40,9 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Every participant must belong to a household, so resolve it before
+        // creating: parent's household > explicitly provided household > a new
+        // household of their own.
         let householdIdToAssign: number | null = null;
 
         if (parentEmail) {
@@ -51,72 +54,58 @@ export async function POST(req: NextRequest) {
                 parent = await prisma.participant.create({
                     data: {
                         email: parentEmail,
-                    }
-                });
-            }
-
-            if (!parent.householdId) {
-                const parentLastName = (parent.name || "").trim().split(/\s+/).pop() || "";
-                const household = await prisma.household.create({
-                    data: {
-                        name: parentLastName ? `${parentLastName} Household` : "Household",
-                        leads: {
-                            create: { participantId: parent.id }
+                        household: {
+                            create: { name: "Household" }
                         }
                     }
                 });
-                await prisma.participant.update({
-                    where: { id: parent.id },
-                    data: { householdId: household.id }
+                await prisma.householdLead.create({
+                    data: { householdId: parent.householdId, participantId: parent.id }
                 });
-                householdIdToAssign = household.id;
-
                 await prisma.membership.create({
                     data: {
-                        householdId: household.id,
+                        householdId: parent.householdId,
                         type: 'HOUSEHOLD',
                         active: true,
                     }
                 });
-            } else {
-                householdIdToAssign = parent.householdId;
             }
+
+            householdIdToAssign = parent.householdId;
+        } else if (householdId) {
+            householdIdToAssign = householdId;
         }
 
-        const newParticipant = await prisma.participant.create({
-            data: {
-                name,
-                ...(email && { email }),
-                dob: dob ? new Date(dob).toISOString() : null,
-                ...(householdIdToAssign && { householdId: householdIdToAssign })
-            }
-        });
-
-        if (householdId && !householdIdToAssign) {
-            await prisma.participant.update({
-                where: { id: newParticipant.id },
-                data: { householdId: householdId }
-            });
-        }
-        else if (!parentEmail && !householdId) {
-            const lastName = (name || "").trim().split(/\s+/).pop() || "";
-            const newHousehold = await prisma.household.create({
+        let newParticipant;
+        if (householdIdToAssign) {
+            newParticipant = await prisma.participant.create({
                 data: {
-                    name: lastName ? `${lastName} Household` : "Household",
-                    leads: {
-                        create: { participantId: newParticipant.id }
+                    name,
+                    ...(email && { email }),
+                    dob: dob ? new Date(dob).toISOString() : null,
+                    householdId: householdIdToAssign
+                }
+            });
+        } else {
+            const lastName = (name || "").trim().split(/\s+/).pop() || "";
+            newParticipant = await prisma.participant.create({
+                data: {
+                    name,
+                    ...(email && { email }),
+                    dob: dob ? new Date(dob).toISOString() : null,
+                    household: {
+                        create: { name: lastName ? `${lastName} Household` : "Household" }
                     }
                 }
             });
 
-            await prisma.participant.update({
-                where: { id: newParticipant.id },
-                data: { householdId: newHousehold.id }
+            await prisma.householdLead.create({
+                data: { householdId: newParticipant.householdId, participantId: newParticipant.id }
             });
 
             await prisma.membership.create({
                 data: {
-                    householdId: newHousehold.id,
+                    householdId: newParticipant.householdId,
                     type: 'HOUSEHOLD',
                     active: true,
                 }

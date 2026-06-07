@@ -45,12 +45,12 @@ describe('My Events API Integration Tests', () => {
 
         // Setup mock database records
         const user = await prisma.participant.create({
-            data: { email: 'user-mine-events-test@example.com', name: 'User Mine Test' }
+            data: { email: 'user-mine-events-test@example.com', name: 'User Mine Test', household: { create: {} } }
         });
         testUserId = user.id;
 
         const volunteer = await prisma.participant.create({
-            data: { email: 'volunteer-mine-events-test@example.com', name: 'Volunteer Mine Test' }
+            data: { email: 'volunteer-mine-events-test@example.com', name: 'Volunteer Mine Test', household: { create: {} } }
         });
         testVolunteerId = volunteer.id;
 
@@ -155,8 +155,17 @@ describe('My Events API Integration Tests', () => {
         await prisma.program.deleteMany({
             where: { id: { in: [testProgram1Id, testProgram2Id] } }
         });
+        // RESTRICT: delete participants before their (auto-created) households.
+        const householdIds = (await prisma.participant.findMany({
+            where: { id: { in: [testUserId, testVolunteerId] } },
+            select: { householdId: true }
+        })).map(p => p.householdId);
+
         await prisma.participant.deleteMany({
             where: { id: { in: [testUserId, testVolunteerId] } }
+        });
+        await prisma.household.deleteMany({
+            where: { id: { in: householdIds } }
         });
     });
 

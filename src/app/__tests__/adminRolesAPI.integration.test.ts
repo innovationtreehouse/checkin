@@ -37,22 +37,22 @@ describe('Admin Roles API Integration Tests', () => {
 
         // Setup mock database records
         const sysadmin = await prisma.participant.create({
-            data: { email: 'sysadmin-roles-api-test@example.com', name: 'Admin Roles Test', sysadmin: true }
+            data: { email: 'sysadmin-roles-api-test@example.com', name: 'Admin Roles Test', sysadmin: true, household: { create: {} } }
         });
         testSysAdminId = sysadmin.id;
 
         const boardMember = await prisma.participant.create({
-            data: { email: 'board-roles-api-test@example.com', name: 'Board Roles Test', boardMember: true }
+            data: { email: 'board-roles-api-test@example.com', name: 'Board Roles Test', boardMember: true, household: { create: {} } }
         });
         testBoardMemberId = boardMember.id;
 
         const user = await prisma.participant.create({
-            data: { email: 'user-roles-api-test@example.com', name: 'User Roles Test' }
+            data: { email: 'user-roles-api-test@example.com', name: 'User Roles Test', household: { create: {} } }
         });
         testUserId = user.id;
 
         const targetUser = await prisma.participant.create({
-            data: { email: 'target-roles-api-test@example.com', name: 'Target Roles Test', dob: new Date('1990-01-01') }
+            data: { email: 'target-roles-api-test@example.com', name: 'Target Roles Test', dob: new Date('1990-01-01'), household: { create: {} } }
         });
         testTargetUserId = targetUser.id;
 
@@ -60,7 +60,7 @@ describe('Admin Roles API Integration Tests', () => {
         const tenYearsAgo = new Date(now.getFullYear() - 10, now.getMonth(), now.getDate());
         
         const student = await prisma.participant.create({
-            data: { email: 'student-roles-api-test@example.com', name: 'Student Roles Test', dob: tenYearsAgo }
+            data: { email: 'student-roles-api-test@example.com', name: 'Student Roles Test', dob: tenYearsAgo, household: { create: {} } }
         });
         testStudentId = student.id;
     });
