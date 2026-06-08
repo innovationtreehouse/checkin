@@ -12,6 +12,7 @@ declare module "next-auth" {
       keyholder?: boolean;
       boardMember?: boolean;
       shopSteward?: boolean;
+      backgroundCheckReviewer?: boolean;
       householdId?: number | null;
       householdLead?: boolean;
       toolStatuses?: { toolId: number; level: string }[];
@@ -24,6 +25,7 @@ declare module "next-auth" {
     keyholder?: boolean;
     boardMember?: boolean;
     shopSteward?: boolean;
+    backgroundCheckReviewer?: boolean;
     householdId?: number | null;
     householdLead?: boolean;
     toolStatuses?: { toolId: number; level: string }[];
@@ -37,6 +39,7 @@ declare module "next-auth/jwt" {
     keyholder?: boolean;
     boardMember?: boolean;
     shopSteward?: boolean;
+    backgroundCheckReviewer?: boolean;
     householdId?: number | null;
     householdLead?: boolean;
     toolStatuses?: { toolId: number; level: string }[];

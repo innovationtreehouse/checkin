@@ -152,6 +152,7 @@ export const authOptions: NextAuthOptions = {
                     token.keyholder = dbParticipant.keyholder;
                     token.boardMember = dbParticipant.boardMember;
                     token.shopSteward = dbParticipant.shopSteward;
+                    token.backgroundCheckReviewer = dbParticipant.backgroundCheckReviewer;
                     token.householdId = dbParticipant.householdId;
                     token.toolStatuses = dbParticipant.toolStatuses;
                 }
@@ -165,6 +166,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.keyholder = token.keyholder;
                 session.user.boardMember = token.boardMember;
                 session.user.shopSteward = token.shopSteward;
+                session.user.backgroundCheckReviewer = token.backgroundCheckReviewer;
                 session.user.householdId = token.householdId;
                 session.user.toolStatuses = token.toolStatuses || [];
             }

@@ -54,6 +54,7 @@ export type Role =
     | 'boardMember'
     | 'keyholder'
     | 'shopSteward'
+    | 'backgroundCheckReviewer'
     | 'householdLead'
     | 'programLeadMentor'
     | 'programCoreVolunteer';
@@ -75,6 +76,7 @@ const VALID_ROLES = new Set<Role>([
     'boardMember',
     'keyholder',
     'shopSteward',
+    'backgroundCheckReviewer',
     'householdLead',
     'programLeadMentor',
     'programCoreVolunteer',

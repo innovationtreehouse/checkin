@@ -156,6 +156,19 @@ async function main() {
     })
     console.log(`✅ shop.steward@example.com (id: ${shopSteward.id}) — Shop Steward`)
 
+    const bgReviewer = await prisma.participant.upsert({
+        where: { email: 'bg.reviewer@example.com' },
+        update: { name: 'BG Reviewer', phone: '555-555-0009', backgroundCheckReviewer: true },
+        create: {
+            email: 'bg.reviewer@example.com',
+            name: 'BG Reviewer',
+            phone: '555-555-0009',
+            backgroundCheckReviewer: true,
+            household: { create: { name: 'BG Reviewer Household' } },
+        },
+    })
+    console.log(`✅ bg.reviewer@example.com (id: ${bgReviewer.id}) — Background Check Reviewer`)
+
     // ──────────────────────────────────────────────
     // 3. Household assignments & leads
     // ──────────────────────────────────────────────

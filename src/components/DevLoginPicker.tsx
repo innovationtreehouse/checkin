@@ -11,6 +11,7 @@ interface Persona {
     boardMember: boolean;
     keyholder: boolean;
     shopSteward: boolean;
+    backgroundCheckReviewer: boolean;
     dob: string | null;
     householdId: number | null;
     toolStatuses: { toolId: number; level: string }[];
@@ -51,6 +52,7 @@ export default function DevLoginPicker() {
         if (p.boardMember) badges.push({ label: "Board", color: "#8b5cf6" });
         if (p.keyholder) badges.push({ label: "Keyholder", color: "#3b82f6" });
         if (p.shopSteward) badges.push({ label: "Shop Steward", color: "#f59e0b" });
+        if (p.backgroundCheckReviewer) badges.push({ label: "BG Reviewer", color: "#14b8a6" });
         if (p.toolStatuses?.length > 0) badges.push({ label: "Certified", color: "#10b981" });
         if (p.householdId) badges.push({ label: "Household", color: "#6366f1" });
         if (p.dob && now !== null) {
