@@ -14,10 +14,17 @@ interface PersonPrefill {
     allergies: string | null;
 }
 
+interface ExternalStatus {
+    contractSigned: boolean;
+    bgConsented: boolean;
+    deepLinkUrl: string | null;
+}
+
 interface IntakeState {
     hasHousehold: boolean;
     membershipStatus: MembershipStatus | null;
     process: { id: number; kind: string; status: MembershipProcessStatus } | null;
+    external: ExternalStatus | null;
     prefill: {
         household: { name: string | null; address: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null } | null;
         primaryParent: PersonPrefill | null;
@@ -32,6 +39,20 @@ interface ChildForm {
     email: string;
     dob: string;
     allergies: string;
+}
+
+function ExternalTask({ done, title, doneText, children }: { done: boolean; title: string; doneText: string; children: React.ReactNode }) {
+    return (
+        <div style={{ border: "1px solid rgba(255,255,255,0.12)", borderRadius: "12px", padding: "1.25rem", display: "flex", gap: "0.9rem", alignItems: "flex-start", background: done ? "rgba(34,197,94,0.08)" : "transparent" }}>
+            <span aria-hidden style={{ width: "26px", height: "26px", borderRadius: "50%", background: done ? "#4ade80" : "rgba(255,255,255,0.15)", color: "#0f172a", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, flexShrink: 0 }}>
+                {done ? "✓" : "•"}
+            </span>
+            <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, marginBottom: "0.4rem" }}>{title}</div>
+                {done ? <p style={{ margin: 0, color: "#86efac" }}>{doneText}</p> : children}
+            </div>
+        </div>
+    );
 }
 
 export default function MembershipPage() {
@@ -346,11 +367,49 @@ export default function MembershipPage() {
                                     </button>
                                 </div>
                             </div>
+                        ) : inStatus === "EXTERNAL" ? (
+                            <div className="glass-container" style={{ padding: "1.75rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                                <div>
+                                    <h2 style={{ marginTop: 0, marginBottom: "0.25rem" }}>Two quick steps</h2>
+                                    <p style={{ color: "var(--color-text-muted)", margin: 0 }}>
+                                        These can be done in any order. We&apos;ll move you forward automatically once both are complete.
+                                    </p>
+                                </div>
+
+                                <ExternalTask
+                                    done={!!state.external?.contractSigned}
+                                    title="Sign your membership contract"
+                                    doneText="Contract signed — thank you!"
+                                >
+                                    <p style={{ margin: 0, color: "var(--color-text-muted)" }}>
+                                        We&apos;ve sent your membership contract via Zoho Sign. Please check your email and sign it. This page updates
+                                        automatically once it&apos;s signed.
+                                    </p>
+                                </ExternalTask>
+
+                                <ExternalTask
+                                    done={!!state.external?.bgConsented}
+                                    title="Consent to a background check"
+                                    doneText="Background-check consent received."
+                                >
+                                    {state.external?.deepLinkUrl ? (
+                                        <a href={state.external.deepLinkUrl} target="_blank" rel="noopener noreferrer" className="glass-button" style={{ display: "inline-block", textDecoration: "none", color: "white", padding: "0.6rem 1.1rem", background: "rgba(59,130,246,0.3)", borderColor: "rgba(59,130,246,0.5)" }}>
+                                            Consent on Averity →
+                                        </a>
+                                    ) : (
+                                        <p style={{ margin: 0, color: "var(--color-text-muted)" }}>The background-check link isn&apos;t available yet. Please check back shortly.</p>
+                                    )}
+                                </ExternalTask>
+
+                                <button className="glass-button" disabled={saving} onClick={load} style={{ alignSelf: "flex-start", padding: "0.6rem 1.1rem" }}>
+                                    Refresh status
+                                </button>
+                            </div>
                         ) : (
                             <div className="glass-container" style={{ padding: "2rem" }}>
                                 <h2 style={{ marginTop: 0 }}>Application in progress</h2>
                                 <p style={{ color: "var(--color-text-muted)" }}>
-                                    Your information is in. Follow the steps on the left — the next stages (contract, background check, and payment)
+                                    Your information is in. Follow the steps on the left — the next stages (background check and payment)
                                     will appear here as they open.
                                 </p>
                             </div>

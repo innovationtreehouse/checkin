@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
+import { getExternalStatus } from "@/lib/membership/external";
 
 /**
  * Membership intake service — the write/read model behind the "Join the
@@ -77,10 +78,13 @@ export async function getIntakeState(userId: number) {
         allergies: p.allergies,
     });
 
+    const external = process ? await getExternalStatus(process) : null;
+
     return {
         hasHousehold: !!household,
         membershipStatus: membership?.status ?? null,
         process: process ? { id: process.id, kind: process.kind, status: process.status } : null,
+        external,
         prefill: {
             household: household
                 ? {
