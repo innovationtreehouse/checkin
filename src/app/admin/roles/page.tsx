@@ -98,7 +98,7 @@ export default function RoleAssignmentPage() {
     if (loading || status === "loading") {
         return (
             <main className={styles.main}>
-                <div className="glass-container animate-float">
+                <div className="glass-container">
                     <h2>Loading...</h2>
                 </div>
             </main>
@@ -114,7 +114,7 @@ export default function RoleAssignmentPage() {
 
     return (
         <main className={styles.main}>
-            <div className={`glass-container animate-float ${styles.heroContainer}`} style={{ maxWidth: '1000px', width: '100%' }}>
+            <div className={`glass-container ${styles.heroContainer}`} style={{ maxWidth: '1000px', width: '100%' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                     <h1 className="text-gradient" style={{ fontSize: '2.5rem', margin: 0 }}>Role Assignment</h1>
                     <button className="glass-button" onClick={() => router.push('/admin')} style={{ padding: '0.5rem 1rem' }}>
