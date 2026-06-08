@@ -11,7 +11,7 @@ export const GET = withAuth(
 
             const user = await prisma.participant.findUnique({
                 where: { id: userId },
-                include: { household: { include: { participants: true, leads: true, memberships: { where: { active: true } } } } }
+                include: { household: { include: { participants: true, leads: true, memberships: { where: { status: "ACTIVE" } } } } }
             });
 
             if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -51,14 +51,6 @@ export const POST = withAuth(
                     }
                 },
                 include: { participants: true, leads: true }
-            });
-
-            await prisma.membership.create({
-                data: {
-                    householdId: household.id,
-                    type: 'HOUSEHOLD',
-                    active: true,
-                }
             });
 
             await prisma.auditLog.create({

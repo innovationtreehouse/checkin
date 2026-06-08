@@ -49,8 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             await prisma.membership.create({
                 data: {
                     householdId: targetHouseholdId,
-                    type: 'HOUSEHOLD',
-                    active: true,
+                    status: 'ACTIVE',
                 }
             });
         } else {

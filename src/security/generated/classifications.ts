@@ -47,13 +47,9 @@ export const classifications = {
     Membership: {
         id: 'public',
         since: 'public',
-        type: 'public',
-        active: 'public',
-        latestShopifyReceipt: 'personal',
-        latestDocusign: 'personal',
+        status: 'public',
+        isVolunteer: 'public',
         householdId: 'public',
-        volunteerId: 'public',
-        corporateId: 'public',
     },
     MembershipProcess: {
         id: 'public',
@@ -247,7 +243,6 @@ export const relations = {
         toolStatuses: { model: 'ToolStatus', isList: true },
         bgAttestations: { model: 'BackgroundCheckAttestation', isList: true },
         householdLeads: { model: 'HouseholdLead', isList: true },
-        memberships: { model: 'Membership', isList: true },
         corporationLeads: { model: 'CorporationLead', isList: true },
         corporationMembers: { model: 'CorporationMember', isList: true },
         programVolunteers: { model: 'ProgramVolunteer', isList: true },
@@ -277,8 +272,6 @@ export const relations = {
     },
     Membership: {
         household: { model: 'Household', isList: false },
-        volunteer: { model: 'Participant', isList: false },
-        corporate: { model: 'Corporation', isList: false },
         processes: { model: 'MembershipProcess', isList: true },
     },
     MembershipProcess: {
@@ -296,7 +289,6 @@ export const relations = {
     Corporation: {
         leads: { model: 'CorporationLead', isList: true },
         members: { model: 'CorporationMember', isList: true },
-        memberships: { model: 'Membership', isList: true },
     },
     CorporationLead: {
         corporation: { model: 'Corporation', isList: false },

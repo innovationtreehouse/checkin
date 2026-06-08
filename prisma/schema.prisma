@@ -19,12 +19,6 @@ enum ToolLevel {
   MAY_CERTIFY_OTHERS
 }
 
-enum MembershipType {
-  HOUSEHOLD
-  VOLUNTEER
-  CORPORATE
-}
-
 enum RSVPStatus {
   ATTENDING
   NOT_ATTENDING
@@ -106,7 +100,6 @@ model Participant {
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
   householdLeads      HouseholdLead[]
-  memberships         Membership[]            @relation("ParticipantMemberships")
   corporationLeads    CorporationLead[]
   corporationMembers  CorporationMember[]
   programVolunteers   ProgramVolunteer[]
@@ -201,31 +194,22 @@ enum AttestationResult {
 
 model Membership {
   /// @sensitivity:public
-  id                   Int            @id @default(autoincrement())
+  id          Int              @id @default(autoincrement())
   /// @sensitivity:public
-  since                DateTime       @default(now())
+  since       DateTime         @default(now())
   /// @sensitivity:public
-  type                 MembershipType
+  status      MembershipStatus @default(NONE)
   /// @sensitivity:public
-  active               Boolean        @default(true)
-  /// @sensitivity:personal
-  latestShopifyReceipt String?
-  /// @sensitivity:personal
-  latestDocusign       String?
+  isVolunteer Boolean          @default(false)
 
   /// @sensitivity:public
-  householdId Int?
-  household   Household? @relation(fields: [householdId], references: [id])
-
-  /// @sensitivity:public
-  volunteerId Int?
-  volunteer   Participant? @relation("ParticipantMemberships", fields: [volunteerId], references: [id])
-
-  /// @sensitivity:public
-  corporateId Int?
-  corporate   Corporation? @relation(fields: [corporateId], references: [id])
+  householdId Int
+  household   Household @relation(fields: [householdId], references: [id])
 
   processes MembershipProcess[]
+
+  @@index([householdId])
+  @@index([status])
 }
 
 model MembershipProcess {
@@ -330,7 +314,6 @@ model Corporation {
 
   leads       CorporationLead[]
   members     CorporationMember[]
-  memberships Membership[]
 }
 
 model CorporationLead {

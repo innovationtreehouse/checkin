@@ -65,8 +65,7 @@ export async function POST(req: NextRequest) {
                 await prisma.membership.create({
                     data: {
                         householdId: parent.householdId,
-                        type: 'HOUSEHOLD',
-                        active: true,
+                        status: 'ACTIVE',
                     }
                 });
             }
@@ -106,8 +105,7 @@ export async function POST(req: NextRequest) {
             await prisma.membership.create({
                 data: {
                     householdId: newParticipant.householdId,
-                    type: 'HOUSEHOLD',
-                    active: true,
+                    status: 'ACTIVE',
                 }
             });
         }

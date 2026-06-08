@@ -18,6 +18,7 @@ describe('Individual Program API Integration Tests', () => {
     let leadId: number;
     let commonId: number;
     let memberId: number;
+    let memberHouseholdId: number;
     let publicProgramId: number;
     let memberOnlyProgramId: number;
 
@@ -25,13 +26,13 @@ describe('Individual Program API Integration Tests', () => {
         // Clean up any leaked state
         const existingUsers = await prisma.participant.findMany({
             where: { email: { contains: 'prog-id-api-test' } },
-            select: { id: true, memberships: true }
+            select: { id: true, householdId: true }
         });
         const existingUserIds = existingUsers.map(u => u.id);
-        const existingMembershipIds = existingUsers.flatMap(u => u.memberships).map(m => m.id);
-        
+        const existingHouseholdIds = existingUsers.map(u => u.householdId);
+
         await prisma.membership.deleteMany({
-            where: { id: { in: existingMembershipIds } }
+            where: { householdId: { in: existingHouseholdIds } }
         });
 
         await prisma.program.deleteMany({
@@ -64,22 +65,26 @@ describe('Individual Program API Integration Tests', () => {
         });
         commonId = commonUser.id;
 
-        // Create Member User (active membership)
+        // Create Member User (household holds an active membership)
         const memberUser = await prisma.participant.create({
             data: {
                 email: 'member-prog-id-api-test@example.com',
                 name: 'Member',
-                household: { create: {} },
-                memberships: {
+                household: {
                     create: {
-                        type: 'HOUSEHOLD',
-                        active: true,
-                        since: new Date()
+                        memberships: {
+                            create: {
+                                status: 'ACTIVE',
+                                since: new Date()
+                            }
+                        }
                     }
                 }
-            }
+            },
+            select: { id: true, householdId: true }
         });
         memberId = memberUser.id;
+        memberHouseholdId = memberUser.householdId;
 
         // Create mock programs
         const publicProgram = await prisma.program.create({
@@ -96,9 +101,9 @@ describe('Individual Program API Integration Tests', () => {
     afterAll(async () => {
         const existingUserIds = [adminId, leadId, commonId, memberId];
 
-        if (memberId) {
+        if (memberHouseholdId) {
             await prisma.membership.deleteMany({
-                where: { volunteerId: memberId }
+                where: { householdId: memberHouseholdId }
             });
         }
 

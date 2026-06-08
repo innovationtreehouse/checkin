@@ -38,8 +38,7 @@ async function main() {
         // Create membership
         await prisma.membership.create({
             data: {
-                type: 'HOUSEHOLD',
-                active: true,
+                status: 'ACTIVE',
                 householdId: household.id
             }
         })

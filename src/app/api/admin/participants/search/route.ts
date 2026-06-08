@@ -25,13 +25,10 @@ export const GET = withAuth(
                 take: 200,
                 orderBy: { id: 'desc' },
                 include: {
-                    memberships: {
-                        where: { active: true }
-                    },
                     household: {
                         include: {
                             participants: true,
-                            memberships: { where: { active: true } },
+                            memberships: { where: { status: "ACTIVE" } },
                         }
                     }
                 }

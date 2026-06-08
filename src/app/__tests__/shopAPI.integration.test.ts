@@ -36,9 +36,6 @@ describe('Shop API Integration Tests', () => {
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: existingUserIds } }
         });
-        await prisma.membership.deleteMany({
-            where: { volunteerId: { in: existingUserIds } }
-        });
         await prisma.toolStatus.deleteMany({
             where: { userId: { in: existingUserIds } }
         });
@@ -48,6 +45,10 @@ describe('Shop API Integration Tests', () => {
         // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
             where: { id: { in: existingUserIds } }
+        });
+        // Memberships belong to the household; remove them before deleting households.
+        await prisma.membership.deleteMany({
+            where: { householdId: { in: existingHouseholdIds } }
         });
         await prisma.household.deleteMany({
             where: { id: { in: existingHouseholdIds } }
@@ -77,8 +78,8 @@ describe('Shop API Integration Tests', () => {
             data: {
                 email: 'common-shop-api-test@example.com',
                 name: 'Common',
-                household: { create: {} },
-                memberships: { create: { type: 'VOLUNTEER', active: true } }
+                // Volunteer member: the household holds an ACTIVE, isVolunteer membership.
+                household: { create: { memberships: { create: { status: 'ACTIVE', isVolunteer: true } } } }
             }
         });
         commonId = commonUser.id;
@@ -117,9 +118,6 @@ describe('Shop API Integration Tests', () => {
             });
             const householdIds = participants.map(p => p.householdId).filter((id): id is number => id !== null);
 
-            await prisma.membership.deleteMany({
-                where: { volunteerId: { in: existingUserIds } }
-            });
             await prisma.auditLog.deleteMany({
                 where: { actorId: { in: existingUserIds } }
             });
@@ -134,6 +132,10 @@ describe('Shop API Integration Tests', () => {
                 where: { id: { in: existingUserIds } }
             });
             if (householdIds.length > 0) {
+                // Memberships belong to the household; remove them before deleting households.
+                await prisma.membership.deleteMany({
+                    where: { householdId: { in: householdIds } }
+                });
                 await prisma.household.deleteMany({
                     where: { id: { in: householdIds } }
                 });
