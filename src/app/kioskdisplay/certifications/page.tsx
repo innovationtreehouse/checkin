@@ -6,7 +6,7 @@ import styles from "../../page.module.css";
 import { useAutoCycle } from "../../../hooks/useAutoCycle";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 
-type ToolStatusLevel = "BASIC" | "DOF" | "CERTIFIED" | "MAY_CERTIFY_OTHERS";
+type ToolStatusLevel = "BASIC" | "DOF" | "CERTIFIED" | "INSTRUCTOR" | "MAY_CERTIFY_OTHERS";
 
 type Participant = {
     id: number;
@@ -95,7 +95,8 @@ function KioskCertificationsInner() {
             case "BASIC": return "#ef4444"; // Red
             case "CERTIFIED": return "#22c55e"; // Green
             case "DOF": return "#eab308"; // Yellow
-            case "MAY_CERTIFY_OTHERS": return "#3b82f6"; // Blue
+            case "INSTRUCTOR": return "#3b82f6"; // Blue
+            case "MAY_CERTIFY_OTHERS": return "#a855f7"; // Purple
             default: return "transparent"; // Blank
         }
     };
@@ -236,6 +237,7 @@ function KioskCertificationsInner() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><span style={{ width: '12px', height: '12px', background: '#22c55e', display: 'inline-block', borderRadius: '3px' }}></span> Certified</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><span style={{ width: '12px', height: '12px', background: '#eab308', display: 'inline-block', borderRadius: '3px' }}></span> DOF</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><span style={{ width: '12px', height: '12px', background: '#3b82f6', display: 'inline-block', borderRadius: '3px' }}></span> Instructor</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><span style={{ width: '12px', height: '12px', background: '#a855f7', display: 'inline-block', borderRadius: '3px' }}></span> Certifier</div>
                         </div>
                     </div>
                     {currentTime && (
