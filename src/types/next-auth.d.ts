@@ -35,6 +35,9 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     id: number;
+    // Google hosted-domain + email_verified claims, used by the dev-instance org-login gate.
+    hd?: string | null;
+    emailVerified?: boolean;
     sysadmin?: boolean;
     keyholder?: boolean;
     boardMember?: boolean;

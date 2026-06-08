@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useSession, signIn } from "next-auth/react";
 import styles from './page.module.css';
 import DevLoginPicker from '@/components/DevLoginPicker';
-import { config } from '@/lib/config';
+import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
 import type { SessionUser, BoardMember } from '@/types/participant';
 
 export default function Home() {
   const router = useRouter();
   const { data: session } = useSession();
+  const isDevInstance = useIsDevInstance();
+  const isLocalInstance = useIsLocalInstance();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [isCheckedIn, setIsCheckedIn] = useState<boolean | null>(null);
@@ -105,7 +107,7 @@ export default function Home() {
     <main className={styles.main}>
       <div className={`glass-container animate-float ${styles.heroContainer}`}>
         <h1 className="text-gradient" style={{ fontSize: '3rem', margin: '0 0 1rem 0' }}>
-          {config.isDev ? 'CMI-dev' : 'CheckMeIn'}
+          {isDevInstance ? 'CMI-dev' : 'CheckMeIn'}
         </h1>
         <p style={{ color: 'var(--color-text-muted)', fontSize: '1.25rem', marginBottom: '2rem' }}>
           The elegant next-generation facility check-in system.
@@ -143,7 +145,7 @@ export default function Home() {
 
               {/* Check-in Toggle Button — in production, only privileged users can self-check-in from the web */}
               {isCheckedIn !== null && (
-                ((session.user as SessionUser)?.sysadmin || (session.user as SessionUser)?.boardMember || (session.user as SessionUser)?.keyholder || (process.env.NEXT_PUBLIC_DEV_AUTH && process.env.NODE_ENV !== 'production')) ? (
+                ((session.user as SessionUser)?.sysadmin || (session.user as SessionUser)?.boardMember || (session.user as SessionUser)?.keyholder || isDevInstance) ? (
                   <button
                     className="glass-button"
                     onClick={handleToggleCheckin}
@@ -258,7 +260,7 @@ export default function Home() {
               >
                 Sign In To Dashboard
               </button>
-              {(process.env.NEXT_PUBLIC_DEV_AUTH && process.env.NODE_ENV !== 'production') && <DevLoginPicker />}
+              {isLocalInstance && <DevLoginPicker />}
             </div>
           )}
         </div>
