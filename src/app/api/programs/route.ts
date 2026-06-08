@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { createShopifyProgramVariants } from "@/lib/shopify";
 import { logBackendError } from "@/lib/logger";
+import { isActiveMember } from "@/lib/membership";
 
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
@@ -21,18 +22,7 @@ export async function GET(req: Request) {
             if (user.sysadmin || user.boardMember) {
                 canSeeMemberOnly = true;
             } else {
-                // Check if user has an active membership
-                const participant = await prisma.participant.findUnique({
-                    where: { id: user.id },
-                    include: {
-                        memberships: {
-                            where: { active: true }
-                        }
-                    }
-                });
-                if (participant && participant.memberships.length > 0) {
-                    canSeeMemberOnly = true;
-                }
+                canSeeMemberOnly = await isActiveMember(user.id);
             }
         }
 
