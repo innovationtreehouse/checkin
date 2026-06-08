@@ -111,6 +111,11 @@ export default function PublicProgramsDirectory() {
                                         Member Only
                                     </span>
                                 )}
+                                {program.phase === 'PLANNING' && (
+                                    <span style={{ background: 'rgba(234, 179, 8, 0.2)', color: '#fde047', padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, border: '1px solid rgba(234, 179, 8, 0.4)', marginLeft: '0.5rem' }}>
+                                        Planning / Not Published
+                                    </span>
+                                )}
                                 {program.enrollmentStatus === 'CLOSED' && (
                                     <span style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#fca5a5', padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, border: '1px solid rgba(239, 68, 68, 0.4)', marginLeft: '0.5rem' }}>
                                         Enrollment Closed
