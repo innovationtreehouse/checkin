@@ -86,11 +86,15 @@ export const authOptions: NextAuthOptions = {
                 }
             }
         }),
-        ...(process.env.NEXT_PUBLIC_DEV_AUTH && process.env.NODE_ENV !== 'production' ? [
+        // Offline credential login — local laptops only (CHECKIN_ENV=local). Lets a developer
+        // sign in without Google. This is NOT enabled on the cloud dev instance (CHECKIN_ENV=dev),
+        // which is publicly reachable and must use real Google org login; impersonation there is
+        // handled by the separate gated mint flow (see DEV_INSTANCE_DESIGN.md §5).
+        ...(config.isLocal() ? [
             CredentialsProvider({
-                name: "Development Mock Auth",
+                name: "Local Offline Login",
                 credentials: {
-                    email: { label: "Enter any email to mock login", type: "email", placeholder: "test@example.com" }
+                    email: { label: "Enter any email to log in locally", type: "email", placeholder: "test@example.com" }
                 },
                 async authorize(credentials) {
                     if (!credentials?.email) return null; console.log("Dev Login Email:", credentials.email);
@@ -120,7 +124,15 @@ export const authOptions: NextAuthOptions = {
         strategy: "jwt",
     },
     callbacks: {
-        async jwt({ token, user, account }) {
+        async jwt({ token, user, account, profile }) {
+            // Capture Google's hosted-domain + email_verified claims on sign-in so the dev-instance
+            // middleware can gate on verified org membership (see DEV_INSTANCE_DESIGN.md §4).
+            // Prefer the `hd` claim over string-matching the email suffix.
+            if (account?.provider === "google" && profile) {
+                const googleProfile = profile as { hd?: string; email_verified?: boolean };
+                token.hd = googleProfile.hd ?? null;
+                token.emailVerified = googleProfile.email_verified ?? false;
+            }
             if (user) {
                 const dbParticipant = await prisma.participant.findUnique({
                     where: { email: user.email! },

@@ -5,7 +5,7 @@ import { useSession, signIn, signOut } from "next-auth/react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from 'next/link';
 import styles from './NavBar.module.css';
-import { config } from '@/lib/config';
+import { useIsDevInstance } from '@/components/EnvProvider';
 
 type SessionUser = {
     sysadmin?: boolean;
@@ -19,6 +19,7 @@ function NavBarInner() {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
+    const isDevInstance = useIsDevInstance();
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -99,7 +100,7 @@ function NavBarInner() {
                 <div className={styles.leftSection}>
                     <Link href="/" onClick={closeMobileMenu} style={{ textDecoration: 'none' }}>
                         <h2 className="text-gradient" style={{ margin: 0, fontSize: '1.5rem', cursor: 'pointer' }}>
-                            {config.isDev ? 'CMI-dev' : 'CheckMeIn'}
+                            {isDevInstance ? 'CMI-dev' : 'CheckMeIn'}
                         </h2>
                     </Link>
                     <div className={styles.navLinks}>

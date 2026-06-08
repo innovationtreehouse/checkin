@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { config } from "@/lib/config";
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/auth/dev-personas
  *
- * Dev-only endpoint that returns all @example.com participants
- * with their role flags for the dev login picker.
+ * Local-only endpoint that returns all @example.com participants with their role flags
+ * for the offline login picker. Gated to CHECKIN_ENV=local (developer laptops); the cloud
+ * dev instance uses the separate gated mint flow, not this open picker.
  */
 export async function GET() {
-    // Block if dev auth is not explicitly enabled or if in production
-    if (!process.env.NEXT_PUBLIC_DEV_AUTH || process.env.NODE_ENV === 'production') {
+    if (!config.isLocal()) {
         return NextResponse.json({ error: "Not available" }, { status: 404 });
     }
 

@@ -28,8 +28,12 @@ export async function authenticateRequest(
             pubKeys
         );
         if (result.ok) return { type: 'kiosk' };
-    } else if (pubKeys.length === 0 && config.isDev && process.env.NODE_ENV !== 'test') {
-        // Dev mode: treat as kiosk if no key configured
+    } else if (pubKeys.length === 0 && config.isLocal()) {
+        // Local laptops only (CHECKIN_ENV=local): treat as kiosk when no signing key is
+        // configured, so the kiosk/check-in flows can be exercised without provisioning keys.
+        // Deliberately NOT enabled on the cloud dev instance (CHECKIN_ENV=dev) — that box is
+        // publicly reachable and must require a real kiosk key, exactly like prod. CHECKIN_ENV
+        // is unset under tests, so this stays off there too.
         if (hasKioskHeaders || !req.headers.get('cookie')) {
             return { type: 'kiosk' };
         }
