@@ -70,11 +70,24 @@ export default function AdminProgramsIndex() {
                                         {program._count?.participants || 0} Participants • {program._count?.events || 0} Events
                                     </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <span style={{ 
-                                        padding: '4px 8px', 
-                                        borderRadius: '4px', 
-                                        fontSize: '0.75rem', 
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                    {program.phase === 'PLANNING' && (
+                                        <span style={{
+                                            padding: '4px 8px',
+                                            borderRadius: '4px',
+                                            fontSize: '0.75rem',
+                                            background: 'rgba(234, 179, 8, 0.2)',
+                                            color: '#fde047',
+                                            border: '1px solid rgba(234, 179, 8, 0.4)',
+                                            fontWeight: 600,
+                                        }}>
+                                            Planning / Not Published
+                                        </span>
+                                    )}
+                                    <span style={{
+                                        padding: '4px 8px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.75rem',
                                         background: program.memberOnly ? 'rgba(168, 85, 247, 0.2)' : 'rgba(59, 130, 246, 0.2)',
                                         color: program.memberOnly ? '#d8b4fe' : '#93c5fd'
                                     }}>
