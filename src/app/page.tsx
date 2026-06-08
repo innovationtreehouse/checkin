@@ -154,6 +154,15 @@ export default function Home() {
                 </div>
               )}
 
+              {/* Background-check reviewers: entry point to their review queue */}
+              {(session.user as SessionUser)?.backgroundCheckReviewer && (
+                <div style={{ width: '100%', gridColumn: '1 / -1' }}>
+                  <a href="/membership/review" className="glass-button" style={{ display: 'inline-block', textDecoration: 'none', color: 'white', padding: '0.75rem 1.25rem', background: 'rgba(168,85,247,0.25)', borderColor: 'rgba(168,85,247,0.5)' }}>
+                    🔍 Background-check reviews
+                  </a>
+                </div>
+              )}
+
               {/* Operational Warnings */}
               {isTwoDeepViolation && (
                 <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.5)', color: '#fca5a5', padding: '1rem', borderRadius: '8px', width: '100%', gridColumn: '1 / -1', display: 'flex', gap: '12px', alignItems: 'center' }}>

@@ -7,6 +7,11 @@ interface Participant {
     name: string | null;
     email: string | null;
 }
+interface Attestation {
+    id: number;
+    result: string;
+    markedVolunteer: boolean;
+}
 interface ProcessRow {
     id: number;
     kind: string;
@@ -15,6 +20,7 @@ interface ProcessRow {
     zohoEnvelopeId: string | null;
     contractSignedAt: string | null;
     bgConsentAt: string | null;
+    attestations: Attestation[];
     membership: {
         householdId: number;
         isVolunteer: boolean;
@@ -71,6 +77,32 @@ export default function AdminMembershipPage() {
             } else {
                 setIsError(true);
                 setMessage(data.error || "Action failed.");
+            }
+        } catch {
+            setIsError(true);
+            setMessage("Network error.");
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const override = async (processId: number, action: "reset" | "approve") => {
+        setBusyId(processId);
+        setMessage("");
+        try {
+            const res = await fetch("/api/admin/membership/review-override", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ processId, action }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setIsError(false);
+                setMessage(action === "reset" ? "Sent back for re-review." : "Overridden to payment.");
+                await load();
+            } else {
+                setIsError(true);
+                setMessage(data.error || "Override failed.");
             }
         } catch {
             setIsError(true);
@@ -150,6 +182,26 @@ export default function AdminMembershipPage() {
                                                 {busyId === r.id ? "…" : "Confirm BG consent"}
                                             </button>
                                         )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {r.status === "PENDING_BG_REVIEW" && (
+                                <div style={{ marginTop: "1rem", fontSize: "0.9rem", color: "var(--color-text-muted)" }}>
+                                    Awaiting reviewers — <strong style={{ color: "var(--color-text-main, #f8fafc)" }}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</strong> approvals recorded.
+                                </div>
+                            )}
+
+                            {r.status === "BLOCKED" && (
+                                <div style={{ marginTop: "1rem", padding: "1rem", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: "10px" }}>
+                                    <div style={{ color: "#fca5a5", fontWeight: 600, marginBottom: "0.75rem" }}>🚨 Blocked at background review — needs board attention.</div>
+                                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                                        <button className="glass-button" disabled={busyId === r.id} onClick={() => override(r.id, "reset")} style={{ padding: "0.45rem 0.9rem" }}>
+                                            {busyId === r.id ? "…" : "Reset for re-review"}
+                                        </button>
+                                        <button className="glass-button" disabled={busyId === r.id} onClick={() => override(r.id, "approve")} style={{ padding: "0.45rem 0.9rem", background: "rgba(34,197,94,0.2)", borderColor: "rgba(34,197,94,0.4)" }}>
+                                            {busyId === r.id ? "…" : "Override → payment"}
+                                        </button>
                                     </div>
                                 </div>
                             )}
