@@ -20,6 +20,7 @@ export const classifications = {
         boardMember: 'public',
         keyholder: 'internal',
         shopSteward: 'internal',
+        backgroundCheckReviewer: 'internal',
     },
     Tool: {
         id: 'public',

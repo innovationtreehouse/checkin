@@ -13,6 +13,7 @@ type UserRole = {
     boardMember: boolean;
     keyholder: boolean;
     shopSteward: boolean;
+    backgroundCheckReviewer: boolean;
 };
 
 type SessionUser = {
@@ -159,6 +160,7 @@ export default function RoleAssignmentPage() {
                                 <th style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>Board Member</th>
                                 <th style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>Keyholder</th>
                                 <th style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>Shop Steward</th>
+                                <th style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>BG Reviewer</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -201,6 +203,15 @@ export default function RoleAssignmentPage() {
                                             checked={user.shopSteward}
                                             disabled={savingId === user.id}
                                             onChange={(e) => handleRoleChange(user.id, 'shopSteward', e.target.checked)}
+                                            style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
+                                        />
+                                    </td>
+                                    <td style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={user.backgroundCheckReviewer}
+                                            disabled={savingId === user.id}
+                                            onChange={(e) => handleRoleChange(user.id, 'backgroundCheckReviewer', e.target.checked)}
                                             style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
                                         />
                                     </td>

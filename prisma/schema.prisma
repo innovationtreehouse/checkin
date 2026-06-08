@@ -98,6 +98,8 @@ model Participant {
   keyholder   Boolean @default(false)
   /// @sensitivity:internal
   shopSteward Boolean @default(false)
+  /// @sensitivity:internal
+  backgroundCheckReviewer Boolean @default(false)
 
   toolStatuses        ToolStatus[]
   householdLeads      HouseholdLead[]
