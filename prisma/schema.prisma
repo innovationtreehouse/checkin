@@ -150,7 +150,7 @@ model Household {
 
   participants Participant[]
   leads        HouseholdLead[]
-  memberships  Membership[]
+  membership   Membership?
 }
 
 model HouseholdLead {
@@ -203,12 +203,11 @@ model Membership {
   isVolunteer Boolean          @default(false)
 
   /// @sensitivity:public
-  householdId Int
+  householdId Int       @unique
   household   Household @relation(fields: [householdId], references: [id])
 
   processes MembershipProcess[]
 
-  @@index([householdId])
   @@index([status])
 }
 

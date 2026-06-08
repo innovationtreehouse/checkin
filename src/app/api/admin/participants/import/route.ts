@@ -101,17 +101,11 @@ export async function POST(req: NextRequest) {
 
         // Helper: ensure an active household membership exists for a household
         const ensureHouseholdMembership = async (householdId: number) => {
-            const existingMembership = await prisma.membership.findFirst({
-                where: { householdId, status: 'ACTIVE' }
+            await prisma.membership.upsert({
+                where: { householdId },
+                create: { householdId, status: 'ACTIVE' },
+                update: { status: 'ACTIVE' },
             });
-            if (!existingMembership) {
-                await prisma.membership.create({
-                    data: {
-                        householdId,
-                        status: 'ACTIVE',
-                    }
-                });
-            }
         };
 
         // Parse all rows first

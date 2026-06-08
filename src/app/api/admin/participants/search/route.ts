@@ -28,7 +28,7 @@ export const GET = withAuth(
                     household: {
                         include: {
                             participants: true,
-                            memberships: { where: { status: "ACTIVE" } },
+                            membership: true,
                         }
                     }
                 }

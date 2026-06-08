@@ -45,13 +45,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 }
             });
             targetHouseholdId = newHousehold.id;
-
-            await prisma.membership.create({
-                data: {
-                    householdId: targetHouseholdId,
-                    status: 'ACTIVE',
-                }
-            });
+            // New household starts as a visitor (no membership) — membership is
+            // earned via the application process or set on the households page.
         } else {
             targetHouseholdId = parseInt(householdId);
             if (isNaN(targetHouseholdId)) {

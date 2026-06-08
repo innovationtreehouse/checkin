@@ -264,7 +264,7 @@ export const relations = {
     Household: {
         participants: { model: 'Participant', isList: true },
         leads: { model: 'HouseholdLead', isList: true },
-        memberships: { model: 'Membership', isList: true },
+        membership: { model: 'Membership', isList: false },
     },
     HouseholdLead: {
         household: { model: 'Household', isList: false },

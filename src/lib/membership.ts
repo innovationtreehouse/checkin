@@ -4,23 +4,23 @@ import prisma from "@/lib/prisma";
 /**
  * Canonical "is this person an active member?" read model.
  *
- * Memberships belong to the household. A Participant counts as an active member
- * when their household holds a membership with status ACTIVE. This is the single
+ * Each household has one Membership (1:1). A Participant counts as an active
+ * member when their household's membership has status ACTIVE. This is the single
  * source of truth for member gating — route every "is member?" check through
  * here so a child or second parent in an active household is honored.
  */
 export const ACTIVE_MEMBER_PARTICIPANT_WHERE: Prisma.ParticipantWhereInput = {
-    household: { memberships: { some: { status: "ACTIVE" } } },
+    household: { membership: { status: "ACTIVE" } },
 };
 
 /**
  * Prisma `include` fragment that loads exactly the membership data
- * `participantRecordIsActiveMember` needs (the household's active memberships).
+ * `participantRecordIsActiveMember` needs (the household's membership).
  * Spread into a findMany/findUnique `include` to compute membership in-query
  * without an extra round-trip.
  */
 export const ACTIVE_MEMBER_INCLUDE = {
-    household: { include: { memberships: { where: { status: "ACTIVE" } } } },
+    household: { include: { membership: true } },
 } satisfies Prisma.ParticipantInclude;
 
 /**
@@ -40,10 +40,10 @@ export async function isActiveMember(participantId: number): Promise<boolean> {
  * Pure predicate over an already-loaded Participant record. Use when a query has
  * already pulled membership data (e.g. via {@link ACTIVE_MEMBER_INCLUDE}) and an
  * extra query would be wasteful. Accepts any record whose household carries its
- * memberships; a missing household reads as "not a member".
+ * membership; a missing household or membership reads as "not a member".
  */
 export function participantRecordIsActiveMember(p: {
-    household?: { memberships?: { status: MembershipStatus }[] | null } | null;
+    household?: { membership?: { status: MembershipStatus } | null } | null;
 }): boolean {
-    return p.household?.memberships?.some((m) => m.status === "ACTIVE") ?? false;
+    return p.household?.membership?.status === "ACTIVE";
 }

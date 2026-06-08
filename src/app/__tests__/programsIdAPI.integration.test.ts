@@ -72,7 +72,7 @@ describe('Individual Program API Integration Tests', () => {
                 name: 'Member',
                 household: {
                     create: {
-                        memberships: {
+                        membership: {
                             create: {
                                 status: 'ACTIVE',
                                 since: new Date()

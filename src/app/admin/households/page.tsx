@@ -10,7 +10,7 @@ export default function AdminHouseholdsPage() {
     const { data: session, status } = useSession();
     const router = useRouter();
 
-    const [households, setHouseholds] = useState<{ id: number, name?: string | null, memberships?: { status: string }[] | null, participants?: { id: number, name?: string | null, email?: string | null }[] | null }[]>([]);
+    const [households, setHouseholds] = useState<{ id: number, name?: string | null, membership?: { status: string } | null, participants?: { id: number, name?: string | null, email?: string | null }[] | null }[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
@@ -98,7 +98,7 @@ export default function AdminHouseholdsPage() {
                         </thead>
                         <tbody>
                             {households.map((household) => {
-                                const hasActiveMembership = (household.memberships as { status: string }[])?.some((m) => m.status === "ACTIVE");
+                                const hasActiveMembership = (household.membership as { status: string } | null)?.status === "ACTIVE";
 
                                 return (
                                     <tr key={household.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>

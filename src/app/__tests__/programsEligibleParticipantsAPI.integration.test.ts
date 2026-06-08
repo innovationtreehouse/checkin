@@ -84,7 +84,7 @@ describe('Eligible Participants API Integration Tests', () => {
                 name: 'Active Member Candidate',
                 household: {
                     create: {
-                        memberships: {
+                        membership: {
                             create: {
                                 status: 'ACTIVE',
                                 since: new Date()
@@ -100,7 +100,7 @@ describe('Eligible Participants API Integration Tests', () => {
         const household = await prisma.household.create({
             data: {
                 name: 'Elig API Test Household',
-                memberships: {
+                membership: {
                     create: {
                         status: 'ACTIVE',
                         since: new Date()
