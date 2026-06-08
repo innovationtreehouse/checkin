@@ -299,8 +299,6 @@ model BoardSettings {
   /// @sensitivity:internal
   shopifyPriceSyncedAt       DateTime?
   /// @sensitivity:internal
-  averityDeepLinkUrl         String?
-  /// @sensitivity:internal
   updatedAt                  DateTime  @updatedAt
 }
 

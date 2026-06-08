@@ -164,6 +164,23 @@ export default function AdminMembershipPage() {
                 </div>
             )}
 
+            {!loading && rows.length > 0 && (
+                <>
+                    {rows.some((r) => r.status === "BLOCKED") && (
+                        <div style={{ marginBottom: "1rem", padding: "0.85rem 1rem", borderRadius: "8px", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.45)", color: "#fca5a5", fontWeight: 600 }}>
+                            🚨 {rows.filter((r) => r.status === "BLOCKED").length} application(s) blocked at background review — board attention needed.
+                        </div>
+                    )}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1.25rem" }}>
+                        {Object.entries(rows.reduce<Record<string, number>>((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {})).map(([status, count]) => (
+                            <span key={status} style={{ background: (STATUS_COLORS[status] || "#64748b") + "33", border: `1px solid ${STATUS_COLORS[status] || "#64748b"}`, color: "var(--color-text-main, #f8fafc)", padding: "3px 10px", borderRadius: "999px", fontSize: "0.78rem" }}>
+                                {status.replace(/_/g, " ")}: <strong>{count}</strong>
+                            </span>
+                        ))}
+                    </div>
+                </>
+            )}
+
             {loading ? (
                 <p style={{ color: "var(--color-text-muted)" }}>Loading…</p>
             ) : rows.length === 0 ? (
