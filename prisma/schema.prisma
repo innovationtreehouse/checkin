@@ -187,8 +187,8 @@ enum MembershipProcessKind {
 
 enum MembershipProcessStatus {
   INTAKE
-  EXTERNAL
-  BG_REVIEW
+  PENDING_EXTERNAL_ACTION
+  PENDING_BG_REVIEW
   PENDING_PAYMENT
   ACTIVE
   BLOCKED
