@@ -8,6 +8,7 @@
 
 import { POST as ZOHO_WEBHOOK } from '@/app/api/webhooks/zoho/route';
 import { POST as BOARD_EXTERNAL } from '@/app/api/admin/membership/external/route';
+import { GET as ADMIN_LIST } from '@/app/api/admin/membership/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -148,5 +149,23 @@ describe('Membership EXTERNAL phase API', () => {
 
     it('keeps hhA/hhB distinct (sanity)', () => {
         expect(hhA).not.toBe(hhB);
+    });
+
+    it('admin listing rejects a non-board user', async () => {
+        asUser(plainUserId);
+        const res = await ADMIN_LIST(boardReq({}) as never);
+        expect(res.status).toBe(403);
+    });
+
+    it('admin listing returns in-flight processes with household + flags for the board', async () => {
+        asBoard(boardId);
+        const res = await ADMIN_LIST(boardReq({}) as never);
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        const ids = data.processes.map((p: { id: number }) => p.id);
+        expect(ids).toEqual(expect.arrayContaining([procA, procB]));
+        const a = data.processes.find((p: { id: number }) => p.id === procA);
+        expect(a.membership.householdId).toBe(hhA);
+        expect(a.status).toBe('BG_REVIEW');
     });
 });
