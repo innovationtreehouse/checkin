@@ -79,7 +79,7 @@ export async function listReviewQueue(reviewerId: number) {
     if (!reviewer?.backgroundCheckReviewer) return [];
 
     const processes = await prisma.membershipProcess.findMany({
-        where: { status: "PENDING_BG_REVIEW" },
+        where: { status: { in: ["PENDING_BG_REVIEW", "RENEWAL_PENDING_BG"] } },
         orderBy: { stageEnteredAt: "asc" },
         select: {
             id: true,
@@ -132,7 +132,7 @@ export async function attest(
         include: { attestations: { include: { reviewer: { select: { householdId: true } } } } },
     });
     if (!process) throw new ReviewError("not_found", "Application not found.");
-    if (process.status !== "PENDING_BG_REVIEW") throw new ReviewError("wrong_phase", "This application is not awaiting background-check review.");
+    if (process.status !== "PENDING_BG_REVIEW" && process.status !== "RENEWAL_PENDING_BG") throw new ReviewError("wrong_phase", "This application is not awaiting background-check review.");
     const membership = await prisma.membership.findUnique({ where: { id: process.membershipId }, select: { householdId: true } });
     if (membership?.householdId === reviewer.householdId) throw new ReviewError("same_household_applicant", "You cannot review an applicant in your own household.");
     if (process.attestations.some((a) => a.reviewerId === reviewerId)) throw new ReviewError("already_attested", "You have already reviewed this application.");
@@ -144,7 +144,7 @@ export async function attest(
 
     if (input.result === "REJECT") {
         await prisma.membershipProcess.update({ where: { id: processId }, data: { status: "BLOCKED", stageEnteredAt: new Date() } });
-        await audit(reviewerId, processId, { status: "PENDING_BG_REVIEW" }, { status: "BLOCKED", reason: "reviewer reject" });
+        await audit(reviewerId, processId, { status: process.status }, { status: "BLOCKED", reason: "reviewer reject" });
         return { status: "BLOCKED" as const };
     }
 
@@ -174,7 +174,7 @@ async function advanceToPayment(processId: number, actorId: number) {
 
     await applyVolunteerStatus(process.membershipId, householdId, process.attestations.some((a) => a.markedVolunteer));
 
-    await audit(actorId, processId, { status: "PENDING_BG_REVIEW" }, { status: "PENDING_PAYMENT" });
+    await audit(actorId, processId, { status: process.status }, { status: "PENDING_PAYMENT" });
 }
 
 /**
@@ -204,11 +204,13 @@ export async function overrideBlocked(processId: number, actorId: number, action
     if (process.status !== "BLOCKED") throw new ReviewError("wrong_phase", "This application is not blocked.");
 
     if (action === "reset") {
+        // Restore the review state that matches the cycle (initial vs renewal).
+        const reviewStatus = process.kind === "RENEWAL" ? "RENEWAL_PENDING_BG" : "PENDING_BG_REVIEW";
         await prisma.backgroundCheckAttestation.deleteMany({ where: { processId } });
-        await prisma.membershipProcess.update({ where: { id: processId }, data: { status: "PENDING_BG_REVIEW", stageEnteredAt: new Date() } });
-        await audit(actorId, processId, { status: "BLOCKED" }, { status: "PENDING_BG_REVIEW", action: "board reset" });
+        await prisma.membershipProcess.update({ where: { id: processId }, data: { status: reviewStatus, stageEnteredAt: new Date() } });
+        await audit(actorId, processId, { status: "BLOCKED" }, { status: reviewStatus, action: "board reset" });
         await notifyReviewers();
-        return { status: "PENDING_BG_REVIEW" as const };
+        return { status: reviewStatus as "PENDING_BG_REVIEW" | "RENEWAL_PENDING_BG" };
     }
     await advanceToPayment(processId, actorId);
     return { status: "PENDING_PAYMENT" as const };
