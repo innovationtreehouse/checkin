@@ -1,6 +1,7 @@
 .layout {
   display: flex;
-  min-height: 100vh;
+  height: calc(100vh - 70px);
+  overflow: hidden;
   background: var(--color-background);
 }
 
@@ -12,15 +13,16 @@
   display: flex;
   flex-direction: column;
   padding: 2rem 1rem;
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  height: 100%;
+  overflow-y: auto;
+  flex-shrink: 0;
   z-index: 100;
 }
 
 .content {
   flex: 1;
   padding: 2rem;
+  height: 100%;
   overflow-y: auto;
 }
 
@@ -100,18 +102,27 @@
 @media (max-width: 768px) {
   .layout {
     flex-direction: column;
+    height: auto;
+    min-height: calc(100vh - 70px);
+    overflow: visible;
   }
-  
+
   .sidebar {
     width: 100%;
     height: auto;
     flex-direction: row;
     padding: 0.5rem;
     overflow-x: auto;
+    overflow-y: visible;
     position: sticky;
     top: 0;
     border-right: none;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .content {
+    height: auto;
+    overflow-y: visible;
   }
   
   .logo, .sectionTitle {
