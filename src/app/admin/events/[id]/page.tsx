@@ -356,8 +356,12 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
                             {formatDateTime(eventData.start)} - {formatDateTime(eventData.end)}
                         </div>
                     </div>
-                    <button className="glass-button" onClick={() => router.back()} style={{ padding: '0.5rem 1rem' }}>
-                        &larr; Go Back
+                    <button
+                        className="glass-button"
+                        onClick={() => router.push(eventData.program?.id ? `/admin/programs/${eventData.program.id}` : '/admin/programs')}
+                        style={{ padding: '0.5rem 1rem' }}
+                    >
+                        &larr; Back to Program
                     </button>
                 </div>
 
