@@ -18,10 +18,11 @@ jest.mock('next-auth/next', () => ({
 }));
 describe('Shop API Integration Tests', () => {
     let adminId: number;
+    let boardMemberId: number;
     let stewardId: number;
     let certifierId: number;
     let commonId: number;
-    
+
     let mockToolId: number;
 
     beforeAll(async () => {
@@ -66,6 +67,12 @@ describe('Shop API Integration Tests', () => {
         });
         adminId = admin.id;
 
+        // Create Board Member (#160 – board members must be able to access shop routes)
+        const boardMember = await prisma.participant.create({
+            data: { email: 'board-shop-api-test@example.com', name: 'Board Member', boardMember: true, household: { create: {} } }
+        });
+        boardMemberId = boardMember.id;
+
         // Create Steward
         const steward = await prisma.participant.create({
             data: { email: 'steward-shop-api-test@example.com', name: 'Steward', shopSteward: true, household: { create: {} } }
@@ -108,7 +115,7 @@ describe('Shop API Integration Tests', () => {
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, stewardId, certifierId, commonId].filter(id => id !== undefined);
+        const existingUserIds = [adminId, boardMemberId, stewardId, certifierId, commonId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
             const participants = await prisma.participant.findMany({
@@ -203,10 +210,21 @@ describe('Shop API Integration Tests', () => {
              const res = await getMembers() as Response;
              expect(res.status).toBe(200);
              const data = await res.json();
-             
+
              // Our common user has an active membership so they should appear
              const memberEmails = data.members.map((m: { email: string }) => m.email);
              expect(memberEmails).toContain('common-shop-api-test@example.com');
+        });
+
+        // Regression test for #160: board members must be able to fetch the member list
+        // so the certification grant picklist is populated in the UI.
+        it('should return 200 and members for a board member', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardMemberId, boardMember: true } });
+
+             const res = await getMembers() as Response;
+             expect(res.status).toBe(200);
+             const data = await res.json();
+             expect(Array.isArray(data.members)).toBe(true);
         });
     });
 
@@ -283,10 +301,24 @@ describe('Shop API Integration Tests', () => {
              const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'BASIC' } });
              const res = await postCerts(req) as Response;
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.success).toBe(true);
              expect(data.certification.level).toBe('BASIC');
+             expect(data.certification.userId).toBe(commonId);
+        });
+
+        // Regression test for #160: board members must be able to grant certifications.
+        it('should allow board members to grant a certification on any tool', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardMemberId, boardMember: true } });
+
+             const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'CERTIFIED' } });
+             const res = await postCerts(req) as Response;
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.success).toBe(true);
+             expect(data.certification.level).toBe('CERTIFIED');
              expect(data.certification.userId).toBe(commonId);
         });
     });
