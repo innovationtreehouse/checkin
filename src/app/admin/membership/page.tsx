@@ -6,7 +6,6 @@ interface Participant {
     id: number;
     name: string | null;
     email: string | null;
-    role: string;
 }
 interface ProcessRow {
     id: number;
@@ -19,14 +18,14 @@ interface ProcessRow {
     membership: {
         householdId: number;
         isVolunteer: boolean;
-        household: { name: string | null; participants: Participant[] } | null;
+        household: { name: string | null; participants: Participant[]; leads: { participantId: number }[] } | null;
     } | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
     INTAKE: "#94a3b8",
-    EXTERNAL: "#3b82f6",
-    BG_REVIEW: "#a855f7",
+    PENDING_EXTERNAL_ACTION: "#3b82f6",
+    PENDING_BG_REVIEW: "#a855f7",
     PENDING_PAYMENT: "#f59e0b",
     BLOCKED: "#ef4444",
     PENDING_RENEWAL: "#14b8a6",
@@ -84,7 +83,9 @@ export default function AdminMembershipPage() {
     const householdLabel = (r: ProcessRow) => {
         const hh = r.membership?.household;
         if (!hh) return `Household #${r.membership?.householdId ?? "?"}`;
-        const parents = (hh.participants || []).filter((p) => p.role === "PARENT").map((p) => p.name || p.email).filter(Boolean);
+        // Parents are the household leads.
+        const leadIds = new Set((hh.leads || []).map((l) => l.participantId));
+        const parents = (hh.participants || []).filter((p) => leadIds.has(p.id)).map((p) => p.name || p.email).filter(Boolean);
         return hh.name || parents.join(" & ") || `Household #${r.membership?.householdId}`;
     };
 
@@ -128,7 +129,7 @@ export default function AdminMembershipPage() {
                                 </span>
                             </div>
 
-                            {r.status === "EXTERNAL" && (
+                            {r.status === "PENDING_EXTERNAL_ACTION" && (
                                 <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
                                     <div>
                                         <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginBottom: "0.35rem" }}>Contract</div>

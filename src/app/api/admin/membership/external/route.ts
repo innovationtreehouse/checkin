@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  *   action 'mark-bg-consent'  — human-mark that Averity consent was submitted
  *   action 'set-envelope'     — associate a Zoho signing request id (needs envelopeId)
  *
- * Any action that completes both external steps advances the application to BG_REVIEW.
+ * Any action that completes both external steps advances the application to PENDING_BG_REVIEW.
  */
 export const POST = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -367,7 +367,7 @@ export default function MembershipPage() {
                                     </button>
                                 </div>
                             </div>
-                        ) : inStatus === "EXTERNAL" ? (
+                        ) : inStatus === "PENDING_EXTERNAL_ACTION" ? (
                             <div className="glass-container" style={{ padding: "1.75rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                                 <div>
                                     <h2 style={{ marginTop: 0, marginBottom: "0.25rem" }}>Two quick steps</h2>

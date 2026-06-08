@@ -28,7 +28,8 @@ export const GET = withAuth({ roles: ["sysadmin", "boardMember"] }, async () => 
                     household: {
                         select: {
                             name: true,
-                            participants: { select: { id: true, name: true, email: true, role: true } },
+                            participants: { select: { id: true, name: true, email: true } },
+                            leads: { select: { participantId: true } },
                         },
                     },
                 },

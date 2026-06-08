@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
  *
  * Verifies the shared-secret header, finds the membership process by its stored
  * Zoho request id, and (on a completed signing) records the contract as signed —
- * which may advance the application to BG_REVIEW. We never read contract content.
+ * which may advance the application to PENDING_BG_REVIEW. We never read contract content.
  */
 export async function POST(req: Request) {
     if (!process.env.ZOHO_WEBHOOK_SECRET) {

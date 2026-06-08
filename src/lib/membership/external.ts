@@ -4,7 +4,7 @@ import { backgroundCheckProvider } from "@/lib/membership/background-check/manua
 /**
  * EXTERNAL-phase service — the two parallel actions an applicant completes after
  * intake: signing the Zoho contract and consenting to a background check on
- * Averity. When BOTH are recorded, the application advances to BG_REVIEW.
+ * Averity. When BOTH are recorded, the application advances to PENDING_BG_REVIEW.
  *
  * The contract is recorded automatically (Zoho webhook) or manually by the
  * board; BG consent is always human-marked by the board (no Averity API). The
@@ -36,15 +36,15 @@ export async function getExternalStatus(process: { contractSignedAt: Date | null
     };
 }
 
-/** If both external actions are done and we're still in EXTERNAL, advance to BG_REVIEW. */
+/** If both external actions are done and we're still in EXTERNAL, advance to PENDING_BG_REVIEW. */
 export async function advanceExternalIfComplete(processId: number) {
     const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
-    if (!process || process.status !== "EXTERNAL") return process;
+    if (!process || process.status !== "PENDING_EXTERNAL_ACTION") return process;
     if (!process.contractSignedAt || !process.bgConsentAt) return process;
 
     const advanced = await prisma.membershipProcess.update({
         where: { id: processId },
-        data: { status: "BG_REVIEW", stageEnteredAt: new Date() },
+        data: { status: "PENDING_BG_REVIEW", stageEnteredAt: new Date() },
     });
     await prisma.auditLog.create({
         data: {
@@ -52,8 +52,8 @@ export async function advanceExternalIfComplete(processId: number) {
             action: "EDIT",
             tableName: "MembershipProcess",
             affectedEntityId: processId,
-            oldData: JSON.stringify({ status: "EXTERNAL" }),
-            newData: JSON.stringify({ status: "BG_REVIEW" }),
+            oldData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION" }),
+            newData: JSON.stringify({ status: "PENDING_BG_REVIEW" }),
         },
     });
     return advanced;

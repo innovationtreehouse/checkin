@@ -3,7 +3,7 @@
  */
 /**
  * Integration tests for the EXTERNAL phase: the Zoho contract webhook,
- * the board external controls, and the advance-to-BG_REVIEW logic.
+ * the board external controls, and the advance-to-PENDING_BG_REVIEW logic.
  */
 
 import { POST as ZOHO_WEBHOOK } from '@/app/api/webhooks/zoho/route';
@@ -51,7 +51,7 @@ describe('Membership EXTERNAL phase API', () => {
         const hh = await prisma.household.create({ data: { name } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
         const p = await prisma.membershipProcess.create({
-            data: { membershipId: m.id, kind: 'INITIAL', status: 'EXTERNAL', zohoEnvelopeId: envelopeId },
+            data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION', zohoEnvelopeId: envelopeId },
         });
         return { householdId: hh.id, processId: p.id };
     }
@@ -106,16 +106,16 @@ describe('Membership EXTERNAL phase API', () => {
         expect(res.status).toBe(200);
         const p = await prisma.membershipProcess.findUnique({ where: { id: procA } });
         expect(p?.contractSignedAt).not.toBeNull();
-        expect(p?.status).toBe('EXTERNAL');
+        expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
     });
 
-    it('marking BG consent after the contract advances to BG_REVIEW', async () => {
+    it('marking BG consent after the contract advances to PENDING_BG_REVIEW', async () => {
         asBoard(boardId);
         const res = await BOARD_EXTERNAL(boardReq({ processId: procA, action: 'mark-bg-consent' }) as never);
         expect(res.status).toBe(200);
         const p = await prisma.membershipProcess.findUnique({ where: { id: procA } });
         expect(p?.bgConsentAt).not.toBeNull();
-        expect(p?.status).toBe('BG_REVIEW');
+        expect(p?.status).toBe('PENDING_BG_REVIEW');
     });
 
     it('rejects a Zoho webhook with a bad token', async () => {
@@ -129,7 +129,7 @@ describe('Membership EXTERNAL phase API', () => {
         const p = await prisma.membershipProcess.findUnique({ where: { id: procB } });
         expect(p?.contractSignedAt).not.toBeNull();
         // BG consent not yet given → still EXTERNAL.
-        expect(p?.status).toBe('EXTERNAL');
+        expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
     });
 
     it('ignores a non-completed Zoho event without changing state', async () => {
@@ -166,6 +166,6 @@ describe('Membership EXTERNAL phase API', () => {
         expect(ids).toEqual(expect.arrayContaining([procA, procB]));
         const a = data.processes.find((p: { id: number }) => p.id === procA);
         expect(a.membership.householdId).toBe(hhA);
-        expect(a.status).toBe('BG_REVIEW');
+        expect(a.status).toBe('PENDING_BG_REVIEW');
     });
 });
