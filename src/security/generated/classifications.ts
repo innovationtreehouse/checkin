@@ -72,7 +72,7 @@ export const classifications = {
         certifiedById: 'internal',
         renewalReminderSentAt: 'internal',
     },
-    MembershipAttestation: {
+    BackgroundCheckAttestation: {
         id: 'public',
         processId: 'public',
         reviewerId: 'public',
@@ -245,7 +245,7 @@ export const relations = {
         sessions: { model: 'Session', isList: true },
         household: { model: 'Household', isList: false },
         toolStatuses: { model: 'ToolStatus', isList: true },
-        bgAttestations: { model: 'MembershipAttestation', isList: true },
+        bgAttestations: { model: 'BackgroundCheckAttestation', isList: true },
         householdLeads: { model: 'HouseholdLead', isList: true },
         memberships: { model: 'Membership', isList: true },
         corporationLeads: { model: 'CorporationLead', isList: true },
@@ -283,9 +283,9 @@ export const relations = {
     },
     MembershipProcess: {
         membership: { model: 'Membership', isList: false },
-        attestations: { model: 'MembershipAttestation', isList: true },
+        attestations: { model: 'BackgroundCheckAttestation', isList: true },
     },
-    MembershipAttestation: {
+    BackgroundCheckAttestation: {
         process: { model: 'MembershipProcess', isList: false },
         reviewer: { model: 'Participant', isList: false },
     },

@@ -104,7 +104,7 @@ model Participant {
   backgroundCheckReviewer Boolean @default(false)
 
   toolStatuses        ToolStatus[]
-  bgAttestations      MembershipAttestation[] @relation("BgAttestations")
+  bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
   householdLeads      HouseholdLead[]
   memberships         Membership[]            @relation("ParticipantMemberships")
   corporationLeads    CorporationLead[]
@@ -261,13 +261,13 @@ model MembershipProcess {
   /// @sensitivity:internal
   renewalReminderSentAt DateTime?
 
-  attestations MembershipAttestation[]
+  attestations BackgroundCheckAttestation[]
 
   @@index([membershipId])
   @@index([status])
 }
 
-model MembershipAttestation {
+model BackgroundCheckAttestation {
   /// @sensitivity:public
   id              Int               @id @default(autoincrement())
   /// @sensitivity:public
