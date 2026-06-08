@@ -369,7 +369,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         <main className={styles.main}>
             <div className="glass-container animate-float">
                 <h2>{message || "Not Found"}</h2>
-                <button className="glass-button" onClick={() => router.push('/programs')}>Back</button>
+                <button className="glass-button" onClick={() => router.push('/admin/programs')}>Back</button>
             </div>
         </main>
     );
@@ -385,7 +385,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
             <main className={styles.main}>
                 <div className="glass-container animate-float">
                     <h2>Forbidden: Not authorized to manage this program.</h2>
-                    <button className="glass-button" onClick={() => router.push('/programs')}>Back</button>
+                    <button className="glass-button" onClick={() => router.push('/admin/programs')}>Back</button>
                 </div>
             </main>
         );
@@ -407,7 +407,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         {program.phase === 'FINISHED' && <span style={{ fontSize: '1rem', background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', padding: '0.2rem 0.5rem', borderRadius: '4px', verticalAlign: 'middle', marginLeft: '0.5rem', border: '1px solid rgba(16, 185, 129, 0.4)' }}>Finished</span>}
                     </h1>
                     <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                        <button className="glass-button" onClick={() => router.push('/programs')} style={{ padding: '0.5rem 1rem' }}>
+                        <button className="glass-button" onClick={() => router.push('/admin/programs')} style={{ padding: '0.5rem 1rem' }}>
                             &larr; Back to Programs
                         </button>
                     </div>
