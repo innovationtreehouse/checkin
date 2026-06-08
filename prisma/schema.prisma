@@ -16,6 +16,7 @@ enum ToolLevel {
   BASIC
   DOF
   CERTIFIED
+  INSTRUCTOR
   MAY_CERTIFY_OTHERS
 }
 

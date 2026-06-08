@@ -16,7 +16,7 @@ type Tool = {
 type Certification = {
     userId: number;
     toolId: number;
-    level: "BASIC" | "DOF" | "CERTIFIED" | "MAY_CERTIFY_OTHERS";
+    level: "BASIC" | "DOF" | "CERTIFIED" | "INSTRUCTOR" | "MAY_CERTIFY_OTHERS";
     user?: { id: number; name: string | null; email: string };
     tool?: { id: number; name: string };
 };
@@ -26,11 +26,11 @@ type Member = { id: number; name: string | null; email: string };
 type Tab = 'tools' | 'person' | 'all';
 
 const LEVEL_RANKS: Record<string, number> = {
-    NONE: 0, BASIC: 1, CERTIFIED: 2, DOF: 3, MAY_CERTIFY_OTHERS: 4,
+    NONE: 0, BASIC: 1, CERTIFIED: 2, DOF: 3, INSTRUCTOR: 4, MAY_CERTIFY_OTHERS: 5,
 };
 
 const LEVEL_LABELS: Record<string, string> = {
-    BASIC: 'Basic', CERTIFIED: 'Certified', DOF: 'DoF', MAY_CERTIFY_OTHERS: 'Certifier',
+    BASIC: 'Basic', CERTIFIED: 'Certified', DOF: 'DoF', INSTRUCTOR: 'Instructor', MAY_CERTIFY_OTHERS: 'Certifier',
 };
 
 function levelBadge(level: string) {
@@ -38,7 +38,8 @@ function levelBadge(level: string) {
         BASIC: { bg: '#ef4444', color: '#fff' },
         CERTIFIED: { bg: '#22c55e', color: '#000' },
         DOF: { bg: '#eab308', color: '#000' },
-        MAY_CERTIFY_OTHERS: { bg: '#3b82f6', color: '#fff' },
+        INSTRUCTOR: { bg: '#3b82f6', color: '#fff' },
+        MAY_CERTIFY_OTHERS: { bg: '#a855f7', color: '#fff' },
     };
     const c = colors[level] || { bg: 'transparent', color: 'gray' };
     return (
@@ -134,6 +135,7 @@ function GrantForm({
                         <option value="BASIC">Basic</option>
                         <option value="CERTIFIED">Certified</option>
                         <option value="DOF">DoF</option>
+                        <option value="INSTRUCTOR">Instructor</option>
                         <option value="MAY_CERTIFY_OTHERS">Certifier</option>
                     </select>
                 </div>

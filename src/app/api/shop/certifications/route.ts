@@ -80,7 +80,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        const validLevels = ["BASIC", "DOF", "CERTIFIED", "MAY_CERTIFY_OTHERS"];
+        const validLevels = ["BASIC", "DOF", "CERTIFIED", "INSTRUCTOR", "MAY_CERTIFY_OTHERS"];
         if (!validLevels.includes(level)) {
             return NextResponse.json({ error: "Invalid certification level" }, { status: 400 });
         }
@@ -125,12 +125,12 @@ export async function POST(req: Request) {
                 }
             },
             update: {
-                level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'MAY_CERTIFY_OTHERS'
+                level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'INSTRUCTOR' | 'MAY_CERTIFY_OTHERS'
             },
             create: {
                 userId: pId,
                 toolId: tId,
-                level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'MAY_CERTIFY_OTHERS'
+                level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'INSTRUCTOR' | 'MAY_CERTIFY_OTHERS'
             }
         });
 
