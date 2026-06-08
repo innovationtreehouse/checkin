@@ -1,9 +1,9 @@
 name: Jules AI Agent
 
-# Trigger when an issue is labeled, opened, or edited, or when a comment is created or edited
+# Trigger when an issue is labeled, opened, edited, or closed, or when a comment is created or edited
 on:
   issues:
-    types: [labeled, opened, edited]
+    types: [labeled, opened, edited, closed]
   issue_comment:
     types: [created, edited]
 
@@ -12,11 +12,12 @@ jobs:
     # Restrict execution to:
     # 1. Issues (not pull requests)
     # 2. EITHER:
-    #    - Labeled 'jules'
+    #    - Labeled 'jules' (either just added or already present)
     #    - OR Issue/Comment body contains '@jules' AND author is an organization MEMBER or OWNER
     if: >
       !github.event.issue.pull_request && (
         github.event.label.name == 'jules' ||
+        contains(github.event.issue.labels.*.name, 'jules') ||
         (github.event_name == 'issues' && contains(github.event.issue.body, '@jules') && (github.event.issue.author_association == 'MEMBER' || github.event.issue.author_association == 'OWNER')) ||
         (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@jules') && (github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'OWNER'))
       )
