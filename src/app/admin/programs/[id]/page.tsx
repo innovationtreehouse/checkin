@@ -185,8 +185,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                 setProgram(data);
 
                 // Initialize form
-                if (data.begin) setBegin(data.begin.split('T')[0]);
-                if (data.end) setEnd(data.end.split('T')[0]);
+                setBegin(data.begin ? data.begin.split('T')[0] : "");
+                setEnd(data.end ? data.end.split('T')[0] : "");
                 setMinAge(data.minAge !== null ? String(data.minAge) : "");
                 setMaxAge(data.maxAge !== null ? String(data.maxAge) : "");
                 setMaxParticipants(data.maxParticipants !== null ? String(data.maxParticipants) : "");
