@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import AuthProvider from '@/components/AuthProvider';
 import { EnvProvider } from '@/components/EnvProvider';
+import DevImpersonationBar from '@/components/DevImpersonationBar';
 import NavBar from '@/components/NavBar';
 import OnboardingGate from '@/components/OnboardingGate';
 import ContentWrapper from '@/components/ContentWrapper';
@@ -30,6 +31,7 @@ export default function RootLayout({
         <EnvProvider value={config.checkinEnv()}>
           <AuthProvider>
             <OnboardingGate>
+              <DevImpersonationBar />
               <NavBar />
               <ContentWrapper>
                 {children}

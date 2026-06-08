@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { config as appConfig } from '@/lib/config';
-
-// Verified Google Workspace hosted-domain that may access the dev instance.
-const ORG_DOMAIN = 'innovationtreehouse.org';
+import { config as appConfig, ORG_DOMAIN } from '@/lib/config';
 
 /**
  * Site-wide org-login gate for the cloud dev instance (see DEV_INSTANCE_DESIGN.md §4).

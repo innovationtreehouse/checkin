@@ -16,6 +16,8 @@ declare module "next-auth" {
       householdId?: number | null;
       householdLead?: boolean;
       toolStatuses?: { toolId: number; level: string }[];
+      // Inert impersonation provenance — display/audit only, never read by authz.
+      impersonatedBy?: string | null;
     };
   }
 
@@ -29,6 +31,8 @@ declare module "next-auth" {
     householdId?: number | null;
     householdLead?: boolean;
     toolStatuses?: { toolId: number; level: string }[];
+    // Set by the persona-mint provider; carried into the JWT by the jwt callback.
+    impersonatedBy?: string | null;
   }
 }
 
@@ -38,6 +42,8 @@ declare module "next-auth/jwt" {
     // Google hosted-domain + email_verified claims, used by the dev-instance org-login gate.
     hd?: string | null;
     emailVerified?: boolean;
+    // Inert impersonation provenance — display/audit only, never read by authz.
+    impersonatedBy?: string | null;
     sysadmin?: boolean;
     keyholder?: boolean;
     boardMember?: boolean;
