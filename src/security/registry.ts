@@ -52,6 +52,31 @@ defineRoute({
     ],
 });
 
+// Board's in-flight membership applications. Exposes every applicant household's
+// PII (parents + children names/emails), so only sysadmin/board may see it, and
+// the field grant is explicit per role.
+defineRoute({
+    endpoint: 'GET /api/admin/membership',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'processes',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+// Background-check reviewers' queue. Reviewers must see applicant parents' names
+// + emails (to look them up on Averity) but NOT internal/personal fields — so the
+// grant is deliberately limited to pii + public.
+defineRoute({
+    endpoint: 'GET /api/membership/reviews',
+    authorize: { anyRole: ['backgroundCheckReviewer'] },
+    envelope: 'queue',
+    orderedView: [
+        ['backgroundCheckReviewer', ['everyones:pii', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
