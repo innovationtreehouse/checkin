@@ -16,7 +16,6 @@ export const classifications = {
         lastBackgroundCheck: 'internal',
         notificationSettings: 'personal',
         householdId: 'public',
-        role: 'public',
         allergies: 'personal',
         sysadmin: 'internal',
         boardMember: 'public',

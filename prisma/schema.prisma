@@ -89,8 +89,6 @@ model Participant {
   householdId Int
   household   Household @relation(fields: [householdId], references: [id])
 
-  /// @sensitivity:public
-  role      ParticipantRole @default(PARENT)
   /// @sensitivity:personal
   allergies String?
 
@@ -194,11 +192,6 @@ enum MembershipProcessStatus {
   BLOCKED
   PENDING_RENEWAL
   RENEWAL_PENDING_BG
-}
-
-enum ParticipantRole {
-  PARENT
-  CHILD
 }
 
 enum AttestationResult {
