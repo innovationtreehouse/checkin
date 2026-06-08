@@ -544,7 +544,7 @@ export default function HouseholdPage() {
                                     value={address}
                                     onChange={(e) => setAddress(e.target.value)}
                                     placeholder="123 Main St, City, ST 12345"
-                                    style={{ width: '100%', padding: '0.75rem' }}
+                                    style={{ width: '100%', padding: '0.75rem', boxSizing: 'border-box' }}
                                 />
                             </div>
                         </div>
@@ -554,7 +554,7 @@ export default function HouseholdPage() {
                             <p style={{ margin: '0 0 1rem 0', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Required for all households. This contact applies to all members of this household.</p>
                             
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
-                                <div>
+                                <div style={{ minWidth: 0 }}>
                                     <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--color-primary)' }}>Contact Name</label>
                                     <input
                                         type="text"
@@ -562,10 +562,10 @@ export default function HouseholdPage() {
                                         value={emergencyContactName}
                                         onChange={(e) => setEmergencyContactName(e.target.value)}
                                         placeholder="Full Name"
-                                        style={{ width: '100%', padding: '0.75rem' }}
+                                        style={{ width: '100%', padding: '0.75rem', boxSizing: 'border-box' }}
                                     />
                                 </div>
-                                <div>
+                                <div style={{ minWidth: 0 }}>
                                     <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--color-primary)' }}>Contact Phone Number</label>
                                     <input
                                         type="tel"
@@ -573,7 +573,7 @@ export default function HouseholdPage() {
                                         value={emergencyContactPhone}
                                         onChange={(e) => setEmergencyContactPhone(e.target.value)}
                                         placeholder="(555) 555-5555"
-                                        style={{ width: '100%', padding: '0.75rem' }}
+                                        style={{ width: '100%', padding: '0.75rem', boxSizing: 'border-box' }}
                                     />
                                 </div>
                             </div>
