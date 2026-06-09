@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { activateByProcessId } from "@/lib/membership/payment";
 
 // Shopify Webhook for `orders/paid` or `orders/create`
 // Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE
@@ -51,13 +52,25 @@ export async function POST(req: Request) {
         
         let accountIdStr = null;
         let programIdStr = null;
+        let membershipProcessIdStr = null;
 
         // Custom attributes in Cart Permalinks are usually mapped to `note_attributes` on the Order
         if (order.note_attributes && Array.isArray(order.note_attributes)) {
             for (const attr of order.note_attributes) {
                 if (attr.name === "CheckMeIn_Account_ID") accountIdStr = attr.value;
                 if (attr.name === "Program_ID") programIdStr = attr.value;
+                if (attr.name === "Membership_Process_ID") membershipProcessIdStr = attr.value;
             }
+        }
+
+        // Membership draft-order payment → activate the household membership.
+        if (membershipProcessIdStr) {
+            const processId = parseInt(membershipProcessIdStr, 10);
+            if (!isNaN(processId)) {
+                await activateByProcessId(processId, order.id ? String(order.id) : "");
+                logger.info(`[SHOPIFY WEBHOOK] Activated membership for process ${processId}`);
+            }
+            return NextResponse.json({ success: true });
         }
 
         if (accountIdStr && programIdStr) {

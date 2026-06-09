@@ -112,6 +112,32 @@ export default function AdminMembershipPage() {
         }
     };
 
+    const certify = async (processId: number) => {
+        setBusyId(processId);
+        setMessage("");
+        try {
+            const res = await fetch("/api/admin/membership/certify-payment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ processId }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setIsError(false);
+                setMessage("Certified — membership activated.");
+                await load();
+            } else {
+                setIsError(true);
+                setMessage(data.error || "Certification failed.");
+            }
+        } catch {
+            setIsError(true);
+            setMessage("Network error.");
+        } finally {
+            setBusyId(null);
+        }
+    };
+
     const householdLabel = (r: ProcessRow) => {
         const hh = r.membership?.household;
         if (!hh) return `Household #${r.membership?.householdId ?? "?"}`;
@@ -189,6 +215,15 @@ export default function AdminMembershipPage() {
                             {r.status === "PENDING_BG_REVIEW" && (
                                 <div style={{ marginTop: "1rem", fontSize: "0.9rem", color: "var(--color-text-muted)" }}>
                                     Awaiting reviewers — <strong style={{ color: "var(--color-text-main, #f8fafc)" }}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</strong> approvals recorded.
+                                </div>
+                            )}
+
+                            {r.status === "PENDING_PAYMENT" && (
+                                <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>Awaiting payment.</span>
+                                    <button className="glass-button" disabled={busyId === r.id} onClick={() => certify(r.id)} style={{ padding: "0.45rem 0.9rem", background: "rgba(34,197,94,0.2)", borderColor: "rgba(34,197,94,0.4)" }}>
+                                        {busyId === r.id ? "…" : "Certify payment plan → activate"}
+                                    </button>
                                 </div>
                             )}
 

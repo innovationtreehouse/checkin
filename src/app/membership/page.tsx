@@ -78,6 +78,7 @@ export default function MembershipPage() {
     const [secondaryDob, setSecondaryDob] = useState("");
     const [secondaryAllergies, setSecondaryAllergies] = useState("");
     const [children, setChildren] = useState<ChildForm[]>([]);
+    const [payment, setPayment] = useState<{ amountCents: number; invoiceUrl: string | null } | null>(null);
 
     const hydrate = useCallback((s: IntakeState) => {
         setState(s);
@@ -125,6 +126,17 @@ export default function MembershipPage() {
         if (sessionStatus === "authenticated") load();
         else if (sessionStatus === "unauthenticated") setLoading(false);
     }, [sessionStatus, load]);
+
+    // When awaiting payment, fetch (and lazily create) the Shopify invoice link.
+    useEffect(() => {
+        if (state?.process?.status !== "PENDING_PAYMENT") return;
+        let cancelled = false;
+        fetch("/api/membership/payment")
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => { if (!cancelled && data) setPayment(data); })
+            .catch(() => { /* shown as link-unavailable */ });
+        return () => { cancelled = true; };
+    }, [state?.process?.status]);
 
     const flash = (msg: string, error = false) => {
         setMessage(msg);
@@ -404,6 +416,33 @@ export default function MembershipPage() {
                                 <button className="glass-button" disabled={saving} onClick={load} style={{ alignSelf: "flex-start", padding: "0.6rem 1.1rem" }}>
                                     Refresh status
                                 </button>
+                            </div>
+                        ) : inStatus === "PENDING_PAYMENT" ? (
+                            <div className="glass-container" style={{ padding: "1.75rem" }}>
+                                <h2 style={{ marginTop: 0 }}>Membership dues</h2>
+                                {payment ? (
+                                    <>
+                                        <p style={{ color: "var(--color-text-muted)" }}>
+                                            Your annual household dues are{" "}
+                                            <strong style={{ color: "var(--color-text-main, #f8fafc)" }}>
+                                                ${(payment.amountCents / 100).toFixed(2)}
+                                            </strong>.
+                                        </p>
+                                        {payment.invoiceUrl ? (
+                                            <a href={payment.invoiceUrl} target="_blank" rel="noopener noreferrer" className="glass-button" style={{ display: "inline-block", textDecoration: "none", color: "white", padding: "0.85rem 1.4rem", background: "rgba(34,197,94,0.25)", borderColor: "rgba(34,197,94,0.5)" }}>
+                                                Pay here with Shopify →
+                                            </a>
+                                        ) : (
+                                            <p style={{ color: "#fcd34d" }}>The payment link isn&apos;t available yet. Please check back shortly.</p>
+                                        )}
+                                        <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", marginTop: "1.25rem" }}>
+                                            To discuss alternative arrangements, please email{" "}
+                                            <a href="mailto:finance@innovationtreehouse.org" style={{ color: "var(--color-primary, #3b82f6)" }}>finance@innovationtreehouse.org</a>.
+                                        </p>
+                                    </>
+                                ) : (
+                                    <p style={{ color: "var(--color-text-muted)" }}>Preparing your invoice…</p>
+                                )}
                             </div>
                         ) : (
                             <div className="glass-container" style={{ padding: "2rem" }}>
