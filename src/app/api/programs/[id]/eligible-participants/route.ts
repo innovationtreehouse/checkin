@@ -2,6 +2,8 @@ import { NextResponse, NextRequest } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
+import { ACTIVE_MEMBER_PARTICIPANT_WHERE } from "@/lib/membership";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
         const q = req.nextUrl.searchParams.get("q") || "";
 
-        const andClauses: Record<string, unknown>[] = [
+        const andClauses: Prisma.ParticipantWhereInput[] = [
             {
                 NOT: {
                     OR: [
@@ -53,12 +55,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         }
 
         if (currentProgram.memberOnly) {
-            andClauses.push({
-                OR: [
-                    { memberships: { some: { active: true } } },
-                    { household: { memberships: { some: { active: true } } } }
-                ]
-            });
+            andClauses.push(ACTIVE_MEMBER_PARTICIPANT_WHERE);
         }
 
         const members = await prisma.participant.findMany({
