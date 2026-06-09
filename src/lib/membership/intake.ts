@@ -59,8 +59,11 @@ export async function getIntakeState(userId: number) {
 
     const household = user.household;
     const membership = household?.membership ?? null;
+    // The current in-flight process of any kind (INITIAL or RENEWAL) — anything
+    // not yet ACTIVE. During renewal the membership stays ACTIVE while its RENEWAL
+    // process cycles, so we surface that here rather than the "you're a member" card.
     const process = membership?.processes
-        .filter((p) => p.kind === "INITIAL" && IN_FLIGHT_INITIAL_STATUSES.includes(p.status))
+        .filter((p) => p.status !== "ACTIVE")
         .sort((a, b) => b.id - a.id)[0] ?? null;
 
     // Parents/guardians are the household leads; children are non-lead members.
