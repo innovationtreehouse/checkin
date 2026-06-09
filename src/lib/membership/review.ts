@@ -73,8 +73,15 @@ async function loadReviewer(reviewerId: number) {
     return prisma.participant.findUnique({ where: { id: reviewerId }, select: { id: true, householdId: true, backgroundCheckReviewer: true } });
 }
 
-/** Applications this reviewer may currently attest (eligibility filtered). */
-export async function listReviewQueue(reviewerId: number) {
+/**
+ * IDs of the applications this reviewer may currently attest (eligibility
+ * filtered: not their own household, not already attested, no household-mate
+ * already on it). The route turns these into model rows for the stripper; the
+ * notifications endpoint just counts them. In PENDING_BG_REVIEW a process only
+ * ever holds APPROVE attestations (any REJECT moves it to BLOCKED), so a row's
+ * attestation _count equals its approval count.
+ */
+export async function eligibleReviewProcessIds(reviewerId: number): Promise<number[]> {
     const reviewer = await loadReviewer(reviewerId);
     if (!reviewer?.backgroundCheckReviewer) return [];
 
@@ -83,14 +90,8 @@ export async function listReviewQueue(reviewerId: number) {
         orderBy: { stageEnteredAt: "asc" },
         select: {
             id: true,
-            createdAt: true,
-            membership: {
-                select: {
-                    householdId: true,
-                    household: { select: { name: true, participants: { select: { id: true, name: true, email: true } }, leads: { select: { participantId: true } } } },
-                },
-            },
-            attestations: { select: { reviewerId: true, result: true, reviewer: { select: { householdId: true } } } },
+            membership: { select: { householdId: true } },
+            attestations: { select: { reviewerId: true, reviewer: { select: { householdId: true } } } },
         },
     });
 
@@ -101,18 +102,7 @@ export async function listReviewQueue(reviewerId: number) {
             if (p.attestations.some((a) => a.reviewer.householdId === reviewer.householdId)) return false; // shares household with other reviewer
             return true;
         })
-        .map((p) => {
-            // Parents are the household leads.
-            const leadIds = new Set((p.membership.household?.leads ?? []).map((l) => l.participantId));
-            return {
-                processId: p.id,
-                householdName: p.membership.household?.name ?? null,
-                parents: (p.membership.household?.participants ?? [])
-                    .filter((x) => leadIds.has(x.id))
-                    .map((x) => ({ name: x.name, email: x.email })),
-                approvals: p.attestations.filter((a) => a.result === "APPROVE").length,
-            };
-        });
+        .map((p) => p.id);
 }
 
 /**

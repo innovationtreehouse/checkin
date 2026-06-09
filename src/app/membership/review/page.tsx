@@ -4,11 +4,17 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 
+interface Participant {
+    id: number;
+    name: string | null;
+    email: string | null;
+}
+// Shape returned by GET /api/membership/reviews (security-stripped model rows).
+// Only the household leads (parents) are returned — children are never sent.
 interface QueueItem {
-    processId: number;
-    householdName: string | null;
-    parents: { name: string | null; email: string | null }[];
-    approvals: number;
+    id: number;
+    membership: { household: { name: string | null; leads: { participant: Participant }[] } | null } | null;
+    _count: { attestations: number };
 }
 
 export default function MembershipReviewPage() {
@@ -109,37 +115,40 @@ export default function MembershipReviewPage() {
                 </div>
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                    {queue.map((item) => (
-                        <div key={item.processId} className="glass-container" style={{ padding: "1.25rem 1.5rem" }}>
-                            <div style={{ fontWeight: 700, fontSize: "1.05rem" }}>{item.householdName || `Household (application #${item.processId})`}</div>
+                    {queue.map((item) => {
+                        const parents = (item.membership?.household?.leads ?? []).map((l) => l.participant);
+                        return (
+                        <div key={item.id} className="glass-container" style={{ padding: "1.25rem 1.5rem" }}>
+                            <div style={{ fontWeight: 700, fontSize: "1.05rem" }}>{item.membership?.household?.name || `Household (application #${item.id})`}</div>
                             <div style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", marginTop: "0.25rem" }}>
-                                {item.parents.length > 0
-                                    ? item.parents.map((p) => `${p.name || "—"}${p.email ? ` <${p.email}>` : ""}`).join(", ")
+                                {parents.length > 0
+                                    ? parents.map((p) => `${p.name || "—"}${p.email ? ` <${p.email}>` : ""}`).join(", ")
                                     : "No parent contact on file."}
                             </div>
                             <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "0.25rem" }}>
-                                {item.approvals}/2 approvals so far.
+                                {item._count.attestations}/2 approvals so far.
                             </div>
 
                             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", margin: "0.9rem 0", cursor: "pointer" }}>
                                 <input
                                     type="checkbox"
-                                    checked={!!volunteer[item.processId]}
-                                    onChange={(e) => setVolunteer((v) => ({ ...v, [item.processId]: e.target.checked }))}
+                                    checked={!!volunteer[item.id]}
+                                    onChange={(e) => setVolunteer((v) => ({ ...v, [item.id]: e.target.checked }))}
                                 />
                                 <span>This is a volunteer family</span>
                             </label>
 
                             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                                <button className="glass-button" disabled={busyId === item.processId} onClick={() => submit(item.processId, "APPROVE")} style={{ padding: "0.55rem 1.1rem", background: "rgba(34,197,94,0.2)", borderColor: "rgba(34,197,94,0.4)" }}>
-                                    {busyId === item.processId ? "…" : "Attest — check is clean"}
+                                <button className="glass-button" disabled={busyId === item.id} onClick={() => submit(item.id, "APPROVE")} style={{ padding: "0.55rem 1.1rem", background: "rgba(34,197,94,0.2)", borderColor: "rgba(34,197,94,0.4)" }}>
+                                    {busyId === item.id ? "…" : "Attest — check is clean"}
                                 </button>
-                                <button className="glass-button" disabled={busyId === item.processId} onClick={() => submit(item.processId, "REJECT")} style={{ padding: "0.55rem 1.1rem", background: "rgba(239,68,68,0.18)", borderColor: "rgba(239,68,68,0.45)" }}>
-                                    {busyId === item.processId ? "…" : "Reject"}
+                                <button className="glass-button" disabled={busyId === item.id} onClick={() => submit(item.id, "REJECT")} style={{ padding: "0.55rem 1.1rem", background: "rgba(239,68,68,0.18)", borderColor: "rgba(239,68,68,0.45)" }}>
+                                    {busyId === item.id ? "…" : "Reject"}
                                 </button>
                             </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </main>
