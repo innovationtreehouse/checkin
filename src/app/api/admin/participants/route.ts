@@ -14,7 +14,9 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
-        const { name, email, parentEmail, dob, householdId } = body;
+        // `alreadyMember` lets an admin confirm a newly-created household is already
+        // a paid member (defaults false — new participants are visitors, not members).
+        const { name, email, parentEmail, dob, householdId, alreadyMember = false } = body;
 
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -62,13 +64,14 @@ export async function POST(req: NextRequest) {
                 await prisma.householdLead.create({
                     data: { householdId: parent.householdId, participantId: parent.id }
                 });
-                await prisma.membership.create({
-                    data: {
-                        householdId: parent.householdId,
-                        type: 'HOUSEHOLD',
-                        active: true,
-                    }
-                });
+                if (alreadyMember) {
+                    await prisma.membership.create({
+                        data: {
+                            householdId: parent.householdId,
+                            status: 'ACTIVE',
+                        }
+                    });
+                }
             }
 
             householdIdToAssign = parent.householdId;
@@ -103,13 +106,14 @@ export async function POST(req: NextRequest) {
                 data: { householdId: newParticipant.householdId, participantId: newParticipant.id }
             });
 
-            await prisma.membership.create({
-                data: {
-                    householdId: newParticipant.householdId,
-                    type: 'HOUSEHOLD',
-                    active: true,
-                }
-            });
+            if (alreadyMember) {
+                await prisma.membership.create({
+                    data: {
+                        householdId: newParticipant.householdId,
+                        status: 'ACTIVE',
+                    }
+                });
+            }
         }
 
         return NextResponse.json({ success: true, participant: newParticipant });

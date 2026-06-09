@@ -176,6 +176,39 @@ describe('Admin Participants API Integration Tests', () => {
             });
             expect(household).toBeDefined();
             expect(household?.name).toBe('Adult Household');
+
+            // D4.5: admin-created participants default to visitors (no membership)
+            const membership = await prisma.membership.findUnique({
+                where: { householdId: updatedParticipant!.householdId! }
+            });
+            expect(membership).toBeNull();
+        });
+
+        it('should grant an ACTIVE membership when alreadyMember is true', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, sysadmin: true, boardMember: false }
+            });
+
+            const req = new Request('http://localhost:4000/api/admin/participants', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: 'Paid Adult',
+                    email: 'new-paid-participants-test@example.com',
+                    alreadyMember: true
+                })
+            });
+
+            const res = await POST(req as unknown as Parameters<typeof POST>[0]);
+            expect(res.status).toBe(200);
+            const data = await res.json();
+
+            const created = await prisma.participant.findUnique({
+                where: { id: data.participant.id }
+            });
+            const membership = await prisma.membership.findUnique({
+                where: { householdId: created!.householdId! }
+            });
+            expect(membership?.status).toBe('ACTIVE');
         });
 
         it('should create a child participant and auto-generate a parent and household if parentEmail does not exist', async () => {

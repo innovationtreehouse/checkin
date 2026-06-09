@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
+import { isActiveMember } from "@/lib/membership";
 
 export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
     const programId = parseInt(params.id, 10);
@@ -30,11 +31,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
 
     if (program.memberOnly && !isPrivileged) {
         if (!sessionUser) throw notFound('Program not found');
-        const participant = await prisma.participant.findUnique({
-            where: { id: sessionUser.id },
-            include: { memberships: { where: { active: true } } },
-        });
-        const hasActiveMembership = !!(participant && participant.memberships.length > 0);
+        const hasActiveMembership = await isActiveMember(sessionUser.id);
         if (!hasActiveMembership) throw forbidden('Forbidden: Member-Only Program');
     }
 

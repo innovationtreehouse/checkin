@@ -17,7 +17,7 @@ export default function HouseholdPage() {
         name?: string;
         leads?: Array<{ participantId: number }>;
         participants?: Array<{ id: number; name?: string; email?: string; dob?: string; phone?: string; programVolunteers?: Array<{ id: number; program: { name: string; end?: string }; events?: Array<{ start: string }> }>; programParticipants?: Array<{ id: number; program: { name: string; end?: string }; events?: Array<{ start: string }> }> }>;
-        memberships?: Array<unknown>;
+        membership?: unknown;
         emergencyContactName?: string;
         emergencyContactPhone?: string;
         address?: string;
