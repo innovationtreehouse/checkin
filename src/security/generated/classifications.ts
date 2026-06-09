@@ -91,7 +91,6 @@ export const classifications = {
         shopifyNormalVariantId: 'internal',
         shopifyVolunteerVariantId: 'internal',
         shopifyPriceSyncedAt: 'internal',
-        averityDeepLinkUrl: 'internal',
         updatedAt: 'internal',
     },
     Corporation: {

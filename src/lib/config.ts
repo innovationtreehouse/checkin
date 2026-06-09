@@ -44,6 +44,10 @@ export const config = {
     resendApiKey: (): string | null => process.env.RESEND_API_KEY || null,
     emailFrom: () => process.env.EMAIL_FROM || 'CheckMeIn <onboarding@resend.dev>',
 
+    // Background check (Averity/VERITY hosted consent deep link). No API — this is a
+    // static hosted URL provided out-of-band, so it lives in config, not BoardSettings.
+    averityConsentUrl: (): string | null => process.env.AVERITY_CONSENT_URL || null,
+
     // App
     checkinEnv: (): CheckinEnv => readCheckinEnv(),
     // Production (default when unset). Consumers should call this rather than
