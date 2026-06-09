@@ -218,6 +218,21 @@ export default function MembershipPage() {
         }
     };
 
+    const renew = async () => {
+        setSaving(true);
+        flash("");
+        try {
+            const res = await fetch("/api/membership/renew", { method: "POST" });
+            const data = await res.json();
+            if (res.ok) { await load(); flash("Renewal started."); }
+            else flash(data.error || "Could not start renewal.", true);
+        } catch {
+            flash("Network error.", true);
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const addChild = () => setChildren((c) => [...c, { name: "", email: "", dob: "", allergies: "" }]);
     const updateChild = (i: number, field: keyof ChildForm, value: string) =>
         setChildren((c) => c.map((child, idx) => (idx === i ? { ...child, [field]: value } : child)));
@@ -242,6 +257,7 @@ export default function MembershipPage() {
     const inStatus = state?.process?.status ?? null;
     const isIntake = inStatus === "INTAKE";
     const isActive = state?.membershipStatus === "ACTIVE";
+    const isRenewal = state?.process?.kind === "RENEWAL";
     const labelStyle: React.CSSProperties = { display: "block", marginBottom: "0.35rem", fontWeight: 500 };
     const fieldStyle: React.CSSProperties = { width: "100%", padding: "0.6rem" };
 
@@ -258,27 +274,50 @@ export default function MembershipPage() {
                 </div>
             )}
 
-            {isActive ? (
-                <div className="glass-container" style={{ padding: "2rem" }}>
-                    <h2 style={{ marginTop: 0 }}>You&apos;re a member 🎉</h2>
-                    <p style={{ color: "var(--color-text-muted)" }}>Your household membership is active. Thank you for being part of the Treehouse!</p>
-                </div>
-            ) : !state?.process ? (
+            {!state?.process ? (
+                isActive ? (
+                    <div className="glass-container" style={{ padding: "2rem" }}>
+                        <h2 style={{ marginTop: 0 }}>You&apos;re a member 🎉</h2>
+                        <p style={{ color: "var(--color-text-muted)" }}>Your household membership is active. Thank you for being part of the Treehouse!</p>
+                    </div>
+                ) : (
+                    <div className="glass-container" style={{ padding: "2rem", maxWidth: "640px" }}>
+                        <h2 style={{ marginTop: 0 }}>Become a member</h2>
+                        <p style={{ color: "var(--color-text-muted)" }}>
+                            Membership is for your whole household. We&apos;ll collect some information about your family, then walk you through signing a
+                            contract, a background check, and payment. You can stop and resume anytime.
+                        </p>
+                        <button className="glass-button" disabled={saving} onClick={startApplication} style={{ background: "rgba(59,130,246,0.3)", borderColor: "rgba(59,130,246,0.5)", padding: "0.9rem 1.4rem", marginTop: "0.5rem" }}>
+                            {saving ? "Starting…" : "Start application"}
+                        </button>
+                    </div>
+                )
+            ) : isRenewal && inStatus === "PENDING_RENEWAL" ? (
                 <div className="glass-container" style={{ padding: "2rem", maxWidth: "640px" }}>
-                    <h2 style={{ marginTop: 0 }}>Become a member</h2>
+                    <h2 style={{ marginTop: 0 }}>Time to renew</h2>
                     <p style={{ color: "var(--color-text-muted)" }}>
-                        Membership is for your whole household. We&apos;ll collect some information about your family, then walk you through signing a
-                        contract, a background check, and payment. You can stop and resume anytime.
+                        Your household membership is up for renewal. You&apos;re still an active member — confirm below to continue for another year.
+                        No contract to re-sign; we&apos;ll only re-check a background if it&apos;s been more than three years.
                     </p>
-                    <button className="glass-button" disabled={saving} onClick={startApplication} style={{ background: "rgba(59,130,246,0.3)", borderColor: "rgba(59,130,246,0.5)", padding: "0.9rem 1.4rem", marginTop: "0.5rem" }}>
-                        {saving ? "Starting…" : "Start application"}
+                    <button className="glass-button" disabled={saving} onClick={renew} style={{ background: "rgba(34,197,94,0.25)", borderColor: "rgba(34,197,94,0.5)", padding: "0.9rem 1.4rem", marginTop: "0.5rem" }}>
+                        {saving ? "Starting…" : "Renew now"}
                     </button>
+                </div>
+            ) : isRenewal && inStatus === "RENEWAL_PENDING_BG" ? (
+                <div className="glass-container" style={{ padding: "2rem", maxWidth: "640px" }}>
+                    <h2 style={{ marginTop: 0 }}>Renewal in progress</h2>
+                    <p style={{ color: "var(--color-text-muted)" }}>
+                        We&apos;re re-confirming your household&apos;s background check (it&apos;s been over three years). You&apos;ll be able to pay once that&apos;s done.
+                        Your membership stays active in the meantime.
+                    </p>
                 </div>
             ) : (
                 <div style={{ display: "flex", gap: "2rem", alignItems: "flex-start", flexWrap: "wrap" }}>
-                    <div style={{ flex: "0 0 auto" }}>
-                        <MembershipFlowStepper currentStatus={inStatus} />
-                    </div>
+                    {!isRenewal && (
+                        <div style={{ flex: "0 0 auto" }}>
+                            <MembershipFlowStepper currentStatus={inStatus} />
+                        </div>
+                    )}
 
                     <div style={{ flex: "1 1 420px", minWidth: "320px" }}>
                         {isIntake ? (

@@ -7,6 +7,7 @@ import styles from './page.module.css';
 import DevLoginPicker from '@/components/DevLoginPicker';
 import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
 import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
+import Notifications from '@/components/Notifications';
 import { config } from '@/lib/config';
 import type { SessionUser, BoardMember } from '@/types/participant';
 
@@ -154,14 +155,10 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Background-check reviewers: entry point to their review queue */}
-              {(session.user as SessionUser)?.backgroundCheckReviewer && (
-                <div style={{ width: '100%', gridColumn: '1 / -1' }}>
-                  <a href="/membership/review" className="glass-button" style={{ display: 'inline-block', textDecoration: 'none', color: 'white', padding: '0.75rem 1.25rem', background: 'rgba(168,85,247,0.25)', borderColor: 'rgba(168,85,247,0.5)' }}>
-                    🔍 Background-check reviews
-                  </a>
-                </div>
-              )}
+              {/* In-app red-dot indicators (membership reviewer queue / blocked apps, …) */}
+              <div style={{ width: '100%', gridColumn: '1 / -1' }}>
+                <Notifications />
+              </div>
 
               {/* Operational Warnings */}
               {isTwoDeepViolation && (

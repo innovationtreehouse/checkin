@@ -17,7 +17,7 @@ export default function HouseholdPage() {
         name?: string;
         leads?: Array<{ participantId: number }>;
         participants?: Array<{ id: number; name?: string; email?: string; dob?: string; phone?: string; programVolunteers?: Array<{ id: number; program: { name: string; end?: string }; events?: Array<{ start: string }> }>; programParticipants?: Array<{ id: number; program: { name: string; end?: string }; events?: Array<{ start: string }> }> }>;
-        membership?: unknown;
+        membership?: { status?: string; since?: string; isVolunteer?: boolean } | null;
         emergencyContactName?: string;
         emergencyContactPhone?: string;
         address?: string;
@@ -267,6 +267,24 @@ export default function HouseholdPage() {
                         &larr; Back
                     </button>
                 </div>
+
+                {household && (
+                    household.membership?.status === 'ACTIVE' ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.5rem', padding: '0.85rem 1rem', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '8px', color: '#4ade80', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600 }}>✓ Member{household.membership.since ? ` since ${formatDate(household.membership.since)}` : ''}</span>
+                            {household.membership.isVolunteer && (
+                                <span style={{ background: 'rgba(34, 197, 94, 0.25)', padding: '1px 8px', borderRadius: '999px', fontSize: '0.75rem' }}>Volunteer family</span>
+                            )}
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.5rem', padding: '1rem 1.25rem', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ color: 'var(--color-text-muted)' }}>Your household isn&apos;t a member yet.</span>
+                            <button className="glass-button" onClick={() => router.push('/membership')} style={{ background: 'rgba(59, 130, 246, 0.3)', borderColor: 'rgba(59, 130, 246, 0.5)', whiteSpace: 'nowrap' }}>
+                                Join the Treehouse!
+                            </button>
+                        </div>
+                    )
+                )}
 
                 {message && (
                     <div style={{

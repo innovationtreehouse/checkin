@@ -1,15 +1,18 @@
-import { NextResponse } from "next/server";
-import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { handler } from "@/security/handler";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/admin/membership — in-flight membership applications for the board.
- * Returns every process not yet ACTIVE, with its household and external-phase
- * flags, so the board can drive the manual steps (contract / BG consent).
+ * Every process not yet ACTIVE, with its household + external-phase flags.
+ *
+ * Field visibility is governed by the security registry (sysadmin/board get the
+ * full applicant PII; anyone else admitted would be stripped to public). The bag
+ * is keyed by the model name so the stripper can classify it; the 'processes'
+ * envelope preserves the response shape consumers expect.
  */
-export const GET = withAuth({ roles: ["sysadmin", "boardMember"] }, async () => {
+export const GET = handler("GET /api/admin/membership", async () => {
     const processes = await prisma.membershipProcess.findMany({
         where: { status: { not: "ACTIVE" } },
         orderBy: { createdAt: "desc" },
@@ -38,5 +41,5 @@ export const GET = withAuth({ roles: ["sysadmin", "boardMember"] }, async () => 
         },
     });
 
-    return NextResponse.json({ processes });
+    return { MembershipProcess: processes };
 });
