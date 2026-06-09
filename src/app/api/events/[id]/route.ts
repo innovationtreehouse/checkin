@@ -36,6 +36,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
         if (!event) return NextResponse.json({ error: "Event not found" }, { status: 404 });
 
+        // Authorization: this response embeds full participant records (email, phone,
+        // dob, googleId — including minors) for everyone enrolled in / RSVP'd to the
+        // program. Restrict it to event staff, matching the PATCH handler below.
+        // Without this gate any authenticated user could harvest roster PII by
+        // enumerating sequential event IDs.
+        const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
+        const userId = user.id;
+        const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
+        const isLeadMentor = event.program?.leadMentorId === userId;
+        const isCoreVolunteer = event.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
+        if (!isSysAdminOrBoard && !isLeadMentor && !isCoreVolunteer) {
+            return NextResponse.json({ error: "Forbidden: Not authorized to view this event" }, { status: 403 });
+        }
+
         return NextResponse.json(event);
     } catch (error: unknown) {
         console.error("Failed to fetch event:", error);
