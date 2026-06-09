@@ -122,6 +122,11 @@ export const authOptions: NextAuthOptions = {
     secret: config.nextAuthSecret(),
     session: {
         strategy: "jwt",
+        // Bound token lifetime so a stale or forgotten session cannot live for the
+        // 30-day NextAuth default. The jwt callback below also re-syncs role flags
+        // from the DB on every request so revocations take effect promptly.
+        maxAge: 60 * 60 * 8,   // 8 hours
+        updateAge: 60 * 15,    // 15 minutes
     },
     callbacks: {
         async jwt({ token, user, account, profile }) {
@@ -168,6 +173,38 @@ export const authOptions: NextAuthOptions = {
                     token.householdId = dbParticipant.householdId;
                     token.toolStatuses = dbParticipant.toolStatuses;
                 }
+            } else if (token.id) {
+                // On every subsequent request (no `user` present), re-sync authority
+                // flags from the DB so role grants/revocations take effect without
+                // waiting for the token to expire. Previously these flags were only
+                // read at sign-in, which let a revoked sysadmin/keyholder keep their
+                // privileges (including the /api/admin/roles endpoint) until the JWT
+                // aged out — up to 30 days.
+                const dbParticipant = await prisma.participant.findUnique({
+                    where: { id: token.id as number },
+                    include: {
+                        toolStatuses: {
+                            select: {
+                                toolId: true,
+                                level: true
+                            }
+                        }
+                    }
+                });
+
+                if (!dbParticipant) {
+                    // Account no longer exists — return an empty token so every
+                    // downstream authorization check fails closed.
+                    return {};
+                }
+
+                token.sysadmin = dbParticipant.sysadmin;
+                token.keyholder = dbParticipant.keyholder;
+                token.boardMember = dbParticipant.boardMember;
+                token.shopSteward = dbParticipant.shopSteward;
+                token.backgroundCheckReviewer = dbParticipant.backgroundCheckReviewer;
+                token.householdId = dbParticipant.householdId;
+                token.toolStatuses = dbParticipant.toolStatuses;
             }
             return token;
         },
