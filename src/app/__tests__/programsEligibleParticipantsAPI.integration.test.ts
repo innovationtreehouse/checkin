@@ -31,16 +31,20 @@ describe('Eligible Participants API Integration Tests', () => {
         // Clean up any leaked state
         const existingUsers = await prisma.participant.findMany({
             where: { email: { contains: 'elig-api-test' } },
-            select: { id: true }
+            select: { id: true, householdId: true }
         });
         const existingUserIds = existingUsers.map(u => u.id);
-        
+        const existingHouseholdIds = existingUsers
+            .map(u => u.householdId)
+            .filter((id): id is number => id !== null && id !== undefined);
+
         await prisma.programParticipant.deleteMany({
             where: { participantId: { in: existingUserIds } }
         });
 
+        // Memberships live on the household now; scope cleanup to this test's households.
         await prisma.membership.deleteMany({
-             where: { volunteerId: { in: existingUserIds } }
+             where: { householdId: { in: existingHouseholdIds } }
         });
 
         await prisma.household.deleteMany({
@@ -73,31 +77,32 @@ describe('Eligible Participants API Integration Tests', () => {
         });
         commonId = commonUser.id;
 
-        // Create Active Member
+        // Create Active Member — membership now lives on the household (status ACTIVE).
         const activeMember = await prisma.participant.create({
             data: {
                 email: 'active-member-elig-api-test@example.com',
                 name: 'Active Member Candidate',
-                household: { create: {} },
-                memberships: {
+                household: {
                     create: {
-                        type: 'HOUSEHOLD',
-                        active: true,
-                        since: new Date()
+                        membership: {
+                            create: {
+                                status: 'ACTIVE',
+                                since: new Date()
+                            }
+                        }
                     }
                 }
             }
         });
         activeMemberId = activeMember.id;
 
-        // Create Household Member (indirect membership)
+        // Create Household Member (indirect membership) — membership held by the household.
         const household = await prisma.household.create({
             data: {
                 name: 'Elig API Test Household',
-                memberships: {
+                membership: {
                     create: {
-                        type: 'HOUSEHOLD',
-                        active: true,
+                        status: 'ACTIVE',
                         since: new Date()
                     }
                 }
@@ -160,9 +165,25 @@ describe('Eligible Participants API Integration Tests', () => {
                 where: { participantId: { in: existingUserIds } }
             });
 
-            await prisma.membership.deleteMany({
-                 where: { OR: [{ householdId: { not: null } }, { volunteerId: { in: existingUserIds } }] }
+            // Memberships are held by households. Scope the cleanup to exactly the
+            // households this test touched: each test participant's household plus the
+            // explicitly created Elig API Test household.
+            const testParticipants = await prisma.participant.findMany({
+                where: { id: { in: existingUserIds } },
+                select: { householdId: true }
             });
+            const testHouseholdIds = Array.from(new Set(
+                testParticipants
+                    .map(p => p.householdId)
+                    .filter((id): id is number => id !== null && id !== undefined)
+                    .concat(testHouseholdId !== undefined ? [testHouseholdId] : [])
+            ));
+
+            if (testHouseholdIds.length > 0) {
+                await prisma.membership.deleteMany({
+                     where: { householdId: { in: testHouseholdIds } }
+                });
+            }
         }
 
         if (existingUserIds.length > 0) {

@@ -19,7 +19,7 @@ export const GET = withAuth(
                         participants: {
                             select: { id: true, name: true, email: true }
                         },
-                        memberships: true
+                        membership: true
                     }
                 });
                 return NextResponse.json({ household });
@@ -39,7 +39,7 @@ export const GET = withAuth(
                     participants: {
                         select: { id: true, name: true, email: true }
                     },
-                    memberships: true
+                    membership: true
                 },
                 orderBy: {
                     id: 'desc'
@@ -66,28 +66,21 @@ export const POST = withAuth(
                 return NextResponse.json({ error: "Household ID is required" }, { status: 400 });
             }
 
-            const existingMembership = await prisma.membership.findFirst({
-                where: { householdId, active: true },
-                orderBy: { since: "desc" }
+            const existingMembership = await prisma.membership.findUnique({
+                where: { householdId }
             });
 
-            if (active && !existingMembership) {
-                const membership = await prisma.membership.create({
-                    data: {
-                        householdId,
-                        type: "HOUSEHOLD",
-                        active: true
-                    }
+            if (active) {
+                const membership = await prisma.membership.upsert({
+                    where: { householdId },
+                    create: { householdId, status: "ACTIVE" },
+                    update: { status: "ACTIVE" }
                 });
                 return NextResponse.json({ success: true, membership });
-            } else if (!active && existingMembership) {
+            } else if (existingMembership && existingMembership.status === "ACTIVE") {
                 await prisma.membership.update({
-                    where: { id: existingMembership.id },
-                    data: { active: false }
-                });
-                await prisma.membership.updateMany({
-                    where: { householdId, id: { not: existingMembership.id }, active: true },
-                    data: { active: false }
+                    where: { householdId },
+                    data: { status: "REVOKED" }
                 });
                 return NextResponse.json({ success: true, message: "Membership deactivated" });
             }

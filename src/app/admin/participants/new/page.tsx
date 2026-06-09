@@ -51,6 +51,7 @@ function NewParticipantForm() {
 
     const studentSelected = isStudent();
 
+    const [alreadyMember, setAlreadyMember] = useState(false);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState("");
     const [isError, setIsError] = useState(false);
@@ -134,7 +135,8 @@ function NewParticipantForm() {
                     email: email || null,
                     parentEmail: studentSelected ? parentEmail : null,
                     dob: dob || null,
-                    householdId: householdId ? parseInt(householdId) : null
+                    householdId: householdId ? parseInt(householdId) : null,
+                    alreadyMember: !householdId && alreadyMember
                 })
             });
 
@@ -148,6 +150,7 @@ function NewParticipantForm() {
                 setDob("");
                 setHouseholdId("");
                 setHouseholdSearch("");
+                setAlreadyMember(false);
             } else {
                 setIsError(true);
                 setMessage(data.error || "Failed to create participant");
@@ -257,6 +260,23 @@ function NewParticipantForm() {
                                 </div>
                             )}
                         </div>
+
+                        {!householdId && (
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={alreadyMember}
+                                    onChange={e => setAlreadyMember(e.target.checked)}
+                                    style={{ marginTop: '0.2rem' }}
+                                />
+                                <span>
+                                    Confirm this household is already a paid member
+                                    <span style={{ display: 'block', fontSize: '0.8rem', opacity: 0.8 }}>
+                                        Leave unchecked for new visitors. Membership is normally earned through the application process.
+                                    </span>
+                                </span>
+                            </label>
+                        )}
 
                         <button type="submit" className="glass-button" disabled={saving || (!studentSelected && !email && !householdId) || (studentSelected && !parentEmail && !householdId)} style={{ background: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.4)', marginTop: '1rem', padding: '1rem', fontSize: '1.1rem' }}>
                             {saving ? "Registering..." : "Create Participant"}

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
+import { config } from "@/lib/config";
 
 export async function GET(req: NextRequest) {
     try {
@@ -23,6 +24,12 @@ export async function GET(req: NextRequest) {
                 return NextResponse.json({ error: result.error }, { status: result.status });
             }
         } else if (!session && pubKeys.length > 0) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        } else if (!session && !config.isLocal()) {
+            // No session and no kiosk key configured (pubKeys empty). Outside local dev
+            // this must fail closed — otherwise an unset KIOSK_PUBLIC_KEY would serve all
+            // participants' PII (email, name, age, certifications) to anonymous callers.
+            // Mirrors the keyless-kiosk gating in src/lib/auth.ts.
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 

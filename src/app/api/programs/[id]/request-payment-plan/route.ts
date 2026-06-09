@@ -39,6 +39,33 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return NextResponse.json({ error: "Participant not found in program" }, { status: 404 });
         }
 
+        // Authorization: only the participant themselves, a lead of their household,
+        // the program's lead mentor, or a sysadmin/board member may request a payment
+        // plan for this enrollment. Without this gate any authenticated user could flip
+        // paymentPlanRequested on an arbitrary participant's enrollment (IDOR).
+        const currentUserId = (session.user as { id: number }).id;
+        const isSelf = currentUserId === participantId;
+        const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin
+            || (session.user as { sysadmin?: boolean, boardMember?: boolean })?.boardMember;
+        const isLeadMentor = participant.program?.leadMentorId === currentUserId;
+
+        let isHouseholdLead = false;
+        if (!isSelf && !isSysAdminOrBoard && !isLeadMentor && participant.participant?.householdId) {
+            const leadRecord = await prisma.householdLead.findUnique({
+                where: {
+                    householdId_participantId: {
+                        householdId: participant.participant.householdId,
+                        participantId: currentUserId
+                    }
+                }
+            });
+            isHouseholdLead = !!leadRecord;
+        }
+
+        if (!isSelf && !isSysAdminOrBoard && !isLeadMentor && !isHouseholdLead) {
+            return NextResponse.json({ error: "Forbidden: Not authorized to request a payment plan for this participant" }, { status: 403 });
+        }
+
         const updatedParticipant = await prisma.programParticipant.update({
             where: {
                 programId_participantId: { programId, participantId }
