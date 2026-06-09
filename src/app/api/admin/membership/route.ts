@@ -21,6 +21,7 @@ export const GET = withAuth({ roles: ["sysadmin", "boardMember"] }, async () => 
             zohoEnvelopeId: true,
             contractSignedAt: true,
             bgConsentAt: true,
+            attestations: { select: { id: true, result: true, markedVolunteer: true } },
             membership: {
                 select: {
                     householdId: true,

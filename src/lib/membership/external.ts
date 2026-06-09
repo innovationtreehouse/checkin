@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { backgroundCheckProvider } from "@/lib/membership/background-check/manual-adapter";
+import { notifyReviewers } from "@/lib/membership/review";
 
 /**
  * EXTERNAL-phase service — the two parallel actions an applicant completes after
@@ -56,6 +57,8 @@ export async function advanceExternalIfComplete(processId: number) {
             newData: JSON.stringify({ status: "PENDING_BG_REVIEW" }),
         },
     });
+    // Ping background-check reviewers that an application is ready (log-only until email is configured).
+    await notifyReviewers();
     return advanced;
 }
 
