@@ -1,0 +1,190 @@
+name: Deploy dev
+
+# Deploy the checkin app to the AWS dev environment on every merge to main.
+# Gated on CI: this fires only after the "CI" workflow succeeds for a push to
+# main, builds an ARM64 image, runs DB migrations, rolls out the ECS service,
+# and posts the result back onto the originating PR.
+#
+# Auth is GitHub OIDC (no static AWS keys) — assumes the checkin-deploy-dev role
+# defined in ~/projects/treehouse/aws/infra/modules/checkin/iam.tf.
+#
+# Infra preconditions (NOT done here — see modules/checkin):
+#   - Terraform applied: OIDC role, ECR repo, ECS cluster/service, both task defs.
+#   - Secret VALUES set in Secrets Manager (checkin-dev/database-url, ...).
+#   - Dev DB (checkin_dev) bootstrapped (init.sql) so migrations can connect.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  id-token: write       # assume the deploy role via OIDC
+  contents: read        # checkout
+  pull-requests: write  # comment on the originating PR
+
+concurrency:
+  group: checkin-deploy-dev
+  cancel-in-progress: false  # serialize deploys; never abandon one mid-rollout
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REGISTRY: 639595353568.dkr.ecr.us-east-2.amazonaws.com
+  ECR_REPOSITORY: checkin-dev
+  ECS_CLUSTER: checkin-dev
+  ECS_SERVICE: checkin-dev
+  APP_TASK_FAMILY: checkin-dev
+  MIGRATE_TASK_FAMILY: checkin-migrate-dev
+  DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-dev
+  APP_URL: https://ops-dev.innovationtreehouse.org
+
+jobs:
+  deploy:
+    name: Build, migrate, roll out
+    # Only deploy a green push to main — skip CI runs from PRs / merge_group.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-24.04-arm  # native ARM64 — task defs require arm64 images
+    outputs:
+      image_tag: ${{ steps.vars.outputs.sha }}
+    steps:
+      - name: Resolve deployed commit
+        id: vars
+        run: |
+          SHA='${{ github.event.workflow_run.head_sha }}'
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout deployed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.vars.outputs.sha }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: build
+        env:
+          IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # Native arm64 runner -> a plain build produces the arm64 image the
+          # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Run database migrations
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: |
+          set -euo pipefail
+          # Register a new revision of the migrate task def pointing at the new
+          # image (run-task can't override the image, only command/env), keeping
+          # only the fields register-task-definition accepts.
+          MIGRATE_ARN=$(aws ecs describe-task-definition \
+            --task-definition "$MIGRATE_TASK_FAMILY" \
+            --query taskDefinition \
+            | jq --arg IMG "$IMAGE" '
+                .containerDefinitions[0].image = $IMG
+                | {family, taskRoleArn, executionRoleArn, networkMode,
+                   containerDefinitions, requiresCompatibilities, cpu, memory,
+                   runtimePlatform}' \
+            | aws ecs register-task-definition --cli-input-json file:///dev/stdin \
+                --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered migrate task def: $MIGRATE_ARN"
+
+          # Reuse the service's own network config (subnets / SG / public IP) so
+          # the one-off task lands exactly where the service runs.
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].networkConfiguration' --output json)
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$MIGRATE_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Migration task: $TASK_ARN"
+
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          echo "Migration exit code: $EXIT_CODE"
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Database migration failed (exit $EXIT_CODE)"
+            exit 1
+          fi
+
+      - name: Deploy to ECS
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: |
+          set -euo pipefail
+          # Register a new app task-def revision with the new image. The service
+          # has lifecycle.ignore_changes on task_definition, so CI owns rollout.
+          APP_ARN=$(aws ecs describe-task-definition \
+            --task-definition "$APP_TASK_FAMILY" \
+            --query taskDefinition \
+            | jq --arg IMG "$IMAGE" '
+                .containerDefinitions[0].image = $IMG
+                | {family, taskRoleArn, executionRoleArn, networkMode,
+                   containerDefinitions, volumes, placementConstraints,
+                   requiresCompatibilities, cpu, memory, runtimePlatform}' \
+            | aws ecs register-task-definition --cli-input-json file:///dev/stdin \
+                --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered app task def: $APP_ARN"
+
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+            --task-definition "$APP_ARN" >/dev/null
+
+          echo "Waiting for the service to reach steady state..."
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+          echo "Service is stable."
+
+      - name: Report result on the PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.vars.outputs.sha }}
+          SHORT_SHA: ${{ steps.vars.outputs.short_sha }}
+          STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Find the PR the merged commit came from. Empty for direct pushes.
+          PR=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" \
+                 --jq '.[0].number' 2>/dev/null || true)
+          if [ -z "$PR" ] || [ "$PR" = "null" ]; then
+            echo "No PR associated with $SHA — skipping comment."
+            exit 0
+          fi
+
+          if [ "$STATUS" = "success" ]; then
+            BODY="### ✅ Deployed to dev
+          Commit \`$SHORT_SHA\` is live on [$APP_URL]($APP_URL).
+          - Image: \`$ECR_REPOSITORY:$SHORT_SHA\`
+          - Migrations: applied · Service: stable
+          - [Deploy run]($RUN_URL)"
+          else
+            BODY="### ❌ Dev deploy failed
+          Commit \`$SHORT_SHA\` did **not** deploy to dev (status: \`$STATUS\`).
+          - [Deploy run]($RUN_URL) — check the logs.
+          - The dev environment still runs the previous image."
+          fi
+
+          gh pr comment "$PR" --body "$BODY"
+          echo "Posted result on PR #$PR"
