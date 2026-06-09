@@ -9,7 +9,7 @@ import AuthProvider from '@/components/AuthProvider';
 import { EnvProvider } from '@/components/EnvProvider';
 import OnboardingGate from '@/components/OnboardingGate';
 import AppFrame from '@/components/AppFrame';
-import { theme } from '@/lib/theme';
+import { brand } from '@/brand';
 import { config } from '@/lib/config';
 
 // CHECKIN_ENV is read at runtime (the same image runs in prod/dev/local), so the root
@@ -31,8 +31,8 @@ export default function RootLayout({
       <head>
         <ColorSchemeScript defaultColorScheme="auto" />
       </head>
-      <body>
-        <MantineProvider theme={theme} defaultColorScheme="auto">
+      <body className={brand.fontVariables} data-brand={brand.id}>
+        <MantineProvider theme={brand.theme} defaultColorScheme="auto">
           <ModalsProvider>
             <Notifications />
             <EnvProvider value={config.checkinEnv()}>

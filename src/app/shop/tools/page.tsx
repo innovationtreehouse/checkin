@@ -5,9 +5,10 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  Alert, Anchor, Badge, Button, Card, Center, Collapse, Container, Group, Loader,
+  Alert, Anchor, Button, Card, Center, Collapse, Container, Group, Loader,
   Modal, Select, Stack, Table, Tabs, Text, TextInput, Title,
 } from '@mantine/core';
+import { ToolLevelBadge, toToolLevel } from '@/components/ToolLevelBadge';
 
 type Tool = {
   id: number;
@@ -27,17 +28,6 @@ type Certification = {
 type Member = { id: number; name: string | null; email: string };
 
 type Tab = 'tools' | 'person' | 'all';
-
-const LEVEL_LABELS: Record<string, string> = {
-  BASIC: 'Basic', CERTIFIED: 'Certified', DOF: 'DoF', INSTRUCTOR: 'Instructor', MAY_CERTIFY_OTHERS: 'Certifier',
-};
-const LEVEL_COLORS: Record<string, string> = {
-  BASIC: 'red', CERTIFIED: 'green', DOF: 'yellow', INSTRUCTOR: 'blue', MAY_CERTIFY_OTHERS: 'grape',
-};
-
-function levelBadge(level: string) {
-  return <Badge color={LEVEL_COLORS[level] ?? 'gray'} variant="filled">{LEVEL_LABELS[level] ?? level}</Badge>;
-}
 
 const LEVEL_OPTIONS = [
   { value: 'BASIC', label: 'Basic' },
@@ -240,7 +230,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
                           {certs.map((c) => (
                             <Group key={`${c.userId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
                               <Text size="sm">{c.user?.name ?? 'Unnamed'} <Text component="span" c="dimmed" size="xs">({c.user?.email})</Text></Text>
-                              {levelBadge(c.level)}
+                              <ToolLevelBadge level={toToolLevel(c.level)} />
                             </Group>
                           ))}
                         </Stack>
@@ -331,7 +321,7 @@ function PersonTab({ members, tools, isCertifier }: { members: Member[]; tools: 
                           {certs.map((c) => (
                             <Group key={`${c.userId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
                               <Text size="sm">{c.tool?.name ?? 'Unknown Tool'}</Text>
-                              {levelBadge(c.level)}
+                              <ToolLevelBadge level={toToolLevel(c.level)} />
                             </Group>
                           ))}
                         </Stack>
@@ -404,7 +394,7 @@ function AllTab() {
                   <Table.Td fw={500}>{c.tool?.name ?? '?'}</Table.Td>
                   <Table.Td>{c.user?.name ?? 'Unnamed'}</Table.Td>
                   <Table.Td c="dimmed">{c.user?.email}</Table.Td>
-                  <Table.Td ta="center">{levelBadge(c.level)}</Table.Td>
+                  <Table.Td ta="center"><ToolLevelBadge level={toToolLevel(c.level)} /></Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

@@ -1,0 +1,9 @@
+Innovation Treehouse brand assets — NOT covered by the repository's source-code license.
+
+The Innovation Treehouse logo and circuit-tree house mark in this folder
+(treehouse-logo-full.webp, treehouse-mark.png) are trademarks or registered trademarks of
+Innovation Treehouse Inc. The license under which this repository's source code is made
+available does not grant any right or license to use, reproduce, or distribute them.
+
+Using this software for a different organization? Remove or replace these assets
+(set NEXT_PUBLIC_BRAND=base for the unbranded app; see src/brand/). See /TRADEMARKS.md.

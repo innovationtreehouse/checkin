@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Alert, Badge, Box, Card, Center, Group, Loader, Text, Title } from "@mantine/core";
 import { useAutoCycle } from "../../../hooks/useAutoCycle";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
+import { ToolLevelBadge, toToolLevel, toolLevelDot } from "@/components/ToolLevelBadge";
 
 type ToolStatusLevel = "BASIC" | "DOF" | "CERTIFIED" | "INSTRUCTOR" | "MAY_CERTIFY_OTHERS";
 
@@ -25,14 +26,8 @@ type Tool = {
   name: string;
 };
 
-const LEGEND: { level: ToolStatusLevel; label: string; color: string }[] = [
-  { level: "BASIC", label: "Basic", color: "#ef4444" },
-  { level: "CERTIFIED", label: "Certified", color: "#22c55e" },
-  { level: "DOF", label: "DOF", color: "#eab308" },
-  { level: "INSTRUCTOR", label: "Instructor", color: "#3b82f6" },
-  { level: "MAY_CERTIFY_OTHERS", label: "Certifier", color: "#a855f7" },
-];
-const LEVEL_COLOR: Record<string, string> = Object.fromEntries(LEGEND.map((l) => [l.level, l.color]));
+// Cert levels shown in the legend; the dot colors come from the regulated ToolLevelBadge.
+const LEGEND_LEVELS: ToolStatusLevel[] = ["BASIC", "CERTIFIED", "DOF", "INSTRUCTOR", "MAY_CERTIFY_OTHERS"];
 
 export default function KioskCertificationsDisplay() {
   return (
@@ -99,7 +94,7 @@ function KioskCertificationsInner() {
   }, [fetchData]);
 
   const getColorForLevel = (level: ToolStatusLevel | undefined) =>
-    (level && LEVEL_COLOR[level]) || "transparent";
+    level ? toolLevelDot(toToolLevel(level)) : "transparent";
 
   // Abbreviate tool name for kiosk: stack words vertically, shorten long words
   const compactToolName = (name: string) => {
@@ -186,11 +181,8 @@ function KioskCertificationsInner() {
             </Group>
             <Group gap="sm" align="center">
               <Text fw={700} size="sm">Legend:</Text>
-              {LEGEND.map((l) => (
-                <Group key={l.level} gap={6} align="center">
-                  <Box w={12} h={12} style={{ background: l.color, borderRadius: 3 }} />
-                  <Text size="sm">{l.label}</Text>
-                </Group>
+              {LEGEND_LEVELS.map((lvl) => (
+                <ToolLevelBadge key={lvl} level={toToolLevel(lvl)} short size="sm" />
               ))}
             </Group>
           </Group>

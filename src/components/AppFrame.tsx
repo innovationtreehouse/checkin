@@ -8,16 +8,29 @@ import {
   Button,
   Group,
   NavLink,
+  Text,
   Title,
   Tooltip,
   useMantineColorScheme,
   useComputedColorScheme,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconLogout, IconMoon, IconSun, IconUser } from '@tabler/icons-react';
+import {
+  IconCalendarEvent,
+  IconClipboardList,
+  IconHome,
+  IconLogout,
+  IconMoon,
+  IconSettings,
+  IconSun,
+  IconTool,
+  IconUser,
+} from '@tabler/icons-react';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import Link from 'next/link';
+import { brand } from '@/brand';
 import { useIsDevInstance } from '@/components/EnvProvider';
 
 type SessionUser = {
@@ -30,16 +43,18 @@ type SessionUser = {
 type NavItem = {
   href: string;
   label: string;
+  icon: React.ReactNode;
   visible: (user: SessionUser | undefined, signedIn: boolean) => boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/kioskdisplay', label: 'Attendance', visible: (_u, signedIn) => signedIn },
-  { href: '/household', label: 'My Household', visible: (_u, signedIn) => signedIn },
-  { href: '/programs', label: 'Programs', visible: () => true },
+  { href: '/kioskdisplay', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
+  { href: '/household', label: 'My Household', icon: <IconHome size={18} />, visible: (_u, signedIn) => signedIn },
+  { href: '/programs', label: 'Programs', icon: <IconCalendarEvent size={18} />, visible: () => true },
   {
     href: '/shop',
     label: 'Shop Ops',
+    icon: <IconTool size={18} />,
     visible: (u) =>
       !!u?.sysadmin ||
       !!u?.boardMember ||
@@ -49,6 +64,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     href: '/admin',
     label: 'Admin Ops',
+    icon: <IconSettings size={18} />,
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
   },
 ];
@@ -97,11 +113,19 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
 
   const visibleItems = NAV_ITEMS.filter((item) => item.visible(user, signedIn));
 
-  const brand = (
-    <Link href="/" style={{ textDecoration: 'none' }}>
-      <Title order={3} c="blue">
-        {isDevInstance ? 'CMI-dev' : 'CheckMeIn'}
-      </Title>
+  // A colored sidebar (brand.nav.sidebar set) ⇒ white nav text + filled active pills.
+  const onColoredSidebar = !!brand.nav.sidebar;
+
+  const brandEl = (
+    <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+      {brand.logo ? (
+        <Image src={brand.logo.src} alt={brand.logo.alt} width={brand.logo.width} height={brand.logo.height} priority />
+      ) : (
+        <Title order={3} c={`${brand.nav.accent}.7`}>
+          {isDevInstance ? `${brand.appName}-dev` : brand.appName}
+        </Title>
+      )}
+      {brand.logo && isDevInstance && <Text size="xs" c="dimmed" fw={700}>dev</Text>}
     </Link>
   );
 
@@ -144,7 +168,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
             {showNav && (
               <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" />
             )}
-            {brand}
+            {brandEl}
           </Group>
           <Group gap="xs" wrap="nowrap" visibleFrom="sm">
             <ColorSchemeToggle />
@@ -157,17 +181,30 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
       </AppShell.Header>
 
       {showNav && (
-        <AppShell.Navbar p="md">
-          {visibleItems.map((item) => (
-            <NavLink
-              key={item.href}
-              component={Link}
-              href={item.href}
-              label={item.label}
-              active={isActive(pathname, item.href)}
-              onClick={closeMobile}
-            />
-          ))}
+        <AppShell.Navbar p="md" bg={brand.nav.sidebar}>
+          {visibleItems.map((item) => {
+            const active = isActive(pathname, item.href);
+            const onSidebarText = onColoredSidebar && !active ? 'var(--mantine-color-white)' : undefined;
+            return (
+              <NavLink
+                key={item.href}
+                component={Link}
+                href={item.href}
+                label={item.label}
+                leftSection={item.icon}
+                active={active}
+                variant={onColoredSidebar ? 'filled' : 'light'}
+                color={brand.nav.accent}
+                onClick={closeMobile}
+                mb={4}
+                styles={{
+                  root: { borderRadius: 'var(--mantine-radius-md)' },
+                  label: { color: onSidebarText, fontWeight: 600 },
+                  section: { color: onSidebarText },
+                }}
+              />
+            );
+          })}
           <Group mt="md" hiddenFrom="sm" grow>
             {authButtons}
           </Group>
