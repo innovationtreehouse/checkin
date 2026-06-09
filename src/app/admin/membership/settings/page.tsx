@@ -25,6 +25,8 @@ export default function MembershipSettingsPage() {
     const [designations, setDesignations] = useState<Designation[]>([]);
     const [newEmail, setNewEmail] = useState("");
 
+    const [bulkReminders, setBulkReminders] = useState(false);
+
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState("");
@@ -98,6 +100,23 @@ export default function MembershipSettingsPage() {
             await fetch(`/api/admin/membership/volunteer-designations?id=${id}`, { method: "DELETE" });
             await load();
         } finally { setSaving(false); }
+    };
+
+    const bulkOpenRenewals = async () => {
+        if (!confirm("Open a renewal cycle for ALL active members now? This is a one-time go-live action.")) return;
+        setSaving(true);
+        flash("");
+        try {
+            const res = await fetch("/api/admin/membership/bulk-open-renewals", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sendReminders: bulkReminders }),
+            });
+            const data = await res.json();
+            if (res.ok) flash(`Opened ${data.opened} renewal(s); ${data.skipped} already in progress.`);
+            else flash(data.error || "Failed.", true);
+        } catch { flash("Network error.", true); }
+        finally { setSaving(false); }
     };
 
     const labelStyle: React.CSSProperties = { display: "block", marginBottom: "0.35rem", fontWeight: 500 };
@@ -181,6 +200,21 @@ export default function MembershipSettingsPage() {
                                 ))}
                             </ul>
                         )}
+                    </div>
+
+                    <div className="glass-container" style={{ padding: "1.75rem", marginTop: "1.5rem", border: "1px solid rgba(245,158,11,0.35)" }}>
+                        <h2 style={{ marginTop: 0 }}>Go-live: open renewals</h2>
+                        <p style={{ color: "#fcd34d", fontSize: "0.9rem" }}>
+                            ⚠️ One-time go-live action. Opens a renewal cycle for <strong>every active member</strong> so they renew for the upcoming year.
+                            Press this once, after your existing members are imported (board or sysadmin).
+                        </p>
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", margin: "0.75rem 0", cursor: "pointer" }}>
+                            <input type="checkbox" checked={bulkReminders} onChange={(e) => setBulkReminders(e.target.checked)} />
+                            <span>Also email each household a renewal reminder</span>
+                        </label>
+                        <button className="glass-button" disabled={saving} onClick={bulkOpenRenewals} style={{ padding: "0.7rem 1.3rem", background: "rgba(245,158,11,0.2)", borderColor: "rgba(245,158,11,0.45)" }}>
+                            {saving ? "Working…" : "Open renewals for all active members"}
+                        </button>
                     </div>
                 </>
             )}

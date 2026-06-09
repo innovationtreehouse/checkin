@@ -64,14 +64,7 @@ export async function runRenewalSweep(now: Date) {
     let skipped = 0;
     for (const m of memberships) {
         if (m.processes.length > 0) { skipped++; continue; } // already opened this cycle
-        const process = await prisma.membershipProcess.create({
-            data: { membershipId: m.id, kind: "RENEWAL", status: "PENDING_RENEWAL" },
-        });
-        await prisma.membershipProcess.update({ where: { id: process.id }, data: { renewalReminderSentAt: now } });
-        await prisma.auditLog.create({
-            data: { actorId: SYSTEM_ACTOR, action: "CREATE", tableName: "MembershipProcess", affectedEntityId: process.id, newData: JSON.stringify({ kind: "RENEWAL", status: "PENDING_RENEWAL" }) },
-        });
-        await remindHousehold(m.householdId, boundary);
+        await createRenewalProcess(m.id, m.householdId, now, { remind: true, boundary });
         opened++;
     }
 
@@ -101,6 +94,47 @@ export async function beginRenewal(processId: number) {
     });
     if (nextStatus === "RENEWAL_PENDING_BG") await notifyReviewers();
     return updated;
+}
+
+/** Create one PENDING_RENEWAL process (+ audit, optional reminder). */
+async function createRenewalProcess(membershipId: number, householdId: number, now: Date, opts: { remind: boolean; boundary: Date }) {
+    const process = await prisma.membershipProcess.create({
+        data: { membershipId, kind: "RENEWAL", status: "PENDING_RENEWAL", renewalReminderSentAt: opts.remind ? now : null },
+    });
+    await prisma.auditLog.create({
+        data: { actorId: SYSTEM_ACTOR, action: "CREATE", tableName: "MembershipProcess", affectedEntityId: process.id, newData: JSON.stringify({ kind: "RENEWAL", status: "PENDING_RENEWAL" }) },
+    });
+    if (opts.remind) await remindHousehold(householdId, opts.boundary);
+    return process;
+}
+
+/**
+ * Go-live migration: open a renewal cycle for EVERY active membership that isn't
+ * already mid-renewal, ignoring the date window. Reminders are opt-in (default
+ * off) to avoid an unexpected mass email blast on the button press — the board
+ * can send them deliberately or let the normal cron remind on schedule.
+ */
+export async function openRenewalsForAllActive(now: Date, opts: { sendReminders?: boolean } = {}) {
+    const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+    const boundary = settings?.membershipYearBoundary ? nextBoundary(settings.membershipYearBoundary, now) : now;
+
+    const memberships = await prisma.membership.findMany({
+        where: { status: "ACTIVE" },
+        select: {
+            id: true,
+            householdId: true,
+            processes: { where: { kind: "RENEWAL", status: { in: ["PENDING_RENEWAL", "RENEWAL_PENDING_BG", "PENDING_PAYMENT"] } }, select: { id: true } },
+        },
+    });
+
+    let opened = 0;
+    let skipped = 0;
+    for (const m of memberships) {
+        if (m.processes.length > 0) { skipped++; continue; }
+        await createRenewalProcess(m.id, m.householdId, now, { remind: !!opts.sendReminders, boundary });
+        opened++;
+    }
+    return { opened, skipped };
 }
 
 /** Resolve and begin the caller's household renewal. */
