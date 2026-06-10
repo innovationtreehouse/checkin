@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
-import { listReviewQueue, attest, ReviewError } from "@/lib/membership/review";
+import prisma from "@/lib/prisma";
+import { handler, unauthorized } from "@/security/handler";
+import { eligibleReviewProcessIds, attest, ReviewError } from "@/lib/membership/review";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +15,40 @@ const STATUS_FOR: Record<ReviewError["code"], number> = {
     already_attested: 409,
 };
 
-// GET /api/membership/reviews — applications this reviewer may attest.
-export const GET = withAuth({ roles: ["backgroundCheckReviewer"] }, async (_req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    return NextResponse.json({ queue: await listReviewQueue(auth.user.id) });
+/**
+ * GET /api/membership/reviews — applications this reviewer may attest.
+ *
+ * Eligibility is computed in the service; the result is returned as model rows
+ * so the security stripper governs field visibility (registry grants reviewers
+ * pii + public only — applicant parents' names/emails, nothing internal). The
+ * attestation _count doubles as the approval count for queue rows.
+ *
+ * The query selects ONLY the household leads' (parents') participant rows — the
+ * reviewer never needs the children, so their PII never leaves the DB. The
+ * stripper is defense-in-depth on top of this narrowing, not the primary filter.
+ */
+export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
+    if (auth.type !== "session") throw unauthorized();
+    const ids = await eligibleReviewProcessIds(auth.user.id);
+    const queue = await prisma.membershipProcess.findMany({
+        where: { id: { in: ids } },
+        orderBy: { stageEnteredAt: "asc" },
+        select: {
+            id: true,
+            membership: {
+                select: {
+                    household: {
+                        select: {
+                            name: true,
+                            leads: { select: { participant: { select: { id: true, name: true, email: true } } } },
+                        },
+                    },
+                },
+            },
+            _count: { select: { attestations: true } },
+        },
+    });
+    return { MembershipProcess: queue };
 });
 
 // POST /api/membership/reviews — submit an attestation { processId, result, markedVolunteer }.

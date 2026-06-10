@@ -179,9 +179,30 @@ describe('Membership BG review API', () => {
         const res = await REVIEW_QUEUE(req({}) as never);
         const data = await res.json();
         expect(Array.isArray(data.queue)).toBe(true);
-        // rev2 shares no household with applicants; every queued item is PENDING_BG_REVIEW and not yet attested by rev2.
+        // Model-shaped rows now: id + _count.attestations + household leads (parents).
         for (const item of data.queue) {
-            expect(typeof item.processId).toBe('number');
+            expect(typeof item.id).toBe('number');
+            expect(item._count).toBeDefined();
         }
+    });
+
+    it('queue returns only parents (leads) and never exposes children', async () => {
+        // Self-contained applicant household: one parent (lead) + one child (non-lead).
+        const hh = await prisma.household.create({ data: { name: `ChildExcl ${TAG}` } });
+        const parent = await prisma.participant.create({ data: { name: 'Excl Parent', email: `exclparent-${TAG}@example.com`, householdId: hh.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: parent.id } });
+        await prisma.participant.create({ data: { name: 'Excl Child', email: `exclchild-${TAG}@example.com`, householdId: hh.id } });
+        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
+        await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } });
+
+        as(rev2, { backgroundCheckReviewer: true }); // different household → eligible
+        const data = await (await REVIEW_QUEUE(req({}) as never)).json();
+        const blob = JSON.stringify(data);
+
+        // Parent (lead) is present; the child's PII never leaves the server.
+        expect(blob).toContain('Excl Parent');
+        expect(blob).toContain('exclparent');
+        expect(blob).not.toContain('Excl Child');
+        expect(blob).not.toContain('exclchild');
     });
 });

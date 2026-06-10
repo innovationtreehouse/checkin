@@ -51,6 +51,11 @@ jobs:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
         run: npx prisma generate
 
+      # The deploy image runs `npm run build`, which type-checks. Catch type
+      # errors here at PR time instead of after merge in the dev deploy.
+      - name: Type check
+        run: npx tsc --noEmit
+
       - name: Push Prisma Schema
         env:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
