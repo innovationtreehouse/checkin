@@ -1,262 +1,215 @@
 "use client";
-/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import { pdf } from "@react-pdf/renderer";
+import { Badge, Button, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import BadgeDocument from "@/components/admin/BadgeDocument";
 import StickerDocument from "@/components/admin/StickerDocument";
-import styles from "../../page.module.css";
+
+type ParticipantRow = {
+  id: number;
+  name: string | null;
+  email: string | null;
+  isMember?: boolean;
+  boardMember?: boolean;
+  shopSteward?: boolean;
+  keyholder?: boolean;
+};
 
 export default function PrintBadgesPage() {
-    const { data: session, status } = useSession();
-    const router = useRouter();
+  const { status } = useSession();
+  const router = useRouter();
 
-    const [participants, setParticipants] = useState<any[]>([]);
-    const [searchTerm, setSearchTerm] = useState("");
-    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-    const [isGenerating, setIsGenerating] = useState(false);
-    const [loading, setLoading] = useState(false);
+  const [participants, setParticipants] = useState<ParticipantRow[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
-        if (status === "unauthenticated") {
-            router.push('/');
-        }
-    }, [status, router]);
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push('/');
+    }
+  }, [status, router]);
 
-    useEffect(() => {
-        if (status === "authenticated") {
-            fetchParticipants();
-        }
-    }, [status, searchTerm]);
+  const fetchParticipants = useCallback(async () => {
+    setLoading(true);
+    try {
+      const url = new URL('/api/admin/participants/search', window.location.origin);
+      if (searchTerm) url.searchParams.set('q', searchTerm);
 
-    const fetchParticipants = async () => {
-        setLoading(true);
-        try {
-            const url = new URL('/api/admin/participants/search', window.location.origin);
-            if (searchTerm) url.searchParams.set('q', searchTerm);
+      const res = await fetch(url.toString());
+      const data = await res.json();
+      if (data.participants) {
+        setParticipants(data.participants);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [searchTerm]);
 
-            const res = await fetch(url.toString());
-            const data = await res.json();
-            if (data.participants) {
-                setParticipants(data.participants);
-            }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-    };
+  useEffect(() => {
+    if (status === "authenticated") {
+      fetchParticipants();
+    }
+  }, [status, fetchParticipants]);
 
-    const toggleSelection = (id: number) => {
-        const newSet = new Set(selectedIds);
-        if (newSet.has(id)) {
-            newSet.delete(id);
-        } else {
-            newSet.add(id);
-        }
-        setSelectedIds(newSet);
-    };
+  const toggleSelection = (id: number) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedIds(newSet);
+  };
 
-    const toggleAll = () => {
-        if (selectedIds.size === participants.length) {
-            setSelectedIds(new Set());
-        } else {
-            setSelectedIds(new Set(participants.map(p => p.id)));
-        }
-    };
+  const toggleAll = () => {
+    if (selectedIds.size === participants.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(participants.map(p => p.id)));
+    }
+  };
 
-    const generatePdf = async () => {
-        if (selectedIds.size === 0) return;
-        setIsGenerating(true);
+  const generate = async (kind: 'badge' | 'sticker') => {
+    if (selectedIds.size === 0) return;
+    setIsGenerating(true);
 
-        try {
-            const selectedParticipants = participants.filter(p => selectedIds.has(p.id));
+    try {
+      const selectedParticipants = participants.filter(p => selectedIds.has(p.id));
 
-            // Add QR code data URIs
-            const badgesWithQr = await Promise.all(
-                selectedParticipants.map(async (p) => {
-                    const qrDataUri = await QRCode.toDataURL(p.id.toString(), {
-                        width: 200,
-                        margin: 1,
-                        color: { dark: '#000000', light: '#FFFFFF' }
-                    });
-                    return { ...p, qrDataUri };
-                })
-            );
+      // Add QR code data URIs
+      const badgesWithQr = await Promise.all(
+        selectedParticipants.map(async (p) => {
+          const qrDataUri = await QRCode.toDataURL(p.id.toString(), {
+            width: 200,
+            margin: 1,
+            color: { dark: '#000000', light: '#FFFFFF' }
+          });
+          return {
+            id: p.id,
+            name: p.name ?? '',
+            isMember: !!p.isMember,
+            boardMember: !!p.boardMember,
+            shopSteward: !!p.shopSteward,
+            keyholder: !!p.keyholder,
+            qrDataUri,
+          };
+        })
+      );
 
-            const blob = await pdf(<BadgeDocument badges={badgesWithQr} />).toBlob();
+      const doc = kind === 'badge'
+        ? <BadgeDocument badges={badgesWithQr} />
+        : <StickerDocument badges={badgesWithQr} />;
+      const blob = await pdf(doc).toBlob();
 
-            // Trigger download
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `badges-${Date.now()}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+      // Trigger download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${kind === 'badge' ? 'badges' : 'stickers'}-${Date.now()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(`Failed to generate ${kind} PDF`, e);
+      notifications.show({ color: 'red', message: `Failed to generate ${kind} PDF. Please try again.` });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
-        } catch (e) {
-            console.error("Failed to generate PDF", e);
-            alert("Failed to generate PDF. Please try again.");
-        } finally {
-            setIsGenerating(false);
-        }
-    };
+  if (status === "loading") return null;
 
-    const generateStickerPdf = async () => {
-        if (selectedIds.size === 0) return;
-        setIsGenerating(true);
+  return (
+    <Stack>
+      <Group justify="space-between" align="center" wrap="wrap">
+        <Title order={1}>Print ID Badges</Title>
+        <Button variant="default" onClick={() => router.push('/admin')}>← Back to Admin Hub</Button>
+      </Group>
 
-        try {
-            const selectedParticipants = participants.filter(p => selectedIds.has(p.id));
+      <Text c="dimmed">
+        Select participants to generate double-sided standard Avery 5390 ID badges.
+      </Text>
 
-            // Add QR code data URIs
-            const badgesWithQr = await Promise.all(
-                selectedParticipants.map(async (p) => {
-                    const qrDataUri = await QRCode.toDataURL(p.id.toString(), {
-                        width: 200,
-                        margin: 1,
-                        color: { dark: '#000000', light: '#FFFFFF' }
-                    });
-                    return { ...p, qrDataUri };
-                })
-            );
+      <Group gap="md" wrap="wrap">
+        <TextInput
+          placeholder="Search by name or email..."
+          style={{ flex: 1, minWidth: 200 }}
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.currentTarget.value)}
+        />
+        <Button onClick={() => generate('badge')} disabled={selectedIds.size === 0 || isGenerating} loading={isGenerating}>
+          Generate Badge ({selectedIds.size})
+        </Button>
+        <Button color="grape" onClick={() => generate('sticker')} disabled={selectedIds.size === 0 || isGenerating} loading={isGenerating}>
+          Generate Sticker ({selectedIds.size})
+        </Button>
+      </Group>
 
-            const blob = await pdf(<StickerDocument badges={badgesWithQr} />).toBlob();
-
-            // Trigger download
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `stickers-${Date.now()}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-
-        } catch (e) {
-            console.error("Failed to generate stickers PDF", e);
-            alert("Failed to generate stickers PDF. Please try again.");
-        } finally {
-            setIsGenerating(false);
-        }
-    };
-
-    if (status === "loading") return null;
-
-    return (
-        <main className={styles.main}>
-            <div className="glass-container animate-float" style={{ maxWidth: "1000px" }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-                    <h1 className="text-gradient" style={{ margin: 0 }}>Print ID Badges</h1>
-                    <button className="glass-button" onClick={() => router.push('/admin')} style={{ padding: '0.5rem 1rem' }}>
-                        &larr; Back to Admin Hub
-                    </button>
-                </div>
-
-                <p style={{ color: 'var(--color-text-muted)', marginBottom: '2rem' }}>
-                    Select participants to generate double-sided standard Avery 5390 ID badges.
-                </p>
-
-                <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
-                    <input
-                        type="text"
-                        placeholder="Search by name or email..."
-                        className="glass-input"
-                        style={{ flex: 1, minWidth: '200px' }}
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                    <select
-                        className="glass-input"
-                        style={{ padding: '0.75rem', borderRadius: '8px', minWidth: '150px' }}
-                        onChange={(e) => {
-                            // UI-only filter for now to satisfy requirements until backend supports date filtering
-                            setSearchTerm(searchTerm);
-                        }}
-                    >
-                        <option value="all">All Dates</option>
-                        <option value="today">Created Today</option>
-                        <option value="last7days">Created Last 7 Days</option>
-                    </select>
-                    <button
-                        className="glass-button"
-                        style={{ backgroundColor: 'var(--color-primary)', color: '#fff' }}
-                        onClick={generatePdf}
-                        disabled={selectedIds.size === 0 || isGenerating}
-                    >
-                        {isGenerating ? 'Generating...' : `Generate Badge (${selectedIds.size})`}
-                    </button>
-                    <button
-                        className="glass-button"
-                        style={{ backgroundColor: '#8b5cf6', color: '#fff' }}
-                        onClick={generateStickerPdf}
-                        disabled={selectedIds.size === 0 || isGenerating}
-                    >
-                        {isGenerating ? 'Generating...' : `Generate Sticker (${selectedIds.size})`}
-                    </button>
-                </div>
-
-                <div className="glass-panel" style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                        <thead>
-                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                                <th style={{ padding: '1rem' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={participants.length > 0 && selectedIds.size === participants.length}
-                                        onChange={toggleAll}
-                                        style={{ width: '18px', height: '18px' }}
-                                    />
-                                </th>
-                                <th style={{ padding: '1rem' }}>ID</th>
-                                <th style={{ padding: '1rem' }}>Name</th>
-                                <th style={{ padding: '1rem' }}>Membership</th>
-                                <th style={{ padding: '1rem' }}>Roles</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                <tr>
-                                    <td colSpan={5} style={{ padding: '2rem', textAlign: 'center' }}>Loading...</td>
-                                </tr>
-                            ) : participants.length === 0 ? (
-                                <tr>
-                                    <td colSpan={5} style={{ padding: '2rem', textAlign: 'center' }}>No participants found.</td>
-                                </tr>
-                            ) : participants.map(p => (
-                                <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', backgroundColor: selectedIds.has(p.id) ? 'rgba(56, 189, 248, 0.1)' : 'transparent' }}>
-                                    <td style={{ padding: '1rem' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedIds.has(p.id)}
-                                            onChange={() => toggleSelection(p.id)}
-                                            style={{ width: '18px', height: '18px' }}
-                                        />
-                                    </td>
-                                    <td style={{ padding: '1rem', color: 'var(--color-text-muted)' }}>#{p.id}</td>
-                                    <td style={{ padding: '1rem' }}><strong>{p.name || 'N/A'}</strong><br /><small style={{ color: 'var(--color-text-muted)' }}>{p.email}</small></td>
-                                    <td style={{ padding: '1rem' }}>
-                                        {p.isMember ? <span style={{ color: '#10b981' }}>Active</span> : <span style={{ color: '#ef4444' }}>Inactive</span>}
-                                    </td>
-                                    <td style={{ padding: '1rem' }}>
-                                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                            {p.boardMember && <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: '#3b82f6', color: '#fff', fontSize: '10px', fontWeight: 'bold' }}>BOARD</span>}
-                                            {p.shopSteward && <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: '#8b5cf6', color: '#fff', fontSize: '10px', fontWeight: 'bold' }}>STEWARD</span>}
-                                            {p.keyholder && <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: '#f59e0b', color: '#fff', fontSize: '10px', fontWeight: 'bold' }}>KEYHOLDER</span>}
-                                            {!p.boardMember && !p.shopSteward && !p.keyholder && p.isMember && <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: '#10b981', color: '#fff', fontSize: '10px', fontWeight: 'bold' }}>MEMBER</span>}
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </main>
-    );
+      <Table.ScrollContainer minWidth={700}>
+        <Table verticalSpacing="sm" highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>
+                <Checkbox
+                  checked={participants.length > 0 && selectedIds.size === participants.length}
+                  onChange={toggleAll}
+                  aria-label="Select all"
+                />
+              </Table.Th>
+              <Table.Th>ID</Table.Th>
+              <Table.Th>Name</Table.Th>
+              <Table.Th>Membership</Table.Th>
+              <Table.Th>Roles</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {loading ? (
+              <Table.Tr>
+                <Table.Td colSpan={5}><Center py="md"><Loader size="sm" /></Center></Table.Td>
+              </Table.Tr>
+            ) : participants.length === 0 ? (
+              <Table.Tr>
+                <Table.Td colSpan={5} ta="center"><Text c="dimmed" py="md">No participants found.</Text></Table.Td>
+              </Table.Tr>
+            ) : participants.map((p) => (
+              <Table.Tr key={p.id} bg={selectedIds.has(p.id) ? 'var(--mantine-color-blue-light)' : undefined}>
+                <Table.Td>
+                  <Checkbox
+                    checked={selectedIds.has(p.id)}
+                    onChange={() => toggleSelection(p.id)}
+                    aria-label={`Select ${p.name ?? p.id}`}
+                  />
+                </Table.Td>
+                <Table.Td c="dimmed">#{p.id}</Table.Td>
+                <Table.Td>
+                  <Text fw={600}>{p.name || 'N/A'}</Text>
+                  <Text size="sm" c="dimmed">{p.email}</Text>
+                </Table.Td>
+                <Table.Td>
+                  {p.isMember ? <Text c="green">Active</Text> : <Text c="red">Inactive</Text>}
+                </Table.Td>
+                <Table.Td>
+                  <Group gap={4}>
+                    {p.boardMember && <Badge size="xs" color="blue">BOARD</Badge>}
+                    {p.shopSteward && <Badge size="xs" color="grape">STEWARD</Badge>}
+                    {p.keyholder && <Badge size="xs" color="orange">KEYHOLDER</Badge>}
+                    {!p.boardMember && !p.shopSteward && !p.keyholder && p.isMember && (
+                      <Badge size="xs" color="green">MEMBER</Badge>
+                    )}
+                  </Group>
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+    </Stack>
+  );
 }
