@@ -233,3 +233,63 @@ export async function createShopifyProgramVariants(name: string, memberPrice: nu
     return null;
   }
 }
+
+/**
+ * Create a per-household membership Draft Order at OUR computed price (our system
+ * is the source of truth for dues). The draft carries the membership process id
+ * in note_attributes so the orders/paid webhook can match it, and returns the
+ * unique invoice URL the household uses to pay.
+ *
+ * Requires the `write_draft_orders` scope. Returns null if Shopify is not
+ * configured or the API call fails (caller degrades gracefully).
+ */
+export async function createMembershipDraftOrder(params: {
+  processId: number;
+  amountCents: number;
+  isVolunteer: boolean;
+}): Promise<{ draftOrderId: string; invoiceUrl: string } | null> {
+  const storeDomain = process.env.SHOPIFY_STORE_DOMAIN;
+  const accessToken = await getAccessToken();
+  if (!storeDomain || !accessToken) {
+    console.warn("[SHOPIFY] Draft order skipped — integration not configured.");
+    return null;
+  }
+
+  const price = (params.amountCents / 100).toFixed(2);
+  const title = params.isVolunteer
+    ? "Treehouse Household Membership (Volunteer)"
+    : "Treehouse Household Membership";
+
+  try {
+    const res = await fetch(`https://${storeDomain}/admin/api/2026-01/draft_orders.json`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": accessToken,
+      },
+      body: JSON.stringify({
+        draft_order: {
+          line_items: [{ title, price, quantity: 1 }],
+          note_attributes: [{ name: "Membership_Process_ID", value: String(params.processId) }],
+          tags: "membership",
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      console.error(`[SHOPIFY] Draft order create failed: ${res.status}`, await res.text());
+      return null;
+    }
+
+    const data = await res.json();
+    const draft = data.draft_order;
+    if (!draft?.id || !draft?.invoice_url) {
+      console.error("[SHOPIFY] Draft order response missing id/invoice_url.");
+      return null;
+    }
+    return { draftOrderId: String(draft.id), invoiceUrl: String(draft.invoice_url) };
+  } catch (error) {
+    console.error("[SHOPIFY] Draft order create error:", error);
+    return null;
+  }
+}

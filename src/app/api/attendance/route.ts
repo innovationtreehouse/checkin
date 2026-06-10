@@ -6,6 +6,7 @@ import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { logBackendError } from "@/lib/logger";
+import { config } from "@/lib/config";
 
 export async function GET(req: NextRequest) {
     try {
@@ -34,9 +35,14 @@ export async function GET(req: NextRequest) {
         } else if (!session && pubKeys.length > 0) {
             // No session and no kiosk headers — reject
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        } else if (!session && pubKeys.length === 0) {
-            // Dev mode: no pubKey configured, treat as kiosk (allow all)
+        } else if (!session && pubKeys.length === 0 && config.isLocal()) {
+            // Local dev only (CHECKIN_ENV=local): no pubKey configured, treat as kiosk.
+            // Deliberately gated on isLocal() — on the cloud dev instance or prod an
+            // unset KIOSK_PUBLIC_KEY must NOT grant full attendance/safety access to
+            // anonymous callers. Mirrors the keyless-kiosk gating in src/lib/auth.ts.
             isKiosk = true;
+        } else if (!session) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         const { attendance, counts, safety } = await getFullAttendance();

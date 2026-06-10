@@ -6,6 +6,9 @@ import { useSession, signIn } from "next-auth/react";
 import styles from './page.module.css';
 import DevLoginPicker from '@/components/DevLoginPicker';
 import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
+import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
+import Notifications from '@/components/Notifications';
+import { config } from '@/lib/config';
 import type { SessionUser, BoardMember } from '@/types/participant';
 
 export default function Home() {
@@ -19,6 +22,7 @@ export default function Home() {
 
   const [isLastKeyholder, setIsLastKeyholder] = useState(false);
   const [isTwoDeepViolation, setIsTwoDeepViolation] = useState(false);
+  const [isMember, setIsMember] = useState<boolean | null>(null);
 
   const [showBoardDirectory, setShowBoardDirectory] = useState(false);
   const [boardMembers, setBoardMembers] = useState<BoardMember[]>([]);
@@ -60,6 +64,21 @@ export default function Home() {
   useEffect(() => {
     checkAttendanceStatus();
   }, [checkAttendanceStatus]);
+
+  useEffect(() => {
+    if (!session?.user) {
+      setIsMember(null);
+      return;
+    }
+    let cancelled = false;
+    fetch('/api/membership')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setIsMember(data.membershipStatus === 'ACTIVE');
+      })
+      .catch(() => { /* non-blocking: leave banner hidden on error */ });
+    return () => { cancelled = true; };
+  }, [session]);
 
   const handleToggleCheckin = async () => {
     if (!session?.user) return;
@@ -127,6 +146,18 @@ export default function Home() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Visitor call-to-action — only for non-members */}
+              {isMember === false && (
+                <div style={{ width: '100%', gridColumn: '1 / -1' }}>
+                  <JoinTreehouseBanner />
+                </div>
+              )}
+
+              {/* In-app red-dot indicators (membership reviewer queue / blocked apps, …) */}
+              <div style={{ width: '100%', gridColumn: '1 / -1' }}>
+                <Notifications />
               </div>
 
               {/* Operational Warnings */}

@@ -53,19 +53,20 @@ describe('Admin Households API Integration Tests', () => {
         });
         testUserId = user.id;
 
-        // Create an existing membership for household 2
+        // Create an existing active membership for household 2
         await prisma.membership.create({
             data: {
                 householdId: testHousehold2Id,
-                type: 'HOUSEHOLD',
-                active: true
+                status: 'ACTIVE'
             }
         });
     });
 
     afterAll(async () => {
-        // Clean up
-        await prisma.membership.deleteMany({});
+        // Clean up — scope membership deletes to this test's households
+        await prisma.membership.deleteMany({
+            where: { householdId: { in: [testHousehold1Id, testHousehold2Id] } }
+        });
         await prisma.participant.deleteMany({
             where: { id: { in: [testAdminId, testUserId] } }
         });
@@ -170,10 +171,10 @@ describe('Admin Households API Integration Tests', () => {
 
             const data = await res.json();
             expect(data.success).toBe(true);
-            expect(data.membership.active).toBe(true);
+            expect(data.membership.status).toBe('ACTIVE');
 
             const membership = await prisma.membership.findFirst({
-                where: { householdId: testHousehold1Id, active: true }
+                where: { householdId: testHousehold1Id, status: 'ACTIVE' }
             });
             expect(membership).toBeDefined();
         });
@@ -195,7 +196,7 @@ describe('Admin Households API Integration Tests', () => {
             expect(data.success).toBe(true);
 
             const activeMembership = await prisma.membership.findFirst({
-                where: { householdId: testHousehold2Id, active: true }
+                where: { householdId: testHousehold2Id, status: 'ACTIVE' }
             });
             expect(activeMembership).toBeNull(); // Should be deactivated
         });

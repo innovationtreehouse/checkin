@@ -124,11 +124,9 @@ export function scopesHeld(
         }
         case 'Membership': {
             const householdId = num(row.householdId);
-            const volunteerId = num(row.volunteerId);
             if (householdId !== undefined && householdId === ctx.householdId) {
                 scopes.add('their_households');
             }
-            if (volunteerId !== undefined && volunteerId === ctx.selfId) scopes.add('their_own');
             break;
         }
         case 'Program': {

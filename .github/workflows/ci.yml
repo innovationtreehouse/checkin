@@ -51,6 +51,24 @@ jobs:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
         run: npx prisma generate
 
+      # The deploy image runs `npm run build`, which type-checks. Catch type
+      # errors here at PR time instead of after merge in the dev deploy.
+      - name: Type check
+        run: npx tsc --noEmit
+
+      # Tests run on `db push` (full schema), deploys run on `migrate deploy`
+      # (only committed migrations) — so a schema change without a migration
+      # passes CI and then breaks the deployed app (P2022 at runtime). Replay
+      # the migrations onto a clean DB and require zero diff vs schema.prisma.
+      - name: Check migrations match schema (no drift)
+        env:
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/drift_check"
+          PGPASSWORD: testpassword
+        run: |
+          psql -h localhost -U testuser -d checkmein_test -c 'CREATE DATABASE drift_check'
+          npx prisma migrate deploy
+          npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
       - name: Push Prisma Schema
         env:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"

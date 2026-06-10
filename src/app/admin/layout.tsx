@@ -72,6 +72,8 @@ export default function AdminLayout({
         { name: "Participants", href: "/admin/participants", icon: "👥" },
         { name: "Merge Participants", href: "/admin/participants/merge", icon: "🔗" },
         { name: "Manage Memberships", href: "/admin/households", icon: "🏠" },
+        { name: "Membership Applications", href: "/admin/membership", icon: "📋" },
+        { name: "Membership Settings", href: "/admin/membership/settings", icon: "⚙️" },
         { name: "Pending Participants", href: "/admin/programs/pending", icon: "⏳" },
         { name: "Emergency Contacts", href: "/admin/emergency-contacts", icon: "🚑" },
         { name: "Role Assignment", href: "/admin/roles", icon: "🔐" },

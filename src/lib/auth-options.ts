@@ -1,4 +1,5 @@
 import { NextAuthOptions } from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { getToken } from "next-auth/jwt";
@@ -96,6 +97,8 @@ export const authOptions: NextAuthOptions = {
         // Dead in prod by construction. Mints a real session AS the chosen persona, stamping an
         // inert `impersonatedBy` claim (display/audit only — no authz path reads it). The policy
         // lives in evaluateMint(); this provider just supplies the caller's claims and the target.
+        // (Replaces the old local-only "Offline Login" provider — local mints are the
+        // unauthenticated-caller case in evaluateMint.)
         ...(config.isDevInstance() ? [
             CredentialsProvider({
                 id: PERSONA_MINT_PROVIDER_ID,
@@ -170,6 +173,11 @@ export const authOptions: NextAuthOptions = {
     },
     session: {
         strategy: "jwt",
+        // Bound token lifetime so a stale or forgotten session cannot live for the
+        // 30-day NextAuth default. The jwt callback below also re-syncs role flags
+        // from the DB on every request so revocations take effect promptly.
+        maxAge: 60 * 60 * 8,   // 8 hours
+        updateAge: 60 * 15,    // 15 minutes
     },
     callbacks: {
         async jwt({ token, user, account, profile }) {
@@ -227,6 +235,39 @@ export const authOptions: NextAuthOptions = {
                     token.householdId = dbParticipant.householdId;
                     token.toolStatuses = dbParticipant.toolStatuses;
                 }
+            } else if (token.id) {
+                // On every subsequent request (no `user` present), re-sync authority
+                // flags from the DB so role grants/revocations take effect without
+                // waiting for the token to expire. Previously these flags were only
+                // read at sign-in, which let a revoked sysadmin/keyholder keep their
+                // privileges (including the /api/admin/roles endpoint) until the JWT
+                // aged out — up to 30 days.
+                const dbParticipant = await prisma.participant.findUnique({
+                    where: { id: token.id as number },
+                    include: {
+                        toolStatuses: {
+                            select: {
+                                toolId: true,
+                                level: true
+                            }
+                        }
+                    }
+                });
+
+                if (!dbParticipant) {
+                    // Account no longer exists — return an empty token so every
+                    // downstream authorization check fails closed. The cast is
+                    // deliberate: JWT requires `id`, and omitting it is the point.
+                    return {} as JWT;
+                }
+
+                token.sysadmin = dbParticipant.sysadmin;
+                token.keyholder = dbParticipant.keyholder;
+                token.boardMember = dbParticipant.boardMember;
+                token.shopSteward = dbParticipant.shopSteward;
+                token.backgroundCheckReviewer = dbParticipant.backgroundCheckReviewer;
+                token.householdId = dbParticipant.householdId;
+                token.toolStatuses = dbParticipant.toolStatuses;
             }
             return token;
         },
