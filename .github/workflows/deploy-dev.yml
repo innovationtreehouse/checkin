@@ -95,17 +95,19 @@ jobs:
           set -euo pipefail
           # Register a new revision of the migrate task def pointing at the new
           # image (run-task can't override the image, only command/env), keeping
-          # only the fields register-task-definition accepts.
-          MIGRATE_ARN=$(aws ecs describe-task-definition \
+          # only the fields register-task-definition accepts. Goes through a real
+          # temp file: the runner's aws CLI cannot read file:///dev/stdin.
+          aws ecs describe-task-definition \
             --task-definition "$MIGRATE_TASK_FAMILY" \
-            --query taskDefinition \
+            --query taskDefinition --output json \
             | jq --arg IMG "$IMAGE" '
                 .containerDefinitions[0].image = $IMG
                 | {family, taskRoleArn, executionRoleArn, networkMode,
                    containerDefinitions, requiresCompatibilities, cpu, memory,
-                   runtimePlatform}' \
-            | aws ecs register-task-definition --cli-input-json file:///dev/stdin \
-                --query 'taskDefinition.taskDefinitionArn' --output text)
+                   runtimePlatform}' > "$RUNNER_TEMP/migrate-taskdef.json"
+          MIGRATE_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "file://$RUNNER_TEMP/migrate-taskdef.json" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered migrate task def: $MIGRATE_ARN"
 
           # Reuse the service's own network config (subnets / SG / public IP) so
@@ -140,16 +142,18 @@ jobs:
           set -euo pipefail
           # Register a new app task-def revision with the new image. The service
           # has lifecycle.ignore_changes on task_definition, so CI owns rollout.
-          APP_ARN=$(aws ecs describe-task-definition \
+          # Same temp-file dance as the migrate step (no /dev/stdin on the runner).
+          aws ecs describe-task-definition \
             --task-definition "$APP_TASK_FAMILY" \
-            --query taskDefinition \
+            --query taskDefinition --output json \
             | jq --arg IMG "$IMAGE" '
                 .containerDefinitions[0].image = $IMG
                 | {family, taskRoleArn, executionRoleArn, networkMode,
                    containerDefinitions, volumes, placementConstraints,
-                   requiresCompatibilities, cpu, memory, runtimePlatform}' \
-            | aws ecs register-task-definition --cli-input-json file:///dev/stdin \
-                --query 'taskDefinition.taskDefinitionArn' --output text)
+                   requiresCompatibilities, cpu, memory, runtimePlatform}' > "$RUNNER_TEMP/app-taskdef.json"
+          APP_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "file://$RUNNER_TEMP/app-taskdef.json" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered app task def: $APP_ARN"
 
           aws ecs update-service \
