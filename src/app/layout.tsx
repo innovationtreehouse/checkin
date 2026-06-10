@@ -27,11 +27,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={brand.fontVariables} suppressHydrationWarning>
       <head>
         <ColorSchemeScript defaultColorScheme="auto" />
       </head>
-      <body className={brand.fontVariables} data-brand={brand.id}>
+      <body data-brand={brand.id}>
         <MantineProvider theme={brand.theme} defaultColorScheme="auto">
           <ModalsProvider>
             <Notifications />
