@@ -18,6 +18,10 @@ declare module "next-auth" {
       toolStatuses?: { toolId: number; level: string }[];
       // Inert impersonation provenance — display/audit only, never read by authz.
       impersonatedBy?: string | null;
+      // Org-gate claims surfaced for the dev-instance server-action fence (assertDevActor).
+      // Not secrets — anyone able to load the dev app is already org-verified by the middleware.
+      hd?: string | null;
+      emailVerified?: boolean;
     };
   }
 

@@ -6,6 +6,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import prisma from "@/lib/prisma";
 import { config, ORG_DOMAIN } from "@/lib/config";
 import { evaluateMint, type MintMode } from "@/lib/impersonation";
+import { recordLedger } from "@/lib/dev/ledger";
 
 // Stable id for the dev/local persona-mint credential flow.
 export const PERSONA_MINT_PROVIDER_ID = "persona-mint";
@@ -142,6 +143,16 @@ export const authOptions: NextAuthOptions = {
                     }
                     if (!dbParticipant) return null;
 
+                    // Record the mint in the dev ledger (DEV_DASHBOARD_DESIGN.md §6), attributed to
+                    // the REAL human. impersonatedBy set → an impersonation (real human becomes a
+                    // persona); null → a plain login (e.g. a local first-login as the persona).
+                    const realActor = decision.impersonatedBy ?? dbParticipant.email ?? "unknown";
+                    await recordLedger(
+                        decision.impersonatedBy ? "impersonate" : "login",
+                        realActor,
+                        decision.impersonatedBy ? (dbParticipant.email ?? dbParticipant.name) : null,
+                    );
+
                     return {
                         id: dbParticipant.id.toString(),
                         email: dbParticipant.email,
@@ -153,6 +164,10 @@ export const authOptions: NextAuthOptions = {
         ] : [])
     ],
     secret: config.nextAuthSecret(),
+    // Use our styled sign-in screen instead of NextAuth's bare default page.
+    pages: {
+        signIn: "/signin",
+    },
     session: {
         strategy: "jwt",
     },
@@ -226,6 +241,10 @@ export const authOptions: NextAuthOptions = {
                 session.user.householdId = token.householdId;
                 session.user.toolStatuses = token.toolStatuses || [];
                 session.user.impersonatedBy = token.impersonatedBy ?? null;
+                // Surface the org-gate claims so dev-only server actions (assertDevActor) can
+                // re-verify the caller is a verified org member without re-decoding the JWT.
+                session.user.hd = token.hd ?? null;
+                session.user.emailVerified = token.emailVerified ?? false;
             }
             return session;
         }

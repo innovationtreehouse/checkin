@@ -23,7 +23,7 @@ export async function middleware(req: NextRequest) {
         return NextResponse.next();
     }
 
-    const signInUrl = new URL('/api/auth/signin', req.url);
+    const signInUrl = new URL('/signin', req.url);
     signInUrl.searchParams.set('callbackUrl', req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(signInUrl);
 }
@@ -33,6 +33,7 @@ export const config = {
     //  - api/*       — routes self-enforce auth (withAuth / kiosk signature). Skipping them also
     //                  lets a keyed kiosk reach /api/scan on dev, keeps NextAuth's own sign-in +
     //                  Google callback reachable, and avoids redirecting JSON clients to HTML.
+    //  - signin      — the custom sign-in screen itself, or anonymous visitors would loop forever.
     //  - _next/*, favicon — framework internals + static assets.
-    matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+    matcher: ['/((?!api|signin|_next/static|_next/image|favicon.ico).*)'],
 };
