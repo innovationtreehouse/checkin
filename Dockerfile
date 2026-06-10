@@ -15,6 +15,13 @@ RUN npx prisma generate
 # be present here. Passed via --build-arg by the deploy workflow; harmless if empty.
 ARG NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN
 ENV NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN=${NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN}
+# auth-options.ts builds its NextAuth providers at module import, which "collecting
+# page data" triggers — so these must EXIST during build, though their values are
+# never used (every route is dynamic; real values come from ECS at runtime). Builder
+# stage only; nothing here reaches the runner image.
+ENV GOOGLE_CLIENT_ID=build-placeholder \
+    GOOGLE_CLIENT_SECRET=build-placeholder \
+    NEXTAUTH_SECRET=build-placeholder
 RUN npm run build
 
 # Stage 3: Production image
