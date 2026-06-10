@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Box, Button, Card, Center, Checkbox, Container, Group, Loader, NumberInput, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { useRequireRole } from '@/hooks/useRequireRole';
 
 type ParticipantOption = {
   id: number;
@@ -12,7 +12,7 @@ type ParticipantOption = {
 };
 
 export default function CreateProgramPage() {
-  const { data: session, status } = useSession();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember'], { redirectTo: '/admin' });
   const router = useRouter();
 
   const [name, setName] = useState("");
@@ -34,17 +34,6 @@ export default function CreateProgramPage() {
   const [mentorSearch, setMentorSearch] = useState("");
   const [mentorResults, setMentorResults] = useState<ParticipantOption[]>([]);
   const [mentorSearching, setMentorSearching] = useState(false);
-
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      const isAuthorized = session.user?.sysadmin || session.user?.boardMember;
-      if (!isAuthorized) {
-        router.push('/admin');
-      }
-    }
-  }, [status, router, session]);
 
   // Debounced mentor search
   useEffect(() => {
@@ -111,11 +100,11 @@ export default function CreateProgramPage() {
     }
   };
 
-  if (status === "loading") {
+  if (authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session) return null;
+  if (!ready) return null;
 
   return (
     <Container size="md" py="md">

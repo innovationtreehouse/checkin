@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, Card, Center, Group, List, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { useRequireRole } from "@/hooks/useRequireRole";
 
 type ParticipantInfo = {
   id: number;
@@ -29,7 +29,7 @@ type Household = {
 };
 
 export default function EmergencyContactsPage() {
-  const { data: session, status } = useSession();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember', 'keyholder']);
   const router = useRouter();
 
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -63,18 +63,8 @@ export default function EmergencyContactsPage() {
   }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      const user = session?.user as { sysadmin?: boolean; boardMember?: boolean; keyholder?: boolean };
-      const isAuthorized = user?.sysadmin || user?.boardMember || user?.keyholder;
-      if (!isAuthorized) {
-        router.push('/');
-      } else {
-        fetchContacts();
-      }
-    }
-  }, [status, session, router, fetchContacts]);
+    if (ready) fetchContacts();
+  }, [ready, fetchContacts]);
 
   // Derived state for searching
   const filteredHouseholds = households.filter((h) => {
@@ -85,9 +75,11 @@ export default function EmergencyContactsPage() {
     return false;
   });
 
-  if (loading || status === "loading") {
+  if (authLoading || loading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
+
+  if (!ready) return null;
 
   if (error) {
     return (
