@@ -7,6 +7,8 @@ import { ModalsProvider } from '@mantine/modals';
 import { Notifications } from '@mantine/notifications';
 import AuthProvider from '@/components/AuthProvider';
 import { EnvProvider } from '@/components/EnvProvider';
+import DevImpersonationBar from '@/components/DevImpersonationBar';
+import DevDashboard from '@/components/DevDashboard';
 import OnboardingGate from '@/components/OnboardingGate';
 import AppFrame from '@/components/AppFrame';
 import { theme } from '@/lib/theme';
@@ -38,7 +40,9 @@ export default function RootLayout({
             <EnvProvider value={config.checkinEnv()}>
               <AuthProvider>
                 <OnboardingGate>
+                  <DevImpersonationBar />
                   <AppFrame>{children}</AppFrame>
+                  <DevDashboard />
                 </OnboardingGate>
               </AuthProvider>
             </EnvProvider>

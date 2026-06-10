@@ -2,9 +2,15 @@ import { NextAuthOptions } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { getToken } from "next-auth/jwt";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import prisma from "@/lib/prisma";
-import { config } from "@/lib/config";
+import { config, ORG_DOMAIN } from "@/lib/config";
+import { evaluateMint, type MintMode } from "@/lib/impersonation";
+import { recordLedger } from "@/lib/dev/ledger";
+
+// Stable id for the dev/local persona-mint credential flow.
+export const PERSONA_MINT_PROVIDER_ID = "persona-mint";
 
 // NextAuth PrismaAdapter hardcodes `prisma.user` for its user operations.
 // We map `.user` to `.participant` so the adapter can find our custom model.
@@ -87,40 +93,84 @@ export const authOptions: NextAuthOptions = {
                 }
             }
         }),
-        // Offline credential login — local laptops only (CHECKIN_ENV=local). Lets a developer
-        // sign in without Google. This is NOT enabled on the cloud dev instance (CHECKIN_ENV=dev),
-        // which is publicly reachable and must use real Google org login; impersonation there is
-        // handled by the separate gated mint flow (see DEV_INSTANCE_DESIGN.md §5).
-        ...(config.isLocal() ? [
+        // Persona-mint — the unified impersonation flow for dev + local (DEV_INSTANCE_DESIGN.md §5).
+        // Dead in prod by construction. Mints a real session AS the chosen persona, stamping an
+        // inert `impersonatedBy` claim (display/audit only — no authz path reads it). The policy
+        // lives in evaluateMint(); this provider just supplies the caller's claims and the target.
+        // (Replaces the old local-only "Offline Login" provider — local mints are the
+        // unauthenticated-caller case in evaluateMint.)
+        ...(config.isDevInstance() ? [
             CredentialsProvider({
-                name: "Local Offline Login",
+                id: PERSONA_MINT_PROVIDER_ID,
+                name: "Persona",
                 credentials: {
-                    email: { label: "Enter any email to log in locally", type: "email", placeholder: "test@example.com" }
+                    personaId: { label: "Persona ID", type: "text" },
+                    mode: { label: "Mode", type: "text" },
                 },
-                async authorize(credentials) {
-                    if (!credentials?.email) return null; console.log("Dev Login Email:", credentials.email);
+                async authorize(credentials, req) {
+                    const mode: MintMode = credentials?.mode === "return" ? "return" : "impersonate";
 
-                    let dbParticipant = await prisma.participant.findUnique({
-                        where: { email: credentials.email }
+                    // The caller's *current* session — the security boundary. getToken decrypts the
+                    // session cookie carried on this request; null when not signed in.
+                    const callerToken = await getToken({
+                        req: req as Parameters<typeof getToken>[0]["req"],
+                        secret: config.nextAuthSecret(),
                     });
 
-                    if (!dbParticipant) {
-                        dbParticipant = await createParticipantWithHousehold({
-                            email: credentials.email,
-                            name: "Mock User - " + credentials.email.split('@')[0],
+                    const decision = evaluateMint({
+                        checkinEnv: config.checkinEnv(),
+                        mode,
+                        caller: callerToken
+                            ? {
+                                  email: callerToken.email,
+                                  hd: callerToken.hd ?? null,
+                                  emailVerified: callerToken.emailVerified ?? false,
+                                  impersonatedBy: callerToken.impersonatedBy ?? null,
+                              }
+                            : null,
+                    });
+                    if (!decision.allowed) return null;
+
+                    // Resolve the target participant (fake data only — must already exist).
+                    let dbParticipant;
+                    if (mode === "return") {
+                        dbParticipant = await prisma.participant.findUnique({
+                            where: { email: decision.targetEmail! },
+                        });
+                    } else {
+                        const personaId = parseInt(String(credentials?.personaId ?? ""), 10);
+                        if (isNaN(personaId)) return null;
+                        dbParticipant = await prisma.participant.findUnique({
+                            where: { id: personaId },
                         });
                     }
+                    if (!dbParticipant) return null;
+
+                    // Record the mint in the dev ledger (DEV_DASHBOARD_DESIGN.md §6), attributed to
+                    // the REAL human. impersonatedBy set → an impersonation (real human becomes a
+                    // persona); null → a plain login (e.g. a local first-login as the persona).
+                    const realActor = decision.impersonatedBy ?? dbParticipant.email ?? "unknown";
+                    await recordLedger(
+                        decision.impersonatedBy ? "impersonate" : "login",
+                        realActor,
+                        decision.impersonatedBy ? (dbParticipant.email ?? dbParticipant.name) : null,
+                    );
 
                     return {
                         id: dbParticipant.id.toString(),
                         email: dbParticipant.email,
                         name: dbParticipant.name,
+                        impersonatedBy: decision.impersonatedBy,
                     };
                 }
             })
         ] : [])
     ],
     secret: config.nextAuthSecret(),
+    // Use our styled sign-in screen instead of NextAuth's bare default page.
+    pages: {
+        signIn: "/signin",
+    },
     session: {
         strategy: "jwt",
         // Bound token lifetime so a stale or forgotten session cannot live for the
@@ -138,6 +188,17 @@ export const authOptions: NextAuthOptions = {
                 const googleProfile = profile as { hd?: string; email_verified?: boolean };
                 token.hd = googleProfile.hd ?? null;
                 token.emailVerified = googleProfile.email_verified ?? false;
+            }
+            // Persona-mint: stamp the inert provenance claim (null clears it on "return to me").
+            // On the cloud dev instance, carry the org gate claims onto the minted session so the
+            // middleware still passes — every dev mint is by/returns to a verified org member
+            // (enforced in evaluateMint), and the middleware must never read impersonatedBy.
+            if (account?.provider === PERSONA_MINT_PROVIDER_ID && user) {
+                token.impersonatedBy = (user as { impersonatedBy?: string | null }).impersonatedBy ?? null;
+                if (config.checkinEnv() === "dev") {
+                    token.hd = ORG_DOMAIN;
+                    token.emailVerified = true;
+                }
             }
             if (user) {
                 const dbParticipant = await prisma.participant.findUnique({
@@ -220,6 +281,11 @@ export const authOptions: NextAuthOptions = {
                 session.user.backgroundCheckReviewer = token.backgroundCheckReviewer;
                 session.user.householdId = token.householdId;
                 session.user.toolStatuses = token.toolStatuses || [];
+                session.user.impersonatedBy = token.impersonatedBy ?? null;
+                // Surface the org-gate claims so dev-only server actions (assertDevActor) can
+                // re-verify the caller is a verified org member without re-decoding the JWT.
+                session.user.hd = token.hd ?? null;
+                session.user.emailVerified = token.emailVerified ?? false;
             }
             return session;
         }
