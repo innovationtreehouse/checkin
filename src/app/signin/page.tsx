@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { ORG_DOMAIN } from "@/lib/config";
+import { useIsDevInstance } from "@/components/EnvProvider";
 import styles from "../page.module.css";
 
 /**
@@ -15,6 +16,7 @@ import styles from "../page.module.css";
 function SignInInner() {
     const params = useSearchParams();
     const { data: session, status } = useSession();
+    const isDevInstance = useIsDevInstance();
     const callbackUrl = params.get("callbackUrl") || "/";
 
     // Signed in but routed here = a valid Google login that isn't an org member (failed the hd gate).
@@ -24,10 +26,12 @@ function SignInInner() {
         <main className={styles.main}>
             <div className={`glass-container animate-float ${styles.heroContainer}`}>
                 <h1 className="text-gradient" style={{ fontSize: "3rem", margin: "0 0 0.5rem 0" }}>
-                    CMI-dev
+                    {isDevInstance ? "Welcome to Innovation Treehouse Dev" : "CheckMeIn"}
                 </h1>
                 <p style={{ color: "var(--color-text-muted)", fontSize: "1.1rem", marginBottom: "2rem" }}>
-                    The Innovation Treehouse check-in system — development environment.
+                    {isDevInstance
+                        ? <>Log in with an <strong>@{ORG_DOMAIN}</strong> email below.</>
+                        : "The Innovation Treehouse check-in system."}
                 </p>
 
                 {wrongAccount ? (
@@ -78,10 +82,6 @@ function SignInInner() {
                             gap: "1.25rem",
                         }}
                     >
-                        <p style={{ color: "white", fontSize: "1.05rem", margin: 0, lineHeight: 1.5 }}>
-                            To play in the dev environment, please sign in with an{" "}
-                            <strong>@{ORG_DOMAIN}</strong> email.
-                        </p>
                         <button
                             className="glass-button primary-button"
                             onClick={() => signIn("google", { callbackUrl })}

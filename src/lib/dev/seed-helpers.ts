@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@/generated/prisma/client";
 
 /**
  * Dev seed + macro helpers (DEV_DASHBOARD_DESIGN.md §4) — the ONE source of truth for creating
@@ -237,7 +237,7 @@ export async function createFamily(prisma: Db): Promise<string> {
         data: { name: `Test Family ${tag}`, address: `${tag} Maker Way` },
     });
     await prisma.membership.create({
-        data: { householdId: household.id, type: "HOUSEHOLD", active: true },
+        data: { householdId: household.id, status: "ACTIVE" },
     });
     const lead = await prisma.participant.create({
         data: {

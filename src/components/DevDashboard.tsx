@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession, signIn, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useIsDevInstance } from "@/components/EnvProvider";
 import {
@@ -15,10 +15,12 @@ import {
 } from "@/lib/dev/actions";
 
 /**
- * The dev dashboard (DEV_DASHBOARD_DESIGN.md §7) — a slide-up panel, rendered only on the
- * dev/local instance for a signed-in org member. Collapsed to a 🛠 FAB so it never obscures the
- * app; expands to the macros + reset + ledger line. The persona switcher / "return to me" lives in
- * the separate persistent DevImpersonationBar. All actions go through the fenced server actions.
+ * The dev dashboard (DEV_DASHBOARD_DESIGN.md §7) — a slide-up drawer from the bottom of the
+ * screen, rendered only on the dev/local instance for a signed-in org member. Collapsed to a
+ * grey "▲ Change mock account" handle so it never obscures the app; expands to the mock-account
+ * (persona) picker + the macros + reset + ledger line. Impersonation provenance ("viewing as…"
+ * + return-to-me) stays in the persistent DevImpersonationBar at the top. All actions go
+ * through the fenced server actions / the persona-mint flow.
  */
 
 interface Entry {
@@ -26,6 +28,12 @@ interface Entry {
     realActor: string;
     detail: string | null;
     createdAt: string | Date;
+}
+
+interface PersonaOption {
+    id: number;
+    email: string;
+    name: string | null;
 }
 
 function relTime(when: string | Date): string {
@@ -63,6 +71,8 @@ export default function DevDashboard() {
     const [confirmingReset, setConfirmingReset] = useState(false);
     const [toast, setToast] = useState<string | null>(null);
     const [activity, setActivity] = useState<Entry[]>([]);
+    const [personas, setPersonas] = useState<PersonaOption[]>([]);
+    const [switching, setSwitching] = useState(false);
     const [pending, startTransition] = useTransition();
 
     const signedIn = !!session?.user;
@@ -74,7 +84,12 @@ export default function DevDashboard() {
     }, []);
 
     useEffect(() => {
-        if (isDevInstance && signedIn && open) loadActivity();
+        if (!isDevInstance || !signedIn || !open) return;
+        loadActivity();
+        fetch("/api/auth/dev-personas", { cache: "no-store" })
+            .then((res) => (res.ok ? res.json() : { personas: [] }))
+            .then((data) => setPersonas(data.personas || []))
+            .catch(() => setPersonas([]));
     }, [isDevInstance, signedIn, open, loadActivity]);
 
     if (!isDevInstance || !signedIn) return null;
@@ -82,6 +97,12 @@ export default function DevDashboard() {
     const flash = (msg: string) => {
         setToast(msg);
         setTimeout(() => setToast((t) => (t === msg ? null : t)), 4000);
+    };
+
+    const impersonate = (personaId: string) => {
+        if (!personaId) return;
+        setSwitching(true);
+        signIn("persona-mint", { personaId, mode: "impersonate", callbackUrl: "/" });
     };
 
     const runMacro = (fn: () => Promise<ActionResult>) => {
@@ -113,15 +134,29 @@ export default function DevDashboard() {
     };
 
     const lastActivity = activity[0];
+    const currentName = session.user.name || session.user.email;
 
     return (
-        <div style={{ position: "fixed", right: "1rem", bottom: "1rem", zIndex: 1000 }}>
+        <div
+            style={{
+                position: "fixed",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 1000,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                pointerEvents: "none", // the full-width wrapper must not block the page
+            }}
+        >
             {/* Toast */}
             {toast && (
                 <div
                     style={{
+                        pointerEvents: "auto",
                         marginBottom: "0.5rem",
-                        maxWidth: 320,
+                        maxWidth: 360,
                         padding: "0.5rem 0.75rem",
                         borderRadius: 8,
                         background: "rgba(17, 24, 39, 0.95)",
@@ -134,103 +169,150 @@ export default function DevDashboard() {
                 </div>
             )}
 
-            {/* Panel */}
-            {open && (
-                <div
-                    style={{
-                        width: 320,
-                        marginBottom: "0.5rem",
-                        padding: "1rem",
-                        borderRadius: 12,
-                        background: "rgba(17, 24, 39, 0.97)",
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        color: "white",
-                        boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-                    }}
-                >
-                    <div style={{ display: "flex", alignItems: "center", marginBottom: "0.75rem" }}>
-                        <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>🛠 Dev Dashboard</span>
-                        <button
-                            onClick={() => setOpen(false)}
-                            aria-label="Close dev dashboard"
-                            style={{ marginLeft: "auto", background: "none", border: "none", color: "rgba(255,255,255,0.6)", cursor: "pointer", fontSize: "1rem" }}
-                        >
-                            ✕
-                        </button>
-                    </div>
-
-                    {/* Macros */}
-                    <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "#9ca3af", marginBottom: "0.4rem" }}>
-                        Macros
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem", marginBottom: "0.9rem" }}>
-                        {MACROS.map((m) => (
-                            <button
-                                key={m.label}
-                                onClick={() => runMacro(m.action)}
-                                disabled={pending}
-                                style={macroBtn(pending)}
-                            >
-                                {m.label}
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Ledger line */}
-                    <div style={{ fontSize: "0.72rem", color: "#9ca3af", marginBottom: "0.75rem", minHeight: "1rem" }}>
-                        {lastActivity
-                            ? `Last activity: ${describe(lastActivity)} ${relTime(lastActivity.createdAt)}`
-                            : "No recorded activity yet"}
-                    </div>
-
-                    {/* Reset */}
-                    {confirmingReset ? (
-                        <div style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 8, padding: "0.6rem" }}>
-                            <div style={{ fontSize: "0.78rem", marginBottom: "0.5rem" }}>
-                                {lastActivity
-                                    ? `${describe(lastActivity)} ${relTime(lastActivity.createdAt)}. Reset anyway?`
-                                    : "Truncate all data and reseed the baseline?"}
-                            </div>
-                            <div style={{ display: "flex", gap: "0.4rem" }}>
-                                <button onClick={doReset} disabled={pending} style={{ ...dangerBtn, flex: 1 }}>
-                                    {pending ? "Resetting…" : "Yes, reset"}
-                                </button>
-                                <button onClick={() => setConfirmingReset(false)} disabled={pending} style={{ ...macroBtn(false), flex: 1 }}>
-                                    Cancel
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <button onClick={() => setConfirmingReset(true)} disabled={pending} style={{ ...dangerBtn, width: "100%" }}>
-                            🔴 Reset dev instance
-                        </button>
-                    )}
-                </div>
-            )}
-
-            {/* FAB */}
+            {/* Collapsed handle: grey up arrow + "Change mock account" */}
             <button
                 onClick={() => setOpen((o) => !o)}
-                aria-label="Toggle dev dashboard"
+                aria-expanded={open}
+                aria-label={open ? "Close the dev panel" : "Open the dev panel"}
                 style={{
-                    marginLeft: "auto",
-                    display: "block",
-                    width: 48,
-                    height: 48,
-                    borderRadius: "50%",
-                    background: pending ? "#f59e0b" : "#1f2937",
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    color: "white",
-                    fontSize: "1.3rem",
+                    pointerEvents: "auto",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.45rem",
+                    padding: "0.35rem 1.1rem",
+                    borderRadius: "10px 10px 0 0",
+                    background: "rgba(55, 65, 81, 0.92)",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    borderBottom: "none",
+                    color: "#d1d5db",
+                    fontSize: "0.8rem",
                     cursor: "pointer",
-                    boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+                    boxShadow: "0 -2px 12px rgba(0,0,0,0.25)",
                 }}
             >
-                {pending ? "⏳" : "🛠"}
+                <span
+                    aria-hidden
+                    style={{
+                        color: "#9ca3af",
+                        display: "inline-block",
+                        transition: "transform 0.2s ease",
+                        transform: open ? "rotate(180deg)" : "none",
+                        fontSize: "0.7rem",
+                    }}
+                >
+                    ▲
+                </span>
+                Change mock account
+                {pending && <span aria-hidden>⏳</span>}
             </button>
+
+            {/* Slide-up panel: mock-account picker + macros */}
+            <div
+                style={{
+                    pointerEvents: open ? "auto" : "none",
+                    width: "min(680px, 100vw - 2rem)",
+                    maxHeight: open ? "60vh" : 0,
+                    overflow: open ? "auto" : "hidden",
+                    transition: "max-height 0.25s ease",
+                    borderRadius: "12px 12px 0 0",
+                    background: "rgba(17, 24, 39, 0.97)",
+                    border: open ? "1px solid rgba(255,255,255,0.12)" : "none",
+                    borderBottom: "none",
+                    color: "white",
+                    boxShadow: open ? "0 -8px 32px rgba(0,0,0,0.4)" : "none",
+                }}
+            >
+                <div style={{ padding: "1rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+                    {/* Mock account (impersonation) */}
+                    <section>
+                        <div style={sectionTitle}>Mock account</div>
+                        <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginBottom: "0.5rem" }}>
+                            Currently <strong style={{ color: "#d1d5db" }}>{currentName}</strong>
+                            {session.user.impersonatedBy ? <> (you are {session.user.impersonatedBy})</> : null}
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", maxHeight: "9.5rem", overflowY: "auto" }}>
+                            {personas.length === 0 && (
+                                <span style={{ fontSize: "0.78rem", color: "#9ca3af" }}>
+                                    No personas yet — run the + Family macro or the seed.
+                                </span>
+                            )}
+                            {personas.map((p) => (
+                                <button
+                                    key={p.id}
+                                    onClick={() => impersonate(String(p.id))}
+                                    disabled={switching}
+                                    style={{
+                                        ...macroBtn(switching),
+                                        textAlign: "left",
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                    }}
+                                    title={p.email}
+                                >
+                                    🎭 {p.name || p.email}
+                                </button>
+                            ))}
+                        </div>
+                    </section>
+
+                    {/* Macros + reset + ledger */}
+                    <section>
+                        <div style={sectionTitle}>Macros</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem", marginBottom: "0.9rem" }}>
+                            {MACROS.map((m) => (
+                                <button
+                                    key={m.label}
+                                    onClick={() => runMacro(m.action)}
+                                    disabled={pending}
+                                    style={macroBtn(pending)}
+                                >
+                                    {m.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div style={{ fontSize: "0.72rem", color: "#9ca3af", marginBottom: "0.75rem", minHeight: "1rem" }}>
+                            {lastActivity
+                                ? `Last activity: ${describe(lastActivity)} ${relTime(lastActivity.createdAt)}`
+                                : "No recorded activity yet"}
+                        </div>
+
+                        {confirmingReset ? (
+                            <div style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 8, padding: "0.6rem" }}>
+                                <div style={{ fontSize: "0.78rem", marginBottom: "0.5rem" }}>
+                                    {lastActivity
+                                        ? `${describe(lastActivity)} ${relTime(lastActivity.createdAt)}. Reset anyway?`
+                                        : "Truncate all data and reseed the baseline?"}
+                                </div>
+                                <div style={{ display: "flex", gap: "0.4rem" }}>
+                                    <button onClick={doReset} disabled={pending} style={{ ...dangerBtn, flex: 1 }}>
+                                        {pending ? "Resetting…" : "Yes, reset"}
+                                    </button>
+                                    <button onClick={() => setConfirmingReset(false)} disabled={pending} style={{ ...macroBtn(false), flex: 1 }}>
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <button onClick={() => setConfirmingReset(true)} disabled={pending} style={{ ...dangerBtn, width: "100%" }}>
+                                🔴 Reset dev instance
+                            </button>
+                        )}
+                    </section>
+                </div>
+            </div>
         </div>
     );
 }
+
+const sectionTitle: React.CSSProperties = {
+    fontSize: "0.7rem",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    color: "#9ca3af",
+    marginBottom: "0.4rem",
+};
 
 function macroBtn(pending: boolean): React.CSSProperties {
     return {
