@@ -1,4 +1,5 @@
 import { NextAuthOptions } from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
@@ -194,8 +195,9 @@ export const authOptions: NextAuthOptions = {
 
                 if (!dbParticipant) {
                     // Account no longer exists — return an empty token so every
-                    // downstream authorization check fails closed.
-                    return {};
+                    // downstream authorization check fails closed. The cast is
+                    // deliberate: JWT requires `id`, and omitting it is the point.
+                    return {} as JWT;
                 }
 
                 token.sysadmin = dbParticipant.sysadmin;
