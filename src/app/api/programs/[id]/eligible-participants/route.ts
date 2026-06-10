@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { ACTIVE_MEMBER_PARTICIPANT_WHERE } from "@/lib/membership";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -1,4 +1,4 @@
-import type { MembershipStatus, Prisma } from "@prisma/client";
+import type { MembershipStatus, Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 
 /**

@@ -1,5 +1,5 @@
 import { INITIAL_PHASES, phaseIndex } from "@/lib/membership/phases";
-import type { MembershipProcessStatus } from "@prisma/client";
+import type { MembershipProcessStatus } from "@/generated/prisma/client";
 
 /**
  * Left-rail flow diagram for the membership application. Shows the INITIAL
