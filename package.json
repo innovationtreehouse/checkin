@@ -18,8 +18,8 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
-    "@prisma/adapter-pg": "^7.4.1",
-    "@prisma/client": "^7.5.0",
+    "@prisma/adapter-pg": "7.8.0",
+    "@prisma/client": "7.8.0",
     "@react-pdf/renderer": "^4.3.2",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
@@ -35,7 +35,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@prisma/generator-helper": "^7.5.0",
+    "@prisma/generator-helper": "7.8.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/jest": "^30.0.0",
@@ -54,7 +54,7 @@
     "jest-environment-jsdom": "^30.2.0",
     "lint-staged": "^16.3.2",
     "node-mocks-http": "^1.17.2",
-    "prisma": "^7.4.1",
+    "prisma": "7.8.0",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.6",
     "ts-morph": "^25.0.0",
