@@ -15,10 +15,9 @@ RUN npx prisma generate
 # be present here. Passed via --build-arg by the deploy workflow; harmless if empty.
 ARG NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN
 ENV NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN=${NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN}
-# auth-options.ts builds its NextAuth providers at module import, which "collecting
-# page data" triggers — so these must EXIST during build, though their values are
-# never used (every route is dynamic; real values come from ECS at runtime). Builder
-# stage only; nothing here reaches the runner image.
+# Needed for GitHub to build the image, overwritten by secrets in AWS at run time.
+# (next build imports auth-options.ts, which requires these to exist; the values
+# are never used — every route is dynamic — and never reach the runner stage.)
 ENV GOOGLE_CLIENT_ID=build-placeholder \
     GOOGLE_CLIENT_SECRET=build-placeholder \
     NEXTAUTH_SECRET=build-placeholder
@@ -36,6 +35,11 @@ COPY --from=builder /app/public ./public
 # which Next's standalone output tracing bundles automatically — there is no
 # node_modules/.prisma engine directory to copy as there was with prisma-client-js.
 COPY --from=builder /app/prisma ./prisma
+# Prisma 7 only reads the datasource URL from a config file (schema-level `url`
+# was removed), so the migrate ECS task — `npx prisma migrate deploy` in this
+# image — needs one. The repo's prisma.config.ts can't be shipped: its dotenv /
+# prisma/config imports don't resolve here. The deploy variant has no imports.
+COPY --from=builder /app/prisma.config.deploy.ts ./prisma.config.ts
 
 EXPOSE 4000
 ENV PORT=4000
