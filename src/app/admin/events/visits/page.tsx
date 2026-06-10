@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alert, Button, Center, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { formatDateTime } from '@/lib/time';
+import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
 type Visit = {
   id: number;
@@ -50,14 +50,9 @@ export default function AdminVisitsPage() {
     if (!confirmEdit) return;
 
     setEditingVisitId(visit.id);
-    const formatForInput = (dateString: string | null) => {
-      if (!dateString) return "";
-      const d = new Date(dateString);
-      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    };
     setEditForm({
-      arrived: formatForInput(visit.arrived),
-      departed: formatForInput(visit.departed ?? null)
+      arrived: toDatetimeLocal(visit.arrived),
+      departed: toDatetimeLocal(visit.departed ?? null)
     });
   };
 
@@ -68,8 +63,8 @@ export default function AdminVisitsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           visitId: id,
-          arrived: editForm.arrived ? new Date(editForm.arrived).toISOString() : undefined,
-          departed: editForm.departed ? new Date(editForm.departed).toISOString() : undefined
+          arrived: editForm.arrived ? fromDatetimeLocal(editForm.arrived) : undefined,
+          departed: editForm.departed ? fromDatetimeLocal(editForm.departed) : undefined
         })
       });
       if (res.ok) {
