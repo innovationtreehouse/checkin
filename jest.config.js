@@ -29,9 +29,12 @@ const customJestConfig = {
 module.exports = async () => {
     const jestConfig = await createJestConfig(customJestConfig)();
     
-    // next/jest ignores node_modules by default, but @auth/prisma-adapter is ESM
+    // next/jest ignores node_modules by default, but @auth/prisma-adapter is ESM,
+    // and the prisma-client generator's runtime dynamically imports ESM/WASM files
+    // from @prisma/client (e.g. query_compiler_fast_bg.postgresql.mjs) that Jest
+    // must transform rather than parse as CommonJS.
     jestConfig.transformIgnorePatterns = [
-        '/node_modules/(?!(@auth/prisma-adapter)/)'
+        '/node_modules/(?!(@auth/prisma-adapter|@prisma/client)/)'
     ];
     
     return jestConfig;

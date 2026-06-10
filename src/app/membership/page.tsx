@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import type { MembershipProcessStatus, MembershipStatus } from "@prisma/client";
+import type { MembershipProcessStatus, MembershipStatus } from "@/generated/prisma/client";
 import {
   Alert, Anchor, Box, Button, Card, Center, Checkbox, Container, Group, Loader,
   SimpleGrid, Stack, Text, TextInput, ThemeIcon, Title,

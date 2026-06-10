@@ -12,7 +12,7 @@ type HouseholdData = {
   name?: string;
   leads?: Array<{ participantId: number }>;
   participants?: Member[];
-  membership?: unknown;
+  membership?: { status?: string; since?: string; isVolunteer?: boolean } | null;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   address?: string;
@@ -216,6 +216,24 @@ export default function HouseholdPage() {
             <Title order={1}>{household?.name || 'My Household'}</Title>
             <Button variant="default" onClick={() => router.push('/')}>← Back</Button>
           </Group>
+
+          {household && (
+            household.membership?.status === 'ACTIVE' ? (
+              <Alert color="green" mb="lg">
+                <Group gap="xs" wrap="wrap">
+                  <Text fw={600}>✓ Member{household.membership.since ? ` since ${formatDate(household.membership.since)}` : ''}</Text>
+                  {household.membership.isVolunteer && <Badge color="green" variant="light">Volunteer family</Badge>}
+                </Group>
+              </Alert>
+            ) : (
+              <Alert color="blue" mb="lg">
+                <Group justify="space-between" align="center" wrap="wrap">
+                  <Text c="dimmed">Your household isn&apos;t a member yet.</Text>
+                  <Button size="xs" onClick={() => router.push('/membership')}>Join the Treehouse!</Button>
+                </Group>
+              </Alert>
+            )
+          )}
 
           {message && <Alert color={message.includes('success') ? 'green' : 'red'} mb="lg">{message}</Alert>}
 

@@ -5,11 +5,17 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, Stack, Text, Title } from "@mantine/core";
 
+interface Participant {
+    id: number;
+    name: string | null;
+    email: string | null;
+}
+// Shape returned by GET /api/membership/reviews (security-stripped model rows).
+// Only the household leads (parents) are returned — children are never sent.
 interface QueueItem {
-  processId: number;
-  householdName: string | null;
-  parents: { name: string | null; email: string | null }[];
-  approvals: number;
+  id: number;
+  membership: { household: { name: string | null; leads: { participant: Participant }[] } | null } | null;
+  _count: { attestations: number };
 }
 
 export default function MembershipReviewPage() {
@@ -107,35 +113,38 @@ export default function MembershipReviewPage() {
         </Card>
       ) : (
         <Stack mt="md">
-          {queue.map((item) => (
-            <Card key={item.processId} withBorder radius="md" padding="lg">
+          {queue.map((item) => {
+            const parents = (item.membership?.household?.leads ?? []).map((l) => l.participant);
+            return (
+            <Card key={item.id} withBorder radius="md" padding="lg">
               <Text fw={700} fz="lg">
-                {item.householdName || `Household (application #${item.processId})`}
+                {item.membership?.household?.name || `Household (application #${item.id})`}
               </Text>
               <Text size="sm" c="dimmed" mt={4}>
-                {item.parents.length > 0
-                  ? item.parents.map((p) => `${p.name || "—"}${p.email ? ` <${p.email}>` : ""}`).join(", ")
+                {parents.length > 0
+                  ? parents.map((p) => `${p.name || "—"}${p.email ? ` <${p.email}>` : ""}`).join(", ")
                   : "No parent contact on file."}
               </Text>
-              <Text size="xs" c="dimmed" mt={4}>{item.approvals}/2 approvals so far.</Text>
+              <Text size="xs" c="dimmed" mt={4}>{item._count.attestations}/2 approvals so far.</Text>
 
               <Checkbox
                 my="md"
-                checked={!!volunteer[item.processId]}
-                onChange={(e) => setVolunteer((v) => ({ ...v, [item.processId]: e.currentTarget.checked }))}
+                checked={!!volunteer[item.id]}
+                onChange={(e) => setVolunteer((v) => ({ ...v, [item.id]: e.currentTarget.checked }))}
                 label="This is a volunteer family"
               />
 
               <Group gap="sm" wrap="wrap">
-                <Button color="green" disabled={busyId === item.processId} loading={busyId === item.processId} onClick={() => submit(item.processId, "APPROVE")}>
+                <Button color="green" disabled={busyId === item.id} loading={busyId === item.id} onClick={() => submit(item.id, "APPROVE")}>
                   Attest — check is clean
                 </Button>
-                <Button color="red" variant="light" disabled={busyId === item.processId} onClick={() => submit(item.processId, "REJECT")}>
+                <Button color="red" variant="light" disabled={busyId === item.id} onClick={() => submit(item.id, "REJECT")}>
                   Reject
                 </Button>
               </Group>
             </Card>
-          ))}
+            );
+          })}
         </Stack>
       )}
     </Container>
