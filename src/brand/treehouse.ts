@@ -1,4 +1,4 @@
-import { createTheme, mergeThemeOverrides, type MantineColorsTuple } from '@mantine/core';
+import { createTheme, type MantineColorsTuple } from '@mantine/core';
 import type { Brand } from './types';
 import { baseBrand, baseTheme } from './base';
 import { fontVariables } from '@/lib/fonts';
@@ -23,6 +23,11 @@ const treehousePurple: MantineColorsTuple = [
  * Innovation Treehouse — a specialization of the base app. Extends baseTheme (shapes +
  * component behaviors) with the brand palette, fonts, and the "HNkani headings render
  * lowercase" rule. Auto light/dark is retained; primaryShade is tuned per scheme.
+ *
+ * NOTE: this module is imported by the server-side root layout, so the theme must be built
+ * with createTheme alone — mergeThemeOverrides is a client-only Mantine export and throws if
+ * called during server module evaluation. baseTheme only sets defaultRadius/radius/components,
+ * so spreading it and merging `components` explicitly is an exact equivalent of the deep merge.
  */
 export const treehouseBrand: Brand = {
   ...baseBrand,
@@ -33,24 +38,23 @@ export const treehouseBrand: Brand = {
   // a license to use the Innovation Treehouse logo/marks; replace when reusing for another org.
   logo: { src: '/brand/treehouse-logo-full.webp', width: 84, height: 40, alt: 'Innovation Treehouse' },
   nav: { accent: 'treehouseGreen', sidebar: 'treehousePurple.9' },
-  theme: mergeThemeOverrides(
-    baseTheme,
-    createTheme({
-      colors: { treehouseGreen, treehousePurple },
-      primaryColor: 'treehouseGreen',
-      primaryShade: { light: 6, dark: 5 },
+  theme: createTheme({
+    ...baseTheme,
+    colors: { treehouseGreen, treehousePurple },
+    primaryColor: 'treehouseGreen',
+    primaryShade: { light: 6, dark: 5 },
 
-      fontFamily: 'var(--font-nunito), system-ui, -apple-system, "Segoe UI", sans-serif',
-      fontFamilyMonospace: 'var(--font-space-mono), ui-monospace, SFMono-Regular, Menlo, monospace',
-      headings: {
-        fontFamily: 'var(--font-hnkani), var(--font-nunito), "Trebuchet MS", system-ui, sans-serif',
-        fontWeight: '600',
-      },
+    fontFamily: 'var(--font-nunito), system-ui, -apple-system, "Segoe UI", sans-serif',
+    fontFamilyMonospace: 'var(--font-space-mono), ui-monospace, SFMono-Regular, Menlo, monospace',
+    headings: {
+      fontFamily: 'var(--font-hnkani), var(--font-nunito), "Trebuchet MS", system-ui, sans-serif',
+      fontWeight: '600',
+    },
 
-      components: {
-        // BRAND RULE: HNkani (heading face) always renders lowercase, matching the wordmark.
-        Title: { styles: { root: { textTransform: 'lowercase' } } },
-      },
-    }),
-  ),
+    components: {
+      ...baseTheme.components,
+      // BRAND RULE: HNkani (heading face) always renders lowercase, matching the wordmark.
+      Title: { styles: { root: { textTransform: 'lowercase' } } },
+    },
+  }),
 };
