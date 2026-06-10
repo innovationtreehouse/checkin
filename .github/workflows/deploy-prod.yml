@@ -133,11 +133,26 @@ jobs:
             --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
             --query 'services[0].networkConfiguration' --output json)
 
+          # The shared Aurora cluster is Serverless v2 with min capacity 0 and
+          # auto-pause: if it's idle at deploy time, the first connection races
+          # the ~30s resume and Prisma fails fast with P1001. Override the
+          # container command with a retry loop so the task survives the wake-up.
+          cat > "$RUNNER_TEMP/migrate-overrides.json" <<'EOF'
+          {
+            "containerOverrides": [{
+              "name": "checkin-migrate",
+              "command": ["sh", "-c",
+                "for i in 1 2 3 4 5; do npx prisma migrate deploy && exit 0; echo \"attempt $i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"]
+            }]
+          }
+          EOF
+
           TASK_ARN=$(aws ecs run-task \
             --cluster "$ECS_CLUSTER" \
             --task-definition "$MIGRATE_ARN" \
             --launch-type FARGATE \
             --network-configuration "$NETWORK_CONFIG" \
+            --overrides "file://$RUNNER_TEMP/migrate-overrides.json" \
             --query 'tasks[0].taskArn' --output text)
           echo "Migration task: $TASK_ARN"
 
