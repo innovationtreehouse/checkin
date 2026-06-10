@@ -10,6 +10,11 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
+# NEXT_PUBLIC_* vars are inlined into the client bundle at build time (not read at
+# runtime), so the store domain used by the client-side Shopify checkout link must
+# be present here. Passed via --build-arg by the deploy workflow; harmless if empty.
+ARG NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN
+ENV NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN=${NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN}
 RUN npm run build
 
 # Stage 3: Production image
