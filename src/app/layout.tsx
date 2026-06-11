@@ -1,14 +1,18 @@
+import '@mantine/core/styles.css';
+import '@mantine/notifications/styles.css';
 import './globals.css';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { ColorSchemeScript, MantineProvider } from '@mantine/core';
+import { ModalsProvider } from '@mantine/modals';
+import { Notifications } from '@mantine/notifications';
 import AuthProvider from '@/components/AuthProvider';
 import { EnvProvider } from '@/components/EnvProvider';
-import NavBar from '@/components/NavBar';
+import DevImpersonationBar from '@/components/DevImpersonationBar';
+import DevDashboard from '@/components/DevDashboard';
 import OnboardingGate from '@/components/OnboardingGate';
-import ContentWrapper from '@/components/ContentWrapper';
+import AppFrame from '@/components/AppFrame';
+import { brand } from '@/brand';
 import { config } from '@/lib/config';
-
-const inter = Inter({ subsets: ['latin'] });
 
 // CHECKIN_ENV is read at runtime (the same image runs in prod/dev/local), so the root
 // layout must render dynamically rather than baking a build-time value into static HTML.
@@ -25,20 +29,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
-        <EnvProvider value={config.checkinEnv()}>
-          <AuthProvider>
-            <OnboardingGate>
-              <NavBar />
-              <ContentWrapper>
-                {children}
-              </ContentWrapper>
-            </OnboardingGate>
-          </AuthProvider>
-        </EnvProvider>
+    <html lang="en" className={brand.fontVariables} suppressHydrationWarning>
+      <head>
+        <ColorSchemeScript defaultColorScheme="auto" />
+      </head>
+      <body data-brand={brand.id}>
+        <MantineProvider theme={brand.theme} defaultColorScheme="auto">
+          <ModalsProvider>
+            <Notifications />
+            <EnvProvider value={config.checkinEnv()}>
+              <AuthProvider>
+                <OnboardingGate>
+                  <DevImpersonationBar />
+                  <AppFrame>{children}</AppFrame>
+                  <DevDashboard />
+                </OnboardingGate>
+              </AuthProvider>
+            </EnvProvider>
+          </ModalsProvider>
+        </MantineProvider>
       </body>
     </html>
   );
 }
-

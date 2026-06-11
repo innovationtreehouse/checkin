@@ -1,105 +1,87 @@
 "use client";
-/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import styles from "../../page.module.css";
+import { Badge, Button, Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
+
+type Program = {
+  id: number;
+  name: string;
+  phase?: string;
+  memberOnly?: boolean;
+  _count?: { participants?: number; events?: number };
+};
 
 export default function AdminProgramsIndex() {
-    const [programs, setPrograms] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const router = useRouter();
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
-    useEffect(() => {
-        fetch('/api/programs')
-            .then(res => res.json())
-            .then(data => {
-                if (Array.isArray(data)) {
-                    setPrograms(data);
-                }
-                setLoading(false);
-            })
-            .catch(err => {
-                console.error(err);
-                setLoading(false);
-            });
-    }, []);
+  useEffect(() => {
+    fetch('/api/programs')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setPrograms(data);
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, []);
 
-    return (
-        <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
-            <div className="glass-container animate-float" style={{ padding: '2rem', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                    <h1 className="text-gradient" style={{ marginTop: 0 }}>Programs</h1>
-                    <p style={{ color: 'var(--color-text-muted)' }}>
-                        Manage recurring programs and curriculum tracks.
-                    </p>
-                </div>
-                <button 
-                    className="glass-button" 
-                    onClick={() => router.push('/admin/programs/new')}
-                    style={{ background: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.4)' }}
-                >
-                    + New Program
-                </button>
-            </div>
-
-            <div className="glass-container" style={{ padding: '1rem' }}>
-                {loading ? (
-                    <p style={{ textAlign: 'center', padding: '2rem' }}>Loading programs...</p>
-                ) : programs.length === 0 ? (
-                    <p style={{ textAlign: 'center', padding: '2rem' }}>No programs found. Create your first one!</p>
-                ) : (
-                    <div style={{ display: 'grid', gap: '1rem' }}>
-                        {programs.map(program => (
-                            <div 
-                                key={program.id} 
-                                className="glass-container" 
-                                style={{ 
-                                    padding: '1.25rem', 
-                                    display: 'flex', 
-                                    justifyContent: 'space-between', 
-                                    alignItems: 'center',
-                                    background: 'rgba(255,255,255,0.03)',
-                                    cursor: 'pointer'
-                                }}
-                                onClick={() => router.push(`/admin/programs/${program.id}`)}
-                            >
-                                <div>
-                                    <h3 style={{ margin: 0 }}>{program.name}</h3>
-                                    <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
-                                        {program._count?.participants || 0} Participants • {program._count?.events || 0} Events
-                                    </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                    {program.phase === 'PLANNING' && (
-                                        <span style={{
-                                            padding: '4px 8px',
-                                            borderRadius: '4px',
-                                            fontSize: '0.75rem',
-                                            background: 'rgba(234, 179, 8, 0.2)',
-                                            color: '#fde047',
-                                            border: '1px solid rgba(234, 179, 8, 0.4)',
-                                            fontWeight: 600,
-                                        }}>
-                                            Planning / Not Published
-                                        </span>
-                                    )}
-                                    <span style={{
-                                        padding: '4px 8px',
-                                        borderRadius: '4px',
-                                        fontSize: '0.75rem',
-                                        background: program.memberOnly ? 'rgba(168, 85, 247, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                                        color: program.memberOnly ? '#d8b4fe' : '#93c5fd'
-                                    }}>
-                                        {program.memberOnly ? 'Member Only' : 'Public'}
-                                    </span>
-                                    <span style={{ fontSize: '1.25rem' }}>&rarr;</span>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
+  return (
+    <Stack>
+      <Group justify="space-between" align="flex-start" wrap="wrap">
+        <div>
+          <Title order={1}>Programs</Title>
+          <Text c="dimmed">Manage recurring programs and curriculum tracks.</Text>
         </div>
-    );
+        <Button color="green" onClick={() => router.push('/admin/programs/new')}>
+          + New Program
+        </Button>
+      </Group>
+
+      {loading ? (
+        <Center py="xl"><Loader /></Center>
+      ) : programs.length === 0 ? (
+        <Card withBorder radius="md" padding="xl" ta="center">
+          <Text c="dimmed">No programs found. Create your first one!</Text>
+        </Card>
+      ) : (
+        <Stack gap="sm">
+          {programs.map((program) => (
+            <Card
+              key={program.id}
+              withBorder
+              radius="md"
+              padding="md"
+              onClick={() => router.push(`/admin/programs/${program.id}`)}
+              style={{ cursor: 'pointer' }}
+            >
+              <Group justify="space-between" wrap="nowrap">
+                <div>
+                  <Text fw={600}>{program.name}</Text>
+                  <Text size="sm" c="dimmed">
+                    {program._count?.participants || 0} Participants • {program._count?.events || 0} Events
+                  </Text>
+                </div>
+                <Group gap="xs">
+                  {program.phase === 'PLANNING' && (
+                    <Badge color="yellow" variant="light">Planning / Not Published</Badge>
+                  )}
+                  <Badge color={program.memberOnly ? 'grape' : 'blue'} variant="light">
+                    {program.memberOnly ? 'Member Only' : 'Public'}
+                  </Badge>
+                  <Text fz="lg">→</Text>
+                </Group>
+              </Group>
+            </Card>
+          ))}
+        </Stack>
+      )}
+    </Stack>
+  );
 }

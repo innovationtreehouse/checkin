@@ -232,6 +232,13 @@ export const classifications = {
         metric: 'internal',
         value: 'internal',
     },
+    DevLedger: {
+        id: 'internal',
+        action: 'internal',
+        realActor: 'internal',
+        detail: 'internal',
+        createdAt: 'internal',
+    },
 } as const;
 
 export const relations = {
@@ -350,6 +357,8 @@ export const relations = {
     ErrorLog: {
     },
     SystemMetric: {
+    },
+    DevLedger: {
     },
 } as const;
 

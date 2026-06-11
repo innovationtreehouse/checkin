@@ -1,220 +1,181 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import styles from "./trends.module.css";
+import { Card, Center, Group, Loader, SegmentedControl, Select, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
+import { useRequireRole } from "@/hooks/useRequireRole";
 
 type PeriodType = "week" | "month" | "quarter" | "year";
 
 interface TrendBucket {
-    label: string;
-    periodStart: string;
-    uniqueVolunteers: number;
-    uniqueStudents: number;
-    totalVolunteerHours: number;
-    totalStudentHours: number;
-    structuredHours: number;
-    unstructuredHours: number;
+  label: string;
+  periodStart: string;
+  uniqueVolunteers: number;
+  uniqueStudents: number;
+  totalVolunteerHours: number;
+  totalStudentHours: number;
+  structuredHours: number;
+  unstructuredHours: number;
 }
 
 interface ProgramOption {
-    id: number;
-    name: string;
+  id: number;
+  name: string;
 }
 
 export default function ParticipationTrendsPage() {
-    const { data: session, status } = useSession();
-    const router = useRouter();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
 
-    const [period, setPeriod] = useState<PeriodType>("month");
-    const [programId, setProgramId] = useState<string>("");
-    const [programs, setPrograms] = useState<ProgramOption[]>([]);
-    const [buckets, setBuckets] = useState<TrendBucket[]>([]);
-    const [totals, setTotals] = useState<TrendBucket | null>(null);
-    const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<PeriodType>("month");
+  const [programId, setProgramId] = useState<string>("");
+  const [programs, setPrograms] = useState<ProgramOption[]>([]);
+  const [buckets, setBuckets] = useState<TrendBucket[]>([]);
+  const [totals, setTotals] = useState<TrendBucket | null>(null);
+  const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        if (status === "unauthenticated") {
-            router.push("/");
-        } else if (status === "authenticated") {
-            const user = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
-            const isAuthorized = user?.sysadmin || user?.boardMember;
-            if (!isAuthorized) {
-                router.push("/");
-            }
+  // Fetch programs for the dropdown
+  useEffect(() => {
+    fetch("/api/programs")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setPrograms(data.map((p: { id: number; name: string }) => ({ id: p.id, name: p.name })));
         }
-    }, [status, session, router]);
+      })
+      .catch(console.error);
+  }, []);
 
-    // Fetch programs for the dropdown
-    useEffect(() => {
-        fetch("/api/programs")
-            .then((res) => res.json())
-            .then((data) => {
-                if (Array.isArray(data)) {
-                    setPrograms(data.map((p: { id: number; name: string }) => ({ id: p.id, name: p.name })));
-                }
-            })
-            .catch(console.error);
-    }, []);
+  // Fetch trends data
+  useEffect(() => {
+    if (!ready) return;
 
-    // Fetch trends data
-    useEffect(() => {
-        if (status !== "authenticated") return;
+    const params = new URLSearchParams({ period });
+    if (programId) params.set("programId", programId);
 
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setLoading(true);
-        const params = new URLSearchParams({ period });
-        if (programId) params.set("programId", programId);
+    fetch(`/api/admin/trends?${params}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setBuckets(data.buckets || []);
+        setTotals(data.totals || null);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [period, programId, ready]);
 
-        fetch(`/api/admin/trends?${params}`)
-            .then((res) => res.json())
-            .then((data) => {
-                setBuckets(data.buckets || []);
-                setTotals(data.totals || null);
-            })
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    }, [period, programId, status]);
+  if (authLoading) {
+    return <Center mih="60vh"><Loader /></Center>;
+  }
 
-    if (status === "loading" || (status === "authenticated" && loading && buckets.length === 0)) {
-        return (
-            <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
-                <div className="glass-container animate-float" style={{ textAlign: "center", padding: "3rem" }}>
-                    <h2>Loading Participation Trends…</h2>
-                </div>
-            </div>
-        );
-    }
+  if (!ready) return null;
 
-    const fmtHours = (h: number) => {
-        if (h === 0) return "0";
-        if (h < 1) return `${Math.round(h * 60)}m`;
-        return h.toFixed(1);
-    };
+  if (loading && buckets.length === 0) {
+    return <Center mih="60vh"><Loader /></Center>;
+  }
 
-    return (
-        <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
-            {/* Header */}
-            <div className="glass-container" style={{ padding: "2rem", marginBottom: "1.5rem" }}>
-                <h1 className="text-gradient" style={{ margin: 0, fontSize: "2rem" }}>
-                    📈 Participation Trends
-                </h1>
-                <p style={{ color: "var(--color-text-muted)", margin: "0.5rem 0 0" }}>
-                    Facility usage metrics across time periods and programs.
-                </p>
-            </div>
+  const fmtHours = (h: number) => {
+    if (h === 0) return "0";
+    if (h < 1) return `${Math.round(h * 60)}m`;
+    return h.toFixed(1);
+  };
 
-            {/* Controls */}
-            <div className={styles.controls}>
-                <div className={styles.periodGroup}>
-                    {(["week", "month", "quarter", "year"] as PeriodType[]).map((p) => (
-                        <button
-                            key={p}
-                            className={`${styles.periodBtn} ${period === p ? styles.periodBtnActive : ""}`}
-                            onClick={() => setPeriod(p)}
-                        >
-                            {p.charAt(0).toUpperCase() + p.slice(1)}
-                        </button>
-                    ))}
-                </div>
+  const stats: { value: string | number; label: string }[] = totals ? [
+    { value: totals.uniqueVolunteers, label: "Unique Volunteers" },
+    { value: totals.uniqueStudents, label: "Unique Students" },
+    { value: fmtHours(totals.totalVolunteerHours), label: "Volunteer Hours" },
+    { value: fmtHours(totals.totalStudentHours), label: "Student Hours" },
+    { value: fmtHours(totals.structuredHours), label: "Program Hours" },
+    { value: fmtHours(totals.unstructuredHours), label: "Unstructured Hours" },
+  ] : [];
 
-                <select
-                    className={styles.programSelect}
-                    value={programId}
-                    onChange={(e) => setProgramId(e.target.value)}
-                >
-                    <option value="">All Programs (Aggregate)</option>
-                    {programs.map((p) => (
-                        <option key={p.id} value={p.id}>
-                            {p.name}
-                        </option>
-                    ))}
-                </select>
-            </div>
+  return (
+    <Stack>
+      <div>
+        <Title order={1}>📈 Participation Trends</Title>
+        <Text c="dimmed">Facility usage metrics across time periods and programs.</Text>
+      </div>
 
-            {/* Summary Cards */}
-            {totals && (
-                <div className={styles.statsGrid}>
-                    <div className={styles.statCard}>
-                        <div className={styles.statValue}>{totals.uniqueVolunteers}</div>
-                        <div className={styles.statLabel}>Unique Volunteers</div>
-                    </div>
-                    <div className={styles.statCard}>
-                        <div className={styles.statValue}>{totals.uniqueStudents}</div>
-                        <div className={styles.statLabel}>Unique Students</div>
-                    </div>
-                    <div className={styles.statCard}>
-                        <div className={styles.statValue}>{fmtHours(totals.totalVolunteerHours)}</div>
-                        <div className={styles.statLabel}>Volunteer Hours</div>
-                    </div>
-                    <div className={styles.statCard}>
-                        <div className={styles.statValue}>{fmtHours(totals.totalStudentHours)}</div>
-                        <div className={styles.statLabel}>Student Hours</div>
-                    </div>
-                    <div className={styles.statCard}>
-                        <div className={styles.statValue}>{fmtHours(totals.structuredHours)}</div>
-                        <div className={styles.statLabel}>Program Hours</div>
-                    </div>
-                    <div className={styles.statCard}>
-                        <div className={styles.statValue}>{fmtHours(totals.unstructuredHours)}</div>
-                        <div className={styles.statLabel}>Unstructured Hours</div>
-                    </div>
-                </div>
+      <Group justify="space-between" wrap="wrap">
+        <SegmentedControl
+          value={period}
+          onChange={(v) => setPeriod(v as PeriodType)}
+          data={[
+            { label: "Week", value: "week" },
+            { label: "Month", value: "month" },
+            { label: "Quarter", value: "quarter" },
+            { label: "Year", value: "year" },
+          ]}
+        />
+        <Select
+          value={programId}
+          onChange={(v) => setProgramId(v ?? "")}
+          allowDeselect={false}
+          w={280}
+          data={[
+            { value: "", label: "All Programs (Aggregate)" },
+            ...programs.map((p) => ({ value: String(p.id), label: p.name })),
+          ]}
+        />
+      </Group>
+
+      {totals && (
+        <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }}>
+          {stats.map((s) => (
+            <Card key={s.label} withBorder radius="md" padding="md" ta="center">
+              <Text fz="xl" fw={800}>{s.value}</Text>
+              <Text size="xs" c="dimmed" tt="uppercase">{s.label}</Text>
+            </Card>
+          ))}
+        </SimpleGrid>
+      )}
+
+      <Table.ScrollContainer minWidth={700}>
+        <Table verticalSpacing="sm" highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Period</Table.Th>
+              <Table.Th>Volunteers</Table.Th>
+              <Table.Th>Students</Table.Th>
+              <Table.Th>Vol. Hours</Table.Th>
+              <Table.Th>Stu. Hours</Table.Th>
+              <Table.Th>Program</Table.Th>
+              <Table.Th>Unstructured</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {buckets.length === 0 ? (
+              <Table.Tr>
+                <Table.Td colSpan={7} ta="center">
+                  <Text c="dimmed" py="md">No visit data found for this time range.</Text>
+                </Table.Td>
+              </Table.Tr>
+            ) : (
+              buckets.map((b) => (
+                <Table.Tr key={b.periodStart}>
+                  <Table.Td>{b.label}</Table.Td>
+                  <Table.Td>{b.uniqueVolunteers}</Table.Td>
+                  <Table.Td>{b.uniqueStudents}</Table.Td>
+                  <Table.Td>{fmtHours(b.totalVolunteerHours)}</Table.Td>
+                  <Table.Td>{fmtHours(b.totalStudentHours)}</Table.Td>
+                  <Table.Td>{fmtHours(b.structuredHours)}</Table.Td>
+                  <Table.Td>{fmtHours(b.unstructuredHours)}</Table.Td>
+                </Table.Tr>
+              ))
             )}
-
-            {/* Data Table */}
-            <div className="glass-container" style={{ padding: "0", overflow: "hidden" }}>
-                <div className={styles.tableWrap}>
-                    <table className={styles.dataTable}>
-                        <thead>
-                            <tr>
-                                <th>Period</th>
-                                <th>Volunteers</th>
-                                <th>Students</th>
-                                <th>Vol. Hours</th>
-                                <th>Stu. Hours</th>
-                                <th>Program</th>
-                                <th>Unstructured</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {buckets.length === 0 ? (
-                                <tr>
-                                    <td colSpan={7} style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-muted)" }}>
-                                        No visit data found for this time range.
-                                    </td>
-                                </tr>
-                            ) : (
-                                buckets.map((b) => (
-                                    <tr key={b.periodStart}>
-                                        <td>{b.label}</td>
-                                        <td>{b.uniqueVolunteers}</td>
-                                        <td>{b.uniqueStudents}</td>
-                                        <td>{fmtHours(b.totalVolunteerHours)}</td>
-                                        <td>{fmtHours(b.totalStudentHours)}</td>
-                                        <td>{fmtHours(b.structuredHours)}</td>
-                                        <td>{fmtHours(b.unstructuredHours)}</td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                        {totals && buckets.length > 0 && (
-                            <tfoot>
-                                <tr>
-                                    <td>Total</td>
-                                    <td>{totals.uniqueVolunteers}</td>
-                                    <td>{totals.uniqueStudents}</td>
-                                    <td>{fmtHours(totals.totalVolunteerHours)}</td>
-                                    <td>{fmtHours(totals.totalStudentHours)}</td>
-                                    <td>{fmtHours(totals.structuredHours)}</td>
-                                    <td>{fmtHours(totals.unstructuredHours)}</td>
-                                </tr>
-                            </tfoot>
-                        )}
-                    </table>
-                </div>
-            </div>
-        </div>
-    );
+          </Table.Tbody>
+          {totals && buckets.length > 0 && (
+            <Table.Tfoot>
+              <Table.Tr>
+                <Table.Th>Total</Table.Th>
+                <Table.Th>{totals.uniqueVolunteers}</Table.Th>
+                <Table.Th>{totals.uniqueStudents}</Table.Th>
+                <Table.Th>{fmtHours(totals.totalVolunteerHours)}</Table.Th>
+                <Table.Th>{fmtHours(totals.totalStudentHours)}</Table.Th>
+                <Table.Th>{fmtHours(totals.structuredHours)}</Table.Th>
+                <Table.Th>{fmtHours(totals.unstructuredHours)}</Table.Th>
+              </Table.Tr>
+            </Table.Tfoot>
+          )}
+        </Table>
+      </Table.ScrollContainer>
+    </Stack>
+  );
 }

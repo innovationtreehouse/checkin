@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { config as appConfig } from '@/lib/config';
-
-// Verified Google Workspace hosted-domain that may access the dev instance.
-const ORG_DOMAIN = 'innovationtreehouse.org';
+import { config as appConfig, ORG_DOMAIN } from '@/lib/config';
 
 /**
  * Site-wide org-login gate for the cloud dev instance (see DEV_INSTANCE_DESIGN.md §4).
@@ -26,7 +23,7 @@ export async function middleware(req: NextRequest) {
         return NextResponse.next();
     }
 
-    const signInUrl = new URL('/api/auth/signin', req.url);
+    const signInUrl = new URL('/signin', req.url);
     signInUrl.searchParams.set('callbackUrl', req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(signInUrl);
 }
@@ -36,6 +33,11 @@ export const config = {
     //  - api/*       — routes self-enforce auth (withAuth / kiosk signature). Skipping them also
     //                  lets a keyed kiosk reach /api/scan on dev, keeps NextAuth's own sign-in +
     //                  Google callback reachable, and avoids redirecting JSON clients to HTML.
-    //  - _next/*, favicon — framework internals + static assets.
-    matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+    //  - signin      — the custom sign-in screen itself, or anonymous visitors would loop forever.
+    //  - _next/*, favicon — framework internals.
+    //  - any path with a file extension (`.*\..*`) — public static assets under /public (the brand
+    //    logo/mark, svgs, the import template). They must stay reachable on the dev instance, and
+    //    next/image optimizes via an origin fetch of its source — so a gated /brand/*.webp source
+    //    makes /_next/image return 400 (the broken dev-instance logo).
+    matcher: ['/((?!api|signin|_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 };

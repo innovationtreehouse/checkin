@@ -1,4 +1,4 @@
-import type { MembershipProcessStatus } from "@prisma/client";
+import type { MembershipProcessStatus } from "@/generated/prisma/client";
 
 /**
  * Applicant-facing phases of an INITIAL membership application, in order.

@@ -1,67 +1,59 @@
 "use client";
-/* eslint-disable @typescript-eslint/no-unused-vars */
 
 import { useRouter } from "next/navigation";
-import styles from "../../page.module.css";
+import { Card, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 
 export default function AdminEventsIndex() {
-    const router = useRouter();
+  const router = useRouter();
 
-    const sections = [
-        {
-            title: "Visit History",
-            description: "View and edit past check-in/out records.",
-            link: "/admin/events/visits",
-            icon: "🕒",
-            color: "rgba(59, 130, 246, 0.2)"
-        },
-        {
-            title: "Live Badge Logs",
-            description: "Audit real-time RFID tap events across the facility.",
-            link: "/admin/events/badges",
-            icon: "📡",
-            color: "rgba(168, 85, 247, 0.2)"
-        },
-        {
-            title: "Create New Event",
-            description: "Schedule a one-off event or manual session.",
-            link: "/admin/events/new",
-            icon: "➕",
-            color: "rgba(34, 197, 94, 0.2)"
-        }
-    ];
+  const sections = [
+    {
+      title: "Visit History",
+      description: "View and edit past check-in/out records.",
+      link: "/admin/events/visits",
+      icon: "🕒",
+    },
+    {
+      title: "Live Badge Logs",
+      description: "Audit real-time RFID tap events across the facility.",
+      link: "/admin/events/badges",
+      icon: "📡",
+    },
+    {
+      title: "Create New Event",
+      description: "Schedule a one-off event or manual session.",
+      link: "/admin/events/new",
+      icon: "➕",
+    },
+  ];
 
-    return (
-        <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
-            <div className="glass-container animate-float" style={{ padding: '2rem', marginBottom: '2rem' }}>
-                <h1 className="text-gradient" style={{ marginTop: 0 }}>Events Management</h1>
-                <p style={{ color: 'var(--color-text-muted)' }}>
-                    Manage facility sessions, audit logs, and historical visit records.
-                </p>
-            </div>
+  return (
+    <Stack>
+      <div>
+        <Title order={1}>Events Management</Title>
+        <Text c="dimmed">
+          Manage facility sessions, audit logs, and historical visit records.
+        </Text>
+      </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-                {sections.map(section => (
-                    <button
-                        key={section.link}
-                        className="glass-button"
-                        onClick={() => router.push(section.link)}
-                        style={{ 
-                            background: section.color, 
-                            borderColor: section.color.replace('0.2', '0.4'), 
-                            padding: '2rem', 
-                            fontSize: '1.25rem', 
-                            flexDirection: 'column',
-                            textAlign: 'center',
-                            height: '100%'
-                        }}
-                    >
-                        <span style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>{section.icon}</span>
-                        <strong>{section.title}</strong>
-                        <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.95rem', color: 'var(--color-text-muted)' }}>{section.description}</p>
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
+      <SimpleGrid cols={{ base: 1, md: 3 }}>
+        {sections.map((section) => (
+          <Card
+            key={section.link}
+            withBorder
+            radius="md"
+            padding="xl"
+            onClick={() => router.push(section.link)}
+            style={{ cursor: "pointer" }}
+          >
+            <Stack align="center" gap="xs" ta="center">
+              <Text fz={40}>{section.icon}</Text>
+              <Text fw={700} fz="lg">{section.title}</Text>
+              <Text size="sm" c="dimmed">{section.description}</Text>
+            </Stack>
+          </Card>
+        ))}
+      </SimpleGrid>
+    </Stack>
+  );
 }

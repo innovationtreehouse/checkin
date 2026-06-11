@@ -1,226 +1,157 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import styles from '../../page.module.css';
+import { Alert, Button, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { useRequireRole } from '@/hooks/useRequireRole';
 
 type UserRole = {
-    id: number;
-    name: string | null;
-    email: string;
-    sysadmin: boolean;
-    boardMember: boolean;
-    keyholder: boolean;
-    shopSteward: boolean;
-    backgroundCheckReviewer: boolean;
+  id: number;
+  name: string | null;
+  email: string;
+  sysadmin: boolean;
+  boardMember: boolean;
+  keyholder: boolean;
+  shopSteward: boolean;
+  backgroundCheckReviewer: boolean;
 };
 
-type SessionUser = {
-    id: number;
-    sysadmin?: boolean;
-    keyholder?: boolean;
-    boardMember?: boolean;
-    householdId?: number | null;
-};
+const ROLE_COLUMNS: { field: keyof UserRole; label: string }[] = [
+  { field: 'sysadmin', label: 'Sysadmin' },
+  { field: 'boardMember', label: 'Board Member' },
+  { field: 'keyholder', label: 'Keyholder' },
+  { field: 'shopSteward', label: 'Shop Steward' },
+  { field: 'backgroundCheckReviewer', label: 'BG Reviewer' },
+];
 
 export default function RoleAssignmentPage() {
-    const { data: session, status } = useSession();
-    const router = useRouter();
+  const { user, ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
+  const router = useRouter();
 
-    const [users, setUsers] = useState<UserRole[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [message, setMessage] = useState("");
-    const [savingId, setSavingId] = useState<number | null>(null);
-    const [userSearchText, setUserSearchText] = useState("");
+  const [users, setUsers] = useState<UserRole[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [userSearchText, setUserSearchText] = useState("");
 
-    const currentUserIsSysadmin = (session?.user as SessionUser)?.sysadmin || false;
+  const currentUserIsSysadmin = !!user?.sysadmin;
 
-    useEffect(() => {
-        if (status === "unauthenticated") {
-            router.push('/');
-        } else if (status === "authenticated") {
-            const isAuthorized = (session.user as SessionUser)?.sysadmin || (session.user as SessionUser)?.boardMember;
-            if (!isAuthorized) {
-                router.push('/');
-            } else {
-                fetchUsers();
-            }
-        }
-    }, [status, router, session]);
-
-    const fetchUsers = async () => {
-        try {
-            const res = await fetch('/api/admin/roles');
-            if (res.ok) {
-                const data = await res.json();
-                setUsers(data.participants);
-            } else {
-                setMessage("Failed to load user list.");
-            }
-        } catch {
-            setMessage("Network error loading users.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleRoleChange = async (userId: number, field: keyof UserRole, value: boolean) => {
-        setSavingId(userId);
-        setMessage("");
-
-        // Optimistic update
-        setUsers(users.map(u => u.id === userId ? { ...u, [field]: value } : u));
-
-        try {
-            const res = await fetch('/api/admin/roles', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    targetUserId: userId,
-                    [field]: value
-                })
-            });
-
-            if (!res.ok) {
-                const data = await res.json();
-                setMessage(data.error || "Failed to update role.");
-                // Revert optimistic update
-                fetchUsers();
-            }
-        } catch {
-            setMessage("Network error updating role.");
-            fetchUsers();
-        } finally {
-            setSavingId(null);
-        }
-    };
-
-    if (loading || status === "loading") {
-        return (
-            <main className={styles.main}>
-                <div className="glass-container">
-                    <h2>Loading...</h2>
-                </div>
-            </main>
-        );
+  const fetchUsers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/roles');
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data.participants);
+      } else {
+        setMessage("Failed to load user list.");
+      }
+    } catch {
+      setMessage("Network error loading users.");
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    if (!session) return null;
+  useEffect(() => {
+    if (ready) fetchUsers();
+  }, [ready, fetchUsers]);
 
-    const filteredUsers = users.filter(u =>
-    ((u.name || "").toLowerCase().includes((userSearchText || "").toLowerCase()) ||
-        (u.email || "").toLowerCase().includes((userSearchText || "").toLowerCase()))
-    );
+  const handleRoleChange = async (userId: number, field: keyof UserRole, value: boolean) => {
+    setSavingId(userId);
+    setMessage("");
 
-    return (
-        <main className={styles.main}>
-            <div className={`glass-container ${styles.heroContainer}`} style={{ maxWidth: '1000px', width: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-                    <h1 className="text-gradient" style={{ fontSize: '2.5rem', margin: 0 }}>Role Assignment</h1>
-                    <button className="glass-button" onClick={() => router.push('/admin')} style={{ padding: '0.5rem 1rem' }}>
-                        &larr; Back to Admin Hub
-                    </button>
-                </div>
+    // Optimistic update
+    setUsers(users.map(u => u.id === userId ? { ...u, [field]: value } : u));
 
-                <p style={{ color: 'var(--color-text-muted)', marginBottom: '2rem' }}>
-                    Manage administrative privileges and access levels for community members. Checkboxes save automatically.
-                </p>
+    try {
+      const res = await fetch('/api/admin/roles', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId: userId,
+          [field]: value
+        })
+      });
 
-                {message && (
-                    <div style={{
-                        marginBottom: '1.5rem',
-                        padding: '1rem',
-                        background: 'rgba(239, 68, 68, 0.1)',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        borderRadius: '8px',
-                        color: '#f87171',
-                    }}>
-                        {message}
-                    </div>
-                )}
+      if (!res.ok) {
+        const data = await res.json();
+        setMessage(data.error || "Failed to update role.");
+        // Revert optimistic update
+        fetchUsers();
+      }
+    } catch {
+      setMessage("Network error updating role.");
+      fetchUsers();
+    } finally {
+      setSavingId(null);
+    }
+  };
 
-                <div style={{ marginBottom: '1.5rem' }}>
-                    <input
-                        type="text"
-                        placeholder="Search users by name or email..."
-                        className="glass-input"
-                        style={{ width: '100%', maxWidth: '400px', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', color: 'white' }}
-                        value={userSearchText}
-                        onChange={e => setUserSearchText(e.target.value)}
-                    />
-                </div>
+  if (authLoading || loading) {
+    return <Center mih="60vh"><Loader /></Center>;
+  }
 
-                <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                        <thead>
-                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                                <th style={{ padding: '1rem 0.5rem' }}>User</th>
-                                <th style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>Sysadmin</th>
-                                <th style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>Board Member</th>
-                                <th style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>Keyholder</th>
-                                <th style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>Shop Steward</th>
-                                <th style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>BG Reviewer</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredUsers.map(user => (
-                                <tr key={user.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                    <td style={{ padding: '1rem 0.5rem' }}>
-                                        <div style={{ fontWeight: 500 }}>{user.name || 'Unnamed'}</div>
-                                        <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>{user.email}</div>
-                                    </td>
-                                    <td style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={user.sysadmin}
-                                            disabled={savingId === user.id || !currentUserIsSysadmin}
-                                            onChange={(e) => handleRoleChange(user.id, 'sysadmin', e.target.checked)}
-                                            style={{ width: '1.2rem', height: '1.2rem', cursor: currentUserIsSysadmin ? 'pointer' : 'not-allowed' }}
-                                        />
-                                    </td>
-                                    <td style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={user.boardMember}
-                                            disabled={savingId === user.id}
-                                            onChange={(e) => handleRoleChange(user.id, 'boardMember', e.target.checked)}
-                                            style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
-                                        />
-                                    </td>
-                                    <td style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={user.keyholder}
-                                            disabled={savingId === user.id}
-                                            onChange={(e) => handleRoleChange(user.id, 'keyholder', e.target.checked)}
-                                            style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
-                                        />
-                                    </td>
-                                    <td style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={user.shopSteward}
-                                            disabled={savingId === user.id}
-                                            onChange={(e) => handleRoleChange(user.id, 'shopSteward', e.target.checked)}
-                                            style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
-                                        />
-                                    </td>
-                                    <td style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={user.backgroundCheckReviewer}
-                                            disabled={savingId === user.id}
-                                            onChange={(e) => handleRoleChange(user.id, 'backgroundCheckReviewer', e.target.checked)}
-                                            style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
-                                        />
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </main>
-    );
+  if (!ready) return null;
+
+  const filteredUsers = users.filter(u =>
+    (u.name || "").toLowerCase().includes((userSearchText || "").toLowerCase()) ||
+    (u.email || "").toLowerCase().includes((userSearchText || "").toLowerCase())
+  );
+
+  return (
+    <Stack>
+      <Group justify="space-between" align="center" wrap="wrap">
+        <Title order={1}>Role Assignment</Title>
+        <Button variant="default" onClick={() => router.push('/admin')}>← Back to Admin Hub</Button>
+      </Group>
+
+      <Text c="dimmed">
+        Manage administrative privileges and access levels for community members. Checkboxes save
+        automatically.
+      </Text>
+
+      {message && <Alert color="red">{message}</Alert>}
+
+      <TextInput
+        placeholder="Search users by name or email..."
+        value={userSearchText}
+        onChange={(e) => setUserSearchText(e.currentTarget.value)}
+        maw={400}
+      />
+
+      <Table.ScrollContainer minWidth={700}>
+        <Table verticalSpacing="sm" highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>User</Table.Th>
+              {ROLE_COLUMNS.map((col) => (
+                <Table.Th key={col.field} ta="center">{col.label}</Table.Th>
+              ))}
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {filteredUsers.map((user) => (
+              <Table.Tr key={user.id}>
+                <Table.Td>
+                  <Text fw={500}>{user.name || 'Unnamed'}</Text>
+                  <Text size="sm" c="dimmed">{user.email}</Text>
+                </Table.Td>
+                {ROLE_COLUMNS.map((col) => (
+                  <Table.Td key={col.field} ta="center">
+                    <Center>
+                      <Checkbox
+                        checked={user[col.field] as boolean}
+                        disabled={savingId === user.id || (col.field === 'sysadmin' && !currentUserIsSysadmin)}
+                        onChange={(e) => handleRoleChange(user.id, col.field, e.currentTarget.checked)}
+                      />
+                    </Center>
+                  </Table.Td>
+                ))}
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+    </Stack>
+  );
 }

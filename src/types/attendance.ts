@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '@/generated/prisma/client';
 
 /**
  * Visit with included participant and event data, as returned by getFullAttendance.

@@ -1,101 +1,96 @@
 "use client";
-/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import styles from "../page.module.css";
+import { Alert, Card, Group, List, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { IconAlertTriangle } from "@tabler/icons-react";
+
+type Orphan = { id: number; name?: string | null; email?: string | null };
 
 export default function AdminDashboardIndex() {
-    const { data: session } = useSession();
-    const router = useRouter();
-    const [orphans, setOrphans] = useState<any[]>([]);
-    const [systemHealth, setSystemHealth] = useState<{
-        count: number;
-        median: number;
-        p90: number;
-        p99: number;
-    } | null>(null);
+  const { data: session } = useSession();
+  const [orphans, setOrphans] = useState<Orphan[]>([]);
 
-    useEffect(() => {
-        fetch('/api/admin/orphans')
-            .then(res => res.json())
-            .then(data => {
-                if (data.orphans) {
-                    setOrphans(data.orphans);
-                }
-            })
-            .catch(console.error);
-    }, []);
+  useEffect(() => {
+    fetch('/api/admin/orphans')
+      .then(res => res.json())
+      .then(data => {
+        if (data.orphans) {
+          setOrphans(data.orphans);
+        }
+      })
+      .catch(console.error);
+  }, []);
 
-    return (
-        <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
-            <div className="glass-container animate-float" style={{ padding: '2rem', marginBottom: '2rem' }}>
-                <h1 className="text-gradient" style={{ marginTop: 0 }}>Admin Dashboard</h1>
-                <p style={{ color: 'var(--color-text-muted)' }}>
-                    Welcome back, {session?.user?.name || 'Admin'}. Here is an overview of the facility status and pending tasks.
-                </p>
-            </div>
+  return (
+    <Stack>
+      <div>
+        <Title order={1}>Admin Dashboard</Title>
+        <Text c="dimmed">
+          Welcome back, {session?.user?.name || 'Admin'}. Here is an overview of the facility
+          status and pending tasks.
+        </Text>
+      </div>
 
-            {orphans.length > 0 && (
-                <div style={{ 
-                    background: 'rgba(239, 68, 68, 0.15)', 
-                    border: '1px solid rgba(239, 68, 68, 0.3)', 
-                    color: '#fca5a5', 
-                    padding: '1.5rem', 
-                    borderRadius: '12px', 
-                    marginBottom: '2rem',
-                    boxShadow: '0 4px 15px rgba(239, 68, 68, 0.1)'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
-                        <span style={{ fontSize: '1.5rem' }}>🚨</span>
-                        <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Attention Required</h2>
-                    </div>
-                    <p>There are {orphans.length} student(s) registered whose parents have not yet claimed their accounts. These students cannot be tracked correctly until their households are linked.</p>
-                    <ul style={{ margin: '1rem 0 0 0', paddingLeft: '1.5rem', fontSize: '0.95rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
-                        {orphans.map(o => (
-                            <li key={o.id} style={{ fontWeight: 500 }}>{o.name || o.email || `Student ID ${o.id}`}</li>
-                        ))}
-                    </ul>
-                </div>
-            )}
+      {orphans.length > 0 && (
+        <Alert color="red" icon={<IconAlertTriangle size={18} />} title="Attention Required">
+          <Text mb="sm">
+            There are {orphans.length} student(s) registered whose parents have not yet claimed
+            their accounts. These students cannot be tracked correctly until their households are
+            linked.
+          </Text>
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="xs">
+            {orphans.map((o) => (
+              <Text key={o.id} fw={500} size="sm">
+                {o.name || o.email || `Student ID ${o.id}`}
+              </Text>
+            ))}
+          </SimpleGrid>
+        </Alert>
+      )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-                <div className="glass-container" style={{ padding: '1.5rem' }}>
-                    <h3 style={{ marginTop: 0, color: 'var(--color-primary)' }}>Quick Stats</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
-                        <div style={{ textAlign: 'center', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>--</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Active Guests</div>
-                        </div>
-                        <div style={{ textAlign: 'center', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>--</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Check-ins Today</div>
-                        </div>
-                    </div>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginTop: '1rem' }}>
-                        Real-time stats are coming soon in the next update.
-                    </p>
-                </div>
+      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+        <Card withBorder radius="md" padding="lg">
+          <Title order={4} mb="md">Quick Stats</Title>
+          <SimpleGrid cols={2}>
+            <Card withBorder radius="sm" padding="sm" ta="center">
+              <Text fz="xl" fw={800}>--</Text>
+              <Text size="xs" c="dimmed" tt="uppercase">Active Guests</Text>
+            </Card>
+            <Card withBorder radius="sm" padding="sm" ta="center">
+              <Text fz="xl" fw={800}>--</Text>
+              <Text size="xs" c="dimmed" tt="uppercase">Check-ins Today</Text>
+            </Card>
+          </SimpleGrid>
+          <Text size="sm" c="dimmed" mt="md">
+            Real-time stats are coming soon in the next update.
+          </Text>
+        </Card>
 
-                <div className="glass-container" style={{ padding: '1.5rem' }}>
-                    <h3 style={{ marginTop: 0, color: 'var(--color-secondary)' }}>System Health</h3>
-                    <ul style={{ listStyle: 'none', padding: 0, margin: '1rem 0 0 0' }}>
-                        <li style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                            <span>Database</span>
-                            <span style={{ color: '#4ade80' }}>● Operational</span>
-                        </li>
-                        <li style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                            <span>RFID Gateway</span>
-                            <span style={{ color: '#4ade80' }}>● Connected</span>
-                        </li>
-                        <li style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0' }}>
-                            <span>Last Backup</span>
-                            <span style={{ color: 'var(--color-text-muted)' }}>2 hours ago</span>
-                        </li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    );
+        <Card withBorder radius="md" padding="lg">
+          <Title order={4} mb="md">System Health</Title>
+          <List spacing="xs" listStyleType="none">
+            <List.Item>
+              <Group justify="space-between">
+                <span>Database</span>
+                <Text c="green">● Operational</Text>
+              </Group>
+            </List.Item>
+            <List.Item>
+              <Group justify="space-between">
+                <span>RFID Gateway</span>
+                <Text c="green">● Connected</Text>
+              </Group>
+            </List.Item>
+            <List.Item>
+              <Group justify="space-between">
+                <span>Last Backup</span>
+                <Text c="dimmed">2 hours ago</Text>
+              </Group>
+            </List.Item>
+          </List>
+        </Card>
+      </SimpleGrid>
+    </Stack>
+  );
 }

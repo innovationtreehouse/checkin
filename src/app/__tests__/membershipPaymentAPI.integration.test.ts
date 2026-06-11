@@ -42,7 +42,7 @@ function shopifyReq(payload: unknown, secret: string) {
 
 describe('Membership payment API', () => {
     let leadId: number;
-    let normalProc: number, normalMembership: number, normalHh: number;
+    let normalProc: number, normalMembership: number;
     let volProc: number;
     let certProc: number;
     const prevWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
@@ -87,7 +87,6 @@ describe('Membership payment API', () => {
         const normal = await makeProc('Normal', false, true);
         normalProc = normal.processId;
         normalMembership = normal.membershipId;
-        normalHh = normal.householdId;
         volProc = (await makeProc('Vol', true)).processId;
         certProc = (await makeProc('Cert', false)).processId;
     });
