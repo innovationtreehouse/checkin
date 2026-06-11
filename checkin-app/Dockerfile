@@ -1,7 +1,14 @@
-# Stage 1: Install dependencies
+# Build context is the REPO ROOT (not checkin-app/) so the workspace install can
+# see the root package.json, root package-lock.json, and every workspace manifest.
+# Build with:  docker build -f checkin-app/Dockerfile .
+
+# Stage 1: Install dependencies (whole workspace, hoisted to /app/node_modules)
 FROM node:22-alpine AS deps
 WORKDIR /app
+# Copy only the manifests + lockfile first for a cache-friendly `npm ci` layer.
+# Add packages/*/package.json here when @checkin/* packages land (item 4).
 COPY package.json package-lock.json* ./
+COPY checkin-app/package.json ./checkin-app/package.json
 RUN npm ci
 
 # Stage 2: Build the app
@@ -9,7 +16,10 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npx prisma generate
+# Generate the Prisma client + security classifications inside the app workspace
+# (its schema lives at checkin-app/prisma; the security generator resolves its
+# script + output paths relative to the app cwd).
+RUN npm -w checkin-app exec -- prisma generate
 # NEXT_PUBLIC_* vars are inlined into the client bundle at build time (not read at
 # runtime), so the store domain used by the client-side Shopify checkout link must
 # be present here. Passed via --build-arg by the deploy workflow; harmless if empty.
@@ -26,7 +36,7 @@ ENV NEXT_PUBLIC_GIT_SHA=${NEXT_PUBLIC_GIT_SHA}
 ENV GOOGLE_CLIENT_ID=build-placeholder \
     GOOGLE_CLIENT_SECRET=build-placeholder \
     NEXTAUTH_SECRET=build-placeholder
-RUN npm run build
+RUN npm -w checkin-app run build
 
 # Stage 3: Production image
 FROM node:22-alpine AS runner
@@ -40,19 +50,28 @@ ENV NODE_ENV=production
 ADD https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /app/rds-global-bundle.pem
 ENV NODE_EXTRA_CA_CERTS=/app/rds-global-bundle.pem
 
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+# next.config sets outputFileTracingRoot to the repo root, so the standalone
+# bundle mirrors the workspace layout: server.js + traced .next under
+# checkin-app/, with the hoisted node_modules and root package.json at the top.
+COPY --from=builder /app/checkin-app/.next/standalone ./
+COPY --from=builder /app/checkin-app/.next/static ./checkin-app/.next/static
+COPY --from=builder /app/checkin-app/public ./checkin-app/public
 # The Rust-free `prisma-client` generator emits the client into src/generated/prisma,
 # which Next's standalone output tracing bundles automatically — there is no
 # node_modules/.prisma engine directory to copy as there was with prisma-client-js.
-COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/checkin-app/prisma ./checkin-app/prisma
 # Prisma 7 only reads the datasource URL from a config file (schema-level `url`
-# was removed), so the migrate ECS task — `npx prisma migrate deploy` in this
-# image — needs one. The repo's prisma.config.ts can't be shipped: its dotenv /
-# prisma/config imports don't resolve here. The deploy variant has no imports.
-COPY --from=builder /app/prisma.config.deploy.ts ./prisma.config.ts
+# was removed), so the migrate ECS task — `cd checkin-app && npx prisma migrate
+# deploy` in this image — needs one. The repo's prisma.config.ts can't be
+# shipped: its dotenv / prisma/config imports don't resolve here. The deploy
+# variant has no imports.
+COPY --from=builder /app/checkin-app/prisma.config.deploy.ts ./checkin-app/prisma.config.ts
 
 EXPOSE 4000
 ENV PORT=4000
-CMD ["node", "server.js"]
+# Bind all interfaces. The Next standalone server listens on $HOSTNAME, which
+# Docker otherwise sets to the container id — that resolves to the bridge IP
+# only, so published ports can miss it. 0.0.0.0 covers the bridge IP locally and
+# the task ENI in ECS.
+ENV HOSTNAME=0.0.0.0
+CMD ["node", "checkin-app/server.js"]
