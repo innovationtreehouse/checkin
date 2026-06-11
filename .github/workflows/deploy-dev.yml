@@ -84,6 +84,7 @@ jobs:
           # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
           docker build \
             --build-arg NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN="$NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN" \
+            -f checkin-app/Dockerfile \
             -t "$IMAGE" .
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
@@ -125,7 +126,7 @@ jobs:
             "containerOverrides": [{
               "name": "checkin-migrate",
               "command": ["sh", "-c",
-                "for i in 1 2 3 4 5; do npx prisma migrate deploy && exit 0; echo \"attempt $i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"]
+                "cd checkin-app && for i in 1 2 3 4 5; do npx prisma migrate deploy && exit 0; echo \"attempt $i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"]
             }]
           }
           EOF

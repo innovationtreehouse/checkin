@@ -16,13 +16,20 @@ const customJestConfig = {
     moduleNameMapper: {
         '^@/(.*)$': '<rootDir>/src/$1',
     },
+    // The worktree ignore lives at the repo root (.claude/worktrees/), one level
+    // up now that rootDir is checkin-app/. testPathIgnorePatterns matches the
+    // absolute path, so the bare substring still works; modulePathIgnorePatterns
+    // is <rootDir>-anchored and must reach up to the repo root.
     testPathIgnorePatterns: [
         '/node_modules/',
         '/.claude/worktrees/',
         '\\.integration\\.test\\.[jt]sx?$',
     ],
     modulePathIgnorePatterns: [
-        '<rootDir>/.claude/worktrees/',
+        '<rootDir>/../.claude/worktrees/',
+        // The standalone build nests a package.json named "checkmein" under
+        // .next/, which collides with the app's own in jest's haste map.
+        '<rootDir>/.next/',
     ],
 }
 

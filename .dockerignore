@@ -1,7 +1,21 @@
-node_modules
-.next
+# Build context is the repo root. Ignore every workspace's build output, deps,
+# and local artifacts while keeping all the source the workspace install/build
+# needs (root + checkin-app/ manifests, app src, prisma, public).
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/*.log
+**/*.pid
 .git
 .env
-Dockerfile
-docker-compose.yml
-*.md
+.env.*
+**/.DS_Store
+# Tooling / deploy / docs not needed inside the image
+.github
+.husky
+.jules
+docs
+deploy
+client
+**/*.md
