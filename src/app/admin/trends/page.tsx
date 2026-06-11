@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { Card, Center, Group, Loader, SegmentedControl, Select, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
+import { useRequireRole } from "@/hooks/useRequireRole";
 
 type PeriodType = "week" | "month" | "quarter" | "year";
 
@@ -24,8 +23,7 @@ interface ProgramOption {
 }
 
 export default function ParticipationTrendsPage() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
 
   const [period, setPeriod] = useState<PeriodType>("month");
   const [programId, setProgramId] = useState<string>("");
@@ -33,18 +31,6 @@ export default function ParticipationTrendsPage() {
   const [buckets, setBuckets] = useState<TrendBucket[]>([]);
   const [totals, setTotals] = useState<TrendBucket | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/");
-    } else if (status === "authenticated") {
-      const user = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
-      const isAuthorized = user?.sysadmin || user?.boardMember;
-      if (!isAuthorized) {
-        router.push("/");
-      }
-    }
-  }, [status, session, router]);
 
   // Fetch programs for the dropdown
   useEffect(() => {
@@ -60,7 +46,7 @@ export default function ParticipationTrendsPage() {
 
   // Fetch trends data
   useEffect(() => {
-    if (status !== "authenticated") return;
+    if (!ready) return;
 
     const params = new URLSearchParams({ period });
     if (programId) params.set("programId", programId);
@@ -73,9 +59,15 @@ export default function ParticipationTrendsPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [period, programId, status]);
+  }, [period, programId, ready]);
 
-  if (status === "loading" || (status === "authenticated" && loading && buckets.length === 0)) {
+  if (authLoading) {
+    return <Center mih="60vh"><Loader /></Center>;
+  }
+
+  if (!ready) return null;
+
+  if (loading && buckets.length === 0) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 

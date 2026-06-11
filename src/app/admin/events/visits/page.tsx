@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Button, Center, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { useRequireRole } from '@/hooks/useRequireRole';
 import { formatDateTime } from '@/lib/time';
 
 type Visit = {
@@ -15,7 +15,7 @@ type Visit = {
 };
 
 export default function AdminVisitsPage() {
-  const { data: session, status } = useSession();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin']);
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -42,16 +42,8 @@ export default function AdminVisitsPage() {
   }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      if (!session.user?.sysadmin) {
-        router.push('/');
-      } else {
-        fetchVisits();
-      }
-    }
-  }, [status, session, router, fetchVisits]);
+    if (ready) fetchVisits();
+  }, [ready, fetchVisits]);
 
   const handleEditClick = (visit: Visit) => {
     const confirmEdit = window.confirm("Warning: You are editing a past visit record using Admin overrides. This will be permanently logged.");
@@ -92,11 +84,11 @@ export default function AdminVisitsPage() {
     }
   };
 
-  if (loading || status === "loading") {
+  if (authLoading || loading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session || !session.user?.sysadmin) return null;
+  if (!ready) return null;
 
   return (
     <Stack>

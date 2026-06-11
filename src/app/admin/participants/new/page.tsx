@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, Suspense } from 'react';
-import { useSession } from 'next-auth/react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Box, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
 
 type HouseholdOption = {
@@ -21,8 +21,7 @@ export default function NewParticipantPage() {
 }
 
 function NewParticipantForm() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
   const searchParams = useSearchParams();
   const queryHouseholdId = searchParams.get('householdId');
 
@@ -55,17 +54,6 @@ function NewParticipantForm() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
-
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      const isAuthorized = session?.user?.sysadmin || session?.user?.boardMember;
-      if (!isAuthorized) {
-        router.push('/');
-      }
-    }
-  }, [status, session, router]);
 
   // Handle deep linked household
   useEffect(() => {
@@ -112,11 +100,11 @@ function NewParticipantForm() {
     return () => clearTimeout(timeoutId);
   }, [householdSearch, householdId]);
 
-  if (status === "loading") {
+  if (authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session || (!session.user?.sysadmin && !session.user?.boardMember)) {
+  if (!ready) {
     return null;
   }
 
