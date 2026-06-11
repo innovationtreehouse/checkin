@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, Select, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Button, Card, Center, Checkbox, Container, Group, Loader, Select, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 
 const DAYS_MAP = [
   { label: 'Sun', value: 0 },
@@ -131,7 +132,7 @@ function NewEventForm() {
         <Button component={Link} href={cancelHref} variant="default">Cancel</Button>
       </Group>
 
-      {message && <Alert color="red" mb="md">{message}</Alert>}
+      <AlertBanner message={message} tone="error" mb="md" />
 
       <form onSubmit={handleSubmit}>
         <Stack>

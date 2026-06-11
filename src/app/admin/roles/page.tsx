@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Button, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 
 type UserRole = {
   id: number;
@@ -110,7 +111,7 @@ export default function RoleAssignmentPage() {
         automatically.
       </Text>
 
-      {message && <Alert color="red">{message}</Alert>}
+      <AlertBanner message={message} tone="error" />
 
       <TextInput
         placeholder="Search users by name or email..."
