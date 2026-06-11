@@ -43,7 +43,7 @@ function SignInInner() {
     return (
         <main style={mainStyle}>
             <div className="glass-container animate-float" style={heroStyle}>
-                <h1 className="text-gradient" style={{ fontSize: "3rem", margin: "0 0 0.5rem 0" }}>
+                <h1 className="text-gradient" style={{ fontSize: "3rem", margin: "0 0 0.5rem 0", fontFamily: "var(--mantine-font-family-headings)" }}>
                     {isDevInstance ? "Welcome to Innovation Treehouse Dev" : "CheckMeIn"}
                 </h1>
                 <p style={{ color: "var(--color-text-muted)", fontSize: "1.1rem", marginBottom: "2rem" }}>
@@ -74,8 +74,10 @@ function SignInInner() {
                                 fontSize: "0.95rem",
                             }}
                         >
-                            <strong>{session.user?.email}</strong> isn&apos;t an <code>@{ORG_DOMAIN}</code>{" "}
-                            account, so it can&apos;t access the dev environment.
+                            Signed in as <strong>{session.user?.email}</strong>, but this Google account is not
+                            managed by the <code>@{ORG_DOMAIN}</code> Google Workspace — it may be a personal
+                            account or a forwarding alias. Sign out and use an actual{" "}
+                            <code>@{ORG_DOMAIN}</code> Workspace account to access the dev environment.
                         </div>
                         <button
                             className="glass-button"
