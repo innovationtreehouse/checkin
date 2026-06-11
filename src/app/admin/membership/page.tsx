@@ -1,266 +1,265 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
 
 interface Participant {
-    id: number;
-    name: string | null;
-    email: string | null;
+  id: number;
+  name: string | null;
+  email: string | null;
 }
 interface Attestation {
-    id: number;
-    result: string;
-    markedVolunteer: boolean;
+  id: number;
+  result: string;
+  markedVolunteer: boolean;
 }
 interface ProcessRow {
-    id: number;
-    kind: string;
-    status: string;
-    createdAt: string;
-    zohoEnvelopeId: string | null;
-    contractSignedAt: string | null;
-    bgConsentAt: string | null;
-    attestations: Attestation[];
-    membership: {
-        householdId: number;
-        isVolunteer: boolean;
-        household: { name: string | null; participants: Participant[]; leads: { participantId: number }[] } | null;
-    } | null;
+  id: number;
+  kind: string;
+  status: string;
+  createdAt: string;
+  zohoEnvelopeId: string | null;
+  contractSignedAt: string | null;
+  bgConsentAt: string | null;
+  attestations: Attestation[];
+  membership: {
+    householdId: number;
+    isVolunteer: boolean;
+    household: { name: string | null; participants: Participant[]; leads: { participantId: number }[] } | null;
+  } | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
-    INTAKE: "#94a3b8",
-    PENDING_EXTERNAL_ACTION: "#3b82f6",
-    PENDING_BG_REVIEW: "#a855f7",
-    PENDING_PAYMENT: "#f59e0b",
-    BLOCKED: "#ef4444",
-    PENDING_RENEWAL: "#14b8a6",
-    RENEWAL_PENDING_BG: "#a855f7",
+  INTAKE: "gray",
+  PENDING_EXTERNAL_ACTION: "blue",
+  PENDING_BG_REVIEW: "grape",
+  PENDING_PAYMENT: "orange",
+  BLOCKED: "red",
+  PENDING_RENEWAL: "teal",
+  RENEWAL_PENDING_BG: "grape",
 };
 
+const statusColor = (status: string) => STATUS_COLORS[status] || "gray";
+const statusLabel = (status: string) => status.replace(/_/g, " ");
+
 export default function AdminMembershipPage() {
-    const [rows, setRows] = useState<ProcessRow[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [busyId, setBusyId] = useState<number | null>(null);
-    const [message, setMessage] = useState("");
-    const [isError, setIsError] = useState(false);
+  const [rows, setRows] = useState<ProcessRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [message, setMessage] = useState("");
+  const [isError, setIsError] = useState(false);
 
-    const load = useCallback(async () => {
-        setLoading(true);
-        try {
-            const res = await fetch("/api/admin/membership");
-            if (res.ok) {
-                const data = await res.json();
-                setRows(data.processes || []);
-            }
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/membership");
+      if (res.ok) {
+        const data = await res.json();
+        setRows(data.processes || []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-    useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-    const act = async (processId: number, action: string, extra?: Record<string, unknown>) => {
-        setBusyId(processId);
-        setMessage("");
-        try {
-            const res = await fetch("/api/admin/membership/external", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ processId, action, ...extra }),
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setIsError(false);
-                setMessage("Updated.");
-                await load();
-            } else {
-                setIsError(true);
-                setMessage(data.error || "Action failed.");
-            }
-        } catch {
-            setIsError(true);
-            setMessage("Network error.");
-        } finally {
-            setBusyId(null);
-        }
-    };
+  const act = async (processId: number, action: string, extra?: Record<string, unknown>) => {
+    setBusyId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/admin/membership/external", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId, action, ...extra }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setIsError(false);
+        setMessage("Updated.");
+        await load();
+      } else {
+        setIsError(true);
+        setMessage(data.error || "Action failed.");
+      }
+    } catch {
+      setIsError(true);
+      setMessage("Network error.");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
-    const override = async (processId: number, action: "reset" | "approve") => {
-        setBusyId(processId);
-        setMessage("");
-        try {
-            const res = await fetch("/api/admin/membership/review-override", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ processId, action }),
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setIsError(false);
-                setMessage(action === "reset" ? "Sent back for re-review." : "Overridden to payment.");
-                await load();
-            } else {
-                setIsError(true);
-                setMessage(data.error || "Override failed.");
-            }
-        } catch {
-            setIsError(true);
-            setMessage("Network error.");
-        } finally {
-            setBusyId(null);
-        }
-    };
+  const override = async (processId: number, action: "reset" | "approve") => {
+    setBusyId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/admin/membership/review-override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId, action }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setIsError(false);
+        setMessage(action === "reset" ? "Sent back for re-review." : "Overridden to payment.");
+        await load();
+      } else {
+        setIsError(true);
+        setMessage(data.error || "Override failed.");
+      }
+    } catch {
+      setIsError(true);
+      setMessage("Network error.");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
-    const certify = async (processId: number) => {
-        setBusyId(processId);
-        setMessage("");
-        try {
-            const res = await fetch("/api/admin/membership/certify-payment", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ processId }),
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setIsError(false);
-                setMessage("Certified — membership activated.");
-                await load();
-            } else {
-                setIsError(true);
-                setMessage(data.error || "Certification failed.");
-            }
-        } catch {
-            setIsError(true);
-            setMessage("Network error.");
-        } finally {
-            setBusyId(null);
-        }
-    };
+  const certify = async (processId: number) => {
+    setBusyId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/admin/membership/certify-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setIsError(false);
+        setMessage("Certified — membership activated.");
+        await load();
+      } else {
+        setIsError(true);
+        setMessage(data.error || "Certification failed.");
+      }
+    } catch {
+      setIsError(true);
+      setMessage("Network error.");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
-    const householdLabel = (r: ProcessRow) => {
-        const hh = r.membership?.household;
-        if (!hh) return `Household #${r.membership?.householdId ?? "?"}`;
-        // Parents are the household leads.
-        const leadIds = new Set((hh.leads || []).map((l) => l.participantId));
-        const parents = (hh.participants || []).filter((p) => leadIds.has(p.id)).map((p) => p.name || p.email).filter(Boolean);
-        return hh.name || parents.join(" & ") || `Household #${r.membership?.householdId}`;
-    };
+  const householdLabel = (r: ProcessRow) => {
+    const hh = r.membership?.household;
+    if (!hh) return `Household #${r.membership?.householdId ?? "?"}`;
+    const leadIds = new Set((hh.leads || []).map((l) => l.participantId));
+    const parents = (hh.participants || []).filter((p) => leadIds.has(p.id)).map((p) => p.name || p.email).filter(Boolean);
+    return hh.name || parents.join(" & ") || `Household #${r.membership?.householdId}`;
+  };
 
-    return (
-        <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
-            <div className="glass-container animate-float" style={{ padding: "2rem", marginBottom: "1.5rem" }}>
-                <h1 className="text-gradient" style={{ marginTop: 0 }}>Membership Applications</h1>
-                <p style={{ color: "var(--color-text-muted)", margin: 0 }}>
-                    In-flight applications. Use the manual controls below to confirm the contract was signed or that
-                    background-check consent was received. (The contract is also confirmed automatically once the Zoho
-                    webhook is configured.)
-                </p>
-            </div>
+  const statusCounts = rows.reduce<Record<string, number>>((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
 
-            {message && (
-                <div style={{ marginBottom: "1rem", padding: "0.85rem 1rem", borderRadius: "8px", background: isError ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)", border: `1px solid ${isError ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"}`, color: isError ? "#f87171" : "#4ade80" }}>
-                    {message}
+  return (
+    <Stack>
+      <div>
+        <Title order={1}>Membership Applications</Title>
+        <Text c="dimmed">
+          In-flight applications. Use the manual controls below to confirm the contract was signed
+          or that background-check consent was received. (The contract is also confirmed
+          automatically once the Zoho webhook is configured.)
+        </Text>
+      </div>
+
+      {message && <Alert color={isError ? "red" : "green"}>{message}</Alert>}
+
+      {!loading && rows.length > 0 && (
+        <>
+          {rows.some((r) => r.status === "BLOCKED") && (
+            <Alert color="red" variant="light" fw={600}>
+              🚨 {rows.filter((r) => r.status === "BLOCKED").length} application(s) blocked at
+              background review — board attention needed.
+            </Alert>
+          )}
+          <Group gap="xs">
+            {Object.entries(statusCounts).map(([status, count]) => (
+              <Badge key={status} color={statusColor(status)} variant="light">
+                {statusLabel(status)}: {count}
+              </Badge>
+            ))}
+          </Group>
+        </>
+      )}
+
+      {loading ? (
+        <Center py="xl"><Loader /></Center>
+      ) : rows.length === 0 ? (
+        <Card withBorder radius="md" padding="xl" ta="center">
+          <Text c="dimmed">No in-flight membership applications.</Text>
+        </Card>
+      ) : (
+        <Stack>
+          {rows.map((r) => (
+            <Card key={r.id} withBorder radius="md" padding="lg">
+              <Group justify="space-between" align="center" wrap="wrap">
+                <div>
+                  <Text fw={700} fz="lg">{householdLabel(r)}</Text>
+                  <Text size="xs" c="dimmed">
+                    {r.kind} · application #{r.id}
+                    {r.membership?.isVolunteer && <Text component="span" c="green"> · volunteer</Text>}
+                  </Text>
                 </div>
-            )}
+                <Badge color={statusColor(r.status)}>{statusLabel(r.status)}</Badge>
+              </Group>
 
-            {!loading && rows.length > 0 && (
-                <>
-                    {rows.some((r) => r.status === "BLOCKED") && (
-                        <div style={{ marginBottom: "1rem", padding: "0.85rem 1rem", borderRadius: "8px", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.45)", color: "#fca5a5", fontWeight: 600 }}>
-                            🚨 {rows.filter((r) => r.status === "BLOCKED").length} application(s) blocked at background review — board attention needed.
-                        </div>
+              {r.status === "PENDING_EXTERNAL_ACTION" && (
+                <Group gap="xl" wrap="wrap" mt="md">
+                  <div>
+                    <Text size="xs" c="dimmed" mb={4}>Contract</Text>
+                    {r.contractSignedAt ? (
+                      <Text c="green" fw={600}>✓ Signed</Text>
+                    ) : (
+                      <Button size="xs" disabled={busyId === r.id} onClick={() => act(r.id, "mark-contract")}>
+                        Confirm contract signed
+                      </Button>
                     )}
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1.25rem" }}>
-                        {Object.entries(rows.reduce<Record<string, number>>((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {})).map(([status, count]) => (
-                            <span key={status} style={{ background: (STATUS_COLORS[status] || "#64748b") + "33", border: `1px solid ${STATUS_COLORS[status] || "#64748b"}`, color: "var(--color-text-main, #f8fafc)", padding: "3px 10px", borderRadius: "999px", fontSize: "0.78rem" }}>
-                                {status.replace(/_/g, " ")}: <strong>{count}</strong>
-                            </span>
-                        ))}
-                    </div>
-                </>
-            )}
+                  </div>
+                  <div>
+                    <Text size="xs" c="dimmed" mb={4}>Background-check consent</Text>
+                    {r.bgConsentAt ? (
+                      <Text c="green" fw={600}>✓ Received</Text>
+                    ) : (
+                      <Button size="xs" variant="default" disabled={busyId === r.id} onClick={() => act(r.id, "mark-bg-consent")}>
+                        Confirm BG consent
+                      </Button>
+                    )}
+                  </div>
+                </Group>
+              )}
 
-            {loading ? (
-                <p style={{ color: "var(--color-text-muted)" }}>Loading…</p>
-            ) : rows.length === 0 ? (
-                <div className="glass-container" style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-muted)" }}>
-                    No in-flight membership applications.
-                </div>
-            ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                    {rows.map((r) => (
-                        <div key={r.id} className="glass-container" style={{ padding: "1.25rem 1.5rem" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}>
-                                <div>
-                                    <div style={{ fontWeight: 700, fontSize: "1.05rem" }}>{householdLabel(r)}</div>
-                                    <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
-                                        {r.kind} · application #{r.id}
-                                        {r.membership?.isVolunteer && <span style={{ marginLeft: 8, color: "#4ade80" }}>· volunteer</span>}
-                                    </div>
-                                </div>
-                                <span style={{ background: STATUS_COLORS[r.status] || "#64748b", color: "#0f172a", padding: "3px 10px", borderRadius: "999px", fontSize: "0.75rem", fontWeight: 700 }}>
-                                    {r.status.replace(/_/g, " ")}
-                                </span>
-                            </div>
+              {r.status === "PENDING_BG_REVIEW" && (
+                <Text size="sm" c="dimmed" mt="md">
+                  Awaiting reviewers — <Text component="span" fw={600}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</Text> approvals recorded.
+                </Text>
+              )}
 
-                            {r.status === "PENDING_EXTERNAL_ACTION" && (
-                                <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
-                                    <div>
-                                        <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginBottom: "0.35rem" }}>Contract</div>
-                                        {r.contractSignedAt ? (
-                                            <span style={{ color: "#4ade80", fontWeight: 600 }}>✓ Signed</span>
-                                        ) : (
-                                            <button className="glass-button" disabled={busyId === r.id} onClick={() => act(r.id, "mark-contract")} style={{ padding: "0.45rem 0.9rem", background: "rgba(59,130,246,0.25)", borderColor: "rgba(59,130,246,0.5)" }}>
-                                                {busyId === r.id ? "…" : "Confirm contract signed"}
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginBottom: "0.35rem" }}>Background-check consent</div>
-                                        {r.bgConsentAt ? (
-                                            <span style={{ color: "#4ade80", fontWeight: 600 }}>✓ Received</span>
-                                        ) : (
-                                            <button className="glass-button" disabled={busyId === r.id} onClick={() => act(r.id, "mark-bg-consent")} style={{ padding: "0.45rem 0.9rem" }}>
-                                                {busyId === r.id ? "…" : "Confirm BG consent"}
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
+              {r.status === "PENDING_PAYMENT" && (
+                <Group mt="md" gap="md" wrap="wrap" align="center">
+                  <Text size="sm" c="dimmed">Awaiting payment.</Text>
+                  <Button size="xs" color="green" disabled={busyId === r.id} onClick={() => certify(r.id)}>
+                    Certify payment plan → activate
+                  </Button>
+                </Group>
+              )}
 
-                            {r.status === "PENDING_BG_REVIEW" && (
-                                <div style={{ marginTop: "1rem", fontSize: "0.9rem", color: "var(--color-text-muted)" }}>
-                                    Awaiting reviewers — <strong style={{ color: "var(--color-text-main, #f8fafc)" }}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</strong> approvals recorded.
-                                </div>
-                            )}
-
-                            {r.status === "PENDING_PAYMENT" && (
-                                <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-                                    <span style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>Awaiting payment.</span>
-                                    <button className="glass-button" disabled={busyId === r.id} onClick={() => certify(r.id)} style={{ padding: "0.45rem 0.9rem", background: "rgba(34,197,94,0.2)", borderColor: "rgba(34,197,94,0.4)" }}>
-                                        {busyId === r.id ? "…" : "Certify payment plan → activate"}
-                                    </button>
-                                </div>
-                            )}
-
-                            {r.status === "BLOCKED" && (
-                                <div style={{ marginTop: "1rem", padding: "1rem", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: "10px" }}>
-                                    <div style={{ color: "#fca5a5", fontWeight: 600, marginBottom: "0.75rem" }}>🚨 Blocked at background review — needs board attention.</div>
-                                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                                        <button className="glass-button" disabled={busyId === r.id} onClick={() => override(r.id, "reset")} style={{ padding: "0.45rem 0.9rem" }}>
-                                            {busyId === r.id ? "…" : "Reset for re-review"}
-                                        </button>
-                                        <button className="glass-button" disabled={busyId === r.id} onClick={() => override(r.id, "approve")} style={{ padding: "0.45rem 0.9rem", background: "rgba(34,197,94,0.2)", borderColor: "rgba(34,197,94,0.4)" }}>
-                                            {busyId === r.id ? "…" : "Override → payment"}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
+              {r.status === "BLOCKED" && (
+                <Alert color="red" variant="light" mt="md" title="🚨 Blocked at background review — needs board attention.">
+                  <Group gap="sm" wrap="wrap">
+                    <Button size="xs" variant="default" disabled={busyId === r.id} onClick={() => override(r.id, "reset")}>
+                      Reset for re-review
+                    </Button>
+                    <Button size="xs" color="green" disabled={busyId === r.id} onClick={() => override(r.id, "approve")}>
+                      Override → payment
+                    </Button>
+                  </Group>
+                </Alert>
+              )}
+            </Card>
+          ))}
+        </Stack>
+      )}
+    </Stack>
+  );
 }
