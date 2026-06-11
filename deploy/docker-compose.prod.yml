@@ -13,14 +13,16 @@ services:
       - web
 
   web:
+    # Context is the repo root (one level up from deploy/) so the workspace
+    # install resolves the root manifest/lockfile and every workspace member.
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: checkin-app/Dockerfile
     restart: unless-stopped
     expose:
       - "4000"
     env_file:
-      - .env
+      - ../.env
     environment:
       DATABASE_URL: postgresql://prisma:${DB_PASSWORD}@db:5432/checkmein?schema=public
     depends_on:

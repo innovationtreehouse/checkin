@@ -5,7 +5,7 @@
     # Next.js standalone mode does NOT serve static assets.
     # Caddy must serve _next/static/ directly from the build output.
     handle /_next/static/* {
-        root * /home/ubuntu/checkmein/.next
+        root * /home/ubuntu/checkmein/checkin-app/.next
         uri strip_prefix /_next
         file_server
     }
