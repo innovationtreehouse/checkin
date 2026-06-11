@@ -11,7 +11,7 @@ import DevImpersonationBar from '@/components/DevImpersonationBar';
 import DevDashboard from '@/components/DevDashboard';
 import OnboardingGate from '@/components/OnboardingGate';
 import AppFrame from '@/components/AppFrame';
-import { theme } from '@/lib/theme';
+import { brand } from '@/brand';
 import { config } from '@/lib/config';
 
 // CHECKIN_ENV is read at runtime (the same image runs in prod/dev/local), so the root
@@ -29,12 +29,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={brand.fontVariables} suppressHydrationWarning>
       <head>
         <ColorSchemeScript defaultColorScheme="auto" />
       </head>
-      <body>
-        <MantineProvider theme={theme} defaultColorScheme="auto">
+      <body data-brand={brand.id}>
+        <MantineProvider theme={brand.theme} defaultColorScheme="auto">
           <ModalsProvider>
             <Notifications />
             <EnvProvider value={config.checkinEnv()}>
