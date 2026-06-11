@@ -5,8 +5,9 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import { pdf } from "@react-pdf/renderer";
-import { Badge, Button, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { Badge, Button, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
 import BadgeDocument from "@/components/admin/BadgeDocument";
 import StickerDocument from "@/components/admin/StickerDocument";
 
@@ -128,10 +129,7 @@ export default function PrintBadgesPage() {
 
   return (
     <Stack>
-      <Group justify="space-between" align="center" wrap="wrap">
-        <Title order={1}>Print ID Badges</Title>
-        <Button variant="default" onClick={() => router.push('/admin')}>← Back to Admin Hub</Button>
-      </Group>
+      <AdminPageHeader title="Print ID Badges" back={{ href: '/admin', label: '← Back to Admin Hub' }} />
 
       <Text c="dimmed">
         Select participants to generate double-sided standard Avery 5390 ID badges.

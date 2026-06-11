@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Center, Checkbox, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 
 type UserRole = {
@@ -27,7 +27,6 @@ const ROLE_COLUMNS: { field: keyof UserRole; label: string }[] = [
 
 export default function RoleAssignmentPage() {
   const { user, ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
-  const router = useRouter();
 
   const [users, setUsers] = useState<UserRole[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,10 +100,7 @@ export default function RoleAssignmentPage() {
 
   return (
     <Stack>
-      <Group justify="space-between" align="center" wrap="wrap">
-        <Title order={1}>Role Assignment</Title>
-        <Button variant="default" onClick={() => router.push('/admin')}>← Back to Admin Hub</Button>
-      </Group>
+      <AdminPageHeader title="Role Assignment" back={{ href: '/admin', label: '← Back to Admin Hub' }} />
 
       <Text c="dimmed">
         Manage administrative privileges and access levels for community members. Checkboxes save

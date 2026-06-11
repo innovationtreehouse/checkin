@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, NumberInput, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, NumberInput, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
 
 type ParticipantOption = {
@@ -84,10 +85,7 @@ export default function CreateProgramPage() {
   return (
     <Container size="md" py="md">
       <Card withBorder radius="md" padding="lg">
-        <Group justify="space-between" align="center" wrap="wrap" mb="md">
-          <Title order={1}>Create Program</Title>
-          <Button variant="default" onClick={() => router.push('/programs')}>← Back to Programs</Button>
-        </Group>
+        <AdminPageHeader title="Create Program" back={{ href: '/programs', label: '← Back to Programs' }} mb="md" />
 
         <Text c="dimmed" mb="lg">
           Create a new program. You can configure the roster and schedule events later.
