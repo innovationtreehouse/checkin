@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, NumberInput, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
@@ -91,7 +92,7 @@ export default function CreateProgramPage() {
           Create a new program. You can configure the roster and schedule events later.
         </Text>
 
-        {message && <Alert color={messageType === 'success' ? 'green' : 'red'} mb="md">{message}</Alert>}
+        <AlertBanner message={message} tone={messageType === 'success' ? 'success' : 'error'} mb="md" />
 
         <form onSubmit={handleCreate}>
           <Stack>

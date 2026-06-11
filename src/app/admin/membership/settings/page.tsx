@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Alert, Button, Card, Center, Checkbox, Group, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
 import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
+import { AlertBanner } from "@/components/admin/AlertBanner";
 
 interface Settings {
   normalDuesCents: number;
@@ -124,7 +125,7 @@ export default function MembershipSettingsPage() {
     <Stack maw={820} mx="auto">
       <AdminPageHeader title="Membership Settings" back={{ href: '/admin/membership', label: '← Applications' }} />
 
-      {message && <Alert color={isError ? "yellow" : "green"}>{message}</Alert>}
+      <AlertBanner message={message} tone={isError ? 'warning' : 'success'} />
 
       {loading ? (
         <Center py="xl"><Loader /></Center>

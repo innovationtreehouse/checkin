@@ -4,6 +4,7 @@ import { useState, useEffect, use, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
 type ParticipantDetail = {
@@ -310,7 +311,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           </Button>
         </Group>
 
-        {message && <Alert color="cyan" mb="lg">{message}</Alert>}
+        <AlertBanner message={message} tone="info" mb="lg" />
 
         {/* PAST EVENT: ATTENDANCE CONFIRMATION */}
         {isPastEvent && canManageAttendance && (

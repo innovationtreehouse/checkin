@@ -6,7 +6,8 @@ import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
 import { isMinor } from '@/lib/time';
-import { Alert, Button, Card, Center, Checkbox, Container, Loader, Paper, Stack, Text, TextInput } from '@mantine/core';
+import { Button, Card, Center, Checkbox, Container, Loader, Paper, Stack, Text, TextInput } from '@mantine/core';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 
 type HouseholdOption = {
   id: number;
@@ -128,7 +129,7 @@ function NewParticipantForm() {
           this profile.
         </Text>
 
-        {message && <Alert color={isError ? 'red' : 'green'} mb="md">{message}</Alert>}
+        <AlertBanner message={message} tone={isError ? 'error' : 'success'} mb="md" />
 
         <form onSubmit={handleSubmit}>
           <Stack>
