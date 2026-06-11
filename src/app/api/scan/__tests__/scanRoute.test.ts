@@ -3,6 +3,7 @@
  */
 import { POST } from '../route';
 import { authenticateRequest } from '@/lib/auth';
+import prisma from '@/lib/prisma';
 
 jest.mock('@/lib/auth', () => ({
     authenticateRequest: jest.fn(),
@@ -86,9 +87,8 @@ describe('POST /api/scan', () => {
             body: JSON.stringify({ participantId: 1 })
         }) as unknown as import('next/server').NextRequest;
 
-        const prisma = require('@/lib/prisma');
-        prisma.participant.findUnique.mockResolvedValue({ id: 1 });
-        prisma.rawBadgeEvent.findFirst.mockResolvedValue({ time: new Date(Date.now() - 1000) });
+        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: 1 });
+        (prisma.rawBadgeEvent.findFirst as jest.Mock).mockResolvedValue({ time: new Date(Date.now() - 1000) });
 
         const res = await POST(req);
         expect(res.status).toBe(200);
