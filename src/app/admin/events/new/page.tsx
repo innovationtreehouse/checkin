@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import { Button, Card, Center, Checkbox, Container, Group, Loader, Select, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Button, Card, Center, Checkbox, Container, Group, Loader, Select, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 
 const DAYS_MAP = [
@@ -127,10 +127,7 @@ function NewEventForm() {
 
   return (
     <Card withBorder radius="md" padding="lg">
-      <Group justify="space-between" align="center" wrap="wrap" mb="lg">
-        <Title order={1}>Schedule Event</Title>
-        <Button component={Link} href={cancelHref} variant="default">Cancel</Button>
-      </Group>
+      <AdminPageHeader title="Schedule Event" back={{ href: cancelHref, label: 'Cancel' }} mb="lg" />
 
       <AlertBanner message={message} tone="error" mb="md" />
 

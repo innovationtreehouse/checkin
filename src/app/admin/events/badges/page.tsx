@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button, Center, Group, Loader, Stack, Table, Title } from '@mantine/core';
+import { Center, Loader, Stack, Table } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime } from '@/lib/time';
 
@@ -16,7 +16,6 @@ type BadgeEvent = {
 
 export default function AdminBadgesPage() {
   const { ready, loading: authLoading } = useRequireRole(['sysadmin']);
-  const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [badges, setBadges] = useState<BadgeEvent[]>([]);
@@ -50,10 +49,7 @@ export default function AdminBadgesPage() {
 
   return (
     <Stack>
-      <Group justify="space-between" align="center" wrap="wrap">
-        <Title order={1}>Raw Badge Events</Title>
-        <Button variant="default" onClick={() => router.push('/admin')}>← Admin Ops</Button>
-      </Group>
+      <AdminPageHeader title="Raw Badge Events" back={{ href: '/admin', label: '← Admin Ops' }} />
 
       <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 

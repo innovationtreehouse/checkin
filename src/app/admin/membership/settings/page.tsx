@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
 import { Alert, Button, Card, Center, Checkbox, Group, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
+import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
 
 interface Settings {
   normalDuesCents: number;
@@ -122,10 +122,7 @@ export default function MembershipSettingsPage() {
 
   return (
     <Stack maw={820} mx="auto">
-      <Group justify="space-between" align="center" wrap="wrap">
-        <Title order={1}>Membership Settings</Title>
-        <Button component={Link} href="/admin/membership" variant="default">← Applications</Button>
-      </Group>
+      <AdminPageHeader title="Membership Settings" back={{ href: '/admin/membership', label: '← Applications' }} />
 
       {message && <Alert color={isError ? "yellow" : "green"}>{message}</Alert>}
 
