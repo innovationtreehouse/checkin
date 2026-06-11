@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Center, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Button, Center, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
 type Visit = {
@@ -92,9 +93,7 @@ export default function AdminVisitsPage() {
         <Button variant="default" onClick={() => router.push('/admin')}>← Admin Ops</Button>
       </Group>
 
-      {message && (
-        <Alert color={message.includes('success') ? 'green' : 'red'}>{message}</Alert>
-      )}
+      <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 
       <Table.ScrollContainer minWidth={800}>
         <Table verticalSpacing="sm" highlightOnHover>
