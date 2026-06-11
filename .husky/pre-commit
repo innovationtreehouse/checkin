@@ -1,19 +1,23 @@
+# Husky hooks run from the repo root. The app is the checkin-app workspace, so
+# prisma / jest / tsc must run inside it. `npm -w checkin-app run <script>`
+# reliably executes in the workspace dir; for the raw prisma/tsc binaries we cd
+# explicitly (npx resolves them from the hoisted root node_modules).
 echo "Regenerating security classifications from schema..."
-npx prisma generate || {
+( cd checkin-app && npx prisma generate ) || {
   echo "Prisma generate failed (likely missing /// @sensitivity annotation). Commit blocked."
   exit 1
 }
-if ! git diff --exit-code src/security/generated/ >/dev/null 2>&1; then
-  echo "src/security/generated/ is out of date. Run 'npx prisma generate' and stage the result."
+if ! git diff --exit-code checkin-app/src/security/generated/ >/dev/null 2>&1; then
+  echo "checkin-app/src/security/generated/ is out of date. Run 'npx prisma generate' in checkin-app/ and stage the result."
   exit 1
 fi
 
 echo "Running tests..."
-npm run test:ci || {
+npm -w checkin-app run test:ci || {
   echo "Tests failed! Commit bypassed."
   exit 1
 }
 
 echo "Running linter and typescript checks..."
 npx lint-staged
-npx tsc --noEmit
+( cd checkin-app && npx tsc --noEmit )
