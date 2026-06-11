@@ -51,8 +51,10 @@ jobs:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
         run: npx prisma generate
 
-      # The deploy image runs `npm run build`, which type-checks. Catch type
-      # errors here at PR time instead of after merge in the dev deploy.
+      # Fast type feedback. NOTE: tsc does NOT resolve bundler imports, so it
+      # misses failures that only `next build` catches (e.g. importing a deleted
+      # CSS module type-checks fine yet breaks the build). The full production
+      # build runs in the `deploy-build` job below.
       - name: Type check
         run: npx tsc --noEmit
 
@@ -93,3 +95,25 @@ jobs:
         env:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
         run: npx jest tests/security/policy.contract.integration.test.ts --runInBand --forceExit --testPathIgnorePatterns=/node_modules/
+
+  # Build the exact production image the dev deploy uses (Dockerfile -> `npm run build`),
+  # but never push or deploy it. The deploy flow's build was previously only exercised on
+  # push to main, so build-only failures (e.g. a Turbopack "module not found" that tsc can't
+  # see) slipped through CI and broke the post-merge deploy. Building here gates the MR.
+  deploy-build:
+    name: Deploy build (no deploy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Mirrors deploy-dev.yml's build step minus `docker push`. Architecture is irrelevant
+      # (the image is discarded), so the default x64 runner is fine — the deploy builds arm64
+      # on its own runner for ECS.
+      - name: Build deploy image (no push)
+        env:
+          NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN: ${{ vars.SHOPIFY_STORE_DOMAIN }}
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN="$NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN" \
+            -t checkin-deploy-build:${{ github.sha }} .
