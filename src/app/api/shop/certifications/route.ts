@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@/generated/prisma/client';
 import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
 
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        const validLevels = ["BASIC", "DOF", "CERTIFIED", "MAY_CERTIFY_OTHERS"];
+        const validLevels = ["BASIC", "DOF", "CERTIFIED", "INSTRUCTOR", "MAY_CERTIFY_OTHERS"];
         if (!validLevels.includes(level)) {
             return NextResponse.json({ error: "Invalid certification level" }, { status: 400 });
         }
@@ -125,12 +125,12 @@ export async function POST(req: Request) {
                 }
             },
             update: {
-                level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'MAY_CERTIFY_OTHERS'
+                level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'INSTRUCTOR' | 'MAY_CERTIFY_OTHERS'
             },
             create: {
                 userId: pId,
                 toolId: tId,
-                level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'MAY_CERTIFY_OTHERS'
+                level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'INSTRUCTOR' | 'MAY_CERTIFY_OTHERS'
             }
         });
 

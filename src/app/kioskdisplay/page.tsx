@@ -3,965 +3,513 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import styles from "../page.module.css";
+import {
+  Alert, Anchor, Badge, Box, Button, Card, Center, Group, Loader, Modal, Paper,
+  SimpleGrid, Stack, Text, TextInput, Title,
+} from "@mantine/core";
 import { formatTime } from "@/lib/time";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 
 type Participant = {
-    id: number;
-    email: string;
-    name?: string | null;
-    keyholder: boolean;
-    sysadmin: boolean;
-    dob?: string | null;
-    householdId?: number | null;
-    phone?: string | null;
-    household?: {
-        emergencyContactName: string | null;
-        emergencyContactPhone: string | null;
-    } | null;
+  id: number;
+  email: string;
+  name?: string | null;
+  keyholder: boolean;
+  sysadmin: boolean;
+  dob?: string | null;
+  householdId?: number | null;
+  phone?: string | null;
+  household?: { emergencyContactName: string | null; emergencyContactPhone: string | null } | null;
 };
 
 type Visit = {
-    id: number;
-    arrived: string;
-    participant: Participant;
-    event?: {
-        program?: {
-            id: number;
-            name: string;
-        }
-    }
+  id: number;
+  arrived: string;
+  participant: Participant;
+  event?: { program?: { id: number; name: string } };
 };
 
-type Counts = {
-    keyholders: number;
-    volunteers: number;
-    students: number;
-    total: number;
-};
-
-type SafetyFlags = {
-    isLastKeyholder: boolean;
-    isTwoDeepViolation: boolean;
-};
-
-type FullResponse = {
-    access: "full";
-    attendance: Visit[];
-    counts: Counts;
-    safety: SafetyFlags;
-};
-
-type LimitedResponse = {
-    access: "limited";
-    counts: Counts;
-    safety: SafetyFlags;
-    self: Visit | null;
-    household: Visit[];
-};
-
+type Counts = { keyholders: number; volunteers: number; students: number; total: number };
+type SafetyFlags = { isLastKeyholder: boolean; isTwoDeepViolation: boolean };
+type FullResponse = { access: "full"; attendance: Visit[]; counts: Counts; safety: SafetyFlags };
+type LimitedResponse = { access: "limited"; counts: Counts; safety: SafetyFlags; self: Visit | null; household: Visit[] };
 type AttendanceResponse = FullResponse | LimitedResponse;
 
 const isStudent = (dob: string | undefined | null) => {
-    if (!dob) return false;
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const m = today.getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-    return age < 18;
+  if (!dob) return false;
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+  return age < 18;
 };
 
-type SessionUser = {
-    id: number;
-    sysadmin?: boolean;
-    keyholder?: boolean;
-    boardMember?: boolean;
-    householdId?: number | null;
-};
+type SessionUser = { id: number; sysadmin?: boolean; keyholder?: boolean; boardMember?: boolean; householdId?: number | null };
 
 function KioskDisplayInner() {
-    const searchParams = useSearchParams();
-    const [isKioskMode, setIsKioskMode] = useState(searchParams.get("mode") === "kiosk");
-    const { data: session } = useSession();
-    const [data, setData] = useState<AttendanceResponse | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [checkingOut, setCheckingOut] = useState<number | null>(null);
-    const [household, setHousehold] = useState<{ leads: { participantId: number }[], participants: Participant[] } | null>(null);
-    const [showSignOutModal, setShowSignOutModal] = useState(false);
-    const [searchSignOutQuery, setSearchSignOutQuery] = useState("");
-    const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null);
+  const searchParams = useSearchParams();
+  const [isKioskMode, setIsKioskMode] = useState(searchParams.get("mode") === "kiosk");
+  const { data: session } = useSession();
+  const [data, setData] = useState<AttendanceResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [checkingOut, setCheckingOut] = useState<number | null>(null);
+  const [household, setHousehold] = useState<{ leads: { participantId: number }[], participants: Participant[] } | null>(null);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [searchSignOutQuery, setSearchSignOutQuery] = useState("");
+  const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null);
 
-    const [searchQuery, setSearchQuery] = useState("");
-    const [searchResults, setSearchResults] = useState<Participant[]>([]);
-    const [checkingInId, setCheckingInId] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Participant[]>([]);
+  const [checkingInId, setCheckingInId] = useState<number | null>(null);
 
-    const currentUserIsSysadmin = (session?.user as SessionUser)?.sysadmin || false;
-    const currentUserIsKeyholder = (session?.user as SessionUser)?.keyholder || false;
-    const currentUserIsBoardMember = (session?.user as SessionUser)?.boardMember || false;
-    const currentUserHouseholdId = (session?.user as SessionUser)?.householdId || null;
-    const canManuallyCheckInGlobal = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
-    const canAdminCheckout = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
-    const canCheckInHousehold = Boolean(currentUserHouseholdId);
+  const currentUserIsSysadmin = (session?.user as SessionUser)?.sysadmin || false;
+  const currentUserIsKeyholder = (session?.user as SessionUser)?.keyholder || false;
+  const currentUserIsBoardMember = (session?.user as SessionUser)?.boardMember || false;
+  const currentUserHouseholdId = (session?.user as SessionUser)?.householdId || null;
+  const canManuallyCheckInGlobal = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
+  const canAdminCheckout = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
+  const canCheckInHousehold = Boolean(currentUserHouseholdId);
 
-    const isFull = data?.access === "full";
-    const counts = data?.counts || { keyholders: 0, volunteers: 0, students: 0, total: 0 };
-    const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
+  const isFull = data?.access === "full";
+  const counts = data?.counts || { keyholders: 0, volunteers: 0, students: 0, total: 0 };
+  const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
 
-    // For full access, split attendance into columns
-    const fullAttendance = isFull ? (data as FullResponse).attendance : [];
-    const keyholderList = fullAttendance.filter(v => v.participant.keyholder);
-    const volunteerList = fullAttendance.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
-    const studentList = fullAttendance.filter(v => isStudent(v.participant.dob));
+  const fullAttendance = isFull ? (data as FullResponse).attendance : [];
+  const keyholderList = fullAttendance.filter(v => v.participant.keyholder);
+  const volunteerList = fullAttendance.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
+  const studentList = fullAttendance.filter(v => isStudent(v.participant.dob));
 
-    // For limited access, determine visible household members per category
-    const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
-    const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
-    const householdKeyholders = limitedHousehold.filter(v => v.participant.keyholder);
-    const householdVolunteers = limitedHousehold.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
-    const householdStudents = limitedHousehold.filter(v => isStudent(v.participant.dob));
+  const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
+  const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
+  const householdKeyholders = limitedHousehold.filter(v => v.participant.keyholder);
+  const householdVolunteers = limitedHousehold.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
+  const householdStudents = limitedHousehold.filter(v => isStudent(v.participant.dob));
 
-    // Is current user checked in?
-    const isCheckedIn = isFull
-        ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)
-        : limitedSelf !== null;
+  const isCheckedIn = isFull
+    ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)
+    : limitedSelf !== null;
 
-    useEffect(() => {
-        const fetchHousehold = async () => {
-            if (!currentUserHouseholdId) return;
-            try {
-                const res = await fetch("/api/household");
-                if (res.ok) {
-                    const hData = await res.json();
-                    setHousehold(hData.household);
-                }
-            } catch (error) {
-                console.error("Failed to fetch household:", error);
-            }
-        };
-
-        if (canCheckInHousehold) {
-            fetchHousehold();
+  useEffect(() => {
+    const fetchHousehold = async () => {
+      if (!currentUserHouseholdId) return;
+      try {
+        const res = await fetch("/api/household");
+        if (res.ok) {
+          const hData = await res.json();
+          setHousehold(hData.household);
         }
-    }, [canCheckInHousehold, currentUserHouseholdId]);
+      } catch (error) {
+        console.error("Failed to fetch household:", error);
+      }
+    };
+    if (canCheckInHousehold) fetchHousehold();
+  }, [canCheckInHousehold, currentUserHouseholdId]);
 
-    useEffect(() => {
-        const fetchAttendance = async () => {
-            try {
-                // Check if we are passing signature headers to the API
-                const headers: Record<string, string> = {};
-                const sigParamsUrl = searchParams.get("sig");
-                const tsParamsUrl = searchParams.get("ts");
-                const nonceParamsUrl = searchParams.get("nonce");
+  useEffect(() => {
+    const fetchAttendance = async () => {
+      try {
+        const headers: Record<string, string> = {};
+        const sigParamsUrl = searchParams.get("sig");
+        const tsParamsUrl = searchParams.get("ts");
+        const nonceParamsUrl = searchParams.get("nonce");
+        if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
+          headers["x-kiosk-signature"] = sigParamsUrl;
+          headers["x-kiosk-timestamp"] = tsParamsUrl;
+          headers["x-kiosk-nonce"] = nonceParamsUrl;
+        }
 
-                if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
-                    headers["x-kiosk-signature"] = sigParamsUrl;
-                    headers["x-kiosk-timestamp"] = tsParamsUrl;
-                    headers["x-kiosk-nonce"] = nonceParamsUrl;
-                }
+        const res = await fetch("/api/attendance", { headers });
+        const json = await res.json();
+        if (res.ok && (json.access === "full" || json.access === "limited")) {
+          setData(json);
+          setError(null);
+          if (json.signedRequest === true) setIsKioskMode(true);
+        } else if (!res.ok) {
+          setError(json.error || "Failed to load attendance");
+        }
+      } catch (error) {
+        console.error("Failed to fetch attendance:", error);
+        setError("Network error");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-                const res = await fetch("/api/attendance", { headers });
-                const json = await res.json();
-                
-                if (res.ok && (json.access === "full" || json.access === "limited")) {
-                    setData(json);
-                    setError(null);
-                    
-                    // If it was a signed request, automatically turn on Kiosk Mode
-                    if (json.signedRequest === true) {
-                        setIsKioskMode(true);
-                    }
-                } else if (!res.ok) {
-                    setError(json.error || "Failed to load attendance");
-                }
-            } catch (error) {
-                console.error("Failed to fetch attendance:", error);
-                setError("Network error");
-            } finally {
-                setLoading(false);
-            }
-        };
+    fetchAttendance();
+    const interval = setInterval(fetchAttendance, 60000);
 
+    const handleMessage = (event: MessageEvent) => {
+      if (typeof event.data === "object" && event.data?.type === "refresh-attendance" && event.data.attendance) {
+        setData({ access: "full", attendance: event.data.attendance, counts: event.data.counts, safety: event.data.safety });
+        setLoading(false);
+        if (event.data.signedRequest) setIsKioskMode(true);
+      } else if (event.data === "refresh-attendance") {
         fetchAttendance();
-        const interval = setInterval(fetchAttendance, 60000);
+      }
+    };
+    window.addEventListener("message", handleMessage);
 
-        // Listen for instant refresh from parent wrapper (triggered by badge SSE events)
-        const handleMessage = (event: MessageEvent) => {
-            if (typeof event.data === "object" && event.data?.type === "refresh-attendance" && event.data.attendance) {
-                // Inline attendance data from signed scan response — update directly, no re-fetch needed
-                setData({ access: "full", attendance: event.data.attendance, counts: event.data.counts, safety: event.data.safety });
-                setLoading(false);
-                if (event.data.signedRequest) {
-                    setIsKioskMode(true);
-                }
-            } else if (event.data === "refresh-attendance") {
-                // Fallback: no inline data, re-fetch from server
-                fetchAttendance();
-            }
-        };
-        window.addEventListener("message", handleMessage);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [searchParams]);
 
-        return () => {
-            clearInterval(interval);
-            window.removeEventListener("message", handleMessage);
-        };
-    }, [searchParams]);
-
-    useEffect(() => {
-        const performSearch = async () => {
-            if (searchQuery.length < 2) {
-                setSearchResults([]);
-                return;
-            }
-            try {
-                const res = await fetch(`/api/admin/roles`);
-                if (res.ok) {
-                    const data = await res.json();
-                    const filtered = data.participants.filter(
-                        (p: Participant) =>
-                            (p.name || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
-                            (p.email || "").toLowerCase().includes((searchQuery || "").toLowerCase())
-                    );
-                    setSearchResults(filtered);
-                }
-            } catch (error) {
-                console.error("Search error:", error);
-            }
-        };
-        const timeoutId = setTimeout(performSearch, 300);
-        return () => clearTimeout(timeoutId);
-    }, [searchQuery]);
-
-    const handleForceCheckout = async (visitId: number) => {
-        if (!confirm("Are you sure you want to force checkout this user?")) return;
-        setCheckingOut(visitId);
-        try {
-            const res = await fetch("/api/attendance", {
-                method: "DELETE",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ visitId }),
-            });
-            if (res.ok) {
-                // Manually trigger a refresh logic or wait for the interval by changing internal state
-                const fetchAttendance = async () => {
-                    // Check if we are passing signature headers to the API
-                    const headers: Record<string, string> = {};
-                    const sigParamsUrl = searchParams.get("sig");
-                    const tsParamsUrl = searchParams.get("ts");
-                    const nonceParamsUrl = searchParams.get("nonce");
-
-                    if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
-                        headers["x-kiosk-signature"] = sigParamsUrl;
-                        headers["x-kiosk-timestamp"] = tsParamsUrl;
-                        headers["x-kiosk-nonce"] = nonceParamsUrl;
-                    }
-
-                    const attRes = await fetch("/api/attendance", { headers });
-                    const json = await attRes.json();
-                    if (attRes.ok && (json.access === "full" || json.access === "limited")) {
-                        setData(json);
-                        if (json.signedRequest) {
-                            setIsKioskMode(true);
-                        }
-                    }
-                };
-                fetchAttendance();
-            } else {
-                alert("Failed to force checkout.");
-            }
-        } catch (e) {
-            console.error(e);
-            alert("Network error.");
-        } finally {
-            setCheckingOut(null);
+  useEffect(() => {
+    const performSearch = async () => {
+      if (searchQuery.length < 2) {
+        setSearchResults([]);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/admin/roles`);
+        if (res.ok) {
+          const data = await res.json();
+          const filtered = data.participants.filter(
+            (p: Participant) =>
+              (p.name || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
+              (p.email || "").toLowerCase().includes((searchQuery || "").toLowerCase())
+          );
+          setSearchResults(filtered);
         }
+      } catch (error) {
+        console.error("Search error:", error);
+      }
     };
+    const timeoutId = setTimeout(performSearch, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
-    const handleManualCheckIn = async (participantId: number) => {
-        setCheckingInId(participantId);
-        try {
-            const res = await fetch("/api/attendance", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ type: "MANUAL_CHECKIN", participantId }),
-            });
-            if (res.ok) {
-                setSearchQuery("");
-                setSearchResults([]);
-                // Manually trigger a refresh logic or wait for the interval by changing internal state
-                const fetchAttendance = async () => {
-                    // Check if we are passing signature headers to the API
-                    const headers: Record<string, string> = {};
-                    const sigParamsUrl = searchParams.get("sig");
-                    const tsParamsUrl = searchParams.get("ts");
-                    const nonceParamsUrl = searchParams.get("nonce");
+  const refreshAttendance = async () => {
+    const headers: Record<string, string> = {};
+    const sigParamsUrl = searchParams.get("sig");
+    const tsParamsUrl = searchParams.get("ts");
+    const nonceParamsUrl = searchParams.get("nonce");
+    if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
+      headers["x-kiosk-signature"] = sigParamsUrl;
+      headers["x-kiosk-timestamp"] = tsParamsUrl;
+      headers["x-kiosk-nonce"] = nonceParamsUrl;
+    }
+    const attRes = await fetch("/api/attendance", { headers });
+    const json = await attRes.json();
+    if (attRes.ok && (json.access === "full" || json.access === "limited")) {
+      setData(json);
+      if (json.signedRequest) setIsKioskMode(true);
+    }
+  };
 
-                    if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
-                        headers["x-kiosk-signature"] = sigParamsUrl;
-                        headers["x-kiosk-timestamp"] = tsParamsUrl;
-                        headers["x-kiosk-nonce"] = nonceParamsUrl;
-                    }
+  const handleForceCheckout = async (visitId: number) => {
+    if (!confirm("Are you sure you want to force checkout this user?")) return;
+    setCheckingOut(visitId);
+    try {
+      const res = await fetch("/api/attendance", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visitId }),
+      });
+      if (res.ok) refreshAttendance();
+      else alert("Failed to force checkout.");
+    } catch (e) {
+      console.error(e);
+      alert("Network error.");
+    } finally {
+      setCheckingOut(null);
+    }
+  };
 
-                    const attRes = await fetch("/api/attendance", { headers });
-                    const json = await attRes.json();
-                    if (attRes.ok && (json.access === "full" || json.access === "limited")) {
-                        setData(json);
-                        if (json.signedRequest) {
-                            setIsKioskMode(true);
-                        }
-                    }
-                };
-                fetchAttendance();
-            } else {
-                const d = await res.json();
-                alert(`Error: ${d.error}`);
-            }
-        } catch (e) {
-            console.error(e);
-            alert("Network error.");
-        } finally {
-            setCheckingInId(null);
-        }
-    };
+  const handleManualCheckIn = async (participantId: number) => {
+    setCheckingInId(participantId);
+    try {
+      const res = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "MANUAL_CHECKIN", participantId }),
+      });
+      if (res.ok) {
+        setSearchQuery("");
+        setSearchResults([]);
+        refreshAttendance();
+      } else {
+        const d = await res.json();
+        alert(`Error: ${d.error}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Network error.");
+    } finally {
+      setCheckingInId(null);
+    }
+  };
 
-    // Visits that are already checked in (for filtering manual search results)
-    const checkedInIds = isFull
-        ? fullAttendance.map(v => v.participant.id)
-        : [...limitedHousehold.map(v => v.participant.id), ...(limitedSelf ? [limitedSelf.participant.id] : [])];
-    const displayResults = searchResults.filter(p => !checkedInIds.includes(p.id));
+  const checkedInIds = isFull
+    ? fullAttendance.map(v => v.participant.id)
+    : [...limitedHousehold.map(v => v.participant.id), ...(limitedSelf ? [limitedSelf.participant.id] : [])];
+  const displayResults = searchResults.filter(p => !checkedInIds.includes(p.id));
 
-    // -- Render helpers --
+  const kioskDisplayNames = useMemo(() => {
+    if (!isKioskMode) return new Map<number, string>();
+    const allVisits = [...keyholderList, ...volunteerList, ...studentList];
+    return getKioskDisplayNames(allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, email: v.participant.email })));
+  }, [isKioskMode, keyholderList, volunteerList, studentList]);
 
-    // Compute privacy-friendly display names for kiosk mode
-    const kioskDisplayNames = useMemo(() => {
-        if (!isKioskMode) return new Map<number, string>();
-        const allVisits = [...keyholderList, ...volunteerList, ...studentList];
-        return getKioskDisplayNames(
-            allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, email: v.participant.email }))
-        );
-    }, [isKioskMode, keyholderList, volunteerList, studentList]);
+  const canSeeNames = !isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin || currentUserIsBoardMember);
 
-    const renderPersonCard = (visit: Visit, showCheckout: boolean) => (
-        <div
-            key={visit.id}
-            style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "0.5rem 0.75rem",
-                background: "rgba(255, 255, 255, 0.04)",
-                borderRadius: "6px",
-                border: "1px solid rgba(255, 255, 255, 0.06)",
-            }}
-        >
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
-                <span
-                    style={{
-                        fontWeight: 500,
-                        fontSize: "0.85rem",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        cursor: (!isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin || currentUserIsBoardMember)) ? 'pointer' : 'default'
-                    }}
-                    onClick={() => {
-                        if (!isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin || currentUserIsBoardMember)) {
-                            setSelectedParticipant(visit.participant);
-                        }
-                    }}
-                    title={isKioskMode ? (kioskDisplayNames.get(visit.participant.id) || visit.participant.name || visit.participant.email) : (visit.participant.name || visit.participant.email)}
-                >
-                    {isKioskMode ? (kioskDisplayNames.get(visit.participant.id) || visit.participant.name || visit.participant.email.split("@")[0]) : (visit.participant.name || visit.participant.email.split("@")[0])}
-                </span>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ color: "var(--color-text-muted)", fontSize: "0.7rem" }}>
-                        {formatTime(visit.arrived)}
-                    </span>
-                    {visit.event?.program?.name && (
-                        <span style={{
-                            fontSize: "0.6rem",
-                            padding: "0.1rem 0.3rem",
-                            borderRadius: "4px",
-                            fontWeight: 600,
-                            whiteSpace: "nowrap",
-                            textOverflow: "ellipsis",
-                            overflow: "hidden",
-                            maxWidth: "100px",
-                            // Generate a consistent hue based on the program name
-                            background: `hsl(${visit.event.program.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 360}, 60%, 20%)`,
-                            color: `hsl(${visit.event.program.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 360}, 80%, 80%)`,
-                            border: `1px solid hsl(${visit.event.program.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 360}, 60%, 30%)`
-                        }} title={visit.event.program.name}>
-                            {visit.event.program.name}
-                        </span>
-                    )}
-                </div>
-                {!isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin) && (
-                    <div style={{ marginTop: "4px", fontSize: "0.7rem", color: "var(--color-primary-light)" }}>
-                        {visit.participant.phone && <div>📞 {visit.participant.phone}</div>}
-                    </div>
-                )}
-            </div>
-            {showCheckout && (
-                <button
-                    onClick={() => handleForceCheckout(visit.id)}
-                    disabled={checkingOut === visit.id}
-                    style={{
-                        background: "rgba(239, 68, 68, 0.2)",
-                        border: "1px solid rgba(239, 68, 68, 0.4)",
-                        color: "#fca5a5",
-                        padding: "0.15rem 0.4rem",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                        fontSize: "0.7rem",
-                        whiteSpace: "nowrap",
-                        flexShrink: 0,
-                    }}
-                >
-                    {checkingOut === visit.id ? "..." : "Out"}
-                </button>
-            )}
-        </div>
-    );
-
-    const canCheckoutVisit = (visit: Visit): boolean => {
-        return Boolean(
-            visit.participant.id === (session?.user as SessionUser)?.id ||
-            (household?.leads?.some((l: { participantId: number }) => l.participantId === (session?.user as SessionUser)?.id) &&
-                visit.participant.householdId === currentUserHouseholdId)
-        );
-    };
-
-    const columnHeaderStyle = (color: string) => ({
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        marginBottom: "0.75rem",
-        paddingBottom: "0.5rem",
-        borderBottom: `2px solid ${color}`,
-    });
-
-    const columnCountStyle = {
-        fontSize: "1.5rem",
-        fontWeight: 800 as const,
-        lineHeight: 1,
-    };
-
-    const columnLabelStyle = {
-        fontSize: "0.75rem",
-        textTransform: "uppercase" as const,
-        letterSpacing: "0.05em",
-        color: "var(--color-text-muted)",
-    };
-
+  const renderPersonCard = (visit: Visit, showCheckout: boolean) => {
+    const hue = visit.event?.program?.name
+      ? visit.event.program.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 360
+      : 0;
     return (
-        <main className={styles.main} style={isKioskMode ? { cursor: "none" } : undefined}>
-            <div className="glass-container" style={{ width: "100%", maxWidth: "1200px" }}>
-                {/* Check-in button — hidden in kiosk mode */}
-                {!isKioskMode && (
-                    <div style={{ marginBottom: "2rem" }}>
-                        {!isCheckedIn ? (
-                            <button
-                                onClick={() => {
-                                    const userId = (session?.user as SessionUser)?.id;
-                                    if (userId) handleManualCheckIn(userId);
-                                }}
-                                disabled={checkingInId === (session?.user as SessionUser)?.id}
-                                className="glass-button primary"
-                                style={{ padding: "1rem 2rem", fontSize: "1.1rem", fontWeight: 600, width: "100%" }}
-                            >
-                                {checkingInId === (session?.user as SessionUser)?.id ? "Checking In..." : "Check Me In"}
-                            </button>
-                        ) : (
-                            <div
-                                style={{
-                                    padding: "1rem",
-                                    background: "rgba(16, 185, 129, 0.1)",
-                                    border: "1px solid rgba(16, 185, 129, 0.3)",
-                                    borderRadius: "8px",
-                                    color: "#6ee7b7",
-                                    textAlign: "center",
-                                }}
-                            >
-                                You are currently checked in!
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Header */}
-                <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: "1.5rem",
-                        flexWrap: "wrap",
-                        gap: "0.5rem",
-                    }}
-                >
-                    <h1 className="text-gradient" style={{ margin: 0 }}>
-                        Current Attendance
-                    </h1>
-                    <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-                        {!isKioskMode && canAdminCheckout && (
-                            <button
-                                onClick={() => setShowSignOutModal(true)}
-                                style={{
-                                    background: "rgba(239, 68, 68, 0.2)",
-                                    border: "1px solid rgba(239, 68, 68, 0.4)",
-                                    color: "#fca5a5",
-                                    padding: "0.5rem 1rem",
-                                    borderRadius: "20px",
-                                    cursor: "pointer",
-                                    fontWeight: 600,
-                                    fontSize: "0.85rem",
-                                }}
-                            >
-                                Sign out a user
-                            </button>
-                        )}
-                        <div
-                            style={{
-                                padding: "0.5rem 1rem",
-                                background: "rgba(255,255,255,0.1)",
-                                borderRadius: "20px",
-                                display: "flex",
-                                gap: "8px",
-                                alignItems: "center",
-                            }}
-                        >
-                            <span
-                                style={{
-                                    width: "10px",
-                                    height: "10px",
-                                    borderRadius: "50%",
-                                    background: "#10b981",
-                                    display: "inline-block",
-                                }}
-                            />
-                            <span>{counts.total} People Present</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Household check-in buttons — hidden in kiosk mode */}
-                {!isKioskMode &&
-                    canCheckInHousehold &&
-                    household &&
-                    household.leads?.some((l: { participantId: number }) => l.participantId === (session?.user as SessionUser)?.id) && (
-                        <div style={{ marginBottom: "2rem" }}>
-                            <h3 style={{ marginBottom: "1rem", color: "var(--color-primary-light)" }}>
-                                Check In Household Members
-                            </h3>
-                            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                                {household.participants
-                                    ?.filter((p: Participant) => !checkedInIds.includes(p.id))
-                                    .map((p: Participant) => (
-                                        <button
-                                            key={p.id}
-                                            onClick={() => handleManualCheckIn(p.id)}
-                                            disabled={checkingInId === p.id}
-                                            className="glass-button"
-                                            style={{
-                                                padding: "0.5rem 1rem",
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: "0.5rem",
-                                            }}
-                                        >
-                                            {checkingInId === p.id ? "..." : <span>{p.name || p.email}</span>}
-                                        </button>
-                                    ))}
-                                {household.participants?.filter((p: Participant) => !checkedInIds.includes(p.id)).length ===
-                                    0 && (
-                                    <span
-                                        style={{
-                                            color: "var(--color-text-muted)",
-                                            fontStyle: "italic",
-                                            fontSize: "0.875rem",
-                                        }}
-                                    >
-                                        All household members are currently checked in!
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                {/* Admin manual check-in search — hidden in kiosk mode */}
-                {!isKioskMode && canManuallyCheckInGlobal && (
-                    <div style={{ marginBottom: "2rem", position: "relative" }}>
-                        <input
-                            type="text"
-                            placeholder="Manually check someone in (Search by name or email)..."
-                            className="glass-input"
-                            style={{
-                                width: "100%",
-                                padding: "0.75rem",
-                                background: "rgba(0,0,0,0.2)",
-                                color: "white",
-                            }}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                        {displayResults.length > 0 && searchQuery.length >= 2 && (
-                            <div
-                                style={{
-                                    position: "absolute",
-                                    top: "100%",
-                                    left: 0,
-                                    right: 0,
-                                    background: "#1e293b",
-                                    border: "1px solid rgba(255,255,255,0.1)",
-                                    borderRadius: "8px",
-                                    marginTop: "4px",
-                                    zIndex: 10,
-                                    maxHeight: "200px",
-                                    overflowY: "auto",
-                                }}
-                            >
-                                {displayResults.map((p) => (
-                                    <div
-                                        key={p.id}
-                                        style={{
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            padding: "0.75rem",
-                                            borderBottom: "1px solid rgba(255,255,255,0.05)",
-                                        }}
-                                    >
-                                        <div>
-                                            <div style={{ fontWeight: 500 }}>{p.name || "Unnamed"}</div>
-                                            <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
-                                                {p.email}
-                                            </div>
-                                        </div>
-                                        <button
-                                            disabled={checkingInId === p.id}
-                                            onClick={() => handleManualCheckIn(p.id)}
-                                            style={{
-                                                background: "rgba(59, 130, 246, 0.2)",
-                                                color: "#93c5fd",
-                                                border: "1px solid rgba(59, 130, 246, 0.4)",
-                                                borderRadius: "4px",
-                                                padding: "0.2rem 0.5rem",
-                                                cursor: "pointer",
-                                                fontSize: "0.8rem",
-                                            }}
-                                        >
-                                            {checkingInId === p.id ? "..." : "Check In"}
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Safety warnings */}
-                {safety.isTwoDeepViolation && (
-                    <div
-                        style={{
-                            background: "rgba(239, 68, 68, 0.2)",
-                            border: "1px solid rgba(239, 68, 68, 0.5)",
-                            color: "#fca5a5",
-                            padding: "1rem",
-                            borderRadius: "8px",
-                            marginBottom: "1.5rem",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "12px",
-                        }}
-                    >
-                        <span>🚨</span>
-                        <strong>Critical Warning:</strong> Two-Deep Compliance is failing! An unaccompanied
-                        student is present without sufficient adult supervision.
-                    </div>
-                )}
-                {!safety.isTwoDeepViolation && safety.isLastKeyholder && (
-                    <div
-                        style={{
-                            background: "rgba(245, 158, 11, 0.2)",
-                            border: "1px solid rgba(245, 158, 11, 0.5)",
-                            color: "#fcd34d",
-                            padding: "1rem",
-                            borderRadius: "8px",
-                            marginBottom: "1.5rem",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "12px",
-                        }}
-                    >
-                        <span>⚠️</span>
-                        <strong>Warning:</strong> Only one keyholder is currently in the building.
-                    </div>
-                )}
-
-                {/* Main content */}
-                {loading ? (
-                    <p style={{ color: "var(--color-text-muted)" }}>Loading attendance...</p>
-                ) : error ? (
-                    <div
-                        style={{
-                            textAlign: "center",
-                            padding: "3rem",
-                            color: "#fca5a5",
-                            background: "rgba(239, 68, 68, 0.1)",
-                            borderRadius: "8px",
-                            border: "1px solid rgba(239, 68, 68, 0.3)",
-                        }}
-                    >
-                        <p>
-                            {error === "Unauthorized"
-                                ? "Access Denied: Please sign in to view attendance."
-                                : error}
-                        </p>
-                    </div>
-                ) : counts.total === 0 ? (
-                    <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-muted)" }}>
-                        <p>The facility is currently empty.</p>
-                    </div>
-                ) : (
-                    /* 3-column layout — responsive for mobile */
-                    <div
-                        style={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-                            gap: "1.5rem",
-                        }}
-                    >
-                        {/* Keyholders column */}
-                        <div className={
-                            counts.students > 20 
-                                ? "" 
-                                : (counts.keyholders > 10 ? styles.span2IfWide : "")
-                        }>
-                            <div style={columnHeaderStyle("rgba(59, 130, 246, 0.6)")}>
-                                <span style={{ fontSize: "1.25rem" }}>🔑</span>
-                                <div>
-                                    <div style={{ ...columnCountStyle, color: "#60a5fa" }}>
-                                        {counts.keyholders}
-                                    </div>
-                                    <div style={columnLabelStyle}>Keyholders</div>
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: (counts.keyholders > 10 && counts.students <= 20) ? "repeat(2, 1fr)" : "1fr", gap: "0.4rem" }}>
-                                {isFull
-                                    ? keyholderList.map(v => renderPersonCard(v, canCheckoutVisit(v)))
-                                    : householdKeyholders.map(v => renderPersonCard(v, canCheckoutVisit(v)))}
-                            </div>
-                        </div>
-
-                        {/* Volunteers column */}
-                        <div className={
-                            counts.students > 20 
-                                ? "" 
-                                : (counts.volunteers > 10 ? styles.span2IfWide : "")
-                        }>
-                            <div style={columnHeaderStyle("rgba(16, 185, 129, 0.6)")}>
-                                <span style={{ fontSize: "1.25rem" }}>🤝</span>
-                                <div>
-                                    <div style={{ ...columnCountStyle, color: "#34d399" }}>
-                                        {counts.volunteers}
-                                    </div>
-                                    <div style={columnLabelStyle}>Volunteers</div>
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: (counts.volunteers > 10 && counts.students <= 20) ? "repeat(2, 1fr)" : "1fr", gap: "0.4rem" }}>
-                                {isFull
-                                    ? volunteerList.map(v => renderPersonCard(v, canCheckoutVisit(v)))
-                                    : householdVolunteers.map(v => renderPersonCard(v, canCheckoutVisit(v)))}
-                            </div>
-                        </div>
-
-                        {/* Students column */}
-                        <div className={
-                            counts.students > 20 ? styles.span2IfWide : (counts.students > 10 ? styles.span2IfWide : "")
-                        }>
-                            <div style={columnHeaderStyle("rgba(168, 85, 247, 0.6)")}>
-                                <span style={{ fontSize: "1.25rem" }}>🎓</span>
-                                <div>
-                                    <div style={{ ...columnCountStyle, color: "#c084fc" }}>
-                                        {counts.students}
-                                    </div>
-                                    <div style={columnLabelStyle}>Students</div>
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: counts.students > 10 ? "repeat(auto-fill, minmax(200px, 1fr))" : "1fr", gap: "0.4rem" }}>
-                                {isFull
-                                    ? studentList.map(v => renderPersonCard(v, canCheckoutVisit(v)))
-                                    : householdStudents.map(v => renderPersonCard(v, canCheckoutVisit(v)))}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Privacy notice for limited access */}
-                {!isFull && counts.total > 0 && (
-                    <div
-                        style={{
-                            marginTop: "1.5rem",
-                            padding: "0.75rem",
-                            background: "rgba(255, 255, 255, 0.03)",
-                            borderRadius: "8px",
-                            textAlign: "center",
-                            fontSize: "0.8rem",
-                            color: "var(--color-text-muted)",
-                        }}
-                    >
-                        🔒 Individual names are only visible to administrators and on the facility kiosk.
-                        {limitedHousehold.length > 0 && " Your household members are shown above."}
-                    </div>
-                )}
-            </div>
-
-            {/* Admin Sign Out Modal */}
-            {showSignOutModal && (
-                <div style={{
-                    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-                    background: "rgba(0,0,0,0.8)", zIndex: 1000, display: "flex",
-                    alignItems: "center", justifyContent: "center", padding: "1rem"
-                }} onClick={() => setShowSignOutModal(false)}>
-                    <div style={{
-                        background: "var(--color-bg)", border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: "12px", width: "100%", maxWidth: "600px",
-                        maxHeight: "85vh", display: "flex", flexDirection: "column",
-                        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)"
-                    }} onClick={(e) => e.stopPropagation()}>
-                        <div style={{ padding: "1.5rem", borderBottom: "1px solid rgba(255,255,255,0.1)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <h2 style={{ margin: 0, fontSize: "1.25rem" }}>Sign Out A User</h2>
-                            <button onClick={() => setShowSignOutModal(false)} style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer", fontSize: "1.5rem" }}>&times;</button>
-                        </div>
-                        <div style={{ padding: "1rem 1.5rem", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                            <input
-                                type="text"
-                                placeholder="Search checked-in users..."
-                                className="glass-input"
-                                style={{ width: "100%", padding: "0.75rem", background: "rgba(0,0,0,0.2)" }}
-                                value={searchSignOutQuery}
-                                onChange={(e) => setSearchSignOutQuery(e.target.value)}
-                                autoFocus
-                            />
-                        </div>
-                        <div style={{ padding: "1rem 1.5rem", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                            {fullAttendance.length === 0 ? (
-                                <p style={{ color: "var(--color-text-muted)", textAlign: "center", padding: "2rem" }}>No one is checked in.</p>
-                            ) : (
-                                fullAttendance
-                                    .filter(v => ((v.participant.name || "").toLowerCase().includes((searchSignOutQuery || "").toLowerCase()) || (v.participant.email || "").toLowerCase().includes((searchSignOutQuery || "").toLowerCase())))
-                                    .sort((a, b) => (a.participant.name || "").localeCompare(b.participant.name || ""))
-                                    .map(v => (
-                                        <div key={v.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem", background: "rgba(255,255,255,0.03)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                                            <div>
-                                                <div style={{ fontWeight: 500 }}>{v.participant.name || v.participant.email.split('@')[0]}</div>
-                                                <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>Arrived: {formatTime(v.arrived)}</div>
-                                            </div>
-                                            <button
-                                                onClick={() => handleForceCheckout(v.id)}
-                                                disabled={checkingOut === v.id}
-                                                style={{
-                                                    background: "rgba(239, 68, 68, 0.2)",
-                                                    border: "1px solid rgba(239, 68, 68, 0.4)",
-                                                    color: "#fca5a5",
-                                                    padding: "0.4rem 1rem",
-                                                    borderRadius: "6px",
-                                                    cursor: "pointer",
-                                                    fontWeight: 600,
-                                                }}
-                                            >
-                                                {checkingOut === v.id ? "Signing Out..." : "Sign Out"}
-                                            </button>
-                                        </div>
-                                    ))
-                            )}
-                        </div>
-                    </div>
-                </div>
+      <Paper key={visit.id} withBorder radius="sm" p="xs">
+        <Group justify="space-between" wrap="nowrap">
+          <Box style={{ overflow: "hidden" }}>
+            <Text
+              fw={500} size="sm" truncate
+              style={{ cursor: canSeeNames ? 'pointer' : 'default' }}
+              onClick={() => { if (canSeeNames) setSelectedParticipant(visit.participant); }}
+            >
+              {isKioskMode ? (kioskDisplayNames.get(visit.participant.id) || visit.participant.name || visit.participant.email.split("@")[0]) : (visit.participant.name || visit.participant.email.split("@")[0])}
+            </Text>
+            <Group gap={6} align="center">
+              <Text c="dimmed" size="xs">{formatTime(visit.arrived)}</Text>
+              {visit.event?.program?.name && (
+                <Badge size="xs" variant="light" style={{ background: `hsl(${hue}, 60%, 20%)`, color: `hsl(${hue}, 80%, 80%)` }} title={visit.event.program.name}>
+                  {visit.event.program.name}
+                </Badge>
+              )}
+            </Group>
+            {!isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin) && visit.participant.phone && (
+              <Text size="xs" c="blue">📞 {visit.participant.phone}</Text>
             )}
-
-            {/* Emergency Contact Modal */}
-            {selectedParticipant && (
-                <div style={{
-                    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-                    background: "rgba(0,0,0,0.95)", zIndex: 1000, display: "flex",
-                    alignItems: "center", justifyContent: "center", padding: "1rem"
-                }} onClick={() => setSelectedParticipant(null)}>
-                    <div style={{
-                        background: "var(--color-bg)", border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: "12px", width: "100%", maxWidth: "500px",
-                        position: "relative",
-                        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)"
-                    }} onClick={(e) => e.stopPropagation()}>
-                        <div style={{ padding: "1.5rem", borderBottom: "1px solid rgba(255,255,255,0.1)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#fcd34d", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                                <span>🆘</span> Emergency Contact Info
-                            </h2>
-                            <button onClick={() => setSelectedParticipant(null)} style={{ background: "transparent", border: "none", color: "white", cursor: "pointer", fontSize: "1.5rem" }}>&times;</button>
-                        </div>
-                        <div style={{ padding: "2rem" }}>
-                            <div style={{ marginBottom: "1.5rem", textAlign: "center" }}>
-                                <div style={{ fontSize: "1.5rem", fontWeight: "bold" }}>{selectedParticipant.name || selectedParticipant.email.split('@')[0]}</div>
-                                {selectedParticipant.phone && (
-                                    <div style={{ fontSize: "1rem", color: "var(--color-text-muted)", marginTop: "0.25rem" }}>
-                                        User Phone: <a href={`tel:${selectedParticipant.phone.replace(/\\D/g, '')}`} style={{ color: "#34d399", textDecoration: "none" }}>{selectedParticipant.phone}</a>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div style={{
-                                background: "rgba(239, 68, 68, 0.1)",
-                                border: "1px solid rgba(239, 68, 68, 0.3)",
-                                padding: "1.5rem",
-                                borderRadius: "8px",
-                                textAlign: "center"
-                            }}>
-                                {selectedParticipant.household?.emergencyContactName && selectedParticipant.household?.emergencyContactPhone ? (
-                                    <>
-                                        <div style={{ color: "var(--color-text-muted)", fontSize: "0.9rem", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "0.5rem" }}>Emergency Contact</div>
-                                        <div style={{ fontSize: "1.25rem", fontWeight: "bold", marginBottom: "0.5rem" }}>{selectedParticipant.household.emergencyContactName}</div>
-                                        <div style={{ fontSize: "1.5rem" }}>
-                                            <a href={`tel:${selectedParticipant.household.emergencyContactPhone.replace(/\\D/g, '')}`} style={{ color: "#f87171", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
-                                                <span>📞</span> {selectedParticipant.household.emergencyContactPhone}
-                                            </a>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div style={{ color: "#fca5a5" }}>
-                                        <p style={{ margin: "0 0 0.5rem 0", fontWeight: "bold" }}>No Emergency Contact on File</p>
-                                        <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--color-text-muted)" }}>This user&apos;s household has not registered an emergency contact.</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <div style={{ padding: "1rem 1.5rem", borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", justifyContent: "flex-end" }}>
-                            <button
-                                onClick={() => setSelectedParticipant(null)}
-                                style={{
-                                    background: "rgba(255, 255, 255, 0.1)",
-                                    border: "1px solid rgba(255, 255, 255, 0.2)",
-                                    color: "white",
-                                    padding: "0.5rem 1.5rem",
-                                    borderRadius: "8px",
-                                    cursor: "pointer",
-                                }}
-                            >
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </main>
+          </Box>
+          {showCheckout && (
+            <Button size="compact-xs" color="red" variant="light" onClick={() => handleForceCheckout(visit.id)} disabled={checkingOut === visit.id}>
+              {checkingOut === visit.id ? "..." : "Out"}
+            </Button>
+          )}
+        </Group>
+      </Paper>
     );
+  };
+
+  const canCheckoutVisit = (visit: Visit): boolean => Boolean(
+    visit.participant.id === (session?.user as SessionUser)?.id ||
+    (household?.leads?.some((l) => l.participantId === (session?.user as SessionUser)?.id) &&
+      visit.participant.householdId === currentUserHouseholdId)
+  );
+
+  const renderColumn = (icon: string, count: number, label: string, color: string, list: Visit[]) => (
+    <div>
+      <Group gap={8} mb="sm" pb="xs" style={{ borderBottom: `2px solid var(--mantine-color-${color}-5)` }}>
+        <Text fz="xl">{icon}</Text>
+        <div>
+          <Text fz="xl" fw={800} c={color} lh={1}>{count}</Text>
+          <Text size="xs" tt="uppercase" c="dimmed">{label}</Text>
+        </div>
+      </Group>
+      <SimpleGrid cols={list.length > 10 ? 2 : 1} spacing="xs">
+        {list.map(v => renderPersonCard(v, canCheckoutVisit(v)))}
+      </SimpleGrid>
+    </div>
+  );
+
+  const userId = (session?.user as SessionUser)?.id;
+
+  return (
+    <Box p="md" style={isKioskMode ? { cursor: "none" } : undefined}>
+      <Card withBorder radius="md" padding="lg" style={{ width: "100%", maxWidth: 1200, margin: "0 auto" }}>
+        {/* Check-in button — hidden in kiosk mode */}
+        {!isKioskMode && (
+          <Box mb="lg">
+            {!isCheckedIn ? (
+              <Button
+                fullWidth size="md"
+                onClick={() => { if (userId) handleManualCheckIn(userId); }}
+                disabled={checkingInId === userId}
+                loading={checkingInId === userId}
+              >
+                Check Me In
+              </Button>
+            ) : (
+              <Alert color="teal" ta="center">You are currently checked in!</Alert>
+            )}
+          </Box>
+        )}
+
+        {/* Header */}
+        <Group justify="space-between" align="center" wrap="wrap" mb="lg">
+          <Title order={1}>Current Attendance</Title>
+          <Group align="center" gap="md" wrap="wrap">
+            {!isKioskMode && canAdminCheckout && (
+              <Button color="red" variant="light" radius="xl" size="xs" onClick={() => setShowSignOutModal(true)}>
+                Sign out a user
+              </Button>
+            )}
+            <Badge size="lg" color="teal" variant="light" leftSection="●">{counts.total} People Present</Badge>
+          </Group>
+        </Group>
+
+        {/* Household check-in buttons — hidden in kiosk mode */}
+        {!isKioskMode && canCheckInHousehold && household && household.leads?.some((l) => l.participantId === userId) && (
+          <Box mb="lg">
+            <Title order={4} c="blue" mb="sm">Check In Household Members</Title>
+            <Group gap="xs" wrap="wrap">
+              {household.participants?.filter((p) => !checkedInIds.includes(p.id)).map((p) => (
+                <Button key={p.id} variant="default" onClick={() => handleManualCheckIn(p.id)} disabled={checkingInId === p.id}>
+                  {checkingInId === p.id ? "..." : (p.name || p.email)}
+                </Button>
+              ))}
+              {household.participants?.filter((p) => !checkedInIds.includes(p.id)).length === 0 && (
+                <Text c="dimmed" fs="italic" size="sm">All household members are currently checked in!</Text>
+              )}
+            </Group>
+          </Box>
+        )}
+
+        {/* Admin manual check-in search — hidden in kiosk mode */}
+        {!isKioskMode && canManuallyCheckInGlobal && (
+          <Box mb="lg" pos="relative">
+            <TextInput
+              placeholder="Manually check someone in (Search by name or email)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.currentTarget.value)}
+            />
+            {displayResults.length > 0 && searchQuery.length >= 2 && (
+              <Paper withBorder shadow="md" radius="sm" pos="absolute" left={0} right={0} style={{ zIndex: 10, maxHeight: 200, overflowY: "auto" }}>
+                {displayResults.map((p) => (
+                  <Group key={p.id} justify="space-between" p="sm" style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}>
+                    <div>
+                      <Text fw={500}>{p.name || "Unnamed"}</Text>
+                      <Text size="xs" c="dimmed">{p.email}</Text>
+                    </div>
+                    <Button size="compact-xs" variant="light" disabled={checkingInId === p.id} onClick={() => handleManualCheckIn(p.id)}>
+                      {checkingInId === p.id ? "..." : "Check In"}
+                    </Button>
+                  </Group>
+                ))}
+              </Paper>
+            )}
+          </Box>
+        )}
+
+        {/* Safety warnings */}
+        {safety.isTwoDeepViolation && (
+          <Alert color="red" icon="🚨" title="Critical Warning" mb="lg">
+            Two-Deep Compliance is failing! An unaccompanied student is present without sufficient
+            adult supervision.
+          </Alert>
+        )}
+        {!safety.isTwoDeepViolation && safety.isLastKeyholder && (
+          <Alert color="yellow" icon="⚠️" title="Warning" mb="lg">
+            Only one keyholder is currently in the building.
+          </Alert>
+        )}
+
+        {/* Main content */}
+        {loading ? (
+          <Center py="xl"><Loader /></Center>
+        ) : error ? (
+          <Alert color="red">{error === "Unauthorized" ? "Access Denied: Please sign in to view attendance." : error}</Alert>
+        ) : counts.total === 0 ? (
+          <Center py="xl"><Text c="dimmed">The facility is currently empty.</Text></Center>
+        ) : (
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
+            {renderColumn("🔑", counts.keyholders, "Keyholders", "blue", isFull ? keyholderList : householdKeyholders)}
+            {renderColumn("🤝", counts.volunteers, "Volunteers", "teal", isFull ? volunteerList : householdVolunteers)}
+            {renderColumn("🎓", counts.students, "Students", "grape", isFull ? studentList : householdStudents)}
+          </SimpleGrid>
+        )}
+
+        {/* Privacy notice for limited access */}
+        {!isFull && counts.total > 0 && (
+          <Paper withBorder radius="md" p="sm" mt="lg" ta="center">
+            <Text size="sm" c="dimmed">
+              🔒 Individual names are only visible to administrators and on the facility kiosk.
+              {limitedHousehold.length > 0 && " Your household members are shown above."}
+            </Text>
+          </Paper>
+        )}
+      </Card>
+
+      {/* Admin Sign Out Modal */}
+      <Modal opened={showSignOutModal} onClose={() => setShowSignOutModal(false)} title={<Title order={4}>Sign Out A User</Title>} size="lg">
+        <TextInput
+          placeholder="Search checked-in users..."
+          value={searchSignOutQuery}
+          onChange={(e) => setSearchSignOutQuery(e.currentTarget.value)}
+          data-autofocus
+          mb="md"
+        />
+        <Stack gap="xs" style={{ maxHeight: "60vh", overflowY: "auto" }}>
+          {fullAttendance.length === 0 ? (
+            <Text c="dimmed" ta="center" py="xl">No one is checked in.</Text>
+          ) : (
+            fullAttendance
+              .filter(v => ((v.participant.name || "").toLowerCase().includes((searchSignOutQuery || "").toLowerCase()) || (v.participant.email || "").toLowerCase().includes((searchSignOutQuery || "").toLowerCase())))
+              .sort((a, b) => (a.participant.name || "").localeCompare(b.participant.name || ""))
+              .map(v => (
+                <Paper key={v.id} withBorder radius="md" p="sm">
+                  <Group justify="space-between">
+                    <div>
+                      <Text fw={500}>{v.participant.name || v.participant.email.split('@')[0]}</Text>
+                      <Text size="xs" c="dimmed">Arrived: {formatTime(v.arrived)}</Text>
+                    </div>
+                    <Button color="red" variant="light" onClick={() => handleForceCheckout(v.id)} disabled={checkingOut === v.id}>
+                      {checkingOut === v.id ? "Signing Out..." : "Sign Out"}
+                    </Button>
+                  </Group>
+                </Paper>
+              ))
+          )}
+        </Stack>
+      </Modal>
+
+      {/* Emergency Contact Modal */}
+      <Modal
+        opened={!!selectedParticipant}
+        onClose={() => setSelectedParticipant(null)}
+        title={<Title order={4} c="yellow">🆘 Emergency Contact Info</Title>}
+        centered
+      >
+        {selectedParticipant && (
+          <>
+            <Stack align="center" gap={4} mb="lg">
+              <Text fz="xl" fw={700}>{selectedParticipant.name || selectedParticipant.email.split('@')[0]}</Text>
+              {selectedParticipant.phone && (
+                <Text c="dimmed">User Phone: <Anchor href={`tel:${selectedParticipant.phone.replace(/\D/g, '')}`} c="teal">{selectedParticipant.phone}</Anchor></Text>
+              )}
+            </Stack>
+            <Alert color="red" variant="light" ta="center">
+              {selectedParticipant.household?.emergencyContactName && selectedParticipant.household?.emergencyContactPhone ? (
+                <>
+                  <Text size="sm" c="dimmed" tt="uppercase" mb="xs">Emergency Contact</Text>
+                  <Text fz="lg" fw={700} mb="xs">{selectedParticipant.household.emergencyContactName}</Text>
+                  <Anchor href={`tel:${selectedParticipant.household.emergencyContactPhone.replace(/\D/g, '')}`} c="red" fz="xl">
+                    📞 {selectedParticipant.household.emergencyContactPhone}
+                  </Anchor>
+                </>
+              ) : (
+                <>
+                  <Text fw={700} mb={4}>No Emergency Contact on File</Text>
+                  <Text size="sm" c="dimmed">This user&apos;s household has not registered an emergency contact.</Text>
+                </>
+              )}
+            </Alert>
+            <Group justify="flex-end" mt="lg">
+              <Button variant="default" onClick={() => setSelectedParticipant(null)}>Close</Button>
+            </Group>
+          </>
+        )}
+      </Modal>
+    </Box>
+  );
 }
 
 export default function KioskDisplay() {
-    return (
-        <Suspense fallback={<main className={styles.main}><p style={{ color: "var(--color-text-muted)" }}>Loading...</p></main>}>
-            <KioskDisplayInner />
-        </Suspense>
-    );
+  return (
+    <Suspense fallback={<Center mih="100vh"><Loader /></Center>}>
+      <KioskDisplayInner />
+    </Suspense>
+  );
 }

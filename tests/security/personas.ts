@@ -18,6 +18,7 @@ async function ensure(
         boardMember: boolean;
         keyholder: boolean;
         shopSteward: boolean;
+        backgroundCheckReviewer: boolean;
     }>,
 ) {
     const email = `policy-persona-${emailSuffix}@example.test`;
@@ -45,6 +46,7 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
     const boardMember = await ensure('board-member', { name: 'Board Member', boardMember: true });
     const keyholder = await ensure('keyholder', { name: 'Key Holder', keyholder: true });
     const shopSteward = await ensure('shop-steward', { name: 'Shop Steward', shopSteward: true });
+    const bgReviewer = await ensure('bg-reviewer', { name: 'BG Reviewer', backgroundCheckReviewer: true });
 
     const mkUser = (p: {
         id: number;
@@ -54,6 +56,7 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
         boardMember: boolean;
         keyholder: boolean;
         shopSteward: boolean;
+        backgroundCheckReviewer: boolean;
     }): SessionUser => ({
         id: p.id,
         email: p.email ?? '',
@@ -62,6 +65,7 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
         boardMember: p.boardMember,
         keyholder: p.keyholder,
         shopSteward: p.shopSteward,
+        backgroundCheckReviewer: p.backgroundCheckReviewer,
     });
 
     cached = {
@@ -91,6 +95,11 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
             role: 'shopSteward',
             sessionUser: mkUser(shopSteward),
             description: 'shopSteward=true',
+        },
+        backgroundCheckReviewer: {
+            role: 'backgroundCheckReviewer',
+            sessionUser: mkUser(bgReviewer),
+            description: 'backgroundCheckReviewer=true',
         },
         kiosk: { role: 'kiosk', description: 'Kiosk signature (no user)' },
         // programLeadMentor, programCoreVolunteer, householdLead are data-scoped roles

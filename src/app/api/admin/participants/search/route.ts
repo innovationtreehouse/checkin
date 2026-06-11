@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { participantRecordIsActiveMember } from "@/lib/membership";
 
 export const dynamic = 'force-dynamic';
 
@@ -24,12 +25,10 @@ export const GET = withAuth(
                 take: 200,
                 orderBy: { id: 'desc' },
                 include: {
-                    memberships: {
-                        where: { active: true }
-                    },
                     household: {
                         include: {
-                            participants: true
+                            participants: true,
+                            membership: true,
                         }
                     }
                 }
@@ -40,7 +39,7 @@ export const GET = withAuth(
                 name: p.name,
                 email: p.email,
                 phone: p.phone,
-                isMember: p.memberships.length > 0,
+                isMember: participantRecordIsActiveMember(p),
                 boardMember: p.boardMember,
                 shopSteward: p.shopSteward,
                 keyholder: p.keyholder,

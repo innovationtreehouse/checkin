@@ -34,7 +34,7 @@ export function useAutoCycle<T>({
       const actualRowHeight = tbodyRow ? tbodyRow.getBoundingClientRect().height : rowHeight;
 
       const rect = container.getBoundingClientRect();
-      const bottomPadding = 64; // Account for 24px/32px padding on main and 16px padding on glass-container
+      const bottomPadding = 64; // Account for outer page padding plus the card padding around the table
       
       // Calculate how much space is left on the screen from the top of our container
       const availableHeight = window.innerHeight - rect.top - actualHeaderHeight - bottomPadding;

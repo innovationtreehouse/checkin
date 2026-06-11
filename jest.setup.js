@@ -1,6 +1,14 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import '@testing-library/jest-dom'
 
+// Tests run as a non-production environment. Previously this was implicit via
+// NODE_ENV=test; under the single CHECKIN_ENV flag we declare it explicitly so
+// prod-only gates (e.g. the scan self-check-in block) stay off during tests.
+// 'dev' (not 'local') reproduces the old behavior exactly: it disables the
+// prod-only gates while leaving the keyless-kiosk fallback and offline
+// credential login (both local-only) off, just as NODE_ENV=test did.
+process.env.CHECKIN_ENV = 'dev';
+
 // Polyfill text encoding
 const { TextEncoder, TextDecoder } = require('util');
 global.TextEncoder = TextEncoder;

@@ -4,6 +4,7 @@ import { authenticateRequest } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { processCheckin, processCheckout } from "@/lib/scan-service";
 import { logBackendError } from "@/lib/logger";
+import { config } from "@/lib/config";
 
 export async function POST(req: NextRequest) {
     const startTime = Date.now();
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
 
             // In production, only privileged users may self-check-in via web.
             // Everyone else must use the kiosk badge scanner.
-            if (isSelf && !isAdmin && process.env.NODE_ENV === 'production') {
+            if (isSelf && !isAdmin && config.isProd()) {
                 return apiError("Please use the kiosk badge scanner to check in.", 403);
             }
 

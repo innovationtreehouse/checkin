@@ -124,11 +124,9 @@ export function scopesHeld(
         }
         case 'Membership': {
             const householdId = num(row.householdId);
-            const volunteerId = num(row.volunteerId);
             if (householdId !== undefined && householdId === ctx.householdId) {
                 scopes.add('their_households');
             }
-            if (volunteerId !== undefined && volunteerId === ctx.selfId) scopes.add('their_own');
             break;
         }
         case 'Program': {
@@ -222,6 +220,8 @@ export function callerHoldsRole(
             return auth.type === 'session' && auth.user.keyholder;
         case 'shopSteward':
             return auth.type === 'session' && auth.user.shopSteward;
+        case 'backgroundCheckReviewer':
+            return auth.type === 'session' && auth.user.backgroundCheckReviewer;
         case 'householdLead':
             return auth.type === 'session' && !!auth.user.householdLead;
         case 'programLeadMentor': {

@@ -16,10 +16,12 @@ export const classifications = {
         lastBackgroundCheck: 'internal',
         notificationSettings: 'personal',
         householdId: 'public',
+        allergies: 'personal',
         sysadmin: 'internal',
         boardMember: 'public',
         keyholder: 'internal',
         shopSteward: 'internal',
+        backgroundCheckReviewer: 'internal',
     },
     Tool: {
         id: 'public',
@@ -45,13 +47,51 @@ export const classifications = {
     Membership: {
         id: 'public',
         since: 'public',
-        type: 'public',
-        active: 'public',
-        latestShopifyReceipt: 'personal',
-        latestDocusign: 'personal',
+        status: 'public',
+        isVolunteer: 'public',
         householdId: 'public',
-        volunteerId: 'public',
-        corporateId: 'public',
+    },
+    MembershipProcess: {
+        id: 'public',
+        membershipId: 'public',
+        kind: 'public',
+        status: 'internal',
+        stageEnteredAt: 'internal',
+        createdAt: 'public',
+        zohoEnvelopeId: 'internal',
+        contractSignedAt: 'internal',
+        bgConsentAt: 'internal',
+        shopifyDraftOrderId: 'internal',
+        shopifyInvoiceUrl: 'personal',
+        shopifyOrderId: 'internal',
+        paidAt: 'internal',
+        certifiedById: 'internal',
+        renewalReminderSentAt: 'internal',
+    },
+    BackgroundCheckAttestation: {
+        id: 'public',
+        processId: 'public',
+        reviewerId: 'public',
+        result: 'internal',
+        markedVolunteer: 'internal',
+        createdAt: 'public',
+    },
+    VolunteerDesignation: {
+        id: 'public',
+        email: 'pii',
+        createdById: 'internal',
+        createdAt: 'public',
+    },
+    BoardSettings: {
+        id: 'public',
+        normalDuesCents: 'public',
+        volunteerDuesCents: 'public',
+        membershipYearBoundary: 'public',
+        shopifyMembershipProductId: 'internal',
+        shopifyNormalVariantId: 'internal',
+        shopifyVolunteerVariantId: 'internal',
+        shopifyPriceSyncedAt: 'internal',
+        updatedAt: 'internal',
     },
     Corporation: {
         id: 'public',
@@ -192,6 +232,13 @@ export const classifications = {
         metric: 'internal',
         value: 'internal',
     },
+    DevLedger: {
+        id: 'internal',
+        action: 'internal',
+        realActor: 'internal',
+        detail: 'internal',
+        createdAt: 'internal',
+    },
 } as const;
 
 export const relations = {
@@ -200,8 +247,8 @@ export const relations = {
         sessions: { model: 'Session', isList: true },
         household: { model: 'Household', isList: false },
         toolStatuses: { model: 'ToolStatus', isList: true },
+        bgAttestations: { model: 'BackgroundCheckAttestation', isList: true },
         householdLeads: { model: 'HouseholdLead', isList: true },
-        memberships: { model: 'Membership', isList: true },
         corporationLeads: { model: 'CorporationLead', isList: true },
         corporationMembers: { model: 'CorporationMember', isList: true },
         programVolunteers: { model: 'ProgramVolunteer', isList: true },
@@ -223,7 +270,7 @@ export const relations = {
     Household: {
         participants: { model: 'Participant', isList: true },
         leads: { model: 'HouseholdLead', isList: true },
-        memberships: { model: 'Membership', isList: true },
+        membership: { model: 'Membership', isList: false },
     },
     HouseholdLead: {
         household: { model: 'Household', isList: false },
@@ -231,13 +278,23 @@ export const relations = {
     },
     Membership: {
         household: { model: 'Household', isList: false },
-        volunteer: { model: 'Participant', isList: false },
-        corporate: { model: 'Corporation', isList: false },
+        processes: { model: 'MembershipProcess', isList: true },
+    },
+    MembershipProcess: {
+        membership: { model: 'Membership', isList: false },
+        attestations: { model: 'BackgroundCheckAttestation', isList: true },
+    },
+    BackgroundCheckAttestation: {
+        process: { model: 'MembershipProcess', isList: false },
+        reviewer: { model: 'Participant', isList: false },
+    },
+    VolunteerDesignation: {
+    },
+    BoardSettings: {
     },
     Corporation: {
         leads: { model: 'CorporationLead', isList: true },
         members: { model: 'CorporationMember', isList: true },
-        memberships: { model: 'Membership', isList: true },
     },
     CorporationLead: {
         corporation: { model: 'Corporation', isList: false },
@@ -300,6 +357,8 @@ export const relations = {
     ErrorLog: {
     },
     SystemMetric: {
+    },
+    DevLedger: {
     },
 } as const;
 

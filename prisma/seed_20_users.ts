@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from '../src/generated/prisma/client'
 import { Pool } from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
 import * as dotenv from 'dotenv'
@@ -38,8 +38,7 @@ async function main() {
         // Create membership
         await prisma.membership.create({
             data: {
-                type: 'HOUSEHOLD',
-                active: true,
+                status: 'ACTIVE',
                 householdId: household.id
             }
         })

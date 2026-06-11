@@ -1,18 +1,29 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth/next";
 import prisma from "@/lib/prisma";
+import { config } from "@/lib/config";
+import { authOptions } from "@/lib/auth-options";
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/auth/dev-personas
  *
- * Dev-only endpoint that returns all @example.com participants
- * with their role flags for the dev login picker.
+ * Returns @example.com personas (with role flags) that feed the persona picker. Available on
+ * the dev instance and local laptops only. Middleware exempts /api, so on the cloud dev instance
+ * we additionally require a session here — otherwise an anonymous visitor could enumerate the
+ * persona list, violating the "not world-readable" rule. On local no session is required (the
+ * logged-out picker is the initial login path).
  */
 export async function GET() {
-    // Block if dev auth is not explicitly enabled or if in production
-    if (!process.env.NEXT_PUBLIC_DEV_AUTH || process.env.NODE_ENV === 'production') {
+    if (!config.isDevInstance()) {
         return NextResponse.json({ error: "Not available" }, { status: 404 });
+    }
+    if (config.checkinEnv() === 'dev') {
+        const session = await getServerSession(authOptions);
+        if (!session?.user) {
+            return NextResponse.json({ error: "Not available" }, { status: 404 });
+        }
     }
 
     const personas = await prisma.participant.findMany({
@@ -27,6 +38,7 @@ export async function GET() {
             boardMember: true,
             keyholder: true,
             shopSteward: true,
+            backgroundCheckReviewer: true,
             dob: true,
             householdId: true,
             toolStatuses: {

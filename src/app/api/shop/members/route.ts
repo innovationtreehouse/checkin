@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { ACTIVE_MEMBER_PARTICIPANT_WHERE } from "@/lib/membership";
 
 export const dynamic = 'force-dynamic';
 
@@ -26,12 +27,7 @@ export async function GET() {
 
     try {
         const members = await prisma.participant.findMany({
-            where: {
-                OR: [
-                    { household: { memberships: { some: { active: true } } } },
-                    { memberships: { some: { active: true } } }
-                ]
-            },
+            where: ACTIVE_MEMBER_PARTICIPANT_WHERE,
             select: {
                 id: true,
                 name: true,

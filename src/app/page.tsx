@@ -3,20 +3,45 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession, signIn } from "next-auth/react";
-import styles from './page.module.css';
+import {
+  Alert,
+  Anchor,
+  Button,
+  Card,
+  Container,
+  Divider,
+  Group,
+  Loader,
+  Modal,
+  Paper,
+  Stack,
+  Text,
+  Title,
+} from '@mantine/core';
+import {
+  IconAlertTriangle,
+  IconAddressBook,
+  IconUrgent,
+} from '@tabler/icons-react';
 import DevLoginPicker from '@/components/DevLoginPicker';
-import { config } from '@/lib/config';
+import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
+import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
+import Notifications from '@/components/Notifications';
+import { RoleBadge } from '@/components/ui/RoleBadge';
 import type { SessionUser, BoardMember } from '@/types/participant';
 
 export default function Home() {
   const router = useRouter();
   const { data: session } = useSession();
+  const isDevInstance = useIsDevInstance();
+  const isLocalInstance = useIsLocalInstance();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [isCheckedIn, setIsCheckedIn] = useState<boolean | null>(null);
 
   const [isLastKeyholder, setIsLastKeyholder] = useState(false);
   const [isTwoDeepViolation, setIsTwoDeepViolation] = useState(false);
+  const [isMember, setIsMember] = useState<boolean | null>(null);
 
   const [showBoardDirectory, setShowBoardDirectory] = useState(false);
   const [boardMembers, setBoardMembers] = useState<BoardMember[]>([]);
@@ -58,6 +83,21 @@ export default function Home() {
   useEffect(() => {
     checkAttendanceStatus();
   }, [checkAttendanceStatus]);
+
+  useEffect(() => {
+    if (!session?.user) {
+      setIsMember(null);
+      return;
+    }
+    let cancelled = false;
+    fetch('/api/membership')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setIsMember(data.membershipStatus === 'ACTIVE');
+      })
+      .catch(() => { /* non-blocking: leave banner hidden on error */ });
+    return () => { cancelled = true; };
+  }, [session]);
 
   const handleToggleCheckin = async () => {
     if (!session?.user) return;
@@ -101,225 +141,164 @@ export default function Home() {
     }
   };
 
-  return (
-    <main className={styles.main}>
-      <div className={`glass-container animate-float ${styles.heroContainer}`}>
-        <h1 className="text-gradient" style={{ fontSize: '3rem', margin: '0 0 1rem 0' }}>
-          {config.isDev ? 'CMI-dev' : 'CheckMeIn'}
-        </h1>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: '1.25rem', marginBottom: '2rem' }}>
-          The elegant next-generation facility check-in system.
-        </p>
+  const user = session?.user as SessionUser | undefined;
+  const canSelfCheckin =
+    !!user?.sysadmin || !!user?.boardMember || !!user?.keyholder || isDevInstance;
+  const isPrivileged = !!user?.sysadmin || !!user?.keyholder;
 
-        <div className={styles.actionGrid}>
+  return (
+    <Container size="sm" py="xl">
+      <Card withBorder shadow="sm" radius="md" padding="xl">
+        <Stack align="center" gap="xs" mb="lg">
+          <Title order={1}>{isDevInstance ? 'CMI-dev' : 'CheckMeIn'}</Title>
+          <Text c="dimmed" size="lg">
+            The next-generation facility check-in system.
+          </Text>
+        </Stack>
+
+        <Stack>
           {session ? (
             <>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', width: '100%', gridColumn: '1 / -1' }}>
-                <div style={{ padding: '1rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.3)', width: '100%', textAlign: 'center' }}>
-                  <p style={{ margin: 0, color: 'white' }}>Welcome back, <strong>{session.user?.name || session.user?.email}</strong>!</p>
-                  {/* Display roles if any */}
-                  {((session.user as SessionUser)?.sysadmin || (session.user as SessionUser)?.keyholder) && (
-                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '8px' }}>
-                      {(session.user as SessionUser)?.sysadmin && <span style={{ background: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem' }}>Sysadmin</span>}
-                      {(session.user as SessionUser)?.keyholder && <span style={{ background: '#3b82f6', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem' }}>Keyholder</span>}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <Paper withBorder radius="md" p="md">
+                <Text ta="center">
+                  Welcome back, <strong>{session.user?.name || session.user?.email}</strong>!
+                </Text>
+                {(user?.sysadmin || user?.keyholder) && (
+                  <Group justify="center" gap="xs" mt="xs">
+                    {user?.sysadmin && <RoleBadge role="sysadmin" />}
+                    {user?.keyholder && <RoleBadge role="keyholder" />}
+                  </Group>
+                )}
+              </Paper>
+
+              {/* Visitor call-to-action — only for non-members */}
+              {isMember === false && <JoinTreehouseBanner />}
+
+              {/* In-app red-dot indicators (membership reviewer queue / blocked apps, …) */}
+              <Notifications />
 
               {/* Operational Warnings */}
               {isTwoDeepViolation && (
-                <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.5)', color: '#fca5a5', padding: '1rem', borderRadius: '8px', width: '100%', gridColumn: '1 / -1', display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <span>🚨</span>
-                  <div><strong>Critical Warning:</strong> Two-Deep Compliance is failing. An unaccompanied student is present without sufficient adult supervision.</div>
-                </div>
+                <Alert color="red" icon={<IconAlertTriangle size={18} />} title="Critical Warning">
+                  Two-Deep Compliance is failing. An unaccompanied student is present without
+                  sufficient adult supervision.
+                </Alert>
               )}
               {isLastKeyholder && (
-                <div style={{ background: 'rgba(245, 158, 11, 0.2)', border: '1px solid rgba(245, 158, 11, 0.5)', color: '#fcd34d', padding: '1rem', borderRadius: '8px', width: '100%', gridColumn: '1 / -1', display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <span>⚠️</span>
-                  <div><strong>You are the last Keyholder present.</strong><br />If you check out now, the facility will be marked as Closed and all remaining occupants will be forcibly checked out.</div>
-                </div>
+                <Alert color="yellow" icon={<IconAlertTriangle size={18} />} title="You are the last Keyholder present.">
+                  If you check out now, the facility will be marked as Closed and all remaining
+                  occupants will be forcibly checked out.
+                </Alert>
               )}
 
               {/* Check-in Toggle Button — in production, only privileged users can self-check-in from the web */}
-              {isCheckedIn !== null && (
-                ((session.user as SessionUser)?.sysadmin || (session.user as SessionUser)?.boardMember || (session.user as SessionUser)?.keyholder || (process.env.NEXT_PUBLIC_DEV_AUTH && process.env.NODE_ENV !== 'production')) ? (
-                  <button
-                    className="glass-button"
+              {isCheckedIn !== null &&
+                (canSelfCheckin ? (
+                  <Button
+                    size="lg"
+                    fullWidth
+                    color={isCheckedIn ? 'red' : 'green'}
                     onClick={handleToggleCheckin}
-                    disabled={loading}
-                    style={{
-                      width: '100%',
-                      padding: '1.5rem',
-                      fontSize: '1.25rem',
-                      fontWeight: 'bold',
-                      background: isCheckedIn ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
-                      borderColor: isCheckedIn ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.4)',
-                      boxShadow: isCheckedIn ? '0 0 15px rgba(239, 68, 68, 0.3)' : '0 0 15px rgba(34, 197, 94, 0.3)',
-                      gridColumn: '1 / -1'
-                    }}>
-                    {loading ? 'Processing...' : isCheckedIn ? 'Check Out' : 'Check In'}
-                  </button>
+                    loading={loading}
+                  >
+                    {isCheckedIn ? 'Check Out' : 'Check In'}
+                  </Button>
                 ) : (
-                  <div style={{
-                    width: '100%',
-                    padding: '1.25rem',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '12px',
-                    textAlign: 'center',
-                    gridColumn: '1 / -1',
-                    color: 'var(--color-text-muted)',
-                    fontSize: '0.95rem',
-                  }}>
+                  <Alert color="gray" variant="light" ta="center">
                     📛 Please use the kiosk badge scanner to check in and out.
-                  </div>
-                )
-              )}
+                  </Alert>
+                ))}
 
               {/* Board Directory Button for Keyholders/Admins */}
-              {((session.user as SessionUser)?.sysadmin || (session.user as SessionUser)?.keyholder) && (
+              {isPrivileged && (
                 <>
-                  <button
-                    className="glass-button"
+                  <Button
+                    variant="default"
+                    fullWidth
+                    leftSection={<IconAddressBook size={18} />}
                     onClick={fetchBoardDirectory}
-                    style={{
-                      width: '100%',
-                      padding: '1rem',
-                      fontSize: '1.1rem',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      gridColumn: '1 / -1',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.5rem'
-                    }}
                   >
-                    <span style={{ fontSize: '1.2rem' }}>📱</span> View Board Directory
-                  </button>
-                  <button
-                    className="glass-button"
+                    View Board Directory
+                  </Button>
+                  <Button
+                    variant="light"
+                    color="red"
+                    fullWidth
+                    leftSection={<IconUrgent size={18} />}
                     onClick={() => router.push('/admin/emergency-contacts')}
-                    style={{
-                      width: '100%',
-                      padding: '1rem',
-                      fontSize: '1.1rem',
-                      background: 'rgba(239, 68, 68, 0.1)',
-                      borderColor: 'rgba(239, 68, 68, 0.3)',
-                      gridColumn: '1 / -1',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.5rem',
-                      marginTop: '0.5rem' // Small gap between the two buttons
-                    }}
                   >
-                    <span style={{ fontSize: '1.2rem' }}>🆘</span> Emergency Contacts
-                  </button>
+                    Emergency Contacts
+                  </Button>
                 </>
               )}
             </>
           ) : (
-            <div style={{ textAlign: 'center', width: '100%', gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-              <p style={{ color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>
+            <Stack align="center">
+              <Text c="dimmed" ta="center">
                 Explore our upcoming events and sign up, or sign in to access your dashboard.
-              </p>
-              
-              <button
-                className="glass-button primary-button"
+              </Text>
+
+              <Button
+                color="green"
+                size="md"
                 onClick={() => router.push('/programs')}
-                style={{ 
-                  background: 'rgba(34, 197, 94, 0.2)', 
-                  borderColor: 'rgba(34, 197, 94, 0.4)',
-                  padding: '1rem 2rem',
-                  fontSize: '1.2rem',
-                  width: '100%',
-                  maxWidth: '300px'
-                }}
+                style={{ maxWidth: 300, width: '100%' }}
               >
                 See Public Programs
-              </button>
+              </Button>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%', justifyContent: 'center', margin: '1rem 0' }}>
-                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)', maxWidth: '100px' }} />
-                <span style={{ color: 'var(--color-text-muted)' }}>OR</span>
-                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)', maxWidth: '100px' }} />
-              </div>
+              <Divider label="OR" labelPosition="center" w="100%" maw={300} />
 
-              <button
-                className="glass-button"
+              <Button
+                size="md"
                 onClick={() => signIn('google')}
-                style={{ 
-                  background: 'rgba(59, 130, 246, 0.2)', 
-                  borderColor: 'rgba(59, 130, 246, 0.4)',
-                  width: '100%',
-                  maxWidth: '300px'
-                }}
+                style={{ maxWidth: 300, width: '100%' }}
               >
                 Sign In To Dashboard
-              </button>
-              {(process.env.NEXT_PUBLIC_DEV_AUTH && process.env.NODE_ENV !== 'production') && <DevLoginPicker />}
-            </div>
+              </Button>
+              {isLocalInstance && <DevLoginPicker />}
+            </Stack>
           )}
-        </div>
+        </Stack>
 
         {message && (
-          <div style={{
-            marginTop: '1.5rem',
-            padding: '1rem',
-            background: 'rgba(255, 255, 255, 0.1)',
-            borderRadius: '8px',
-            color: 'var(--color-primary)',
-            backdropFilter: 'blur(10px)'
-          }}>
+          <Alert mt="lg" variant="light">
             {message}
-          </div>
+          </Alert>
         )}
-      </div>
+      </Card>
 
-      {showBoardDirectory && (
-        <div
-          onClick={() => setShowBoardDirectory(false)}
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(0,0,0,0.8)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
-          }}
-        >
-          <div
-            className="glass-container animate-float"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: '500px', width: '100%', padding: '2rem', position: 'relative', background: 'var(--color-bg-base)' }}
-          >
-            <button 
-              onClick={() => setShowBoardDirectory(false)}
-              style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', color: 'white', fontSize: '1.5rem', cursor: 'pointer' }}
-            >
-              &times;
-            </button>
-            <h2 style={{ margin: '0 0 1.5rem 0', color: '#fcd34d', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span>📱</span> Board Directory
-            </h2>
-            
-            {loadingBoard ? (
-              <p style={{ color: 'var(--color-text-muted)' }}>Loading contacts...</p>
-            ) : boardMembers.length === 0 ? (
-              <p style={{ color: 'var(--color-text-muted)' }}>No board members found.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '60vh', overflowY: 'auto' }}>
-                {boardMembers.map(member => (
-                  <div key={member.id} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '0.25rem' }}>{member.name || 'Unnamed'}</div>
-                    <div style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>✉️ <a href={`mailto:${member.email}`} style={{ color: 'var(--color-primary-light)', textDecoration: 'none' }}>{member.email}</a></div>
-                    {member.phone && (
-                      <div style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>📞 <a href={`tel:${member.phone.replace(/\D/g,'')}`} style={{ color: '#34d399', textDecoration: 'none' }}>{member.phone}</a></div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </main>
+      <Modal
+        opened={showBoardDirectory}
+        onClose={() => setShowBoardDirectory(false)}
+        title={<Title order={4}>Board Directory</Title>}
+        centered
+      >
+        {loadingBoard ? (
+          <Group justify="center" py="md">
+            <Loader size="sm" />
+            <Text c="dimmed">Loading contacts...</Text>
+          </Group>
+        ) : boardMembers.length === 0 ? (
+          <Text c="dimmed">No board members found.</Text>
+        ) : (
+          <Stack>
+            {boardMembers.map((member) => (
+              <Paper key={member.id} withBorder radius="md" p="md">
+                <Text fw={600}>{member.name || 'Unnamed'}</Text>
+                <Text size="sm">
+                  ✉️ <Anchor href={`mailto:${member.email}`}>{member.email}</Anchor>
+                </Text>
+                {member.phone && (
+                  <Text size="sm">
+                    📞 <Anchor href={`tel:${member.phone.replace(/\D/g, '')}`}>{member.phone}</Anchor>
+                  </Text>
+                )}
+              </Paper>
+            ))}
+          </Stack>
+        )}
+      </Modal>
+    </Container>
   );
 }

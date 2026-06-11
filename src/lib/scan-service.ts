@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { sendCheckinNotifications } from "@/lib/notifications";
 import { apiError, apiJson } from "@/lib/api-response";
-import type { Participant } from "@prisma/client";
+import type { Participant } from "@/generated/prisma/client";
 
 /**
  * Process a check-in for a participant who has no active visit.
