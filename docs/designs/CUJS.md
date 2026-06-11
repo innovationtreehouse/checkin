@@ -76,14 +76,16 @@ All user-facing flows implemented in the system, organized by persona.
 
 | # | Journey | Route | Description |
 |---|---------|-------|-------------|
-| 7.1 | **Admin Hub** | `/admin` | Central admin dashboard with alerts (orphan students) and links to all admin tools. |
+| 7.1 | **Admin Hub** | `/admin` | Central admin dashboard: orphan-student alerts plus a card grid linking to every admin tool. The hub grid and the sidebar nav are driven by one shared config (`src/lib/adminNav.ts`). |
 | 7.2 | **Role Assignment** | `/admin/roles` | Toggle roles (Sysadmin, Board Member, Keyholder, Shop Steward) for any participant. |
-| 7.3 | **Manage Memberships** | `/admin/households` | View all households and grant/revoke active facility membership per household. |
+| 7.3 | **Manage Memberships** | `/admin/households` | View all households and grant/revoke active facility membership per household. Tab of the Membership area (Applications · Manage Memberships · Settings). |
 | 7.4 | **Register New Participant** | `/admin/participants/new` | Manually pre-create a user (adult or minor) before their first Google login. For minors, associate with a parent email (auto-creates parent placeholder if needed). |
 | 7.5 | **Orphan Student Alerts** | `/admin` | Dashboard alert showing students whose parent accounts have not yet been claimed. |
 | 7.6 | **View/Edit Historical Visits** | `/admin/events/visits` | View all past visit records and edit arrival/departure times (with date filtering). |
 | 7.7 | **Audit Raw Badge Events** | `/admin/events/badges` | View raw RFID badge tap log (sysadmin only) for audit purposes. |
 | 7.8 | **Create Tool** | `/shop/tools/new` | Register a new piece of shop equipment with an optional safety guide URL. |
+| 7.9 | **Membership Applications** | `/admin/membership` | Review in-flight membership applications; confirm signed contract / background-check consent. Tab of the Membership area. |
+| 7.10 | **Membership Settings** | `/admin/membership/settings` | Configure dues amounts and the membership-year boundary. Tab of the Membership area. |
 
 ---
 

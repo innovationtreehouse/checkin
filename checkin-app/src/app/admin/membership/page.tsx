@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { MembershipTabs } from "@/components/admin/MembershipTabs";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 
 interface Participant {
@@ -163,6 +164,8 @@ export default function AdminMembershipPage() {
           automatically once the Zoho webhook is configured.)
         </Text>
       </div>
+
+      <MembershipTabs active="applications" />
 
       <AlertBanner message={message} tone={isError ? 'error' : 'success'} />
 
