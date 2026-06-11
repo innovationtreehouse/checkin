@@ -626,3 +626,22 @@ model SystemMetric {
   /// @sensitivity:internal
   value     Float
 }
+
+/// Dev-instance activity ledger (DEV_DASHBOARD_DESIGN.md §6). Lives only in checkin_dev; records
+/// the last login / impersonate / macro / reset by REAL human identity so a shared dev instance
+/// shows who tested/reset last (no accidental clobbering). Never written in prod by construction;
+/// excluded from the reset truncation so the coordination history survives a reset.
+model DevLedger {
+  /// @sensitivity:internal
+  id        Int      @id @default(autoincrement())
+  /// @sensitivity:internal
+  action    String
+  /// @sensitivity:internal
+  realActor String
+  /// @sensitivity:internal
+  detail    String?
+  /// @sensitivity:internal
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

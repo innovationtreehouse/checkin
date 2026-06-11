@@ -42,9 +42,11 @@ export default function DevLoginPicker() {
       });
   }, []);
 
-  const handleLogin = (email: string) => {
-    setSigningIn(email);
-    signIn("credentials", { email, callbackUrl: "/" });
+  const handleLogin = (persona: Persona) => {
+    setSigningIn(persona.email);
+    // Initial local login: no current session, so the mint is a plain login as this persona
+    // (impersonatedBy stays null). The same flow handles impersonation once signed in.
+    signIn("persona-mint", { personaId: String(persona.id), mode: "impersonate", callbackUrl: "/" });
   };
 
   const getRoleBadges = (p: Persona): { label: string; color: string }[] => {
@@ -84,7 +86,7 @@ export default function DevLoginPicker() {
             withBorder
             radius="md"
             padding="sm"
-            onClick={() => { if (!signingIn) handleLogin(p.email); }}
+            onClick={() => { if (!signingIn) handleLogin(p); }}
             style={{
               cursor: signingIn ? "wait" : "pointer",
               opacity: signingIn && signingIn !== p.email ? 0.5 : 1,

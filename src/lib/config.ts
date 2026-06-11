@@ -21,6 +21,9 @@ function requireEnv(name: string): string {
  */
 export type CheckinEnv = 'prod' | 'dev' | 'local';
 
+/** Verified Google Workspace hosted-domain (`hd`) allowed on the dev instance. */
+export const ORG_DOMAIN = 'innovationtreehouse.org';
+
 function readCheckinEnv(): CheckinEnv {
     const value = process.env.CHECKIN_ENV;
     // Anything unrecognized — including unset — fails safe to prod.

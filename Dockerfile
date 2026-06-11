@@ -28,6 +28,13 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# RDS TLS: the pg driver verifies the server certificate (sslmode=require is
+# strict in the Prisma 7 / pg stack), and Amazon's RDS CA is not in the OS
+# trust store — without this, every query dies with "unable to get local
+# issuer certificate". NODE_EXTRA_CA_CERTS appends to Node's default roots.
+ADD https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /app/rds-global-bundle.pem
+ENV NODE_EXTRA_CA_CERTS=/app/rds-global-bundle.pem
+
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
