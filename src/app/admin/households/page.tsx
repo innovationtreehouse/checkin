@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Button, Center, Group, List, Loader, Stack, Table, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 
@@ -15,7 +15,7 @@ type Household = {
 };
 
 export default function AdminHouseholdsPage() {
-  const { data: session, status } = useSession();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
   const router = useRouter();
 
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -39,17 +39,8 @@ export default function AdminHouseholdsPage() {
   }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      const isAuthorized = session?.user?.sysadmin || session?.user?.boardMember;
-      if (!isAuthorized) {
-        router.push('/');
-      } else {
-        fetchHouseholds();
-      }
-    }
-  }, [status, session, router, fetchHouseholds]);
+    if (ready) fetchHouseholds();
+  }, [ready, fetchHouseholds]);
 
   const toggleMembership = async (householdId: number, currentActive: boolean) => {
     try {
@@ -69,11 +60,11 @@ export default function AdminHouseholdsPage() {
     }
   };
 
-  if (loading || status === "loading") {
+  if (authLoading || loading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session || (!session.user?.sysadmin && !session.user?.boardMember)) {
+  if (!ready) {
     return null;
   }
 

@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, Suspense } from 'react';
-import { useSession } from 'next-auth/react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Box, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
+import { useRequireRole } from '@/hooks/useRequireRole';
+import { EntityPicker } from '@/components/admin/EntityPicker';
+import { isMinor } from '@/lib/time';
+import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
 
 type HouseholdOption = {
   id: number;
@@ -21,8 +23,7 @@ export default function NewParticipantPage() {
 }
 
 function NewParticipantForm() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
   const searchParams = useSearchParams();
   const queryHouseholdId = searchParams.get('householdId');
 
@@ -31,41 +32,16 @@ function NewParticipantForm() {
   const [parentEmail, setParentEmail] = useState("");
   const [dob, setDob] = useState("");
 
-  // Household search state
+  // Household selection state (the EntityPicker owns the transient query/results)
   const [householdId, setHouseholdId] = useState("");
   const [householdSearch, setHouseholdSearch] = useState("");
-  const [householdResults, setHouseholdResults] = useState<HouseholdOption[]>([]);
-  const [householdSearching, setHouseholdSearching] = useState(false);
 
-  const isStudent = () => {
-    if (!dob) return false;
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const m = today.getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age < 18;
-  };
-
-  const studentSelected = isStudent();
+  const studentSelected = isMinor(dob);
 
   const [alreadyMember, setAlreadyMember] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
-
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      const isAuthorized = session?.user?.sysadmin || session?.user?.boardMember;
-      if (!isAuthorized) {
-        router.push('/');
-      }
-    }
-  }, [status, session, router]);
 
   // Handle deep linked household
   useEffect(() => {
@@ -88,35 +64,11 @@ function NewParticipantForm() {
     }
   }, [queryHouseholdId, householdId]);
 
-  // Debounced household search
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (householdSearch && !householdId) {
-        const search = async () => {
-          setHouseholdSearching(true);
-          try {
-            const res = await fetch(`/api/admin/households?q=${encodeURIComponent(householdSearch)}`);
-            if (res.ok) {
-              const data = await res.json();
-              setHouseholdResults(data.households || []);
-            }
-          } finally {
-            setHouseholdSearching(false);
-          }
-        };
-        search();
-      } else if (!householdSearch) {
-        setHouseholdResults([]);
-      }
-    }, 300);
-    return () => clearTimeout(timeoutId);
-  }, [householdSearch, householdId]);
-
-  if (status === "loading") {
+  if (authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session || (!session.user?.sysadmin && !session.user?.boardMember)) {
+  if (!ready) {
     return null;
   }
 
@@ -223,42 +175,24 @@ function NewParticipantForm() {
             )}
 
             {/* Household Selector */}
-            <Paper withBorder radius="md" p="md" pos="relative">
-              <TextInput
+            <Paper withBorder radius="md" p="md">
+              <EntityPicker<HouseholdOption>
                 label="Add to Existing Household (Optional)"
                 description="Search by household name or member name/email. If left blank, a new household will be created automatically for adults."
-                value={householdSearch}
-                onChange={(e) => { setHouseholdSearch(e.currentTarget.value); setHouseholdId(""); }}
                 placeholder="Search households..."
-                rightSection={householdId ? (
-                  <Button variant="subtle" color="red" size="compact-xs" onClick={() => { setHouseholdId(""); setHouseholdSearch(""); }}>
-                    Clear
-                  </Button>
-                ) : undefined}
-                rightSectionWidth={householdId ? 60 : undefined}
+                selectedId={householdId || null}
+                selectedLabel={householdSearch}
+                search={async (q) => {
+                  const res = await fetch(`/api/admin/households?q=${encodeURIComponent(q)}`);
+                  if (!res.ok) return [];
+                  const data = await res.json();
+                  return data.households || [];
+                }}
+                getOptionLabel={(h) => h.name || `Household #${h.id}`}
+                getOptionDescription={(h) => h.participants.map((p) => p.name || p.email || 'Unnamed').join(', ') || 'Empty'}
+                onSelect={(h) => { setHouseholdId(h.id.toString()); setHouseholdSearch(h.name || `Household #${h.id}`); }}
+                onClear={() => { setHouseholdId(""); setHouseholdSearch(""); }}
               />
-              {householdSearching && <Text size="xs" c="dimmed" mt={4}>Searching...</Text>}
-              {householdResults.length > 0 && !householdId && (
-                <Paper withBorder shadow="md" radius="sm" pos="absolute" left={16} right={16} style={{ zIndex: 10, maxHeight: 250, overflowY: 'auto' }}>
-                  {householdResults.map((h) => (
-                    <Box
-                      key={h.id}
-                      p="sm"
-                      style={{ cursor: 'pointer', borderBottom: '1px solid var(--mantine-color-default-border)' }}
-                      onClick={() => {
-                        setHouseholdId(h.id.toString());
-                        setHouseholdSearch(h.name || `Household #${h.id}`);
-                        setHouseholdResults([]);
-                      }}
-                    >
-                      <Text fw={500}>{h.name || `Household #${h.id}`}</Text>
-                      <Text size="xs" c="dimmed">
-                        {h.participants.map((p) => p.name || p.email || 'Unnamed').join(', ') || 'Empty'}
-                      </Text>
-                    </Box>
-                  ))}
-                </Paper>
-              )}
             </Paper>
 
             {!householdId && (

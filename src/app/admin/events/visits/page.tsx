@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Center, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
-import { formatDateTime } from '@/lib/time';
+import { Button, Center, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { useRequireRole } from '@/hooks/useRequireRole';
+import { AlertBanner } from '@/components/admin/AlertBanner';
+import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
 type Visit = {
   id: number;
@@ -15,7 +16,7 @@ type Visit = {
 };
 
 export default function AdminVisitsPage() {
-  const { data: session, status } = useSession();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin']);
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -42,30 +43,17 @@ export default function AdminVisitsPage() {
   }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      if (!session.user?.sysadmin) {
-        router.push('/');
-      } else {
-        fetchVisits();
-      }
-    }
-  }, [status, session, router, fetchVisits]);
+    if (ready) fetchVisits();
+  }, [ready, fetchVisits]);
 
   const handleEditClick = (visit: Visit) => {
     const confirmEdit = window.confirm("Warning: You are editing a past visit record using Admin overrides. This will be permanently logged.");
     if (!confirmEdit) return;
 
     setEditingVisitId(visit.id);
-    const formatForInput = (dateString: string | null) => {
-      if (!dateString) return "";
-      const d = new Date(dateString);
-      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    };
     setEditForm({
-      arrived: formatForInput(visit.arrived),
-      departed: formatForInput(visit.departed ?? null)
+      arrived: toDatetimeLocal(visit.arrived),
+      departed: toDatetimeLocal(visit.departed ?? null)
     });
   };
 
@@ -76,8 +64,8 @@ export default function AdminVisitsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           visitId: id,
-          arrived: editForm.arrived ? new Date(editForm.arrived).toISOString() : undefined,
-          departed: editForm.departed ? new Date(editForm.departed).toISOString() : undefined
+          arrived: editForm.arrived ? fromDatetimeLocal(editForm.arrived) : undefined,
+          departed: editForm.departed ? fromDatetimeLocal(editForm.departed) : undefined
         })
       });
       if (res.ok) {
@@ -92,11 +80,11 @@ export default function AdminVisitsPage() {
     }
   };
 
-  if (loading || status === "loading") {
+  if (authLoading || loading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session || !session.user?.sysadmin) return null;
+  if (!ready) return null;
 
   return (
     <Stack>
@@ -105,9 +93,7 @@ export default function AdminVisitsPage() {
         <Button variant="default" onClick={() => router.push('/admin')}>← Admin Ops</Button>
       </Group>
 
-      {message && (
-        <Alert color={message.includes('success') ? 'green' : 'red'}>{message}</Alert>
-      )}
+      <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 
       <Table.ScrollContainer minWidth={800}>
         <Table verticalSpacing="sm" highlightOnHover>

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Button, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { useRequireRole } from '@/hooks/useRequireRole';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 
 type UserRole = {
   id: number;
@@ -16,14 +17,6 @@ type UserRole = {
   backgroundCheckReviewer: boolean;
 };
 
-type SessionUser = {
-  id: number;
-  sysadmin?: boolean;
-  keyholder?: boolean;
-  boardMember?: boolean;
-  householdId?: number | null;
-};
-
 const ROLE_COLUMNS: { field: keyof UserRole; label: string }[] = [
   { field: 'sysadmin', label: 'Sysadmin' },
   { field: 'boardMember', label: 'Board Member' },
@@ -33,7 +26,7 @@ const ROLE_COLUMNS: { field: keyof UserRole; label: string }[] = [
 ];
 
 export default function RoleAssignmentPage() {
-  const { data: session, status } = useSession();
+  const { user, ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
   const router = useRouter();
 
   const [users, setUsers] = useState<UserRole[]>([]);
@@ -42,7 +35,7 @@ export default function RoleAssignmentPage() {
   const [savingId, setSavingId] = useState<number | null>(null);
   const [userSearchText, setUserSearchText] = useState("");
 
-  const currentUserIsSysadmin = (session?.user as SessionUser)?.sysadmin || false;
+  const currentUserIsSysadmin = !!user?.sysadmin;
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -61,17 +54,8 @@ export default function RoleAssignmentPage() {
   }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      const isAuthorized = (session.user as SessionUser)?.sysadmin || (session.user as SessionUser)?.boardMember;
-      if (!isAuthorized) {
-        router.push('/');
-      } else {
-        fetchUsers();
-      }
-    }
-  }, [status, router, session, fetchUsers]);
+    if (ready) fetchUsers();
+  }, [ready, fetchUsers]);
 
   const handleRoleChange = async (userId: number, field: keyof UserRole, value: boolean) => {
     setSavingId(userId);
@@ -104,11 +88,11 @@ export default function RoleAssignmentPage() {
     }
   };
 
-  if (loading || status === "loading") {
+  if (authLoading || loading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session) return null;
+  if (!ready) return null;
 
   const filteredUsers = users.filter(u =>
     (u.name || "").toLowerCase().includes((userSearchText || "").toLowerCase()) ||
@@ -127,7 +111,7 @@ export default function RoleAssignmentPage() {
         automatically.
       </Text>
 
-      {message && <Alert color="red">{message}</Alert>}
+      <AlertBanner message={message} tone="error" />
 
       <TextInput
         placeholder="Search users by name or email..."

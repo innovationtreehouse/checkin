@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { EntityPicker } from "@/components/admin/EntityPicker";
 
 type HouseholdRef = {
   id: number;
@@ -48,8 +49,6 @@ export default function AdminParticipantsIndex() {
   const [selectedParticipant, setSelectedParticipant] = useState<ParticipantRow | null>(null);
   const [householdId, setHouseholdId] = useState("");
   const [householdSearch, setHouseholdSearch] = useState("");
-  const [householdResults, setHouseholdResults] = useState<HouseholdRef[]>([]);
-  const [householdSearching, setHouseholdSearching] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [showingNewHouseholdConfirm, setShowingNewHouseholdConfirm] = useState(false);
 
@@ -62,30 +61,6 @@ export default function AdminParticipantsIndex() {
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     notifications.show({ message, color: type === 'error' ? 'red' : 'green' });
   };
-
-  // Debounced household search
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (householdSearch && !householdId) {
-        const search = async () => {
-          setHouseholdSearching(true);
-          try {
-            const res = await fetch(`/api/admin/households?q=${encodeURIComponent(householdSearch)}`);
-            if (res.ok) {
-              const data = await res.json();
-              setHouseholdResults(data.households || []);
-            }
-          } finally {
-            setHouseholdSearching(false);
-          }
-        };
-        search();
-      } else if (!householdSearch) {
-        setHouseholdResults([]);
-      }
-    }, 300);
-    return () => clearTimeout(timeoutId);
-  }, [householdSearch, householdId]);
 
   const closeAssign = () => {
     setAssignModalOpen(false);
@@ -256,31 +231,23 @@ export default function AdminParticipantsIndex() {
           </Alert>
         ) : (
           <form onSubmit={handleAssignHousehold}>
-            <Box pos="relative">
-              <TextInput
-                label="Search for Existing Household"
-                description="If left blank, a new household will be created."
-                value={householdSearch}
-                onChange={(e) => { setHouseholdSearch(e.currentTarget.value); setHouseholdId(""); }}
-                placeholder="Search households..."
-                rightSection={householdId ? (
-                  <Button variant="subtle" color="red" size="compact-xs" onClick={() => { setHouseholdId(""); setHouseholdSearch(""); }}>Clear</Button>
-                ) : undefined}
-                rightSectionWidth={householdId ? 60 : undefined}
-              />
-              {householdSearching && <Text size="xs" c="dimmed" mt={4}>Searching...</Text>}
-              {householdResults.length > 0 && !householdId && (
-                <Paper withBorder shadow="md" radius="sm" pos="absolute" left={0} right={0} style={{ zIndex: 10, maxHeight: 250, overflowY: 'auto' }}>
-                  {householdResults.map((h) => (
-                    <Box key={h.id} p="sm" style={{ cursor: 'pointer', borderBottom: '1px solid var(--mantine-color-default-border)' }}
-                      onClick={() => { setHouseholdId(h.id.toString()); setHouseholdSearch(h.name || `Household #${h.id}`); setHouseholdResults([]); }}>
-                      <Text fw={500}>{h.name || `Household #${h.id}`}</Text>
-                      <Text size="xs" c="dimmed">{h.participants.map((p) => p.name || p.email || 'Unnamed').join(', ') || 'Empty'}</Text>
-                    </Box>
-                  ))}
-                </Paper>
-              )}
-            </Box>
+            <EntityPicker<HouseholdRef>
+              label="Search for Existing Household"
+              description="If left blank, a new household will be created."
+              placeholder="Search households..."
+              selectedId={householdId || null}
+              selectedLabel={householdSearch}
+              search={async (q) => {
+                const res = await fetch(`/api/admin/households?q=${encodeURIComponent(q)}`);
+                if (!res.ok) return [];
+                const data = await res.json();
+                return data.households || [];
+              }}
+              getOptionLabel={(h) => h.name || `Household #${h.id}`}
+              getOptionDescription={(h) => h.participants.map((p) => p.name || p.email || 'Unnamed').join(', ') || 'Empty'}
+              onSelect={(h) => { setHouseholdId(h.id.toString()); setHouseholdSearch(h.name || `Household #${h.id}`); }}
+              onClear={() => { setHouseholdId(""); setHouseholdSearch(""); }}
+            />
             <Group justify="flex-end" mt="lg">
               <Button type="button" variant="default" onClick={closeAssign} disabled={assigning}>Cancel</Button>
               {canSubmitAssign && (

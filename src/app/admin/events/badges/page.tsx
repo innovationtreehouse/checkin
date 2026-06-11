@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Center, Group, Loader, Stack, Table, Title } from '@mantine/core';
+import { Button, Center, Group, Loader, Stack, Table, Title } from '@mantine/core';
+import { useRequireRole } from '@/hooks/useRequireRole';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime } from '@/lib/time';
 
 type BadgeEvent = {
@@ -14,7 +15,7 @@ type BadgeEvent = {
 };
 
 export default function AdminBadgesPage() {
-  const { data: session, status } = useSession();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin']);
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -38,22 +39,14 @@ export default function AdminBadgesPage() {
   }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      if (!session.user?.sysadmin) {
-        router.push('/');
-      } else {
-        fetchBadges();
-      }
-    }
-  }, [status, session, router, fetchBadges]);
+    if (ready) fetchBadges();
+  }, [ready, fetchBadges]);
 
-  if (loading || status === "loading") {
+  if (authLoading || loading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session || !session.user?.sysadmin) return null;
+  if (!ready) return null;
 
   return (
     <Stack>
@@ -62,9 +55,7 @@ export default function AdminBadgesPage() {
         <Button variant="default" onClick={() => router.push('/admin')}>← Admin Ops</Button>
       </Group>
 
-      {message && (
-        <Alert color={message.includes('success') ? 'green' : 'red'}>{message}</Alert>
-      )}
+      <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 
       <Table.ScrollContainer minWidth={700}>
         <Table verticalSpacing="sm" highlightOnHover>

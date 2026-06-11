@@ -25,7 +25,7 @@ function jsonReq(method: string, body?: unknown, url = 'http://localhost:4000/x'
 }
 
 describe('Membership settings + volunteer designations API', () => {
-    let boardId: number, plainId: number, fullMemberId: number;
+    let boardId: number, plainId: number;
     let prevSettings: { normalDuesCents: number; volunteerDuesCents: number } | null = null;
 
     async function wipe() {
@@ -50,10 +50,9 @@ describe('Membership settings + volunteer designations API', () => {
         plainId = (await prisma.participant.create({ data: { email: `plain-${TAG}@example.com`, name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
 
         // A full-price active member, for the designation warning.
-        const fm = await prisma.participant.create({
+        await prisma.participant.create({
             data: { email: `fullmember-${TAG}@example.com`, name: 'Full', household: { create: { name: `Full HH ${TAG}`, membership: { create: { status: 'ACTIVE', isVolunteer: false } } } } },
         });
-        fullMemberId = fm.id;
     });
 
     afterAll(async () => {

@@ -3,6 +3,17 @@ import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { logBackendError } from "@/lib/logger";
 
+interface ParentInput {
+    name: string;
+    email?: string | null;
+    phone?: string | null;
+}
+
+interface ParticipantInput {
+    name: string;
+    dob?: string | null;
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
 
@@ -37,14 +48,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         }
 
         // Validate Emergency Contact phone doesn't match parents
-        const parentPhones = parents.map((p: any) => p.phone && p.phone.replace(/\D/g, '')).filter(Boolean);
+        const parentPhones = parents.map((p: ParentInput) => p.phone && p.phone.replace(/\D/g, '')).filter(Boolean);
         const emergencyPhone = emergencyContact.phone.replace(/\D/g, '');
         if (parentPhones.includes(emergencyPhone)) {
              return NextResponse.json({ error: "Emergency contact phone must be different from parent/guardian phone numbers." }, { status: 400 });
         }
 
         // Check for existing emails to prevent Unique Constraint violations
-        const emailsToCheck = parents.map((p: any) => p.email).filter(Boolean);
+        const emailsToCheck = parents.map((p: ParentInput) => p.email).filter(Boolean);
         if (emailsToCheck.length > 0) {
             const existingUsers = await prisma.participant.findMany({
                 where: { email: { in: emailsToCheck } }
@@ -66,8 +77,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         // Check Age constraints
         if (currentProgram.minAge !== null || currentProgram.maxAge !== null) {
-            for (const p of participants) {
-                const isMatchingParent = parents.some((parent: any) => parent.name.toLowerCase().trim() === p.name.toLowerCase().trim());
+            for (const p of participants as ParticipantInput[]) {
+                const isMatchingParent = parents.some((parent: ParentInput) => parent.name.toLowerCase().trim() === p.name.toLowerCase().trim());
                 if (isMatchingParent) {
                     // It's an adult parent. Assume they are over 18.
                     const age = 30; 
@@ -198,7 +209,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             message: isFree ? "Enrollment complete." : "Redirecting to Shopify for payment."
         });
 
-    } catch (error: any) {
+    } catch (error) {
         await logBackendError(error, "POST /api/programs/[id]/public-register");
         return NextResponse.json({ error: "An error occurred during registration." }, { status: 500 });
     }
