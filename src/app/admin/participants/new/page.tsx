@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { EntityPicker } from '@/components/admin/EntityPicker';
+import { isMinor } from '@/lib/time';
 import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
 
 type HouseholdOption = {
@@ -35,19 +36,7 @@ function NewParticipantForm() {
   const [householdId, setHouseholdId] = useState("");
   const [householdSearch, setHouseholdSearch] = useState("");
 
-  const isStudent = () => {
-    if (!dob) return false;
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const m = today.getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age < 18;
-  };
-
-  const studentSelected = isStudent();
+  const studentSelected = isMinor(dob);
 
   const [alreadyMember, setAlreadyMember] = useState(false);
   const [saving, setSaving] = useState(false);
