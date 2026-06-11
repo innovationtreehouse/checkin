@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
-import { Alert, Button, Center, Group, List, Loader, Stack, Table, Text } from '@mantine/core';
+import { Button, Center, Group, List, Loader, Stack, Table, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 
 type Household = {
   id: number;
@@ -77,7 +78,7 @@ export default function AdminHouseholdsPage() {
         shop access and other organizational privileges.
       </Text>
 
-      {error && <Alert color="red">{error}</Alert>}
+      <AlertBanner message={error} tone="error" />
 
       <Table.ScrollContainer minWidth={600}>
         <Table verticalSpacing="sm" highlightOnHover>

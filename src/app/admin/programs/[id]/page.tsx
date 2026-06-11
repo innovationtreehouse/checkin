@@ -8,6 +8,7 @@ import {
   Alert, Anchor, Badge, Box, Button, Card, Center, Checkbox, Container, Divider, Group,
   Loader, NumberInput, Paper, Select, SimpleGrid, Stack, Table, Tabs, Text, TextInput, Title,
 } from '@mantine/core';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime } from '@/lib/time';
 
 type ProgramDetail = {
@@ -366,7 +367,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
           <Button variant="default" onClick={() => router.push('/admin/programs')}>← Back to Programs</Button>
         </Group>
 
-        {message && <Alert color="cyan" mb="lg">{message}</Alert>}
+        <AlertBanner message={message} tone="info" mb="lg" />
 
         <Tabs value={activeTab} onChange={(v) => setActiveTab((v as typeof activeTab) ?? 'general')}>
           <Tabs.List mb="lg">
