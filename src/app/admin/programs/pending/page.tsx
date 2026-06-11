@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Button, Center, Loader, Stack, Table, Text, Title } from '@mantine/core';
+import { Button, Center, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
+import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { formatDateTime } from '@/lib/time';
 
 type PaymentPlanRequest = {
@@ -96,6 +97,42 @@ export default function PaymentPlansPage() {
     );
   }
 
+  const columns: DataTableColumn<PaymentPlanRequest>[] = [
+    {
+      header: 'Participant',
+      render: (req) => (
+        <>
+          <Text fw={500}>{req.participant.name}</Text>
+          <Text size="sm" c="dimmed">{req.participant.email}</Text>
+        </>
+      ),
+    },
+    {
+      header: 'Program',
+      render: (req) => (
+        <>
+          <Text fw={500}>{req.program.name}</Text>
+          <Text size="sm" c="dimmed">
+            Price: M ${req.program.memberPrice || 0} / NM ${req.program.nonMemberPrice || 0}
+          </Text>
+        </>
+      ),
+    },
+    {
+      header: 'Requested On',
+      render: (req) => <Text size="sm" c="dimmed">{formatDateTime(req.pendingSince)}</Text>,
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      render: (req) => (
+        <Button size="xs" color="green" variant="light" onClick={() => handleApprove(req.programId, req.participantId)}>
+          Approve &amp; Mark Active
+        </Button>
+      ),
+    },
+  ];
+
   return (
     <Stack>
       <AdminPageHeader title="Payment Plan Requests" back={{ href: '/admin', label: '← Back to Admin' }} />
@@ -108,49 +145,12 @@ export default function PaymentPlansPage() {
 
       <AlertBanner message={message} tone="error" />
 
-      <Table.ScrollContainer minWidth={700}>
-        <Table verticalSpacing="sm" highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Participant</Table.Th>
-              <Table.Th>Program</Table.Th>
-              <Table.Th>Requested On</Table.Th>
-              <Table.Th ta="right">Actions</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {requests.map((req) => (
-              <Table.Tr key={`${req.programId}-${req.participantId}`}>
-                <Table.Td>
-                  <Text fw={500}>{req.participant.name}</Text>
-                  <Text size="sm" c="dimmed">{req.participant.email}</Text>
-                </Table.Td>
-                <Table.Td>
-                  <Text fw={500}>{req.program.name}</Text>
-                  <Text size="sm" c="dimmed">
-                    Price: M ${req.program.memberPrice || 0} / NM ${req.program.nonMemberPrice || 0}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
-                  <Text size="sm" c="dimmed">{formatDateTime(req.pendingSince)}</Text>
-                </Table.Td>
-                <Table.Td ta="right">
-                  <Button size="xs" color="green" variant="light" onClick={() => handleApprove(req.programId, req.participantId)}>
-                    Approve &amp; Mark Active
-                  </Button>
-                </Table.Td>
-              </Table.Tr>
-            ))}
-            {requests.length === 0 && (
-              <Table.Tr>
-                <Table.Td colSpan={4} ta="center">
-                  <Text c="dimmed" py="md">No pending payment plan requests.</Text>
-                </Table.Td>
-              </Table.Tr>
-            )}
-          </Table.Tbody>
-        </Table>
-      </Table.ScrollContainer>
+      <DataTable
+        columns={columns}
+        rows={requests}
+        getRowKey={(req) => `${req.programId}-${req.participantId}`}
+        emptyMessage="No pending payment plan requests."
+      />
     </Stack>
   );
 }
