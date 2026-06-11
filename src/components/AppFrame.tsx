@@ -32,6 +32,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { brand } from '@/brand';
 import { useIsDevInstance } from '@/components/EnvProvider';
+import { BuildInfoFooter } from '@/components/BuildInfoFooter';
 
 type SessionUser = {
   sysadmin?: boolean;
@@ -155,6 +156,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   return (
     <AppShell
       header={{ height: 60 }}
+      footer={{ height: 28 }}
       navbar={
         showNav
           ? { width: 260, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }
@@ -212,6 +214,10 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
       )}
 
       <AppShell.Main>{children}</AppShell.Main>
+
+      <AppShell.Footer>
+        <BuildInfoFooter />
+      </AppShell.Footer>
     </AppShell>
   );
 }
