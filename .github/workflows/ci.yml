@@ -25,7 +25,7 @@ jobs:
     outputs:
       app: ${{ steps.detect.outputs.app }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - id: detect
@@ -80,11 +80,11 @@ jobs:
 
       - name: Checkout code
         if: needs.changes.outputs.app == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
         if: needs.changes.outputs.app == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: 'npm'
@@ -170,7 +170,7 @@ jobs:
 
       - name: Checkout code
         if: needs.changes.outputs.app == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Mirrors deploy-dev.yml's build step minus `docker push`. Architecture is irrelevant
       # (the image is discarded), so the default x64 runner is fine — the deploy builds arm64
