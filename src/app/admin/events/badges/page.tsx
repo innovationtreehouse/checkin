@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Center, Group, Loader, Stack, Table, Title } from '@mantine/core';
+import { Button, Center, Group, Loader, Stack, Table, Title } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime } from '@/lib/time';
 
 type BadgeEvent = {
@@ -54,9 +55,7 @@ export default function AdminBadgesPage() {
         <Button variant="default" onClick={() => router.push('/admin')}>← Admin Ops</Button>
       </Group>
 
-      {message && (
-        <Alert color={message.includes('success') ? 'green' : 'red'}>{message}</Alert>
-      )}
+      <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 
       <Table.ScrollContainer minWidth={700}>
         <Table verticalSpacing="sm" highlightOnHover>

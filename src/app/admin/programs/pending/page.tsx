@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Center, Group, Loader, Stack, Table, Text, Title } from '@mantine/core';
+import { Button, Center, Group, Loader, Stack, Table, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime } from '@/lib/time';
 
 type PaymentPlanRequest = {
@@ -107,7 +108,7 @@ export default function PaymentPlansPage() {
         removal cron job.
       </Text>
 
-      {message && <Alert color="red">{message}</Alert>}
+      <AlertBanner message={message} tone="error" />
 
       <Table.ScrollContainer minWidth={700}>
         <Table verticalSpacing="sm" highlightOnHover>
