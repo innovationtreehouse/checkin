@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Alert, Button, Center, Group, List, Loader, Stack, Table, Text, Title } from '@mantine/core';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { Button, Center, Group, List, Loader, Stack, Table, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 
 type Household = {
   id: number;
@@ -70,17 +71,14 @@ export default function AdminHouseholdsPage() {
 
   return (
     <Stack>
-      <Group justify="space-between" align="center" wrap="wrap">
-        <Title order={1}>Manage Memberships</Title>
-        <Button component={Link} href="/admin" variant="default">← Admin Hub</Button>
-      </Group>
+      <AdminPageHeader title="Manage Memberships" back={{ href: '/admin', label: '← Admin Hub' }} />
 
       <Text c="dimmed">
         View all households and toggle their official facility Membership status. Memberships grant
         shop access and other organizational privileges.
       </Text>
 
-      {error && <Alert color="red">{error}</Alert>}
+      <AlertBanner message={error} tone="error" />
 
       <Table.ScrollContainer minWidth={600}>
         <Table verticalSpacing="sm" highlightOnHover>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Box, Button, Card, Group, List, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { AlertBanner } from "@/components/admin/AlertBanner";
 
 interface ParticipantMergeView {
   id: number;
@@ -242,7 +243,7 @@ export default function MergeParticipants() {
         </Text>
       </div>
 
-      {error && <Alert color="red">{error}</Alert>}
+      <AlertBanner message={error} tone="error" />
 
       {!previewMode ? (
         <>

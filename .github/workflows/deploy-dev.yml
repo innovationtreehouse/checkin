@@ -58,12 +58,12 @@ jobs:
           echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout deployed commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ steps.vars.outputs.sha }}
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.DEPLOY_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -84,6 +84,7 @@ jobs:
           # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
           docker build \
             --build-arg NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN="$NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN" \
+            --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
             -f checkin-app/Dockerfile \
             -t "$IMAGE" .
           docker push "$IMAGE"

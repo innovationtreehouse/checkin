@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button, Center, Group, Loader, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Button, Center, Group, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
@@ -17,7 +17,6 @@ type Visit = {
 
 export default function AdminVisitsPage() {
   const { ready, loading: authLoading } = useRequireRole(['sysadmin']);
-  const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -88,10 +87,7 @@ export default function AdminVisitsPage() {
 
   return (
     <Stack>
-      <Group justify="space-between" align="center" wrap="wrap">
-        <Title order={1}>Visit History</Title>
-        <Button variant="default" onClick={() => router.push('/admin')}>← Admin Ops</Button>
-      </Group>
+      <AdminPageHeader title="Visit History" back={{ href: '/admin', label: '← Admin Ops' }} />
 
       <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 

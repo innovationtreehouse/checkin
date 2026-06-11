@@ -5,8 +5,10 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import { pdf } from "@react-pdf/renderer";
-import { Badge, Button, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
+import { DataTable, type DataTableColumn } from "@/components/admin/DataTable";
 import BadgeDocument from "@/components/admin/BadgeDocument";
 import StickerDocument from "@/components/admin/StickerDocument";
 
@@ -126,12 +128,55 @@ export default function PrintBadgesPage() {
 
   if (status === "loading") return null;
 
+  const columns: DataTableColumn<ParticipantRow>[] = [
+    {
+      header: (
+        <Checkbox
+          checked={participants.length > 0 && selectedIds.size === participants.length}
+          onChange={toggleAll}
+          aria-label="Select all"
+        />
+      ),
+      render: (p) => (
+        <Checkbox
+          checked={selectedIds.has(p.id)}
+          onChange={() => toggleSelection(p.id)}
+          aria-label={`Select ${p.name ?? p.id}`}
+        />
+      ),
+    },
+    { header: 'ID', render: (p) => <Text span c="dimmed">#{p.id}</Text> },
+    {
+      header: 'Name',
+      render: (p) => (
+        <>
+          <Text fw={600}>{p.name || 'N/A'}</Text>
+          <Text size="sm" c="dimmed">{p.email}</Text>
+        </>
+      ),
+    },
+    {
+      header: 'Membership',
+      render: (p) => (p.isMember ? <Text c="green">Active</Text> : <Text c="red">Inactive</Text>),
+    },
+    {
+      header: 'Roles',
+      render: (p) => (
+        <Group gap={4}>
+          {p.boardMember && <Badge size="xs" color="blue">BOARD</Badge>}
+          {p.shopSteward && <Badge size="xs" color="grape">STEWARD</Badge>}
+          {p.keyholder && <Badge size="xs" color="orange">KEYHOLDER</Badge>}
+          {!p.boardMember && !p.shopSteward && !p.keyholder && p.isMember && (
+            <Badge size="xs" color="green">MEMBER</Badge>
+          )}
+        </Group>
+      ),
+    },
+  ];
+
   return (
     <Stack>
-      <Group justify="space-between" align="center" wrap="wrap">
-        <Title order={1}>Print ID Badges</Title>
-        <Button variant="default" onClick={() => router.push('/admin')}>← Back to Admin Hub</Button>
-      </Group>
+      <AdminPageHeader title="Print ID Badges" back={{ href: '/admin', label: '← Back to Admin Hub' }} />
 
       <Text c="dimmed">
         Select participants to generate double-sided standard Avery 5390 ID badges.
@@ -152,64 +197,14 @@ export default function PrintBadgesPage() {
         </Button>
       </Group>
 
-      <Table.ScrollContainer minWidth={700}>
-        <Table verticalSpacing="sm" highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>
-                <Checkbox
-                  checked={participants.length > 0 && selectedIds.size === participants.length}
-                  onChange={toggleAll}
-                  aria-label="Select all"
-                />
-              </Table.Th>
-              <Table.Th>ID</Table.Th>
-              <Table.Th>Name</Table.Th>
-              <Table.Th>Membership</Table.Th>
-              <Table.Th>Roles</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {loading ? (
-              <Table.Tr>
-                <Table.Td colSpan={5}><Center py="md"><Loader size="sm" /></Center></Table.Td>
-              </Table.Tr>
-            ) : participants.length === 0 ? (
-              <Table.Tr>
-                <Table.Td colSpan={5} ta="center"><Text c="dimmed" py="md">No participants found.</Text></Table.Td>
-              </Table.Tr>
-            ) : participants.map((p) => (
-              <Table.Tr key={p.id} bg={selectedIds.has(p.id) ? 'var(--mantine-color-blue-light)' : undefined}>
-                <Table.Td>
-                  <Checkbox
-                    checked={selectedIds.has(p.id)}
-                    onChange={() => toggleSelection(p.id)}
-                    aria-label={`Select ${p.name ?? p.id}`}
-                  />
-                </Table.Td>
-                <Table.Td c="dimmed">#{p.id}</Table.Td>
-                <Table.Td>
-                  <Text fw={600}>{p.name || 'N/A'}</Text>
-                  <Text size="sm" c="dimmed">{p.email}</Text>
-                </Table.Td>
-                <Table.Td>
-                  {p.isMember ? <Text c="green">Active</Text> : <Text c="red">Inactive</Text>}
-                </Table.Td>
-                <Table.Td>
-                  <Group gap={4}>
-                    {p.boardMember && <Badge size="xs" color="blue">BOARD</Badge>}
-                    {p.shopSteward && <Badge size="xs" color="grape">STEWARD</Badge>}
-                    {p.keyholder && <Badge size="xs" color="orange">KEYHOLDER</Badge>}
-                    {!p.boardMember && !p.shopSteward && !p.keyholder && p.isMember && (
-                      <Badge size="xs" color="green">MEMBER</Badge>
-                    )}
-                  </Group>
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Table.ScrollContainer>
+      <DataTable
+        columns={columns}
+        rows={participants}
+        getRowKey={(p) => p.id}
+        loading={loading}
+        emptyMessage="No participants found."
+        rowProps={(p) => ({ bg: selectedIds.has(p.id) ? 'var(--mantine-color-blue-light)' : undefined })}
+      />
     </Stack>
   );
 }

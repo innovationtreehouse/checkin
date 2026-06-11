@@ -2,11 +2,12 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
 import { isMinor } from '@/lib/time';
-import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Button, Card, Center, Checkbox, Container, Loader, Paper, Stack, Text, TextInput } from '@mantine/core';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 
 type HouseholdOption = {
   id: number;
@@ -120,10 +121,7 @@ function NewParticipantForm() {
   return (
     <Container size="md" py="md">
       <Card withBorder radius="md" padding="lg">
-        <Group justify="space-between" align="center" wrap="wrap" mb="md">
-          <Title order={1}>Register New User</Title>
-          <Button component={Link} href="/admin" variant="default">← Admin Hub</Button>
-        </Group>
+        <AdminPageHeader title="Register New User" back={{ href: '/admin', label: '← Admin Hub' }} mb="md" />
 
         <Text c="dimmed" mb="lg">
           System Administrators can manually register a new participant into the database. When they
@@ -131,7 +129,7 @@ function NewParticipantForm() {
           this profile.
         </Text>
 
-        {message && <Alert color={isError ? 'red' : 'green'} mb="md">{message}</Alert>}
+        <AlertBanner message={message} tone={isError ? 'error' : 'success'} mb="md" />
 
         <form onSubmit={handleSubmit}>
           <Stack>
