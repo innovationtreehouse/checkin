@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Center, Loader, Stack, Table } from '@mantine/core';
+import { Center, Loader, Stack } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
+import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { formatDateTime } from '@/lib/time';
 
 type BadgeEvent = {
@@ -13,6 +14,14 @@ type BadgeEvent = {
   participant?: { name?: string; email?: string };
   location?: string;
 };
+
+const COLUMNS: DataTableColumn<BadgeEvent>[] = [
+  { header: 'ID', render: (b) => b.id },
+  { header: 'Time', render: (b) => formatDateTime(b.time) },
+  { header: 'Participant', render: (b) => b.participant?.name || 'Unknown' },
+  { header: 'Email', render: (b) => b.participant?.email },
+  { header: 'Location', render: (b) => b.location || 'Front Door' },
+];
 
 export default function AdminBadgesPage() {
   const { ready, loading: authLoading } = useRequireRole(['sysadmin']);
@@ -53,30 +62,7 @@ export default function AdminBadgesPage() {
 
       <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 
-      <Table.ScrollContainer minWidth={700}>
-        <Table verticalSpacing="sm" highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>ID</Table.Th>
-              <Table.Th>Time</Table.Th>
-              <Table.Th>Participant</Table.Th>
-              <Table.Th>Email</Table.Th>
-              <Table.Th>Location</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {badges.map((b) => (
-              <Table.Tr key={b.id}>
-                <Table.Td>{b.id}</Table.Td>
-                <Table.Td>{formatDateTime(b.time)}</Table.Td>
-                <Table.Td>{b.participant?.name || "Unknown"}</Table.Td>
-                <Table.Td>{b.participant?.email}</Table.Td>
-                <Table.Td>{b.location || 'Front Door'}</Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Table.ScrollContainer>
+      <DataTable columns={COLUMNS} rows={badges} getRowKey={(b) => b.id} emptyMessage="No badge events." />
     </Stack>
   );
 }
