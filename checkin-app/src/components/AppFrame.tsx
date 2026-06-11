@@ -4,11 +4,11 @@ import { Suspense } from 'react';
 import {
   ActionIcon,
   AppShell,
+  Badge,
   Burger,
   Button,
   Group,
   NavLink,
-  Text,
   Title,
   Tooltip,
   useMantineColorScheme,
@@ -32,6 +32,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { brand } from '@/brand';
 import { useIsDevInstance } from '@/components/EnvProvider';
+import { BuildInfoFooter } from '@/components/BuildInfoFooter';
 
 type SessionUser = {
   sysadmin?: boolean;
@@ -122,10 +123,14 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
         <Image src={brand.logo.src} alt={brand.logo.alt} width={brand.logo.width} height={brand.logo.height} priority />
       ) : (
         <Title order={3} c={`${brand.nav.accent}.7`}>
-          {isDevInstance ? `${brand.appName}-dev` : brand.appName}
+          {brand.appName}
         </Title>
       )}
-      {brand.logo && isDevInstance && <Text size="xs" c="dimmed" fw={700}>dev</Text>}
+      {isDevInstance && (
+        <Badge color="orange" variant="filled" size="sm" radius="sm" aria-label="Development environment">
+          DEV
+        </Badge>
+      )}
     </Link>
   );
 
@@ -155,6 +160,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   return (
     <AppShell
       header={{ height: 60 }}
+      footer={{ height: 28 }}
       navbar={
         showNav
           ? { width: 260, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }
@@ -162,7 +168,9 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
       }
       padding="md"
     >
-      <AppShell.Header>
+      <AppShell.Header
+        style={isDevInstance ? { borderBottom: '3px solid var(--mantine-color-orange-6)' } : undefined}
+      >
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group gap="sm" wrap="nowrap">
             {showNav && (
@@ -212,6 +220,10 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
       )}
 
       <AppShell.Main>{children}</AppShell.Main>
+
+      <AppShell.Footer>
+        <BuildInfoFooter />
+      </AppShell.Footer>
     </AppShell>
   );
 }

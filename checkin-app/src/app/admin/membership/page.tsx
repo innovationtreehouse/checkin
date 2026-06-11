@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { AlertBanner } from "@/components/admin/AlertBanner";
 
 interface Participant {
   id: number;
@@ -163,7 +164,7 @@ export default function AdminMembershipPage() {
         </Text>
       </div>
 
-      {message && <Alert color={isError ? "red" : "green"}>{message}</Alert>}
+      <AlertBanner message={message} tone={isError ? 'error' : 'success'} />
 
       {!loading && rows.length > 0 && (
         <>

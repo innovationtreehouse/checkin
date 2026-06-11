@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Box, Button, Card, Center, Checkbox, Container, Group, Loader, NumberInput, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, NumberInput, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
+import { AlertBanner } from '@/components/admin/AlertBanner';
+import { useRequireRole } from '@/hooks/useRequireRole';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { EntityPicker } from '@/components/admin/EntityPicker';
 
 type ParticipantOption = {
   id: number;
@@ -12,7 +15,7 @@ type ParticipantOption = {
 };
 
 export default function CreateProgramPage() {
-  const { data: session, status } = useSession();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember'], { redirectTo: '/admin' });
   const router = useRouter();
 
   const [name, setName] = useState("");
@@ -29,46 +32,9 @@ export default function CreateProgramPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
 
-  // Lead Mentor search state
+  // Lead Mentor selection state (the EntityPicker owns the transient query/results)
   const [leadMentorId, setLeadMentorId] = useState("");
   const [mentorSearch, setMentorSearch] = useState("");
-  const [mentorResults, setMentorResults] = useState<ParticipantOption[]>([]);
-  const [mentorSearching, setMentorSearching] = useState(false);
-
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      const isAuthorized = session.user?.sysadmin || session.user?.boardMember;
-      if (!isAuthorized) {
-        router.push('/admin');
-      }
-    }
-  }, [status, router, session]);
-
-  // Debounced mentor search
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (mentorSearch && !leadMentorId) {
-        const searchMentors = async () => {
-          setMentorSearching(true);
-          try {
-            const res = await fetch(`/api/admin/participants/search?q=${encodeURIComponent(mentorSearch)}&filter=adults`);
-            if (res.ok) {
-              const data = await res.json();
-              setMentorResults(data.participants || []);
-            }
-          } finally {
-            setMentorSearching(false);
-          }
-        };
-        searchMentors();
-      } else if (!mentorSearch) {
-        setMentorResults([]);
-      }
-    }, 300);
-    return () => clearTimeout(timeoutId);
-  }, [mentorSearch, leadMentorId]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,25 +77,22 @@ export default function CreateProgramPage() {
     }
   };
 
-  if (status === "loading") {
+  if (authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session) return null;
+  if (!ready) return null;
 
   return (
     <Container size="md" py="md">
       <Card withBorder radius="md" padding="lg">
-        <Group justify="space-between" align="center" wrap="wrap" mb="md">
-          <Title order={1}>Create Program</Title>
-          <Button variant="default" onClick={() => router.push('/programs')}>← Back to Programs</Button>
-        </Group>
+        <AdminPageHeader title="Create Program" back={{ href: '/programs', label: '← Back to Programs' }} mb="md" />
 
         <Text c="dimmed" mb="lg">
           Create a new program. You can configure the roster and schedule events later.
         </Text>
 
-        {message && <Alert color={messageType === 'success' ? 'green' : 'red'} mb="md">{message}</Alert>}
+        <AlertBanner message={message} tone={messageType === 'success' ? 'success' : 'error'} mb="md" />
 
         <form onSubmit={handleCreate}>
           <Stack>
@@ -142,37 +105,23 @@ export default function CreateProgramPage() {
             />
 
             {/* Lead Mentor Selector */}
-            <Box pos="relative">
-              <TextInput
-                label="Lead Mentor / Program Coordinator"
-                description="The lead mentor will be able to manage this program's roster and events."
-                value={mentorSearch}
-                onChange={(e) => { setMentorSearch(e.currentTarget.value); setLeadMentorId(""); }}
-                placeholder="Search by name or email..."
-                rightSection={leadMentorId ? (
-                  <Button variant="subtle" color="red" size="compact-xs" onClick={() => { setLeadMentorId(""); setMentorSearch(""); }}>
-                    Clear
-                  </Button>
-                ) : undefined}
-                rightSectionWidth={leadMentorId ? 60 : undefined}
-              />
-              {mentorSearching && <Text size="xs" c="dimmed" mt={4}>Loading...</Text>}
-              {mentorResults.length > 0 && !leadMentorId && (
-                <Paper withBorder shadow="md" radius="sm" pos="absolute" left={0} right={0} style={{ zIndex: 10, maxHeight: 200, overflowY: 'auto' }}>
-                  {mentorResults.map((p) => (
-                    <Box
-                      key={p.id}
-                      p="sm"
-                      style={{ cursor: 'pointer', borderBottom: '1px solid var(--mantine-color-default-border)' }}
-                      onClick={() => { setLeadMentorId(p.id.toString()); setMentorSearch(`${p.name || 'Unnamed'} (${p.email})`); setMentorResults([]); }}
-                    >
-                      <Text fw={500}>{p.name || 'Unnamed'}</Text>
-                      <Text size="xs" c="dimmed">{p.email}</Text>
-                    </Box>
-                  ))}
-                </Paper>
-              )}
-            </Box>
+            <EntityPicker<ParticipantOption>
+              label="Lead Mentor / Program Coordinator"
+              description="The lead mentor will be able to manage this program's roster and events."
+              placeholder="Search by name or email..."
+              selectedId={leadMentorId || null}
+              selectedLabel={mentorSearch}
+              search={async (q) => {
+                const res = await fetch(`/api/admin/participants/search?q=${encodeURIComponent(q)}&filter=adults`);
+                if (!res.ok) return [];
+                const data = await res.json();
+                return data.participants || [];
+              }}
+              getOptionLabel={(p) => p.name || 'Unnamed'}
+              getOptionDescription={(p) => p.email}
+              onSelect={(p) => { setLeadMentorId(p.id.toString()); setMentorSearch(`${p.name || 'Unnamed'} (${p.email})`); }}
+              onClear={() => { setLeadMentorId(""); setMentorSearch(""); }}
+            />
 
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <NumberInput label="Min Age (Optional)" value={minAge} onChange={(v) => setMinAge(String(v))} min={0} />

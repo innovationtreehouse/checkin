@@ -5,6 +5,7 @@
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "noEmit": true,
+    "types": ["node", "jest", "@testing-library/jest-dom"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,

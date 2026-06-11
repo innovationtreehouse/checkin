@@ -3,7 +3,7 @@
 # Build with:  docker build -f checkin-app/Dockerfile .
 
 # Stage 1: Install dependencies (whole workspace, hoisted to /app/node_modules)
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 # Copy only the manifests + lockfile first for a cache-friendly `npm ci` layer.
 # Add packages/*/package.json here when @checkin/* packages land (item 4).
@@ -12,7 +12,7 @@ COPY checkin-app/package.json ./checkin-app/package.json
 RUN npm ci
 
 # Stage 2: Build the app
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -25,6 +25,11 @@ RUN npm -w checkin-app exec -- prisma generate
 # be present here. Passed via --build-arg by the deploy workflow; harmless if empty.
 ARG NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN
 ENV NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN=${NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN}
+# Build stamp surfaced in the app footer: the deployed commit SHA, passed via
+# --build-arg by the deploy workflow and inlined into the bundle (NEXT_PUBLIC_*,
+# build-time). Empty in local/ad-hoc builds -> the footer shows "dev".
+ARG NEXT_PUBLIC_GIT_SHA
+ENV NEXT_PUBLIC_GIT_SHA=${NEXT_PUBLIC_GIT_SHA}
 # Needed for GitHub to build the image, overwritten by secrets in AWS at run time.
 # (next build imports auth-options.ts, which requires these to exist; the values
 # are never used — every route is dynamic — and never reach the runner stage.)
@@ -34,7 +39,7 @@ ENV GOOGLE_CLIENT_ID=build-placeholder \
 RUN npm -w checkin-app run build
 
 # Stage 3: Production image
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 

@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Alert, Button, Center, Group, List, Loader, Stack, Table, Text, Title } from '@mantine/core';
+import { useRequireRole } from '@/hooks/useRequireRole';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { Button, Center, Group, List, Loader, Stack, Table, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { AlertBanner } from '@/components/admin/AlertBanner';
 
 type Household = {
   id: number;
@@ -15,7 +16,7 @@ type Household = {
 };
 
 export default function AdminHouseholdsPage() {
-  const { data: session, status } = useSession();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
   const router = useRouter();
 
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -39,17 +40,8 @@ export default function AdminHouseholdsPage() {
   }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      const isAuthorized = session?.user?.sysadmin || session?.user?.boardMember;
-      if (!isAuthorized) {
-        router.push('/');
-      } else {
-        fetchHouseholds();
-      }
-    }
-  }, [status, session, router, fetchHouseholds]);
+    if (ready) fetchHouseholds();
+  }, [ready, fetchHouseholds]);
 
   const toggleMembership = async (householdId: number, currentActive: boolean) => {
     try {
@@ -69,27 +61,24 @@ export default function AdminHouseholdsPage() {
     }
   };
 
-  if (loading || status === "loading") {
+  if (authLoading || loading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session || (!session.user?.sysadmin && !session.user?.boardMember)) {
+  if (!ready) {
     return null;
   }
 
   return (
     <Stack>
-      <Group justify="space-between" align="center" wrap="wrap">
-        <Title order={1}>Manage Memberships</Title>
-        <Button component={Link} href="/admin" variant="default">← Admin Hub</Button>
-      </Group>
+      <AdminPageHeader title="Manage Memberships" back={{ href: '/admin', label: '← Admin Hub' }} />
 
       <Text c="dimmed">
         View all households and toggle their official facility Membership status. Memberships grant
         shop access and other organizational privileges.
       </Text>
 
-      {error && <Alert color="red">{error}</Alert>}
+      <AlertBanner message={error} tone="error" />
 
       <Table.ScrollContainer minWidth={600}>
         <Table verticalSpacing="sm" highlightOnHover>

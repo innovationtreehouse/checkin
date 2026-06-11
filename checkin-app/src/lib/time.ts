@@ -25,6 +25,31 @@ export function formatDateTime(date: Date | string | number | null | undefined, 
 }
 
 /**
+ * Format a date as a value for an <input type="datetime-local"> (yyyy-MM-ddTHH:mm).
+ *
+ * NOTE: datetime-local is inherently local, so this uses the BROWSER's timezone — matching the
+ * inline `getTime() - getTimezoneOffset()*60000` conversions it replaces. It deliberately does
+ * NOT use APP_TIMEZONE; switching to that would change the displayed value.
+ */
+export function toDatetimeLocal(date: Date | string | number | null | undefined): string {
+    if (!date) return '';
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return '';
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+/**
+ * Parse an <input type="datetime-local"> value into a UTC ISO string. Inverse of toDatetimeLocal.
+ * Returns '' for empty/invalid input.
+ */
+export function fromDatetimeLocal(value: string | null | undefined): string {
+    if (!value) return '';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toISOString();
+}
+
+/**
  * Returns true if the person with the given DOB is under 18 years old.
  * Canonical implementation — use this everywhere instead of inline age checks.
  */

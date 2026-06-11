@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
-import { Alert, Button, Center, Group, Loader, Stack, Table, Title } from '@mantine/core';
+import { Center, Loader, Stack } from '@mantine/core';
+import { useRequireRole } from '@/hooks/useRequireRole';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { AlertBanner } from '@/components/admin/AlertBanner';
+import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { formatDateTime } from '@/lib/time';
 
 type BadgeEvent = {
@@ -13,9 +15,16 @@ type BadgeEvent = {
   location?: string;
 };
 
+const COLUMNS: DataTableColumn<BadgeEvent>[] = [
+  { header: 'ID', render: (b) => b.id },
+  { header: 'Time', render: (b) => formatDateTime(b.time) },
+  { header: 'Participant', render: (b) => b.participant?.name || 'Unknown' },
+  { header: 'Email', render: (b) => b.participant?.email },
+  { header: 'Location', render: (b) => b.location || 'Front Door' },
+];
+
 export default function AdminBadgesPage() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
+  const { ready, loading: authLoading } = useRequireRole(['sysadmin']);
 
   const [loading, setLoading] = useState(true);
   const [badges, setBadges] = useState<BadgeEvent[]>([]);
@@ -38,58 +47,22 @@ export default function AdminBadgesPage() {
   }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      if (!session.user?.sysadmin) {
-        router.push('/');
-      } else {
-        fetchBadges();
-      }
-    }
-  }, [status, session, router, fetchBadges]);
+    if (ready) fetchBadges();
+  }, [ready, fetchBadges]);
 
-  if (loading || status === "loading") {
+  if (authLoading || loading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session || !session.user?.sysadmin) return null;
+  if (!ready) return null;
 
   return (
     <Stack>
-      <Group justify="space-between" align="center" wrap="wrap">
-        <Title order={1}>Raw Badge Events</Title>
-        <Button variant="default" onClick={() => router.push('/admin')}>← Admin Ops</Button>
-      </Group>
+      <AdminPageHeader title="Raw Badge Events" back={{ href: '/admin', label: '← Admin Ops' }} />
 
-      {message && (
-        <Alert color={message.includes('success') ? 'green' : 'red'}>{message}</Alert>
-      )}
+      <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 
-      <Table.ScrollContainer minWidth={700}>
-        <Table verticalSpacing="sm" highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>ID</Table.Th>
-              <Table.Th>Time</Table.Th>
-              <Table.Th>Participant</Table.Th>
-              <Table.Th>Email</Table.Th>
-              <Table.Th>Location</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {badges.map((b) => (
-              <Table.Tr key={b.id}>
-                <Table.Td>{b.id}</Table.Td>
-                <Table.Td>{formatDateTime(b.time)}</Table.Td>
-                <Table.Td>{b.participant?.name || "Unknown"}</Table.Td>
-                <Table.Td>{b.participant?.email}</Table.Td>
-                <Table.Td>{b.location || 'Front Door'}</Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Table.ScrollContainer>
+      <DataTable columns={COLUMNS} rows={badges} getRowKey={(b) => b.id} emptyMessage="No badge events." />
     </Stack>
   );
 }

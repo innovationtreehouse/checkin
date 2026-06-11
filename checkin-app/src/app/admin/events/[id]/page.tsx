@@ -4,7 +4,8 @@ import { useState, useEffect, use, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
-import { formatDateTime } from '@/lib/time';
+import { AlertBanner } from '@/components/admin/AlertBanner';
+import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
 type ParticipantDetail = {
   participantId: number;
@@ -69,8 +70,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         const data = await res.json();
         setEventData(data);
 
-        const startStr = new Date(new Date(data.start).getTime() - new Date(data.start).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        const endStr = new Date(new Date(data.end).getTime() - new Date(data.end).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        const startStr = toDatetimeLocal(data.start);
+        const endStr = toDatetimeLocal(data.end);
         setNewStart(startStr);
         setNewEnd(endStr);
       } else {
@@ -116,8 +117,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   const handleEditTime = async () => {
     setActionLoading(true);
     try {
-      const startIso = new Date(newStart).toISOString();
-      const endIso = new Date(newEnd).toISOString();
+      const startIso = fromDatetimeLocal(newStart);
+      const endIso = fromDatetimeLocal(newEnd);
 
       const res = await fetch(`/api/events/${id}`, {
         method: 'PATCH',
@@ -150,8 +151,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           action: 'manualEditAttendance',
           participantId: editingAttendance.participantId,
           status: manualStatus,
-          arrived: manualStatus === 'Present' ? (new Date(manualArrived).toISOString()) : null,
-          departed: manualStatus === 'Present' && manualDeparted ? (new Date(manualDeparted).toISOString()) : null
+          arrived: manualStatus === 'Present' ? fromDatetimeLocal(manualArrived) : null,
+          departed: manualStatus === 'Present' && manualDeparted ? fromDatetimeLocal(manualDeparted) : null
         })
       });
       if (res.ok) {
@@ -272,12 +273,12 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
                           setEditingAttendance(member);
                           if (visit) {
                             setManualStatus("Present");
-                            setManualArrived(new Date(new Date(visit.arrived).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16));
-                            setManualDeparted(visit.departed ? new Date(new Date(visit.departed).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "");
+                            setManualArrived(toDatetimeLocal(visit.arrived));
+                            setManualDeparted(visit.departed ? toDatetimeLocal(visit.departed) : "");
                           } else {
                             setManualStatus("Absent");
-                            setManualArrived(new Date(new Date(eventData.start).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16));
-                            setManualDeparted(new Date(new Date(eventData.end).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+                            setManualArrived(toDatetimeLocal(eventData.start));
+                            setManualDeparted(toDatetimeLocal(eventData.end));
                           }
                         }}>
                           Manual Edit
@@ -310,7 +311,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           </Button>
         </Group>
 
-        {message && <Alert color="cyan" mb="lg">{message}</Alert>}
+        <AlertBanner message={message} tone="info" mb="lg" />
 
         {/* PAST EVENT: ATTENDANCE CONFIRMATION */}
         {isPastEvent && canManageAttendance && (

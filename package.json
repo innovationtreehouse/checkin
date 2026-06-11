@@ -14,6 +14,9 @@
     "check-route-coverage": "npm -w checkin-app run check-route-coverage",
     "prepare": "husky"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "lint-staged": {
     "checkin-app/**/*.{js,jsx,ts,tsx}": [
       "eslint --fix"
