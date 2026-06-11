@@ -5,7 +5,25 @@ import { useSearchParams } from "next/navigation";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { ORG_DOMAIN } from "@/lib/config";
 import { useIsDevInstance } from "@/components/EnvProvider";
-import styles from "../page.module.css";
+
+// Layout for the glass hero (this page still uses the legacy glass-* utilities, not Mantine).
+// Inlined from the former page.module.css, which the Mantine migration removed.
+const mainStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: "calc(100vh - 70px)",
+    padding: "2rem 1rem",
+};
+const heroStyle: React.CSSProperties = {
+    maxWidth: 600,
+    width: "100%",
+    textAlign: "center",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+};
 
 /**
  * Custom sign-in screen for the dev instance (replaces NextAuth's bare default page). The dev
@@ -23,8 +41,8 @@ function SignInInner() {
     const wrongAccount = status === "authenticated" && !!session?.user;
 
     return (
-        <main className={styles.main}>
-            <div className={`glass-container animate-float ${styles.heroContainer}`}>
+        <main style={mainStyle}>
+            <div className="glass-container animate-float" style={heroStyle}>
                 <h1 className="text-gradient" style={{ fontSize: "3rem", margin: "0 0 0.5rem 0" }}>
                     {isDevInstance ? "Welcome to Innovation Treehouse Dev" : "CheckMeIn"}
                 </h1>
