@@ -5,7 +5,7 @@
 // resolvable there. A plain default export is fine — the config loader passes it
 // through defineConfig itself. DATABASE_URL comes from ECS Secrets Manager
 // injection, no dotenv needed.
-export default {
+const config = {
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
@@ -14,3 +14,5 @@ export default {
     url: process.env["DATABASE_URL"],
   },
 };
+
+export default config;

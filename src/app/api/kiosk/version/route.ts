@@ -14,7 +14,7 @@ export async function GET() {
       } else {
         cachedVersion = execSync("git rev-parse HEAD").toString().trim();
       }
-    } catch (e) {
+    } catch {
       cachedVersion = "unknown-" + Date.now();
     }
   }
