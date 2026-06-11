@@ -15,6 +15,11 @@ RUN npx prisma generate
 # be present here. Passed via --build-arg by the deploy workflow; harmless if empty.
 ARG NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN
 ENV NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN=${NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN}
+# Build stamp surfaced in the app footer: the deployed commit SHA, passed via
+# --build-arg by the deploy workflow and inlined into the bundle (NEXT_PUBLIC_*,
+# build-time). Empty in local/ad-hoc builds -> the footer shows "dev".
+ARG NEXT_PUBLIC_GIT_SHA
+ENV NEXT_PUBLIC_GIT_SHA=${NEXT_PUBLIC_GIT_SHA}
 # Needed for GitHub to build the image, overwritten by secrets in AWS at run time.
 # (next build imports auth-options.ts, which requires these to exist; the values
 # are never used — every route is dynamic — and never reach the runner stage.)
