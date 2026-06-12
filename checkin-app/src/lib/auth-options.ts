@@ -3,6 +3,7 @@ import type { JWT } from "next-auth/jwt";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { getToken } from "next-auth/jwt";
+import { cookies as requestCookies } from "next/headers";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import prisma from "@/lib/prisma";
 import { config, ORG_DOMAIN } from "@/lib/config";
@@ -112,8 +113,15 @@ export const authOptions: NextAuthOptions = {
 
                     // The caller's *current* session — the security boundary. getToken decrypts the
                     // session cookie carried on this request; null when not signed in.
+                    // The `req` NextAuth hands to a credentials authorize() has NO `cookies` field
+                    // (only query/body/headers/method), and getToken reads req.cookies exclusively —
+                    // it never parses the cookie header. Without the next/headers cookie store the
+                    // caller always looks anonymous and every dev-instance mint is denied.
                     const callerToken = await getToken({
-                        req: req as Parameters<typeof getToken>[0]["req"],
+                        req: {
+                            headers: req.headers,
+                            cookies: await requestCookies(),
+                        } as unknown as Parameters<typeof getToken>[0]["req"],
                         secret: config.nextAuthSecret(),
                     });
 

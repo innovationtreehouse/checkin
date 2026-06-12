@@ -26,7 +26,11 @@ export default function DevImpersonationBar() {
 
     const returnToMe = () => {
         setBusy(true);
-        signIn("persona-mint", { mode: "return", callbackUrl: "/" });
+        // Land back on the page being viewed, re-rendered as the real identity.
+        signIn("persona-mint", {
+            mode: "return",
+            callbackUrl: window.location.pathname + window.location.search,
+        });
     };
 
     return (

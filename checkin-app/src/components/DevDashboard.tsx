@@ -102,7 +102,12 @@ export default function DevDashboard() {
     const impersonate = (personaId: string) => {
         if (!personaId) return;
         setSwitching(true);
-        signIn("persona-mint", { personaId, mode: "impersonate", callbackUrl: "/" });
+        // Land back on the page being viewed, re-rendered as the new persona.
+        signIn("persona-mint", {
+            personaId,
+            mode: "impersonate",
+            callbackUrl: window.location.pathname + window.location.search,
+        });
     };
 
     const runMacro = (fn: () => Promise<ActionResult>) => {
