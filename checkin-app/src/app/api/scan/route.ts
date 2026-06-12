@@ -128,9 +128,9 @@ export async function POST(req: NextRequest) {
             });
 
             if (activeVisit) {
-                return await processCheckout(tx, participant, activeVisit.id, authType);
+                return await processCheckout(participant, activeVisit.id, authType, tx);
             } else {
-                return await processCheckin(tx, participant, authType);
+                return await processCheckin(participant, authType, tx);
             }
         }, {
             // maxWait: time a racing scan waits to acquire a connection / start.
