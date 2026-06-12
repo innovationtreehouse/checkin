@@ -83,11 +83,11 @@ describe('Program payment-plan routes', () => {
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 
-    async function enroll(participantId: number, opts: { requested: boolean; status?: string }) {
+    async function enroll(participantId: number, opts: { requested: boolean }) {
         await prisma.programParticipant.upsert({
             where: { programId_participantId: { programId, participantId } },
-            update: { status: opts.status ?? 'PENDING', paymentPlanRequested: opts.requested, pendingSince: new Date() },
-            create: { programId, participantId, status: opts.status ?? 'PENDING', paymentPlanRequested: opts.requested, pendingSince: new Date() },
+            update: { status: 'PENDING', paymentPlanRequested: opts.requested, pendingSince: new Date() },
+            create: { programId, participantId, status: 'PENDING', paymentPlanRequested: opts.requested, pendingSince: new Date() },
         });
     }
 
