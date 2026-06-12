@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
 import { formatDate, formatTime, formatDateTime } from '@/lib/time';
+import SafetyLinksPanel from '@/components/SafetyLinksPanel';
 
 type Member = { id: number; name?: string; email?: string; dob?: string; phone?: string };
 type HouseholdData = {
@@ -347,18 +348,8 @@ export default function HouseholdPage() {
               </Card>
 
               <Card withBorder radius="md" padding="md">
-                <Group justify="space-between" align="flex-start" wrap="nowrap">
-                  <div>
-                    <Title order={5} c="grape">Safety Links</Title>
-                    <Text size="sm" c="dimmed">
-                      Disclose a board-approved relationship (family, guardian, legal restriction, etc.) tied to a member
-                      of this household. Reviewed by the board and valid for one year.
-                    </Text>
-                  </div>
-                  <Button variant="light" onClick={() => router.push('/safety-links')} style={{ flexShrink: 0 }}>
-                    Manage Safety Links
-                  </Button>
-                </Group>
+                <Title order={5} c="grape" mb="sm">Safety Links</Title>
+                <SafetyLinksPanel />
               </Card>
             </Stack>
             <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="lg">
