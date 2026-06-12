@@ -345,6 +345,21 @@ export default function HouseholdPage() {
                   <TextInput type="tel" label="Contact Phone Number" value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.currentTarget.value)} placeholder="(555) 555-5555" />
                 </SimpleGrid>
               </Card>
+
+              <Card withBorder radius="md" padding="md">
+                <Group justify="space-between" align="flex-start" wrap="nowrap">
+                  <div>
+                    <Title order={5} c="grape">Safety Links</Title>
+                    <Text size="sm" c="dimmed">
+                      Disclose a board-approved relationship (family, guardian, legal restriction, etc.) tied to a member
+                      of this household. Reviewed by the board and valid for one year.
+                    </Text>
+                  </div>
+                  <Button variant="light" onClick={() => router.push('/safety-links')} style={{ flexShrink: 0 }}>
+                    Manage Safety Links
+                  </Button>
+                </Group>
+              </Card>
             </Stack>
             <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="lg">
               Update Household Settings
