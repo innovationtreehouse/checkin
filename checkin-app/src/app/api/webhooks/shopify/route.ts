@@ -79,24 +79,22 @@ export async function POST(req: Request) {
 
             if (participantIds.length > 0 && !isNaN(programId)) {
                 for (const participantId of participantIds) {
-                    // Find existing participant
-                    const existing = await prisma.programParticipant.findUnique({
-                        where: {
-                            programId_participantId: { programId, participantId }
+                    // Activate atomically. A single updateMany is a read-modify-write
+                    // in one statement, so it can't race the pending-participants
+                    // cron's deleteMany the way a findUnique-then-update pair can: that
+                    // pair lets the cron delete the row in between, and the follow-up
+                    // update then throws Prisma P2025 and 500s the webhook (losing the
+                    // payment ack). updateMany matches zero rows quietly instead — its
+                    // `count` tells us whether the row still existed.
+                    const { count } = await prisma.programParticipant.updateMany({
+                        where: { programId, participantId },
+                        data: {
+                            status: 'ACTIVE',
+                            pendingSince: null, // clear out the pending timer
                         }
                     });
 
-                    if (existing) {
-                        await prisma.programParticipant.update({
-                            where: {
-                                programId_participantId: { programId, participantId }
-                            },
-                            data: {
-                                status: 'ACTIVE',
-                                pendingSince: null, // clear out the pending timer
-                            }
-                        });
-                        
+                    if (count > 0) {
                         logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
                     } else {
                         logger.warn(`[SHOPIFY WEBHOOK] Participant ${participantId} not found in Program ${programId}. Ignoring payment.`);
