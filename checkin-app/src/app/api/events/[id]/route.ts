@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const session = await getServerSession(authOptions);
@@ -126,7 +127,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                     
                     return NextResponse.json({ success: true, count: futureEvents.length });
                 } else if (body.action === 'editTime') {
-                    const updatePromises = futureEvents.map(fe => {
+                    const ops: Prisma.PrismaPromise<unknown>[] = futureEvents.map(fe => {
                         return prisma.event.update({
                             where: { id: fe.id },
                             data: {
@@ -136,7 +137,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                         });
                     });
 
-                    await prisma.$transaction(updatePromises);
+                    // Rescheduled to a new start → clear reminders for the shifted events
+                    // so attendees get a fresh 2h reminder. End-only shifts keep state.
+                    if (timeShiftStartMs !== 0) {
+                        ops.push(prisma.rSVP.updateMany({
+                            where: { eventId: { in: futureEvents.map(e => e.id) }, reminderSentAt: { not: null } },
+                            data: { reminderSentAt: null }
+                        }));
+                    }
+
+                    await prisma.$transaction(ops);
 
                     return NextResponse.json({ success: true, count: futureEvents.length });
                 }
@@ -148,6 +158,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                     await prisma.event.delete({ where: { id: event.id } });
                     return NextResponse.json({ success: true });
                 } else if (body.action === 'editTime') {
+                    const startChanged = timeShiftStartMs !== 0;
                     const updatedEvent = await prisma.event.update({
                         where: { id: event.id },
                         data: {
@@ -155,6 +166,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                             end: end ? new Date(end) : event.end
                         }
                     });
+                    // Rescheduled to a new start → attendees become eligible for a fresh
+                    // 2h reminder. End-only edits keep the existing reminder state.
+                    if (startChanged) {
+                        await prisma.rSVP.updateMany({
+                            where: { eventId: event.id, reminderSentAt: { not: null } },
+                            data: { reminderSentAt: null }
+                        });
+                    }
                     return NextResponse.json({ success: true, event: updatedEvent });
                 }
             }

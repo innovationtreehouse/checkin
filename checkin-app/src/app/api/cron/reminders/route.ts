@@ -6,6 +6,16 @@ import { sendNotification } from "@/lib/notifications";
 /**
  * Expected to be called by an external CRON trigger (e.g. Vercel Cron or CloudWatch Events)
  * GET /api/cron/reminders
+ *
+ * Delivery guarantee: at-least-once with best-effort dedup, NOT exactly-once.
+ * `reminderSentAt` is stamped only after `sendNotification` resolves, so a send
+ * failure leaves the RSVP eligible next run rather than silently dropping it.
+ * The one residual double-send window is send-succeeds-then-stamp-fails: the
+ * notification went out but the stamp write threw, so the next run re-sends.
+ * That's fundamental — an external send can't be transactionally bound to a DB
+ * write. Likewise, this assumes the platform never runs the job concurrently
+ * with itself; two overlapping runs could both read `reminderSentAt: null`
+ * before either stamps and double-send.
  */
 export async function GET(req: Request) {
     const authHeader = req.headers.get("authorization");
