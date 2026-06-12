@@ -18,10 +18,13 @@
  * serialize. These tests fire two concurrent POSTs with Promise.all and assert
  * the committed state and the response pair.
  *
- * (Note: the test pool is capped at one connection, which on its own serializes
- * the two transactions; the advisory lock is what protects production, where the
- * pool holds many connections. Both mechanisms yield the same observable result
- * asserted here.)
+ * (Note: jest.setup.js gives this suite a connection pool of 2 — via
+ * TEST_DB_POOL_MAX — instead of the default 1. With a pool of 1 the
+ * $transaction wrapping serializes the two scans on its own and the assertions
+ * pass even without the lock; with a pool of 2 the two transactions run on
+ * separate connections, so the per-participant advisory lock is the *only*
+ * thing that serializes them, exactly as in production (pool 10). Deleting the
+ * `pg_advisory_xact_lock` line in route.ts makes this suite fail.)
  */
 import { POST } from '@/app/api/scan/route';
 import prisma from '@/lib/prisma';
