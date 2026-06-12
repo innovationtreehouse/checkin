@@ -37,7 +37,7 @@ export const GET = withAuth(
                 where: whereClause,
                 include: {
                     participants: {
-                        select: { id: true, name: true, email: true }
+                        select: { id: true, name: true, email: true, boardMember: true }
                     },
                     membership: true
                 },
@@ -57,10 +57,10 @@ export const GET = withAuth(
 
 export const POST = withAuth(
     { roles: ['sysadmin', 'boardMember'] },
-    async (req) => {
+    async (req, auth) => {
         try {
             const body = await req.json();
-            const { householdId, active } = body;
+            const { householdId, active, deny } = body;
 
             if (!householdId) {
                 return NextResponse.json({ error: "Household ID is required" }, { status: 400 });
@@ -69,6 +69,49 @@ export const POST = withAuth(
             const existingMembership = await prisma.membership.findUnique({
                 where: { householdId }
             });
+
+            // Deny / restore — a separate legal act from grant/revoke. Denying blocks login for
+            // every member of the household (enforced in the auth layer).
+            if (typeof deny === "boolean") {
+                if (deny) {
+                    // Two separate legal actions → two separate software actions: a household
+                    // containing a board member cannot be denied. Remove the board role first.
+                    // Enforced server-side; the UI's disabled button is only a courtesy.
+                    const boardMemberInHousehold = await prisma.participant.findFirst({
+                        where: { householdId, boardMember: true },
+                        select: { id: true }
+                    });
+                    if (boardMemberInHousehold) {
+                        return NextResponse.json(
+                            { error: "This household includes a board member. Remove the board role before denying membership." },
+                            { status: 409 }
+                        );
+                    }
+                }
+
+                const newStatus = deny ? "DENIED" : "NONE";
+                const membership = await prisma.membership.upsert({
+                    where: { householdId },
+                    create: { householdId, status: newStatus },
+                    update: { status: newStatus }
+                });
+
+                if (auth.type === 'session') {
+                    await prisma.auditLog.create({
+                        data: {
+                            actorId: auth.user.id,
+                            action: "EDIT",
+                            tableName: "Membership",
+                            affectedEntityId: membership.id,
+                            secondaryAffectedEntity: householdId,
+                            oldData: { status: existingMembership?.status ?? "NONE" },
+                            newData: { status: newStatus }
+                        }
+                    });
+                }
+
+                return NextResponse.json({ success: true, membership });
+            }
 
             if (active) {
                 const membership = await prisma.membership.upsert({

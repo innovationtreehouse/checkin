@@ -42,6 +42,13 @@ export async function authenticateRequest(
     // 2. Try session
     const session = await getServerSession(authOptions);
     if (session?.user) {
+        // A denied household is locked out of the whole app. Treat it as unauthenticated
+        // so every route — including authenticated-only ones — fails closed, regardless of
+        // each route's role list. The jwt callback already strips role flags; this is the
+        // belt-and-suspenders that also denies plain member endpoints.
+        if ((session.user as SessionUser).denied) {
+            return { type: 'unauthenticated' };
+        }
         return { type: 'session', user: session.user as SessionUser };
     }
 

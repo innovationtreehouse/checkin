@@ -9,6 +9,7 @@ import prisma from "@/lib/prisma";
 import { config, ORG_DOMAIN } from "@/lib/config";
 import { evaluateMint, type MintMode } from "@/lib/impersonation";
 import { recordLedger } from "@/lib/dev/ledger";
+import { assignParticipantClaims } from "@/lib/authClaims";
 
 // Stable id for the dev/local persona-mint credential flow.
 export const PERSONA_MINT_PROVIDER_ID = "persona-mint";
@@ -217,7 +218,8 @@ export const authOptions: NextAuthOptions = {
                                 toolId: true,
                                 level: true
                             }
-                        }
+                        },
+                        household: { include: { membership: true } }
                     }
                 });
 
@@ -234,14 +236,9 @@ export const authOptions: NextAuthOptions = {
                         dbParticipant.sysadmin = true;
                     }
 
-                    token.id = dbParticipant.id;
-                    token.sysadmin = dbParticipant.sysadmin;
-                    token.keyholder = dbParticipant.keyholder;
-                    token.boardMember = dbParticipant.boardMember;
-                    token.shopSteward = dbParticipant.shopSteward;
-                    token.backgroundCheckReviewer = dbParticipant.backgroundCheckReviewer;
-                    token.householdId = dbParticipant.householdId;
-                    token.toolStatuses = dbParticipant.toolStatuses;
+                    // Stamp authority claims, applying the household login gate (a board
+                    // "Deny Membership" forces denied=true and strips every role flag).
+                    assignParticipantClaims(token, dbParticipant);
                 }
             } else if (token.id) {
                 // On every subsequent request (no `user` present), re-sync authority
@@ -258,7 +255,8 @@ export const authOptions: NextAuthOptions = {
                                 toolId: true,
                                 level: true
                             }
-                        }
+                        },
+                        household: { include: { membership: true } }
                     }
                 });
 
@@ -269,19 +267,17 @@ export const authOptions: NextAuthOptions = {
                     return {} as JWT;
                 }
 
-                token.sysadmin = dbParticipant.sysadmin;
-                token.keyholder = dbParticipant.keyholder;
-                token.boardMember = dbParticipant.boardMember;
-                token.shopSteward = dbParticipant.shopSteward;
-                token.backgroundCheckReviewer = dbParticipant.backgroundCheckReviewer;
-                token.householdId = dbParticipant.householdId;
-                token.toolStatuses = dbParticipant.toolStatuses;
+                // Re-stamp claims on every request so a board "Deny Membership" takes effect
+                // within the token's refresh window (updateAge), not only at next sign-in.
+                // assignParticipantClaims forces denied=true and clears all roles when DENIED.
+                assignParticipantClaims(token, dbParticipant);
             }
             return token;
         },
         async session({ session, token }) {
             if (session.user) {
                 session.user.id = token.id;
+                session.user.denied = token.denied ?? false;
                 session.user.sysadmin = token.sysadmin;
                 session.user.keyholder = token.keyholder;
                 session.user.boardMember = token.boardMember;
