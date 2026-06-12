@@ -39,6 +39,7 @@ const LEVEL_OPTIONS = [
 
 function GrantForm({
   tools, members, prefillToolId, prefillMemberId, onGranted, saving, setSaving,
+  certifierOnly = false,
 }: {
   tools: Tool[];
   members: Member[];
@@ -47,10 +48,15 @@ function GrantForm({
   onGranted: (msg: string) => void;
   saving: boolean;
   setSaving: (v: boolean) => void;
+  /** When true, restricts the level dropdown to MAY_CERTIFY_OTHERS only (board-member use-case). */
+  certifierOnly?: boolean;
 }) {
+  const levelOptions = certifierOnly
+    ? LEVEL_OPTIONS.filter(o => o.value === 'MAY_CERTIFY_OTHERS')
+    : LEVEL_OPTIONS;
   const [toolId, setToolId] = useState(prefillToolId?.toString() ?? "");
   const [memberId, setMemberId] = useState(prefillMemberId?.toString() ?? "");
-  const [level, setLevel] = useState("CERTIFIED");
+  const [level, setLevel] = useState(certifierOnly ? "MAY_CERTIFY_OTHERS" : "CERTIFIED");
   const [confirm, setConfirm] = useState<null | { toolName: string; userName: string; newLevel: string; payload: object }>(null);
 
   const selectedTool = tools.find(t => t.id === parseInt(toolId));
@@ -110,7 +116,7 @@ function GrantForm({
               data={members.map(m => ({ value: String(m.id), label: m.name ?? m.email }))}
             />
           )}
-          <Select label="Level" w={140} value={level} onChange={(v) => setLevel(v ?? "CERTIFIED")} allowDeselect={false} data={LEVEL_OPTIONS} />
+          <Select label="Level" w={140} value={level} onChange={(v) => setLevel(v ?? "CERTIFIED")} allowDeselect={false} data={levelOptions} />
           <Button type="submit" color="green" disabled={saving}>Grant</Button>
         </Group>
       </form>
@@ -130,11 +136,12 @@ function GrantForm({
 
 // ---- Tools tab ----
 
-function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
+function ToolsTab({ tools, members, isAdmin, isCertifier, canAssignCertifier = false, onToolsChange }: {
   tools: Tool[];
   members: Member[];
   isAdmin: boolean;
   isCertifier: boolean;
+  canAssignCertifier?: boolean;
   onToolsChange: () => void;
 }) {
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -235,12 +242,13 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
                           ))}
                         </Stack>
                       )}
-                      {isCertifier && (
+                      {(isCertifier || canAssignCertifier) && (
                         <>
                           {grantMsg && <Text size="sm" c="cyan" mb="sm">{grantMsg}</Text>}
                           <GrantForm tools={tools} members={members} prefillToolId={tool.id}
                             onGranted={m => { setGrantMsg(m); toggle(tool.id).then(() => toggle(tool.id)); }}
-                            saving={grantSaving} setSaving={setGrantSaving} />
+                            saving={grantSaving} setSaving={setGrantSaving}
+                            certifierOnly={canAssignCertifier && !isCertifier} />
                         </>
                       )}
                     </>
@@ -265,7 +273,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
 
 // ---- By Person tab ----
 
-function PersonTab({ members, tools, isCertifier }: { members: Member[]; tools: Tool[]; isCertifier: boolean }) {
+function PersonTab({ members, tools, isCertifier, canAssignCertifier = false }: { members: Member[]; tools: Tool[]; isCertifier: boolean; canAssignCertifier?: boolean }) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [certs, setCerts] = useState<Certification[]>([]);
   const [loadingCerts, setLoadingCerts] = useState(false);
@@ -326,12 +334,13 @@ function PersonTab({ members, tools, isCertifier }: { members: Member[]; tools: 
                           ))}
                         </Stack>
                       )}
-                      {isCertifier && (
+                      {(isCertifier || canAssignCertifier) && (
                         <>
                           {grantMsg && <Text size="sm" c="cyan" mb="sm">{grantMsg}</Text>}
                           <GrantForm tools={tools} members={members} prefillMemberId={member.id}
                             onGranted={m => { setGrantMsg(m); toggle(member.id).then(() => toggle(member.id)); }}
-                            saving={grantSaving} setSaving={setGrantSaving} />
+                            saving={grantSaving} setSaving={setGrantSaving}
+                            certifierOnly={canAssignCertifier && !isCertifier} />
                         </>
                       )}
                     </>
@@ -440,9 +449,12 @@ export default function ToolManagementPage() {
   const isAdmin = isSysadmin || isBoardMember || session?.user?.shopSteward;
 
   const hasCertifierAuth = (session?.user?.toolStatuses ?? []).some((ts: { level?: string }) => ts.level === 'MAY_CERTIFY_OTHERS');
-  const isCertifier = isSysadmin || isBoardMember || session?.user?.shopSteward || hasCertifierAuth;
+  // Full certifiers (stewards, tool-certifiers, sysadmins) can grant any level.
+  const isCertifier = isSysadmin || session?.user?.shopSteward || hasCertifierAuth;
+  // Board members can only assign the MAY_CERTIFY_OTHERS level (designate a certifier).
+  const canAssignCertifier = !!isBoardMember && !isCertifier;
 
-  if (!isCertifier && !isAdmin) {
+  if (!isCertifier && !canAssignCertifier && !isAdmin) {
     return (
       <Container size="sm" py="xl">
         <Card withBorder radius="md" padding="xl">
@@ -473,10 +485,10 @@ export default function ToolManagementPage() {
         </Tabs.List>
 
         <Tabs.Panel value="tools">
-          <ToolsTab tools={tools} members={members} isAdmin={!!isAdmin} isCertifier={!!isCertifier} onToolsChange={reloadTools} />
+          <ToolsTab tools={tools} members={members} isAdmin={!!isAdmin} isCertifier={!!isCertifier} canAssignCertifier={canAssignCertifier} onToolsChange={reloadTools} />
         </Tabs.Panel>
         <Tabs.Panel value="person">
-          <PersonTab members={members} tools={tools} isCertifier={!!isCertifier} />
+          <PersonTab members={members} tools={tools} isCertifier={!!isCertifier} canAssignCertifier={canAssignCertifier} />
         </Tabs.Panel>
         {isAdmin && (
           <Tabs.Panel value="all">

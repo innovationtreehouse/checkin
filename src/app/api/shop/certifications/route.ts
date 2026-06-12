@@ -86,9 +86,20 @@ export async function POST(req: Request) {
         }
 
         const currentUserId = session.user.id;
-        const isSysAdminOrBoard = session.user?.sysadmin || session.user?.boardMember;
+        const isSysadmin = !!session.user?.sysadmin;
+        const isBoardMember = !!session.user?.boardMember;
 
-        let hasCertifierPermission = isSysAdminOrBoard;
+        // Board members may only assign the MAY_CERTIFY_OTHERS level (designate a certifier).
+        // Granting lower-level certs (BASIC, CERTIFIED, etc.) requires being a sysadmin,
+        // shop steward, or an actual per-tool certifier.
+        if (isBoardMember && !isSysadmin && level !== "MAY_CERTIFY_OTHERS") {
+            return NextResponse.json(
+                { error: "Forbidden: Board members may only assign the Certifier role, not individual tool certifications" },
+                { status: 403 }
+            );
+        }
+
+        let hasCertifierPermission = isSysadmin || isBoardMember || !!session.user?.shopSteward;
 
         if (!hasCertifierPermission) {
             // Check if user is a certifier for this specific tool

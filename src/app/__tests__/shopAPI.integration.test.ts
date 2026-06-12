@@ -310,18 +310,27 @@ describe('Shop API Integration Tests', () => {
              expect(data.certification.userId).toBe(commonId);
         });
 
-        // Regression test for #160: board members must be able to grant certifications.
-        it('should allow board members to grant a certification on any tool', async () => {
+        // Regression tests for #160: board members may assign the MAY_CERTIFY_OTHERS
+        // (certifier) role, but may NOT grant lower-level tool certifications.
+        it('should allow board members to assign the MAY_CERTIFY_OTHERS (certifier) role', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardMemberId, boardMember: true } });
 
-             const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'CERTIFIED' } });
+             const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' } });
              const res = await postCerts(req) as Response;
              expect(res.status).toBe(200);
 
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.certification.level).toBe('CERTIFIED');
+             expect(data.certification.level).toBe('MAY_CERTIFY_OTHERS');
              expect(data.certification.userId).toBe(commonId);
+        });
+
+        it('should forbid board members from granting non-certifier tool certifications', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardMemberId, boardMember: true } });
+
+             const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'CERTIFIED' } });
+             const res = await postCerts(req) as Response;
+             expect(res.status).toBe(403);
         });
     });
 });
