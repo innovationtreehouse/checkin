@@ -8,6 +8,7 @@ import { MembershipTabs } from '@/components/admin/MembershipTabs';
 import { Button, Center, Group, List, Loader, Stack, Table, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
+import { AdminEditHouseholdModal } from '@/components/admin/AdminEditHouseholdModal';
 
 type Household = {
   id: number;
@@ -23,6 +24,7 @@ export default function AdminHouseholdsPage() {
   const [households, setHouseholds] = useState<Household[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
 
   const fetchHouseholds = useCallback(async () => {
     try {
@@ -125,6 +127,13 @@ export default function AdminHouseholdsPage() {
                       <Button
                         size="xs"
                         variant="light"
+                        onClick={() => setEditHouseholdId(household.id)}
+                      >
+                        Edit Info
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="light"
                         onClick={() => router.push(`/admin/participants/new?householdId=${household.id}`)}
                       >
                         + Add Participant
@@ -153,6 +162,13 @@ export default function AdminHouseholdsPage() {
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
+
+      <AdminEditHouseholdModal
+        householdId={editHouseholdId}
+        opened={editHouseholdId !== null}
+        onClose={() => setEditHouseholdId(null)}
+        onSaved={() => fetchHouseholds()}
+      />
     </Stack>
   );
 }
