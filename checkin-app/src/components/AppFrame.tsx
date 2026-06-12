@@ -192,7 +192,9 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
         <AppShell.Navbar p="md" bg={brand.nav.sidebar}>
           {visibleItems.map((item) => {
             const active = isActive(pathname, item.href);
-            const onSidebarText = onColoredSidebar && !active ? 'var(--mantine-color-white)' : undefined;
+            // On the colored sidebar all text is white; the 'light' variant gives a soft
+            // translucent overlay on the active item rather than a harsh solid fill.
+            const sidebarText = onColoredSidebar ? 'var(--mantine-color-white)' : undefined;
             return (
               <NavLink
                 key={item.href}
@@ -201,14 +203,14 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                 label={item.label}
                 leftSection={item.icon}
                 active={active}
-                variant={onColoredSidebar ? 'filled' : 'light'}
+                variant="light"
                 color={brand.nav.accent}
                 onClick={closeMobile}
                 mb={4}
                 styles={{
                   root: { borderRadius: 'var(--mantine-radius-md)' },
-                  label: { color: onSidebarText, fontWeight: 600 },
-                  section: { color: onSidebarText },
+                  label: { color: sidebarText, fontWeight: 600 },
+                  section: { color: sidebarText },
                 }}
               />
             );
