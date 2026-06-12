@@ -611,6 +611,8 @@ model RSVP {
   participantId Int
   /// @sensitivity:public
   status        RSVPStatus
+  /// @sensitivity:internal
+  reminderSentAt DateTime?
 
   event       Event       @relation(fields: [eventId], references: [id])
   participant Participant @relation(fields: [participantId], references: [id])

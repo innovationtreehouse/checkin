@@ -196,6 +196,7 @@ export const classifications = {
         eventId: 'public',
         participantId: 'public',
         status: 'public',
+        reminderSentAt: 'internal',
     },
     RawBadgeEvent: {
         id: 'internal',
