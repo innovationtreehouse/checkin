@@ -1,6 +1,7 @@
 {
   "name": "checkin-monorepo",
   "private": true,
+  "license": "BSD-4-Clause",
   "workspaces": [
     "packages/*",
     "*-app"
