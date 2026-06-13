@@ -29,6 +29,10 @@ export default function DevLoginPicker() {
   const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
+    if (process.env.NODE_ENV === 'production') {
+      setTimeout(() => setLoading(false), 0);
+      return;
+    }
     fetch("/api/auth/dev-personas", { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
@@ -41,6 +45,8 @@ export default function DevLoginPicker() {
         setLoading(false);
       });
   }, []);
+
+  if (process.env.NODE_ENV === 'production') return null;
 
   const handleLogin = (persona: Persona) => {
     setSigningIn(persona.email);

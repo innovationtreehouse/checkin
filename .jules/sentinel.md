@@ -17,3 +17,8 @@
 **Vulnerability:** The application was logging the raw `html` body of emails to the console when `RESEND_API_KEY` was missing in production (e.g., in `src/lib/email.ts`).
 **Learning:** Logging entire email bodies can inadvertently expose sensitive information, such as authentication links or personal user details, to server logs where they can be accessed by unauthorized personnel or aggregated inappropriately.
 **Prevention:** Avoid logging raw email content in production. Ensure that fallback logging mechanisms only record the full body when `process.env.NODE_ENV === 'development'`. In production, log only metadata like the recipient and subject.
+
+## 2024-06-15 - Missing Production Check on Dev Authentication
+**Vulnerability:** The dev authentication components and endpoints (`DevLoginPicker.tsx`, `dev-personas/route.ts`, `auth-options.ts`) relied solely on the `config.isDevInstance()` check which could potentially be bypassed or misconfigured, enabling dev login features in production.
+**Learning:** Security gates for development features should use multiple layers of checks, including a hard check against the `NODE_ENV` variable to ensure they cannot execute in a production build, regardless of other configurations.
+**Prevention:** Always pair `isDevInstance` or similar custom environment checks with `process.env.NODE_ENV !== 'production'` to provide a reliable fallback that guarantees dev features are disabled in production.
