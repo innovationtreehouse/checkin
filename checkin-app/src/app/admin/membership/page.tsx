@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
 import { MembershipTabs } from "@/components/admin/MembershipTabs";
 import { AlertBanner } from "@/components/admin/AlertBanner";
+import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface Participant {
   id: number;
@@ -80,6 +81,7 @@ export default function AdminMembershipPage() {
         setIsError(false);
         setMessage("Updated.");
         await load();
+        notifyNavRefresh();
       } else {
         setIsError(true);
         setMessage(data.error || "Action failed.");
@@ -106,6 +108,7 @@ export default function AdminMembershipPage() {
         setIsError(false);
         setMessage(action === "reset" ? "Sent back for re-review." : "Overridden to payment.");
         await load();
+        notifyNavRefresh();
       } else {
         setIsError(true);
         setMessage(data.error || "Override failed.");
@@ -132,6 +135,7 @@ export default function AdminMembershipPage() {
         setIsError(false);
         setMessage("Certified — membership activated.");
         await load();
+        notifyNavRefresh();
       } else {
         setIsError(true);
         setMessage(data.error || "Certification failed.");

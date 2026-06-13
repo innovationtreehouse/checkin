@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Anchor, Button, Card, Center, Container, Divider, Group, Loader, Radio, Stack, Text, Title } from '@mantine/core';
 import { formatDate } from '@/lib/time';
+import { notifyNavRefresh } from '@/lib/nav-refresh';
 
 type ProgramDetail = {
   id: number;
@@ -128,6 +129,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       if (res.ok) {
         setSuccessMessage("Requested! Please check your email for communication from the finance committee of the board.");
         fetchProgram();
+        notifyNavRefresh();
       } else {
         setMessage("Enrolled as pending, but failed to alert the finance committee. Please email them directly.");
       }
@@ -157,6 +159,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       });
 
       if (res.ok) {
+        notifyNavRefresh();
         if (isPayingOnShopify && program) {
           setSuccessMessage("Redirecting to Shopify for secure payment...");
 

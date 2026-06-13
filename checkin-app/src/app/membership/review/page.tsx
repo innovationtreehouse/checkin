@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface Participant {
     id: number;
@@ -64,6 +65,7 @@ export default function MembershipReviewPage() {
         setIsError(false);
         setMessage(result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified.");
         await load();
+        notifyNavRefresh();
       } else {
         setIsError(true);
         setMessage(data.error || "Could not record your attestation.");
