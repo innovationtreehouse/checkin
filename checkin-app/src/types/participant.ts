@@ -6,6 +6,8 @@ export interface SessionUser {
     id: number;
     email: string;
     name?: string;
+    // Household membership is DENIED — login blocked; role flags below are forced false.
+    denied?: boolean;
     sysadmin: boolean;
     boardMember: boolean;
     keyholder: boolean;

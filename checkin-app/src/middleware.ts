@@ -13,11 +13,26 @@ import { config as appConfig, ORG_DOMAIN } from '@/lib/config';
  * In `prod` and `local` the gate is inert (public surfaces stay public; local work needs no Google).
  */
 export async function middleware(req: NextRequest) {
+    // The bare "Access Denied" page must stay reachable in every env, or a denied
+    // user would loop on the redirect below (and an anonymous hit just sees the words).
+    if (req.nextUrl.pathname.startsWith('/access-denied')) {
+        return NextResponse.next();
+    }
+
+    // Household-denial login gate — runs in ALL envs (prod included), unlike the dev org
+    // gate further down. A board "Deny Membership" stamps token.denied via the jwt callback;
+    // bounce every page navigation to the bare /access-denied screen. APIs self-enforce
+    // (authenticateRequest treats denied sessions as unauthenticated), so they're exempt
+    // via the matcher and don't need handling here.
+    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    if (token?.denied) {
+        return NextResponse.redirect(new URL('/access-denied', req.url));
+    }
+
     if (appConfig.checkinEnv() !== 'dev') {
         return NextResponse.next();
     }
 
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
     const isVerifiedOrgMember = token?.hd === ORG_DOMAIN && token?.emailVerified === true;
     if (isVerifiedOrgMember) {
         return NextResponse.next();

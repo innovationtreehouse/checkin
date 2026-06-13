@@ -170,6 +170,11 @@ enum MembershipStatus {
   NONE
   ACTIVE
   REVOKED
+  // Board denied this household membership. Unlike REVOKED (former member who keeps
+  // app access but loses facility privileges), DENIED blocks login for every member
+  // of the household — enforced in the auth jwt callback + middleware. A household
+  // containing a board member cannot be DENIED; remove the board role first.
+  DENIED
 }
 
 enum MembershipProcessKind {

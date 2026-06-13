@@ -47,3 +47,17 @@ export function participantRecordIsActiveMember(p: {
 }): boolean {
     return p.household?.membership?.status === "ACTIVE";
 }
+
+/**
+ * Does this membership status lock every household member out of login?
+ *
+ * Only DENIED blocks login. REVOKED is a softer state — a former member who keeps
+ * app access but loses facility privileges. This is the single source of truth for
+ * the login gate; the auth jwt callback and middleware both route through it so a
+ * board "Deny Membership" action takes effect for every member of the household.
+ */
+export function membershipStatusBlocksLogin(
+    status: MembershipStatus | null | undefined,
+): boolean {
+    return status === "DENIED";
+}
