@@ -21,8 +21,8 @@ the unbranded base app is an explicit opt‑out — set `NEXT_PUBLIC_BRAND=base`
 
 ## Third‑party assets
 
-The **HNkani** typeface bundled in [`src/app/fonts/`](src/app/fonts/) is a third‑party
-font. It is likewise **not** covered by this repository's source‑code license; do not redistribute it without the appropriate
-font license.
+The brand headings use the **Fredoka** typeface, served at build time from Google Fonts via
+`next/font` and licensed under the [SIL Open Font License](https://openfontlicense.org/). It is
+not bundled in this repository.
 
 All other trademarks are the property of their respective owners.
