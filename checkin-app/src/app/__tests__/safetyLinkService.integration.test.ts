@@ -14,7 +14,6 @@ import {
     withdrawSafetyLink,
     overrideReview,
     runExpirySweep,
-    SafetyLinkError,
 } from '@/lib/safety-link/service';
 import prisma from '@/lib/prisma';
 
