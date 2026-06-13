@@ -35,10 +35,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const isAuthorized = session.user?.sysadmin || session.user?.boardMember || session.user?.shopSteward;
+    const isAuthorized = session.user?.sysadmin || session.user?.boardMember;
 
     if (!isAuthorized) {
-        return NextResponse.json({ error: "Forbidden: Only admins, board members, and shop stewards can create tools" }, { status: 403 });
+        return NextResponse.json({ error: "Forbidden: Only admins and board members can create tools" }, { status: 403 });
     }
 
     try {

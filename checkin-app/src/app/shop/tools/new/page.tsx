@@ -50,7 +50,7 @@ export default function CreateToolPage() {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  const isAdmin = session?.user?.boardMember || session?.user?.sysadmin || session?.user?.shopSteward;
+  const isAdmin = session?.user?.boardMember || session?.user?.sysadmin;
 
   if (!isAdmin) {
     return (
@@ -58,7 +58,7 @@ export default function CreateToolPage() {
         <Card withBorder radius="md" padding="xl">
           <Title order={2} mb="sm">Access Denied</Title>
           <Alert color="red" mb="md">
-            Forbidden: Only Admins, Board Members, and Shop Stewards can define new tools.
+            Forbidden: Only Admins and Board Members can define new tools.
           </Alert>
           <Button onClick={() => router.push('/shop')}>Back to Shop Ops</Button>
         </Card>

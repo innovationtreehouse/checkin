@@ -13,7 +13,6 @@ type UserRole = {
   sysadmin: boolean;
   boardMember: boolean;
   keyholder: boolean;
-  shopSteward: boolean;
   backgroundCheckReviewer: boolean;
 };
 
@@ -21,7 +20,6 @@ const ROLE_COLUMNS: { field: keyof UserRole; label: string }[] = [
   { field: 'sysadmin', label: 'Sysadmin' },
   { field: 'boardMember', label: 'Board Member' },
   { field: 'keyholder', label: 'Keyholder' },
-  { field: 'shopSteward', label: 'Shop Steward' },
   { field: 'backgroundCheckReviewer', label: 'BG Reviewer' },
 ];
 

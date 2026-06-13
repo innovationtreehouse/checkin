@@ -11,7 +11,6 @@ export interface SessionUser {
     sysadmin: boolean;
     boardMember: boolean;
     keyholder: boolean;
-    shopSteward: boolean;
     backgroundCheckReviewer: boolean;
     householdId?: number;
     householdLead?: boolean;

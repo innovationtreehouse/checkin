@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Button, Card, Center, Container, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 
-export default function ShopStewardPage() {
+export default function ShopOpsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
@@ -30,13 +30,12 @@ export default function ShopStewardPage() {
 
   const isSysadmin = session?.user?.sysadmin;
   const isBoardMember = session?.user?.boardMember;
-  const isShopSteward = session?.user?.shopSteward;
-  const isAdmin = isSysadmin || isBoardMember || isShopSteward;
+  const isAdmin = isSysadmin || isBoardMember;
 
-  // Certifier check: either Shop Steward, Board Member, Admin, or explicitly has MAY_CERTIFY_OTHERS
+  // Certifier check: Board Member, Admin, or explicitly has MAY_CERTIFY_OTHERS
   const certs = session?.user?.toolStatuses || [];
   const hasCertifierAuth = certs.some((ts: { level?: string }) => ts.level === 'MAY_CERTIFY_OTHERS');
-  const isCertifier = isSysadmin || isBoardMember || session?.user?.shopSteward || hasCertifierAuth;
+  const isCertifier = isSysadmin || isBoardMember || hasCertifierAuth;
 
   if (!isCertifier && !isAdmin) {
     return (
@@ -44,7 +43,7 @@ export default function ShopStewardPage() {
         <Card withBorder radius="md" padding="xl">
           <Title order={2} mb="sm">Access Denied</Title>
           <Alert color="red" mb="md">
-            Forbidden: You require the Shop Steward, Admin, Board Member, or Certifier role to view
+            Forbidden: You require the Admin, Board Member, or Certifier role to view
             this page.
           </Alert>
           <Button onClick={() => router.push('/dashboard')}>Back to Dashboard</Button>

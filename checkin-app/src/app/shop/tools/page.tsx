@@ -38,7 +38,7 @@ const LEVEL_OPTIONS = [
 ];
 
 function GrantForm({
-  tools, members, prefillToolId, prefillMemberId, onGranted, saving, setSaving,
+  tools, members, prefillToolId, prefillMemberId, onGranted, saving, setSaving, canGrantCertifier,
 }: {
   tools: Tool[];
   members: Member[];
@@ -47,7 +47,14 @@ function GrantForm({
   onGranted: (msg: string) => void;
   saving: boolean;
   setSaving: (v: boolean) => void;
+  // Only admins/board may grant the Certifier (MAY_CERTIFY_OTHERS) level.
+  canGrantCertifier: boolean;
 }) {
+  // Tool certifiers can grant up to (but not including) Certifier; the backend
+  // enforces this too — this just keeps the option out of their dropdown.
+  const levelOptions = canGrantCertifier
+    ? LEVEL_OPTIONS
+    : LEVEL_OPTIONS.filter(o => o.value !== 'MAY_CERTIFY_OTHERS');
   const [toolId, setToolId] = useState(prefillToolId?.toString() ?? "");
   const [memberId, setMemberId] = useState(prefillMemberId?.toString() ?? "");
   const [level, setLevel] = useState("CERTIFIED");
@@ -110,7 +117,7 @@ function GrantForm({
               data={members.map(m => ({ value: String(m.id), label: m.name ?? m.email }))}
             />
           )}
-          <Select label="Level" w={140} value={level} onChange={(v) => setLevel(v ?? "CERTIFIED")} allowDeselect={false} data={LEVEL_OPTIONS} />
+          <Select label="Level" w={140} value={level} onChange={(v) => setLevel(v ?? "CERTIFIED")} allowDeselect={false} data={levelOptions} />
           <Button type="submit" color="green" disabled={saving}>Grant</Button>
         </Group>
       </form>
@@ -239,6 +246,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
                         <>
                           {grantMsg && <Text size="sm" c="cyan" mb="sm">{grantMsg}</Text>}
                           <GrantForm tools={tools} members={members} prefillToolId={tool.id}
+                            canGrantCertifier={isAdmin}
                             onGranted={m => { setGrantMsg(m); toggle(tool.id).then(() => toggle(tool.id)); }}
                             saving={grantSaving} setSaving={setGrantSaving} />
                         </>
@@ -265,7 +273,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
 
 // ---- By Person tab ----
 
-function PersonTab({ members, tools, isCertifier }: { members: Member[]; tools: Tool[]; isCertifier: boolean }) {
+function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]; tools: Tool[]; isCertifier: boolean; isAdmin: boolean }) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [certs, setCerts] = useState<Certification[]>([]);
   const [loadingCerts, setLoadingCerts] = useState(false);
@@ -330,6 +338,7 @@ function PersonTab({ members, tools, isCertifier }: { members: Member[]; tools: 
                         <>
                           {grantMsg && <Text size="sm" c="cyan" mb="sm">{grantMsg}</Text>}
                           <GrantForm tools={tools} members={members} prefillMemberId={member.id}
+                            canGrantCertifier={isAdmin}
                             onGranted={m => { setGrantMsg(m); toggle(member.id).then(() => toggle(member.id)); }}
                             saving={grantSaving} setSaving={setGrantSaving} />
                         </>
@@ -437,17 +446,17 @@ export default function ToolManagementPage() {
 
   const isSysadmin = session?.user?.sysadmin;
   const isBoardMember = session?.user?.boardMember;
-  const isAdmin = isSysadmin || isBoardMember || session?.user?.shopSteward;
+  const isAdmin = isSysadmin || isBoardMember;
 
   const hasCertifierAuth = (session?.user?.toolStatuses ?? []).some((ts: { level?: string }) => ts.level === 'MAY_CERTIFY_OTHERS');
-  const isCertifier = isSysadmin || isBoardMember || session?.user?.shopSteward || hasCertifierAuth;
+  const isCertifier = isSysadmin || isBoardMember || hasCertifierAuth;
 
   if (!isCertifier && !isAdmin) {
     return (
       <Container size="sm" py="xl">
         <Card withBorder radius="md" padding="xl">
           <Title order={2} mb="sm">Access Denied</Title>
-          <Alert color="red" mb="md">Forbidden: You require the Shop Steward, Admin, Board Member, or Certifier role.</Alert>
+          <Alert color="red" mb="md">Forbidden: You require the Admin, Board Member, or Certifier role.</Alert>
           <Button onClick={() => router.push('/shop')}>Back to Shop Ops</Button>
         </Card>
       </Container>
@@ -476,7 +485,7 @@ export default function ToolManagementPage() {
           <ToolsTab tools={tools} members={members} isAdmin={!!isAdmin} isCertifier={!!isCertifier} onToolsChange={reloadTools} />
         </Tabs.Panel>
         <Tabs.Panel value="person">
-          <PersonTab members={members} tools={tools} isCertifier={!!isCertifier} />
+          <PersonTab members={members} tools={tools} isCertifier={!!isCertifier} isAdmin={!!isAdmin} />
         </Tabs.Panel>
         {isAdmin && (
           <Tabs.Panel value="all">

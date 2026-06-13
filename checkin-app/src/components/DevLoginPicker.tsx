@@ -11,7 +11,6 @@ interface Persona {
   sysadmin: boolean;
   boardMember: boolean;
   keyholder: boolean;
-  shopSteward: boolean;
   backgroundCheckReviewer: boolean;
   dob: string | null;
   householdId: number | null;
@@ -54,7 +53,6 @@ export default function DevLoginPicker() {
     if (p.sysadmin) badges.push({ label: "Sysadmin", color: "red" });
     if (p.boardMember) badges.push({ label: "Board", color: "grape" });
     if (p.keyholder) badges.push({ label: "Keyholder", color: "blue" });
-    if (p.shopSteward) badges.push({ label: "Shop Steward", color: "orange" });
     if (p.backgroundCheckReviewer) badges.push({ label: "BG Reviewer", color: "teal" });
     if (p.toolStatuses?.length > 0) badges.push({ label: "Certified", color: "green" });
     if (p.householdId) badges.push({ label: "Household", color: "indigo" });

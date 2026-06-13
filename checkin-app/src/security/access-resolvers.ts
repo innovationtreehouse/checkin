@@ -228,8 +228,6 @@ export function callerHoldsRole(
             return auth.type === 'session' && auth.user.boardMember;
         case 'keyholder':
             return auth.type === 'session' && auth.user.keyholder;
-        case 'shopSteward':
-            return auth.type === 'session' && auth.user.shopSteward;
         case 'backgroundCheckReviewer':
             return auth.type === 'session' && auth.user.backgroundCheckReviewer;
         case 'householdLead':

@@ -13,7 +13,6 @@ declare module "next-auth" {
       sysadmin?: boolean;
       keyholder?: boolean;
       boardMember?: boolean;
-      shopSteward?: boolean;
       backgroundCheckReviewer?: boolean;
       householdId?: number | null;
       householdLead?: boolean;
@@ -32,7 +31,6 @@ declare module "next-auth" {
     sysadmin?: boolean;
     keyholder?: boolean;
     boardMember?: boolean;
-    shopSteward?: boolean;
     backgroundCheckReviewer?: boolean;
     householdId?: number | null;
     householdLead?: boolean;
@@ -55,7 +53,6 @@ declare module "next-auth/jwt" {
     sysadmin?: boolean;
     keyholder?: boolean;
     boardMember?: boolean;
-    shopSteward?: boolean;
     backgroundCheckReviewer?: boolean;
     householdId?: number | null;
     householdLead?: boolean;

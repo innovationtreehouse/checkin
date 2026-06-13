@@ -14,7 +14,6 @@ type Participant = {
   email: string;
   name: string | null;
   ageCategory?: "ADULT" | "STUDENT";
-  shopSteward?: boolean;
   toolStatuses: {
     toolId: number;
     level: ToolStatusLevel;
@@ -138,13 +137,8 @@ function KioskCertificationsInner() {
       </td>
       {tools.map((tool) => {
         const status = participant.toolStatuses.find(ts => ts.toolId === tool.id);
-        let bgColor = getColorForLevel(status?.level);
-        let opacity = status ? 0.8 : 1;
-
-        if (participant.shopSteward) {
-          bgColor = getColorForLevel("MAY_CERTIFY_OTHERS");
-          opacity = 0.8;
-        }
+        const bgColor = getColorForLevel(status?.level);
+        const opacity = status ? 0.8 : 1;
 
         return (
           <td key={tool.id} style={{ padding: 0, textAlign: 'center', borderRight: cellBorder, height: '100%' }}>

@@ -141,15 +141,17 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         },
     });
 
-    await prisma.participant.upsert({
-        where: { email: "shop.steward@example.com" },
-        update: { name: "Shop Steward", phone: "555-555-0008", shopSteward: true },
+    // No carte-blanche "may certify others" role exists. This persona is a plain
+    // member who holds the MAY_CERTIFY_OTHERS certification on a single tool (granted
+    // below), exercising the per-tool certifier path.
+    const toolCertifier = await prisma.participant.upsert({
+        where: { email: "tool.certifier@example.com" },
+        update: { name: "Tool Certifier", phone: "555-555-0008" },
         create: {
-            email: "shop.steward@example.com",
-            name: "Shop Steward",
+            email: "tool.certifier@example.com",
+            name: "Tool Certifier",
             phone: "555-555-0008",
-            shopSteward: true,
-            household: { create: { name: "Shop Steward Household" } },
+            household: { create: { name: "Tool Certifier Household" } },
         },
     });
 
@@ -203,6 +205,11 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         where: { userId_toolId: { userId: certifiedAdult.id, toolId: drillPress.id } },
         update: { level: "CERTIFIED" },
         create: { userId: certifiedAdult.id, toolId: drillPress.id, level: "CERTIFIED" },
+    });
+    await prisma.toolStatus.upsert({
+        where: { userId_toolId: { userId: toolCertifier.id, toolId: tableSaw.id } },
+        update: { level: "MAY_CERTIFY_OTHERS" },
+        create: { userId: toolCertifier.id, toolId: tableSaw.id, level: "MAY_CERTIFY_OTHERS" },
     });
 
     // 5. Sample program

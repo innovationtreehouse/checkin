@@ -18,7 +18,7 @@ jest.mock('next-auth/next', () => ({
 }));
 describe('Shop API Integration Tests', () => {
     let adminId: number;
-    let stewardId: number;
+    let boardId: number;
     let certifierId: number;
     let commonId: number;
     
@@ -67,11 +67,11 @@ describe('Shop API Integration Tests', () => {
         });
         adminId = admin.id;
 
-        // Create Steward
-        const steward = await prisma.participant.create({
-            data: { email: 'steward-shop-api-test@example.com', name: 'Steward', shopSteward: true, household: { create: {} } }
+        // Create Board Member
+        const board = await prisma.participant.create({
+            data: { email: 'board-shop-api-test@example.com', name: 'Board', boardMember: true, household: { create: {} } }
         });
-        stewardId = steward.id;
+        boardId = board.id;
 
         // Create Common User
         const commonUser = await prisma.participant.create({
@@ -109,7 +109,7 @@ describe('Shop API Integration Tests', () => {
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, stewardId, certifierId, commonId].filter(id => id !== undefined);
+        const existingUserIds = [adminId, boardId, certifierId, commonId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
             const participants = await prisma.participant.findMany({
@@ -168,8 +168,8 @@ describe('Shop API Integration Tests', () => {
              expect(res.status).toBe(403);
         });
 
-        it('should return 200 and active occupants for standard shop steward', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: stewardId, shopSteward: true } });
+        it('should return 200 and active occupants for board member', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
 
              const res = await getActive() as Response;
              expect(res.status).toBe(200);
@@ -243,16 +243,16 @@ describe('Shop API Integration Tests', () => {
              expect(data.tool.name).toBe('Shop Test Tool Admin');
         });
 
-        it('should allow shop stewards to create a new tool', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: stewardId, shopSteward: true } });
+        it('should allow board members to create a new tool', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
 
-             const req = createReq('POST', { body: { name: 'Shop Test Tool Steward' } });
+             const req = createReq('POST', { body: { name: 'Shop Test Tool Board' } });
              const res = await postTools(req) as Response;
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.tool.name).toBe('Shop Test Tool Steward');
+             expect(data.tool.name).toBe('Shop Test Tool Board');
         });
     });
 
@@ -290,6 +290,27 @@ describe('Shop API Integration Tests', () => {
              expect(data.success).toBe(true);
              expect(data.certification.level).toBe('BASIC');
              expect(data.certification.userId).toBe(commonId);
+        });
+
+        it('should forbid a Certifier from promoting someone to MAY_CERTIFY_OTHERS', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: certifierId } });
+
+             const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' } });
+             const res = await postCerts(req) as Response;
+             // Only admins/board may grant the Certifier level.
+             expect(res.status).toBe(403);
+        });
+
+        it('should allow an admin to grant MAY_CERTIFY_OTHERS', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+             const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' } });
+             const res = await postCerts(req) as Response;
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.success).toBe(true);
+             expect(data.certification.level).toBe('MAY_CERTIFY_OTHERS');
         });
     });
 });

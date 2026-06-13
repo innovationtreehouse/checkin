@@ -18,7 +18,6 @@ type ParticipantRow = {
   email: string | null;
   isMember?: boolean;
   boardMember?: boolean;
-  shopSteward?: boolean;
   keyholder?: boolean;
 };
 
@@ -97,7 +96,6 @@ export default function PrintBadgesPage() {
             name: p.name ?? '',
             isMember: !!p.isMember,
             boardMember: !!p.boardMember,
-            shopSteward: !!p.shopSteward,
             keyholder: !!p.keyholder,
             qrDataUri,
           };
@@ -164,9 +162,8 @@ export default function PrintBadgesPage() {
       render: (p) => (
         <Group gap={4}>
           {p.boardMember && <Badge size="xs" color="blue">BOARD</Badge>}
-          {p.shopSteward && <Badge size="xs" color="grape">STEWARD</Badge>}
           {p.keyholder && <Badge size="xs" color="orange">KEYHOLDER</Badge>}
-          {!p.boardMember && !p.shopSteward && !p.keyholder && p.isMember && (
+          {!p.boardMember && !p.keyholder && p.isMember && (
             <Badge size="xs" color="green">MEMBER</Badge>
           )}
         </Group>

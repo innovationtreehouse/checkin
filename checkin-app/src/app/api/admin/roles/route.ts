@@ -23,7 +23,6 @@ export const GET = withAuth(
                     sysadmin: true,
                     boardMember: true,
                     keyholder: true,
-                    shopSteward: true,
                     backgroundCheckReviewer: true,
                 },
                 orderBy: { name: "asc" },
@@ -55,7 +54,7 @@ export const PATCH = withAuth(
                 );
             }
 
-            const allowedFields = ["sysadmin", "boardMember", "keyholder", "shopSteward", "backgroundCheckReviewer"];
+            const allowedFields = ["sysadmin", "boardMember", "keyholder", "backgroundCheckReviewer"];
             const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
             for (const field of allowedFields) {
                 if (roleUpdates[field] !== undefined) {
@@ -77,7 +76,6 @@ export const PATCH = withAuth(
                     sysadmin: true,
                     boardMember: true,
                     keyholder: true,
-                    shopSteward: true,
                     backgroundCheckReviewer: true,
                 },
             });

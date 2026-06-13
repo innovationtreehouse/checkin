@@ -39,7 +39,6 @@ import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 type SessionUser = {
   sysadmin?: boolean;
   boardMember?: boolean;
-  shopSteward?: boolean;
   toolStatuses?: Array<{ level: string }>;
 };
 
@@ -61,7 +60,6 @@ const NAV_ITEMS: NavItem[] = [
     visible: (u) =>
       !!u?.sysadmin ||
       !!u?.boardMember ||
-      !!u?.shopSteward ||
       !!u?.toolStatuses?.some((ts) => ts.level === 'MAY_CERTIFY_OTHERS'),
   },
   {
