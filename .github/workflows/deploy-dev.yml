@@ -22,6 +22,7 @@ on:
 permissions:
   id-token: write       # assume the deploy role via OIDC
   contents: read        # checkout
+  packages: write       # push the image to ghcr.io
   pull-requests: write  # comment on the originating PR
 
 concurrency:
@@ -30,8 +31,7 @@ concurrency:
 
 env:
   AWS_REGION: us-east-2
-  ECR_REGISTRY: 639595353568.dkr.ecr.us-east-2.amazonaws.com
-  ECR_REPOSITORY: checkin-dev
+  IMAGE_REPO: ghcr.io/innovationtreehouse/checkin-dev
   ECS_CLUSTER: checkin-dev
   ECS_SERVICE: checkin-dev
   APP_TASK_FAMILY: checkin-dev
@@ -68,13 +68,17 @@ jobs:
           role-to-assume: ${{ env.DEPLOY_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push image
         id: build
         env:
-          IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha }}
+          IMAGE: ${{ env.IMAGE_REPO }}:${{ steps.vars.outputs.sha }}
           # Public store domain baked into the client bundle (NEXT_PUBLIC_*, build-time).
           # Set as a repo variable (Settings > Variables); empty is harmless.
           NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN: ${{ vars.SHOPIFY_STORE_DOMAIN }}
@@ -202,7 +206,7 @@ jobs:
           if [ "$STATUS" = "success" ]; then
             BODY="### ✅ Deployed to dev
           Commit \`$SHORT_SHA\` is live on [$APP_URL]($APP_URL).
-          - Image: \`$ECR_REPOSITORY:$SHORT_SHA\`
+          - Image: \`$IMAGE_REPO:$SHORT_SHA\`
           - Migrations: applied · Service: stable
           - [Deploy run]($RUN_URL)"
           else
