@@ -53,11 +53,14 @@ describe('Membership renewal', () => {
         await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
     }
 
+    // A real Treehouse-style interval (~2.6yr) so the BG-freshness rule has a configured value.
+    const BG_RECHECK_MONTHS = 31;
+
     async function setBoundary(date: Date | null) {
         await prisma.boardSettings.upsert({
             where: { id: 1 },
-            create: { id: 1, normalDuesCents: 0, volunteerDuesCents: 0, membershipYearBoundary: date },
-            update: { membershipYearBoundary: date },
+            create: { id: 1, normalDuesCents: 0, volunteerDuesCents: 0, membershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
+            update: { membershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
         });
     }
 

@@ -299,7 +299,11 @@ export default function MembershipPage() {
           <Text c="dimmed" my="md">
             Your household membership is up for renewal. You&apos;re still an active member — confirm
             below to continue for another year. No contract to re-sign; we&apos;ll only re-check a
-            background if it&apos;s been more than three years.
+            background if it has expired.
+          </Text>
+          <Text c="dimmed" mb="md">
+            Did anything change — new members, address, phone, or email?{" "}
+            <Anchor component={Link} href="/household">Update your household details first</Anchor>.
           </Text>
           <Button color="green" disabled={saving} loading={saving} onClick={renew}>Renew now</Button>
         </Card>
@@ -307,9 +311,9 @@ export default function MembershipPage() {
         <Card withBorder radius="md" padding="xl" maw={640}>
           <Title order={2}>Renewal in progress</Title>
           <Text c="dimmed" mt="md">
-            We&apos;re re-confirming your household&apos;s background check (it&apos;s been over three
-            years). You&apos;ll be able to pay once that&apos;s done. Your membership stays active in
-            the meantime.
+            We&apos;re re-confirming your household&apos;s background check (the previous one has
+            expired). You&apos;ll be able to pay once that&apos;s done. Your membership stays active
+            in the meantime.
           </Text>
         </Card>
       ) : (

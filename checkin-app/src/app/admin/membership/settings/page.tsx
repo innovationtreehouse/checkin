@@ -12,6 +12,7 @@ interface Settings {
   membershipYearBoundary: string | null;
   membershipVariantId: string | null;
   volunteerDiscountCode: string | null;
+  bgRecheckMonths: number;
 }
 interface Designation {
   id: number;
@@ -24,6 +25,7 @@ const dollars = (cents: number) => (cents / 100).toFixed(2);
 export default function MembershipSettingsPage() {
   const [normalDues, setNormalDues] = useState("0");
   const [volunteerDues, setVolunteerDues] = useState("0");
+  const [bgRecheckMonths, setBgRecheckMonths] = useState("0");
   const [boundary, setBoundary] = useState("");
   const [boundaryUnlocked, setBoundaryUnlocked] = useState(false);
   const [variantId, setVariantId] = useState("");
@@ -52,6 +54,7 @@ export default function MembershipSettingsPage() {
         const { settings } = (await sRes.json()) as { settings: Settings };
         setNormalDues(dollars(settings.normalDuesCents));
         setVolunteerDues(dollars(settings.volunteerDuesCents));
+        setBgRecheckMonths(String(settings.bgRecheckMonths ?? 0));
         setBoundary(settings.membershipYearBoundary ? settings.membershipYearBoundary.slice(0, 10) : "");
         setVariantId(settings.membershipVariantId ?? "");
         setDiscountCode(settings.volunteerDiscountCode ?? "");
@@ -76,6 +79,7 @@ export default function MembershipSettingsPage() {
           volunteerDuesCents: Math.round(parseFloat(volunteerDues || "0") * 100),
           membershipVariantId: variantId.trim() || null,
           volunteerDiscountCode: discountCode.trim() || null,
+          bgRecheckMonths: Math.round(parseInt(bgRecheckMonths || "0", 10)),
           ...(boundaryUnlocked ? { membershipYearBoundary: boundary || null } : {}),
         }),
       });
@@ -161,7 +165,25 @@ export default function MembershipSettingsPage() {
                 value={volunteerDues}
                 onChange={(e) => setVolunteerDues(e.currentTarget.value)}
               />
+              <TextInput
+                label="Background check valid for"
+                description="Months. Set to Treehouse policy."
+                rightSection={<Text size="sm" c="dimmed">mo</Text>}
+                rightSectionWidth={36}
+                inputMode="numeric"
+                w={200}
+                value={bgRecheckMonths}
+                onChange={(e) => setBgRecheckMonths(e.currentTarget.value)}
+              />
             </Group>
+
+            {(!bgRecheckMonths || parseInt(bgRecheckMonths, 10) <= 0) && (
+              <Alert color="yellow" variant="light" mt="md">
+                ⚠️ Background-check interval is <strong>not set</strong>. Until the board enters the
+                policy value (in months), every renewal will be sent back for a fresh background
+                review. Enter the real Treehouse re-check interval above.
+              </Alert>
+            )}
 
             <Alert color="yellow" variant="light" mt="md">
               ⚠️ These amounts only set what applicants <strong>see</strong> in the membership
