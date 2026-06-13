@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { ORG_DOMAIN } from "@/lib/config";
-import { useIsDevInstance } from "@/components/EnvProvider";
+import { useCheckinEnv, useIsDevInstance } from "@/components/EnvProvider";
 
 // Layout for the glass hero (this page still uses the legacy glass-* utilities, not Mantine).
 // Inlined from the former page.module.css, which the Mantine migration removed.
@@ -35,15 +35,23 @@ function SignInInner() {
     const params = useSearchParams();
     const { data: session, status } = useSession();
     const isDevInstance = useIsDevInstance();
+    const checkinEnv = useCheckinEnv();
     const callbackUrl = params.get("callbackUrl") || "/";
+    const error = params.get("error");
 
-    // Signed in but routed here = a valid Google login that isn't an org member (failed the hd gate).
-    const wrongAccount = status === "authenticated" && !!session?.user;
+    const signedIn = status === "authenticated" && !!session?.user;
+    // The same org gate the dev middleware enforces (hd + verified email). Only a session that
+    // actually FAILS it gets the "wrong account" treatment — a verified org member can also land
+    // here (e.g. a persona-mint that was refused redirects back with ?error=), and telling them
+    // their account isn't in the Workspace would be wrong on both counts. The gate only exists on
+    // the cloud dev instance; local sessions never carry the hd claim.
+    const orgVerified = session?.user?.hd === ORG_DOMAIN && session?.user?.emailVerified === true;
+    const wrongAccount = signedIn && checkinEnv === "dev" && !orgVerified;
 
     return (
         <main style={mainStyle}>
             <div className="glass-container animate-float" style={heroStyle}>
-                <h1 className="text-gradient" style={{ fontSize: "3rem", margin: "0 0 0.5rem 0" }}>
+                <h1 className="text-gradient" style={{ fontSize: "3rem", margin: "0 0 0.5rem 0", fontFamily: "var(--mantine-font-family-headings)" }}>
                     {isDevInstance ? "Welcome to Innovation Treehouse Dev" : "CheckMeIn"}
                 </h1>
                 <p style={{ color: "var(--color-text-muted)", fontSize: "1.1rem", marginBottom: "2rem" }}>
@@ -74,8 +82,10 @@ function SignInInner() {
                                 fontSize: "0.95rem",
                             }}
                         >
-                            <strong>{session.user?.email}</strong> isn&apos;t an <code>@{ORG_DOMAIN}</code>{" "}
-                            account, so it can&apos;t access the dev environment.
+                            Signed in as <strong>{session.user?.email}</strong>, but this Google account is not
+                            managed by the <code>@{ORG_DOMAIN}</code> Google Workspace — it may be a personal
+                            account or a forwarding alias. Sign out and use an actual{" "}
+                            <code>@{ORG_DOMAIN}</code> Workspace account to access the dev environment.
                         </div>
                         <button
                             className="glass-button"
@@ -88,6 +98,45 @@ function SignInInner() {
                         >
                             Sign out &amp; use another account
                         </button>
+                    </div>
+                ) : signedIn ? (
+                    <div
+                        style={{
+                            width: "100%",
+                            maxWidth: 360,
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "1rem",
+                        }}
+                    >
+                        {error && (
+                            <div
+                                style={{
+                                    width: "100%",
+                                    padding: "1rem",
+                                    background: "rgba(245, 158, 11, 0.12)",
+                                    border: "1px solid rgba(245, 158, 11, 0.4)",
+                                    borderRadius: 12,
+                                    color: "#fcd34d",
+                                    fontSize: "0.95rem",
+                                }}
+                            >
+                                That sign-in attempt didn&apos;t complete (code: <code>{error}</code>).
+                                You are still signed in as <strong>{session.user?.email}</strong>.
+                            </div>
+                        )}
+                        <a
+                            className="glass-button"
+                            href={callbackUrl}
+                            style={{
+                                width: "100%",
+                                background: "rgba(59, 130, 246, 0.2)",
+                                borderColor: "rgba(59, 130, 246, 0.4)",
+                            }}
+                        >
+                            Continue as {session.user?.name || session.user?.email}
+                        </a>
                     </div>
                 ) : (
                     <div

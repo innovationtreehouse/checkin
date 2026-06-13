@@ -3,6 +3,7 @@ import type { JWT } from "next-auth/jwt";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { getToken } from "next-auth/jwt";
+import { cookies as requestCookies } from "next/headers";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import prisma from "@/lib/prisma";
 import { config, ORG_DOMAIN } from "@/lib/config";
@@ -108,12 +109,22 @@ export const authOptions: NextAuthOptions = {
                     mode: { label: "Mode", type: "text" },
                 },
                 async authorize(credentials, req) {
-                    const mode: MintMode = credentials?.mode === "return" ? "return" : "impersonate";
+                    const mode: MintMode =
+                        credentials?.mode === "return" ? "return"
+                        : credentials?.mode === "logout" ? "logout"
+                        : "impersonate";
 
                     // The caller's *current* session — the security boundary. getToken decrypts the
                     // session cookie carried on this request; null when not signed in.
+                    // The `req` NextAuth hands to a credentials authorize() has NO `cookies` field
+                    // (only query/body/headers/method), and getToken reads req.cookies exclusively —
+                    // it never parses the cookie header. Without the next/headers cookie store the
+                    // caller always looks anonymous and every dev-instance mint is denied.
                     const callerToken = await getToken({
-                        req: req as Parameters<typeof getToken>[0]["req"],
+                        req: {
+                            headers: req.headers,
+                            cookies: await requestCookies(),
+                        } as unknown as Parameters<typeof getToken>[0]["req"],
                         secret: config.nextAuthSecret(),
                     });
 
@@ -130,6 +141,23 @@ export const authOptions: NextAuthOptions = {
                             : null,
                     });
                     if (!decision.allowed) return null;
+
+                    // Logged-out preview: mint a synthetic guest session with NO participant. authz
+                    // sees a logged-out visitor (no id/roles via the jwt callback's email guard); the
+                    // inert impersonatedBy still credits the real human so "Return to me" works.
+                    if (decision.guest) {
+                        await recordLedger(
+                            "impersonate",
+                            decision.impersonatedBy ?? "unknown",
+                            "logged out",
+                        );
+                        return {
+                            id: "guest",
+                            email: null,
+                            name: "Logged out",
+                            impersonatedBy: decision.impersonatedBy,
+                        };
+                    }
 
                     // Resolve the target participant (fake data only — must already exist).
                     let dbParticipant;
@@ -200,9 +228,13 @@ export const authOptions: NextAuthOptions = {
                     token.emailVerified = true;
                 }
             }
-            if (user) {
+            // Guard on `user.email`: a synthetic guest mint (logged-out preview) returns a user with
+            // no email, so it resolves no participant and the token carries no id/roles — authz sees
+            // a logged-out visitor, while the persona-mint block above still stamped the gate claims
+            // + impersonatedBy so the dev gate passes and "Return to me" works.
+            if (user?.email) {
                 const dbParticipant = await prisma.participant.findUnique({
-                    where: { email: user.email! },
+                    where: { email: user.email },
                     include: {
                         toolStatuses: {
                             select: {

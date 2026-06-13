@@ -15,6 +15,8 @@ describe('evaluateMint', () => {
                 .toEqual({ allowed: false });
             expect(evaluateMint({ checkinEnv: 'prod', mode: 'return', caller: { ...orgCaller, impersonatedBy: 'x@y.org' } }))
                 .toEqual({ allowed: false });
+            expect(evaluateMint({ checkinEnv: 'prod', mode: 'logout', caller: orgCaller }))
+                .toEqual({ allowed: false });
         });
     });
 
@@ -25,6 +27,7 @@ describe('evaluateMint', () => {
                 targetEmail: null,
                 impersonatedBy: 'daniel@innovationtreehouse.org',
                 carryGateClaims: true,
+                guest: false,
             });
         });
 
@@ -58,6 +61,7 @@ describe('evaluateMint', () => {
                 targetEmail: 'daniel@innovationtreehouse.org',
                 impersonatedBy: null,
                 carryGateClaims: true,
+                guest: false,
             });
         });
 
@@ -69,6 +73,39 @@ describe('evaluateMint', () => {
         });
     });
 
+    describe('dev — logout (synthetic guest session)', () => {
+        it('allows a verified org member and mints a guest crediting their email', () => {
+            expect(evaluateMint({ checkinEnv: 'dev', mode: 'logout', caller: orgCaller })).toEqual({
+                allowed: true,
+                targetEmail: null,
+                impersonatedBy: 'daniel@innovationtreehouse.org',
+                carryGateClaims: true,
+                guest: true,
+            });
+        });
+
+        it('refuses an unverified / non-org caller', () => {
+            expect(evaluateMint({ checkinEnv: 'dev', mode: 'logout', caller: { email: 'x@gmail.com', hd: null, emailVerified: true } }))
+                .toEqual({ allowed: false });
+            expect(evaluateMint({ checkinEnv: 'dev', mode: 'logout', caller: { email: 'x@innovationtreehouse.org', hd: ORG_DOMAIN, emailVerified: false } }))
+                .toEqual({ allowed: false });
+        });
+
+        it('refuses an anonymous caller (dev requires Google first)', () => {
+            expect(evaluateMint({ checkinEnv: 'dev', mode: 'logout', caller: null }))
+                .toEqual({ allowed: false });
+        });
+
+        it('credits the real human when viewing logged-out mid-impersonation', () => {
+            const nested = { email: 'jane@example.com', hd: ORG_DOMAIN, emailVerified: true, impersonatedBy: 'daniel@innovationtreehouse.org' };
+            expect(evaluateMint({ checkinEnv: 'dev', mode: 'logout', caller: nested })).toMatchObject({
+                allowed: true,
+                guest: true,
+                impersonatedBy: 'daniel@innovationtreehouse.org',
+            });
+        });
+    });
+
     describe('local', () => {
         it('first login (no caller) is a plain login, not an impersonation', () => {
             expect(evaluateMint({ checkinEnv: 'local', mode: 'impersonate', caller: null })).toEqual({
@@ -76,6 +113,7 @@ describe('evaluateMint', () => {
                 targetEmail: null,
                 impersonatedBy: null,
                 carryGateClaims: false,
+                guest: false,
             });
         });
 
@@ -86,6 +124,7 @@ describe('evaluateMint', () => {
                 targetEmail: null,
                 impersonatedBy: 'me@example.com',
                 carryGateClaims: false,
+                guest: false,
             });
         });
 
@@ -96,6 +135,27 @@ describe('evaluateMint', () => {
                 targetEmail: 'me@example.com',
                 impersonatedBy: null,
                 carryGateClaims: false,
+                guest: false,
+            });
+        });
+
+        it('logout is allowed for any caller and carries no gate claims', () => {
+            // No caller (laptop first action) → a plain guest with no real human to credit.
+            expect(evaluateMint({ checkinEnv: 'local', mode: 'logout', caller: null })).toEqual({
+                allowed: true,
+                targetEmail: null,
+                impersonatedBy: null,
+                carryGateClaims: false,
+                guest: true,
+            });
+            // From an existing local session → credits that identity so "Return to me" lands back.
+            const local = { email: 'me@example.com', hd: null, emailVerified: false, impersonatedBy: null };
+            expect(evaluateMint({ checkinEnv: 'local', mode: 'logout', caller: local })).toEqual({
+                allowed: true,
+                targetEmail: null,
+                impersonatedBy: 'me@example.com',
+                carryGateClaims: false,
+                guest: true,
             });
         });
     });

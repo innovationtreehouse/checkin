@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Alert, Button, Card, Center, Checkbox, Group, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
 import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
+import { MembershipTabs } from "@/components/admin/MembershipTabs";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 
 interface Settings {
@@ -123,7 +124,9 @@ export default function MembershipSettingsPage() {
 
   return (
     <Stack maw={820} mx="auto">
-      <AdminPageHeader title="Membership Settings" back={{ href: '/admin/membership', label: '← Applications' }} />
+      <AdminPageHeader title="Membership Settings" />
+
+      <MembershipTabs active="settings" />
 
       <AlertBanner message={message} tone={isError ? 'warning' : 'success'} />
 

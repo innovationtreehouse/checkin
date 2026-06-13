@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect } from "react";
 import { Box, Center, Flex, Loader, NavLink, Paper, Stack, Text } from "@mantine/core";
+import { ADMIN_NAV_SECTIONS } from "@/lib/adminNav";
 
 type AdminUser = { sysadmin?: boolean; boardMember?: boolean; keyholder?: boolean };
 
@@ -57,36 +58,6 @@ export default function AdminLayout({
     return null;
   }
 
-  const navItems = [
-    {
-      title: "Dashboard",
-      links: [{ name: "Dashboard", href: "/admin", icon: "📊" }],
-    },
-    {
-      title: "Operations",
-      links: [
-        { name: "Visit History", href: "/admin/events/visits", icon: "🕒" },
-        { name: "Raw Badge Events", href: "/admin/events/badges", icon: "📡" },
-        { name: "Print ID Badges", href: "/admin/print-badges", icon: "🖨️" },
-        { name: "Participation Trends", href: "/admin/trends", icon: "📈" },
-        { name: "System Health", href: "/admin/systemhealth", icon: "🫀" },
-      ],
-    },
-    {
-      title: "People",
-      links: [
-        { name: "Participants", href: "/admin/participants", icon: "👥" },
-        { name: "Merge Participants", href: "/admin/participants/merge", icon: "🔗" },
-        { name: "Manage Memberships", href: "/admin/households", icon: "🏠" },
-        { name: "Membership Applications", href: "/admin/membership", icon: "📋" },
-        { name: "Membership Settings", href: "/admin/membership/settings", icon: "⚙️" },
-        { name: "Pending Participants", href: "/admin/programs/pending", icon: "⏳" },
-        { name: "Emergency Contacts", href: "/admin/emergency-contacts", icon: "🚑" },
-        { name: "Role Assignment", href: "/admin/roles", icon: "🔐" },
-      ],
-    },
-  ];
-
   if (isProgramFlow) {
     return <>{children}</>;
   }
@@ -99,7 +70,7 @@ export default function AdminLayout({
         <Text fw={800} size="lg" c="blue" px="sm" py="xs">
           Admin Ops
         </Text>
-        {navItems.map((section) => {
+        {ADMIN_NAV_SECTIONS.map((section) => {
           const filteredLinks = isStrictKeyholder
             ? section.links.filter((link) => link.href === '/admin/emergency-contacts')
             : section.links;
