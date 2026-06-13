@@ -23,9 +23,19 @@ type Household = {
   name: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
+  emergencyContacts: EmergencyContactInfo[];
   isPresent: boolean;
   participants: ParticipantInfo[];
   leads: LeadInfo[];
+};
+
+type EmergencyContactInfo = {
+  id: number;
+  name: string;
+  phone: string;
+  email: string | null;
+  relationship: string | null;
+  invalid: boolean;
 };
 
 export default function EmergencyContactsPage() {
@@ -159,19 +169,27 @@ export default function EmergencyContactsPage() {
                 )}
               </div>
 
-              {/* Emergency Contact */}
+              {/* Emergency Contacts */}
               <div>
-                <Text size="sm" c="dimmed" mb="xs">External Emergency Contact:</Text>
-                <Paper withBorder radius="sm" p="md" bg="var(--mantine-color-red-light)">
-                  {h.emergencyContactName ? (
-                    <>
-                      <Text fw={600}>{h.emergencyContactName}</Text>
-                      <Text size="sm" mt={4}>Phone: {h.emergencyContactPhone || "Not Provided"}</Text>
-                    </>
+                <Text size="sm" c="dimmed" mb="xs">External Emergency Contacts:</Text>
+                <Stack gap="xs">
+                  {h.emergencyContacts.filter(c => !c.invalid).length > 0 ? (
+                    h.emergencyContacts.filter(c => !c.invalid).map((c) => (
+                      <Paper key={c.id} withBorder radius="sm" p="md" bg="var(--mantine-color-red-light)">
+                        <Text fw={600}>{c.name}{c.relationship ? ` (${c.relationship})` : ''}</Text>
+                        <Text size="sm" mt={4}>Phone: {c.phone || "Not Provided"}</Text>
+                        {c.email && <Text size="sm">Email: {c.email}</Text>}
+                      </Paper>
+                    ))
                   ) : (
-                    <Text size="sm" c="red" fs="italic">Not Configured</Text>
+                    <Paper withBorder radius="sm" p="md" bg="var(--mantine-color-red-light)">
+                      <Text size="sm" c="red" fs="italic">Not Configured</Text>
+                    </Paper>
                   )}
-                </Paper>
+                  {h.emergencyContacts.some(c => c.invalid) && (
+                    <Text size="xs" c="red">⚠ One or more contacts are invalid (now a household member).</Text>
+                  )}
+                </Stack>
               </div>
             </SimpleGrid>
           </Card>

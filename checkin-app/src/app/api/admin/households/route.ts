@@ -4,6 +4,18 @@ import { withAuth } from "@/lib/auth";
 
 export const dynamic = 'force-dynamic';
 
+// Emergency contacts are their own entity now; the admin editor still works in
+// terms of a single primary contact, so map the household's primary valid contact
+// back onto the flat emergencyContactName/Phone shape the client expects. Include
+// it inline (below) with this where/order so Prisma infers the result type.
+const PRIMARY_CONTACT_WHERE = { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } };
+function withFlatContact<T extends { emergencyContacts: { name: string; phone: string }[] }>(h: T) {
+    const primary = h.emergencyContacts[0] ?? null;
+    const { emergencyContacts: _drop, ...rest } = h;
+    void _drop;
+    return { ...rest, emergencyContactName: primary?.name ?? null, emergencyContactPhone: primary?.phone ?? null };
+}
+
 export const GET = withAuth(
     { roles: ['sysadmin', 'boardMember'] },
     async (req) => {
@@ -19,10 +31,16 @@ export const GET = withAuth(
                         participants: {
                             select: { id: true, name: true, email: true }
                         },
-                        membership: true
+                        membership: true,
+                        emergencyContacts: {
+                            where: PRIMARY_CONTACT_WHERE,
+                            orderBy: [{ priority: "asc" }, { id: "asc" }],
+                            select: { name: true, phone: true },
+                            take: 1,
+                        },
                     }
                 });
-                return NextResponse.json({ household });
+                return NextResponse.json({ household: household ? withFlatContact(household) : null });
             }
 
             const whereClause = q ? {
@@ -39,7 +57,13 @@ export const GET = withAuth(
                     participants: {
                         select: { id: true, name: true, email: true, boardMember: true }
                     },
-                    membership: true
+                    membership: true,
+                    emergencyContacts: {
+                        where: PRIMARY_CONTACT_WHERE,
+                        orderBy: [{ priority: "asc" }, { id: "asc" }],
+                        select: { name: true, phone: true },
+                        take: 1,
+                    },
                 },
                 orderBy: {
                     id: 'desc'
@@ -47,7 +71,7 @@ export const GET = withAuth(
                 ...(q && { take: 20 })
             });
 
-            return NextResponse.json({ households });
+            return NextResponse.json({ households: households.map(withFlatContact) });
         } catch (error) {
             console.error("Failed to fetch households:", error);
             return NextResponse.json({ error: "Failed to fetch households" }, { status: 500 });

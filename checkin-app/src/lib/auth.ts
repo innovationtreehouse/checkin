@@ -65,14 +65,17 @@ export async function authenticateRequest(
  *       async (req, auth) => { ... }
  *   );
  */
-export function withAuth(
+export function withAuth<Ctx = unknown>(
     options: {
         roles?: BusinessRole[];
         allowKiosk?: boolean;
     },
-    handler: (req: NextRequest, auth: AuthResult) => Promise<NextResponse>
+    handler: (req: NextRequest, auth: AuthResult, ctx: Ctx) => Promise<NextResponse>
 ) {
-    return async (req: NextRequest) => {
+    // Ctx is the Next.js route-handler context ({ params }). Forwarded so dynamic
+    // routes can read their params; non-dynamic handlers (and unit tests that call
+    // the route with just a request) simply omit it.
+    return async (req: NextRequest, ctx?: Ctx) => {
         const auth = await authenticateRequest(req);
 
         if (auth.type === 'unauthenticated') {
@@ -91,6 +94,6 @@ export function withAuth(
             }
         }
 
-        return handler(req, auth);
+        return handler(req, auth, ctx as Ctx);
     };
 }

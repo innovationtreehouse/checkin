@@ -183,7 +183,8 @@ describe('Public Program Registration API Integration Tests', () => {
             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
             expect(res.status).toBe(400);
             const data = await res.json();
-            expect(data.error).toMatch(/Emergency contact phone must be different/i);
+            // The not-a-household-member rule now blocks this (matched on phone) with a unified message.
+            expect(data.error).toMatch(/can't be its emergency contact|outside the household/i);
         });
 
         it('should block if parent email already exists', async () => {

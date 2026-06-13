@@ -73,6 +73,9 @@ describe('Membership notifications API', () => {
     it('a plain user sees nothing', async () => {
         as(plainId);
         const data = await (await NOTIFS(req())).json();
-        expect(data).toEqual({ membership: { pendingReviews: 0, blocked: 0 } });
+        expect(data).toEqual({
+            membership: { pendingReviews: 0, blocked: 0 },
+            emergencyContacts: { householdsMissingValidContact: 0 },
+        });
     });
 });

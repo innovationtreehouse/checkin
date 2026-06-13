@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { upsertPrimaryContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 
 export const PATCH = withAuth(
     {},
@@ -28,12 +29,17 @@ export const PATCH = withAuth(
 
             const updatedHousehold = await prisma.household.update({
                 where: { id: user.householdId },
-                data: {
-                    emergencyContactName: emergencyContactName !== undefined ? emergencyContactName : undefined,
-                    emergencyContactPhone: emergencyContactPhone !== undefined ? emergencyContactPhone : undefined,
-                    address: address !== undefined ? address : undefined,
-                }
+                data: { address: address !== undefined ? address : undefined },
             });
+
+            // Emergency contact is a separate entity; the settings form edits the
+            // household's primary contact. Rejects a contact who is a member.
+            if (emergencyContactName !== undefined || emergencyContactPhone !== undefined) {
+                await upsertPrimaryContact(prisma, user.householdId, {
+                    name: emergencyContactName,
+                    phone: emergencyContactPhone,
+                });
+            }
 
             await prisma.auditLog.create({
                 data: {
@@ -48,6 +54,9 @@ export const PATCH = withAuth(
             return NextResponse.json({ household: updatedHousehold }, { status: 200 });
 
         } catch (error: unknown) {
+            if (error instanceof EmergencyContactError) {
+                return NextResponse.json({ error: error.message }, { status: 400 });
+            }
             console.error("Household Settings PATCH Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }

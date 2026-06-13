@@ -19,7 +19,7 @@ type Participant = {
   dob?: string | null;
   householdId?: number | null;
   phone?: string | null;
-  household?: { emergencyContactName: string | null; emergencyContactPhone: string | null } | null;
+  household?: { emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[] } | null;
 };
 
 type Visit = {
@@ -481,14 +481,20 @@ function KioskDisplayInner() {
               )}
             </Stack>
             <Alert color="red" variant="light" ta="center">
-              {selectedParticipant.household?.emergencyContactName && selectedParticipant.household?.emergencyContactPhone ? (
-                <>
-                  <Text size="sm" c="dimmed" tt="uppercase" mb="xs">Emergency Contact</Text>
-                  <Text fz="lg" fw={700} mb="xs">{selectedParticipant.household.emergencyContactName}</Text>
-                  <Anchor href={`tel:${selectedParticipant.household.emergencyContactPhone.replace(/\D/g, '')}`} c="red" fz="xl">
-                    📞 {selectedParticipant.household.emergencyContactPhone}
-                  </Anchor>
-                </>
+              {selectedParticipant.household?.emergencyContacts && selectedParticipant.household.emergencyContacts.length > 0 ? (
+                <Stack gap="md">
+                  <Text size="sm" c="dimmed" tt="uppercase">Emergency Contact{selectedParticipant.household.emergencyContacts.length > 1 ? "s" : ""}</Text>
+                  {selectedParticipant.household.emergencyContacts.map((c) => (
+                    <div key={c.id}>
+                      <Text fz="lg" fw={700} mb="xs">
+                        {c.name}{c.relationship ? <Text component="span" c="dimmed" fz="sm"> ({c.relationship})</Text> : null}
+                      </Text>
+                      <Anchor href={`tel:${c.phone.replace(/\D/g, '')}`} c="red" fz="xl">
+                        📞 {c.phone}
+                      </Anchor>
+                    </div>
+                  ))}
+                </Stack>
               ) : (
                 <>
                   <Text fw={700} mb={4}>No Emergency Contact on File</Text>

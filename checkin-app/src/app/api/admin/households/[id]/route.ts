@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
+import { upsertPrimaryContact, getPrimaryValidContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 
 /**
  * Admin edit of a household's own info (name, address, emergency contact).
@@ -35,22 +36,27 @@ export async function PATCH(
         }
 
         const body = await request.json();
-        const data: {
-            name?: string | null;
-            address?: string | null;
-            emergencyContactName?: string | null;
-            emergencyContactPhone?: string | null;
-        } = {};
+        const data: { name?: string | null; address?: string | null } = {};
         if (body.name !== undefined) data.name = body.name;
         if (body.address !== undefined) data.address = body.address;
-        if (body.emergencyContactName !== undefined) data.emergencyContactName = body.emergencyContactName;
-        if (body.emergencyContactPhone !== undefined) data.emergencyContactPhone = body.emergencyContactPhone;
 
-        if (Object.keys(data).length === 0) {
+        const editsContact = body.emergencyContactName !== undefined || body.emergencyContactPhone !== undefined;
+        if (Object.keys(data).length === 0 && !editsContact) {
             return NextResponse.json({ error: "No fields to update provided" }, { status: 400 });
         }
 
-        const updated = await prisma.household.update({ where: { id }, data });
+        // Emergency contact is its own entity; the admin editor maps onto the
+        // household's primary contact. Snapshot it before the change for the audit log.
+        const priorContact = await getPrimaryValidContact(prisma, id);
+
+        const updated = Object.keys(data).length > 0
+            ? await prisma.household.update({ where: { id }, data })
+            : existing;
+
+        if (editsContact) {
+            // Rejects (direction A) a contact who is a member of this household.
+            await upsertPrimaryContact(prisma, id, { name: body.emergencyContactName, phone: body.emergencyContactPhone });
+        }
 
         await prisma.auditLog.create({
             data: {
@@ -61,15 +67,18 @@ export async function PATCH(
                 oldData: JSON.stringify({
                     name: existing.name,
                     address: existing.address,
-                    emergencyContactName: existing.emergencyContactName,
-                    emergencyContactPhone: existing.emergencyContactPhone,
+                    emergencyContactName: priorContact?.name ?? null,
+                    emergencyContactPhone: priorContact?.phone ?? null,
                 }),
-                newData: JSON.stringify(data),
+                newData: JSON.stringify({ ...data, ...(editsContact && { emergencyContactName: body.emergencyContactName, emergencyContactPhone: body.emergencyContactPhone }) }),
             }
         });
 
         return NextResponse.json({ household: updated });
     } catch (error) {
+        if (error instanceof EmergencyContactError) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
         console.error("Failed to update household:", error);
         return NextResponse.json({ error: "Failed to update household" }, { status: 500 });
     }

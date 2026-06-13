@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus } from "@/lib/membership/external";
+import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
 
 /**
  * Membership intake service — the write/read model behind the "Join the
@@ -40,6 +41,7 @@ async function loadUserWithHousehold(userId: number) {
                     participants: { orderBy: { id: "asc" } },
                     leads: true,
                     membership: { include: { processes: true } },
+                    emergencyContacts: { orderBy: [{ priority: "asc" }, { id: "asc" }] },
                 },
             },
         },
@@ -93,8 +95,10 @@ export async function getIntakeState(userId: number) {
                 ? {
                       name: household.name,
                       address: household.address,
-                      emergencyContactName: household.emergencyContactName,
-                      emergencyContactPhone: household.emergencyContactPhone,
+                      // The primary (lowest-priority) contact backs the single-field
+                      // form. Shown even when flagged invalid so the lead can fix it.
+                      emergencyContactName: household.emergencyContacts[0]?.name ?? null,
+                      emergencyContactPhone: household.emergencyContacts[0]?.phone ?? null,
                   }
                 : null,
             primaryParent: primary ? shape(primary) : null,
@@ -173,14 +177,18 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     const toDate = (d?: string | null) => (d ? new Date(d) : null);
 
     if (input.household) {
-        await prisma.household.update({
-            where: { id: householdId },
-            data: {
-                ...(input.household.address !== undefined && { address: input.household.address }),
-                ...(input.household.emergencyContactName !== undefined && { emergencyContactName: input.household.emergencyContactName }),
-                ...(input.household.emergencyContactPhone !== undefined && { emergencyContactPhone: input.household.emergencyContactPhone }),
-            },
-        });
+        if (input.household.address !== undefined) {
+            await prisma.household.update({ where: { id: householdId }, data: { address: input.household.address } });
+        }
+        // Emergency contact lives in its own table now; the single-field intake
+        // form maps onto the household's primary contact. Tolerant of partial
+        // saves; rejects (direction A) a contact that is a household member.
+        if (input.household.emergencyContactName !== undefined || input.household.emergencyContactPhone !== undefined) {
+            await upsertPrimaryContact(prisma, householdId, {
+                name: input.household.emergencyContactName,
+                phone: input.household.emergencyContactPhone,
+            });
+        }
     }
 
     // Primary parent is always the caller.
@@ -253,6 +261,10 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
         }
     }
 
+    // Members added in this save (children / second parent) may collide with an
+    // existing emergency contact — re-evaluate and flag (direction B).
+    await reconcileHouseholdConflicts(prisma, householdId);
+
     return getIntakeState(userId);
 }
 
@@ -273,8 +285,11 @@ export async function submitIntake(userId: number) {
 
     const missing: string[] = [];
     if (!household.address?.trim()) missing.push("home address");
-    if (!household.emergencyContactName?.trim()) missing.push("emergency contact name");
-    if (!household.emergencyContactPhone?.trim()) missing.push("emergency contact phone");
+    // A household must keep >= 1 valid (non-member, complete) emergency contact.
+    const hasValidContact = household.emergencyContacts.some(
+        (c) => c.conflictParticipantId === null && c.name.trim() && c.phone.trim(),
+    );
+    if (!hasValidContact) missing.push("a valid emergency contact (someone outside the household)");
     const primary = household.participants.find((p) => p.id === userId);
     if (!primary?.name?.trim()) missing.push("primary parent name");
     if (missing.length) {
