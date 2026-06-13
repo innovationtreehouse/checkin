@@ -9,6 +9,7 @@ import prisma from "@/lib/prisma";
 import { config, ORG_DOMAIN } from "@/lib/config";
 import { evaluateMint, type MintMode } from "@/lib/impersonation";
 import { recordLedger } from "@/lib/dev/ledger";
+import { assignParticipantClaims } from "@/lib/authClaims";
 
 // Stable id for the dev/local persona-mint credential flow.
 export const PERSONA_MINT_PROVIDER_ID = "persona-mint";
@@ -109,7 +110,10 @@ export const authOptions: NextAuthOptions = {
                     mode: { label: "Mode", type: "text" },
                 },
                 async authorize(credentials, req) {
-                    const mode: MintMode = credentials?.mode === "return" ? "return" : "impersonate";
+                    const mode: MintMode =
+                        credentials?.mode === "return" ? "return"
+                        : credentials?.mode === "logout" ? "logout"
+                        : "impersonate";
 
                     // The caller's *current* session — the security boundary. getToken decrypts the
                     // session cookie carried on this request; null when not signed in.
@@ -138,6 +142,23 @@ export const authOptions: NextAuthOptions = {
                             : null,
                     });
                     if (!decision.allowed) return null;
+
+                    // Logged-out preview: mint a synthetic guest session with NO participant. authz
+                    // sees a logged-out visitor (no id/roles via the jwt callback's email guard); the
+                    // inert impersonatedBy still credits the real human so "Return to me" works.
+                    if (decision.guest) {
+                        await recordLedger(
+                            "impersonate",
+                            decision.impersonatedBy ?? "unknown",
+                            "logged out",
+                        );
+                        return {
+                            id: "guest",
+                            email: null,
+                            name: "Logged out",
+                            impersonatedBy: decision.impersonatedBy,
+                        };
+                    }
 
                     // Resolve the target participant (fake data only — must already exist).
                     let dbParticipant;
@@ -208,16 +229,21 @@ export const authOptions: NextAuthOptions = {
                     token.emailVerified = true;
                 }
             }
-            if (user) {
+            // Guard on `user.email`: a synthetic guest mint (logged-out preview) returns a user with
+            // no email, so it resolves no participant and the token carries no id/roles — authz sees
+            // a logged-out visitor, while the persona-mint block above still stamped the gate claims
+            // + impersonatedBy so the dev gate passes and "Return to me" works.
+            if (user?.email) {
                 const dbParticipant = await prisma.participant.findUnique({
-                    where: { email: user.email! },
+                    where: { email: user.email },
                     include: {
                         toolStatuses: {
                             select: {
                                 toolId: true,
                                 level: true
                             }
-                        }
+                        },
+                        household: { include: { membership: true } }
                     }
                 });
 
@@ -234,14 +260,9 @@ export const authOptions: NextAuthOptions = {
                         dbParticipant.sysadmin = true;
                     }
 
-                    token.id = dbParticipant.id;
-                    token.sysadmin = dbParticipant.sysadmin;
-                    token.keyholder = dbParticipant.keyholder;
-                    token.boardMember = dbParticipant.boardMember;
-                    token.shopSteward = dbParticipant.shopSteward;
-                    token.backgroundCheckReviewer = dbParticipant.backgroundCheckReviewer;
-                    token.householdId = dbParticipant.householdId;
-                    token.toolStatuses = dbParticipant.toolStatuses;
+                    // Stamp authority claims, applying the household login gate (a board
+                    // "Deny Membership" forces denied=true and strips every role flag).
+                    assignParticipantClaims(token, dbParticipant);
                 }
             } else if (token.id) {
                 // On every subsequent request (no `user` present), re-sync authority
@@ -258,7 +279,8 @@ export const authOptions: NextAuthOptions = {
                                 toolId: true,
                                 level: true
                             }
-                        }
+                        },
+                        household: { include: { membership: true } }
                     }
                 });
 
@@ -269,19 +291,17 @@ export const authOptions: NextAuthOptions = {
                     return {} as JWT;
                 }
 
-                token.sysadmin = dbParticipant.sysadmin;
-                token.keyholder = dbParticipant.keyholder;
-                token.boardMember = dbParticipant.boardMember;
-                token.shopSteward = dbParticipant.shopSteward;
-                token.backgroundCheckReviewer = dbParticipant.backgroundCheckReviewer;
-                token.householdId = dbParticipant.householdId;
-                token.toolStatuses = dbParticipant.toolStatuses;
+                // Re-stamp claims on every request so a board "Deny Membership" takes effect
+                // within the token's refresh window (updateAge), not only at next sign-in.
+                // assignParticipantClaims forces denied=true and clears all roles when DENIED.
+                assignParticipantClaims(token, dbParticipant);
             }
             return token;
         },
         async session({ session, token }) {
             if (session.user) {
                 session.user.id = token.id;
+                session.user.denied = token.denied ?? false;
                 session.user.sysadmin = token.sysadmin;
                 session.user.keyholder = token.keyholder;
                 session.user.boardMember = token.boardMember;

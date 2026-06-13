@@ -1,0 +1,31 @@
+{
+  "name": "s-read-function",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run db:generate -w @inventory/s-ingest-core && npm run db:generate -w @inventory/monitoring-db && tsc --noEmit && node ../scripts/bundle-function.mjs",
+    "typecheck": "tsc --noEmit",
+    "ping": "node --env-file=.env --import tsx src/cli.ts ping",
+    "read-orders": "node --env-file=.env --import tsx src/cli.ts read-orders",
+    "read-payouts": "node --env-file=.env --import tsx src/cli.ts read-payouts",
+    "read-balance-txns": "node --env-file=.env --import tsx src/cli.ts read-balance-txns",
+    "sync:incremental": "node --env-file=.env --import tsx src/cli.ts incremental",
+    "sync:backfill": "node --env-file=.env --import tsx src/cli.ts backfill",
+    "inject": "node --env-file=.env --import tsx src/cli.ts inject",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@inventory/monitoring-db": "*",
+    "@inventory/s-ingest-core": "*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.8",
+    "tsx": "^4.19.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

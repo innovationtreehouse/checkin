@@ -8,6 +8,8 @@ declare module "next-auth" {
       name?: string | null;
       email?: string | null;
       image?: string | null;
+      // Household membership is DENIED — login is blocked; all role flags are forced false.
+      denied?: boolean;
       sysadmin?: boolean;
       keyholder?: boolean;
       boardMember?: boolean;
@@ -43,6 +45,8 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     id: number;
+    // Household membership is DENIED — login is blocked; all role flags are forced false.
+    denied?: boolean;
     // Google hosted-domain + email_verified claims, used by the dev-instance org-login gate.
     hd?: string | null;
     emailVerified?: boolean;

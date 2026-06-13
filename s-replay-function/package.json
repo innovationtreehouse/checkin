@@ -1,0 +1,27 @@
+{
+  "name": "s-replay-function",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run db:generate -w @inventory/s-ingest-core && tsc --noEmit && node ../scripts/bundle-function.mjs",
+    "typecheck": "tsc --noEmit",
+    "replay": "node --env-file=.env --import tsx src/cli.ts replay",
+    "reset-watermark": "node --env-file=.env --import tsx src/cli.ts reset-watermark",
+    "reingest-bulk": "node --env-file=.env --import tsx src/cli.ts reingest-bulk",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@inventory/s-ingest-core": "*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@inventory/pg-test-harness": "*",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.8",
+    "tsx": "^4.19.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

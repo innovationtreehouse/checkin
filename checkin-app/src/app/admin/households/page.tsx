@@ -13,7 +13,7 @@ type Household = {
   id: number;
   name?: string | null;
   membership?: { status: string } | null;
-  participants?: { id: number; name?: string | null; email?: string | null }[] | null;
+  participants?: { id: number; name?: string | null; email?: string | null; boardMember?: boolean }[] | null;
 };
 
 export default function AdminHouseholdsPage() {
@@ -62,6 +62,32 @@ export default function AdminHouseholdsPage() {
     }
   };
 
+  // Deny blocks login for every member of the household; restore (deny=false) returns it
+  // to NONE so they can log in again with no privileges. Separate from grant/revoke.
+  const setDenied = async (householdId: number, deny: boolean) => {
+    if (deny && !window.confirm(
+      'Deny membership for this household? Every member will be unable to log in.'
+    )) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/households', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ householdId, deny })
+      });
+
+      if (res.ok) {
+        fetchHouseholds();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: 'red', message: data.error || 'Failed to update membership.' });
+      }
+    } catch {
+      notifications.show({ color: 'red', message: 'Network error.' });
+    }
+  };
+
   if (authLoading || loading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
@@ -78,7 +104,8 @@ export default function AdminHouseholdsPage() {
 
       <Text c="dimmed">
         View all households and toggle their official facility Membership status. Memberships grant
-        shop access and other organizational privileges.
+        shop access and other organizational privileges. Denying membership blocks login for every
+        member of the household — a household containing a board member must have that role removed first.
       </Text>
 
       <AlertBanner message={error} tone="error" />
@@ -95,7 +122,10 @@ export default function AdminHouseholdsPage() {
           </Table.Thead>
           <Table.Tbody>
             {households.map((household) => {
-              const hasActiveMembership = household.membership?.status === "ACTIVE";
+              const status = household.membership?.status;
+              const hasActiveMembership = status === "ACTIVE";
+              const isDenied = status === "DENIED";
+              const hasBoardMember = household.participants?.some((p) => p.boardMember) ?? false;
 
               return (
                 <Table.Tr key={household.id}>
@@ -114,7 +144,9 @@ export default function AdminHouseholdsPage() {
                     )}
                   </Table.Td>
                   <Table.Td>
-                    {hasActiveMembership ? (
+                    {isDenied ? (
+                      <Text c="red" fw={700}>Denied</Text>
+                    ) : hasActiveMembership ? (
                       <Text c="green" fw={700}>Yes</Text>
                     ) : (
                       <Text c="dimmed">No</Text>
@@ -129,14 +161,37 @@ export default function AdminHouseholdsPage() {
                       >
                         + Add Participant
                       </Button>
-                      <Button
-                        size="xs"
-                        variant="light"
-                        color={hasActiveMembership ? 'red' : 'green'}
-                        onClick={() => toggleMembership(household.id, hasActiveMembership)}
-                      >
-                        {hasActiveMembership ? "Revoke Membership" : "Grant Membership"}
-                      </Button>
+                      {isDenied ? (
+                        <Button
+                          size="xs"
+                          variant="light"
+                          color="blue"
+                          onClick={() => setDenied(household.id, false)}
+                        >
+                          Restore Access
+                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            size="xs"
+                            variant="light"
+                            color={hasActiveMembership ? 'red' : 'green'}
+                            onClick={() => toggleMembership(household.id, hasActiveMembership)}
+                          >
+                            {hasActiveMembership ? "Revoke Membership" : "Grant Membership"}
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            color="red"
+                            disabled={hasBoardMember}
+                            title={hasBoardMember ? "Remove the board role before denying membership" : undefined}
+                            onClick={() => setDenied(household.id, true)}
+                          >
+                            Deny Membership
+                          </Button>
+                        </>
+                      )}
                     </Group>
                   </Table.Td>
                 </Table.Tr>
