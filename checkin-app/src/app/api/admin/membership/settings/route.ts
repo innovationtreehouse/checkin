@@ -15,7 +15,9 @@ export const GET = withAuth({ roles: ["sysadmin", "boardMember"] }, async () => 
 /**
  * PUT /api/admin/membership/settings — update board settings.
  * Body may include: normalDuesCents, volunteerDuesCents, membershipYearBoundary (ISO|null).
- * Dues are clamped to >= 0. (The Averity consent link is an env var, not a board setting.)
+ * Dues must be finite and >= 0; an invalid value rejects the whole update (400) so the
+ * previous value survives rather than silently collapsing to zero. (The Averity consent
+ * link is an env var, not a board setting.)
  */
 export const PUT = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -31,8 +33,15 @@ export const PUT = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, 
     }
 
     const data: Record<string, unknown> = {};
-    if (body.normalDuesCents !== undefined) data.normalDuesCents = Math.max(0, Math.round(body.normalDuesCents));
-    if (body.volunteerDuesCents !== undefined) data.volunteerDuesCents = Math.max(0, Math.round(body.volunteerDuesCents));
+    const invalidDues = (v: number) => !Number.isFinite(v) || v < 0;
+    if (body.normalDuesCents !== undefined) {
+        if (invalidDues(body.normalDuesCents)) return NextResponse.json({ error: "normalDuesCents must be a number >= 0" }, { status: 400 });
+        data.normalDuesCents = Math.round(body.normalDuesCents);
+    }
+    if (body.volunteerDuesCents !== undefined) {
+        if (invalidDues(body.volunteerDuesCents)) return NextResponse.json({ error: "volunteerDuesCents must be a number >= 0" }, { status: 400 });
+        data.volunteerDuesCents = Math.round(body.volunteerDuesCents);
+    }
     if (body.membershipYearBoundary !== undefined) {
         data.membershipYearBoundary = body.membershipYearBoundary ? new Date(body.membershipYearBoundary) : null;
     }

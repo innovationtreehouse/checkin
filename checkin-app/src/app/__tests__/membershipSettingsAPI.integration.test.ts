@@ -79,11 +79,20 @@ describe('Membership settings + volunteer designations API', () => {
         expect(settings.volunteerDuesCents).toBe(3000);
     });
 
-    it('clamps negative dues to zero', async () => {
+    it('rejects negative dues and keeps the previous value', async () => {
         asBoard(boardId);
+        // Establish a known good value.
+        const seed = await SETTINGS_PUT(jsonReq('PUT', { normalDuesCents: 12000 }));
+        expect(seed.status).toBe(200);
+
+        // Negative input must be rejected, not clamped to zero.
         const res = await SETTINGS_PUT(jsonReq('PUT', { normalDuesCents: -50 }));
-        const { settings } = await res.json();
-        expect(settings.normalDuesCents).toBe(0);
+        expect(res.status).toBe(400);
+
+        // Old value survives untouched.
+        const getRes = await SETTINGS_GET(jsonReq('GET'));
+        const { settings } = await getRes.json();
+        expect(settings.normalDuesCents).toBe(12000);
     });
 
     it('adds, lists, and removes a volunteer designation', async () => {
