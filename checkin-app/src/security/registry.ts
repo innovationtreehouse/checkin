@@ -77,6 +77,30 @@ defineRoute({
     ],
 });
 
+// The caller's own disclosed dual relationships (Safety Links). Self-scoped:
+// the subject sees their_own personal fields (relationship, conditions, status,
+// dates) but never the board's internal notes/decisions.
+defineRoute({
+    endpoint: 'GET /api/safety-links/mine',
+    authorize: 'authenticated',
+    envelope: 'safetyLinks',
+    orderedView: [
+        ['authenticated', ['their_own:pii', 'their_own:personal', 'public']],
+    ],
+});
+
+// Board's safety-link review queue. Exposes subject + counterparty PII and the
+// board's own internal decision notes, so only sysadmin/board may see it.
+defineRoute({
+    endpoint: 'GET /api/admin/safety-links',
+    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    envelope: 'safetyLinks',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({

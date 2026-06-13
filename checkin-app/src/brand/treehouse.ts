@@ -44,6 +44,12 @@ export const treehouseBrand: Brand = {
     primaryColor: 'treehouseGreen',
     primaryShade: { light: 6, dark: 5 },
 
+    // Brand green (#78B858, L≈0.39) is too light to carry white text — white-on-green is
+    // only ~2.4:1, below WCAG AA. autoContrast lets Mantine pick a dark label per button bg;
+    // `black` makes that dark a soft near-black (not harsh #000). Dark-on-green ≈ 7.2:1.
+    autoContrast: true,
+    black: '#1a1b1e',
+
     fontFamily: 'var(--font-nunito), system-ui, -apple-system, "Segoe UI", sans-serif',
     fontFamilyMonospace: 'var(--font-space-mono), ui-monospace, SFMono-Regular, Menlo, monospace',
     headings: {

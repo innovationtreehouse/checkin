@@ -189,6 +189,16 @@ export function scopesHeld(
             if (userId !== undefined && userId === ctx.selfId) scopes.add('their_own');
             break;
         }
+        case 'SafetyLink':
+        case 'SafetyLinkReview': {
+            // Subject sees their own disclosures (and the reviews of them). The
+            // subjectParticipantId is denormalized onto review rows so nested
+            // review rows resolve the same scope. No counterparty scope — a named
+            // counterparty is not notified (board policy).
+            const subjectId = num(row.subjectParticipantId);
+            if (subjectId !== undefined && subjectId === ctx.selfId) scopes.add('their_own');
+            break;
+        }
         // Corporation, CorporationLead, CorporationMember, AuditLog,
         // VerificationToken, ErrorLog, SystemMetric, Tool — no per-row
         // scopes beyond 'everyones' in this version. Admin (sysadmin/

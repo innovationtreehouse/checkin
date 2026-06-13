@@ -93,6 +93,35 @@ export const classifications = {
         shopifyPriceSyncedAt: 'internal',
         updatedAt: 'internal',
     },
+    SafetyLink: {
+        id: 'public',
+        subjectParticipantId: 'public',
+        counterpartyParticipantId: 'public',
+        counterpartyName: 'personal',
+        counterpartyContact: 'personal',
+        relationshipType: 'personal',
+        description: 'personal',
+        origin: 'internal',
+        disclosedById: 'internal',
+        createdAt: 'public',
+        updatedAt: 'internal',
+    },
+    SafetyLinkReview: {
+        id: 'public',
+        safetyLinkId: 'public',
+        subjectParticipantId: 'public',
+        kind: 'public',
+        status: 'personal',
+        decidedById: 'internal',
+        decision: 'internal',
+        decisionNote: 'internal',
+        conditions: 'personal',
+        effectiveFrom: 'personal',
+        reviewBy: 'personal',
+        warnedAt: 'internal',
+        createdAt: 'public',
+        updatedAt: 'internal',
+    },
     Corporation: {
         id: 'public',
         primaryEmail: 'pii',
@@ -259,6 +288,10 @@ export const relations = {
         rawBadgeEvents: { model: 'RawBadgeEvent', isList: true },
         visits: { model: 'Visit', isList: true },
         eventsConfirmedBy: { model: 'Event', isList: true },
+        safetyLinksAsSubject: { model: 'SafetyLink', isList: true },
+        safetyLinksAsCounterparty: { model: 'SafetyLink', isList: true },
+        safetyLinksDisclosed: { model: 'SafetyLink', isList: true },
+        safetyLinkReviewsDecided: { model: 'SafetyLinkReview', isList: true },
     },
     Tool: {
         toolStatuses: { model: 'ToolStatus', isList: true },
@@ -291,6 +324,16 @@ export const relations = {
     VolunteerDesignation: {
     },
     BoardSettings: {
+    },
+    SafetyLink: {
+        subject: { model: 'Participant', isList: false },
+        counterparty: { model: 'Participant', isList: false },
+        disclosedBy: { model: 'Participant', isList: false },
+        reviews: { model: 'SafetyLinkReview', isList: true },
+    },
+    SafetyLinkReview: {
+        safetyLink: { model: 'SafetyLink', isList: false },
+        decidedBy: { model: 'Participant', isList: false },
     },
     Corporation: {
         leads: { model: 'CorporationLead', isList: true },

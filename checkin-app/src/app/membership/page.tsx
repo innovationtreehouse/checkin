@@ -9,6 +9,7 @@ import {
   SimpleGrid, Stack, Text, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import MembershipFlowStepper from "@/components/MembershipFlowStepper";
+import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface PersonPrefill {
   id: number;
@@ -155,7 +156,7 @@ export default function MembershipPage() {
     try {
       const res = await fetch("/api/membership", { method: "POST" });
       const data = await res.json();
-      if (res.ok) hydrate(data.state);
+      if (res.ok) { hydrate(data.state); notifyNavRefresh(); }
       else flash(data.error || "Could not start your application.", true);
     } catch {
       flash("Network error.", true);
@@ -215,6 +216,7 @@ export default function MembershipPage() {
       const data = await res.json();
       if (res.ok) {
         hydrate(data.state);
+        notifyNavRefresh();
         flash("Submitted! Next: sign your contract and consent to a background check.");
       } else flash(data.error || "Could not submit.", true);
     } catch {
@@ -230,7 +232,7 @@ export default function MembershipPage() {
     try {
       const res = await fetch("/api/membership/renew", { method: "POST" });
       const data = await res.json();
-      if (res.ok) { await load(); flash("Renewal started."); }
+      if (res.ok) { await load(); notifyNavRefresh(); flash("Renewal started."); }
       else flash(data.error || "Could not start renewal.", true);
     } catch {
       flash("Network error.", true);

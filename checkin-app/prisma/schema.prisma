@@ -111,6 +111,11 @@ model Participant {
   rawBadgeEvents      RawBadgeEvent[]
   visits              Visit[]
   eventsConfirmedBy   Event[]                      @relation("EventAttendanceConfirmer")
+
+  safetyLinksAsSubject      SafetyLink[]       @relation("SafetyLinkSubject")
+  safetyLinksAsCounterparty SafetyLink[]       @relation("SafetyLinkCounterparty")
+  safetyLinksDisclosed      SafetyLink[]       @relation("SafetyLinkDiscloser")
+  safetyLinkReviewsDecided  SafetyLinkReview[] @relation("SafetyLinkDecider")
 }
 
 model Tool {
@@ -196,6 +201,44 @@ enum MembershipProcessStatus {
 enum AttestationResult {
   APPROVE
   REJECT
+}
+
+enum SafetyLinkRelationshipType {
+  FAMILY
+  GUARDIAN
+  HOUSEHOLD
+  ROMANTIC
+  FORMER_PROFESSIONAL
+  FINANCIAL
+  LEGAL_RESTRICTION
+  OTHER
+}
+
+enum SafetyLinkOrigin {
+  SELF_DISCLOSED
+  STAFF_ENTERED
+}
+
+enum SafetyLinkReviewKind {
+  INITIAL
+  RENEWAL
+}
+
+enum SafetyLinkReviewStatus {
+  PENDING_BOARD_REVIEW
+  PENDING_SUBJECT_ACTION
+  APPROVED
+  APPROVED_WITH_CONDITIONS
+  DENIED
+  EXPIRED
+  REVOKED
+}
+
+enum SafetyLinkDecisionKind {
+  APPROVE
+  APPROVE_WITH_CONDITIONS
+  DENY
+  REQUEST_INFO
 }
 
 model Membership {
@@ -305,6 +348,85 @@ model BoardSettings {
   shopifyPriceSyncedAt       DateTime?
   /// @sensitivity:internal
   updatedAt                  DateTime  @updatedAt
+}
+
+/// Dual Relationship Management (Safety Links). A board-reviewed disclosure that
+/// one individual (the subject, always a Participant) holds an external
+/// relationship — familial, romantic, guardianship, financial, legal-restriction,
+/// etc. — with a counterparty who may be another Participant or someone outside
+/// the org. The durable relationship facts live here, entered once; each annual
+/// review cycle is a SafetyLinkReview row (like Membership/MembershipProcess), so
+/// a renewal reuses the facts without re-entry.
+model SafetyLink {
+  /// @sensitivity:public
+  id                        Int                        @id @default(autoincrement())
+  /// @sensitivity:public
+  subjectParticipantId      Int
+  subject                   Participant                @relation("SafetyLinkSubject", fields: [subjectParticipantId], references: [id])
+  /// @sensitivity:public
+  counterpartyParticipantId Int?
+  counterparty              Participant?               @relation("SafetyLinkCounterparty", fields: [counterpartyParticipantId], references: [id])
+  /// @sensitivity:personal
+  counterpartyName          String?
+  /// @sensitivity:personal
+  counterpartyContact       String?
+  /// @sensitivity:personal
+  relationshipType          SafetyLinkRelationshipType
+  /// @sensitivity:personal
+  description               String
+  /// @sensitivity:internal
+  origin                    SafetyLinkOrigin           @default(SELF_DISCLOSED)
+  /// @sensitivity:internal
+  disclosedById             Int
+  disclosedBy               Participant                @relation("SafetyLinkDiscloser", fields: [disclosedById], references: [id])
+  /// @sensitivity:public
+  createdAt                 DateTime                   @default(now())
+  /// @sensitivity:internal
+  updatedAt                 DateTime                   @updatedAt
+
+  reviews SafetyLinkReview[]
+
+  @@index([subjectParticipantId])
+}
+
+/// One review cycle for a SafetyLink. A single board member decides it (no
+/// quorum). subjectParticipantId is denormalized from the parent so the security
+/// stripper can scope a nested review row to the subject (their_own).
+model SafetyLinkReview {
+  /// @sensitivity:public
+  id                   Int                    @id @default(autoincrement())
+  /// @sensitivity:public
+  safetyLinkId         Int
+  safetyLink           SafetyLink             @relation(fields: [safetyLinkId], references: [id])
+  /// @sensitivity:public
+  subjectParticipantId Int
+  /// @sensitivity:public
+  kind                 SafetyLinkReviewKind
+  /// @sensitivity:personal
+  status               SafetyLinkReviewStatus @default(PENDING_BOARD_REVIEW)
+  /// @sensitivity:internal
+  decidedById          Int?
+  decidedBy            Participant?           @relation("SafetyLinkDecider", fields: [decidedById], references: [id])
+  /// @sensitivity:internal
+  decision             SafetyLinkDecisionKind?
+  /// @sensitivity:internal
+  decisionNote         String?
+  /// @sensitivity:personal
+  conditions           String?
+  /// @sensitivity:personal
+  effectiveFrom        DateTime?
+  /// @sensitivity:personal
+  reviewBy             DateTime?
+  /// @sensitivity:internal
+  warnedAt             DateTime?
+  /// @sensitivity:public
+  createdAt            DateTime               @default(now())
+  /// @sensitivity:internal
+  updatedAt            DateTime               @updatedAt
+
+  @@index([safetyLinkId])
+  @@index([status])
+  @@index([subjectParticipantId])
 }
 
 model Corporation {
