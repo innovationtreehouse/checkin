@@ -305,7 +305,6 @@ export const authOptions: NextAuthOptions = {
                 session.user.sysadmin = token.sysadmin;
                 session.user.keyholder = token.keyholder;
                 session.user.boardMember = token.boardMember;
-                session.user.shopSteward = token.shopSteward;
                 session.user.backgroundCheckReviewer = token.backgroundCheckReviewer;
                 session.user.householdId = token.householdId;
                 session.user.toolStatuses = token.toolStatuses || [];

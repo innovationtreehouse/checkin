@@ -20,7 +20,7 @@ const TAG = 'safetylink-api-test';
 
 function as(id: number, householdId: number, roles: { boardMember?: boolean; sysadmin?: boolean } = {}) {
     (getServerSession as jest.Mock).mockResolvedValue({
-        user: { id, householdId, sysadmin: false, boardMember: false, keyholder: false, shopSteward: false, backgroundCheckReviewer: false, ...roles },
+        user: { id, householdId, sysadmin: false, boardMember: false, keyholder: false, backgroundCheckReviewer: false, ...roles },
     });
 }
 function post(url: string, body: unknown) {

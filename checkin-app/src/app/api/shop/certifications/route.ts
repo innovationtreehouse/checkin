@@ -18,9 +18,9 @@ export async function GET(req: Request) {
         const toolIdParam = searchParams.get('toolId');
         const allParam = searchParams.get('all');
 
-        // ?all=true returns every assignment — admin/shop steward only
+        // ?all=true returns every assignment — admin/board only
         if (allParam === 'true') {
-            const isAuthorized = session.user?.sysadmin || session.user?.boardMember || session.user?.shopSteward;
+            const isAuthorized = session.user?.sysadmin || session.user?.boardMember;
             if (!isAuthorized) {
                 return NextResponse.json({ error: "Forbidden" }, { status: 403 });
             }
@@ -108,6 +108,13 @@ export async function POST(req: Request) {
 
         if (!hasCertifierPermission) {
             return NextResponse.json({ error: "Forbidden: You are not authorized to certify users on this tool" }, { status: 403 });
+        }
+
+        // Only sysadmins/board may promote a user to MAY_CERTIFY_OTHERS. A tool
+        // certifier can change certification status up to (but not including)
+        // MAY_CERTIFY_OTHERS — they cannot mint new certifiers.
+        if (level === "MAY_CERTIFY_OTHERS" && !isSysAdminOrBoard) {
+            return NextResponse.json({ error: "Forbidden: Only admins and board members can grant the Certifier level" }, { status: 403 });
         }
 
         const tId = parseInt(toolId, 10);

@@ -107,7 +107,6 @@ interface ParticipantBadge {
     name: string;
     isMember: boolean;
     boardMember: boolean;
-    shopSteward: boolean;
     keyholder: boolean;
     qrDataUri: string;
 }
@@ -174,17 +173,12 @@ export default function BadgeDocument({ badges }: { badges: ParticipantBadge[] }
                                                 <Text style={styles.roleText}>BOARD</Text>
                                             </View>
                                         )}
-                                        {badge.shopSteward && (
-                                            <View style={{ ...styles.rolePill, backgroundColor: '#8b5cf6' }}>
-                                                <Text style={styles.roleText}>STEWARD</Text>
-                                            </View>
-                                        )}
                                         {badge.keyholder && (
                                             <View style={{ ...styles.rolePill, backgroundColor: '#f59e0b' }}>
                                                 <Text style={styles.roleText}>KEYHOLDER</Text>
                                             </View>
                                         )}
-                                        {(!badge.boardMember && !badge.shopSteward && !badge.keyholder && badge.isMember) && (
+                                        {(!badge.boardMember && !badge.keyholder && badge.isMember) && (
                                             <View style={{ ...styles.rolePill, backgroundColor: '#10b981' }}>
                                                 <Text style={styles.roleText}>MEMBER</Text>
                                             </View>

@@ -7,7 +7,6 @@ function participant(overrides: Partial<ClaimSourceParticipant> = {}): ClaimSour
         sysadmin: true,
         keyholder: true,
         boardMember: true,
-        shopSteward: true,
         backgroundCheckReviewer: true,
         householdId: 99,
         toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
@@ -25,7 +24,6 @@ describe('assignParticipantClaims — household login gate', () => {
         expect(token.sysadmin).toBe(false);
         expect(token.keyholder).toBe(false);
         expect(token.boardMember).toBe(false);
-        expect(token.shopSteward).toBe(false);
         expect(token.backgroundCheckReviewer).toBe(false);
         expect(token.toolStatuses).toEqual([]);
         // Identity is preserved so the session still resolves and the gate can act.

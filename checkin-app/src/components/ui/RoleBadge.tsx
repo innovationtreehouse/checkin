@@ -13,7 +13,6 @@ const ROLE_META: Record<string, RoleMeta> = {
   sysadmin: { label: 'Sysadmin', color: 'red' },
   boardMember: { label: 'Board', color: 'grape' },
   keyholder: { label: 'Keyholder', color: 'blue' },
-  shopSteward: { label: 'Shop Steward', color: 'teal' },
   backgroundCheckReviewer: { label: 'BG Reviewer', color: 'indigo' },
   coreVolunteer: { label: 'Core Volunteer', color: 'pink' },
   // Tool certification levels

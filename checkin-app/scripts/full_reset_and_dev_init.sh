@@ -46,22 +46,25 @@ async function seed() {
     );
 
     // ── Participants ──
+    // The Shop Steward role was removed (only sysadmin/board grant the per-tool Certifier level).
+    // Carol and Frank stay keyholders; certifier authority is now a per-tool MAY_CERTIFY_OTHERS
+    // grant seeded elsewhere, not a participant flag.
     const personas = [
-        { name: 'Alice Admin',     email: 'alice.admin@example.com',      sysadmin: true,  boardMember: true,  keyholder: true,  shopSteward: false, householdId: householdId, dob: '1985-03-15' },
-        { name: 'Bob Board',       email: 'bob.board@example.com',        sysadmin: false, boardMember: true,  keyholder: false, shopSteward: false, householdId: null,        dob: '1990-06-22' },
-        { name: 'Carol Keyholder', email: 'carol.keyholder@example.com',  sysadmin: false, boardMember: false, keyholder: true,  shopSteward: true,  householdId: household2Id, dob: '1988-11-05' },
-        { name: 'Dave Member',     email: 'dave.member@example.com',      sysadmin: false, boardMember: false, keyholder: false, shopSteward: false, householdId: householdId, dob: '1992-01-30' },
-        { name: 'Eve Guest',       email: 'eve.guest@example.com',        sysadmin: false, boardMember: false, keyholder: false, shopSteward: false, householdId: null,        dob: '1995-09-12' },
-        { name: 'Frank Steward',   email: 'frank.steward@example.com',    sysadmin: false, boardMember: false, keyholder: true,  shopSteward: true,  householdId: household2Id, dob: '1987-04-18' },
-        { name: 'Grace Minor',     email: null,                           sysadmin: false, boardMember: false, keyholder: false, shopSteward: false, householdId: householdId, dob: '2015-07-25' },
-        { name: 'Henry Teen',      email: 'henry.teen@example.com',       sysadmin: false, boardMember: false, keyholder: false, shopSteward: false, householdId: householdId, dob: '2010-12-03' },
+        { name: 'Alice Admin',     email: 'alice.admin@example.com',      sysadmin: true,  boardMember: true,  keyholder: true,  householdId: householdId, dob: '1985-03-15' },
+        { name: 'Bob Board',       email: 'bob.board@example.com',        sysadmin: false, boardMember: true,  keyholder: false, householdId: null,        dob: '1990-06-22' },
+        { name: 'Carol Keyholder', email: 'carol.keyholder@example.com',  sysadmin: false, boardMember: false, keyholder: true,  householdId: household2Id, dob: '1988-11-05' },
+        { name: 'Dave Member',     email: 'dave.member@example.com',      sysadmin: false, boardMember: false, keyholder: false, householdId: householdId, dob: '1992-01-30' },
+        { name: 'Eve Guest',       email: 'eve.guest@example.com',        sysadmin: false, boardMember: false, keyholder: false, householdId: null,        dob: '1995-09-12' },
+        { name: 'Frank Member',    email: 'frank.member@example.com',     sysadmin: false, boardMember: false, keyholder: true,  householdId: household2Id, dob: '1987-04-18' },
+        { name: 'Grace Minor',     email: null,                           sysadmin: false, boardMember: false, keyholder: false, householdId: householdId, dob: '2015-07-25' },
+        { name: 'Henry Teen',      email: 'henry.teen@example.com',       sysadmin: false, boardMember: false, keyholder: false, householdId: householdId, dob: '2010-12-03' },
     ];
 
     for (const p of personas) {
         const result = await pool.query(
-            \`INSERT INTO \"Participant\" (name, email, sysadmin, \"boardMember\", keyholder, \"shopSteward\", \"householdId\", dob)
-             VALUES (\\\$1, \\\$2, \\\$3, \\\$4, \\\$5, \\\$6, \\\$7, \\\$8) RETURNING id\`,
-            [p.name, p.email, p.sysadmin, p.boardMember, p.keyholder, p.shopSteward, p.householdId, p.dob ? new Date(p.dob) : null]
+            \`INSERT INTO \"Participant\" (name, email, sysadmin, \"boardMember\", keyholder, \"householdId\", dob)
+             VALUES (\\\$1, \\\$2, \\\$3, \\\$4, \\\$5, \\\$6, \\\$7) RETURNING id\`,
+            [p.name, p.email, p.sysadmin, p.boardMember, p.keyholder, p.householdId, p.dob ? new Date(p.dob) : null]
         );
         console.log('  ✓ ' + p.name + (p.email ? ' (' + p.email + ')' : ' (no email — minor)'));
 

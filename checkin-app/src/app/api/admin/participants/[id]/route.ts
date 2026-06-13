@@ -46,7 +46,6 @@ export async function PUT(
             email: updatedParticipant.email,
             phone: updatedParticipant.phone,
             boardMember: updatedParticipant.boardMember,
-            shopSteward: updatedParticipant.shopSteward,
             keyholder: updatedParticipant.keyholder,
             household: updatedParticipant.household,
         };

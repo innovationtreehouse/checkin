@@ -17,7 +17,6 @@ async function ensure(
         sysadmin: boolean;
         boardMember: boolean;
         keyholder: boolean;
-        shopSteward: boolean;
         backgroundCheckReviewer: boolean;
     }>,
 ) {
@@ -45,7 +44,6 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
     const sysadmin = await ensure('sysadmin', { name: 'Sys Admin', sysadmin: true });
     const boardMember = await ensure('board-member', { name: 'Board Member', boardMember: true });
     const keyholder = await ensure('keyholder', { name: 'Key Holder', keyholder: true });
-    const shopSteward = await ensure('shop-steward', { name: 'Shop Steward', shopSteward: true });
     const bgReviewer = await ensure('bg-reviewer', { name: 'BG Reviewer', backgroundCheckReviewer: true });
 
     const mkUser = (p: {
@@ -55,7 +53,6 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
         sysadmin: boolean;
         boardMember: boolean;
         keyholder: boolean;
-        shopSteward: boolean;
         backgroundCheckReviewer: boolean;
     }): SessionUser => ({
         id: p.id,
@@ -64,7 +61,6 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
         sysadmin: p.sysadmin,
         boardMember: p.boardMember,
         keyholder: p.keyholder,
-        shopSteward: p.shopSteward,
         backgroundCheckReviewer: p.backgroundCheckReviewer,
     });
 
@@ -90,11 +86,6 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
             role: 'keyholder',
             sessionUser: mkUser(keyholder),
             description: 'keyholder=true',
-        },
-        shopSteward: {
-            role: 'shopSteward',
-            sessionUser: mkUser(shopSteward),
-            description: 'shopSteward=true',
         },
         backgroundCheckReviewer: {
             role: 'backgroundCheckReviewer',

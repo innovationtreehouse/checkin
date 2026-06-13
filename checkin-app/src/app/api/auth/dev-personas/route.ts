@@ -37,7 +37,6 @@ export async function GET() {
             sysadmin: true,
             boardMember: true,
             keyholder: true,
-            shopSteward: true,
             backgroundCheckReviewer: true,
             dob: true,
             householdId: true,

@@ -8,7 +8,6 @@ export type ClaimSourceParticipant = {
     sysadmin: boolean;
     keyholder: boolean;
     boardMember: boolean;
-    shopSteward: boolean;
     backgroundCheckReviewer: boolean;
     householdId: number;
     toolStatuses: { toolId: number; level: string }[];
@@ -31,7 +30,6 @@ export function assignParticipantClaims(token: JWT, p: ClaimSourceParticipant): 
     token.sysadmin = denied ? false : p.sysadmin;
     token.keyholder = denied ? false : p.keyholder;
     token.boardMember = denied ? false : p.boardMember;
-    token.shopSteward = denied ? false : p.shopSteward;
     token.backgroundCheckReviewer = denied ? false : p.backgroundCheckReviewer;
     token.householdId = p.householdId;
     token.toolStatuses = denied ? [] : p.toolStatuses;

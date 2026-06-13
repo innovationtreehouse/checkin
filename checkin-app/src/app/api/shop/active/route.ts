@@ -17,11 +17,10 @@ export async function GET() {
 
     const isAuthorized = session.user?.sysadmin ||
         session.user?.boardMember ||
-        session.user?.shopSteward ||
         hasCertifierAuth;
 
     if (!isAuthorized) {
-        return NextResponse.json({ error: "Forbidden: Requires Shop Steward, Admin, or Certifier role" }, { status: 403 });
+        return NextResponse.json({ error: "Forbidden: Requires Admin, Board, or Certifier role" }, { status: 403 });
     }
 
     try {

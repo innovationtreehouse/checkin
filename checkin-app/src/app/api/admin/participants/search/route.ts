@@ -41,7 +41,6 @@ export const GET = withAuth(
                 phone: p.phone,
                 isMember: participantRecordIsActiveMember(p),
                 boardMember: p.boardMember,
-                shopSteward: p.shopSteward,
                 keyholder: p.keyholder,
                 household: p.household,
             }));
