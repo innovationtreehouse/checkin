@@ -1,0 +1,44 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+  web:
+    # Context is the repo root (one level up from deploy/) so the workspace
+    # install resolves the root manifest/lockfile and every workspace member.
+    build:
+      context: ..
+      dockerfile: checkin-app/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "4000"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql://prisma:${DB_PASSWORD}@db:5432/checkmein?schema=public
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prisma
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: checkmein
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
