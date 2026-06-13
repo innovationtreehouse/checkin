@@ -1,21 +1,17 @@
 /**
  * Font loading for the Innovation Treehouse brand (Next.js App Router).
- *   HNkani     → headings / brand wordmark (commercial face, bundled locally)
+ *   Fredoka    → headings / brand wordmark (Google Fonts, SIL OFL)
  *   Nunito     → body / UI text
  *   Space Mono → IDs, codes, mono accents
  *
- * Put HNkani.ttf + HNkani-Italic.ttf in src/app/fonts/ and fix the localFont paths to
- * resolve from THIS file's location. Then put `fontVariables` on <body> (see MIGRATION.md).
+ * All three load from next/font/google; put `fontVariables` on <html> (see layout.tsx).
  */
-import localFont from 'next/font/local';
-import { Nunito, Space_Mono } from 'next/font/google';
+import { Fredoka, Nunito, Space_Mono } from 'next/font/google';
 
-export const hnkani = localFont({
-  src: [
-    { path: '../app/fonts/HNkani.ttf', weight: '400', style: 'normal' },
-    { path: '../app/fonts/HNkani-Italic.ttf', weight: '400', style: 'italic' },
-  ],
-  variable: '--font-hnkani',
+export const fredoka = Fredoka({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-fredoka',
   display: 'swap',
 });
 
@@ -34,4 +30,4 @@ export const spaceMono = Space_Mono({
 });
 
 /** Join all font variable classes for the <body> className. */
-export const fontVariables = `${hnkani.variable} ${nunito.variable} ${spaceMono.variable}`;
+export const fontVariables = `${fredoka.variable} ${nunito.variable} ${spaceMono.variable}`;

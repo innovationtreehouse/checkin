@@ -10,7 +10,7 @@ const read = (...p: string[]) => readFileSync(join(repoRoot, ...p), 'utf8');
  */
 describe('branding & seed wiring', () => {
   /**
-   * The next/font CSS variables (--font-hnkani/-nunito/-space-mono) must live on <html>,
+   * The next/font CSS variables (--font-fredoka/-nunito/-space-mono) must live on <html>,
    * the same scope where MantineProvider declares --mantine-font-family: var(--font-nunito).
    * When they were on <body>, those vars were undefined at :root, every font-family resolved
    * to an invalid var(), and the whole document fell back to the UA default serif.

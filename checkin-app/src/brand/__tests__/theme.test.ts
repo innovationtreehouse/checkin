@@ -31,7 +31,7 @@ describe('treehouse brand theme', () => {
   it('references the brand font CSS variables in the right slots', () => {
     expect(theme.fontFamily).toContain('var(--font-nunito)');
     expect(theme.fontFamilyMonospace).toContain('var(--font-space-mono)');
-    expect(theme.headings?.fontFamily).toContain('var(--font-hnkani)');
+    expect(theme.headings?.fontFamily).toContain('var(--font-fredoka)');
   });
 
   it('inherits the base theme (shape scale) when folded into createTheme', () => {
