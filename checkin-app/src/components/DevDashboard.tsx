@@ -34,6 +34,7 @@ interface PersonaOption {
     id: number;
     email: string;
     name: string | null;
+    sysadmin?: boolean;
 }
 
 function relTime(when: string | Date): string {
@@ -110,6 +111,16 @@ export default function DevDashboard() {
         });
     };
 
+    // Mint a synthetic logged-out (guest) session: preview the signed-out UX while staying past the
+    // dev org gate, with one-click "Return to me" via the DevImpersonationBar.
+    const viewLoggedOut = () => {
+        setSwitching(true);
+        signIn("persona-mint", {
+            mode: "logout",
+            callbackUrl: window.location.pathname + window.location.search,
+        });
+    };
+
     const runMacro = (fn: () => Promise<ActionResult>) => {
         startTransition(async () => {
             try {
@@ -140,6 +151,8 @@ export default function DevDashboard() {
 
     const lastActivity = activity[0];
     const currentName = session.user.name || session.user.email;
+    // Quick "View as admin" reuses the seeded sysadmin persona (e.g. boardmember@example.com).
+    const adminPersona = personas.find((p) => p.sysadmin);
 
     return (
         <div
@@ -234,6 +247,27 @@ export default function DevDashboard() {
                         <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginBottom: "0.5rem" }}>
                             Currently <strong style={{ color: "#d1d5db" }}>{currentName}</strong>
                             {session.user.impersonatedBy ? <> (you are {session.user.impersonatedBy})</> : null}
+                        </div>
+                        {/* Quick sessions: one-click admin + logged-out, alongside the persona list. */}
+                        <div style={{ display: "flex", gap: "0.35rem", marginBottom: "0.5rem" }}>
+                            {adminPersona && (
+                                <button
+                                    onClick={() => impersonate(String(adminPersona.id))}
+                                    disabled={switching}
+                                    style={{ ...macroBtn(switching), flex: 1 }}
+                                    title={`Sysadmin — ${adminPersona.email}`}
+                                >
+                                    🛡 Admin
+                                </button>
+                            )}
+                            <button
+                                onClick={viewLoggedOut}
+                                disabled={switching}
+                                style={{ ...macroBtn(switching), flex: 1 }}
+                                title="Preview the signed-out experience (you can return to yourself)"
+                            >
+                                🔓 Logged out
+                            </button>
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", maxHeight: "9.5rem", overflowY: "auto" }}>
                             {personas.length === 0 && (
