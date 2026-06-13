@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
+import { notifyNavRefresh } from '@/lib/nav-refresh';
 import {
   Alert,
   Box,
@@ -83,6 +84,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
       if (res.ok) {
         // Check status again to dismiss the modal
         await checkStatus();
+        notifyNavRefresh();
       } else {
         const data = await res.json();
         setError(data.error || 'Failed to save information');

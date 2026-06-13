@@ -9,6 +9,7 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { formatDateTime } from '@/lib/time';
+import { notifyNavRefresh } from '@/lib/nav-refresh';
 
 type PaymentPlanRequest = {
   programId: number;
@@ -75,6 +76,7 @@ export default function PaymentPlansPage() {
 
       if (res.ok) {
         setRequests(prev => prev.filter(r => !(r.programId === programId && r.participantId === participantId)));
+        notifyNavRefresh();
       } else {
         const data = await res.json();
         notifications.show({ color: 'red', message: data.error || "Failed to approve." });

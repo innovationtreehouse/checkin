@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
 import { formatDate, formatTime, formatDateTime } from '@/lib/time';
 import SafetyLinksPanel from '@/components/SafetyLinksPanel';
+import TodoCard from '@/components/TodoCard';
+import { notifyNavRefresh } from '@/lib/nav-refresh';
 
 type Member = { id: number; name?: string; email?: string; dob?: string; phone?: string };
 type HouseholdData = {
@@ -100,6 +102,7 @@ export default function HouseholdPage() {
       if (res.ok && householdRes.ok) {
         setMessage("Settings updated successfully!");
         fetchHousehold();
+        notifyNavRefresh();
       } else {
         setMessage("Failed to update some settings.");
       }
@@ -212,6 +215,7 @@ export default function HouseholdPage() {
   return (
     <Container size="md" py="md">
       <Stack>
+        <TodoCard />
         <Card withBorder radius="md" padding="lg">
           <Group justify="space-between" align="center" wrap="wrap" mb="md">
             <Title order={1}>{household?.name || 'My Household'}</Title>
@@ -338,7 +342,7 @@ export default function HouseholdPage() {
                 <TextInput label="Address" value={address} onChange={(e) => setAddress(e.currentTarget.value)} placeholder="123 Main St, City, ST 12345" />
               </Card>
 
-              <Card withBorder radius="md" padding="md">
+              <Card withBorder radius="md" padding="md" id="emergency-contact" style={{ scrollMarginTop: 80 }}>
                 <Title order={5} c="yellow">Emergency Contact</Title>
                 <Text size="sm" c="dimmed" mb="sm">Required for all households. This contact applies to all members of this household.</Text>
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>

@@ -33,6 +33,8 @@ import Link from 'next/link';
 import { brand } from '@/brand';
 import { useIsDevInstance } from '@/components/EnvProvider';
 import { BuildInfoFooter } from '@/components/BuildInfoFooter';
+import { useTodoCounts } from '@/hooks/useTodoCounts';
+import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 
 type SessionUser = {
   sysadmin?: boolean;
@@ -74,6 +76,24 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+/** Todo-count badge value for a nav item, or 0 when nothing is due / unknown. */
+function todoCountFor(href: string, counts: TodoCounts | null): number {
+  if (!counts) return 0;
+  switch (href) {
+    case '/household':
+      return counts.member.household.length;
+    case '/programs':
+      return counts.member.programs.length;
+    case '/admin':
+      // Top-level roll-up of the board's queue; per-queue badges live in the admin sub-nav.
+      return counts.admin
+        ? counts.admin.membership + counts.admin.programsPending + counts.admin.safetyLinks
+        : 0;
+    default:
+      return 0;
+  }
+}
+
 function ColorSchemeToggle() {
   const { setColorScheme } = useMantineColorScheme();
   const computed = useComputedColorScheme('light', { getInitialValueInEffect: true });
@@ -99,6 +119,8 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   const isDevInstance = useIsDevInstance();
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure(false);
+  // Fetch before any early return so the hook order stays stable (rules of hooks).
+  const todoCounts = useTodoCounts(!!session);
 
   // Kiosk mode (mode=kiosk param or valid cert signature present): render full-screen,
   // no app chrome, cursor hidden — preserves the unattended Raspberry-Pi board behavior.
@@ -195,6 +217,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
             // On the colored sidebar all text is white; the 'light' variant gives a soft
             // translucent overlay on the active item rather than a harsh solid fill.
             const sidebarText = onColoredSidebar ? 'var(--mantine-color-white)' : undefined;
+            const todoCount = todoCountFor(item.href, todoCounts);
             return (
               <NavLink
                 key={item.href}
@@ -202,6 +225,18 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 label={item.label}
                 leftSection={item.icon}
+                rightSection={
+                  todoCount > 0 ? (
+                    <Badge
+                      size="xs"
+                      color="treehouseGreen"
+                      variant="filled"
+                      aria-label={`${todoCount} item${todoCount === 1 ? '' : 's'} need attention`}
+                    >
+                      {todoCount}
+                    </Badge>
+                  ) : undefined
+                }
                 active={active}
                 variant="light"
                 color={brand.nav.accent}

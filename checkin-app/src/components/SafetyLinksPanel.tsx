@@ -16,6 +16,7 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconAlertTriangle, IconPlus } from "@tabler/icons-react";
+import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 const RELATIONSHIP_TYPES = [
     { value: "FAMILY", label: "Family" },
@@ -106,6 +107,7 @@ export default function SafetyLinksPanel() {
             setCounterpartyContact("");
             setDescription("");
             load();
+            notifyNavRefresh();
         } finally {
             setSubmitting(false);
         }
@@ -113,8 +115,10 @@ export default function SafetyLinksPanel() {
 
     async function act(id: number, action: "renew" | "withdraw") {
         const res = await fetch(`/api/safety-links/${id}/${action}`, { method: "POST" });
-        if (res.ok) load();
-        else {
+        if (res.ok) {
+            load();
+            notifyNavRefresh();
+        } else {
             const body = await res.json().catch(() => ({}));
             setError(body.error ?? "Action failed.");
         }
