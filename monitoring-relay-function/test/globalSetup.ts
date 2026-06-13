@@ -1,0 +1,14 @@
+/**
+ * Boots an ephemeral, migration-fresh monitoring Postgres for this function's integration
+ * tier. The relay owns no schema of its own — it drains @inventory/monitoring-db's outbox —
+ * so migrateCwd points at the schema-owning package (monitoring-db), exactly as s-replay
+ * points at s-ingest-core.
+ */
+import { fileURLToPath } from "node:url";
+import { pgGlobalSetup } from "@inventory/pg-test-harness";
+
+export default pgGlobalSetup({
+  migrateCwd: fileURLToPath(new URL("../../packages/monitoring-db", import.meta.url)),
+  envVar: "MONITORING_DATABASE_URL",
+  provideKey: "monitoringDbUrl",
+});
