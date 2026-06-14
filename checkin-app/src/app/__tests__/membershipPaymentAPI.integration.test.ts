@@ -19,7 +19,8 @@ jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }
 
 const TAG = 'payment-test';
 const WEBHOOK_SECRET = 'shopify-test-secret';
-const CHECKOUT_URL = 'https://shop.example/cart/4567:1';
+const STORE_DOMAIN = 'shop.example';
+const VARIANT_ID = '4567';
 const DISCOUNT_CODE = 'VOLUNTEER';
 
 function asBoard(id: number) {
@@ -44,7 +45,8 @@ describe('Membership payment API', () => {
     let volProc: number;
     let certProc: number;
     const prevWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
-    let prevSettings: { normalDuesCents: number; volunteerDuesCents: number; membershipCheckoutUrl: string | null; volunteerDiscountCode: string | null } | null = null;
+    const prevStoreDomain = process.env.SHOPIFY_STORE_DOMAIN;
+    let prevSettings: { normalDuesCents: number; volunteerDuesCents: number; membershipVariantId: string | null; volunteerDiscountCode: string | null } | null = null;
 
     async function makeProc(label: string, isVolunteer: boolean, withLead = false) {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
@@ -73,12 +75,13 @@ describe('Membership payment API', () => {
 
     beforeAll(async () => {
         process.env.SHOPIFY_WEBHOOK_SECRET = WEBHOOK_SECRET;
+        process.env.SHOPIFY_STORE_DOMAIN = STORE_DOMAIN;
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-        prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents, membershipCheckoutUrl: existing.membershipCheckoutUrl, volunteerDiscountCode: existing.volunteerDiscountCode } : null;
+        prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents, membershipVariantId: existing.membershipVariantId, volunteerDiscountCode: existing.volunteerDiscountCode } : null;
         const settingsData = {
             normalDuesCents: 10000,
             volunteerDuesCents: 2500,
-            membershipCheckoutUrl: CHECKOUT_URL,
+            membershipVariantId: VARIANT_ID,
             volunteerDiscountCode: DISCOUNT_CODE,
         };
         await prisma.boardSettings.upsert({
@@ -100,6 +103,8 @@ describe('Membership payment API', () => {
         if (prevSettings) await prisma.boardSettings.update({ where: { id: 1 }, data: prevSettings });
         if (prevWebhookSecret === undefined) delete process.env.SHOPIFY_WEBHOOK_SECRET;
         else process.env.SHOPIFY_WEBHOOK_SECRET = prevWebhookSecret;
+        if (prevStoreDomain === undefined) delete process.env.SHOPIFY_STORE_DOMAIN;
+        else process.env.SHOPIFY_STORE_DOMAIN = prevStoreDomain;
         await prisma.$disconnect();
     });
 
@@ -111,14 +116,14 @@ describe('Membership payment API', () => {
     it('builds a checkout link to the membership product (no discount for normal)', async () => {
         const res = await ensurePaymentLink(normalProc);
         expect(res.amountCents).toBe(10000);
-        expect(res.checkoutUrl).toBe(`${CHECKOUT_URL}?attributes[Membership_Process_ID]=${normalProc}`);
+        expect(res.checkoutUrl).toBe(`https://${STORE_DOMAIN}/cart/${VARIANT_ID}:1?attributes[Membership_Process_ID]=${normalProc}`);
         expect(res.checkoutUrl).not.toContain('discount=');
     });
 
     it('uses the volunteer rate and appends the discount code for a volunteer household', async () => {
         const res = await ensurePaymentLink(volProc);
         expect(res.amountCents).toBe(2500);
-        expect(res.checkoutUrl).toBe(`${CHECKOUT_URL}?discount=${DISCOUNT_CODE}&attributes[Membership_Process_ID]=${volProc}`);
+        expect(res.checkoutUrl).toBe(`https://${STORE_DOMAIN}/cart/${VARIANT_ID}:1?discount=${DISCOUNT_CODE}&attributes[Membership_Process_ID]=${volProc}`);
     });
 
     it('resolves the payment link for the calling user', async () => {

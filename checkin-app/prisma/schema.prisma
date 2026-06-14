@@ -336,10 +336,11 @@ model BoardSettings {
   volunteerDuesCents         Int       @default(0)
   /// @sensitivity:public
   membershipYearBoundary     DateTime?
-  /// Shopify product/checkout permalink the "Pay with Shopify" button links to
-  /// (e.g. https://store.myshopify.com/cart/<variantId>:1). Both tiers use it.
+  /// Shopify variant ID of the membership product everyone checks out through.
+  /// The "Pay with Shopify" link is built from it as
+  /// https://<SHOPIFY_STORE_DOMAIN>/cart/<membershipVariantId>:1.
   /// @sensitivity:internal
-  membershipCheckoutUrl      String?
+  membershipVariantId        String?
   /// Discount code (created in Shopify by the board) appended to the checkout
   /// link for volunteer households so Shopify applies their discount.
   /// @sensitivity:internal

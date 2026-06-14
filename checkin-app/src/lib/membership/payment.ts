@@ -31,48 +31,54 @@ export async function computeDuesCents(isVolunteer: boolean): Promise<number> {
 }
 
 /**
- * Build the Shopify checkout link for a membership process. Both tiers point at
- * the same product (baseUrl); volunteers get `discount=<code>` appended so
- * Shopify applies their discount at checkout. The process id rides along as a
- * cart attribute (`attributes[Membership_Process_ID]`) so the orders/paid
- * webhook can match the payment back to this application.
+ * Build the Shopify cart-permalink checkout link for a membership process. Both
+ * tiers point at the same product variant; volunteers get `discount=<code>`
+ * appended so Shopify applies their discount at checkout. The process id rides
+ * along as a cart attribute (`attributes[Membership_Process_ID]`) so the
+ * orders/paid webhook can match the payment back to this application.
  */
-export function buildMembershipCheckoutUrl(baseUrl: string, processId: number, discountCode: string | null): string {
-    const sep = baseUrl.includes("?") ? "&" : "?";
+export function buildMembershipCheckoutUrl(
+    storeDomain: string,
+    variantId: string,
+    processId: number,
+    discountCode: string | null,
+): string {
     const parts: string[] = [];
     if (discountCode) parts.push(`discount=${encodeURIComponent(discountCode)}`);
     parts.push(`attributes[Membership_Process_ID]=${processId}`);
-    return `${baseUrl}${sep}${parts.join("&")}`;
+    return `https://${storeDomain}/cart/${variantId}:1?${parts.join("&")}`;
 }
 
 /**
  * Resolve the dues amount and the Shopify checkout link for a process in
- * PENDING_PAYMENT. The link is built from BoardSettings.membershipCheckoutUrl,
- * with the volunteer discount code appended for volunteer households. If no
- * checkout URL is configured, returns the amount with a null link.
+ * PENDING_PAYMENT. The link is built from SHOPIFY_STORE_DOMAIN +
+ * BoardSettings.membershipVariantId, with the volunteer discount code appended
+ * for volunteer households. If the store domain or variant isn't configured,
+ * returns the amount with a null link.
  */
 export async function ensurePaymentLink(processId: number): Promise<{ amountCents: number; checkoutUrl: string | null }> {
-    const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
-    if (!process) throw new PaymentError("not_found", "Application not found.");
-    if (process.status !== "PENDING_PAYMENT") throw new PaymentError("wrong_phase", "This application is not awaiting payment.");
+    const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+    if (!proc) throw new PaymentError("not_found", "Application not found.");
+    if (proc.status !== "PENDING_PAYMENT") throw new PaymentError("wrong_phase", "This application is not awaiting payment.");
 
-    const membership = await prisma.membership.findUnique({ where: { id: process.membershipId }, select: { isVolunteer: true } });
+    const membership = await prisma.membership.findUnique({ where: { id: proc.membershipId }, select: { isVolunteer: true } });
     if (!membership) throw new PaymentError("not_found", "Membership not found.");
 
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const amountCents = membership.isVolunteer ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
 
-    const baseUrl = settings?.membershipCheckoutUrl;
-    if (!baseUrl) return { amountCents, checkoutUrl: null };
+    const variantId = settings?.membershipVariantId;
+    const storeDomain = process.env.SHOPIFY_STORE_DOMAIN;
+    if (!variantId || !storeDomain) return { amountCents, checkoutUrl: null };
 
-    // TODO(volunteer-discount): the code is appended to a public cart link, so
-    // entitlement is currently honor-system — nothing stops a non-volunteer from
-    // reusing it, and the orders/paid webhook does not validate it (see
+    // TODO(#278): the code is appended to a public cart link, so entitlement is
+    // currently honor-system — nothing stops a non-volunteer from reusing it, and
+    // the orders/paid webhook does not validate it (see
     // api/webhooks/shopify/route.ts). Long-term: gate the coupon to an
     // auto-managed Shopify customer segment of volunteer households so Shopify
     // enforces who can redeem it.
     const discountCode = membership.isVolunteer ? settings?.volunteerDiscountCode ?? null : null;
-    return { amountCents, checkoutUrl: buildMembershipCheckoutUrl(baseUrl, processId, discountCode) };
+    return { amountCents, checkoutUrl: buildMembershipCheckoutUrl(storeDomain, variantId, processId, discountCode) };
 }
 
 /** Resolve the caller's household PENDING_PAYMENT process and ensure its payment link. */

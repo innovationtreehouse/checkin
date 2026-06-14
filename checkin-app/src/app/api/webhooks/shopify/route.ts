@@ -65,7 +65,7 @@ export async function POST(req: Request) {
 
         // Membership payment → activate the household membership.
         //
-        // TODO(volunteer-discount): we trust the Membership_Process_ID rather than
+        // TODO(#278): we trust the Membership_Process_ID rather than
         // validating the order. The volunteer discount is a self-serve code on a
         // public cart link, so a non-volunteer could append ?discount=<code> and
         // underpay — and this handler would still activate them. We do NOT check

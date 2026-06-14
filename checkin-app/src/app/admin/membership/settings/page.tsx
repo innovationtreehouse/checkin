@@ -10,7 +10,7 @@ interface Settings {
   normalDuesCents: number;
   volunteerDuesCents: number;
   membershipYearBoundary: string | null;
-  membershipCheckoutUrl: string | null;
+  membershipVariantId: string | null;
   volunteerDiscountCode: string | null;
 }
 interface Designation {
@@ -26,7 +26,7 @@ export default function MembershipSettingsPage() {
   const [volunteerDues, setVolunteerDues] = useState("0");
   const [boundary, setBoundary] = useState("");
   const [boundaryUnlocked, setBoundaryUnlocked] = useState(false);
-  const [checkoutUrl, setCheckoutUrl] = useState("");
+  const [variantId, setVariantId] = useState("");
   const [discountCode, setDiscountCode] = useState("");
 
   const [designations, setDesignations] = useState<Designation[]>([]);
@@ -53,7 +53,7 @@ export default function MembershipSettingsPage() {
         setNormalDues(dollars(settings.normalDuesCents));
         setVolunteerDues(dollars(settings.volunteerDuesCents));
         setBoundary(settings.membershipYearBoundary ? settings.membershipYearBoundary.slice(0, 10) : "");
-        setCheckoutUrl(settings.membershipCheckoutUrl ?? "");
+        setVariantId(settings.membershipVariantId ?? "");
         setDiscountCode(settings.volunteerDiscountCode ?? "");
       }
       if (dRes.ok) setDesignations((await dRes.json()).designations || []);
@@ -74,7 +74,7 @@ export default function MembershipSettingsPage() {
         body: JSON.stringify({
           normalDuesCents: Math.round(parseFloat(normalDues || "0") * 100),
           volunteerDuesCents: Math.round(parseFloat(volunteerDues || "0") * 100),
-          membershipCheckoutUrl: checkoutUrl.trim() || null,
+          membershipVariantId: variantId.trim() || null,
           volunteerDiscountCode: discountCode.trim() || null,
           ...(boundaryUnlocked ? { membershipYearBoundary: boundary || null } : {}),
         }),
@@ -172,11 +172,12 @@ export default function MembershipSettingsPage() {
             <Title order={4} mt="lg" mb="sm">Shopify checkout</Title>
             <Stack gap="md">
               <TextInput
-                label="Membership product checkout link"
-                description="The Shopify product/cart permalink the “Pay with Shopify” button sends households to, e.g. https://your-store.myshopify.com/cart/<variantId>:1"
-                placeholder="https://your-store.myshopify.com/cart/1234567890:1"
-                value={checkoutUrl}
-                onChange={(e) => setCheckoutUrl(e.currentTarget.value)}
+                label="Membership product variant ID"
+                description="The Shopify variant ID of the membership product. We build the “Pay with Shopify” link from it as https://<store>/cart/<variantId>:1."
+                placeholder="1234567890"
+                w={260}
+                value={variantId}
+                onChange={(e) => setVariantId(e.currentTarget.value)}
               />
               <TextInput
                 label="Volunteer discount code"

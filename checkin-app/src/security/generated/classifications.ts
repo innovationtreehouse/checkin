@@ -86,7 +86,7 @@ export const classifications = {
         normalDuesCents: 'public',
         volunteerDuesCents: 'public',
         membershipYearBoundary: 'public',
-        membershipCheckoutUrl: 'internal',
+        membershipVariantId: 'internal',
         volunteerDiscountCode: 'internal',
         shopifyMembershipProductId: 'internal',
         shopifyNormalVariantId: 'internal',
