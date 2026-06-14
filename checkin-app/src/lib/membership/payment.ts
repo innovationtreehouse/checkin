@@ -1,16 +1,18 @@
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { logger } from "@/lib/logger";
-import { createMembershipDraftOrder } from "@/lib/shopify";
 
 /**
  * Payment phase (PENDING_PAYMENT -> ACTIVE).
  *
- * Our system is the source of truth for dues (volunteer vs normal, from
- * BoardSettings). We create a per-household Shopify draft order at that price and
- * hand back its unique invoice URL. Payment (orders/paid webhook) OR a board
- * "payment-plan certified" override both converge on activate(): one place that
- * flips the membership ACTIVE, records how, and sends one congrats email.
+ * Every household pays through the same Shopify membership product (its
+ * checkout permalink is set in BoardSettings). Volunteer households get the
+ * board's discount code appended to that link so Shopify applies their discount
+ * at checkout — our dues figures are only what applicants *see*. The membership
+ * process id rides along as a cart attribute so the orders/paid webhook can
+ * match the payment back to this application. Payment (orders/paid webhook) OR a
+ * board "payment-plan certified" override both converge on activate(): one place
+ * that flips the membership ACTIVE, records how, and sends one congrats email.
  */
 
 const SYSTEM_ACTOR = 0;
@@ -29,28 +31,42 @@ export async function computeDuesCents(isVolunteer: boolean): Promise<number> {
 }
 
 /**
- * Ensure a payment link exists for a process in PENDING_PAYMENT, creating the
- * Shopify draft order on first call. Idempotent: returns the stored link after.
- * If Shopify isn't configured, returns the amount with a null link.
+ * Build the Shopify checkout link for a membership process. Both tiers point at
+ * the same product (baseUrl); volunteers get `discount=<code>` appended so
+ * Shopify applies their discount at checkout. The process id rides along as a
+ * cart attribute (`attributes[Membership_Process_ID]`) so the orders/paid
+ * webhook can match the payment back to this application.
  */
-export async function ensurePaymentLink(processId: number): Promise<{ amountCents: number; invoiceUrl: string | null }> {
+export function buildMembershipCheckoutUrl(baseUrl: string, processId: number, discountCode: string | null): string {
+    const sep = baseUrl.includes("?") ? "&" : "?";
+    const parts: string[] = [];
+    if (discountCode) parts.push(`discount=${encodeURIComponent(discountCode)}`);
+    parts.push(`attributes[Membership_Process_ID]=${processId}`);
+    return `${baseUrl}${sep}${parts.join("&")}`;
+}
+
+/**
+ * Resolve the dues amount and the Shopify checkout link for a process in
+ * PENDING_PAYMENT. The link is built from BoardSettings.membershipCheckoutUrl,
+ * with the volunteer discount code appended for volunteer households. If no
+ * checkout URL is configured, returns the amount with a null link.
+ */
+export async function ensurePaymentLink(processId: number): Promise<{ amountCents: number; checkoutUrl: string | null }> {
     const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new PaymentError("not_found", "Application not found.");
     if (process.status !== "PENDING_PAYMENT") throw new PaymentError("wrong_phase", "This application is not awaiting payment.");
 
     const membership = await prisma.membership.findUnique({ where: { id: process.membershipId }, select: { isVolunteer: true } });
     if (!membership) throw new PaymentError("not_found", "Membership not found.");
-    const amountCents = await computeDuesCents(membership.isVolunteer);
-    if (process.shopifyInvoiceUrl) return { amountCents, invoiceUrl: process.shopifyInvoiceUrl };
 
-    const draft = await createMembershipDraftOrder({ processId, amountCents, isVolunteer: membership.isVolunteer });
-    if (!draft) return { amountCents, invoiceUrl: null };
+    const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+    const amountCents = membership.isVolunteer ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
 
-    await prisma.membershipProcess.update({
-        where: { id: processId },
-        data: { shopifyDraftOrderId: draft.draftOrderId, shopifyInvoiceUrl: draft.invoiceUrl },
-    });
-    return { amountCents, invoiceUrl: draft.invoiceUrl };
+    const baseUrl = settings?.membershipCheckoutUrl;
+    if (!baseUrl) return { amountCents, checkoutUrl: null };
+
+    const discountCode = membership.isVolunteer ? settings?.volunteerDiscountCode ?? null : null;
+    return { amountCents, checkoutUrl: buildMembershipCheckoutUrl(baseUrl, processId, discountCode) };
 }
 
 /** Resolve the caller's household PENDING_PAYMENT process and ensure its payment link. */

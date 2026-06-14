@@ -2,8 +2,9 @@
  * @jest-environment node
  */
 /**
- * Integration tests for the payment phase: dues, the Shopify invoice link,
- * the orders/paid webhook -> activate(), and the board certify override.
+ * Integration tests for the payment phase: dues, the Shopify checkout link
+ * (with the volunteer discount code), the orders/paid webhook -> activate(),
+ * and the board certify override.
  */
 
 import crypto from 'crypto';
@@ -15,14 +16,11 @@ import { getServerSession } from 'next-auth/next';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
-jest.mock('@/lib/shopify', () => ({
-    createMembershipDraftOrder: jest.fn().mockResolvedValue({ draftOrderId: 'draft-1', invoiceUrl: 'https://shop.example/invoice/abc' }),
-}));
-
-import { createMembershipDraftOrder } from '@/lib/shopify';
 
 const TAG = 'payment-test';
 const WEBHOOK_SECRET = 'shopify-test-secret';
+const CHECKOUT_URL = 'https://shop.example/cart/4567:1';
+const DISCOUNT_CODE = 'VOLUNTEER';
 
 function asBoard(id: number) {
     (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: true } });
@@ -46,7 +44,7 @@ describe('Membership payment API', () => {
     let volProc: number;
     let certProc: number;
     const prevWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
-    let prevSettings: { normalDuesCents: number; volunteerDuesCents: number } | null = null;
+    let prevSettings: { normalDuesCents: number; volunteerDuesCents: number; membershipCheckoutUrl: string | null; volunteerDiscountCode: string | null } | null = null;
 
     async function makeProc(label: string, isVolunteer: boolean, withLead = false) {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
@@ -76,11 +74,17 @@ describe('Membership payment API', () => {
     beforeAll(async () => {
         process.env.SHOPIFY_WEBHOOK_SECRET = WEBHOOK_SECRET;
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-        prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents } : null;
+        prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents, membershipCheckoutUrl: existing.membershipCheckoutUrl, volunteerDiscountCode: existing.volunteerDiscountCode } : null;
+        const settingsData = {
+            normalDuesCents: 10000,
+            volunteerDuesCents: 2500,
+            membershipCheckoutUrl: CHECKOUT_URL,
+            volunteerDiscountCode: DISCOUNT_CODE,
+        };
         await prisma.boardSettings.upsert({
             where: { id: 1 },
-            create: { id: 1, normalDuesCents: 10000, volunteerDuesCents: 2500 },
-            update: { normalDuesCents: 10000, volunteerDuesCents: 2500 },
+            create: { id: 1, ...settingsData },
+            update: settingsData,
         });
         await wipe();
 
@@ -104,21 +108,17 @@ describe('Membership payment API', () => {
         expect(await computeDuesCents(true)).toBe(2500);
     });
 
-    it('creates + stores the Shopify invoice link, and is idempotent', async () => {
-        (createMembershipDraftOrder as jest.Mock).mockClear();
-        const first = await ensurePaymentLink(normalProc);
-        expect(first).toEqual({ amountCents: 10000, invoiceUrl: 'https://shop.example/invoice/abc' });
-        const stored = await prisma.membershipProcess.findUnique({ where: { id: normalProc } });
-        expect(stored?.shopifyInvoiceUrl).toBe('https://shop.example/invoice/abc');
-
-        const second = await ensurePaymentLink(normalProc);
-        expect(second.invoiceUrl).toBe('https://shop.example/invoice/abc');
-        expect(createMembershipDraftOrder as jest.Mock).toHaveBeenCalledTimes(1); // not re-created
+    it('builds a checkout link to the membership product (no discount for normal)', async () => {
+        const res = await ensurePaymentLink(normalProc);
+        expect(res.amountCents).toBe(10000);
+        expect(res.checkoutUrl).toBe(`${CHECKOUT_URL}?attributes[Membership_Process_ID]=${normalProc}`);
+        expect(res.checkoutUrl).not.toContain('discount=');
     });
 
-    it('uses the volunteer rate for a volunteer household', async () => {
+    it('uses the volunteer rate and appends the discount code for a volunteer household', async () => {
         const res = await ensurePaymentLink(volProc);
         expect(res.amountCents).toBe(2500);
+        expect(res.checkoutUrl).toBe(`${CHECKOUT_URL}?discount=${DISCOUNT_CODE}&attributes[Membership_Process_ID]=${volProc}`);
     });
 
     it('resolves the payment link for the calling user', async () => {

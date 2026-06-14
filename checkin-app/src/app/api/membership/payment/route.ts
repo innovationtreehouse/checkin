@@ -4,7 +4,7 @@ import { ensurePaymentLinkForUser, PaymentError } from "@/lib/membership/payment
 
 export const dynamic = "force-dynamic";
 
-// GET /api/membership/payment — the caller's dues amount + Shopify invoice link.
+// GET /api/membership/payment — the caller's dues amount + Shopify checkout link.
 export const GET = withAuth({}, async (_req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     try {
