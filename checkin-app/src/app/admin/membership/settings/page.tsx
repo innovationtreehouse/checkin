@@ -10,6 +10,8 @@ interface Settings {
   normalDuesCents: number;
   volunteerDuesCents: number;
   membershipYearBoundary: string | null;
+  membershipVariantId: string | null;
+  volunteerDiscountCode: string | null;
 }
 interface Designation {
   id: number;
@@ -24,6 +26,8 @@ export default function MembershipSettingsPage() {
   const [volunteerDues, setVolunteerDues] = useState("0");
   const [boundary, setBoundary] = useState("");
   const [boundaryUnlocked, setBoundaryUnlocked] = useState(false);
+  const [variantId, setVariantId] = useState("");
+  const [discountCode, setDiscountCode] = useState("");
 
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [newEmail, setNewEmail] = useState("");
@@ -49,6 +53,8 @@ export default function MembershipSettingsPage() {
         setNormalDues(dollars(settings.normalDuesCents));
         setVolunteerDues(dollars(settings.volunteerDuesCents));
         setBoundary(settings.membershipYearBoundary ? settings.membershipYearBoundary.slice(0, 10) : "");
+        setVariantId(settings.membershipVariantId ?? "");
+        setDiscountCode(settings.volunteerDiscountCode ?? "");
       }
       if (dRes.ok) setDesignations((await dRes.json()).designations || []);
     } finally {
@@ -68,6 +74,8 @@ export default function MembershipSettingsPage() {
         body: JSON.stringify({
           normalDuesCents: Math.round(parseFloat(normalDues || "0") * 100),
           volunteerDuesCents: Math.round(parseFloat(volunteerDues || "0") * 100),
+          membershipVariantId: variantId.trim() || null,
+          volunteerDiscountCode: discountCode.trim() || null,
           ...(boundaryUnlocked ? { membershipYearBoundary: boundary || null } : {}),
         }),
       });
@@ -157,9 +165,29 @@ export default function MembershipSettingsPage() {
 
             <Alert color="yellow" variant="light" mt="md">
               ⚠️ These amounts only set what applicants <strong>see</strong> in the membership
-              process. They do <strong>not</strong> change what members are actually charged — the
-              matching Shopify variant prices must be updated separately.
+              process. What members are actually charged is the price of the Shopify product below
+              (less the volunteer discount code, for volunteer households).
             </Alert>
+
+            <Title order={4} mt="lg" mb="sm">Shopify checkout</Title>
+            <Stack gap="md">
+              <TextInput
+                label="Membership product variant ID"
+                description="The Shopify variant ID of the membership product. We build the “Pay with Shopify” link from it as https://<store>/cart/<variantId>:1."
+                placeholder="1234567890"
+                w={260}
+                value={variantId}
+                onChange={(e) => setVariantId(e.currentTarget.value)}
+              />
+              <TextInput
+                label="Volunteer discount code"
+                description="Create this discount in Shopify, then paste the code here. It is appended to the checkout link for volunteer households only."
+                placeholder="VOLUNTEER"
+                w={260}
+                value={discountCode}
+                onChange={(e) => setDiscountCode(e.currentTarget.value)}
+              />
+            </Stack>
 
             <Alert color="yellow" variant="light" mt="md" title="Membership-year boundary">
               <Text size="sm" mb="sm">

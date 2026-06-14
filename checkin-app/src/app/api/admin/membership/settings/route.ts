@@ -14,7 +14,8 @@ export const GET = withAuth({ roles: ["sysadmin", "boardMember"] }, async () => 
 
 /**
  * PUT /api/admin/membership/settings — update board settings.
- * Body may include: normalDuesCents, volunteerDuesCents, membershipYearBoundary (ISO|null).
+ * Body may include: normalDuesCents, volunteerDuesCents, membershipYearBoundary (ISO|null),
+ * membershipVariantId (string|null), volunteerDiscountCode (string|null).
  * Dues must be finite and >= 0; an invalid value rejects the whole update (400) so the
  * previous value survives rather than silently collapsing to zero. (The Averity consent
  * link is an env var, not a board setting.)
@@ -25,6 +26,8 @@ export const PUT = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, 
         normalDuesCents?: number;
         volunteerDuesCents?: number;
         membershipYearBoundary?: string | null;
+        membershipVariantId?: string | null;
+        volunteerDiscountCode?: string | null;
     };
     try {
         body = await req.json();
@@ -44,6 +47,14 @@ export const PUT = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, 
     }
     if (body.membershipYearBoundary !== undefined) {
         data.membershipYearBoundary = body.membershipYearBoundary ? new Date(body.membershipYearBoundary) : null;
+    }
+    if (body.membershipVariantId !== undefined) {
+        const variantId = body.membershipVariantId?.trim();
+        if (variantId && !/^\d+$/.test(variantId)) return NextResponse.json({ error: "membershipVariantId must be a numeric Shopify variant ID" }, { status: 400 });
+        data.membershipVariantId = variantId || null;
+    }
+    if (body.volunteerDiscountCode !== undefined) {
+        data.volunteerDiscountCode = body.volunteerDiscountCode?.trim() || null;
     }
 
     const settings = await prisma.boardSettings.upsert({

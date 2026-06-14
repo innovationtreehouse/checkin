@@ -63,7 +63,21 @@ export async function POST(req: Request) {
             }
         }
 
-        // Membership draft-order payment → activate the household membership.
+        // Membership payment → activate the household membership.
+        //
+        // TODO(#278): we trust the Membership_Process_ID rather than
+        // validating the order. The volunteer discount is a self-serve code on a
+        // public cart link, so a non-volunteer could append ?discount=<code> and
+        // underpay — and this handler would still activate them. We do NOT check
+        // entitlement, amount, product, or discount code here.
+        //
+        // Long-term fix: gate the volunteer coupon to an auto-managed Shopify
+        // customer segment (only volunteer households are members of it), so
+        // Shopify itself refuses the code for everyone else and no app-side check
+        // is needed. Until that exists, the order payload carries enough to
+        // validate manually if we want a stopgap: order.discount_codes[].code vs
+        // BoardSettings.volunteerDiscountCode + membership.isVolunteer, and
+        // order.total_price vs the expected tier dues.
         if (membershipProcessIdStr) {
             const processId = parseInt(membershipProcessIdStr, 10);
             if (!isNaN(processId)) {
