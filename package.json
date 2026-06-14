@@ -4,10 +4,13 @@
   "license": "BSD-4-Clause",
   "workspaces": [
     "packages/*",
-    "*-app"
+    "*-app",
+    "*-function"
   ],
   "scripts": {
     "build": "npm -w checkin-app run build",
+    "build:functions": "npm run build -w s-read-function -w s-replay-function -w monitoring-relay-function -w monitoring-watchdog-function",
+    "build:prisma-layer": "node scripts/build-prisma-layer.mjs",
     "lint": "npm -w checkin-app run lint",
     "test": "npm -w checkin-app run test",
     "test:ci": "npm -w checkin-app run test:ci",
@@ -24,6 +27,7 @@
     ]
   },
   "devDependencies": {
+    "esbuild": "^0.28.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.3.2"
   }
