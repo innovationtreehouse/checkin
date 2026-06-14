@@ -65,6 +65,12 @@ export async function ensurePaymentLink(processId: number): Promise<{ amountCent
     const baseUrl = settings?.membershipCheckoutUrl;
     if (!baseUrl) return { amountCents, checkoutUrl: null };
 
+    // TODO(volunteer-discount): the code is appended to a public cart link, so
+    // entitlement is currently honor-system — nothing stops a non-volunteer from
+    // reusing it, and the orders/paid webhook does not validate it (see
+    // api/webhooks/shopify/route.ts). Long-term: gate the coupon to an
+    // auto-managed Shopify customer segment of volunteer households so Shopify
+    // enforces who can redeem it.
     const discountCode = membership.isVolunteer ? settings?.volunteerDiscountCode ?? null : null;
     return { amountCents, checkoutUrl: buildMembershipCheckoutUrl(baseUrl, processId, discountCode) };
 }
