@@ -1,24 +1,11 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
-import { getIntakeState, startIntake, IntakeError } from "@/lib/membership/intake";
+import { getIntakeState, startIntake } from "@/lib/membership/intake";
+import { intakeErrorResponse } from "@/lib/membership/intakeResponse";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_FOR: Record<IntakeError["code"], number> = {
-    no_household: 400,
-    not_lead: 403,
-    already_member: 409,
-    no_process: 400,
-    incomplete: 400,
-};
-
-function handleError(error: unknown) {
-    if (error instanceof IntakeError) {
-        return NextResponse.json({ error: error.message, code: error.code }, { status: STATUS_FOR[error.code] });
-    }
-    console.error("Membership route error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-}
+const handleError = (error: unknown) => intakeErrorResponse(error, "Membership route error");
 
 // GET /api/membership — the caller's current application state, prefilled.
 export const GET = withAuth({}, async (_req, auth) => {

@@ -70,6 +70,9 @@ export default function MembershipPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
+  // Per-field validation errors, keyed by form field ("address", "emName",
+  // "emPhone", "primaryName"). Drives the red-highlighted inputs.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Intake form fields
   const [address, setAddress] = useState("");
@@ -150,6 +153,43 @@ export default function MembershipPage() {
     setIsError(error);
   };
 
+  // Build an error message from an API response, appending the dev-only `detail`
+  // (the real server failure) when present so an "Internal Server Error" isn't a
+  // dead end. Falls back to a friendly default when the body carries nothing.
+  const apiError = (data: { error?: string; detail?: string } | null | undefined, fallback: string) =>
+    [data?.error, data?.detail].filter(Boolean).join(" — ") || fallback;
+
+  // Clear a single field's error (called as the user edits it).
+  const clearErr = (key: string) =>
+    setFieldErrors((fe) => (fe[key] ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+
+  // Required-field check for submit, mirroring the server's rules so the user
+  // gets instant red-box feedback on every environment (no round-trip needed).
+  const validateIntake = (): Record<string, string> => {
+    const errs: Record<string, string> = {};
+    if (!address.trim()) errs.address = "Home address is required.";
+    if (!emName.trim()) errs.emName = "Emergency contact name is required.";
+    if (!emPhone.trim()) errs.emPhone = "Emergency contact phone is required.";
+    if (!primaryName.trim()) errs.primaryName = "Your name is required.";
+    return errs;
+  };
+
+  // Map the server's field keys (from an `incomplete` submit) onto form inputs —
+  // covers cases the client can't detect locally (e.g. an emergency contact that
+  // is itself a household member).
+  const mapServerFields = (fields?: string[]): Record<string, string> => {
+    const errs: Record<string, string> = {};
+    for (const f of fields ?? []) {
+      if (f === "address") errs.address = "Home address is required.";
+      else if (f === "primaryName") errs.primaryName = "Your name is required.";
+      else if (f === "emergencyContact") {
+        errs.emName = "Add an emergency contact who isn't in your household.";
+        errs.emPhone = "Add an emergency contact who isn't in your household.";
+      }
+    }
+    return errs;
+  };
+
   const startApplication = async () => {
     setSaving(true);
     flash("");
@@ -157,7 +197,7 @@ export default function MembershipPage() {
       const res = await fetch("/api/membership", { method: "POST" });
       const data = await res.json();
       if (res.ok) { hydrate(data.state); notifyNavRefresh(); }
-      else flash(data.error || "Could not start your application.", true);
+      else flash(apiError(data, "Could not start your application."), true);
     } catch {
       flash("Network error.", true);
     } finally {
@@ -189,7 +229,7 @@ export default function MembershipPage() {
       if (res.ok) {
         hydrate(data.state);
         flash("Progress saved.");
-      } else flash(data.error || "Could not save.", true);
+      } else flash(apiError(data, "Could not save."), true);
     } catch {
       flash("Network error.", true);
     } finally {
@@ -198,6 +238,14 @@ export default function MembershipPage() {
   };
 
   const submit = async () => {
+    // Highlight missing required fields up front — instant feedback, no round-trip.
+    const errs = validateIntake();
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) {
+      flash("Please complete the highlighted fields.", true);
+      return;
+    }
+
     setSaving(true);
     flash("");
     try {
@@ -209,16 +257,22 @@ export default function MembershipPage() {
       });
       if (!saveRes.ok) {
         const d = await saveRes.json();
-        flash(d.error || "Could not save.", true);
+        flash(apiError(d, "Could not save."), true);
         return;
       }
       const res = await fetch("/api/membership/intake/submit", { method: "POST" });
       const data = await res.json();
       if (res.ok) {
+        setFieldErrors({});
         hydrate(data.state);
         notifyNavRefresh();
         flash("Submitted! Next: sign your contract and consent to a background check.");
-      } else flash(data.error || "Could not submit.", true);
+      } else {
+        // The server may flag fields the client can't check locally (e.g. an
+        // emergency contact who is a household member) — highlight those too.
+        if (data.fields) setFieldErrors(mapServerFields(data.fields));
+        flash(apiError(data, "Could not submit."), true);
+      }
     } catch {
       flash("Network error.", true);
     } finally {
@@ -233,7 +287,7 @@ export default function MembershipPage() {
       const res = await fetch("/api/membership/renew", { method: "POST" });
       const data = await res.json();
       if (res.ok) { await load(); notifyNavRefresh(); flash("Renewal started."); }
-      else flash(data.error || "Could not start renewal.", true);
+      else flash(apiError(data, "Could not start renewal."), true);
     } catch {
       flash("Network error.", true);
     } finally {
@@ -326,16 +380,16 @@ export default function MembershipPage() {
                 <Stack gap="lg">
                   <section>
                     <Title order={2} mb="sm">Your household</Title>
-                    <TextInput label="Home address" value={address} onChange={(e) => setAddress(e.currentTarget.value)} placeholder="123 Main St, City, State ZIP" />
+                    <TextInput label="Home address" value={address} error={fieldErrors.address} onChange={(e) => { setAddress(e.currentTarget.value); clearErr("address"); }} placeholder="123 Main St, City, State ZIP" />
                     <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md">
-                      <TextInput label="Emergency contact name" value={emName} onChange={(e) => setEmName(e.currentTarget.value)} />
-                      <TextInput label="Emergency contact phone" value={emPhone} onChange={(e) => setEmPhone(e.currentTarget.value)} />
+                      <TextInput label="Emergency contact name" value={emName} error={fieldErrors.emName} onChange={(e) => { setEmName(e.currentTarget.value); clearErr("emName"); }} />
+                      <TextInput label="Emergency contact phone" value={emPhone} error={fieldErrors.emPhone} onChange={(e) => { setEmPhone(e.currentTarget.value); clearErr("emPhone"); }} />
                     </SimpleGrid>
                   </section>
 
                   <section>
                     <Title order={2} mb="sm">Primary parent / guardian</Title>
-                    <TextInput label="Full name" value={primaryName} onChange={(e) => setPrimaryName(e.currentTarget.value)} />
+                    <TextInput label="Full name" value={primaryName} error={fieldErrors.primaryName} onChange={(e) => { setPrimaryName(e.currentTarget.value); clearErr("primaryName"); }} />
                     <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md">
                       <TextInput type="date" label="Date of birth" value={primaryDob} onChange={(e) => setPrimaryDob(e.currentTarget.value)} />
                       <TextInput label="Allergies (optional)" value={primaryAllergies} onChange={(e) => setPrimaryAllergies(e.currentTarget.value)} />

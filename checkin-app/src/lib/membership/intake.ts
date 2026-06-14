@@ -15,7 +15,17 @@ import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergen
  */
 
 export class IntakeError extends Error {
-    constructor(public readonly code: "no_household" | "not_lead" | "already_member" | "no_process" | "incomplete", message: string) {
+    /**
+     * @param fields  form field keys this error applies to, so the client can
+     *                highlight the offending inputs (e.g. an `incomplete` submit).
+     *                Keys match the intake form: "address", "emergencyContact",
+     *                "primaryName".
+     */
+    constructor(
+        public readonly code: "no_household" | "not_lead" | "already_member" | "no_process" | "incomplete",
+        message: string,
+        public readonly fields?: string[],
+    ) {
         super(message);
         this.name = "IntakeError";
     }
@@ -283,17 +293,23 @@ export async function submitIntake(userId: number) {
         .sort((a, b) => b.id - a.id)[0];
     if (!process) throw new IntakeError("no_process", "No application is awaiting your information.");
 
-    const missing: string[] = [];
-    if (!household.address?.trim()) missing.push("home address");
+    // Each missing requirement carries the form field key to highlight + a label
+    // for the summary message.
+    const missing: { field: string; label: string }[] = [];
+    if (!household.address?.trim()) missing.push({ field: "address", label: "home address" });
     // A household must keep >= 1 valid (non-member, complete) emergency contact.
     const hasValidContact = household.emergencyContacts.some(
         (c) => c.conflictParticipantId === null && c.name.trim() && c.phone.trim(),
     );
-    if (!hasValidContact) missing.push("a valid emergency contact (someone outside the household)");
+    if (!hasValidContact) missing.push({ field: "emergencyContact", label: "a valid emergency contact (someone outside the household)" });
     const primary = household.participants.find((p) => p.id === userId);
-    if (!primary?.name?.trim()) missing.push("primary parent name");
+    if (!primary?.name?.trim()) missing.push({ field: "primaryName", label: "primary parent name" });
     if (missing.length) {
-        throw new IntakeError("incomplete", `Please complete: ${missing.join(", ")}.`);
+        throw new IntakeError(
+            "incomplete",
+            `Please complete: ${missing.map((m) => m.label).join(", ")}.`,
+            missing.map((m) => m.field),
+        );
     }
 
     const advanced = await prisma.membershipProcess.update({
