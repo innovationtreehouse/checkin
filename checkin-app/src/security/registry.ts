@@ -77,27 +77,47 @@ defineRoute({
     ],
 });
 
-// The caller's own disclosed dual relationships (Safety Links). Self-scoped:
-// the subject sees their_own personal fields (relationship, conditions, status,
-// dates) but never the board's internal notes/decisions.
+// The caller's household trusted adults. Household-scoped: members/leads see the
+// family context (pii band) + the board's shared note (personal) + status/dates,
+// but never the board's internal decision notes.
 defineRoute({
-    endpoint: 'GET /api/safety-links/mine',
-    authorize: 'authenticated',
-    envelope: 'safetyLinks',
+    endpoint: 'GET /api/trusted-adults/mine',
+    authorize: 'household-member',
+    envelope: 'trustedAdults',
     orderedView: [
-        ['authenticated', ['their_own:pii', 'their_own:personal', 'public']],
+        ['authenticated', ['their_households:pii', 'their_households:personal', 'public']],
     ],
 });
 
-// Board's safety-link review queue. Exposes subject + counterparty PII and the
-// board's own internal decision notes, so only sysadmin/board may see it.
+// Board's trusted-adult review queue. Full visibility incl. familyContext (pii)
+// and the board's internal decision notes (internal).
 defineRoute({
-    endpoint: 'GET /api/admin/safety-links',
+    endpoint: 'GET /api/admin/trusted-adults',
     authorize: { anyRole: ['sysadmin', 'boardMember'] },
-    envelope: 'safetyLinks',
+    envelope: 'trustedAdults',
     orderedView: [
         ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
         ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
+// Operational pickup view for keyholders (global) and program leads (the
+// households whose kids they oversee). They get the board's shared note + the
+// adult's name/contact (personal), but NOT the family's board-facing context
+// (pii) or the board's internal notes (internal). The handler restricts which
+// rows are returned; this view is the field-level backstop.
+defineRoute({
+    endpoint: 'GET /api/trusted-adults/operational',
+    authorize: 'authenticated',
+    envelope: 'trustedAdults',
+    orderedView: [
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['keyholder',   ['keyholders:personal', 'their_program_households:personal', 'their_households:personal', 'public']],
+        // Catch-all: program leads (and household members) match here. Scopes are
+        // per-row, so a caller only receives 'personal' on rows where they hold
+        // their_program_households (a kid in their program) or their_households.
+        ['authenticated', ['their_program_households:personal', 'their_households:personal', 'public']],
     ],
 });
 

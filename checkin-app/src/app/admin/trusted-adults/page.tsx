@@ -22,7 +22,7 @@ interface Review {
     status: string;
     decision: string | null;
     decisionNote: string | null;
-    conditions: string | null;
+    sharedNote: string | null;
     effectiveFrom: string | null;
     reviewBy: string | null;
     createdAt: string;
@@ -32,15 +32,19 @@ interface PersonRef {
     name: string | null;
     email: string | null;
 }
-interface SafetyLink {
+interface HouseholdRef {
+    id: number;
+    name: string | null;
+    leads: { participant: PersonRef }[];
+}
+interface TrustedAdult {
     id: number;
     counterpartyName: string | null;
     counterpartyContact: string | null;
-    relationshipType: string;
-    description: string;
+    familyContext: string;
     origin: string;
     createdAt: string;
-    subject: PersonRef | null;
+    household: HouseholdRef | null;
     counterparty: PersonRef | null;
     reviews: Review[];
 }
@@ -49,28 +53,27 @@ const STATUS_COLORS: Record<string, string> = {
     PENDING_BOARD_REVIEW: "yellow",
     PENDING_SUBJECT_ACTION: "orange",
     APPROVED: "green",
-    APPROVED_WITH_CONDITIONS: "teal",
     DENIED: "red",
     EXPIRED: "gray",
     REVOKED: "gray",
 };
 const label = (s: string) => s.replace(/_/g, " ");
 
-export default function AdminSafetyLinksPage() {
-    const [links, setLinks] = useState<SafetyLink[]>([]);
+export default function AdminTrustedAdultsPage() {
+    const [items, setItems] = useState<TrustedAdult[]>([]);
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState<number | null>(null);
-    const [conditions, setConditions] = useState<Record<number, string>>({});
+    const [shared, setShared] = useState<Record<number, string>>({});
     const [message, setMessage] = useState("");
     const [isError, setIsError] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch("/api/admin/safety-links");
+            const res = await fetch("/api/admin/trusted-adults");
             if (res.ok) {
                 const data = await res.json();
-                setLinks(data.safetyLinks || []);
+                setItems(data.trustedAdults || []);
             }
         } finally {
             setLoading(false);
@@ -85,7 +88,7 @@ export default function AdminSafetyLinksPage() {
         setBusyId(reviewId);
         setMessage("");
         try {
-            const res = await fetch("/api/admin/safety-links/decision", {
+            const res = await fetch("/api/admin/trusted-adults/decision", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ reviewId, decision, ...extra }),
@@ -104,15 +107,21 @@ export default function AdminSafetyLinksPage() {
         }
     };
 
-    const override = async (reviewId: number, action: string) => {
+    const override = async (reviewId: number, action: string, extra?: Record<string, unknown>) => {
         setBusyId(reviewId);
         try {
-            const res = await fetch("/api/admin/safety-links/override", {
+            const res = await fetch("/api/admin/trusted-adults/override", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ reviewId, action }),
+                body: JSON.stringify({ reviewId, action, ...extra }),
             });
-            if (res.ok) await load();
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setIsError(true);
+                setMessage(body.error ?? "Override failed.");
+            } else {
+                await load();
+            }
         } finally {
             setBusyId(null);
         }
@@ -129,10 +138,11 @@ export default function AdminSafetyLinksPage() {
     return (
         <Stack p="md">
             <div>
-                <Title order={2}>Safety Links — Board Review</Title>
+                <Title order={2}>Trusted Adults — Board Review</Title>
                 <Text c="dimmed" size="sm">
-                    Disclosed dual relationships awaiting review, awaiting the discloser, or expired. A single board
-                    member&apos;s decision settles each review.
+                    Household-disclosed trusted adults (a.k.a. dual relationships) awaiting review, awaiting the family,
+                    or expired. A single board member settles each. Approving requires a shared note that front-desk
+                    keyholders and program leads will see.
                 </Text>
             </div>
 
@@ -142,44 +152,59 @@ export default function AdminSafetyLinksPage() {
                 </Alert>
             )}
 
-            {links.length === 0 && <Text c="dimmed">Nothing in the queue.</Text>}
+            {items.length === 0 && <Text c="dimmed">Nothing in the queue.</Text>}
 
-            {links.map((link) => {
-                const latest = link.reviews[0];
+            {items.map((ta) => {
+                const latest = ta.reviews[0];
                 const status = latest?.status ?? "PENDING_BOARD_REVIEW";
                 const pending = status === "PENDING_BOARD_REVIEW";
+                const sharedVal = latest ? shared[latest.id] ?? "" : "";
                 return (
-                    <Card key={link.id} withBorder radius="md" padding="md">
-                        <Group justify="space-between" align="flex-start">
-                            <div>
-                                <Group gap="xs">
-                                    <Text fw={600}>{link.subject?.name || `Participant ${link.subject?.id}`}</Text>
-                                    <Text c="dimmed">→</Text>
-                                    <Text>{link.counterparty?.name || link.counterpartyName || "external person"}</Text>
-                                    <Badge variant="light">{label(link.relationshipType)}</Badge>
-                                    <Badge color={STATUS_COLORS[status] ?? "gray"}>{label(status)}</Badge>
-                                    {latest && <Badge variant="outline">{label(latest.kind)}</Badge>}
-                                </Group>
-                                <Text size="sm" mt={6}>{link.description}</Text>
-                                {link.counterpartyContact && (
-                                    <Text size="xs" c="dimmed" mt={2}>Counterparty contact: {link.counterpartyContact}</Text>
-                                )}
-                                {latest?.conditions && (
-                                    <Text size="sm" c="teal" mt={2}>Conditions: {latest.conditions}</Text>
-                                )}
-                                {latest?.reviewBy && (
-                                    <Text size="xs" c="dimmed" mt={2}>Review by {latest.reviewBy.slice(0, 10)}</Text>
-                                )}
-                                <Text size="xs" c="dimmed" mt={2}>
-                                    Disclosed {link.createdAt.slice(0, 10)} · {label(link.origin)}
-                                </Text>
-                            </div>
+                    <Card key={ta.id} withBorder radius="md" padding="md">
+                        <Group gap="xs">
+                            <Text fw={600}>{ta.household?.name || `Household ${ta.household?.id}`}</Text>
+                            <Text c="dimmed">→</Text>
+                            <Text>{ta.counterparty?.name || ta.counterpartyName || "trusted adult"}</Text>
+                            <Badge color={STATUS_COLORS[status] ?? "gray"}>{label(status)}</Badge>
+                            {latest && <Badge variant="outline">{label(latest.kind)}</Badge>}
                         </Group>
+                        {ta.counterpartyContact && (
+                            <Text size="xs" c="dimmed" mt={2}>Contact: {ta.counterpartyContact}</Text>
+                        )}
+                        <Text size="sm" mt={6}><b>Family context (board only):</b> {ta.familyContext}</Text>
+                        {latest?.sharedNote && (
+                            <Text size="sm" c="teal" mt={2}>Shared note (keyholders/program leads): {latest.sharedNote}</Text>
+                        )}
+                        {ta.household?.leads?.length ? (
+                            <Text size="xs" c="dimmed" mt={2}>
+                                Leads: {ta.household.leads.map((l) => l.participant.name || l.participant.email).join(", ")}
+                            </Text>
+                        ) : null}
+                        {latest?.reviewBy && (
+                            <Text size="xs" c="dimmed" mt={2}>Review by {latest.reviewBy.slice(0, 10)}</Text>
+                        )}
+                        <Text size="xs" c="dimmed" mt={2}>
+                            Disclosed {ta.createdAt.slice(0, 10)} · {label(ta.origin)}
+                        </Text>
 
                         {pending && latest && (
                             <Stack mt="md" gap="xs">
+                                <Textarea
+                                    label="Shared note — what keyholders & program leads should know (required to approve)"
+                                    placeholder="e.g. Grandma (Jane Doe) may pick up Bobby and Sue."
+                                    autosize
+                                    minRows={2}
+                                    value={sharedVal}
+                                    onChange={(e) => setShared((s) => ({ ...s, [latest.id]: e.currentTarget.value }))}
+                                />
                                 <Group gap="xs">
-                                    <Button size="xs" color="green" loading={busyId === latest.id} onClick={() => decide(latest.id, "APPROVE")}>
+                                    <Button
+                                        size="xs"
+                                        color="green"
+                                        loading={busyId === latest.id}
+                                        disabled={!sharedVal.trim()}
+                                        onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
+                                    >
                                         Approve
                                     </Button>
                                     <Button size="xs" color="red" loading={busyId === latest.id} onClick={() => decide(latest.id, "DENY")}>
@@ -190,32 +215,11 @@ export default function AdminSafetyLinksPage() {
                                         variant="light"
                                         loading={busyId === latest.id}
                                         onClick={() => {
-                                            const note = window.prompt("What information do you need from the discloser?") ?? "";
+                                            const note = window.prompt("What information do you need from the family?") ?? "";
                                             decide(latest.id, "REQUEST_INFO", { note });
                                         }}
                                     >
                                         Request info
-                                    </Button>
-                                </Group>
-                                <Group gap="xs" align="flex-end">
-                                    <Textarea
-                                        label="Approve with conditions"
-                                        placeholder="e.g. no unsupervised contact"
-                                        size="xs"
-                                        autosize
-                                        minRows={1}
-                                        style={{ flex: 1 }}
-                                        value={conditions[latest.id] ?? ""}
-                                        onChange={(e) => setConditions((c) => ({ ...c, [latest.id]: e.currentTarget.value }))}
-                                    />
-                                    <Button
-                                        size="xs"
-                                        color="teal"
-                                        loading={busyId === latest.id}
-                                        disabled={!conditions[latest.id]?.trim()}
-                                        onClick={() => decide(latest.id, "APPROVE_WITH_CONDITIONS", { conditions: conditions[latest.id] })}
-                                    >
-                                        Approve with conditions
                                     </Button>
                                 </Group>
                             </Stack>
@@ -224,7 +228,16 @@ export default function AdminSafetyLinksPage() {
                         {latest && !pending && status !== "REVOKED" && (
                             <Group gap="xs" mt="md">
                                 <Text size="xs" c="dimmed">Override:</Text>
-                                <Button size="xs" variant="subtle" color="green" loading={busyId === latest.id} onClick={() => override(latest.id, "approve")}>
+                                <Button
+                                    size="xs"
+                                    variant="subtle"
+                                    color="green"
+                                    loading={busyId === latest.id}
+                                    onClick={() => {
+                                        const note = window.prompt("Shared note (required to force-approve):") ?? "";
+                                        if (note.trim()) override(latest.id, "approve", { sharedNote: note });
+                                    }}
+                                >
                                     Force approve
                                 </Button>
                                 <Button size="xs" variant="subtle" color="red" loading={busyId === latest.id} onClick={() => override(latest.id, "deny")}>

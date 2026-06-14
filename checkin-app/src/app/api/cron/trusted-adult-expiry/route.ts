@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { logger } from "@/lib/logger";
-import { runExpirySweep } from "@/lib/safety-link/service";
+import { runExpirySweep } from "@/lib/trusted-adult/service";
 
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/cron/safety-link-expiry — warn families 30 days before an approved
- * safety link lapses, and expire links whose review date has passed.
+ * GET /api/cron/trusted-adult-expiry — warn families 30 days before an approved
+ * trusted adult lapses, and expire links whose review date has passed.
  * Authorized by `Authorization: Bearer $CRON_SECRET`.
  */
 export async function GET(req: Request) {
@@ -25,10 +25,10 @@ export async function GET(req: Request) {
 
     try {
         const result = await runExpirySweep(new Date());
-        logger.info("[CRON] safety-link expiry sweep:", result);
+        logger.info("[CRON] trusted-adult expiry sweep:", result);
         return NextResponse.json({ success: true, ...result });
     } catch (error) {
-        logger.error("Safety-link expiry sweep error:", error);
+        logger.error("Trusted-adult expiry sweep error:", error);
         return NextResponse.json({ error: "Sweep failed" }, { status: 500 });
     }
 }

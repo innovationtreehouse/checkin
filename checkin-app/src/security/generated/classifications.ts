@@ -92,32 +92,31 @@ export const classifications = {
         shopifyPriceSyncedAt: 'internal',
         updatedAt: 'internal',
     },
-    SafetyLink: {
+    TrustedAdult: {
         id: 'public',
-        subjectParticipantId: 'public',
+        householdId: 'public',
         counterpartyParticipantId: 'public',
         counterpartyName: 'personal',
         counterpartyContact: 'personal',
-        relationshipType: 'personal',
-        description: 'personal',
+        familyContext: 'pii',
         origin: 'internal',
         disclosedById: 'internal',
         createdAt: 'public',
         updatedAt: 'internal',
     },
-    SafetyLinkReview: {
+    TrustedAdultReview: {
         id: 'public',
-        safetyLinkId: 'public',
-        subjectParticipantId: 'public',
+        trustedAdultId: 'public',
+        householdId: 'public',
         kind: 'public',
         status: 'personal',
         decidedById: 'internal',
         decision: 'internal',
         decisionNote: 'internal',
-        conditions: 'personal',
+        sharedNote: 'personal',
         effectiveFrom: 'personal',
         reviewBy: 'personal',
-        warnedAt: 'internal',
+        expiryWarningSentAt: 'internal',
         createdAt: 'public',
         updatedAt: 'internal',
     },
@@ -288,10 +287,9 @@ export const relations = {
         rawBadgeEvents: { model: 'RawBadgeEvent', isList: true },
         visits: { model: 'Visit', isList: true },
         eventsConfirmedBy: { model: 'Event', isList: true },
-        safetyLinksAsSubject: { model: 'SafetyLink', isList: true },
-        safetyLinksAsCounterparty: { model: 'SafetyLink', isList: true },
-        safetyLinksDisclosed: { model: 'SafetyLink', isList: true },
-        safetyLinkReviewsDecided: { model: 'SafetyLinkReview', isList: true },
+        trustedAdultsAsCounterparty: { model: 'TrustedAdult', isList: true },
+        trustedAdultsDisclosed: { model: 'TrustedAdult', isList: true },
+        trustedAdultReviewsDecided: { model: 'TrustedAdultReview', isList: true },
     },
     Tool: {
         toolStatuses: { model: 'ToolStatus', isList: true },
@@ -304,6 +302,7 @@ export const relations = {
         participants: { model: 'Participant', isList: true },
         leads: { model: 'HouseholdLead', isList: true },
         membership: { model: 'Membership', isList: false },
+        trustedAdults: { model: 'TrustedAdult', isList: true },
     },
     HouseholdLead: {
         household: { model: 'Household', isList: false },
@@ -325,14 +324,14 @@ export const relations = {
     },
     BoardSettings: {
     },
-    SafetyLink: {
-        subject: { model: 'Participant', isList: false },
+    TrustedAdult: {
+        household: { model: 'Household', isList: false },
         counterparty: { model: 'Participant', isList: false },
         disclosedBy: { model: 'Participant', isList: false },
-        reviews: { model: 'SafetyLinkReview', isList: true },
+        reviews: { model: 'TrustedAdultReview', isList: true },
     },
-    SafetyLinkReview: {
-        safetyLink: { model: 'SafetyLink', isList: false },
+    TrustedAdultReview: {
+        trustedAdult: { model: 'TrustedAdult', isList: false },
         decidedBy: { model: 'Participant', isList: false },
     },
     Corporation: {

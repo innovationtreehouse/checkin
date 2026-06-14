@@ -26,6 +26,9 @@ export interface CallerContext {
     programsCoreVolIn: Set<number>;
     /** Union of participant IDs across programsLed ∪ programsCoreVolIn. */
     participantIdsInScopePrograms: Set<number>;
+    /** Household IDs of those participants — i.e. households with a child in a
+     *  program the caller leads/core-vols. Drives the 'their_program_households' scope. */
+    householdIdsInScopePrograms: Set<number>;
     /** Participant IDs with an un-departed Visit. Only populated for keyholders. */
     activeVisitorIds: Set<number>;
 }
@@ -39,6 +42,7 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
         programsLed: new Set(),
         programsCoreVolIn: new Set(),
         participantIdsInScopePrograms: new Set(),
+        householdIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
     };
 
@@ -67,6 +71,17 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
     for (const v of coreVols) {
         ctx.programsCoreVolIn.add(v.programId);
         for (const pp of v.program.participants) ctx.participantIdsInScopePrograms.add(pp.participantId);
+    }
+
+    // Households of the children in the caller's programs — for Trusted Adult
+    // pickup-note visibility (program leads see operational notes for the
+    // households whose kids they oversee).
+    if (ctx.participantIdsInScopePrograms.size) {
+        const members = await prisma.participant.findMany({
+            where: { id: { in: [...ctx.participantIdsInScopePrograms] } },
+            select: { householdId: true },
+        });
+        for (const m of members) ctx.householdIdsInScopePrograms.add(m.householdId);
     }
 
     if (ctx.isKeyholder) {
@@ -189,14 +204,23 @@ export function scopesHeld(
             if (userId !== undefined && userId === ctx.selfId) scopes.add('their_own');
             break;
         }
-        case 'SafetyLink':
-        case 'SafetyLinkReview': {
-            // Subject sees their own disclosures (and the reviews of them). The
-            // subjectParticipantId is denormalized onto review rows so nested
-            // review rows resolve the same scope. No counterparty scope — a named
-            // counterparty is not notified (board policy).
-            const subjectId = num(row.subjectParticipantId);
-            if (subjectId !== undefined && subjectId === ctx.selfId) scopes.add('their_own');
+        case 'TrustedAdult':
+        case 'TrustedAdultReview': {
+            // A Trusted Adult belongs to a household. householdId is denormalized
+            // onto review rows so nested rows resolve the same scopes.
+            //   their_households         → the household's own members/leads (sees
+            //                              familyContext[pii] + notes[personal]).
+            //   their_program_households → a program lead of the household's kids
+            //                              (sees personal-tier notes, NOT pii).
+            //   keyholders               → any keyholder, global (personal-tier notes).
+            // The board's familyContext (pii) and decisionNote (internal) are never
+            // granted to the program/keyholder scopes.
+            const householdId = num(row.householdId);
+            if (householdId !== undefined && householdId === ctx.householdId) scopes.add('their_households');
+            if (householdId !== undefined && ctx.householdIdsInScopePrograms.has(householdId)) {
+                scopes.add('their_program_households');
+            }
+            if (ctx.isKeyholder) scopes.add('keyholders');
             break;
         }
         // Corporation, CorporationLead, CorporationMember, AuditLog,
