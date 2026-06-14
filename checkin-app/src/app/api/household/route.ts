@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 
 export const GET = withAuth(
     {},
@@ -135,7 +136,11 @@ export const PATCH = withAuth(
                 }
             });
 
-            return NextResponse.json({ member: targetMember }, { status: 200 });
+            // A newly-added member may be an existing emergency contact (direction
+            // B): flag the colliding contact and warn the lead to add a replacement.
+            const warning = await reconcileAndWarn(prisma, user.householdId);
+
+            return NextResponse.json({ member: targetMember, warning }, { status: 200 });
         } catch (error: unknown) {
             console.error("Household PATCH Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

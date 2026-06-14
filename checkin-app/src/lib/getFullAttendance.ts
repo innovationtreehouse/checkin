@@ -19,8 +19,12 @@ export async function getFullAttendance() {
                     household: {
                         select: {
                             id: true,
-                            emergencyContactName: true,
-                            emergencyContactPhone: true,
+                            // Only valid (non-member, complete) contacts, primary first.
+                            emergencyContacts: {
+                                where: { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } },
+                                orderBy: [{ priority: "asc" }, { id: "asc" }],
+                                select: { id: true, name: true, phone: true, relationship: true },
+                            },
                         }
                     }
                 },

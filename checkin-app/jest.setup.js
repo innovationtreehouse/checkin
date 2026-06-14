@@ -9,6 +9,20 @@ import '@testing-library/jest-dom'
 // credential login (both local-only) off, just as NODE_ENV=test did.
 process.env.CHECKIN_ENV = 'dev';
 
+// The scan concurrency suite must exercise the advisory lock, not the
+// single-connection serialization that a pool of 1 gives for free. Give just
+// that suite a pool of 2 so its two scan transactions run on separate
+// connections — then the per-participant advisory lock is the only thing that
+// serializes them (as in production), and dropping the lock makes the suite
+// fail. testPath is populated before setup runs (the prisma mock below relies
+// on it too); @/lib/prisma reads TEST_DB_POOL_MAX when it first loads.
+{
+  const { testPath } = expect.getState();
+  if (testPath && /scanConcurrency\.integration\.test\.[jt]sx?$/.test(testPath)) {
+    process.env.TEST_DB_POOL_MAX = '2';
+  }
+}
+
 // Polyfill text encoding
 const { TextEncoder, TextDecoder } = require('util');
 global.TextEncoder = TextEncoder;

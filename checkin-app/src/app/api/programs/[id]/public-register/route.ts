@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
+import { createContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 
 interface ParentInput {
     name: string;
@@ -48,12 +49,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return NextResponse.json({ error: "At least one participant is required." }, { status: 400 });
         }
 
-        // Validate Emergency Contact phone doesn't match parents
-        const parentPhones = parents.map((p: ParentInput) => p.phone && p.phone.replace(/\D/g, '')).filter(Boolean);
-        const emergencyPhone = emergencyContact.phone.replace(/\D/g, '');
-        if (parentPhones.includes(emergencyPhone)) {
-             return NextResponse.json({ error: "Emergency contact phone must be different from parent/guardian phone numbers." }, { status: 400 });
-        }
+        // The not-a-household-member rule (phone/email/name) is enforced when the
+        // contact is created inside the transaction, against every household
+        // member — see createContact below.
 
         // Check for existing emails to prevent Unique Constraint violations
         const emailsToCheck = parents.map((p: ParentInput) => p.email).filter(Boolean);
@@ -115,8 +113,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             const household = await tx.household.create({
                 data: {
                     name: `${parents[0].name.split(' ').pop() || parents[0].name}'s Household`,
-                    emergencyContactName: emergencyContact.name,
-                    emergencyContactPhone: emergencyContact.phone,
                 }
             });
 
@@ -181,6 +177,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 });
             }
 
+            // 4. Create the emergency contact now that members exist, so the
+            //    not-a-household-member check runs against the full household.
+            await createContact(tx, household.id, {
+                name: emergencyContact.name,
+                phone: emergencyContact.phone,
+                email: emergencyContact.email ?? null,
+            });
+
             return { householdId: household.id, enrolledParticipantIds, primaryParent: createdParents[0] };
         });
 
@@ -206,7 +210,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         });
 
     } catch (error) {
-        if (error instanceof HouseholdLeadLimitError) {
+        if (error instanceof HouseholdLeadLimitError || error instanceof EmergencyContactError) {
             return NextResponse.json({ error: error.message }, { status: 400 });
         }
         await logBackendError(error, "POST /api/programs/[id]/public-register");

@@ -9,21 +9,30 @@ jest.mock('@/lib/auth', () => ({
     authenticateRequest: jest.fn(),
 }));
 
-jest.mock('@/lib/prisma', () => ({
-    participant: {
-        findUnique: jest.fn(),
-    },
-    rawBadgeEvent: {
-        create: jest.fn(),
-        findFirst: jest.fn(),
-    },
-    visit: {
-        findFirst: jest.fn(),
-    },
-    systemMetric: {
-        create: jest.fn().mockResolvedValue({}),
-    },
-}));
+jest.mock('@/lib/prisma', () => {
+    const mock = {
+        participant: {
+            findUnique: jest.fn(),
+        },
+        rawBadgeEvent: {
+            create: jest.fn(),
+            findFirst: jest.fn(),
+        },
+        visit: {
+            findFirst: jest.fn(),
+        },
+        systemMetric: {
+            create: jest.fn().mockResolvedValue({}),
+        },
+        // The route runs steps 4–6 inside a $transaction under a per-participant
+        // advisory lock; the callback receives a tx client. For unit tests the
+        // tx client is just this same mock, and the lock query is a no-op.
+        $executeRaw: jest.fn().mockResolvedValue(1),
+        $transaction: jest.fn(),
+    };
+    mock.$transaction.mockImplementation((cb: (tx: typeof mock) => unknown) => cb(mock));
+    return mock;
+});
 
 jest.mock('@/lib/logger', () => ({
     logBackendError: jest.fn(),

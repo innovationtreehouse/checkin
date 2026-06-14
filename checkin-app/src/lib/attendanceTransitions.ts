@@ -1,21 +1,31 @@
 import prisma from "@/lib/prisma";
+import type { PrismaClient, Prisma } from "@/generated/prisma/client";
+
+/**
+ * A Prisma client that can run queries: either the global singleton or a
+ * transaction-scoped client passed in by a caller that has already opened a
+ * `$transaction` (e.g. the scan route's per-participant lock). Threading this
+ * through lets the same reads/writes run under the caller's transaction and
+ * lock instead of on independent connections.
+ */
+type DbClient = PrismaClient | Prisma.TransactionClient;
 
 /**
  * Finds all program IDs that a participant is associated with
  * (as enrolled participant, volunteer, or lead mentor).
  * Uses Promise.all for parallel queries.
  */
-async function getRelevantProgramIds(participantId: number): Promise<number[]> {
+async function getRelevantProgramIds(participantId: number, db: DbClient = prisma): Promise<number[]> {
     const [participantPrograms, volunteerPrograms, leadPrograms] = await Promise.all([
-        prisma.programParticipant.findMany({
+        db.programParticipant.findMany({
             where: { participantId },
             select: { programId: true }
         }),
-        prisma.programVolunteer.findMany({
+        db.programVolunteer.findMany({
             where: { participantId },
             select: { programId: true }
         }),
-        prisma.program.findMany({
+        db.program.findMany({
             where: { leadMentorId: participantId },
             select: { id: true }
         }),
@@ -34,18 +44,18 @@ async function getRelevantProgramIds(participantId: number): Promise<number[]> {
  * 1. Checks what programs the participant is enrolled in (or volunteering for).
  * 2. Looks for an event in those programs that is currently ongoing or starting within 4 hours.
  */
-export async function findAssociatedEventAt(participantId: number, targetTime: Date): Promise<number | null> {
+export async function findAssociatedEventAt(participantId: number, targetTime: Date, db: DbClient = prisma): Promise<number | null> {
     // A target event can be one that is currently ongoing OR starting within 4 hours of targetTime
     const timePlus4Hours = new Date(targetTime.getTime() + 4 * 60 * 60 * 1000);
 
-    const relevantProgramIds = await getRelevantProgramIds(participantId);
+    const relevantProgramIds = await getRelevantProgramIds(participantId, db);
 
     if (relevantProgramIds.length === 0) {
         return null;
     }
 
     // Find the soonest matching event in these programs
-    const matchingEvent = await prisma.event.findFirst({
+    const matchingEvent = await db.event.findFirst({
         where: {
             programId: { in: relevantProgramIds },
             // Event must either overlap with targetTime, or start within 4 hours of targetTime
@@ -76,8 +86,8 @@ export async function findAssociatedEventAt(participantId: number, targetTime: D
  * 
  * It returns the final list of visits spanning their arrival to departure.
  */
-export async function processVisitCheckout(visitId: number, checkoutTime: Date) {
-    const originalVisit = await prisma.visit.findUnique({
+export async function processVisitCheckout(visitId: number, checkoutTime: Date, db: DbClient = prisma) {
+    const originalVisit = await db.visit.findUnique({
         where: { id: visitId }
     });
 
@@ -87,18 +97,18 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date) 
 
     const { participantId, arrived } = originalVisit;
 
-    const relevantProgramIds = await getRelevantProgramIds(participantId);
+    const relevantProgramIds = await getRelevantProgramIds(participantId, db);
 
     if (relevantProgramIds.length === 0) {
         // No programs enrolled, just close the visit normally
-        return [await prisma.visit.update({
+        return [await db.visit.update({
             where: { id: visitId },
             data: { departed: checkoutTime }
         })];
     }
 
     // Find all events in these programs that fall between arrival and checkoutTime
-    const eventsDuringStay = await prisma.event.findMany({
+    const eventsDuringStay = await db.event.findMany({
         where: {
             programId: { in: relevantProgramIds },
             // An event overlaps if it starts before checkout time AND ends after arrival time
@@ -110,15 +120,15 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date) 
 
     if (eventsDuringStay.length === 0) {
         // No relevant events during their stay, just close normally
-        return [await prisma.visit.update({
+        return [await db.visit.update({
             where: { id: visitId },
             data: { departed: checkoutTime }
         })];
     }
 
-    // We have at least one event. We need to chunk the visit.
-    // We will delete the original visit and recreate the chunks inside a transaction.
-    return await prisma.$transaction(async (tx) => {
+    // We have at least one event. We need to chunk the visit by deleting the
+    // original open visit and recreating the chunks atomically.
+    const chunk = async (tx: Prisma.TransactionClient) => {
         // First, delete the original open visit
         await tx.visit.delete({
             where: { id: visitId }
@@ -189,5 +199,14 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date) 
         }
 
         return createdVisits;
-    });
+    };
+
+    // If we were handed a transaction client (caller already opened one — e.g.
+    // the scan route's per-participant lock), run the chunking on it directly:
+    // Postgres has no nested transactions and the tx client has no `$transaction`.
+    // Otherwise open our own transaction so the delete + recreates stay atomic.
+    if ("$transaction" in db) {
+        return await db.$transaction(chunk);
+    }
+    return await chunk(db);
 }

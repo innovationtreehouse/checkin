@@ -110,10 +110,9 @@ model Participant {
   visits              Visit[]
   eventsConfirmedBy   Event[]                      @relation("EventAttendanceConfirmer")
 
-  safetyLinksAsSubject      SafetyLink[]       @relation("SafetyLinkSubject")
-  safetyLinksAsCounterparty SafetyLink[]       @relation("SafetyLinkCounterparty")
-  safetyLinksDisclosed      SafetyLink[]       @relation("SafetyLinkDiscloser")
-  safetyLinkReviewsDecided  SafetyLinkReview[] @relation("SafetyLinkDecider")
+  trustedAdultsAsCounterparty TrustedAdult[]       @relation("TrustedAdultCounterparty")
+  trustedAdultsDisclosed      TrustedAdult[]       @relation("TrustedAdultDiscloser")
+  trustedAdultReviewsDecided  TrustedAdultReview[] @relation("TrustedAdultDecider")
 }
 
 model Tool {
@@ -142,19 +141,63 @@ model ToolStatus {
 
 model Household {
   /// @sensitivity:public
-  id                    Int     @id @default(autoincrement())
+  id      Int     @id @default(autoincrement())
   /// @sensitivity:public
-  name                  String?
+  name    String?
   /// @sensitivity:personal
-  address               String?
-  /// @sensitivity:personal
-  emergencyContactName  String?
-  /// @sensitivity:personal
-  emergencyContactPhone String?
+  address String?
 
-  participants Participant[]
-  leads        HouseholdLead[]
-  membership   Membership?
+  participants      Participant[]
+  leads             HouseholdLead[]
+  membership        Membership?
+  trustedAdults     TrustedAdult[]
+  emergencyContacts EmergencyContact[]
+}
+
+/// An emergency contact for a household. Modeled as a separate entity (1 household
+/// : many contacts) so external, non-family people can be linked. The invariant
+/// "an emergency contact is not a member of the same household" is enforced in
+/// application code (lib/emergencyContacts), not the database: a row is INVALID
+/// when conflictParticipantId is set, meaning it collides with a household member.
+model EmergencyContact {
+  /// @sensitivity:public
+  id          Int       @id @default(autoincrement())
+  /// @sensitivity:public
+  householdId Int
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  /// @sensitivity:personal
+  name         String
+  /// @sensitivity:personal
+  phone        String
+  /// @sensitivity:personal
+  email        String?
+  /// @sensitivity:personal
+  relationship String?
+  /// @sensitivity:public
+  priority     Int     @default(0)
+
+  // Normalized identity keys, used for the not-a-household-member check.
+  /// @sensitivity:personal
+  phoneDigits String
+  /// @sensitivity:personal
+  emailNorm   String?
+
+  // Soft-conflict state. Null conflictParticipantId == a valid contact. When a
+  // household member is found to be the same person as this contact, the id of
+  // that member is recorded here (the row is kept for audit, flagged invalid).
+  /// @sensitivity:internal
+  conflictParticipantId Int?
+  /// @sensitivity:internal
+  conflictedAt          DateTime?
+
+  /// @sensitivity:internal
+  createdAt DateTime @default(now())
+  /// @sensitivity:internal
+  updatedAt DateTime @updatedAt
+
+  @@index([householdId])
+  @@index([phoneDigits])
 }
 
 model HouseholdLead {
@@ -201,40 +244,27 @@ enum AttestationResult {
   REJECT
 }
 
-enum SafetyLinkRelationshipType {
-  FAMILY
-  GUARDIAN
-  HOUSEHOLD
-  ROMANTIC
-  FORMER_PROFESSIONAL
-  FINANCIAL
-  LEGAL_RESTRICTION
-  OTHER
-}
-
-enum SafetyLinkOrigin {
+enum TrustedAdultOrigin {
   SELF_DISCLOSED
   STAFF_ENTERED
 }
 
-enum SafetyLinkReviewKind {
+enum TrustedAdultReviewKind {
   INITIAL
   RENEWAL
 }
 
-enum SafetyLinkReviewStatus {
+enum TrustedAdultReviewStatus {
   PENDING_BOARD_REVIEW
   PENDING_SUBJECT_ACTION
   APPROVED
-  APPROVED_WITH_CONDITIONS
   DENIED
   EXPIRED
   REVOKED
 }
 
-enum SafetyLinkDecisionKind {
+enum TrustedAdultDecisionKind {
   APPROVE
-  APPROVE_WITH_CONDITIONS
   DENY
   REQUEST_INFO
 }
@@ -336,6 +366,15 @@ model BoardSettings {
   volunteerDuesCents         Int       @default(0)
   /// @sensitivity:public
   membershipYearBoundary     DateTime?
+  /// Shopify variant ID of the membership product everyone checks out through.
+  /// The "Pay with Shopify" link is built from it as
+  /// https://<SHOPIFY_STORE_DOMAIN>/cart/<membershipVariantId>:1.
+  /// @sensitivity:internal
+  membershipVariantId        String?
+  /// Discount code (created in Shopify by the board) appended to the checkout
+  /// link for volunteer households so Shopify applies their discount.
+  /// @sensitivity:internal
+  volunteerDiscountCode      String?
   /// @sensitivity:internal
   shopifyMembershipProductId String?
   /// @sensitivity:internal
@@ -348,83 +387,95 @@ model BoardSettings {
   updatedAt                  DateTime  @updatedAt
 }
 
-/// Dual Relationship Management (Safety Links). A board-reviewed disclosure that
+/// Trusted Adult Management (Trusted Adults). A board-reviewed disclosure that
 /// one individual (the subject, always a Participant) holds an external
 /// relationship — familial, romantic, guardianship, financial, legal-restriction,
 /// etc. — with a counterparty who may be another Participant or someone outside
 /// the org. The durable relationship facts live here, entered once; each annual
-/// review cycle is a SafetyLinkReview row (like Membership/MembershipProcess), so
+/// review cycle is a TrustedAdultReview row (like Membership/MembershipProcess), so
 /// a renewal reuses the facts without re-entry.
-model SafetyLink {
+model TrustedAdult {
   /// @sensitivity:public
-  id                        Int                        @id @default(autoincrement())
+  id                        Int                @id @default(autoincrement())
+  /// A Trusted Adult belongs to a HOUSEHOLD, not an individual (e.g. "Grandma can
+  /// pick up the Smith kids").
   /// @sensitivity:public
-  subjectParticipantId      Int
-  subject                   Participant                @relation("SafetyLinkSubject", fields: [subjectParticipantId], references: [id])
+  householdId               Int
+  household                 Household          @relation(fields: [householdId], references: [id])
+  /// The trusted adult, if they are also a participant in the system.
   /// @sensitivity:public
   counterpartyParticipantId Int?
-  counterparty              Participant?               @relation("SafetyLinkCounterparty", fields: [counterpartyParticipantId], references: [id])
+  counterparty              Participant?       @relation("TrustedAdultCounterparty", fields: [counterpartyParticipantId], references: [id])
   /// @sensitivity:personal
-  counterpartyName          String?
+  counterpartyName          String
   /// @sensitivity:personal
-  counterpartyContact       String?
-  /// @sensitivity:personal
-  relationshipType          SafetyLinkRelationshipType
-  /// @sensitivity:personal
-  description               String
+  counterpartyContact       String
+  /// The family's explanation for the BOARD — what this adult may or may not do,
+  /// restrictions, safeguarding context. Board + the household's own leads only
+  /// (pii tier is the board/family band here; program leads & keyholders never
+  /// receive it).
+  /// @sensitivity:pii
+  familyContext             String
   /// @sensitivity:internal
-  origin                    SafetyLinkOrigin           @default(SELF_DISCLOSED)
+  origin                    TrustedAdultOrigin @default(SELF_DISCLOSED)
   /// @sensitivity:internal
   disclosedById             Int
-  disclosedBy               Participant                @relation("SafetyLinkDiscloser", fields: [disclosedById], references: [id])
+  disclosedBy               Participant        @relation("TrustedAdultDiscloser", fields: [disclosedById], references: [id])
   /// @sensitivity:public
-  createdAt                 DateTime                   @default(now())
+  createdAt                 DateTime           @default(now())
   /// @sensitivity:internal
-  updatedAt                 DateTime                   @updatedAt
+  updatedAt                 DateTime           @updatedAt
 
-  reviews SafetyLinkReview[]
+  reviews TrustedAdultReview[]
 
-  @@index([subjectParticipantId])
+  @@index([householdId])
 }
 
-/// One review cycle for a SafetyLink. A single board member decides it (no
+/// One review cycle for a TrustedAdult. A single board member decides it (no
 /// quorum). subjectParticipantId is denormalized from the parent so the security
 /// stripper can scope a nested review row to the subject (their_own).
-model SafetyLinkReview {
+model TrustedAdultReview {
   /// @sensitivity:public
   id                   Int                    @id @default(autoincrement())
   /// @sensitivity:public
-  safetyLinkId         Int
-  safetyLink           SafetyLink             @relation(fields: [safetyLinkId], references: [id])
+  trustedAdultId       Int
+  trustedAdult         TrustedAdult             @relation(fields: [trustedAdultId], references: [id])
+  /// Denormalized from the parent so the security stripper can scope a nested
+  /// review row to the household (their_households / program / keyholder).
   /// @sensitivity:public
-  subjectParticipantId Int
+  householdId          Int
   /// @sensitivity:public
-  kind                 SafetyLinkReviewKind
+  kind                 TrustedAdultReviewKind
   /// @sensitivity:personal
-  status               SafetyLinkReviewStatus @default(PENDING_BOARD_REVIEW)
+  status               TrustedAdultReviewStatus @default(PENDING_BOARD_REVIEW)
   /// @sensitivity:internal
   decidedById          Int?
-  decidedBy            Participant?           @relation("SafetyLinkDecider", fields: [decidedById], references: [id])
+  decidedBy            Participant?             @relation("TrustedAdultDecider", fields: [decidedById], references: [id])
   /// @sensitivity:internal
-  decision             SafetyLinkDecisionKind?
+  decision             TrustedAdultDecisionKind?
+  /// The board's PRIVATE reasoning. Board/sysadmin only (internal tier).
   /// @sensitivity:internal
   decisionNote         String?
+  /// The board's note shared OUTWARD on approval — what keyholders & program
+  /// leads need to act on ("Grandma can pick up Bobby"). Required to approve.
+  /// Visible to the family, board, program leads, and keyholders (personal tier).
   /// @sensitivity:personal
-  conditions           String?
+  sharedNote           String?
   /// @sensitivity:personal
   effectiveFrom        DateTime?
   /// @sensitivity:personal
   reviewBy             DateTime?
+  /// When the 30-day-before-expiry reminder email was sent (once).
   /// @sensitivity:internal
-  warnedAt             DateTime?
+  expiryWarningSentAt  DateTime?
   /// @sensitivity:public
   createdAt            DateTime               @default(now())
   /// @sensitivity:internal
   updatedAt            DateTime               @updatedAt
 
-  @@index([safetyLinkId])
+  @@index([trustedAdultId])
   @@index([status])
-  @@index([subjectParticipantId])
+  @@index([householdId])
 }
 
 model Corporation {

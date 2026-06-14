@@ -13,7 +13,23 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
         where: { id: programId },
         include: {
             volunteers: { include: { participant: true } },
-            participants: { include: { participant: { include: { household: true } } } },
+            participants: {
+                include: {
+                    participant: {
+                        include: {
+                            household: {
+                                include: {
+                                    emergencyContacts: {
+                                        where: { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } },
+                                        orderBy: [{ priority: "asc" }, { id: "asc" }],
+                                        select: { id: true, name: true, phone: true, relationship: true },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
             events: { orderBy: { start: 'asc' } },
             fees: true,
             leadMentor: true,

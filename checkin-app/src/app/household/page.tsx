@@ -5,21 +5,22 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
 import { formatDate, formatTime, formatDateTime } from '@/lib/time';
-import SafetyLinksPanel from '@/components/SafetyLinksPanel';
+import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 
 type Member = { id: number; name?: string; email?: string; dob?: string; phone?: string };
+type EmergencyContact = { id: number; name: string; phone: string; email?: string | null; relationship?: string | null; priority: number; invalid: boolean };
 type HouseholdData = {
   id?: number;
   name?: string;
   leads?: Array<{ participantId: number }>;
   participants?: Member[];
   membership?: { status?: string; since?: string; isVolunteer?: boolean } | null;
-  emergencyContactName?: string;
-  emergencyContactPhone?: string;
   address?: string;
 } | null;
+
+const blankContactForm = { id: null as number | null, name: "", phone: "", email: "", relationship: "" };
 type Visit = { id: number; participant?: { name: string }; event?: { name: string }; arrived: string; departed?: string };
 
 export default function HouseholdPage() {
@@ -39,10 +40,24 @@ export default function HouseholdPage() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [filterDate, setFilterDate] = useState("");
   const [settings, setSettings] = useState({ emailDependentCheckins: false });
-  const [emergencyContactName, setEmergencyContactName] = useState("");
-  const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
   const [address, setAddress] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
+
+  const [contacts, setContacts] = useState<EmergencyContact[]>([]);
+  const [contactForm, setContactForm] = useState(blankContactForm);
+  const [showContactForm, setShowContactForm] = useState(false);
+  const [savingContact, setSavingContact] = useState(false);
+  // Errors specific to the emergency-contact card render inline next to the form,
+  // not in the page-top banner which is far off-screen from this section.
+  const [contactError, setContactError] = useState("");
+
+  const fetchContacts = useCallback(async () => {
+    const res = await fetch('/api/household/emergency-contacts');
+    if (res.ok) {
+      const data = await res.json();
+      setContacts(data.contacts || []);
+    }
+  }, []);
 
   const fetchHousehold = useCallback(async () => {
     try {
@@ -54,8 +69,6 @@ export default function HouseholdPage() {
       if (res.ok) {
         const data = await res.json();
         setHousehold(data.household);
-        setEmergencyContactName(data.household?.emergencyContactName || "");
-        setEmergencyContactPhone(data.household?.emergencyContactPhone || "");
         setAddress(data.household?.address || "");
       }
       if (visitRes.ok) {
@@ -78,8 +91,9 @@ export default function HouseholdPage() {
       router.push('/');
     } else if (status === "authenticated") {
       fetchHousehold();
+      fetchContacts();
     }
-  }, [status, router, fetchHousehold]);
+  }, [status, router, fetchHousehold, fetchContacts]);
 
   const handleSaveSettings = async () => {
     setSavingSettings(true);
@@ -96,7 +110,7 @@ export default function HouseholdPage() {
       const householdRes = await fetch('/api/household/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emergencyContactName, emergencyContactPhone, address })
+        body: JSON.stringify({ address })
       });
 
       if (res.ok && householdRes.ok) {
@@ -111,6 +125,70 @@ export default function HouseholdPage() {
     } finally {
       setSavingSettings(false);
     }
+  };
+
+  const handleSaveContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingContact(true);
+    setContactError("");
+    try {
+      const editing = contactForm.id !== null;
+      const url = editing ? `/api/household/emergency-contacts/${contactForm.id}` : '/api/household/emergency-contacts';
+      const res = await fetch(url, {
+        method: editing ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: contactForm.name, phone: contactForm.phone, email: contactForm.email, relationship: contactForm.relationship }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage(editing ? "Emergency contact updated." : "Emergency contact added.");
+        setContactForm(blankContactForm);
+        setShowContactForm(false);
+        fetchContacts();
+      } else {
+        setContactError(data.error || "Failed to save emergency contact.");
+      }
+    } catch {
+      setContactError("Network error saving emergency contact.");
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
+  const handleDeleteContact = async (id: number) => {
+    setContactError("");
+    try {
+      const res = await fetch(`/api/household/emergency-contacts/${id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setMessage("Emergency contact removed.");
+        fetchContacts();
+      } else {
+        setContactError(data.error || "Failed to remove emergency contact.");
+      }
+    } catch {
+      setContactError("Network error removing emergency contact.");
+    }
+  };
+
+  const startAddContact = () => {
+    setContactError("");
+    setContactForm(blankContactForm);
+    setShowContactForm(true);
+  };
+  // Direction-B: a member change collided with an emergency contact. Surface the
+  // warning and drop the lead straight into the add-contact form.
+  const applyContactWarning = (warning?: { message: string } | null) => {
+    if (!warning) return false;
+    setMessage(`⚠️ ${warning.message}`);
+    fetchContacts();
+    startAddContact();
+    return true;
+  };
+  const startEditContact = (c: EmergencyContact) => {
+    setContactError("");
+    setContactForm({ id: c.id, name: c.name, phone: c.phone, email: c.email || "", relationship: c.relationship || "" });
+    setShowContactForm(true);
   };
 
   const handleCreateHousehold = async () => {
@@ -142,10 +220,10 @@ export default function HouseholdPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setMessage(data.message || "Member added successfully!");
         setMemberForm({ name: "", email: "", dob: "" });
         setAddingMember(false);
         fetchHousehold();
+        if (!applyContactWarning(data.warning)) setMessage(data.message || "Member added successfully!");
       } else {
         setMessage(data.error || "Failed to add member.");
       }
@@ -165,13 +243,17 @@ export default function HouseholdPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        // Field edits saved even when the promotion to lead was declined by the
-        // household cap; show that caveat instead of an unqualified success.
-        setMessage(data.leadRejection
-          ? `Member updated, but not added as a lead — ${data.leadRejection}`
-          : (data.message || "Member updated successfully!"));
         setEditingMemberId(null);
         fetchHousehold();
+        // A member edit can both collide with an emergency contact (warning,
+        // which also opens the add-contact flow) and be declined the lead
+        // promotion (leadRejection). Surface the contact warning first since
+        // it's the more urgent, then the lead caveat, else a plain success.
+        if (!applyContactWarning(data.warning)) {
+          setMessage(data.leadRejection
+            ? `Member updated, but not added as a lead — ${data.leadRejection}`
+            : (data.message || "Member updated successfully!"));
+        }
       } else {
         setMessage(data.error || "Failed to update member.");
       }
@@ -347,17 +429,76 @@ export default function HouseholdPage() {
               </Card>
 
               <Card withBorder radius="md" padding="md" id="emergency-contact" style={{ scrollMarginTop: 80 }}>
-                <Title order={5} c="yellow">Emergency Contact</Title>
-                <Text size="sm" c="dimmed" mb="sm">Required for all households. This contact applies to all members of this household.</Text>
-                <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                  <TextInput label="Contact Name" value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.currentTarget.value)} placeholder="Full Name" />
-                  <TextInput type="tel" label="Contact Phone Number" value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.currentTarget.value)} placeholder="(555) 555-5555" />
-                </SimpleGrid>
+                <Group justify="space-between" align="center" mb="xs">
+                  <Title order={5} c="yellow">Emergency Contacts</Title>
+                  {!showContactForm && <Button size="compact-xs" variant="light" onClick={startAddContact}>+ Add Contact</Button>}
+                </Group>
+                <Text size="sm" c="dimmed" mb="sm">
+                  At least one is required. Each must be someone <strong>outside</strong> this household.
+                </Text>
+
+                {contactError && (
+                  <Alert color="red" variant="light" mb="sm" withCloseButton onClose={() => setContactError("")}>{contactError}</Alert>
+                )}
+
+                {contacts.length === 0 && !showContactForm && (
+                  <Alert color="red" variant="light">No emergency contact on file. Add at least one.</Alert>
+                )}
+
+                <Stack gap="xs">
+                  {contacts.map((c) => {
+                    // Can't remove the only valid contact — a household must keep at least one.
+                    const validCount = contacts.filter((x) => !x.invalid).length;
+                    const isLastValid = !c.invalid && validCount <= 1;
+                    return (
+                    <Paper key={c.id} withBorder radius="sm" p="sm" bg={c.invalid ? 'var(--mantine-color-red-light)' : undefined}>
+                      <Group justify="space-between" wrap="nowrap">
+                        <div>
+                          <Group gap="xs">
+                            <Text fw={600}>{c.name || "Unnamed"}</Text>
+                            {c.relationship && <Badge variant="light" color="gray">{c.relationship}</Badge>}
+                            {c.invalid && <Badge variant="light" color="red">Invalid — is a household member</Badge>}
+                          </Group>
+                          <Text size="sm" c="dimmed">{c.phone}{c.email ? ` • ${c.email}` : ''}</Text>
+                        </div>
+                        <Group gap="xs" wrap="nowrap">
+                          <Button size="compact-xs" variant="subtle" color="gray" onClick={() => startEditContact(c)}>Edit</Button>
+                          <Button
+                            size="compact-xs"
+                            variant="subtle"
+                            color="red"
+                            disabled={isLastValid}
+                            title={isLastValid ? "Add a second emergency contact before removing this one." : undefined}
+                            onClick={() => handleDeleteContact(c.id)}
+                          >Remove</Button>
+                        </Group>
+                      </Group>
+                    </Paper>
+                    );
+                  })}
+                </Stack>
+
+                {showContactForm && (
+                  <form onSubmit={handleSaveContact}>
+                    <Stack gap="xs" mt="sm">
+                      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                        <TextInput label="Contact Name" required value={contactForm.name} onChange={(e) => setContactForm({ ...contactForm, name: e.currentTarget.value })} placeholder="Full Name" />
+                        <TextInput type="tel" label="Phone" required value={contactForm.phone} onChange={(e) => setContactForm({ ...contactForm, phone: e.currentTarget.value })} placeholder="(555) 555-5555" />
+                        <TextInput type="email" label="Email (optional)" value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.currentTarget.value })} />
+                        <TextInput label="Relationship (optional)" value={contactForm.relationship} onChange={(e) => setContactForm({ ...contactForm, relationship: e.currentTarget.value })} placeholder="Aunt, Neighbor…" />
+                      </SimpleGrid>
+                      <Group gap="xs">
+                        <Button type="submit" size="xs" color="green" loading={savingContact}>{contactForm.id !== null ? "Save Contact" : "Add Contact"}</Button>
+                        <Button type="button" size="xs" variant="default" onClick={() => { setShowContactForm(false); setContactForm(blankContactForm); setContactError(""); }}>Cancel</Button>
+                      </Group>
+                    </Stack>
+                  </form>
+                )}
               </Card>
 
               <Card withBorder radius="md" padding="md">
-                <Title order={5} c="grape" mb="sm">Safety Links</Title>
-                <SafetyLinksPanel />
+                <Title order={5} c="grape" mb="sm">Trusted Adults</Title>
+                <TrustedAdultPanel />
               </Card>
             </Stack>
             <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="lg">

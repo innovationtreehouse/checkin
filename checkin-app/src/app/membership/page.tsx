@@ -88,7 +88,7 @@ export default function MembershipPage() {
   const [secondaryDob, setSecondaryDob] = useState("");
   const [secondaryAllergies, setSecondaryAllergies] = useState("");
   const [children, setChildren] = useState<ChildForm[]>([]);
-  const [payment, setPayment] = useState<{ amountCents: number; invoiceUrl: string | null } | null>(null);
+  const [payment, setPayment] = useState<{ amountCents: number; checkoutUrl: string | null } | null>(null);
 
   const hydrate = useCallback((s: IntakeState) => {
     setState(s);
@@ -137,7 +137,7 @@ export default function MembershipPage() {
     else if (sessionStatus === "unauthenticated") setLoading(false);
   }, [sessionStatus, load]);
 
-  // When awaiting payment, fetch (and lazily create) the Shopify invoice link.
+  // When awaiting payment, fetch the dues amount and Shopify checkout link.
   useEffect(() => {
     if (state?.process?.status !== "PENDING_PAYMENT") return;
     let cancelled = false;
@@ -448,8 +448,8 @@ export default function MembershipPage() {
                     <Text c="dimmed">
                       Your annual household dues are <strong>${(payment.amountCents / 100).toFixed(2)}</strong>.
                     </Text>
-                    {payment.invoiceUrl ? (
-                      <Button component="a" href={payment.invoiceUrl} target="_blank" rel="noopener noreferrer" color="green" mt="md">
+                    {payment.checkoutUrl ? (
+                      <Button component="a" href={payment.checkoutUrl} target="_blank" rel="noopener noreferrer" color="green" mt="md">
                         Pay here with Shopify →
                       </Button>
                     ) : (

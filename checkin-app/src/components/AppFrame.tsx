@@ -39,6 +39,7 @@ import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 type SessionUser = {
   sysadmin?: boolean;
   boardMember?: boolean;
+  keyholder?: boolean;
   toolStatuses?: Array<{ level: string }>;
 };
 
@@ -53,6 +54,12 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/kioskdisplay', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/household', label: 'My Household', icon: <IconHome size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/programs', label: 'Programs', icon: <IconCalendarEvent size={18} />, visible: () => true },
+  {
+    href: '/trusted-adults/pickup',
+    label: 'Pickup List',
+    icon: <IconClipboardList size={18} />,
+    visible: (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder,
+  },
   {
     href: '/shop',
     label: 'Shop Ops',
@@ -85,7 +92,7 @@ function todoCountFor(href: string, counts: TodoCounts | null): number {
     case '/admin':
       // Top-level roll-up of the board's queue; per-queue badges live in the admin sub-nav.
       return counts.admin
-        ? counts.admin.membership + counts.admin.programsPending + counts.admin.safetyLinks
+        ? counts.admin.membership + counts.admin.programsPending + counts.admin.trustedAdults
         : 0;
     default:
       return 0;

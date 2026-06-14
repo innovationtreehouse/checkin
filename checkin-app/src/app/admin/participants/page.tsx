@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { EntityPicker } from "@/components/admin/EntityPicker";
+import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
 
 type HouseholdRef = {
   id: number;
@@ -57,6 +58,9 @@ export default function AdminParticipantsIndex() {
   const [editingParticipant, setEditingParticipant] = useState<ParticipantRow | null>(null);
   const [editForm, setEditForm] = useState({ name: "", email: "", phone: "" });
   const [savingDetails, setSavingDetails] = useState(false);
+
+  // Admin edit of household's own info (name, address, emergency contact)
+  const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     notifications.show({ message, color: type === 'error' ? 'red' : 'green' });
@@ -181,7 +185,11 @@ export default function AdminParticipantsIndex() {
                     </div>
                     <Group gap="md" wrap="wrap" align="center">
                       <Text size="sm" c="dimmed">{p.household?.name || 'No household'}</Text>
-                      {!p.household && (
+                      {p.household ? (
+                        <Button size="xs" variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
+                          Edit Household
+                        </Button>
+                      ) : (
                         <Button size="xs" variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
                           Assign Household
                         </Button>
@@ -274,14 +282,22 @@ export default function AdminParticipantsIndex() {
               <div>
                 <Text fw={500} size="sm" mb={4}>Household</Text>
                 <Paper withBorder radius="md" p="sm">
-                  <Group justify="space-between">
+                  <Group justify="space-between" wrap="wrap">
                     <Text size="sm">{editingParticipant.household.name}</Text>
-                    <Button size="xs" variant="default" onClick={() => {
-                      setEditModalOpen(false);
-                      setSelectedParticipant(editingParticipant);
-                      setEditingParticipant(null);
-                      setAssignModalOpen(true);
-                    }}>Edit Household</Button>
+                    <Group gap="xs">
+                      <Button size="xs" variant="light" onClick={() => {
+                        const hid = editingParticipant.household!.id;
+                        setEditModalOpen(false);
+                        setEditingParticipant(null);
+                        setEditHouseholdId(hid);
+                      }}>Edit Household Info</Button>
+                      <Button size="xs" variant="default" onClick={() => {
+                        setEditModalOpen(false);
+                        setSelectedParticipant(editingParticipant);
+                        setEditingParticipant(null);
+                        setAssignModalOpen(true);
+                      }}>Move to Another Household</Button>
+                    </Group>
                   </Group>
                 </Paper>
               </div>
@@ -293,6 +309,18 @@ export default function AdminParticipantsIndex() {
           </Group>
         </form>
       </Modal>
+
+      {/* Admin edit of household's own info */}
+      <AdminEditHouseholdModal
+        householdId={editHouseholdId}
+        opened={editHouseholdId !== null}
+        onClose={() => setEditHouseholdId(null)}
+        onSaved={(h) => {
+          setResults(results.map(p =>
+            p.household?.id === h.id ? { ...p, household: { ...p.household, name: h.name } } : p
+          ));
+        }}
+      />
     </Stack>
   );
 }

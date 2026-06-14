@@ -19,8 +19,8 @@ function adminTodoCountFor(href: string, counts: TodoCounts | null): number {
       return counts.admin.membership;
     case "/admin/programs/pending":
       return counts.admin.programsPending;
-    case "/admin/safety-links":
-      return counts.admin.safetyLinks;
+    case "/admin/trusted-adults":
+      return counts.admin.trustedAdults;
     default:
       return 0;
   }

@@ -37,6 +37,11 @@ export type Scope =
     | 'their_own'
     | 'their_households'
     | 'their_program_participants'
+    // Caller leads/core-vols a program that a child of this row's household is
+    // enrolled in (used for Trusted Adult pickup notes).
+    | 'their_program_households'
+    // Caller is a keyholder (global — front-desk staff). Unconditional per-row.
+    | 'keyholders'
     | 'all_current_visitors';
 
 export type Token = 'public' | `${Scope}:${SensitiveTier}`;
@@ -63,6 +68,8 @@ const VALID_SCOPES = new Set<Scope>([
     'their_own',
     'their_households',
     'their_program_participants',
+    'their_program_households',
+    'keyholders',
     'all_current_visitors',
 ]);
 const VALID_SENSITIVE_TIERS = new Set<SensitiveTier>(['pii', 'personal', 'internal']);

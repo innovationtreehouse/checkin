@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
+import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 
 export const PATCH = withAuth(
     {},
@@ -107,10 +108,15 @@ export const PATCH = withAuth(
                 }
             });
 
+            // Edits to a member's name/phone/email can make them match an
+            // emergency contact (direction B): re-evaluate and warn if so.
+            const warning = await reconcileAndWarn(prisma, user.householdId);
+
             return NextResponse.json({
                 member: updatedMember,
                 message: leadRejection ? "Member updated, but not added as a lead." : "Member updated successfully.",
                 leadRejection,
+                warning,
             }, { status: 200 });
 
         } catch (error: unknown) {
