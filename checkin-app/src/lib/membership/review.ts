@@ -169,7 +169,7 @@ async function advanceToPayment(processId: number, actorId: number) {
 
 /**
  * Sticky/additive volunteer status: set Membership.isVolunteer = true if ANY
- * reviewer marked the family volunteer OR a household parent's email is pre-
+ * reviewer marked the family volunteer-only OR a household parent's email is pre-
  * designated. Never clears it here.
  */
 export async function applyVolunteerStatus(membershipId: number, householdId: number, markedByReviewer: boolean) {

@@ -215,10 +215,10 @@ export default function MembershipSettingsPage() {
           </Card>
 
           <Card withBorder radius="md" padding="lg">
-            <Title order={3} mb="xs">Volunteer-designated emails</Title>
+            <Title order={3} mb="xs">Volunteer-only designated emails</Title>
             <Text c="dimmed" mb="md">
               If one of these emails applies for membership, that whole household is treated as a
-              volunteer family (lower dues).
+              volunteer only family (lower dues).
             </Text>
             <Group gap="sm" wrap="wrap" mb="md" align="flex-end">
               <TextInput
