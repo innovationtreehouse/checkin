@@ -141,20 +141,63 @@ model ToolStatus {
 
 model Household {
   /// @sensitivity:public
-  id                    Int     @id @default(autoincrement())
+  id      Int     @id @default(autoincrement())
   /// @sensitivity:public
-  name                  String?
+  name    String?
   /// @sensitivity:personal
-  address               String?
-  /// @sensitivity:personal
-  emergencyContactName  String?
-  /// @sensitivity:personal
-  emergencyContactPhone String?
+  address String?
 
-  participants  Participant[]
-  leads         HouseholdLead[]
-  membership    Membership?
-  trustedAdults TrustedAdult[]
+  participants      Participant[]
+  leads             HouseholdLead[]
+  membership        Membership?
+  trustedAdults     TrustedAdult[]
+  emergencyContacts EmergencyContact[]
+}
+
+/// An emergency contact for a household. Modeled as a separate entity (1 household
+/// : many contacts) so external, non-family people can be linked. The invariant
+/// "an emergency contact is not a member of the same household" is enforced in
+/// application code (lib/emergencyContacts), not the database: a row is INVALID
+/// when conflictParticipantId is set, meaning it collides with a household member.
+model EmergencyContact {
+  /// @sensitivity:public
+  id          Int       @id @default(autoincrement())
+  /// @sensitivity:public
+  householdId Int
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  /// @sensitivity:personal
+  name         String
+  /// @sensitivity:personal
+  phone        String
+  /// @sensitivity:personal
+  email        String?
+  /// @sensitivity:personal
+  relationship String?
+  /// @sensitivity:public
+  priority     Int     @default(0)
+
+  // Normalized identity keys, used for the not-a-household-member check.
+  /// @sensitivity:personal
+  phoneDigits String
+  /// @sensitivity:personal
+  emailNorm   String?
+
+  // Soft-conflict state. Null conflictParticipantId == a valid contact. When a
+  // household member is found to be the same person as this contact, the id of
+  // that member is recorded here (the row is kept for audit, flagged invalid).
+  /// @sensitivity:internal
+  conflictParticipantId Int?
+  /// @sensitivity:internal
+  conflictedAt          DateTime?
+
+  /// @sensitivity:internal
+  createdAt DateTime @default(now())
+  /// @sensitivity:internal
+  updatedAt DateTime @updatedAt
+
+  @@index([householdId])
+  @@index([phoneDigits])
 }
 
 model HouseholdLead {

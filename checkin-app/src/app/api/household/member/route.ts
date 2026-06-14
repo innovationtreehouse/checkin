@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 
 export const PATCH = withAuth(
     {},
@@ -97,7 +98,11 @@ export const PATCH = withAuth(
                 }
             });
 
-            return NextResponse.json({ member: updatedMember, message: "Member updated successfully." }, { status: 200 });
+            // Edits to a member's name/phone/email can make them match an
+            // emergency contact (direction B): re-evaluate and warn if so.
+            const warning = await reconcileAndWarn(prisma, user.householdId);
+
+            return NextResponse.json({ member: updatedMember, message: "Member updated successfully.", warning }, { status: 200 });
 
         } catch (error: unknown) {
             console.error("Household Member PATCH Error:", error);

@@ -81,7 +81,15 @@ export const GET = withAuth({}, async (_req, auth) => {
             isLead
                 ? prisma.household.findUnique({
                       where: { id: householdId },
-                      select: { emergencyContactName: true, emergencyContactPhone: true },
+                      select: {
+                          // A household needs the todo when it has no valid (non-member,
+                          // complete) emergency contact. Emergency contacts are their own entity.
+                          emergencyContacts: {
+                              where: { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } },
+                              select: { id: true },
+                              take: 1,
+                          },
+                      },
                   })
                 : Promise.resolve(null),
             prisma.membershipProcess.findMany({
@@ -104,7 +112,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             }),
         ]);
 
-        if (!!hh && (!hh.emergencyContactName || !hh.emergencyContactPhone)) {
+        if (!!hh && hh.emergencyContacts.length === 0) {
             householdTodos.push({ key: "emergency-contact", label: "Add a household emergency contact", href: "/household#emergency-contact" });
         }
         for (const p of membershipProcs) {

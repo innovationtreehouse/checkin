@@ -14,7 +14,9 @@ export const GET = withAuth(
                 where: { id: userId },
                 include: {
                     householdLeads: true,
-                    household: true
+                    household: {
+                        include: { emergencyContacts: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
+                    },
                 }
             });
 
@@ -25,16 +27,21 @@ export const GET = withAuth(
             // Minors are never required to provide a phone number (issue #169)
             const needsPhone = !user.phone && !isMinor(user.dob);
             const isLead = user.householdId && user.householdLeads.some((lead: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => lead.householdId === user.householdId);
-            
-            const needsEmergencyContact = isLead && (!user.household?.emergencyContactName || !user.household?.emergencyContactPhone);
+
+            // A lead needs a contact when no valid (non-member, complete) one exists.
+            const validContact = user.household?.emergencyContacts.find(
+                (c) => c.conflictParticipantId === null && c.name.trim() && c.phone.trim(),
+            );
+            const primaryContact = user.household?.emergencyContacts[0];
+            const needsEmergencyContact = isLead && !validContact;
 
             return NextResponse.json({
                 phone: user.phone || "",
                 needsPhone,
                 isLead: Boolean(isLead),
                 needsEmergencyContact: Boolean(needsEmergencyContact),
-                emergencyContactName: user.household?.emergencyContactName || "",
-                emergencyContactPhone: user.household?.emergencyContactPhone || ""
+                emergencyContactName: primaryContact?.name || "",
+                emergencyContactPhone: primaryContact?.phone || ""
             });
         } catch (error) {
             console.error("Error checking onboarding status:", error);

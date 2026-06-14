@@ -32,7 +32,7 @@ type ProgramDetail = {
       name: string | null;
       email: string;
       phone?: string | null;
-      household?: { emergencyContactName: string | null; emergencyContactPhone: string | null } | null;
+      household?: { emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[] } | null;
     };
   }[];
   volunteers: { participantId: number; isCore: boolean; participant: { name: string | null; email: string } }[];
@@ -554,7 +554,12 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                           <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone || 'N/A'}</Text>
                           <Text size="sm" c="dimmed"><strong>Joined:</strong> {p.joinedAt ? formatDateTime(p.joinedAt) : 'N/A'}</Text>
                           {p.participant.household && (
-                            <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}><strong>Emergency Contact:</strong> {p.participant.household.emergencyContactName || 'N/A'} - {p.participant.household.emergencyContactPhone || 'N/A'}</Text>
+                            <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
+                              <strong>Emergency Contact{(p.participant.household.emergencyContacts?.length ?? 0) > 1 ? 's' : ''}:</strong>{' '}
+                              {p.participant.household.emergencyContacts && p.participant.household.emergencyContacts.length > 0
+                                ? p.participant.household.emergencyContacts.map((c) => `${c.name} - ${c.phone}`).join('; ')
+                                : 'N/A'}
+                            </Text>
                           )}
                         </SimpleGrid>
                       </Card>

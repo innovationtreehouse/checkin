@@ -31,8 +31,12 @@ jest.mock('@/lib/prisma', () => ({
     participant: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
       deleteMany: jest.fn(),
+    },
+    emergencyContact: {
+      findMany: jest.fn(),
     },
     program: {
       create: jest.fn(),
@@ -143,7 +147,6 @@ describe('Full Program Signup Integration Flow', () => {
         const createHouseholdReq = new Request('http://localhost/api/household', {
             method: 'POST',
         });
-        // @ts-expect-error - Mocking auth session internally used via second argument
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const createHouseholdRes = await CreateHousehold(createHouseholdReq as any, { type: 'session', user: { id: leadUserId } } as any);
         expect(createHouseholdRes.status).toBe(201);
@@ -153,6 +156,9 @@ describe('Full Program Signup Integration Flow', () => {
         // 5. Lead user adds a child member to the household
         (prisma.participant.findUnique as jest.Mock).mockResolvedValueOnce({ id: leadUserId, householdId, householdLeads: [{ householdId, participantId: leadUserId }] });
         (prisma.participant.create as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId });
+        // Adding a member reconciles emergency contacts (direction B); no contacts/members to flag here.
+        (prisma.participant.findMany as jest.Mock).mockResolvedValue([]);
+        (prisma.emergencyContact.findMany as jest.Mock).mockResolvedValue([]);
 
         const addChildReq = new Request('http://localhost/api/household', {
             method: 'PATCH',
@@ -161,7 +167,6 @@ describe('Full Program Signup Integration Flow', () => {
                 memberDob: '2015-01-01',
             }),
         });
-        // @ts-expect-error - Mocking auth session internally used via second argument
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const addChildRes = await AddHouseholdMember(addChildReq as any, { type: 'session', user: { id: leadUserId } } as any);
         expect(addChildRes.status).toBe(200);

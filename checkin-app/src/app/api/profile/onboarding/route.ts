@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuth } from "@/lib/auth";
+import { upsertPrimaryContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 
 export const POST = withAuth(
     {},
@@ -30,18 +31,19 @@ export const POST = withAuth(
 
             const isLead = user.householdId && user.householdLeads.some((lead: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => lead.householdId === user.householdId);
             if (isLead && user.householdId && (emergencyContactName !== undefined || emergencyContactPhone !== undefined)) {
-                const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
-                if (emergencyContactName !== undefined) updateData.emergencyContactName = emergencyContactName;
-                if (emergencyContactPhone !== undefined) updateData.emergencyContactPhone = emergencyContactPhone;
-                
-                await prisma.household.update({
-                    where: { id: user.householdId },
-                    data: updateData
+                // Emergency contact is a separate entity; onboarding edits the
+                // household's primary contact. Rejects a member as the contact.
+                await upsertPrimaryContact(prisma, user.householdId, {
+                    name: emergencyContactName,
+                    phone: emergencyContactPhone,
                 });
             }
 
             return NextResponse.json({ success: true });
         } catch (error) {
+            if (error instanceof EmergencyContactError) {
+                return NextResponse.json({ error: error.message }, { status: 400 });
+            }
             console.error("Error saving onboarding details:", error);
             return NextResponse.json({ error: "Failed to save data" }, { status: 500 });
         }

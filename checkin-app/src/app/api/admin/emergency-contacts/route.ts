@@ -31,18 +31,33 @@ export const GET = withAuth(
                                 }
                             }
                         }
+                    },
+                    emergencyContacts: {
+                        orderBy: [{ priority: "asc" }, { id: "asc" }]
                     }
                 }
             });
 
             const formattedHouseholds = households.map(h => {
                 const isPresent = h.participants.some(p => p.visits.length > 0);
-                
+                const contacts = h.emergencyContacts.map(c => ({
+                    id: c.id,
+                    name: c.name,
+                    phone: c.phone,
+                    email: c.email,
+                    relationship: c.relationship,
+                    // Invalid == flagged as a household member (kept for audit).
+                    invalid: c.conflictParticipantId !== null || !c.name.trim() || !c.phone.trim(),
+                }));
+                const primaryValid = contacts.find(c => !c.invalid) ?? null;
+
                 return {
                     id: h.id,
                     name: h.name,
-                    emergencyContactName: h.emergencyContactName,
-                    emergencyContactPhone: h.emergencyContactPhone,
+                    // Back-compat fields: the primary valid contact.
+                    emergencyContactName: primaryValid?.name ?? null,
+                    emergencyContactPhone: primaryValid?.phone ?? null,
+                    emergencyContacts: contacts,
                     isPresent,
                     participants: h.participants.map(p => ({
                         id: p.id,
