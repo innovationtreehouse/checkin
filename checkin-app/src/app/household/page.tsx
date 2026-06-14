@@ -165,7 +165,11 @@ export default function HouseholdPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setMessage("Member updated successfully!");
+        // Field edits saved even when the promotion to lead was declined by the
+        // household cap; show that caveat instead of an unqualified success.
+        setMessage(data.leadRejection
+          ? `Member updated, but not added as a lead — ${data.leadRejection}`
+          : (data.message || "Member updated successfully!"));
         setEditingMemberId(null);
         fetchHousehold();
       } else {
