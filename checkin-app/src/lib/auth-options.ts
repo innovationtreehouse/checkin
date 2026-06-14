@@ -10,6 +10,7 @@ import { config, ORG_DOMAIN } from "@/lib/config";
 import { evaluateMint, type MintMode } from "@/lib/impersonation";
 import { recordLedger } from "@/lib/dev/ledger";
 import { assignParticipantClaims } from "@/lib/authClaims";
+import { addHouseholdLead } from "@/lib/household/leads";
 
 // Stable id for the dev/local persona-mint credential flow.
 export const PERSONA_MINT_PROVIDER_ID = "persona-mint";
@@ -38,9 +39,7 @@ async function createParticipantWithHousehold(data: {
         const participant = await tx.participant.create({
             data: { ...data, householdId: household.id },
         });
-        await tx.householdLead.create({
-            data: { householdId: household.id, participantId: participant.id },
-        });
+        await addHouseholdLead(tx, household.id, participant.id);
         return participant;
     });
 }

@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus } from "@/lib/membership/external";
+import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 
 /**
  * Membership intake service — the write/read model behind the "Join the
@@ -14,7 +15,7 @@ import { getExternalStatus } from "@/lib/membership/external";
  */
 
 export class IntakeError extends Error {
-    constructor(public readonly code: "no_household" | "not_lead" | "already_member" | "no_process" | "incomplete", message: string) {
+    constructor(public readonly code: "no_household" | "not_lead" | "already_member" | "no_process" | "incomplete" | "lead_limit", message: string) {
         super(message);
         this.name = "IntakeError";
     }
@@ -172,6 +173,16 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
 
     const toDate = (d?: string | null) => (d ? new Date(d) : null);
 
+    // Promote a guardian to household lead, surfacing the cap (#269) as a 400.
+    const addLeadOrThrow = async (participantId: number) => {
+        try {
+            await addHouseholdLead(prisma, householdId, participantId);
+        } catch (e) {
+            if (e instanceof HouseholdLeadLimitError) throw new IntakeError("lead_limit", e.message);
+            throw e;
+        }
+    };
+
     if (input.household) {
         await prisma.household.update({
             where: { id: householdId },
@@ -209,11 +220,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 },
             });
             // A second guardian is a household lead (parent).
-            await prisma.householdLead.upsert({
-                where: { householdId_participantId: { householdId, participantId: sp.id } },
-                create: { householdId, participantId: sp.id },
-                update: {},
-            });
+            await addLeadOrThrow(sp.id);
         } else if (sp.name || sp.email) {
             const created = await prisma.participant.create({
                 data: {
@@ -224,7 +231,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     allergies: sp.allergies ?? null,
                 },
             });
-            await prisma.householdLead.create({ data: { householdId, participantId: created.id } });
+            await addLeadOrThrow(created.id);
         }
     }
 

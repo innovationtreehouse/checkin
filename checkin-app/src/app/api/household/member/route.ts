@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 
 export const PATCH = withAuth(
     {},
@@ -50,12 +51,7 @@ export const PATCH = withAuth(
                 });
 
                 if (isLead && !currentLead) {
-                    await prisma.householdLead.create({
-                        data: {
-                            householdId: user.householdId,
-                            participantId
-                        }
-                    });
+                    await addHouseholdLead(prisma, user.householdId, participantId);
                     await prisma.auditLog.create({
                         data: {
                             actorId: userId,
@@ -100,6 +96,9 @@ export const PATCH = withAuth(
             return NextResponse.json({ member: updatedMember, message: "Member updated successfully." }, { status: 200 });
 
         } catch (error: unknown) {
+            if (error instanceof HouseholdLeadLimitError) {
+                return NextResponse.json({ error: error.message }, { status: 400 });
+            }
             console.error("Household Member PATCH Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }

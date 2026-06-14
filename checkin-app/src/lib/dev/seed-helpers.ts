@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
+import { addHouseholdLead } from "@/lib/household/leads";
 
 /**
  * Dev seed + macro helpers (DEV_DASHBOARD_DESIGN.md §4) — the ONE source of truth for creating
@@ -172,18 +173,10 @@ export async function seedBaseline(prisma: Db): Promise<void> {
     await prisma.participant.update({ where: { id: parent2Family.id }, data: { householdId: household1.id } });
     await prisma.participant.update({ where: { id: childFamily.id }, data: { householdId: household1.id } });
 
-    await prisma.householdLead.upsert({
-        where: { householdId_participantId: { householdId: household1.id, participantId: parentFamily.id } },
-        update: {},
-        create: { householdId: household1.id, participantId: parentFamily.id },
-    });
+    await addHouseholdLead(prisma, household1.id, parentFamily.id);
 
     await prisma.participant.update({ where: { id: parentFamily2.id }, data: { householdId: household2.id } });
-    await prisma.householdLead.upsert({
-        where: { householdId_participantId: { householdId: household2.id, participantId: parentFamily2.id } },
-        update: {},
-        create: { householdId: household2.id, participantId: parentFamily2.id },
-    });
+    await addHouseholdLead(prisma, household2.id, parentFamily2.id);
 
     // 4. Tools & certifications
     const tableSaw = await prisma.tool.upsert({
@@ -255,9 +248,7 @@ export async function createFamily(prisma: Db): Promise<string> {
             householdId: household.id,
         },
     });
-    await prisma.householdLead.create({
-        data: { householdId: household.id, participantId: lead.id },
-    });
+    await addHouseholdLead(prisma, household.id, lead.id);
     await prisma.participant.create({
         data: {
             name: `Partner ${tag}`,

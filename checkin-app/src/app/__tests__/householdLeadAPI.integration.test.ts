@@ -210,8 +210,30 @@ describe('Household Lead API Integration Tests', () => {
             });
             expect(auditLogs.length).toBeGreaterThan(0);
         });
+
+        it('should reject promoting a third lead (max 2 per household)', async () => {
+            // householdId now has two leads: testLeadId and testAdultId (from the
+            // previous test). Promoting a third must be rejected (#269).
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testLeadId } });
+
+            const req = new Request('http://localhost:4000/api/household/lead', {
+                method: 'POST',
+                body: JSON.stringify({ participantId: testChildId })
+            });
+
+            const res = await POST(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('A household can have at most 2 leads.');
+
+            // No lead row should have been created for the third member.
+            const noLead = await prisma.householdLead.findUnique({
+                where: { householdId_participantId: { householdId, participantId: testChildId } }
+            });
+            expect(noLead).toBeNull();
+        });
     });
-    
+
     describe('DELETE /api/household/lead', () => {
          it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);

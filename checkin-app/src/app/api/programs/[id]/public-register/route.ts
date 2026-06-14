@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { logBackendError } from "@/lib/logger";
+import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 
 interface ParentInput {
     name: string;
@@ -134,12 +135,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 createdParents.push(newParent);
 
                 // Make them lead
-                await tx.householdLead.create({
-                    data: {
-                        householdId: household.id,
-                        participantId: newParent.id
-                    }
-                });
+                await addHouseholdLead(tx, household.id, newParent.id);
             }
 
             // 3. Create Participants & Enrollments
@@ -210,6 +206,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         });
 
     } catch (error) {
+        if (error instanceof HouseholdLeadLimitError) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
         await logBackendError(error, "POST /api/programs/[id]/public-register");
         return NextResponse.json({ error: "An error occurred during registration." }, { status: 500 });
     }
