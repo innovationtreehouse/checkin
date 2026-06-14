@@ -8,9 +8,8 @@
  * secret and a single in-window event. These add:
  *   - the auth rejections (missing / wrong / unconfigured CRON_SECRET)
  *   - window selection at the inside/outside boundaries of the [now+2h, +2h15m] range
- *   - a characterization test documenting that a second run RE-SENDS reminders
- *     (the route has no per-RSVP "reminderSent" guard, so a 15-min cron cadence
- *     overlapping the 15-min window can double-notify).
+ *   - idempotency: a second run does NOT re-send, because the route now stamps
+ *     RSVP.reminderSentAt after sending and excludes already-reminded RSVPs.
  */
 import { GET } from '@/app/api/cron/reminders/route';
 import prisma from '@/lib/prisma';
@@ -113,7 +112,7 @@ describe('GET /api/cron/reminders — auth & window edges', () => {
         expect(notified).not.toContain(`${TAG} too-late`);
     });
 
-    it('CHARACTERIZATION: a second run re-sends the reminder (no idempotency guard)', async () => {
+    it('is idempotent: a second run does not re-send the reminder', async () => {
         await makeEvent('dup', 2 * HOUR + 5 * MIN);
 
         const first = await GET(cronReq(`Bearer ${SECRET}`));
@@ -125,8 +124,8 @@ describe('GET /api/cron/reminders — auth & window edges', () => {
         expect(second.status).toBe(200);
         const afterSecond = (sendNotification as jest.Mock).mock.calls.length;
 
-        // Documents the gap: the same RSVP is notified again on the second run.
-        // If a `reminderSent` flag is added to the route, flip this to `toBe(1)`.
-        expect(afterSecond).toBe(2);
+        // reminderSentAt is stamped after the first send and excludes the RSVP
+        // from the query, so the overlapping second run is a no-op.
+        expect(afterSecond).toBe(1);
     });
 });
