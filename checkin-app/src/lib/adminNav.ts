@@ -41,7 +41,7 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
       { name: "Membership Settings", href: "/admin/membership/settings", icon: "⚙️", description: "Configure dues and membership-year settings." },
       { name: "Pending Participants", href: "/admin/programs/pending", icon: "⏳", description: "Approve pending payment-plan requests." },
       { name: "Emergency Contacts", href: "/admin/emergency-contacts", icon: "🚑", description: "View participant emergency contacts." },
-      { name: "Safety Links", href: "/admin/safety-links", icon: "🔗", description: "Review board-approved dual relationships." },
+      { name: "Trusted Adults", href: "/admin/trusted-adults", icon: "🔗", description: "Review board-approved trusted adults." },
       { name: "Role Assignment", href: "/admin/roles", icon: "🔐", description: "Assign admin / board / keyholder roles." },
     ],
   },

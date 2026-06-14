@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
 import { formatDate, formatTime, formatDateTime } from '@/lib/time';
-import SafetyLinksPanel from '@/components/SafetyLinksPanel';
+import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 
@@ -352,8 +352,8 @@ export default function HouseholdPage() {
               </Card>
 
               <Card withBorder radius="md" padding="md">
-                <Title order={5} c="grape" mb="sm">Safety Links</Title>
-                <SafetyLinksPanel />
+                <Title order={5} c="grape" mb="sm">Trusted Adults</Title>
+                <TrustedAdultPanel />
               </Card>
             </Stack>
             <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="lg">

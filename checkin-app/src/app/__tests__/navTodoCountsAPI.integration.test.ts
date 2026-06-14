@@ -29,7 +29,7 @@ describe('Nav todo-counts API', () => {
     let membershipId: number;
     let program1Id: number;
     let program2Id: number;
-    const safetyLinkIds: number[] = [];
+    const trustedAdultIds: number[] = [];
 
     const daysFromNow = (n: number) => {
         const d = new Date();
@@ -61,29 +61,40 @@ describe('Nav todo-counts API', () => {
         await prisma.membershipProcess.create({ data: { membershipId, kind: 'INITIAL', status: 'PENDING_PAYMENT' } });
         await prisma.membershipProcess.create({ data: { membershipId, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } });
 
-        // Safety links for the lead: one awaiting subject action, one approved and
+        // Trusted adults for the lead: one awaiting subject action, one approved and
         // expiring within the warn window.
-        const slAction = await prisma.safetyLink.create({
+        const slAction = await prisma.trustedAdult.create({
             data: {
-                subjectParticipantId: leadId,
+                householdId: householdAId,
                 counterpartyName: 'Counterparty One',
-                relationshipType: 'OTHER',
-                description: 'needs info',
+                counterpartyContact: 'one@example.com',
+                familyContext: 'needs info',
                 disclosedById: leadId,
-                reviews: { create: { subjectParticipantId: leadId, kind: 'INITIAL', status: 'PENDING_SUBJECT_ACTION' } },
+                reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'PENDING_SUBJECT_ACTION' } },
             },
         });
-        const slExpiring = await prisma.safetyLink.create({
+        const slExpiring = await prisma.trustedAdult.create({
             data: {
-                subjectParticipantId: leadId,
+                householdId: householdAId,
                 counterpartyName: 'Counterparty Two',
-                relationshipType: 'OTHER',
-                description: 'expiring soon',
+                counterpartyContact: 'two@example.com',
+                familyContext: 'expiring soon',
                 disclosedById: leadId,
-                reviews: { create: { subjectParticipantId: leadId, kind: 'INITIAL', status: 'APPROVED', effectiveFrom: daysFromNow(-355), reviewBy: daysFromNow(10) } },
+                reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'APPROVED', sharedNote: 'note', effectiveFrom: daysFromNow(-355), reviewBy: daysFromNow(10) } },
             },
         });
-        safetyLinkIds.push(slAction.id, slExpiring.id);
+        // One awaiting board review — the board's own queue item.
+        const slPending = await prisma.trustedAdult.create({
+            data: {
+                householdId: householdAId,
+                counterpartyName: 'Counterparty Three',
+                counterpartyContact: 'three@example.com',
+                familyContext: 'pending board review',
+                disclosedById: leadId,
+                reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'PENDING_BOARD_REVIEW' } },
+            },
+        });
+        trustedAdultIds.push(slAction.id, slExpiring.id, slPending.id);
 
         // Two pending program enrollments for household members. One has a payment
         // plan requested (the board's approval queue), one does not.
@@ -103,8 +114,8 @@ describe('Nav todo-counts API', () => {
     });
 
     afterAll(async () => {
-        await prisma.safetyLinkReview.deleteMany({ where: { safetyLinkId: { in: safetyLinkIds } } });
-        await prisma.safetyLink.deleteMany({ where: { id: { in: safetyLinkIds } } });
+        await prisma.trustedAdultReview.deleteMany({ where: { trustedAdultId: { in: trustedAdultIds } } });
+        await prisma.trustedAdult.deleteMany({ where: { id: { in: trustedAdultIds } } });
         await prisma.programParticipant.deleteMany({ where: { programId: { in: [program1Id, program2Id] } } });
         await prisma.program.deleteMany({ where: { id: { in: [program1Id, program2Id] } } });
         await prisma.membershipProcess.deleteMany({ where: { membershipId } });
@@ -130,7 +141,7 @@ describe('Nav todo-counts API', () => {
         expect(res.status).toBe(200);
         const data = await res.json();
         // emergency contact (1) + PENDING_PAYMENT (1) + PENDING_SUBJECT_ACTION (1)
-        // + expiring safety link (1) = 4. PENDING_BG_REVIEW is board-owned → excluded.
+        // + expiring trusted adult (1) = 4. PENDING_BG_REVIEW is board-owned → excluded.
         expect(data.member.household).toHaveLength(4);
         expect(data.member.programs).toHaveLength(2);
         // Items carry a label + a deep link so the UI can show *what* is due.
@@ -155,6 +166,6 @@ describe('Nav todo-counts API', () => {
         // Global queues may hold other rows; assert our injected items are included.
         expect(data.admin.membership).toBeGreaterThanOrEqual(1); // the PENDING_BG_REVIEW
         expect(data.admin.programsPending).toBeGreaterThanOrEqual(1); // payment-plan requested
-        expect(data.admin.safetyLinks).toBeGreaterThanOrEqual(1); // the expiring approval
+        expect(data.admin.trustedAdults).toBeGreaterThanOrEqual(1); // the PENDING_BOARD_REVIEW review
     });
 });
