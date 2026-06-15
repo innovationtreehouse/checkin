@@ -375,6 +375,10 @@ model BoardSettings {
   /// link for volunteer households so Shopify applies their discount.
   /// @sensitivity:internal
   volunteerDiscountCode      String?
+  /// How long a background check stays valid, in months. 0 = not yet configured
+  /// (the board must set the real Treehouse policy value before renewals re-check).
+  /// @sensitivity:public
+  bgRecheckMonths            Int       @default(0)
   /// @sensitivity:internal
   shopifyMembershipProductId String?
   /// @sensitivity:internal

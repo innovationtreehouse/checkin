@@ -159,7 +159,8 @@ async function advanceToPayment(processId: number, actorId: number) {
 
     await prisma.membershipProcess.update({ where: { id: processId }, data: { status: "PENDING_PAYMENT", stageEnteredAt: new Date() } });
 
-    // Stamp the guardians' (household leads') lastBackgroundCheck (drives the 3-year renewal rule).
+    // Stamp the guardians' (household leads') lastBackgroundCheck. Expiry is derived from this
+    // plus BoardSettings.bgRecheckMonths at read time (see householdBgIsFresh) — not stored.
     await prisma.participant.updateMany({ where: { householdId, householdLeads: { some: { householdId } } }, data: { lastBackgroundCheck: new Date() } });
 
     await applyVolunteerStatus(process.membershipId, householdId, process.attestations.some((a) => a.markedVolunteer));

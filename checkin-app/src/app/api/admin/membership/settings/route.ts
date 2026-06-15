@@ -28,6 +28,7 @@ export const PUT = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, 
         membershipYearBoundary?: string | null;
         membershipVariantId?: string | null;
         volunteerDiscountCode?: string | null;
+        bgRecheckMonths?: number;
     };
     try {
         body = await req.json();
@@ -56,6 +57,7 @@ export const PUT = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, 
     if (body.volunteerDiscountCode !== undefined) {
         data.volunteerDiscountCode = body.volunteerDiscountCode?.trim() || null;
     }
+    if (body.bgRecheckMonths !== undefined) data.bgRecheckMonths = Math.max(0, Math.round(body.bgRecheckMonths));
 
     const settings = await prisma.boardSettings.upsert({
         where: { id: 1 },
