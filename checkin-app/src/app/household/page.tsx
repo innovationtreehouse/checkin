@@ -305,7 +305,7 @@ export default function HouseholdPage() {
               <Alert color="green" mb="lg">
                 <Group gap="xs" wrap="wrap">
                   <Text fw={600}>✓ Member{household.membership.since ? ` since ${formatDate(household.membership.since)}` : ''}</Text>
-                  {household.membership.isVolunteer && <Badge color="green" variant="light">Volunteer family</Badge>}
+                  {household.membership.isVolunteer && <Badge color="green" variant="light">Volunteer-only family</Badge>}
                 </Group>
               </Alert>
             ) : (
