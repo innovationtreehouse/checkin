@@ -63,6 +63,8 @@ export default function DevLoginPicker() {
     return badges;
   };
 
+  if (process.env.NODE_ENV === 'production') return null;
+
   if (loading) {
     return (
       <Center mt="md">

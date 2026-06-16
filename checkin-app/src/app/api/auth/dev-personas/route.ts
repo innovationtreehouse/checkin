@@ -16,6 +16,9 @@ export const dynamic = 'force-dynamic';
  * logged-out picker is the initial login path).
  */
 export async function GET() {
+    if (process.env.NODE_ENV === 'production') {
+        return NextResponse.json({ error: "Not available" }, { status: 404 });
+    }
     if (!config.isDevInstance()) {
         return NextResponse.json({ error: "Not available" }, { status: 404 });
     }

@@ -100,7 +100,7 @@ export const authOptions: NextAuthOptions = {
         // lives in evaluateMint(); this provider just supplies the caller's claims and the target.
         // (Replaces the old local-only "Offline Login" provider — local mints are the
         // unauthenticated-caller case in evaluateMint.)
-        ...(config.isDevInstance() ? [
+        ...(config.isDevInstance() && process.env.NODE_ENV !== 'production' ? [
             CredentialsProvider({
                 id: PERSONA_MINT_PROVIDER_ID,
                 name: "Persona",
