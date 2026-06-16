@@ -10,8 +10,8 @@ export const PATCH = withAuth({}, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     try {
         const body = await req.json();
-        const state = await saveIntake(auth.user.id, body);
-        return NextResponse.json({ state });
+        const { state, rejections } = await saveIntake(auth.user.id, body);
+        return NextResponse.json({ state, rejections });
     } catch (error) {
         return intakeErrorResponse(error, "Membership intake save error");
     }

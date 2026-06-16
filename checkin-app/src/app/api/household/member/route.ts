@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 
 export const PATCH = withAuth(
@@ -43,6 +44,12 @@ export const PATCH = withAuth(
                 }
             });
 
+            // Set when the field edits saved but the requested promotion to lead
+            // was declined by the per-household cap (#269). We report this back
+            // rather than 400 the whole edit, so the form can say the member's
+            // details were saved even though they weren't made a lead.
+            let leadRejection: string | null = null;
+
             if (isLead !== undefined && participantId !== userId) {
                 const currentLead = await prisma.householdLead.findUnique({
                     where: {
@@ -51,21 +58,24 @@ export const PATCH = withAuth(
                 });
 
                 if (isLead && !currentLead) {
-                    await prisma.householdLead.create({
-                        data: {
-                            householdId: user.householdId,
-                            participantId
+                    try {
+                        await addHouseholdLead(prisma, user.householdId, participantId);
+                        await prisma.auditLog.create({
+                            data: {
+                                actorId: userId,
+                                action: "CREATE",
+                                tableName: "HouseholdLead",
+                                affectedEntityId: user.householdId,
+                                secondaryAffectedEntity: participantId
+                            }
+                        });
+                    } catch (e) {
+                        if (e instanceof HouseholdLeadLimitError) {
+                            leadRejection = e.message;
+                        } else {
+                            throw e;
                         }
-                    });
-                    await prisma.auditLog.create({
-                        data: {
-                            actorId: userId,
-                            action: "CREATE",
-                            tableName: "HouseholdLead",
-                            affectedEntityId: user.householdId,
-                            secondaryAffectedEntity: participantId
-                        }
-                    });
+                    }
                 } else if (!isLead && currentLead) {
                     const leadCount = await prisma.householdLead.count({ where: { householdId: user.householdId } });
                     if (leadCount > 1) {
@@ -102,9 +112,17 @@ export const PATCH = withAuth(
             // emergency contact (direction B): re-evaluate and warn if so.
             const warning = await reconcileAndWarn(prisma, user.householdId);
 
-            return NextResponse.json({ member: updatedMember, message: "Member updated successfully.", warning }, { status: 200 });
+            return NextResponse.json({
+                member: updatedMember,
+                message: leadRejection ? "Member updated, but not added as a lead." : "Member updated successfully.",
+                leadRejection,
+                warning,
+            }, { status: 200 });
 
         } catch (error: unknown) {
+            if (error instanceof HouseholdLeadLimitError) {
+                return NextResponse.json({ error: error.message }, { status: 400 });
+            }
             console.error("Household Member PATCH Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }

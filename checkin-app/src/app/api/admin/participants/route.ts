@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
+import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 
 export async function POST(req: NextRequest) {
     const auth = await authenticateRequest(req);
@@ -61,9 +62,7 @@ export async function POST(req: NextRequest) {
                         }
                     }
                 });
-                await prisma.householdLead.create({
-                    data: { householdId: parent.householdId, participantId: parent.id }
-                });
+                await addHouseholdLead(prisma, parent.householdId, parent.id);
                 if (alreadyMember) {
                     await prisma.membership.create({
                         data: {
@@ -102,9 +101,7 @@ export async function POST(req: NextRequest) {
                 }
             });
 
-            await prisma.householdLead.create({
-                data: { householdId: newParticipant.householdId, participantId: newParticipant.id }
-            });
+            await addHouseholdLead(prisma, newParticipant.householdId, newParticipant.id);
 
             if (alreadyMember) {
                 await prisma.membership.create({
@@ -118,6 +115,9 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ success: true, participant: newParticipant });
     } catch (error: unknown) {
+        if (error instanceof HouseholdLeadLimitError) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
         await logBackendError(error, "POST /api/admin/participants");
         return NextResponse.json({ error: `Failed to create participant` }, { status: 500 });
     }

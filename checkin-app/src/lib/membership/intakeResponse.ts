@@ -8,6 +8,7 @@ const STATUS_FOR: Record<IntakeError["code"], number> = {
     already_member: 409,
     no_process: 400,
     incomplete: 400,
+    lead_limit: 400,
 };
 
 /**

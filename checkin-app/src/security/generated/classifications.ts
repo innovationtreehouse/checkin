@@ -101,6 +101,7 @@ export const classifications = {
         membershipYearBoundary: 'public',
         membershipVariantId: 'internal',
         volunteerDiscountCode: 'internal',
+        bgRecheckMonths: 'public',
         shopifyMembershipProductId: 'internal',
         shopifyNormalVariantId: 'internal',
         shopifyVolunteerVariantId: 'internal',

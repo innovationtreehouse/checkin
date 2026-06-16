@@ -10,6 +10,7 @@ import { EnvProvider } from '@/components/EnvProvider';
 import DevImpersonationBar from '@/components/DevImpersonationBar';
 import DevDashboard from '@/components/DevDashboard';
 import OnboardingGate from '@/components/OnboardingGate';
+import RenewalBanner from '@/components/RenewalBanner';
 import AppFrame from '@/components/AppFrame';
 import { brand } from '@/brand';
 import { config } from '@/lib/config';
@@ -41,7 +42,10 @@ export default function RootLayout({
               <AuthProvider>
                 <OnboardingGate>
                   <DevImpersonationBar />
-                  <AppFrame>{children}</AppFrame>
+                  <AppFrame>
+                    <RenewalBanner />
+                    {children}
+                  </AppFrame>
                   <DevDashboard />
                 </OnboardingGate>
               </AuthProvider>

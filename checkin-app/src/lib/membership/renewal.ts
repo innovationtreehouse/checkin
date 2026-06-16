@@ -8,16 +8,15 @@ import { notifyReviewers } from "@/lib/membership/review";
  * household. Two months out, the cron opens a RENEWAL process at PENDING_RENEWAL
  * and reminds the household — the membership stays ACTIVE throughout.
  *
- * When the member begins renewal, the 3-year background-check rule decides the
- * path: if EITHER parent's lastBackgroundCheck is within 3 years of the boundary,
- * skip straight to PENDING_PAYMENT; otherwise re-run review (RENEWAL_PENDING_BG).
- * The Zoho contract is NOT re-signed at renewal. No auto-revoke — that's a manual
- * admin action.
+ * When the member begins renewal, the background-check rule decides the path: if
+ * EITHER parent's check is still valid at the boundary (lastBackgroundCheck within
+ * BoardSettings.bgRecheckMonths of it), skip straight to PENDING_PAYMENT; otherwise
+ * re-run review (RENEWAL_PENDING_BG). The interval is board-configured, not hardcoded.
+ * The Zoho contract is NOT re-signed at renewal. No auto-revoke — manual admin action.
  */
 
 const SYSTEM_ACTOR = 0;
 const RENEWAL_LEAD_MONTHS = 2;
-const BG_VALID_YEARS = 3;
 
 export class RenewalError extends Error {
     constructor(public readonly code: "not_found" | "wrong_phase", message: string) {
@@ -85,7 +84,7 @@ export async function beginRenewal(processId: number) {
     if (!membership) throw new RenewalError("not_found", "Membership not found.");
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const boundary = settings?.membershipYearBoundary ? nextBoundary(settings.membershipYearBoundary, new Date()) : new Date();
-    const bgFresh = await householdBgIsFresh(membership.householdId, boundary);
+    const bgFresh = await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0);
 
     const nextStatus = bgFresh ? "PENDING_PAYMENT" : "RENEWAL_PENDING_BG";
     const updated = await prisma.membershipProcess.update({ where: { id: processId }, data: { status: nextStatus, stageEnteredAt: new Date() } });
@@ -149,10 +148,14 @@ export async function beginRenewalForUser(userId: number) {
     return beginRenewal(process.id);
 }
 
-/** True if EITHER guardian (household lead) has a lastBackgroundCheck within BG_VALID_YEARS of the boundary. */
-export async function householdBgIsFresh(householdId: number, boundary: Date): Promise<boolean> {
-    const threshold = new Date(boundary);
-    threshold.setUTCFullYear(threshold.getUTCFullYear() - BG_VALID_YEARS);
+/**
+ * True if EITHER guardian (household lead) has a check still valid at the boundary,
+ * i.e. lastBackgroundCheck >= boundary - recheckMonths. When recheckMonths is 0 (the
+ * board hasn't set the policy), nothing counts as fresh — renewals re-run review.
+ */
+export async function householdBgIsFresh(householdId: number, boundary: Date, recheckMonths: number): Promise<boolean> {
+    if (recheckMonths <= 0) return false;
+    const threshold = monthsBefore(boundary, recheckMonths);
     const fresh = await prisma.participant.findFirst({
         where: { householdId, householdLeads: { some: { householdId } }, lastBackgroundCheck: { gte: threshold } },
         select: { id: true },

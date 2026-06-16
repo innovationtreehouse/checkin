@@ -133,7 +133,7 @@ export default function MembershipReviewPage() {
                 my="md"
                 checked={!!volunteer[item.id]}
                 onChange={(e) => setVolunteer((v) => ({ ...v, [item.id]: e.currentTarget.checked }))}
-                label="This is a volunteer family"
+                label="This is a volunteer only family (no students)"
               />
 
               <Group gap="sm" wrap="wrap">

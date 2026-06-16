@@ -73,6 +73,9 @@ export default function MembershipPage() {
   // Per-field validation errors, keyed by form field ("address", "emName",
   // "emPhone", "primaryName"). Drives the red-highlighted inputs.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // Non-fatal notes from a save: parts that didn't go through (e.g. a second
+  // guardian over the household cap) while the rest of the form did save.
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   // Intake form fields
   const [address, setAddress] = useState("");
@@ -151,6 +154,9 @@ export default function MembershipPage() {
   const flash = (msg: string, error = false) => {
     setMessage(msg);
     setIsError(error);
+    // Clear stale warnings when starting an action (msg === "") or on a hard
+    // failure; a successful save sets them right after this call.
+    if (error || msg === "") setWarnings([]);
   };
 
   // Build an error message from an API response, appending the dev-only `detail`
@@ -229,6 +235,7 @@ export default function MembershipPage() {
       if (res.ok) {
         hydrate(data.state);
         flash("Progress saved.");
+        setWarnings((data.rejections ?? []).map((r: { message: string }) => r.message));
       } else flash(apiError(data, "Could not save."), true);
     } catch {
       flash("Network error.", true);
@@ -255,11 +262,12 @@ export default function MembershipPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(buildPayload()),
       });
+      const saveData = await saveRes.json();
       if (!saveRes.ok) {
-        const d = await saveRes.json();
-        flash(apiError(d, "Could not save."), true);
+        flash(apiError(saveData, "Could not save."), true);
         return;
       }
+      const saveWarnings: string[] = (saveData.rejections ?? []).map((r: { message: string }) => r.message);
       const res = await fetch("/api/membership/intake/submit", { method: "POST" });
       const data = await res.json();
       if (res.ok) {
@@ -267,6 +275,7 @@ export default function MembershipPage() {
         hydrate(data.state);
         notifyNavRefresh();
         flash("Submitted! Next: sign your contract and consent to a background check.");
+        setWarnings(saveWarnings);
       } else {
         // The server may flag fields the client can't check locally (e.g. an
         // emergency contact who is a household member) — highlight those too.
@@ -330,6 +339,14 @@ export default function MembershipPage() {
 
       {message && <Alert color={isError ? "red" : "green"} mb="lg">{message}</Alert>}
 
+      {warnings.length > 0 && (
+        <Alert color="yellow" mb="lg" title="Saved — with a couple of things to know">
+          <Stack gap="xs">
+            {warnings.map((w, i) => <Text key={i} size="sm">{w}</Text>)}
+          </Stack>
+        </Alert>
+      )}
+
       {!state?.process ? (
         isActive ? (
           <Card withBorder radius="md" padding="xl">
@@ -353,7 +370,11 @@ export default function MembershipPage() {
           <Text c="dimmed" my="md">
             Your household membership is up for renewal. You&apos;re still an active member — confirm
             below to continue for another year. No contract to re-sign; we&apos;ll only re-check a
-            background if it&apos;s been more than three years.
+            background if it has expired.
+          </Text>
+          <Text c="dimmed" mb="md">
+            Did anything change — new members, address, phone, or email?{" "}
+            <Anchor component={Link} href="/household">Update your household details first</Anchor>.
           </Text>
           <Button color="green" disabled={saving} loading={saving} onClick={renew}>Renew now</Button>
         </Card>
@@ -361,9 +382,9 @@ export default function MembershipPage() {
         <Card withBorder radius="md" padding="xl" maw={640}>
           <Title order={2}>Renewal in progress</Title>
           <Text c="dimmed" mt="md">
-            We&apos;re re-confirming your household&apos;s background check (it&apos;s been over three
-            years). You&apos;ll be able to pay once that&apos;s done. Your membership stays active in
-            the meantime.
+            We&apos;re re-confirming your household&apos;s background check (the previous one has
+            expired). You&apos;ll be able to pay once that&apos;s done. Your membership stays active
+            in the meantime.
           </Text>
         </Card>
       ) : (

@@ -245,7 +245,15 @@ export default function HouseholdPage() {
       if (res.ok) {
         setEditingMemberId(null);
         fetchHousehold();
-        if (!applyContactWarning(data.warning)) setMessage("Member updated successfully!");
+        // A member edit can both collide with an emergency contact (warning,
+        // which also opens the add-contact flow) and be declined the lead
+        // promotion (leadRejection). Surface the contact warning first since
+        // it's the more urgent, then the lead caveat, else a plain success.
+        if (!applyContactWarning(data.warning)) {
+          setMessage(data.leadRejection
+            ? `Member updated, but not added as a lead — ${data.leadRejection}`
+            : (data.message || "Member updated successfully!"));
+        }
       } else {
         setMessage(data.error || "Failed to update member.");
       }
@@ -305,7 +313,7 @@ export default function HouseholdPage() {
               <Alert color="green" mb="lg">
                 <Group gap="xs" wrap="wrap">
                   <Text fw={600}>✓ Member{household.membership.since ? ` since ${formatDate(household.membership.since)}` : ''}</Text>
-                  {household.membership.isVolunteer && <Badge color="green" variant="light">Volunteer family</Badge>}
+                  {household.membership.isVolunteer && <Badge color="green" variant="light">Volunteer-only family</Badge>}
                 </Group>
               </Alert>
             ) : (

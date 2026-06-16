@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus } from "@/lib/membership/external";
+import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
 
 /**
@@ -22,7 +23,7 @@ export class IntakeError extends Error {
      *                "primaryName".
      */
     constructor(
-        public readonly code: "no_household" | "not_lead" | "already_member" | "no_process" | "incomplete",
+        public readonly code: "no_household" | "not_lead" | "already_member" | "no_process" | "incomplete" | "lead_limit",
         message: string,
         public readonly fields?: string[],
     ) {
@@ -30,6 +31,17 @@ export class IntakeError extends Error {
         this.name = "IntakeError";
     }
 }
+
+/**
+ * A non-fatal thing the save couldn't do, reported back to the form so it can
+ * tell the applicant exactly what did and didn't happen. The rest of the save
+ * still goes through — partial saves are fine as long as they're transparent.
+ */
+export type IntakeRejection = {
+    section: "secondaryParent";
+    code: "lead_limit";
+    message: string;
+};
 
 type ParentInput = { id?: number; name?: string; email?: string; dob?: string | null; allergies?: string | null };
 type ChildInput = { id?: number; name?: string; email?: string | null; dob?: string | null; allergies?: string | null };
@@ -186,6 +198,28 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
 
     const toDate = (d?: string | null) => (d ? new Date(d) : null);
 
+    // Promote a guardian to household lead. The per-household cap (#269) is a
+    // soft stop here, not a hard failure: the guardian's other details are still
+    // saved (above), and the rest of the form (children) still saves below. We
+    // collect the skipped promotion and hand it back so the form can say exactly
+    // what happened, instead of failing the whole save with a single error.
+    const rejections: IntakeRejection[] = [];
+    const addLeadOrRecord = async (participantId: number) => {
+        try {
+            await addHouseholdLead(prisma, householdId, participantId);
+        } catch (e) {
+            if (e instanceof HouseholdLeadLimitError) {
+                rejections.push({
+                    section: "secondaryParent",
+                    code: "lead_limit",
+                    message: `We saved this person's details, but your household already lists the maximum of ${MAX_HOUSEHOLD_LEADS} parents/guardians, so they weren't added as a second guardian. Update or remove an existing parent/guardian to change that.`,
+                });
+                return;
+            }
+            throw e;
+        }
+    };
+
     if (input.household) {
         if (input.household.address !== undefined) {
             await prisma.household.update({ where: { id: householdId }, data: { address: input.household.address } });
@@ -227,11 +261,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 },
             });
             // A second guardian is a household lead (parent).
-            await prisma.householdLead.upsert({
-                where: { householdId_participantId: { householdId, participantId: sp.id } },
-                create: { householdId, participantId: sp.id },
-                update: {},
-            });
+            await addLeadOrRecord(sp.id);
         } else if (sp.name || sp.email) {
             const created = await prisma.participant.create({
                 data: {
@@ -242,7 +272,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     allergies: sp.allergies ?? null,
                 },
             });
-            await prisma.householdLead.create({ data: { householdId, participantId: created.id } });
+            await addLeadOrRecord(created.id);
         }
     }
 
@@ -275,7 +305,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     // existing emergency contact — re-evaluate and flag (direction B).
     await reconcileHouseholdConflicts(prisma, householdId);
 
-    return getIntakeState(userId);
+    return { state: await getIntakeState(userId), rejections };
 }
 
 /**

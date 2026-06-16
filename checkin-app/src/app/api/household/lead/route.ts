@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 
 export const POST = withAuth(
     {},
@@ -35,26 +36,13 @@ export const POST = withAuth(
                 return NextResponse.json({ error: "Member not found in your household" }, { status: 404 });
             }
 
-            const existingLead = await prisma.householdLead.findUnique({
-                where: {
-                    householdId_participantId: {
-                        householdId: user.householdId,
-                        participantId: participantId
-                    }
-                }
-            });
+            const { created } = await addHouseholdLead(prisma, user.householdId, participantId);
 
-            if (existingLead) {
-                 return NextResponse.json({ message: "Member is already a lead" }, { status: 200 });
+            if (!created) {
+                return NextResponse.json({ message: "Member is already a lead" }, { status: 200 });
             }
 
-            const newLead = await prisma.householdLead.create({
-                data: {
-                    householdId: user.householdId,
-                    participantId: participantId
-                }
-            });
-
+            const newLead = { householdId: user.householdId, participantId };
             await prisma.auditLog.create({
                 data: {
                     actorId: userId,
@@ -69,6 +57,9 @@ export const POST = withAuth(
             return NextResponse.json({ lead: newLead, message: "Member promoted to lead successfully." }, { status: 200 });
 
         } catch (error: unknown) {
+            if (error instanceof HouseholdLeadLimitError) {
+                return NextResponse.json({ error: error.message }, { status: 400 });
+            }
             console.error("Household Lead POST Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
