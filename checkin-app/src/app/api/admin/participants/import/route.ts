@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import * as xlsx from "xlsx";
 import { logBackendError } from "@/lib/logger";
+import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 
 export async function POST(req: NextRequest) {
     try {
@@ -82,9 +83,7 @@ export async function POST(req: NextRequest) {
                 }
             });
             if (isAdult) {
-                await prisma.householdLead.create({
-                    data: { householdId: participant.householdId, participantId: participant.id }
-                });
+                await addHouseholdLead(prisma, participant.householdId, participant.id);
             }
             return participant;
         };
@@ -338,6 +337,25 @@ export async function POST(req: NextRequest) {
                         }
 
                         // Merge the ENTIRE source household into the target.
+                        const sourceLeads = await prisma.householdLead.findMany({
+                            where: { householdId: sourceHouseholdId }
+                        });
+
+                        // Enforce the 2-lead cap (#269) BEFORE mutating: this
+                        // block isn't transactional, so reject the merge up front
+                        // rather than leave participants half-moved on a throw.
+                        const projectedLeadIds = new Set(
+                            (await prisma.householdLead.findMany({
+                                where: { householdId: targetHouseholdId },
+                                select: { participantId: true }
+                            })).map((l) => l.participantId)
+                        );
+                        for (const l of sourceLeads) projectedLeadIds.add(l.participantId);
+                        if (pr.email) projectedLeadIds.add(participantId);
+                        if (projectedLeadIds.size > MAX_HOUSEHOLD_LEADS) {
+                            throw new HouseholdLeadLimitError(targetHouseholdId);
+                        }
+
                         // Move all participants from source to target
                         await prisma.participant.updateMany({
                             where: { householdId: sourceHouseholdId },
@@ -345,24 +363,8 @@ export async function POST(req: NextRequest) {
                         });
 
                         // Move all leads from source to target
-                        const sourceLeads = await prisma.householdLead.findMany({
-                            where: { householdId: sourceHouseholdId }
-                        });
-
                         for (const lead of sourceLeads) {
-                            await prisma.householdLead.upsert({
-                                where: {
-                                    householdId_participantId: {
-                                        householdId: targetHouseholdId,
-                                        participantId: lead.participantId
-                                    }
-                                },
-                                update: {},
-                                create: {
-                                    householdId: targetHouseholdId,
-                                    participantId: lead.participantId
-                                }
-                            });
+                            await addHouseholdLead(prisma, targetHouseholdId, lead.participantId);
                         }
 
                         // Delete memberships and leads from the old source household
@@ -375,19 +377,7 @@ export async function POST(req: NextRequest) {
 
                         // If the row that initiated the merge is an adult with an email, ensure they are a lead
                         if (pr.email) {
-                            await prisma.householdLead.upsert({
-                                where: {
-                                    householdId_participantId: {
-                                        householdId: targetHouseholdId,
-                                        participantId: participantId
-                                    }
-                                },
-                                update: {},
-                                create: {
-                                    householdId: targetHouseholdId,
-                                    participantId: participantId
-                                }
-                            });
+                            await addHouseholdLead(prisma, targetHouseholdId, participantId);
                         }
 
                         await ensureHouseholdMembership(targetHouseholdId);
@@ -417,6 +407,9 @@ export async function POST(req: NextRequest) {
         });
 
     } catch (error: unknown) {
+        if (error instanceof HouseholdLeadLimitError) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
         await logBackendError(error, "POST /api/admin/participants/import");
         return NextResponse.json({ error: `Internal server error` }, { status: 500 });
     }

@@ -245,7 +245,15 @@ export default function HouseholdPage() {
       if (res.ok) {
         setEditingMemberId(null);
         fetchHousehold();
-        if (!applyContactWarning(data.warning)) setMessage("Member updated successfully!");
+        // A member edit can both collide with an emergency contact (warning,
+        // which also opens the add-contact flow) and be declined the lead
+        // promotion (leadRejection). Surface the contact warning first since
+        // it's the more urgent, then the lead caveat, else a plain success.
+        if (!applyContactWarning(data.warning)) {
+          setMessage(data.leadRejection
+            ? `Member updated, but not added as a lead — ${data.leadRejection}`
+            : (data.message || "Member updated successfully!"));
+        }
       } else {
         setMessage(data.error || "Failed to update member.");
       }

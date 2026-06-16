@@ -70,6 +70,9 @@ export default function MembershipPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
+  // Non-fatal notes from a save: parts that didn't go through (e.g. a second
+  // guardian over the household cap) while the rest of the form did save.
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   // Intake form fields
   const [address, setAddress] = useState("");
@@ -148,6 +151,9 @@ export default function MembershipPage() {
   const flash = (msg: string, error = false) => {
     setMessage(msg);
     setIsError(error);
+    // Clear stale warnings when starting an action (msg === "") or on a hard
+    // failure; a successful save sets them right after this call.
+    if (error || msg === "") setWarnings([]);
   };
 
   const startApplication = async () => {
@@ -189,6 +195,7 @@ export default function MembershipPage() {
       if (res.ok) {
         hydrate(data.state);
         flash("Progress saved.");
+        setWarnings((data.rejections ?? []).map((r: { message: string }) => r.message));
       } else flash(data.error || "Could not save.", true);
     } catch {
       flash("Network error.", true);
@@ -207,17 +214,19 @@ export default function MembershipPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(buildPayload()),
       });
+      const saveData = await saveRes.json();
       if (!saveRes.ok) {
-        const d = await saveRes.json();
-        flash(d.error || "Could not save.", true);
+        flash(saveData.error || "Could not save.", true);
         return;
       }
+      const saveWarnings: string[] = (saveData.rejections ?? []).map((r: { message: string }) => r.message);
       const res = await fetch("/api/membership/intake/submit", { method: "POST" });
       const data = await res.json();
       if (res.ok) {
         hydrate(data.state);
         notifyNavRefresh();
         flash("Submitted! Next: sign your contract and consent to a background check.");
+        setWarnings(saveWarnings);
       } else flash(data.error || "Could not submit.", true);
     } catch {
       flash("Network error.", true);
@@ -275,6 +284,14 @@ export default function MembershipPage() {
       </Group>
 
       {message && <Alert color={isError ? "red" : "green"} mb="lg">{message}</Alert>}
+
+      {warnings.length > 0 && (
+        <Alert color="yellow" mb="lg" title="Saved — with a couple of things to know">
+          <Stack gap="xs">
+            {warnings.map((w, i) => <Text key={i} size="sm">{w}</Text>)}
+          </Stack>
+        </Alert>
+      )}
 
       {!state?.process ? (
         isActive ? (
