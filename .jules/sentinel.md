@@ -17,3 +17,8 @@
 **Vulnerability:** The application was logging the raw `html` body of emails to the console when `RESEND_API_KEY` was missing in production (e.g., in `src/lib/email.ts`).
 **Learning:** Logging entire email bodies can inadvertently expose sensitive information, such as authentication links or personal user details, to server logs where they can be accessed by unauthorized personnel or aggregated inappropriately.
 **Prevention:** Avoid logging raw email content in production. Ensure that fallback logging mechanisms only record the full body when `process.env.NODE_ENV === 'development'`. In production, log only metadata like the recipient and subject.
+
+## 2026-06-14 - Dev Auth Exposure via Rules of Hooks Violation
+**Vulnerability:** When fixing the dev auth exposure in `DevLoginPicker.tsx`, placing the early environment return (`if (process.env.NODE_ENV === 'production') return null;`) before hook declarations (`useState`, `useEffect`) violated the React Rules of Hooks. While it doesn't crash at runtime since the environment variable is static, it breaks the CI/CD pipeline via `eslint-plugin-react-hooks`.
+**Learning:** Security fixes in React components must respect the fundamental Rules of Hooks. Early returns for security/environment checks must be placed after all hook declarations.
+**Prevention:** When adding conditional early returns to React components (e.g., environment checks), ensure they are placed after all hook declarations.

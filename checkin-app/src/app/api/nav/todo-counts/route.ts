@@ -1,0 +1,159 @@
+import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
+import { withAuth } from "@/lib/auth";
+import type { MembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
+
+/**
+ * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
+ * to what the *viewer can actually resolve* — see docs/plan: member keys count
+ * only member/household actions, the admin block only the board's own queue.
+ * Items blocked on someone else are deliberately excluded (they'd be noise).
+ *
+ * Predicates are composed from the existing domain modules rather than re-derived:
+ *   - membership phases   -> src/lib/membership/phases.ts (member-actionable set)
+ *   - renewal             -> PENDING_RENEWAL (member clicks "begin renewal")
+ *   - trusted-adult expiry  -> src/lib/trusted-adult/service.ts (WARN_LEAD_DAYS = 30)
+ *   - emergency contact   -> same gap the onboarding-status route reports
+ */
+
+// Membership process statuses the household itself must act on. Mirrors
+// IN_FLIGHT_INITIAL_STATUSES minus the board-only PENDING_BG_REVIEW, plus the
+// member-driven PENDING_RENEWAL. PENDING_BG_REVIEW / RENEWAL_PENDING_BG / BLOCKED
+// are board actions and never count here.
+const MEMBER_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["INTAKE", "PENDING_EXTERNAL_ACTION", "PENDING_PAYMENT", "PENDING_RENEWAL"];
+
+// Membership statuses awaiting the board.
+const BOARD_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["PENDING_BG_REVIEW", "RENEWAL_PENDING_BG", "BLOCKED"];
+
+const APPROVED_STATUSES: TrustedAdultReviewStatus[] = ["APPROVED"];
+
+// Same warning lead as runExpirySweep (src/lib/trusted-adult/service.ts).
+const WARN_LEAD_DAYS = 30;
+
+/** A single actionable item: what to do, and where to go to do it. */
+export type TodoItem = { key: string; label: string; href: string };
+
+export type TodoCounts = {
+    // Member buckets are itemized so the UI can show *what* is due, not just a number.
+    member: { household: TodoItem[]; programs: TodoItem[] };
+    // Admin keys stay numeric — each admin nav link already deep-links to a page
+    // that lists its own queue, so the number is enough.
+    admin?: { membership: number; programsPending: number; trustedAdults: number };
+};
+
+// What a member-actionable membership process means, in plain terms.
+const MEMBERSHIP_TODO_LABEL: Record<string, string> = {
+    INTAKE: "Finish your membership application",
+    PENDING_EXTERNAL_ACTION: "Sign your membership contract and background-check consent",
+    PENDING_PAYMENT: "Pay your membership dues",
+    PENDING_RENEWAL: "Confirm your membership renewal",
+};
+
+export const GET = withAuth({}, async (_req, auth) => {
+    if (auth.type !== "session") {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const user = auth.user;
+
+    const warnThreshold = new Date();
+    warnThreshold.setUTCDate(warnThreshold.getUTCDate() + WARN_LEAD_DAYS);
+
+    // ---- Member surface (scoped to the caller's household) ----
+    const householdTodos: TodoItem[] = [];
+    const programTodos: TodoItem[] = [];
+
+    if (user.householdId) {
+        const householdId = user.householdId;
+        const members = await prisma.participant.findMany({
+            where: { householdId },
+            select: { id: true },
+        });
+        const memberIds = members.map((m) => m.id);
+
+        const isLead =
+            user.householdLead ??
+            (await prisma.householdLead.findFirst({
+                where: { householdId, participantId: user.id },
+                select: { participantId: true },
+            })) !== null;
+
+        const [hh, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
+            isLead
+                ? prisma.household.findUnique({
+                      where: { id: householdId },
+                      select: {
+                          // A household needs the todo when it has no valid (non-member,
+                          // complete) emergency contact. Emergency contacts are their own entity.
+                          emergencyContacts: {
+                              where: { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } },
+                              select: { id: true },
+                              take: 1,
+                          },
+                      },
+                  })
+                : Promise.resolve(null),
+            prisma.membershipProcess.findMany({
+                where: { membership: { householdId }, status: { in: MEMBER_ACTIONABLE_MEMBERSHIP } },
+                select: { id: true, status: true },
+            }),
+            prisma.trustedAdultReview.count({
+                where: { householdId, status: "PENDING_SUBJECT_ACTION" },
+            }),
+            prisma.trustedAdultReview.count({
+                where: {
+                    householdId,
+                    status: { in: APPROVED_STATUSES },
+                    reviewBy: { not: null, lte: warnThreshold },
+                },
+            }),
+            prisma.programParticipant.findMany({
+                where: { participantId: { in: memberIds }, status: "PENDING" },
+                select: { programId: true, program: { select: { name: true } } },
+            }),
+        ]);
+
+        if (!!hh && hh.emergencyContacts.length === 0) {
+            householdTodos.push({ key: "emergency-contact", label: "Add a household emergency contact", href: "/household#emergency-contact" });
+        }
+        for (const p of membershipProcs) {
+            householdTodos.push({
+                key: `membership-${p.id}`,
+                label: MEMBERSHIP_TODO_LABEL[p.status] ?? "Continue your membership application",
+                href: "/membership",
+            });
+        }
+        for (let i = 0; i < trustedAdultAction; i++) {
+            householdTodos.push({ key: `trusted-adult-action-${i}`, label: "Respond to the board's request on a trusted adult", href: "/trusted-adults" });
+        }
+        for (let i = 0; i < trustedAdultExpiring; i++) {
+            householdTodos.push({ key: `trusted-adult-expiring-${i}`, label: "Renew an expiring trusted adult", href: "/trusted-adults" });
+        }
+        for (const p of pendingPrograms) {
+            programTodos.push({
+                key: `program-${p.programId}`,
+                label: `Complete enrollment for ${p.program?.name ?? "a program"}`,
+                href: `/programs/${p.programId}`,
+            });
+        }
+    }
+
+    const result: TodoCounts = { member: { household: householdTodos, programs: programTodos } };
+
+    // ---- Admin surface (board's own queue) — only for board/sysadmin ----
+    if (user.sysadmin || user.boardMember) {
+        const [membership, programsPending, trustedAdults] = await Promise.all([
+            prisma.membershipProcess.count({
+                where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
+            }),
+            prisma.programParticipant.count({
+                where: { status: "PENDING", paymentPlanRequested: true },
+            }),
+            prisma.trustedAdultReview.count({
+                where: { status: "PENDING_BOARD_REVIEW" },
+            }),
+        ]);
+        result.admin = { membership, programsPending, trustedAdults };
+    }
+
+    return NextResponse.json(result);
+});

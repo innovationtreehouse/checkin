@@ -1,0 +1,177 @@
+/**
+ * @jest-environment node
+ */
+/**
+ * Integration tests for the payment phase: dues, the Shopify checkout link
+ * (with the volunteer discount code), the orders/paid webhook -> activate(),
+ * and the board certify override.
+ */
+
+import crypto from 'crypto';
+import { POST as SHOPIFY_WEBHOOK } from '@/app/api/webhooks/shopify/route';
+import { POST as CERTIFY } from '@/app/api/admin/membership/certify-payment/route';
+import { computeDuesCents, ensurePaymentLink, ensurePaymentLinkForUser, activate } from '@/lib/membership/payment';
+import prisma from '@/lib/prisma';
+import { getServerSession } from 'next-auth/next';
+
+jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
+jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+
+const TAG = 'payment-test';
+const WEBHOOK_SECRET = 'shopify-test-secret';
+const STORE_DOMAIN = 'shop.example';
+const VARIANT_ID = '4567';
+const DISCOUNT_CODE = 'VOLUNTEER';
+
+function asBoard(id: number) {
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: true } });
+}
+function asUser(id: number) {
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false } });
+}
+function shopifyReq(payload: unknown, secret: string) {
+    const raw = JSON.stringify(payload);
+    const sig = crypto.createHmac('sha256', secret).update(raw, 'utf8').digest('base64');
+    return new Request('http://localhost:4000/api/webhooks/shopify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-shopify-hmac-sha256': sig },
+        body: raw,
+    });
+}
+
+describe('Membership payment API', () => {
+    let leadId: number;
+    let normalProc: number, normalMembership: number;
+    let volProc: number;
+    let certProc: number;
+    const prevWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    const prevStoreDomain = process.env.SHOPIFY_STORE_DOMAIN;
+    let prevSettings: { normalDuesCents: number; volunteerDuesCents: number; membershipVariantId: string | null; volunteerDiscountCode: string | null } | null = null;
+
+    async function makeProc(label: string, isVolunteer: boolean, withLead = false) {
+        const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
+        if (withLead) {
+            const lead = await prisma.participant.create({ data: { email: `lead-${TAG}@example.com`, name: 'Lead', householdId: hh.id } });
+            await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+            leadId = lead.id;
+        }
+        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer } });
+        const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT' } });
+        return { householdId: hh.id, membershipId: m.id, processId: p.id };
+    }
+
+    async function wipe() {
+        const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
+        const ids = hhs.map((h) => h.id);
+        if (ids.length) {
+            await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
+            await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.household.deleteMany({ where: { id: { in: ids } } });
+        }
+        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+    }
+
+    beforeAll(async () => {
+        process.env.SHOPIFY_WEBHOOK_SECRET = WEBHOOK_SECRET;
+        process.env.SHOPIFY_STORE_DOMAIN = STORE_DOMAIN;
+        const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+        prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents, membershipVariantId: existing.membershipVariantId, volunteerDiscountCode: existing.volunteerDiscountCode } : null;
+        const settingsData = {
+            normalDuesCents: 10000,
+            volunteerDuesCents: 2500,
+            membershipVariantId: VARIANT_ID,
+            volunteerDiscountCode: DISCOUNT_CODE,
+        };
+        await prisma.boardSettings.upsert({
+            where: { id: 1 },
+            create: { id: 1, ...settingsData },
+            update: settingsData,
+        });
+        await wipe();
+
+        const normal = await makeProc('Normal', false, true);
+        normalProc = normal.processId;
+        normalMembership = normal.membershipId;
+        volProc = (await makeProc('Vol', true)).processId;
+        certProc = (await makeProc('Cert', false)).processId;
+    });
+
+    afterAll(async () => {
+        await wipe();
+        if (prevSettings) await prisma.boardSettings.update({ where: { id: 1 }, data: prevSettings });
+        if (prevWebhookSecret === undefined) delete process.env.SHOPIFY_WEBHOOK_SECRET;
+        else process.env.SHOPIFY_WEBHOOK_SECRET = prevWebhookSecret;
+        if (prevStoreDomain === undefined) delete process.env.SHOPIFY_STORE_DOMAIN;
+        else process.env.SHOPIFY_STORE_DOMAIN = prevStoreDomain;
+        await prisma.$disconnect();
+    });
+
+    it('computes dues by tier from BoardSettings', async () => {
+        expect(await computeDuesCents(false)).toBe(10000);
+        expect(await computeDuesCents(true)).toBe(2500);
+    });
+
+    it('builds a checkout link to the membership product (no discount for normal)', async () => {
+        const res = await ensurePaymentLink(normalProc);
+        expect(res.amountCents).toBe(10000);
+        expect(res.checkoutUrl).toBe(`https://${STORE_DOMAIN}/cart/${VARIANT_ID}:1?attributes[Membership_Process_ID]=${normalProc}`);
+        expect(res.checkoutUrl).not.toContain('discount=');
+    });
+
+    it('uses the volunteer rate and appends the discount code for a volunteer household', async () => {
+        const res = await ensurePaymentLink(volProc);
+        expect(res.amountCents).toBe(2500);
+        expect(res.checkoutUrl).toBe(`https://${STORE_DOMAIN}/cart/${VARIANT_ID}:1?discount=${DISCOUNT_CODE}&attributes[Membership_Process_ID]=${volProc}`);
+    });
+
+    it('resolves the payment link for the calling user', async () => {
+        const res = await ensurePaymentLinkForUser(leadId);
+        expect(res.amountCents).toBe(10000);
+    });
+
+    it('orders/paid webhook activates the membership (and is idempotent)', async () => {
+        const payload = { id: 555, note_attributes: [{ name: 'Membership_Process_ID', value: String(normalProc) }] };
+        const res = await SHOPIFY_WEBHOOK(shopifyReq(payload, WEBHOOK_SECRET) as never);
+        expect(res.status).toBe(200);
+
+        const proc = await prisma.membershipProcess.findUnique({ where: { id: normalProc } });
+        expect(proc?.status).toBe('ACTIVE');
+        expect(proc?.paidAt).not.toBeNull();
+        expect(proc?.shopifyOrderId).toBe('555');
+        const m = await prisma.membership.findUnique({ where: { id: normalMembership } });
+        expect(m?.status).toBe('ACTIVE');
+
+        // Idempotent: a second identical webhook does not throw or change state.
+        const again = await SHOPIFY_WEBHOOK(shopifyReq(payload, WEBHOOK_SECRET) as never);
+        expect(again.status).toBe(200);
+    });
+
+    it('rejects a webhook with a bad HMAC', async () => {
+        const res = await SHOPIFY_WEBHOOK(shopifyReq({ id: 1, note_attributes: [] }, 'wrong-secret') as never);
+        expect(res.status).toBe(401);
+    });
+
+    it('board certify-payment activates without a Shopify payment', async () => {
+        asBoard(leadId); // leadId is fine as an actor id; role mocked as board
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: certProc }) }) as never);
+        expect(res.status).toBe(200);
+        const proc = await prisma.membershipProcess.findUnique({ where: { id: certProc } });
+        expect(proc?.status).toBe('ACTIVE');
+        expect(proc?.certifiedById).toBe(leadId);
+    });
+
+    it('non-board cannot certify', async () => {
+        asUser(leadId);
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: 1 }) }) as never);
+        expect(res.status).toBe(403);
+    });
+
+    it('activate() is a no-op once already ACTIVE', async () => {
+        const before = await prisma.membershipProcess.findUnique({ where: { id: normalProc } });
+        await activate(normalProc, { via: 'payment', shopifyOrderId: 'ignored' });
+        const after = await prisma.membershipProcess.findUnique({ where: { id: normalProc } });
+        expect(after?.shopifyOrderId).toBe(before?.shopifyOrderId); // unchanged
+    });
+});

@@ -1,0 +1,17 @@
+# CheckMeIn — Caddy reverse proxy config
+# Change the domain below per environment (dev vs prod)
+3-17-46-175.nip.io {
+
+    # Next.js standalone mode does NOT serve static assets.
+    # Caddy must serve _next/static/ directly from the build output.
+    handle /_next/static/* {
+        root * /home/ubuntu/checkmein/checkin-app/.next
+        uri strip_prefix /_next
+        file_server
+    }
+
+    # Everything else → Next.js standalone server
+    handle {
+        reverse_proxy localhost:4000
+    }
+}

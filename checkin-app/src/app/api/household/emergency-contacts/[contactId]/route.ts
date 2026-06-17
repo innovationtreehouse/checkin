@@ -1,0 +1,89 @@
+import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
+import { withAuth } from "@/lib/auth";
+import { updateContact, deleteContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
+
+async function leadHousehold(userId: number): Promise<number | { error: string; status: number }> {
+    const user = await prisma.participant.findUnique({ where: { id: userId }, include: { householdLeads: true } });
+    if (!user?.householdId) return { error: "You must create a household first.", status: 400 };
+    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
+    if (!isLead && !user.sysadmin) return { error: "Only household leads can manage emergency contacts.", status: 403 };
+    return user.householdId;
+}
+
+export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ contactId: string }> }) => {
+    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const hh = await leadHousehold(auth.user.id);
+    if (typeof hh !== "number") return NextResponse.json({ error: hh.error }, { status: hh.status });
+    const contactId = parseInt((await params).contactId, 10);
+    if (isNaN(contactId)) return NextResponse.json({ error: "Invalid contact id" }, { status: 400 });
+
+    try {
+        const { name, phone, email, relationship, priority } = await req.json();
+        const contact = await updateContact(prisma, hh, contactId, { name, phone, email, relationship, priority });
+        await prisma.auditLog.create({
+            data: {
+                actorId: auth.user.id,
+                action: "EDIT",
+                tableName: "EmergencyContact",
+                affectedEntityId: contact.id,
+                secondaryAffectedEntity: hh,
+                newData: JSON.stringify({ name: contact.name, phone: contact.phone }),
+            },
+        });
+        return NextResponse.json({ contact });
+    } catch (error) {
+        if (error instanceof EmergencyContactError) {
+            return NextResponse.json({ error: error.message }, { status: error.code === "not_found" ? 404 : 400 });
+        }
+        console.error("Emergency contact PATCH error:", error);
+        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    }
+});
+
+export const DELETE = withAuth({}, async (_req, auth, { params }: { params: Promise<{ contactId: string }> }) => {
+    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const hh = await leadHousehold(auth.user.id);
+    if (typeof hh !== "number") return NextResponse.json({ error: hh.error }, { status: hh.status });
+    const contactId = parseInt((await params).contactId, 10);
+    if (isNaN(contactId)) return NextResponse.json({ error: "Invalid contact id" }, { status: 400 });
+
+    try {
+        // A household must never be left without a valid emergency contact: block
+        // removing a valid contact unless another valid one is already on file.
+        // (Removing an already-invalid contact is always allowed — it doesn't drop
+        // the valid count, and lets a household clean up a flagged row.)
+        const target = await prisma.emergencyContact.findFirst({ where: { id: contactId, householdId: hh } });
+        if (!target) return NextResponse.json({ error: "Emergency contact not found." }, { status: 404 });
+        const targetIsValid = target.conflictParticipantId === null && !!target.name.trim() && !!target.phone.trim();
+        if (targetIsValid) {
+            const otherValid = await prisma.emergencyContact.count({
+                where: { householdId: hh, id: { not: contactId }, conflictParticipantId: null, name: { not: "" }, phone: { not: "" } },
+            });
+            if (otherValid === 0) {
+                return NextResponse.json(
+                    { error: "Add a second emergency contact before removing this one — your household must always have at least one valid emergency contact." },
+                    { status: 400 },
+                );
+            }
+        }
+
+        await deleteContact(prisma, hh, contactId);
+        await prisma.auditLog.create({
+            data: {
+                actorId: auth.user.id,
+                action: "DELETE",
+                tableName: "EmergencyContact",
+                affectedEntityId: contactId,
+                secondaryAffectedEntity: hh,
+            },
+        });
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        if (error instanceof EmergencyContactError) {
+            return NextResponse.json({ error: error.message }, { status: error.code === "not_found" ? 404 : 400 });
+        }
+        console.error("Emergency contact DELETE error:", error);
+        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    }
+});

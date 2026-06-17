@@ -1,0 +1,130 @@
+import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
+import { withAuth } from "@/lib/auth";
+import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
+import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
+
+export const PATCH = withAuth(
+    {},
+    async (req, auth) => {
+        try {
+            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            const userId = auth.user.id;
+
+            const body = await req.json();
+            const { participantId, name, email, dob, phone, isLead } = body;
+
+            if (!participantId) {
+                return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
+            }
+
+            const user = await prisma.participant.findUnique({ where: { id: userId }, include: { householdLeads: true } });
+
+            if (!user?.householdId) {
+                return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
+            }
+
+            const isCurrentUserLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
+            if (!isCurrentUserLead && !user.sysadmin) {
+                return NextResponse.json({ error: "Only household leads can edit members" }, { status: 403 });
+            }
+
+            const targetMember = await prisma.participant.findUnique({ where: { id: participantId } });
+            if (!targetMember || targetMember.householdId !== user.householdId) {
+                return NextResponse.json({ error: "Member not found in your household" }, { status: 404 });
+            }
+
+            const updatedMember = await prisma.participant.update({
+                where: { id: participantId },
+                data: {
+                    name: name !== undefined ? name : undefined,
+                    email: email !== undefined ? (email === "" ? null : email.toLowerCase()) : undefined,
+                    dob: dob !== undefined ? (dob === "" ? null : new Date(dob + "T12:00:00Z")) : undefined,
+                    phone: phone !== undefined ? (phone === "" ? null : phone) : undefined,
+                }
+            });
+
+            // Set when the field edits saved but the requested promotion to lead
+            // was declined by the per-household cap (#269). We report this back
+            // rather than 400 the whole edit, so the form can say the member's
+            // details were saved even though they weren't made a lead.
+            let leadRejection: string | null = null;
+
+            if (isLead !== undefined && participantId !== userId) {
+                const currentLead = await prisma.householdLead.findUnique({
+                    where: {
+                        householdId_participantId: { householdId: user.householdId, participantId }
+                    }
+                });
+
+                if (isLead && !currentLead) {
+                    try {
+                        await addHouseholdLead(prisma, user.householdId, participantId);
+                        await prisma.auditLog.create({
+                            data: {
+                                actorId: userId,
+                                action: "CREATE",
+                                tableName: "HouseholdLead",
+                                affectedEntityId: user.householdId,
+                                secondaryAffectedEntity: participantId
+                            }
+                        });
+                    } catch (e) {
+                        if (e instanceof HouseholdLeadLimitError) {
+                            leadRejection = e.message;
+                        } else {
+                            throw e;
+                        }
+                    }
+                } else if (!isLead && currentLead) {
+                    const leadCount = await prisma.householdLead.count({ where: { householdId: user.householdId } });
+                    if (leadCount > 1) {
+                        await prisma.householdLead.delete({
+                             where: {
+                                 householdId_participantId: { householdId: user.householdId, participantId }
+                             }
+                        });
+                        
+                        await prisma.auditLog.create({
+                            data: {
+                                actorId: userId,
+                                action: "DELETE",
+                                tableName: "HouseholdLead",
+                                affectedEntityId: user.householdId,
+                                secondaryAffectedEntity: participantId
+                            }
+                        });
+                    }
+                }
+            }
+
+            await prisma.auditLog.create({
+                data: {
+                    actorId: userId,
+                    action: "EDIT",
+                    tableName: "Participant",
+                    affectedEntityId: targetMember.id,
+                    newData: JSON.stringify(updatedMember)
+                }
+            });
+
+            // Edits to a member's name/phone/email can make them match an
+            // emergency contact (direction B): re-evaluate and warn if so.
+            const warning = await reconcileAndWarn(prisma, user.householdId);
+
+            return NextResponse.json({
+                member: updatedMember,
+                message: leadRejection ? "Member updated, but not added as a lead." : "Member updated successfully.",
+                leadRejection,
+                warning,
+            }, { status: 200 });
+
+        } catch (error: unknown) {
+            if (error instanceof HouseholdLeadLimitError) {
+                return NextResponse.json({ error: error.message }, { status: 400 });
+            }
+            console.error("Household Member PATCH Error:", error);
+            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        }
+    }
+);

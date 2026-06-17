@@ -9,6 +9,7 @@ A thin client for Raspberry Pi that:
   4. Listens for USB barcode/QR scanner input
 """
 
+import html
 import json
 import os
 import sys
@@ -517,27 +518,34 @@ def stdin_scanner_listener(backend, state):
 def handle_scan(backend, state, participant_id):
     body, status = backend.post_scan(participant_id)
 
-    # Build banner HTML for the wrapper page
-    html = ""
+    # Build banner HTML for the wrapper page.
+    # All values below originate from the backend response (participant names,
+    # emails, messages) and are ultimately assigned to the wrapper page via
+    # innerHTML. Names/emails are user-controlled (set via PATCH /api/profile),
+    # so every interpolated value MUST be HTML-escaped to prevent stored XSS in
+    # the kiosk browser — which can issue signed, kiosk-authenticated requests
+    # through the local proxy. Escape before the newline->`<br>` substitution so
+    # injected markup cannot survive.
+    banner_html = ""
     if status >= 400 or "error" in body:
         if body.get("type") == "warning":
-            warn = body.get("error", "Warning").replace("\n", "<br>")
-            html = f'<div class="banner banner-warning">⚠️ {warn}</div>'
+            warn = html.escape(body.get("error", "Warning")).replace("\n", "<br>")
+            banner_html = f'<div class="banner banner-warning">⚠️ {warn}</div>'
         else:
-            err = body.get("error", "Unknown error")
-            html = f'<div class="banner banner-error">✗ Scan failed: {err}</div>'
+            err = html.escape(body.get("error", "Unknown error"))
+            banner_html = f'<div class="banner banner-error">✗ Scan failed: {err}</div>'
     else:
         stype = body.get("type", "")
-        email = body.get("participant", {}).get("email", "?")
-        msg = body.get("message", "")
+        email = html.escape(str(body.get("participant", {}).get("email", "?")))
+        msg = html.escape(body.get("message", ""))
         label = "CHECKED IN" if stype == "checkin" else "CHECKED OUT"
         if msg and msg != "Checked in successfully" and msg != "Checked out successfully":
-            html = f'<div class="banner banner-ok">✓ {email} — {msg}</div>'
+            banner_html = f'<div class="banner banner-ok">✓ {email} — {msg}</div>'
         else:
-            html = f'<div class="banner banner-ok">✓ {email} — {label}</div>'
+            banner_html = f'<div class="banner banner-ok">✓ {email} — {label}</div>'
 
     # Phase 1: Push banner immediately (no attendance data yet)
-    state.push_event({"html": html})
+    state.push_event({"html": banner_html})
 
     if status < 400 and "error" not in body:
         ptype = body.get("type", "?")

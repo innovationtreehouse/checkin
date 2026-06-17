@@ -1,0 +1,130 @@
+import { NextResponse } from "next/server";
+import crypto from "crypto";
+import prisma from "@/lib/prisma";
+import { logger } from "@/lib/logger";
+import { activateByProcessId } from "@/lib/membership/payment";
+
+// Shopify Webhook for `orders/paid` or `orders/create`
+// Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE
+export async function POST(req: Request) {
+    const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
+
+    if (!secret) {
+        logger.error("Shopify webhook received but SHOPIFY_WEBHOOK_SECRET is not configured.");
+        return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
+    }
+
+    try {
+        const rawBody = await req.text();
+        const headerSignature = req.headers.get("x-shopify-hmac-sha256");
+
+        if (!headerSignature) {
+            return NextResponse.json({ error: "Missing signature" }, { status: 401 });
+        }
+
+        const generatedSignature = crypto
+            .createHmac("sha256", secret)
+            .update(rawBody, "utf8")
+            .digest("base64");
+
+        // Convert both signatures to Buffers to prevent timing attacks using crypto.timingSafeEqual.
+        // Since HMAC-SHA256 in base64 is a known fixed length, an early length check does not leak
+        // any secret information about the signature itself.
+        const generatedBuffer = Buffer.from(generatedSignature);
+        const headerBuffer = Buffer.from(headerSignature);
+
+        if (generatedBuffer.length !== headerBuffer.length || !crypto.timingSafeEqual(generatedBuffer, headerBuffer)) {
+            logger.error("Shopify webhook signature mismatch.");
+            return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+        }
+
+        let order;
+        try {
+            order = JSON.parse(rawBody);
+        } catch (parseError) {
+            logger.error("Failed to parse Shopify webhook payload:", parseError);
+            return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+        }
+
+        // Iterate through line items to find CheckMeIn_Account_ID and Program_ID
+        // We set these custom attributes in the permalink URL:
+        // https://[store].myshopify.com/cart/[VariantID]:1?attributes[CheckMeIn_Account_ID]=123&attributes[Program_ID]=456
+        
+        let accountIdStr = null;
+        let programIdStr = null;
+        let membershipProcessIdStr = null;
+
+        // Custom attributes in Cart Permalinks are usually mapped to `note_attributes` on the Order
+        if (order.note_attributes && Array.isArray(order.note_attributes)) {
+            for (const attr of order.note_attributes) {
+                if (attr.name === "CheckMeIn_Account_ID") accountIdStr = attr.value;
+                if (attr.name === "Program_ID") programIdStr = attr.value;
+                if (attr.name === "Membership_Process_ID") membershipProcessIdStr = attr.value;
+            }
+        }
+
+        // Membership payment → activate the household membership.
+        //
+        // TODO(#278): we trust the Membership_Process_ID rather than
+        // validating the order. The volunteer discount is a self-serve code on a
+        // public cart link, so a non-volunteer could append ?discount=<code> and
+        // underpay — and this handler would still activate them. We do NOT check
+        // entitlement, amount, product, or discount code here.
+        //
+        // Long-term fix: gate the volunteer coupon to an auto-managed Shopify
+        // customer segment (only volunteer households are members of it), so
+        // Shopify itself refuses the code for everyone else and no app-side check
+        // is needed. Until that exists, the order payload carries enough to
+        // validate manually if we want a stopgap: order.discount_codes[].code vs
+        // BoardSettings.volunteerDiscountCode + membership.isVolunteer, and
+        // order.total_price vs the expected tier dues.
+        if (membershipProcessIdStr) {
+            const processId = parseInt(membershipProcessIdStr, 10);
+            if (!isNaN(processId)) {
+                await activateByProcessId(processId, order.id ? String(order.id) : "");
+                logger.info(`[SHOPIFY WEBHOOK] Activated membership for process ${processId}`);
+            }
+            return NextResponse.json({ success: true });
+        }
+
+        if (accountIdStr && programIdStr) {
+            const participantIds = accountIdStr.split(',').map((id: string) => parseInt(id.trim(), 10)).filter((id: number) => !isNaN(id));
+            const programId = parseInt(programIdStr, 10);
+
+            if (participantIds.length > 0 && !isNaN(programId)) {
+                for (const participantId of participantIds) {
+                    // Find existing participant
+                    const existing = await prisma.programParticipant.findUnique({
+                        where: {
+                            programId_participantId: { programId, participantId }
+                        }
+                    });
+
+                    if (existing) {
+                        await prisma.programParticipant.update({
+                            where: {
+                                programId_participantId: { programId, participantId }
+                            },
+                            data: {
+                                status: 'ACTIVE',
+                                pendingSince: null, // clear out the pending timer
+                            }
+                        });
+                        
+                        logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
+                    } else {
+                        logger.warn(`[SHOPIFY WEBHOOK] Participant ${participantId} not found in Program ${programId}. Ignoring payment.`);
+                    }
+                }
+            }
+        } else {
+             logger.info(`[SHOPIFY WEBHOOK] Payload received but missing CheckMeIn_Account_ID or Program_ID attributes. Ignoring.`);
+        }
+
+        // Always return 200 OK to Shopify to acknowledge receipt, even if missing attributes.
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        logger.error("Shopify webhook error:", error);
+        return NextResponse.json({ error: "Webhook Error" }, { status: 500 });
+    }
+}
