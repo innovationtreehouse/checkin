@@ -264,6 +264,9 @@ export default function MembershipPage() {
       });
       const saveData = await saveRes.json();
       if (!saveRes.ok) {
+        // The save can reject a field the client can't check locally (e.g. an
+        // emergency contact who is also a household member) — highlight it.
+        if (saveData.fields) setFieldErrors(mapServerFields(saveData.fields));
         flash(apiError(saveData, "Could not save."), true);
         return;
       }
