@@ -51,6 +51,18 @@ export const config = {
     // static hosted URL provided out-of-band, so it lives in config, not BoardSettings.
     averityConsentUrl: (): string | null => process.env.AVERITY_CONSENT_URL || null,
 
+    // Zoho Sign — membership-agreement e-signing. The three OAuth secrets are
+    // null when unset (integration "off"); the two endpoints default to the .com
+    // data center and only need overriding for .eu/.in/etc. See zohoConfigured().
+    zohoClientId: (): string | null => process.env.ZOHO_CLIENT_ID || null,
+    zohoClientSecret: (): string | null => process.env.ZOHO_CLIENT_SECRET || null,
+    zohoRefreshToken: (): string | null => process.env.ZOHO_REFRESH_TOKEN || null,
+    zohoAccountsUrl: (): string => process.env.ZOHO_ACCOUNTS_URL || 'https://accounts.zoho.com',
+    zohoSignApi: (): string => process.env.ZOHO_SIGN_API || 'https://sign.zoho.com/api/v1',
+    // True only when all three OAuth secrets are present — gates the sign endpoint.
+    zohoConfigured: (): boolean =>
+        !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN),
+
     // App
     checkinEnv: (): CheckinEnv => readCheckinEnv(),
     // Production (default when unset). Consumers should call this rather than
