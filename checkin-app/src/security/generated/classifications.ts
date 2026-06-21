@@ -71,6 +71,7 @@ export const classifications = {
         stageEnteredAt: 'internal',
         createdAt: 'public',
         zohoEnvelopeId: 'internal',
+        zohoActionId: 'internal',
         contractSignedAt: 'internal',
         bgConsentAt: 'internal',
         shopifyDraftOrderId: 'internal',

@@ -21,6 +21,7 @@ interface PersonPrefill {
 
 interface ExternalStatus {
   contractSigned: boolean;
+  contractStarted: boolean;
   bgConsented: boolean;
   deepLinkUrl: string | null;
 }
@@ -289,6 +290,28 @@ export default function MembershipPage() {
     }
   };
 
+  // "Sign your membership agreement" — create/reuse the Zoho request and go
+  // straight into the embedded signing ceremony. The contract task flips to ✓
+  // automatically (Zoho webhook) when the applicant returns signed.
+  const startSigning = async () => {
+    setSaving(true);
+    flash("");
+    try {
+      const res = await fetch("/api/membership/contract/sign", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        flash(apiError(data, "Couldn't open the signing form. Please try again."), true);
+        setSaving(false);
+      }
+    } catch {
+      flash("Network error.", true);
+      setSaving(false);
+    }
+    // On success we navigate away, so we intentionally leave `saving` true.
+  };
+
   const renew = async () => {
     setSaving(true);
     flash("");
@@ -476,11 +499,16 @@ export default function MembershipPage() {
                     </Text>
                   </div>
 
-                  <ExternalTask done={!!state.external?.contractSigned} title="Sign your membership contract" doneText="Contract signed — thank you!">
-                    <Text c="dimmed">
-                      We&apos;ve sent your membership contract via Zoho Sign. Please check your email
-                      and sign it. This page updates automatically once it&apos;s signed.
-                    </Text>
+                  <ExternalTask done={!!state.external?.contractSigned} title="Sign your membership agreement" doneText="Agreement signed — thank you!">
+                    <Stack gap="xs" align="flex-start">
+                      <Text c="dimmed">
+                        Sign your personalized membership agreement online. This page updates
+                        automatically once it&apos;s signed.
+                      </Text>
+                      <Button color="green" disabled={saving} loading={saving} onClick={startSigning}>
+                        {state.external?.contractStarted ? "Resume signing →" : "Sign your membership agreement →"}
+                      </Button>
+                    </Stack>
                   </ExternalTask>
 
                   <ExternalTask done={!!state.external?.bgConsented} title="Consent to a background check" doneText="Background-check consent received.">

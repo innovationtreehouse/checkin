@@ -53,6 +53,17 @@ export const config = {
 
     // Zoho Sign webhook shared secret (timing-safe compared in verifyZohoToken).
     zohoWebhookSecret: (): string | null => process.env.ZOHO_WEBHOOK_SECRET || null,
+    // Zoho Sign — membership-agreement e-signing. The three OAuth secrets are
+    // null when unset (integration "off"); the two endpoints default to the .com
+    // data center and only need overriding for .eu/.in/etc. See zohoConfigured().
+    zohoClientId: (): string | null => process.env.ZOHO_CLIENT_ID || null,
+    zohoClientSecret: (): string | null => process.env.ZOHO_CLIENT_SECRET || null,
+    zohoRefreshToken: (): string | null => process.env.ZOHO_REFRESH_TOKEN || null,
+    zohoAccountsUrl: (): string => process.env.ZOHO_ACCOUNTS_URL || 'https://accounts.zoho.com',
+    zohoSignApi: (): string => process.env.ZOHO_SIGN_API || 'https://sign.zoho.com/api/v1',
+    // True only when all three OAuth secrets are present — gates the sign endpoint.
+    zohoConfigured: (): boolean =>
+        !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN),
 
     // App
     checkinEnv: (): CheckinEnv => readCheckinEnv(),
