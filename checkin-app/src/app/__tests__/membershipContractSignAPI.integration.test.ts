@@ -113,6 +113,48 @@ describe('POST /api/membership/contract/sign', () => {
         expect(p?.zohoEnvelopeId).toBe('REQ-1'); // unchanged
     });
 
+    it('lets a RENEWAL process in the EXTERNAL phase sign (renewals re-sign fresh)', async () => {
+        const hh = await prisma.household.create({ data: { name: `HH renewal ${TAG}` } });
+        const rLead = await prisma.participant.create({ data: { email: `rlead-${TAG}@example.com`, name: 'Renewing Lead', householdId: hh.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: rLead.id } });
+        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
+        await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'RENEWAL', status: 'PENDING_EXTERNAL_ACTION' } });
+
+        asUser(rLead.id);
+        const res = await SIGN(signReq());
+        expect(res.status).toBe(200);
+        expect(zoho.createRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('survives two concurrent clicks: stores one request and embeds the same id for both', async () => {
+        // Distinct ids per create so a double-create would be detectable.
+        let n = 0;
+        (zoho.createRequest as jest.Mock).mockImplementation(async () => {
+            n += 1;
+            return { requestId: `REQ-C${n}`, actionId: `ACT-C${n}`, documentId: `DOC-C${n}` };
+        });
+        await prisma.membershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: null, zohoActionId: null } });
+        asUser(leadId);
+
+        const [r1, r2] = await Promise.all([SIGN(signReq()), SIGN(signReq())]);
+        expect(r1.status).toBe(200);
+        expect(r2.status).toBe(200);
+
+        // Exactly one canonical request persisted, and every embed URL was minted
+        // against THAT id — no split brain even if both calls created at Zoho.
+        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        expect(p?.zohoEnvelopeId).toBeTruthy();
+        expect(p?.zohoActionId).toBeTruthy();
+        for (const call of (zoho.getEmbeddedSignUrl as jest.Mock).mock.calls) {
+            expect(call[0].requestId).toBe(p?.zohoEnvelopeId);
+            expect(call[0].actionId).toBe(p?.zohoActionId);
+        }
+
+        // Restore the default create mock + a stored request for later assertions.
+        (zoho.createRequest as jest.Mock).mockResolvedValue({ requestId: 'REQ-1', actionId: 'ACT-1', documentId: 'DOC-1' });
+        await prisma.membershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: 'REQ-1', zohoActionId: 'ACT-1' } });
+    });
+
     it('409s when the application is not in the EXTERNAL phase', async () => {
         await prisma.membershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
         asUser(leadId);

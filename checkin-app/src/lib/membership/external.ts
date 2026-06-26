@@ -158,8 +158,12 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
         throw new ExternalError("not_lead", "Only a household lead can sign the membership agreement.");
     }
 
+    // Any kind in the EXTERNAL phase — INITIAL applications AND renewals, which
+    // re-sign the agreement fresh each cycle. Gating on status alone keeps this in
+    // step with getIntakeState/getExternalStatus, which surface the button for any
+    // non-ACTIVE process (a kind filter here would render the button then 409).
     const process = (user.household?.membership?.processes ?? [])
-        .filter((p) => p.kind === "INITIAL" && p.status === "PENDING_EXTERNAL_ACTION")
+        .filter((p) => p.status === "PENDING_EXTERNAL_ACTION")
         .sort((a, b) => b.id - a.id)[0];
     if (!process) throw new ExternalError("wrong_phase", "No application is awaiting your signature.");
 
@@ -214,22 +218,38 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
             prefill: { PrintedName: recipientName },
         });
 
-        requestId = created.requestId;
-        actionId = created.actionId;
-        await prisma.membershipProcess.update({
-            where: { id: process.id },
-            data: { zohoEnvelopeId: requestId, zohoActionId: actionId },
+        // Atomically claim the process for THIS request's ids. Two concurrent
+        // POSTs can both pass the null check above and both create a Zoho request;
+        // the conditional update (zohoEnvelopeId still null) lets only the first
+        // writer win. If we lost the race (count 0), discard our just-created
+        // request and reuse the winner's stored ids so the process keeps a single
+        // canonical signing request — our orphaned Zoho request simply expires.
+        const claim = await prisma.membershipProcess.updateMany({
+            where: { id: process.id, zohoEnvelopeId: null },
+            data: { zohoEnvelopeId: created.requestId, zohoActionId: created.actionId },
         });
-        await prisma.auditLog.create({
-            data: {
-                actorId: userId,
-                action: "EDIT",
-                tableName: "MembershipProcess",
-                affectedEntityId: process.id,
-                newData: JSON.stringify({ zohoEnvelopeId: requestId, zohoActionId: actionId }),
-            },
-        });
-        logger.info(`Created Zoho signing request ${requestId} for membership process ${process.id}.`);
+        if (claim.count === 0) {
+            const winner = await prisma.membershipProcess.findUnique({ where: { id: process.id } });
+            requestId = winner?.zohoEnvelopeId ?? null;
+            actionId = winner?.zohoActionId ?? null;
+            if (!requestId || !actionId) {
+                throw new ExternalError("wrong_phase", "Your signing request is still being prepared. Please try again in a moment.");
+            }
+            logger.info(`Concurrent signing request for membership process ${process.id}; reusing stored ${requestId}.`);
+        } else {
+            requestId = created.requestId;
+            actionId = created.actionId;
+            await prisma.auditLog.create({
+                data: {
+                    actorId: userId,
+                    action: "EDIT",
+                    tableName: "MembershipProcess",
+                    affectedEntityId: process.id,
+                    newData: JSON.stringify({ zohoEnvelopeId: requestId, zohoActionId: actionId }),
+                },
+            });
+            logger.info(`Created Zoho signing request ${requestId} for membership process ${process.id}.`);
+        }
     }
 
     return getEmbeddedSignUrl({ token, requestId, actionId, host: config.baseUrl() });
