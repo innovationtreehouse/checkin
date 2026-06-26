@@ -9,7 +9,7 @@ import {
     getAccessToken,
     getEmbeddedSignUrl,
 } from "@/lib/membership/contract/zohoClient";
-import { loadAgreementPdf, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
+import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
 
 /**
  * EXTERNAL-phase service — the two parallel actions an applicant completes after
@@ -184,13 +184,21 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
             throw e;
         }
 
+        // On non-prod instances, mark the request + document as a DEV test so a
+        // signature can never be mistaken for a binding one — baked in server-side
+        // (CHECKIN_ENV), not editable by the applicant. Prod stays clean. The
+        // create/submit/embed flow is otherwise identical across envs.
+        const isProd = config.isProd();
+        const pdf = isProd ? agreement.pdf : await stampWatermark(agreement.pdf, "DEV TEST — NOT A LEGAL AGREEMENT");
+        const requestName = `${isProd ? "" : "[DEV TEST — NOT BINDING] "}Membership Agreement — ${recipientName}`;
+
         const created = await createRequest({
             token,
-            pdf: agreement.pdf,
+            pdf,
             filename: AGREEMENT_FILENAME,
             recipientEmail,
             recipientName,
-            requestName: `Membership Agreement — ${recipientName}`,
+            requestName,
             expirationDays: CONTRACT_EXPIRATION_DAYS,
         });
         await submitRequest({

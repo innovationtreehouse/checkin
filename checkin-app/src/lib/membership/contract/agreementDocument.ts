@@ -1,6 +1,6 @@
 import { readFile } from "fs/promises";
 import path from "path";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, degrees } from "pdf-lib";
 
 /**
  * Loader for the static membership-agreement PDF that gets uploaded to Zoho Sign.
@@ -52,4 +52,30 @@ export async function loadAgreementPdf(): Promise<LoadedAgreement> {
     const lastPageNo = doc.getPageCount() - 1;
     const { width, height } = doc.getPage(lastPageNo).getSize();
     return { pdf, lastPageNo, pageWidth: width, pageHeight: height };
+}
+
+/**
+ * Stamp a diagonal watermark across every page — used on NON-prod instances so a
+ * test signature is unmistakably marked as such, both in the signing ceremony and
+ * on the final signed PDF. Server-controlled (driven by CHECKIN_ENV), so the
+ * applicant can't remove or edit it. Page geometry is unchanged, so signature
+ * field placement still matches loadAgreementPdf()'s dimensions. Never applied in
+ * prod, which must produce a clean, binding agreement.
+ */
+export async function stampWatermark(pdf: Buffer, text: string): Promise<Buffer> {
+    const doc = await PDFDocument.load(pdf);
+    const font = await doc.embedFont(StandardFonts.HelveticaBold);
+    for (const page of doc.getPages()) {
+        const { width, height } = page.getSize();
+        page.drawText(text, {
+            x: width * 0.1,
+            y: height * 0.42,
+            size: 26,
+            font,
+            color: rgb(0.85, 0.1, 0.1),
+            opacity: 0.22,
+            rotate: degrees(45),
+        });
+    }
+    return Buffer.from(await doc.save());
 }
