@@ -53,6 +53,19 @@ export const config = {
 
     // Zoho Sign webhook shared secret (timing-safe compared in verifyZohoToken).
     zohoWebhookSecret: (): string | null => process.env.ZOHO_WEBHOOK_SECRET || null,
+
+    // AWS — region for SDK clients. Set on the ECS task def (AWS_REGION); the
+    // default covers local dev. Credentials come from the task role / local profile.
+    awsRegion: (): string => process.env.AWS_REGION || 'us-east-2',
+
+    // Membership-agreement PDF — stored in a private S3 bucket (uploaded
+    // out-of-band, never committed) and fetched at runtime by the task role.
+    // Bucket null when unset → the sign endpoint reports the agreement
+    // unavailable (503), the same failure as a missing object. The key has a
+    // default so only the bucket must be wired per-env.
+    agreementPdfBucket: (): string | null => process.env.AGREEMENT_PDF_S3_BUCKET || null,
+    agreementPdfKey: (): string => process.env.AGREEMENT_PDF_S3_KEY || 'membership-agreement.pdf',
+
     // Zoho Sign — membership-agreement e-signing. The three OAuth secrets are
     // null when unset (integration "off"); the two endpoints default to the .com
     // data center and only need overriding for .eu/.in/etc. See zohoConfigured().
