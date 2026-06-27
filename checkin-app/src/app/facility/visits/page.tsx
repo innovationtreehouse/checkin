@@ -87,7 +87,7 @@ export default function AdminVisitsPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Visit History" back={{ href: '/admin', label: '← Admin Ops' }} />
+      <AdminPageHeader title="Visit History" back={{ href: '/facility', label: '← Facility Ops' }} />
 
       <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 

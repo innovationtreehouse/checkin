@@ -58,7 +58,7 @@ export default function AdminBadgesPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Raw Badge Events" back={{ href: '/admin', label: '← Admin Ops' }} />
+      <AdminPageHeader title="Raw Badge Events" back={{ href: '/facility', label: '← Facility Ops' }} />
 
       <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 

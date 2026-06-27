@@ -24,10 +24,6 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
   {
     title: "Operations",
     links: [
-      { name: "Visit History", href: "/admin/events/visits", icon: "🕒", description: "View and edit past visit records." },
-      { name: "Raw Badge Events", href: "/admin/events/badges", icon: "📡", description: "Audit the raw RFID badge tap log." },
-      { name: "Print ID Badges", href: "/admin/print-badges", icon: "🖨️", description: "Generate printable participant ID badges." },
-      { name: "Participation Trends", href: "/admin/trends", icon: "📈", description: "Attendance and participation analytics." },
       { name: "System Health", href: "/admin/systemhealth", icon: "🫀", description: "Service and integration status." },
     ],
   },
