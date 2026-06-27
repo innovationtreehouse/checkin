@@ -1,4 +1,4 @@
-import { baseEmailLayout } from './base';
+import { baseEmailLayout, escapeHtml } from './base';
 
 interface PostEventTemplateParams {
     eventName: string;
@@ -13,8 +13,8 @@ interface PostEventTemplateParams {
  */
 export function postEventTemplate({ eventName, attendingRsvps, actualVisits, eventLink }: PostEventTemplateParams): string {
     return baseEmailLayout(`
-        <h2>Event Completed: ${eventName}</h2>
-        <p>The event <strong>${eventName}</strong> has finished.</p>
+        <h2>Event Completed: ${escapeHtml(eventName)}</h2>
+        <p>The event <strong>${escapeHtml(eventName)}</strong> has finished.</p>
         <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
             <h3 style="margin-top: 0;">Attendance Summary</h3>
             <ul style="margin-bottom: 0;">

@@ -1,4 +1,17 @@
 /**
+ * Escape user-controlled values before interpolating them into email HTML,
+ * so a name/event like `<img src=x onerror=...>` renders as text, not markup.
+ */
+export function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
  * Base HTML email layout with consistent branding.
  */
 export function baseEmailLayout(content: string): string {

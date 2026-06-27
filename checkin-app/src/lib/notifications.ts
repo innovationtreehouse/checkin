@@ -3,6 +3,7 @@ import { sendEmail } from "./email";
 import { formatTime, formatDate } from "./time";
 import { checkinReceiptTemplate } from "./email-templates/checkin";
 import { householdMemberTemplate } from "./email-templates/household";
+import { escapeHtml } from "./email-templates/base";
 
 /**
  * Service to handle sending notifications to users via their defined preferences.
@@ -61,7 +62,7 @@ export async function sendNotification(userId: number, eventType: NotificationEv
         const wantsEmail = settings?.email !== false; // Active by default
 
         if (wantsEmail) {
-            await sendEmail(user.email, subject, `<p>${message}</p>`);
+            await sendEmail(user.email, subject, `<p>${escapeHtml(message)}</p>`);
         }
 
     } catch (error) {

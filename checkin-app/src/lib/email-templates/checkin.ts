@@ -1,4 +1,4 @@
-import { baseEmailLayout } from './base';
+import { baseEmailLayout, escapeHtml } from './base';
 
 interface CheckinTemplateParams {
     name: string;
@@ -16,7 +16,7 @@ export function checkinReceiptTemplate({ name, type, date, time }: CheckinTempla
 
     return baseEmailLayout(`
         <h2 style="color: #6366f1;">${emoji} Visit ${action}</h2>
-        <p><strong>${name}</strong> ${type === 'checkin' ? 'checked in to' : 'checked out of'} Innovation Treehouse.</p>
+        <p><strong>${escapeHtml(name)}</strong> ${type === 'checkin' ? 'checked in to' : 'checked out of'} Innovation Treehouse.</p>
         <p style="color: #6b7280;">📅 ${date}<br/>🕐 ${time}</p>
     `);
 }

@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { escapeHtml } from "@/lib/email-templates/base";
 import { logger } from "@/lib/logger";
 
 /**
@@ -314,7 +315,7 @@ async function notifyHouseholdFamily(householdId: number, subject: string, body?
             select: { participant: { select: { email: true } } },
         });
         const base = process.env.NEXTAUTH_URL ?? "";
-        const html = `<p>${body ?? ""}</p><p><a href="${base}/trusted-adults">View your trusted adults</a>.</p>`;
+        const html = `<p>${escapeHtml(body ?? "")}</p><p><a href="${base}/trusted-adults">View your trusted adults</a>.</p>`;
         await Promise.all(
             leads
                 .map((l) => l.participant?.email)

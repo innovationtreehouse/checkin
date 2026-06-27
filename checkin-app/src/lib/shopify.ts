@@ -3,6 +3,7 @@
 
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { escapeHtml } from "@/lib/email-templates/base";
 
 let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
@@ -218,7 +219,7 @@ export async function createShopifyProgramVariants(name: string, memberPrice: nu
                 sendEmail(
                     email,
                     "Shopify Integration Error",
-                    `<p>An error occurred in the Shopify integration while creating variants for program: <strong>${name}</strong>.</p><p>Error details:</p><pre>${error instanceof Error ? error.message : String(error)}</pre>`
+                    `<p>An error occurred in the Shopify integration while creating variants for program: <strong>${escapeHtml(name)}</strong>.</p><p>Error details:</p><pre>${escapeHtml(error instanceof Error ? error.message : String(error))}</pre>`
                 )
             );
 
