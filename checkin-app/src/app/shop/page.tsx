@@ -3,7 +3,6 @@
 import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { Alert, Button, Card, Center, Container, Group, Loader, Stack, Tabs, Text, Title } from '@mantine/core';
 
 export default function ShopOpsPage() {
@@ -59,9 +58,6 @@ export default function ShopOpsPage() {
           <Title order={1}>Shop Operations</Title>
           <Text c="dimmed">Centralized hub for tool management and safety certifications.</Text>
         </div>
-        <Button component={Link} href="/dashboard" variant="default">
-          ← Main Dashboard
-        </Button>
       </Group>
 
       <Tabs defaultValue={isAdmin ? 'create' : isCertifier ? 'manage' : 'live'}>
