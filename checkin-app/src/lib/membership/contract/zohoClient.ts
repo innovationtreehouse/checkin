@@ -104,6 +104,11 @@ export async function createRequest(params: {
                     recipient_name: params.recipientName,
                     signing_order: 0,
                     verify_recipient: false,
+                    // Required for the in-app embedded signing flow: the recipient must be
+                    // created as embedded, or the embedtoken call later fails with Zoho
+                    // code 2009 "Action is not embedded" (the recipient defaults to
+                    // email-based signing otherwise).
+                    is_embedded: true,
                 },
             ],
         },
@@ -165,6 +170,9 @@ export async function submitRequest(params: {
                     recipient_name: params.recipientName,
                     recipient_email: params.recipientEmail,
                     action_type: "SIGN",
+                    // Re-assert embedded on submit so the field-attach step can't reset the
+                    // recipient back to email signing (keeps the embedtoken call valid).
+                    is_embedded: true,
                     fields,
                 },
             ],
