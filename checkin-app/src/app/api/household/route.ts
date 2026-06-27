@@ -25,53 +25,6 @@ export const GET = withAuth(
     }
 );
 
-export const POST = withAuth(
-    {},
-    async (_req, auth) => {
-        try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-            const userId = auth.user.id;
-
-            const user = await prisma.participant.findUnique({ where: { id: userId } });
-            if (user?.householdId) {
-                return NextResponse.json({ error: "User already belongs to a household" }, { status: 400 });
-            }
-
-            const lastName = (user?.name || "").trim().split(/\s+/).pop() || "";
-            const householdName = lastName ? `${lastName} Household` : "Household";
-
-            const household = await prisma.household.create({
-                data: {
-                    name: householdName,
-                    address: "",
-                    leads: {
-                        create: { participantId: userId }
-                    },
-                    participants: {
-                        connect: { id: userId }
-                    }
-                },
-                include: { participants: true, leads: true }
-            });
-
-            await prisma.auditLog.create({
-                data: {
-                    actorId: userId,
-                    action: "CREATE",
-                    tableName: "Household",
-                    affectedEntityId: household.id,
-                    newData: JSON.stringify(household)
-                }
-            });
-
-            return NextResponse.json({ household }, { status: 201 });
-        } catch (error: unknown) {
-            console.error("Household POST Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-        }
-    }
-);
-
 export const PATCH = withAuth(
     {},
     async (req, auth) => {

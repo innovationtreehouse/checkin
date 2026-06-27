@@ -191,24 +191,6 @@ export default function HouseholdPage() {
     setShowContactForm(true);
   };
 
-  const handleCreateHousehold = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/household', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-      if (res.ok) {
-        const data = await res.json();
-        setHousehold(data.household);
-        setMessage("Household created successfully!");
-      } else {
-        setMessage("Failed to create household.");
-      }
-    } catch {
-      setMessage("Network error creating household.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage("");
@@ -328,10 +310,8 @@ export default function HouseholdPage() {
           {!household ? (
             <Stack align="center" py="md">
               <Text c="dimmed" ta="center">
-                You are not currently part of a family household structure. Create one to add
-                dependents or combine billing.
+                We couldn&apos;t load your household. Please refresh to try again.
               </Text>
-              <Button color="grape" onClick={handleCreateHousehold}>Register New Household</Button>
             </Stack>
           ) : (
             <>
