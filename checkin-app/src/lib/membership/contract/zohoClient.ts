@@ -83,6 +83,13 @@ export interface CreateRequestResult {
  * Upload the agreement PDF and register the single SIGN recipient. Mirrors the
  * script's create_request: is_sequential, one SIGN action, verify_recipient false.
  */
+export interface RedirectPages {
+    sign_completed: string;
+    sign_success: string;
+    sign_declined: string;
+    sign_later: string;
+}
+
 export async function createRequest(params: {
     token: string;
     pdf: Buffer;
@@ -91,12 +98,18 @@ export async function createRequest(params: {
     recipientName: string;
     requestName: string;
     expirationDays: number;
+    redirectPages: RedirectPages;
 }): Promise<CreateRequestResult> {
     const payload = {
         requests: {
             request_name: params.requestName,
             expiration_days: params.expirationDays,
             is_sequential: true,
+            // Where Zoho sends the (embedded) signer when they finish. Without this
+            // the embedded session ends on Zoho's own page and the applicant is
+            // stranded — never returned to checkin. Set at creation, inside
+            // `requests` (Zoho has no redirect param on the embedtoken call).
+            redirect_pages: params.redirectPages,
             actions: [
                 {
                     action_type: "SIGN",
