@@ -26,8 +26,15 @@ permissions:
   pull-requests: write  # comment on the originating PR
 
 concurrency:
-  group: checkin-deploy-dev
-  cancel-in-progress: false  # serialize deploys; never abandon one mid-rollout
+  # Group PER COMMIT (not a single shared group): with one shared group, GitHub
+  # collapses queued runs to the latest when merges land back-to-back, so an
+  # intermediate commit's deploy gets cancelled before it runs — losing the signal
+  # for which change broke things. Per-commit, every merge's deploy runs to
+  # completion and its result is pinned to that commit (re-runs of the SAME commit
+  # still dedup). Trade-off: two near-simultaneous merges can deploy in parallel
+  # (last update-service wins); acceptable for dev, and worth it for the visibility.
+  group: checkin-deploy-dev-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false # never abandon a deploy mid-rollout
 
 env:
   AWS_REGION: us-east-2

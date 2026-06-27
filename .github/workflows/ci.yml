@@ -159,6 +159,8 @@ jobs:
   # but never push or deploy it. The deploy flow's build was previously only exercised on
   # push to main, so build-only failures (e.g. a Turbopack "module not found" that tsc can't
   # see) slipped through CI and broke the post-merge deploy. Building here gates the MR.
+  # It ALSO boots the built image and probes `/` (smoke test) — `docker build` alone can't
+  # catch a runtime crash on startup, which only surfaced post-merge as a hung ECS rollout.
   deploy-build:
     name: Deploy build (no deploy)
     needs: changes
@@ -184,3 +186,35 @@ jobs:
             --build-arg NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN="$NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN" \
             -f checkin-app/Dockerfile \
             -t checkin-deploy-build:${{ github.sha }} .
+
+      # Actually RUN the image: it must boot and serve `/` (mirrors the ALB health
+      # check, which accepts 200-399 for the app's auth redirect). Placeholder env,
+      # no DB — `/` is reachable without one. This catches a startup crash that the
+      # build can't, before the change can merge and hang the post-merge rollout.
+      - name: Smoke test — boot the app and probe /
+        if: needs.changes.outputs.app == 'true'
+        run: |
+          set -uo pipefail
+          docker run -d --name checkin-smoke -p 4000:4000 \
+            -e NODE_ENV=production -e PORT=4000 -e HOSTNAME=0.0.0.0 \
+            -e DATABASE_URL='postgresql://u:p@127.0.0.1:5432/db?sslmode=disable' \
+            -e NEXTAUTH_URL='http://127.0.0.1:4000' -e AUTH_TRUST_HOST=true -e NEXTAUTH_SECRET=smoke \
+            -e CHECKIN_ENV=dev -e AWS_REGION=us-east-2 \
+            checkin-deploy-build:${{ github.sha }}
+
+          ok=
+          for i in $(seq 1 30); do
+            if [ -z "$(docker ps -q -f name=checkin-smoke -f status=running)" ]; then
+              echo "container is no longer running"; break
+            fi
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4000/ || echo 000)
+            case "$code" in
+              2??|3??) echo "app booted — GET / -> $code"; ok=1; break ;;
+            esac
+            sleep 2
+          done
+
+          echo "----- container logs (tail) -----"
+          docker logs checkin-smoke 2>&1 | tail -50 || true
+          docker rm -f checkin-smoke >/dev/null 2>&1 || true
+          [ -n "$ok" ] || { echo "::error::checkin app failed to boot / serve \"/\" within ~60s"; exit 1; }
