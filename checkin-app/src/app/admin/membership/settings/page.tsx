@@ -22,6 +22,17 @@ interface Designation {
 
 const dollars = (cents: number) => (cents / 100).toFixed(2);
 
+// Next occurrence (>= now) of the stored boundary's month/day, as a label.
+// ponytail: mirrors nextBoundary() in lib/membership/renewal.ts — can't import, it pulls in prisma.
+const currentBoundaryLabel = (iso: string) => {
+  const [, m, d] = iso.split("-").map(Number);
+  if (!m || !d) return null;
+  const now = new Date();
+  let b = Date.UTC(now.getUTCFullYear(), m - 1, d);
+  if (b < now.getTime()) b = Date.UTC(now.getUTCFullYear() + 1, m - 1, d);
+  return new Date(b).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+};
+
 export default function MembershipSettingsPage() {
   const [normalDues, setNormalDues] = useState("0");
   const [volunteerDues, setVolunteerDues] = useState("0");
@@ -215,6 +226,10 @@ export default function MembershipSettingsPage() {
               <Text size="sm" mb="sm">
                 ⚠️ Changing this date shifts the renewal cycle for <strong>every household</strong>.
                 Only change it if you are sure.
+              </Text>
+              <Text size="sm" mb="sm">
+                Current boundary:{" "}
+                <strong>{boundary ? (currentBoundaryLabel(boundary) ?? "—") : "not set"}</strong>
               </Text>
               <Checkbox
                 mb="sm"
