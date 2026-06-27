@@ -48,7 +48,11 @@ async function main() {
         return;
     }
 
-    const pool = new Pool({ connectionString: `${process.env.DATABASE_URL}` });
+    if (!process.env.DATABASE_URL) {
+        throw new Error("DATABASE_URL is not set — point it at the target database before --commit.");
+    }
+    // connectionTimeoutMillis: pg defaults to infinite, so an unreachable DB hangs forever. Fail fast.
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10_000 });
     const adapter = new PrismaPg(pool);
     const prisma = new PrismaClient({ adapter });
     try {
