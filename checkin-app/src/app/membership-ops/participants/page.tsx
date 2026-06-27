@@ -155,8 +155,8 @@ export default function AdminParticipantsIndex() {
           <Text c="dimmed">Search and manage system participants and households.</Text>
         </div>
         <Group>
-          <Button variant="light" onClick={() => router.push('/admin/participants/import')}>Bulk Import</Button>
-          <Button color="green" onClick={() => router.push('/admin/participants/new')}>+ New Participant</Button>
+          <Button variant="light" onClick={() => router.push('/membership-ops/participants/import')}>Bulk Import</Button>
+          <Button color="green" onClick={() => router.push('/membership-ops/participants/new')}>+ New Participant</Button>
         </Group>
       </Group>
 

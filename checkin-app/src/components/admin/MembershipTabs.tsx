@@ -6,8 +6,8 @@ import { Tabs } from "@mantine/core";
 export type MembershipTab = "applications" | "households" | "settings";
 
 const TABS: { value: MembershipTab; label: string; href: string }[] = [
-  { value: "applications", label: "Applications", href: "/admin/membership" },
-  { value: "households", label: "Manage Memberships", href: "/admin/households" },
+  { value: "applications", label: "Applications", href: "/membership-ops/applications" },
+  { value: "households", label: "Manage Memberships", href: "/membership-ops/households" },
   { value: "settings", label: "Settings", href: "/admin/membership/settings" },
 ];
 

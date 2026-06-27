@@ -217,7 +217,7 @@ export default function MergeParticipants() {
             setPA(null); setPB(null);
             setSearchA(""); setSearchB("");
           }}>Merge More</Button>
-          <Button onClick={() => router.push('/admin/participants')}>Back to Participants</Button>
+          <Button onClick={() => router.push('/membership-ops/participants')}>Back to Participants</Button>
         </Group>
       </Card>
     );
