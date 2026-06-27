@@ -13,6 +13,7 @@ import { POST as CERTIFY } from '@/app/api/admin/membership/certify-payment/rout
 import { computeDuesCents, ensurePaymentLink, ensurePaymentLinkForUser, activate } from '@/lib/membership/payment';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { sendEmail } from '@/lib/email';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
@@ -166,6 +167,30 @@ describe('Membership payment API', () => {
         asUser(leadId);
         const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: 1 }) }) as never);
         expect(res.status).toBe(403);
+    });
+
+    it('concurrent activate() of the same process sends one email and writes one audit row', async () => {
+        // Fresh proc with a lead so a congrats email would fire.
+        const hh = await prisma.household.create({ data: { name: `Concurrent ${TAG}` } });
+        const lead = await prisma.participant.create({ data: { email: `concurrent-${TAG}@example.com`, name: 'C Lead', householdId: hh.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer: false } });
+        const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT' } });
+
+        (sendEmail as jest.Mock).mockClear();
+
+        // Two near-simultaneous deliveries (Shopify retry) hit the same sink.
+        await Promise.all([
+            activate(p.id, { via: 'payment', shopifyOrderId: 'race-1' }),
+            activate(p.id, { via: 'payment', shopifyOrderId: 'race-2' }),
+        ]);
+
+        const auditRows = await prisma.auditLog.count({ where: { tableName: 'MembershipProcess', affectedEntityId: p.id } });
+        expect(auditRows).toBe(1);
+        expect(sendEmail as jest.Mock).toHaveBeenCalledTimes(1);
+
+        const proc = await prisma.membershipProcess.findUnique({ where: { id: p.id } });
+        expect(proc?.status).toBe('ACTIVE');
     });
 
     it('activate() is a no-op once already ACTIVE', async () => {

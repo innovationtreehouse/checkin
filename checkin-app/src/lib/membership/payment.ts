@@ -104,36 +104,47 @@ export async function activate(
 ) {
     const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new PaymentError("not_found", "Application not found.");
-    const membership = await prisma.membership.findUnique({ where: { id: process.membershipId }, select: { status: true, householdId: true } });
+    const membership = await prisma.membership.findUnique({ where: { id: process.membershipId }, select: { householdId: true } });
     if (!membership) throw new PaymentError("not_found", "Membership not found.");
-    if (process.status === "ACTIVE" && membership.status === "ACTIVE") return process;
 
     const now = new Date();
-    const updated = await prisma.membershipProcess.update({
-        where: { id: processId },
-        data: {
-            status: "ACTIVE",
-            stageEnteredAt: now,
-            paidAt: now,
-            ...(opts.shopifyOrderId ? { shopifyOrderId: opts.shopifyOrderId } : {}),
-            ...(opts.via === "certified" && opts.actorId ? { certifiedById: opts.actorId } : {}),
-        },
-    });
-    await prisma.membership.update({ where: { id: process.membershipId }, data: { status: "ACTIVE" } });
+    // The flip + membership update + audit row are one transaction, and the flip
+    // is CONDITIONAL on status != ACTIVE. Under Read Committed, two concurrent
+    // updateMany re-check the WHERE against the just-committed row, so exactly one
+    // sees count === 1 and the rest see 0 — no row lock needed. Shopify retries
+    // an orders/paid webhook routinely; this makes activate() truly idempotent
+    // (no duplicate audit rows, no duplicate congrats emails).
+    const flipped = await prisma.$transaction(async (tx) => {
+        const { count } = await tx.membershipProcess.updateMany({
+            where: { id: processId, status: { not: "ACTIVE" } },
+            data: {
+                status: "ACTIVE",
+                stageEnteredAt: now,
+                paidAt: now,
+                ...(opts.shopifyOrderId ? { shopifyOrderId: opts.shopifyOrderId } : {}),
+                ...(opts.via === "certified" && opts.actorId ? { certifiedById: opts.actorId } : {}),
+            },
+        });
+        if (count === 0) return false; // already ACTIVE — a retry; skip audit + email
 
-    await prisma.auditLog.create({
-        data: {
-            actorId: opts.actorId ?? SYSTEM_ACTOR,
-            action: "EDIT",
-            tableName: "MembershipProcess",
-            affectedEntityId: processId,
-            oldData: JSON.stringify({ status: process.status }),
-            newData: JSON.stringify({ status: "ACTIVE", via: opts.via }),
-        },
+        await tx.membership.update({ where: { id: process.membershipId }, data: { status: "ACTIVE" } });
+        await tx.auditLog.create({
+            data: {
+                actorId: opts.actorId ?? SYSTEM_ACTOR,
+                action: "EDIT",
+                tableName: "MembershipProcess",
+                affectedEntityId: processId,
+                oldData: JSON.stringify({ status: process.status }),
+                newData: JSON.stringify({ status: "ACTIVE", via: opts.via }),
+            },
+        });
+        return true;
     });
 
-    await sendCongrats(membership.householdId);
-    return updated;
+    // Email outside the transaction: a slow/failed send must not roll back the
+    // activation, and we only send when this call is the one that flipped it.
+    if (flipped) await sendCongrats(membership.householdId);
+    return prisma.membershipProcess.findUnique({ where: { id: processId } });
 }
 
 /** Board override: certify a payment plan and activate without a Shopify payment. */
