@@ -1,4 +1,4 @@
-import { baseEmailLayout } from './base';
+import { baseEmailLayout, escapeHtml } from './base';
 
 interface HouseholdTemplateParams {
     leadName: string;
@@ -18,8 +18,8 @@ export function householdMemberTemplate({ leadName, memberName, type, date, time
 
     return baseEmailLayout(`
         <h2 style="color: #6366f1;">${emoji} Household Member ${actionNoun}</h2>
-        <p>Hi ${leadName},</p>
-        <p>Your household member <strong>${memberName}</strong> ${action} Innovation Treehouse.</p>
+        <p>Hi ${escapeHtml(leadName)},</p>
+        <p>Your household member <strong>${escapeHtml(memberName)}</strong> ${action} Innovation Treehouse.</p>
         <p style="color: #6b7280;">📅 ${date}<br/>🕐 ${time}</p>
     `);
 }
