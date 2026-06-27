@@ -3,7 +3,7 @@
 # Build with:  docker build -f checkin-app/Dockerfile .
 
 # Stage 1: Install dependencies (whole workspace, hoisted to /app/node_modules)
-FROM node:22-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 # Copy only the manifests + lockfile first for a cache-friendly `npm ci` layer.
 # Add packages/*/package.json here when @checkin/* packages land (item 4).
@@ -12,7 +12,7 @@ COPY checkin-app/package.json ./checkin-app/package.json
 RUN npm ci
 
 # Stage 2: Build the app
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -39,7 +39,7 @@ ENV GOOGLE_CLIENT_ID=build-placeholder \
 RUN npm -w checkin-app run build
 
 # Stage 3: Production image
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
