@@ -45,13 +45,44 @@ describe("getCurrentBulkOperation", () => {
 describe("downloadBulkJsonl", () => {
   it("returns the body text on success", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "line1\nline2\n" }));
-    expect(await downloadBulkJsonl("https://bulk/result.jsonl")).toBe("line1\nline2\n");
+    expect(await downloadBulkJsonl("https://storage.googleapis.com/shopify-bulk/result.jsonl")).toBe("line1\nline2\n");
+  });
+
+  it("accepts an allowlisted https GCS host without rejecting", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "ok\n" });
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await downloadBulkJsonl("https://storage.googleapis.com/shopify-bulk/r.jsonl")).toBe("ok\n");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects SSRF targets (http, metadata IP, arbitrary host, suffix-spoof) before any fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    for (const url of [
+      "http://storage.googleapis.com/shopify-bulk/r.jsonl", // not https
+      "https://169.254.169.254/latest/meta-data/", // cloud metadata service
+      "https://evil.example.com/r.jsonl", // off-allowlist host
+      "https://storage.googleapis.com.evil.com/r.jsonl", // suffix-spoof
+    ]) {
+      await expect(downloadBulkJsonl(url, { backoffMs: () => 0 })).rejects.toThrow(/rejected/);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks a redirect off the signed URL (redirect: manual), no retry", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ type: "opaqueredirect", ok: false, status: 0, text: async () => "" });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      downloadBulkJsonl("https://storage.googleapis.com/shopify-bulk/r.jsonl", { backoffMs: () => 0 }),
+    ).rejects.toThrow("redirect blocked");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ redirect: "manual" });
   });
 
   it("throws immediately on a non-retryable status (403 expired signed URL), no retry", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 403, text: async () => "" });
     vi.stubGlobal("fetch", fetchMock);
-    await expect(downloadBulkJsonl("https://bulk/result.jsonl", { backoffMs: () => 0 })).rejects.toThrow("HTTP 403");
+    await expect(downloadBulkJsonl("https://storage.googleapis.com/shopify-bulk/result.jsonl", { backoffMs: () => 0 })).rejects.toThrow("HTTP 403");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -62,7 +93,7 @@ describe("downloadBulkJsonl", () => {
       .mockResolvedValueOnce({ ok: true, status: 200, text: async () => "ok\n" });
     vi.stubGlobal("fetch", fetchMock);
 
-    expect(await downloadBulkJsonl("https://bulk/r.jsonl", { backoffMs: () => 0 })).toBe("ok\n");
+    expect(await downloadBulkJsonl("https://storage.googleapis.com/shopify-bulk/r.jsonl", { backoffMs: () => 0 })).toBe("ok\n");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -74,7 +105,7 @@ describe("downloadBulkJsonl", () => {
       .mockResolvedValueOnce({ ok: true, status: 200, text: async () => "late\n" });
     vi.stubGlobal("fetch", fetchMock);
 
-    expect(await downloadBulkJsonl("https://bulk/r.jsonl", { backoffMs: () => 0 })).toBe("late\n");
+    expect(await downloadBulkJsonl("https://storage.googleapis.com/shopify-bulk/r.jsonl", { backoffMs: () => 0 })).toBe("late\n");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -83,7 +114,7 @@ describe("downloadBulkJsonl", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
-      downloadBulkJsonl("https://bulk/r.jsonl", { maxAttempts: 3, backoffMs: () => 0 }),
+      downloadBulkJsonl("https://storage.googleapis.com/shopify-bulk/r.jsonl", { maxAttempts: 3, backoffMs: () => 0 }),
     ).rejects.toThrow("HTTP 500");
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
@@ -101,7 +132,7 @@ describe("downloadBulkJsonl", () => {
       });
       vi.stubGlobal("fetch", fetchMock);
 
-      const p = downloadBulkJsonl("https://bulk/r.jsonl", { timeoutMs: 1_000, maxAttempts: 1, backoffMs: () => 0 });
+      const p = downloadBulkJsonl("https://storage.googleapis.com/shopify-bulk/r.jsonl", { timeoutMs: 1_000, maxAttempts: 1, backoffMs: () => 0 });
       const rejects = expect(p).rejects.toThrow(/abort/i);
       await vi.advanceTimersByTimeAsync(1_000);
       await rejects;
