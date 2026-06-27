@@ -5,6 +5,7 @@ import {
     getAccessToken,
     createRequest,
     getEmbeddedSignUrl,
+    getRequestStatus,
     ZohoError,
     _resetTokenCache,
 } from "@/lib/membership/contract/zohoClient";
@@ -110,5 +111,13 @@ describe("zohoClient", () => {
         const calledUrl = (global.fetch as jest.Mock).mock.calls[0][0] as URL;
         expect(calledUrl.toString()).toContain("/requests/req-1/actions/act-1/embedtoken");
         expect(calledUrl.searchParams.get("host")).toBe("https://app.example.com");
+    });
+
+    it("getRequestStatus is true only when the request is completed", async () => {
+        mockFetchOnce({ requests: { request_status: "completed" } });
+        await expect(getRequestStatus("t", "req-1")).resolves.toBe(true);
+
+        mockFetchOnce({ requests: { request_status: "inprogress" } });
+        await expect(getRequestStatus("t", "req-1")).resolves.toBe(false);
     });
 });

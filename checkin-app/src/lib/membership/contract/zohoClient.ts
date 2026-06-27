@@ -228,3 +228,19 @@ export async function getEmbeddedSignUrl(params: {
     if (!signUrl) throw new ZohoError(`Embed token response missing sign_url: ${JSON.stringify(result)}`);
     return signUrl;
 }
+
+/**
+ * Read a signing request's current status. Returns true once the request is fully
+ * completed. Used to sync state on the applicant's return from embedded signing,
+ * so completion doesn't depend on the inbound webhook (which is unreliable against
+ * a scale-to-zero dev instance).
+ */
+export async function getRequestStatus(token: string, requestId: string): Promise<boolean> {
+    const resp = await fetch(`${config.zohoSignApi()}/requests/${requestId}`, {
+        method: "GET",
+        headers: authHeader(token),
+    });
+    if (!resp.ok) throw new ZohoError(`Failed to get request status (${resp.status}): ${await resp.text()}`);
+    const result = (await resp.json()) as { requests?: { request_status?: string } };
+    return result.requests?.request_status?.toLowerCase() === "completed";
+}
