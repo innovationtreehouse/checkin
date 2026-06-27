@@ -196,6 +196,9 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
         const pdf = isProd ? agreement.pdf : await stampWatermark(agreement.pdf, "DEV TEST — NOT A LEGAL AGREEMENT");
         const requestName = `${isProd ? "" : "[DEV TEST — NOT BINDING] "}Membership Agreement — ${recipientName}`;
 
+        // Return the embedded signer to checkin when they finish (Zoho navigates
+        // the window to these). signed=1 lets the membership page confirm + refresh.
+        const membershipUrl = `${config.baseUrl()}/membership`;
         const created = await createRequest({
             token,
             pdf,
@@ -204,6 +207,12 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
             recipientName,
             requestName,
             expirationDays: CONTRACT_EXPIRATION_DAYS,
+            redirectPages: {
+                sign_completed: `${membershipUrl}?signed=1`,
+                sign_success: `${membershipUrl}?signed=1`,
+                sign_declined: `${membershipUrl}?declined=1`,
+                sign_later: membershipUrl,
+            },
         });
         await submitRequest({
             token,

@@ -66,8 +66,20 @@ describe("zohoClient", () => {
             recipientName: "X",
             requestName: "Agreement",
             expirationDays: 15,
+            redirectPages: {
+                sign_completed: "https://app.example.com/membership?signed=1",
+                sign_success: "https://app.example.com/membership?signed=1",
+                sign_declined: "https://app.example.com/membership?declined=1",
+                sign_later: "https://app.example.com/membership",
+            },
         });
         expect(result).toEqual({ requestId: "req-1", actionId: "act-1", documentId: "doc-1" });
+        // redirect_pages must ride in the create payload so the embedded signer is
+        // returned to checkin after signing (not stranded on Zoho's page).
+        const sentData = JSON.parse(
+            ((global.fetch as jest.Mock).mock.calls[0][1].body as FormData).get("data") as string,
+        );
+        expect(sentData.requests.redirect_pages.sign_completed).toContain("/membership?signed=1");
     });
 
     it("createRequest throws when Zoho reports a non-success status", async () => {
@@ -81,6 +93,12 @@ describe("zohoClient", () => {
                 recipientName: "X",
                 requestName: "Agreement",
                 expirationDays: 15,
+                redirectPages: {
+                    sign_completed: "https://app.example.com/membership?signed=1",
+                    sign_success: "https://app.example.com/membership?signed=1",
+                    sign_declined: "https://app.example.com/membership?declined=1",
+                    sign_later: "https://app.example.com/membership",
+                },
             }),
         ).rejects.toBeInstanceOf(ZohoError);
     });
