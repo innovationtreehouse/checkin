@@ -14,7 +14,7 @@
     "import:zoho": "tsx scripts/import-zoho.ts"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
