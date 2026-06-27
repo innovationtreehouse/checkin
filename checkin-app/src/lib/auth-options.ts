@@ -11,6 +11,7 @@ import { evaluateMint, type MintMode } from "@/lib/impersonation";
 import { recordLedger } from "@/lib/dev/ledger";
 import { assignParticipantClaims } from "@/lib/authClaims";
 import { addHouseholdLead } from "@/lib/household/leads";
+import { withAuroraResumeRetry } from "@/lib/auroraResumeRetry";
 
 // Stable id for the dev/local persona-mint credential flow.
 export const PERSONA_MINT_PROVIDER_ID = "persona-mint";
@@ -233,8 +234,9 @@ export const authOptions: NextAuthOptions = {
             // a logged-out visitor, while the persona-mint block above still stamped the gate claims
             // + impersonatedBy so the dev gate passes and "Return to me" works.
             if (user?.email) {
-                const dbParticipant = await prisma.participant.findUnique({
-                    where: { email: user.email },
+                const email = user.email;
+                const dbParticipant = await withAuroraResumeRetry(() => prisma.participant.findUnique({
+                    where: { email },
                     include: {
                         toolStatuses: {
                             select: {
@@ -244,7 +246,7 @@ export const authOptions: NextAuthOptions = {
                         },
                         household: { include: { membership: true } }
                     }
-                });
+                }));
 
                 if (dbParticipant) {
                     if (
@@ -270,7 +272,7 @@ export const authOptions: NextAuthOptions = {
                 // read at sign-in, which let a revoked sysadmin/keyholder keep their
                 // privileges (including the /api/admin/roles endpoint) until the JWT
                 // aged out — up to 30 days.
-                const dbParticipant = await prisma.participant.findUnique({
+                const dbParticipant = await withAuroraResumeRetry(() => prisma.participant.findUnique({
                     where: { id: token.id as number },
                     include: {
                         toolStatuses: {
@@ -281,7 +283,7 @@ export const authOptions: NextAuthOptions = {
                         },
                         household: { include: { membership: true } }
                     }
-                });
+                }));
 
                 if (!dbParticipant) {
                     // Account no longer exists — return an empty token so every
