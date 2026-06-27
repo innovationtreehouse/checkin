@@ -252,6 +252,84 @@ describe('stripValue — nested relations', () => {
     });
 });
 
+describe('scopesHeld — row-scoped fail-closed', () => {
+    it('EmergencyContact.their_households when row.householdId === caller.householdId', () => {
+        const s = scopesHeld('EmergencyContact', { id: 1, householdId: 2 }, ctx({ householdId: 2 }));
+        expect(s.has('their_households')).toBe(true);
+        const s2 = scopesHeld('EmergencyContact', { id: 1, householdId: 99 }, ctx({ householdId: 2 }));
+        expect(s2.has('their_households')).toBe(false);
+        expect(s2.has('everyones')).toBe(true); // key present, just not the caller's household
+    });
+
+    it('EmergencyContact missing its scope key yields NO scopes (not even everyones)', () => {
+        // Nested row where householdId was not selected → cannot prove relationship.
+        const s = scopesHeld('EmergencyContact', { id: 1, name: 'X' }, ctx({ householdId: 2 }));
+        expect(s).toEqual(new Set());
+    });
+});
+
+describe('stripValue — nested EmergencyContact (the leak)', () => {
+    const ec = (householdId: number | undefined) => ({
+        id: 1,
+        householdId,
+        name: 'Aunt May',
+        phone: '555-1234',
+        priority: 1,
+        createdAt: '2026-01-01',
+    });
+
+    it('(a) non-admin their_households view shows only allowed fields on own household EC', () => {
+        const homeCtx = ctx({ selfId: 5, householdId: 2 });
+        const tokens = ['their_households:personal', 'public'] as const;
+        const household = { id: 2, name: 'Home', emergencyContacts: [ec(2)] };
+        const out = stripValue('Household', household, tokens, homeCtx) as Record<string, unknown>;
+        const got = (out.emergencyContacts as Record<string, unknown>[])[0];
+        expect(got.name).toBe('Aunt May'); // personal, granted via their_households
+        expect(got.phone).toBe('555-1234');
+        expect(got.priority).toBe(1); // public
+        expect(got.createdAt).toBeUndefined(); // internal — not granted
+    });
+
+    it('(a) same view strips personal on another household’s EC', () => {
+        const homeCtx = ctx({ selfId: 5, householdId: 2 });
+        const tokens = ['their_households:personal', 'public'] as const;
+        const household = { id: 99, name: 'Other', emergencyContacts: [ec(99)] };
+        const out = stripValue('Household', household, tokens, homeCtx) as Record<string, unknown>;
+        const got = (out.emergencyContacts as Record<string, unknown>[])[0];
+        expect(got.name).toBeUndefined();
+        expect(got.phone).toBeUndefined();
+        expect(got.priority).toBe(1); // public still shows
+    });
+
+    it('(b) everyones:* view does NOT leak personal/internal on a key-less nested EC', () => {
+        // Admin/board view; the nested EC row omitted householdId. Must fail closed.
+        const adminCtx = ctx({ selfId: 1 });
+        const tokens = ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public'] as const;
+        const household = {
+            id: 2,
+            name: 'Home',
+            emergencyContacts: [{ id: 1, name: 'Aunt May', phone: '555-1234', priority: 1, createdAt: '2026-01-01' }],
+        };
+        const out = stripValue('Household', household, tokens, adminCtx) as Record<string, unknown>;
+        const got = (out.emergencyContacts as Record<string, unknown>[])[0];
+        expect(got.name).toBeUndefined(); // personal — stripped despite everyones:personal
+        expect(got.phone).toBeUndefined();
+        expect(got.createdAt).toBeUndefined(); // internal — stripped despite everyones:internal
+        expect(got.priority).toBe(1); // public — unaffected
+        expect(got.id).toBe(1);
+    });
+
+    it('everyones:* view DOES show fields when the key is present (admin intent preserved)', () => {
+        const adminCtx = ctx({ selfId: 1 });
+        const tokens = ['everyones:personal', 'everyones:internal', 'public'] as const;
+        const household = { id: 2, name: 'Home', emergencyContacts: [ec(2)] };
+        const out = stripValue('Household', household, tokens, adminCtx) as Record<string, unknown>;
+        const got = (out.emergencyContacts as Record<string, unknown>[])[0];
+        expect(got.name).toBe('Aunt May');
+        expect(got.createdAt).toBe('2026-01-01');
+    });
+});
+
 describe('stripValue — _count preservation', () => {
     it('preserves Prisma _count aggregate', () => {
         const row = { id: 5, name: 'Me', _count: { visits: 3 } };

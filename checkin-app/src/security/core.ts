@@ -5,7 +5,9 @@
  *   'public'                — public-tier fields, always visible (no row gate)
  *   '<scope>:<tier>'        — tier ∈ {pii, personal, internal}; the grant
  *                             applies on rows where the caller holds <scope>
- *   scope = 'everyones'     — unconditional (broad grant, no row check)
+ *   scope = 'everyones'     — broad grant; held on every row by default, but a
+ *                             row-scoped model missing its scope key fails
+ *                             closed and does NOT hold it (see scopesHeld)
  *   scope = 'their_own' | 'their_households' | 'their_program_participants'
  *           | 'all_current_visitors' — per-row predicates evaluated by the
  *                             handler against a prefetched CallerContext.
@@ -216,7 +218,10 @@ export function fieldVisible(
         const parsed = parseToken(tok);
         if (parsed === null || parsed === 'public') continue;
         if (parsed.tier !== tier) continue;
-        if (parsed.scope === 'everyones') return true;
+        // 'everyones' is a normal scope here: scopesHeld() seeds it for every
+        // row EXCEPT a row-scoped model whose scope key is absent, which fails
+        // closed by omitting it. So even an everyones:* grant is gated on the
+        // caller actually holding the everyones scope on this row.
         if (scopesHeld.has(parsed.scope)) return true;
     }
     return false;

@@ -96,18 +96,44 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
 }
 
 /**
+ * Models whose sensitive fields MUST be gated per-row by a scope key the row
+ * carries. If that key isn't present on the (possibly nested) row — e.g. a
+ * query selected the row but not its `householdId` — we cannot prove the
+ * caller's relationship to it, so `scopesHeld` returns NO scopes (not even
+ * `'everyones'`) and the stripper drops every sensitive field. This fails
+ * CLOSED: a missing selected column must never let an `everyones:*` (admin/
+ * board) view leak a whole row. Each entry also needs a `case` below that
+ * derives the row-scoped grant from the same key.
+ */
+const ROW_SCOPE_KEY: Record<string, string> = {
+    EmergencyContact: 'householdId',
+};
+
+/**
  * Per-row scope resolver. Returns the set of Scopes the caller holds on the
- * given row. `'everyones'` is always included (unconditional scope).
+ * given row. `'everyones'` is included for non-row-scoped models (unconditional
+ * scope); for models in `ROW_SCOPE_KEY` it is granted only once the row's scope
+ * key is present, so a key-less row fails closed.
  */
 export function scopesHeld(
     modelName: string,
     row: Record<string, unknown> | null | undefined,
     ctx: CallerContext,
 ): Set<Scope> {
-    const scopes = new Set<Scope>(['everyones']);
-    if (!row || typeof row !== 'object') return scopes;
+    if (!row || typeof row !== 'object') {
+        // No row to gate on. Row-scoped models fail closed; others get the broad scope.
+        return modelName in ROW_SCOPE_KEY ? new Set<Scope>() : new Set<Scope>(['everyones']);
+    }
 
     const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
+
+    // Defense-in-depth: row-scoped model missing its scope key → fail closed.
+    const scopeKey = ROW_SCOPE_KEY[modelName];
+    if (scopeKey !== undefined && num(row[scopeKey]) === undefined) {
+        return new Set<Scope>();
+    }
+
+    const scopes = new Set<Scope>(['everyones']);
 
     switch (modelName) {
         case 'Participant': {
@@ -126,6 +152,16 @@ export function scopesHeld(
         case 'Household': {
             const id = num(row.id);
             if (id !== undefined && id === ctx.householdId) scopes.add('their_households');
+            break;
+        }
+        case 'EmergencyContact': {
+            // Row-scoped (see ROW_SCOPE_KEY): householdId is guaranteed present
+            // by the fail-closed guard above. Belongs to one household, so the
+            // household's own members/leads see its personal fields.
+            const householdId = num(row.householdId);
+            if (householdId !== undefined && householdId === ctx.householdId) {
+                scopes.add('their_households');
+            }
             break;
         }
         case 'HouseholdLead': {
@@ -223,10 +259,16 @@ export function scopesHeld(
             if (ctx.isKeyholder) scopes.add('keyholders');
             break;
         }
-        // Corporation, CorporationLead, CorporationMember, AuditLog,
-        // VerificationToken, ErrorLog, SystemMetric, Tool — no per-row
-        // scopes beyond 'everyones' in this version. Admin (sysadmin/
-        // boardMember) views grant 'everyones:*' so they still get through.
+        // MembershipProcess, BackgroundCheckAttestation, Corporation,
+        // CorporationLead, CorporationMember, AuditLog, VerificationToken,
+        // ErrorLog, SystemMetric, Tool — no per-row scopes beyond 'everyones'
+        // yet. Admin (sysadmin/boardMember) views grant 'everyones:*' so they
+        // still get through. These SHOULD be row-scoped too (they carry
+        // membershipId / processId / corporationId); until each has a case +
+        // ROW_SCOPE_KEY entry, a non-admin view cannot see them and an admin
+        // view sees them ungated. Add them to ROW_SCOPE_KEY as cases land.
+        // ponytail: EmergencyContact done first (carries householdId);
+        // extend to the rest when a route needs non-admin access to them.
     }
     return scopes;
 }
