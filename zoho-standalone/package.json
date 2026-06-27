@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "gen": "prisma generate --schema schema.prisma",
+    "build": "esbuild import-zoho.ts --bundle --platform=node --format=cjs --target=node18 --define:import.meta.url='\"file:///app/import-zoho.cjs\"' --external:pg-native --outfile=import-zoho.cjs",
     "import": "tsx import-zoho.ts"
   },
   "dependencies": {
@@ -12,6 +13,7 @@
     "pg": "^8.18.0"
   },
   "devDependencies": {
+    "esbuild": "^0.25.0",
     "prisma": "7.8.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3"
