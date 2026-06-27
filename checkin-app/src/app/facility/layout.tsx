@@ -1,13 +1,13 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Box, Center, Flex, Loader, NavLink, Paper, Stack, Text } from "@mantine/core";
+import { usePathname, useRouter } from "next/navigation";
+import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { FACILITY_NAV_LINKS } from "@/lib/facilityNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
 export default function FacilityLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
 
   if (loading) {
@@ -23,24 +23,27 @@ export default function FacilityLayout({ children }: { children: React.ReactNode
 
   if (!ready) return null;
 
+  // Active tab = the nav link whose href matches the current route (null on the hub).
+  const active = FACILITY_NAV_LINKS.find((link) => pathname === link.href)?.href ?? null;
+
   return (
-    <Flex gap="md" align="flex-start" wrap="wrap">
-      <Paper withBorder p="xs" style={{ width: 240, flexShrink: 0 }}>
-        <Text fw={800} size="lg" c="blue" px="sm" py="xs">
-          Facility Ops
-        </Text>
-        {FACILITY_NAV_LINKS.map((link) => (
-          <NavLink
-            key={link.href}
-            component={Link}
-            href={link.href}
-            label={link.name}
-            leftSection={<span>{link.icon}</span>}
-            active={pathname === link.href}
-          />
-        ))}
-      </Paper>
-      <Box style={{ flex: 1, minWidth: 0 }}>{children}</Box>
-    </Flex>
+    <>
+      <Tabs
+        value={active}
+        onChange={(value) => {
+          if (value && value !== active) router.push(value);
+        }}
+        mb="md"
+      >
+        <Tabs.List>
+          {FACILITY_NAV_LINKS.map((link) => (
+            <Tabs.Tab key={link.href} value={link.href} leftSection={<span>{link.icon}</span>}>
+              {link.name}
+            </Tabs.Tab>
+          ))}
+        </Tabs.List>
+      </Tabs>
+      <Box style={{ minWidth: 0 }}>{children}</Box>
+    </>
   );
 }
