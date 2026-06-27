@@ -104,7 +104,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             }
         }
 
-        const isFree = currentProgram.memberPrice === null && currentProgram.nonMemberPrice === null;
+        const isFree = currentProgram.memberPriceCents === null && currentProgram.nonMemberPriceCents === null;
         const initialStatus = isFree ? 'ACTIVE' : 'PENDING';
 
         // Transactionally create everything

@@ -7,7 +7,7 @@ import { formatCents } from '@inventory/money';
 
 type RegProgram = {
   name: string;
-  nonMemberPrice: number | null;
+  nonMemberPriceCents: number | null;
   minAge: number | null;
   maxAge: number | null;
   enrollmentStatus?: string;
@@ -170,9 +170,9 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
         <Stack align="center" gap={4} mb="lg">
           <Title order={1}>Register for Program</Title>
           <Text c="dimmed" fz="lg">{program.name}</Text>
-          {program.nonMemberPrice !== null && (
+          {program.nonMemberPriceCents !== null && (
             <Text c="green" fz="lg">
-              Cost: {formatCents(program.nonMemberPrice)} {participants.length > 1 ? `× ${participants.length}` : ''}
+              Cost: {formatCents(program.nonMemberPriceCents)} {participants.length > 1 ? `× ${participants.length}` : ''}
             </Text>
           )}
         </Stack>
@@ -253,7 +253,7 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
                 Cancel
               </Button>
               <Button type="submit" size="md" disabled={submitting} loading={submitting}>
-                {program.nonMemberPrice !== null ? "Pay & Register via Shopify" : "Complete Registration"}
+                {program.nonMemberPriceCents !== null ? "Pay & Register via Shopify" : "Complete Registration"}
               </Button>
             </Group>
           </Stack>

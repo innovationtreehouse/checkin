@@ -89,12 +89,12 @@ describe('Program Participants API Integration Tests', () => {
 
         // Create mock programs
         const standardProgram = await prisma.program.create({
-            data: { name: 'Standard Partic API Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', leadMentorId: leadId, memberPrice: 1000, nonMemberPrice: 1500 }
+            data: { name: 'Standard Partic API Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', leadMentorId: leadId, memberPriceCents: 1000, nonMemberPriceCents: 1500 }
         });
         standardProgramId = standardProgram.id;
 
         const freeProgram = await prisma.program.create({
-            data: { name: 'Free Partic API Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', leadMentorId: leadId, memberPrice: null, nonMemberPrice: null }
+            data: { name: 'Free Partic API Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', leadMentorId: leadId, memberPriceCents: null, nonMemberPriceCents: null }
         });
         freeProgramId = freeProgram.id;
 

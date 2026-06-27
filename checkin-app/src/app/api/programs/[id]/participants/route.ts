@@ -96,7 +96,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             }
         }
 
-        const isFree = currentProgram.memberPrice === null && currentProgram.nonMemberPrice === null;
+        const isFree = currentProgram.memberPriceCents === null && currentProgram.nonMemberPriceCents === null;
         
         // Default status is PENDING, unless board is bypassing or the program is free
         const initialStatus = ((isSysAdminOrBoard && override) || isFree) ? 'ACTIVE' : 'PENDING';

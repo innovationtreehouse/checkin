@@ -24,8 +24,8 @@ type PaymentPlanRequest = {
   program: {
     id: number;
     name: string;
-    memberPrice: number | null;
-    nonMemberPrice: number | null;
+    memberPriceCents: number | null;
+    nonMemberPriceCents: number | null;
   };
 };
 
@@ -116,7 +116,7 @@ export default function PaymentPlansPage() {
         <>
           <Text fw={500}>{req.program.name}</Text>
           <Text size="sm" c="dimmed">
-            Price: M {formatCents(req.program.memberPrice)} / NM {formatCents(req.program.nonMemberPrice)}
+            Price: M {formatCents(req.program.memberPriceCents)} / NM {formatCents(req.program.nonMemberPriceCents)}
           </Text>
         </>
       ),
