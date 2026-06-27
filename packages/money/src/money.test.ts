@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dollarsToCents, dollarsToCentsOrNull, sumCents, formatCents, formatUSD, formatCurrency } from "./index";
+import { dollarsToCents, dollarsToCentsOrNull, sumCents, formatCents, formatUSD } from "./index";
 
 describe("dollarsToCents", () => {
   it("converts whole dollar string", () => expect(dollarsToCents("100")).toBe(10000));
@@ -13,10 +13,14 @@ describe("dollarsToCents", () => {
   });
   it("handles large amounts without overflow", () => expect(dollarsToCents("999999.99")).toBe(99999999));
   it("converts string '0.00'", () => expect(dollarsToCents("0.00")).toBe(0));
-  it("converts empty string to 0 (Number('') === 0)", () => expect(dollarsToCents("")).toBe(0));
+  it("throws on empty string (blank ≠ $0.00)", () => expect(() => dollarsToCents("")).toThrow("Invalid monetary value"));
+  it("throws on trailing garbage", () => expect(() => dollarsToCents("12.5x")).toThrow("Invalid monetary value"));
   it("throws on NaN string", () => expect(() => dollarsToCents("N/A")).toThrow("Invalid monetary value"));
   it("throws on Infinity", () => expect(() => dollarsToCents(Infinity)).toThrow("Invalid monetary value"));
   it("throws on NaN number", () => expect(() => dollarsToCents(NaN)).toThrow("Invalid monetary value"));
+  it("rounds float-product half-cents up (1.005 → 101)", () => expect(dollarsToCents("1.005")).toBe(101));
+  it("rounds 7.005 → 701", () => expect(dollarsToCents("7.005")).toBe(701));
+  it("rounds 1.015 → 102", () => expect(dollarsToCents("1.015")).toBe(102));
 });
 
 describe("dollarsToCentsOrNull", () => {
@@ -29,6 +33,27 @@ describe("dollarsToCentsOrNull", () => {
   it("returns null for whitespace", () => expect(dollarsToCentsOrNull("   ")).toBeNull());
   it("returns null for undefined", () => expect(dollarsToCentsOrNull(undefined)).toBeNull());
   it("returns null for non-numeric string", () => expect(dollarsToCentsOrNull("abc")).toBeNull());
+  it("returns null for trailing garbage (Number(), not parseFloat)", () => expect(dollarsToCentsOrNull("12.5x")).toBeNull());
+  it("rounds float-product half-cents up (1.005 → 101)", () => expect(dollarsToCentsOrNull("1.005")).toBe(101));
+  it("rounds 7.005 → 701", () => expect(dollarsToCentsOrNull("7.005")).toBe(701));
+  it("rounds 1.015 → 102", () => expect(dollarsToCentsOrNull("1.015")).toBe(102));
+});
+
+// Both entry points must agree on what is valid — they share one parse helper.
+describe("parse convergence", () => {
+  const invalid = ["", "   ", "12.5x", "abc", "N/A"];
+  for (const v of invalid) {
+    it(`both reject ${JSON.stringify(v)}`, () => {
+      expect(() => dollarsToCents(v)).toThrow();
+      expect(dollarsToCentsOrNull(v)).toBeNull();
+    });
+  }
+  const valid = ["123.45", "-50.00", "0", "1.005"];
+  for (const v of valid) {
+    it(`both accept ${JSON.stringify(v)} with equal cents`, () => {
+      expect(dollarsToCents(v)).toBe(dollarsToCentsOrNull(v));
+    });
+  }
 });
 
 describe("sumCents", () => {
@@ -47,21 +72,20 @@ describe("formatCents", () => {
   it("formats zero", () => expect(formatCents(0)).toBe("$0.00"));
   it("formats negative value with leading minus", () => expect(formatCents(-5000)).toBe("-$50.00"));
   it("pads cents below 10 to two digits", () => expect(formatCents(509)).toBe("$5.09"));
-  it("formats large amount", () => expect(formatCents(99999999)).toBe("$999999.99"));
+  it("groups thousands", () => expect(formatCents(1234567)).toBe("$12,345.67"));
+  it("groups large amounts", () => expect(formatCents(99999999)).toBe("$999,999.99"));
+  it("formats a non-USD currency", () => expect(formatCents(1234567, "EUR")).toBe("€12,345.67"));
+  it("defaults to USD for empty currency", () => expect(formatCents(990, "")).toBe("$9.90"));
+  it("returns em-dash for null", () => expect(formatCents(null)).toBe("—"));
+  it("returns em-dash for undefined", () => expect(formatCents(undefined)).toBe("—"));
 });
 
-describe("formatUSD", () => {
+describe("formatUSD (deprecated alias of formatCents)", () => {
   it("formats a positive cents value", () => expect(formatUSD(10000)).toBe("$100.00"));
   it("formats sub-dollar cents", () => { expect(formatUSD(100)).toBe("$1.00"); expect(formatUSD(5)).toBe("$0.05"); });
   it("formats zero", () => expect(formatUSD(0)).toBe("$0.00"));
   it("formats negative cents", () => expect(formatUSD(-2550)).toBe("-$25.50"));
   it("returns em-dash for null", () => expect(formatUSD(null)).toBe("—"));
   it("returns em-dash for undefined", () => expect(formatUSD(undefined)).toBe("—"));
-});
-
-describe("formatCurrency", () => {
-  it("formats USD dollars", () => expect(formatCurrency(1234.5, "USD")).toBe("$1,234.50"));
-  it("formats EUR", () => expect(formatCurrency(0, "EUR")).toBe("€0.00"));
-  it("defaults to USD for empty currency", () => expect(formatCurrency(9.9, "")).toBe("$9.90"));
-  it("formats negative USD", () => expect(formatCurrency(-50, "USD")).toBe("-$50.00"));
+  it("is the same function as formatCents", () => expect(formatUSD).toBe(formatCents));
 });
