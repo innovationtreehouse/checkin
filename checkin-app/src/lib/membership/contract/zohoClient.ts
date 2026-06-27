@@ -39,13 +39,22 @@ export async function getAccessToken(): Promise<string> {
     if (cachedToken && cachedToken.expiresAt > Date.now()) return cachedToken.token;
 
     const { clientId, clientSecret, refreshToken } = requireSecrets();
-    const url = new URL(`${config.zohoAccountsUrl()}/oauth/v2/token`);
-    url.searchParams.set("grant_type", "refresh_token");
-    url.searchParams.set("client_id", clientId);
-    url.searchParams.set("client_secret", clientSecret);
-    url.searchParams.set("refresh_token", refreshToken);
+    // Secrets (client_secret, refresh_token) go in the form-urlencoded body, not the
+    // URL query string: query strings are routinely written to access logs / APM at
+    // every TLS-terminating hop, request bodies are not. This is the OAuth2 (RFC 6749)
+    // form; Zoho's token endpoint accepts it.
+    const body = new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+    });
 
-    const resp = await fetch(url, { method: "POST" });
+    const resp = await fetch(`${config.zohoAccountsUrl()}/oauth/v2/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+    });
     if (!resp.ok) throw new ZohoError(`Token exchange failed (${resp.status}): ${await resp.text()}`);
     const data = (await resp.json()) as { access_token?: string; expires_in?: number };
     if (!data.access_token) throw new ZohoError(`Token exchange returned no access_token: ${JSON.stringify(data)}`);
