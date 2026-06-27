@@ -1,0 +1,135 @@
+// @inventory/monitoring-db — the dedicated monitoring Postgres.
+//
+// A separate database from any watched service (its own MONITORING_DATABASE_URL). It
+// holds the durable incident record, the transactional outbox, and the push-based
+// freshness heartbeats; the watchdog WRITES incidents/READS heartbeats here, the relay
+// READS the outbox here, and each watched service PUSHES its own heartbeat here.
+//
+// Three tables, mirroring the rest of the system's append-only philosophy:
+//   1. health_event       — append-only incident log (never updated/deleted).
+//   2. monitoring_outbox   — the to-be-sent alert, written in the SAME transaction as
+//                            its health_event (transactional outbox, PRD §5.3).
+//   3. service_heartbeat   — one upserted freshness row per watched service. Services
+//                            PUSH here when a data run finishes; the watchdog READS it
+//                            instead of holding a credential to every service's own
+//                            financial database (review finding F7). The monitor's blast
+//                            radius is therefore this DB alone, not the whole fleet.
+
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  runtime      = "nodejs"
+  moduleFormat = "esm"
+}
+
+/// What kind of unhealthy a service is. The metric is generic (`serviceError`); this is
+/// the "why" that the metric deliberately cannot carry.
+enum IncidentKind {
+  STALE // no COMPLETED sync_run within the service's staleAfterSeconds window
+  ERRORING // recent runs exist but are failing
+  DB_UNREACHABLE // the watched service's database could not be reached
+  OTHER
+
+  @@map("incident_kind")
+}
+
+enum OutboxStatus {
+  PENDING
+  SENT
+  /// Dead-letter: delivery failed permanently or exhausted RELAY_MAX_ATTEMPTS. Never
+  /// re-claimed, so a poison row can't wedge the oldest-first drain. A non-empty DEAD set
+  /// makes the relay report itself unhealthy (serviceError metric).
+  DEAD
+
+  @@map("outbox_status")
+}
+
+enum Severity {
+  CRITICAL
+  WARNING
+
+  @@map("severity")
+}
+
+/// Append-only record of every detected incident. Never updated or deleted — same
+/// philosophy as shopify_raw_event. Enables history/trend queries and replay.
+model HealthEvent {
+  id         BigInt       @id @default(autoincrement())
+  service    String
+  env        String
+  kind       IncidentKind
+  severity   Severity     @default(WARNING)
+  /// Structured detail: correlationId, lastFinishedAt, error excerpt, registry entry, …
+  /// The rich free-text layer (PRD §4.2) that a metric cannot hold.
+  detail     Json
+  detectedAt DateTime     @default(now()) @map("detected_at")
+
+  outbox Outbox[]
+
+  @@index([service, detectedAt])
+  @@map("health_event")
+}
+
+/// Transactional outbox: the alert to deliver, written in the SAME transaction as its
+/// HealthEvent (PRD §5.3 — closes the dual-write gap). The relay reads PENDING rows and
+/// publishes them to SNS. `subject` + `summary` are the self-contained alert (PRD §3.3):
+/// actionable from the notification alone, no DB round-trip required.
+model Outbox {
+  id            BigInt       @id @default(autoincrement())
+  healthEventId BigInt       @map("health_event_id")
+  service       String
+  env           String
+  severity      Severity     @default(WARNING)
+  subject       String
+  summary       String
+  /// Correlation id shared with the health_event detail, the EMF metric line, and the logs
+  /// for this detection — carried onto the SNS alert so a responder can pivot alert → logs.
+  correlationId String?      @map("correlation_id")
+  status        OutboxStatus @default(PENDING)
+  attempts      Int          @default(0)
+  lastError     String?      @map("last_error")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  sentAt        DateTime?    @map("sent_at")
+  /// When the row was moved to DEAD (dead-letter). Null unless status = DEAD.
+  deadAt        DateTime?    @map("dead_at")
+
+  healthEvent HealthEvent @relation(fields: [healthEventId], references: [id])
+
+  @@index([status, createdAt])
+  @@map("monitoring_outbox")
+}
+
+/// Push-based freshness signal — the inversion of the old pull probe (review finding F7).
+/// Each watched service upserts its own row when a *data* run reaches a terminal state
+/// (services write across to this shared monitoring DB); the watchdog reads these rows
+/// instead of connecting to each service's financial database. One row per (service, env).
+///
+/// Success and failure are tracked in separate columns so the watchdog can still detect
+/// "erroring" (a failure newer than the last success) the same way the old two-query probe
+/// did. ADMIN runs (replay / reset-watermark) deliberately never write here — mirroring the
+/// probe's `kind <> 'ADMIN'` exclusion — so an operator action can neither reset the
+/// freshness clock nor look like a pipeline fault.
+model ServiceHeartbeat {
+  /// Pipeline/service name — must match the watchdog registry's `service`. Also the metric dim.
+  service       String
+  /// Deployment environment — must match the watchdog's `MONITORING_ENV`.
+  env           String
+  /// Finish time of the newest COMPLETED data run. Drives the staleness check.
+  lastSuccessAt DateTime? @map("last_success_at")
+  /// Finish time of the newest FAILED/ABANDONED data run. Drives the erroring check.
+  lastFailureAt DateTime? @map("last_failure_at")
+  /// Error excerpt from that latest failure (truncated by the writer).
+  lastError     String?   @map("last_error")
+  /// Last terminal status pushed (e.g. COMPLETED | FAILED) — diagnostics only.
+  lastStatus    String?   @map("last_status")
+  /// Last run kind pushed (e.g. INCREMENTAL | BACKFILL) — diagnostics only.
+  lastKind      String?   @map("last_kind")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@id([service, env])
+  @@map("service_heartbeat")
+}

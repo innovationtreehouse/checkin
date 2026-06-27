@@ -1,0 +1,22 @@
+/*
+ * Global styles. The visual system is provided by Mantine (see src/lib/theme.ts and the
+ * `@mantine/core/styles.css` import in layout.tsx). Keep this file minimal — only app-wide
+ * resets that Mantine doesn't already cover.
+ */
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+/* Glass buttons are real <button>s; show a pointer on hover like a link. */
+.glass-button {
+  cursor: pointer;
+}
+
+/* Kiosk display runs unattended on a Raspberry Pi — never show a pointer there. */
+.kiosk-mode,
+.kiosk-mode * {
+  cursor: none !important;
+}

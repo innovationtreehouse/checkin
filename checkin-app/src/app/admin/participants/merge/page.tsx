@@ -1,0 +1,300 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Alert, Box, Button, Card, Group, List, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { AlertBanner } from "@/components/admin/AlertBanner";
+
+interface ParticipantMergeView {
+  id: number;
+  email?: string;
+  name?: string;
+  phone?: string;
+  googleId?: string;
+  _count: { visits: number, rawBadgeEvents: number, programParticipants: number, programVolunteers: number };
+  household?: { id: number, name: string, leads: { participant: { name: string, email: string } }[], _count?: { participants: number }, participants: Record<string, unknown>[] } | null;
+  [key: string]: unknown;
+}
+
+export default function MergeParticipants() {
+  const router = useRouter();
+  const [searchA, setSearchA] = useState("");
+  const [searchB, setSearchB] = useState("");
+
+  const [resultsA, setResultsA] = useState<ParticipantMergeView[]>([]);
+  const [resultsB, setResultsB] = useState<ParticipantMergeView[]>([]);
+
+  const [pA, setPA] = useState<ParticipantMergeView | null>(null);
+  const [pB, setPB] = useState<ParticipantMergeView | null>(null);
+
+  const [analyzedA, setAnalyzedA] = useState<ParticipantMergeView | null>(null);
+  const [analyzedB, setAnalyzedB] = useState<ParticipantMergeView | null>(null);
+
+  const [keepId, setKeepId] = useState<number | null>(null);
+
+  const [loading, setLoading] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const [previewMode, setPreviewMode] = useState(false);
+
+  useEffect(() => {
+    if (searchA.length > 2 && !pA) {
+      fetch(`/api/admin/participants/search?q=${encodeURIComponent(searchA)}`)
+        .then(r => r.json())
+        .then(d => setResultsA(d.participants || []));
+    } else {
+      setResultsA([]);
+    }
+  }, [searchA, pA]);
+
+  useEffect(() => {
+    if (searchB.length > 2 && !pB) {
+      fetch(`/api/admin/participants/search?q=${encodeURIComponent(searchB)}`)
+        .then(r => r.json())
+        .then(d => setResultsB(d.participants || []));
+    } else {
+      setResultsB([]);
+    }
+  }, [searchB, pB]);
+
+  useEffect(() => {
+    if (pA && pB) {
+      setLoading(true);
+      fetch(`/api/admin/participants/merge/analyze?a=${pA.id}&b=${pB.id}`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.participants) {
+            setAnalyzedA(d.participants[0]);
+            setAnalyzedB(d.participants[1]);
+
+            // Recommend keeping the one with more activity or better data
+            const score = (p: ParticipantMergeView) => {
+              let s = 0;
+              s += p._count.visits * 2;
+              s += p._count.rawBadgeEvents;
+              s += p._count.programParticipants * 5;
+              s += p._count.programVolunteers * 5;
+              if (p.email) s += 10;
+              if (p.phone) s += 10;
+              if (p.googleId) s += 20; // real account
+              return s;
+            };
+            const sA = score(d.participants[0]);
+            const sB = score(d.participants[1]);
+
+            setKeepId(sA >= sB ? pA.id : pB.id);
+          }
+        })
+        .catch(() => setError("Failed to analyze participants"))
+        .finally(() => setLoading(false));
+    } else {
+      setAnalyzedA(null);
+      setAnalyzedB(null);
+      setKeepId(null);
+      setPreviewMode(false);
+    }
+  }, [pA, pB]);
+
+  const handleMerge = async () => {
+    setMerging(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/participants/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keepId,
+          mergeId: keepId === pA?.id ? pB?.id : pA?.id
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess(true);
+      } else {
+        setError(data.error || "Failed to merge");
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  const renderSearch = (label: string, value: string, setValue: (v: string) => void, results: ParticipantMergeView[], selected: ParticipantMergeView | null, setSelected: (p: ParticipantMergeView | null) => void) => (
+    <Box style={{ flex: 1, position: "relative" }}>
+      {selected ? (
+        <Card withBorder radius="md" padding="md" bg="var(--mantine-color-blue-light)">
+          <Group justify="space-between">
+            <div>
+              <Text fw={600}>{selected.name || "Unnamed"}</Text>
+              <Text size="sm" c="dimmed">{selected.email || "No email"} | ID: {selected.id}</Text>
+            </div>
+            <Button size="xs" variant="default" onClick={() => setSelected(null)}>Change</Button>
+          </Group>
+        </Card>
+      ) : (
+        <>
+          <TextInput
+            label={label}
+            value={value}
+            onChange={(e) => setValue(e.currentTarget.value)}
+            placeholder="Search by name or email..."
+          />
+          {results.length > 0 && (
+            <Paper withBorder shadow="md" radius="sm" pos="absolute" left={0} right={0} style={{ zIndex: 10, maxHeight: 250, overflowY: "auto" }}>
+              {results.map((r) => (
+                <Box key={r.id} p="sm" style={{ cursor: "pointer", borderBottom: "1px solid var(--mantine-color-default-border)" }} onClick={() => setSelected(r)}>
+                  <Text>{r.name || "Unnamed"} <Text component="span" size="xs" c="dimmed">(ID: {r.id})</Text></Text>
+                  <Text size="xs" c="dimmed">{r.email}</Text>
+                </Box>
+              ))}
+            </Paper>
+          )}
+        </>
+      )}
+    </Box>
+  );
+
+  const renderStats = (p: ParticipantMergeView, isKept: boolean, isLeadWithOthers: boolean) => (
+    <Card withBorder radius="md" padding="lg" style={{ borderColor: isKept ? "var(--mantine-color-green-6)" : "var(--mantine-color-red-6)", borderWidth: 2 }}>
+      <Title order={4} c={isKept ? "green" : "red"} mb="sm">
+        {isKept ? "Keep and augment" : "Merge and delete"}
+      </Title>
+
+      <Box mb="md">
+        <Text fw={600}>{p.name || "Unnamed"} (ID: {p.id})</Text>
+        <Text size="sm">Email: {p.email || "—"}</Text>
+        <Text size="sm">Phone: {p.phone || "—"}</Text>
+        <Text size="sm">Google Auth: {p.googleId ? "Yes" : "No"}</Text>
+      </Box>
+
+      <Stack gap={2}>
+        <Text size="sm" c="dimmed">Visits: {p._count.visits}</Text>
+        <Text size="sm" c="dimmed">Raw Badge Events: {p._count.rawBadgeEvents}</Text>
+        <Text size="sm" c="dimmed">Program Participation: {p._count.programParticipants}</Text>
+        <Text size="sm" c="dimmed">Program Volunteering: {p._count.programVolunteers}</Text>
+
+        <Text size="sm" c="dimmed" mt="md">
+          Household: {p.household ? p.household.name || `Household #${p.household.id}` : "None"}
+        </Text>
+        {p.household && p.household.participants && (
+          <List size="sm">
+            {(p.household.participants as { id: number, name: string | null }[]).map((hp) => (
+              <List.Item key={hp.id}>
+                {hp.name} {hp.id === p.id && "(This)"} {((p.household!.leads as unknown) as { participantId: number }[]).find((l) => l.participantId === hp.id) && "[Lead]"}
+              </List.Item>
+            ))}
+          </List>
+        )}
+      </Stack>
+
+      {!isKept && isLeadWithOthers && (
+        <Alert color="red" variant="light" mt="md" fw={700}>
+          Error: This participant is the lead of a household with other members. You cannot delete
+          them. Change the household lead first.
+        </Alert>
+      )}
+
+      {!isKept && p.household && p.household.participants && !isLeadWithOthers && p.household.participants.length > 1 && (
+        <Alert color="yellow" variant="light" mt="md" fw={700}>
+          Warning: This participant is in a household with others. They will be removed from that
+          household during deletion.
+        </Alert>
+      )}
+    </Card>
+  );
+
+  if (success) {
+    return (
+      <Card withBorder radius="md" padding="xl" ta="center" style={{ borderColor: "var(--mantine-color-green-6)" }} maw={1000} mx="auto">
+        <Title order={2} c="green" mb="md">Merge Successful!</Title>
+        <Text mb="lg">The participants have been successfully merged.</Text>
+        <Group justify="center">
+          <Button variant="default" onClick={() => {
+            setSuccess(false);
+            setPA(null); setPB(null);
+            setSearchA(""); setSearchB("");
+          }}>Merge More</Button>
+          <Button onClick={() => router.push('/admin/participants')}>Back to Participants</Button>
+        </Group>
+      </Card>
+    );
+  }
+
+  const mergeParticipant = keepId === analyzedA?.id ? analyzedB : analyzedA;
+  const keepParticipant = keepId === analyzedA?.id ? analyzedA : analyzedB;
+
+  let isLeadWithOthers = false;
+  if (mergeParticipant && !previewMode) {
+    const isLead = mergeParticipant.household?.leads.find((l: { participantId?: number;[key: string]: unknown }) => l.participantId === mergeParticipant.id);
+    const othersCount = (mergeParticipant.household?.participants as { id: number }[] | undefined)?.filter((p) => p.id !== mergeParticipant.id).length || 0;
+    isLeadWithOthers = !!isLead && othersCount > 0;
+  }
+
+  return (
+    <Stack maw={1000} mx="auto">
+      <div>
+        <Title order={1}>Merge Participants</Title>
+        <Text c="dimmed">
+          Combine two participant records. The data from the merged record (visits, programs, etc)
+          will be moved to the kept record. The merged record will be tombstoned.
+        </Text>
+      </div>
+
+      <AlertBanner message={error} tone="error" />
+
+      {!previewMode ? (
+        <>
+          <Card withBorder radius="md" padding="lg">
+            <Group align="flex-start" gap="xl" grow>
+              {renderSearch("Participant 1", searchA, setSearchA, resultsA, pA, setPA)}
+              {renderSearch("Participant 2", searchB, setSearchB, resultsB, pB, setPB)}
+            </Group>
+          </Card>
+
+          {loading && <Text>Analyzing participants...</Text>}
+
+          {analyzedA && analyzedB && (
+            <Stack>
+              <Group justify="center">
+                <Button variant="default" onClick={() => setKeepId(keepId === analyzedA.id ? analyzedB.id : analyzedA.id)}>
+                  Swap Kept / Merged
+                </Button>
+              </Group>
+
+              <SimpleGrid cols={{ base: 1, md: 2 }}>
+                {renderStats(analyzedA, keepId === analyzedA.id, analyzedA.id !== keepId ? isLeadWithOthers : false)}
+                {renderStats(analyzedB, keepId === analyzedB.id, analyzedB.id !== keepId ? isLeadWithOthers : false)}
+              </SimpleGrid>
+
+              <Group justify="flex-end">
+                <Button size="md" disabled={isLeadWithOthers} onClick={() => setPreviewMode(true)}>
+                  Proceed to Preview
+                </Button>
+              </Group>
+            </Stack>
+          )}
+        </>
+      ) : mergeParticipant && keepParticipant ? (
+        <Card withBorder radius="md" padding="lg" style={{ borderColor: "var(--mantine-color-yellow-6)" }}>
+          <Title order={2} c="yellow.7">Preview &amp; Confirm Merge</Title>
+          <Text my="sm"><strong>This action is extremely difficult to undo.</strong> Please review the changes below.</Text>
+
+          <List spacing="xs" my="lg">
+            <List.Item><strong>{mergeParticipant.name || mergeParticipant.email || `ID ${mergeParticipant.id}`}</strong> will be tombstoned.</List.Item>
+            <List.Item>All visits, program enrollments, RSVPs, and fee payments will be transferred to <strong>{keepParticipant.name || keepParticipant.email || `ID ${keepParticipant.id}`}</strong>.</List.Item>
+            <List.Item>Missing personal info on the kept participant will be filled in from the merged participant.</List.Item>
+            <List.Item>Raw badge scans will remain on the tombstoned record for audit purposes.</List.Item>
+          </List>
+
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setPreviewMode(false)} disabled={merging}>Cancel</Button>
+            <Button color="red" onClick={handleMerge} disabled={merging} loading={merging}>Confirm Merge &amp; Delete</Button>
+          </Group>
+        </Card>
+      ) : null}
+    </Stack>
+  );
+}

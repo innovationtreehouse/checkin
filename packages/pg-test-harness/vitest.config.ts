@@ -1,0 +1,48 @@
+import { defineConfig } from "vitest/config";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+
+/**
+ * Source uses NodeNext-style `.js` import specifiers (correct for Node), but on disk the
+ * files are `.ts`. This pre-resolver rewrites a relative `.js` import to its `.ts` sibling
+ * when one exists, so globalSetup.ts's `./container.js` / `./migrate.js` imports resolve (and
+ * can be mocked) under vitest. Mirrors the other packages' configs.
+ */
+export default defineConfig({
+  plugins: [
+    {
+      name: "resolve-js-to-ts",
+      enforce: "pre",
+      resolveId(source, importer) {
+        if (importer && source.startsWith(".") && source.endsWith(".js")) {
+          const tsPath = resolve(dirname(importer), source.replace(/\.js$/, ".ts"));
+          if (existsSync(tsPath)) return tsPath;
+        }
+        return null;
+      },
+    },
+  ],
+  test: {
+    // Pure-logic unit suites live beside the source as `src/*.test.ts`. They mock the
+    // container/child-process boundary, so no Docker is needed.
+    include: ["src/**/*.test.ts"],
+    environment: "node",
+    // Static provided values for setupEnv.test.ts: `applyHarnessEnv` reads vitest's `inject`,
+    // which is fed exactly this way in production (globalSetup `provide`s the URL). Exercising
+    // it through the real `inject` channel beats mocking the vitest module itself.
+    provide: { pgHarnessProvidedUrl: "postgres://from-harness" },
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "lcov"],
+      include: ["src/**/*.ts"],
+      // container.ts is a thin @testcontainers config wrapper that only runs with Docker — it is
+      // exercised live by EVERY package's integration tier (each boots via startPostgres), so a
+      // mocked unit here would add nothing. index.ts is a barrel re-export.
+      exclude: ["src/**/*.test.ts", "src/container.ts", "src/index.ts"],
+      // setupEnv/migrate/globalSetup carry the harness's only real logic (env precedence, CLI
+      // resolution, the boot/migrate/provide lifecycle + the no-Docker skip). Floors a few
+      // points below measured so a regression in this fleet-wide test gate trips loudly.
+      thresholds: { lines: 95, functions: 100, statements: 95, branches: 90 },
+    },
+  },
+});

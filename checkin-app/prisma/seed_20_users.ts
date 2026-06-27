@@ -1,0 +1,59 @@
+import { PrismaClient } from '../src/generated/prisma/client'
+import { Pool } from 'pg'
+import { PrismaPg } from '@prisma/adapter-pg'
+import * as dotenv from 'dotenv'
+
+dotenv.config()
+
+const connectionString = `${process.env.DATABASE_URL}`
+const pool = new Pool({ connectionString })
+const adapter = new PrismaPg(pool)
+const prisma = new PrismaClient({ adapter })
+
+async function main() {
+    console.log("Adding 20 test members and marking them as present...")
+    for (let i = 1; i <= 20; i++) {
+        // Create household
+        const household = await prisma.household.create({
+            data: { name: `Test Family ${i}`, address: `123 Test St ${i}` }
+        })
+
+        // Create participant
+        const participant = await prisma.participant.create({
+            data: {
+                email: `testmember${i}@example.com`,
+                name: `Test Member ${i}`,
+                householdId: household.id,
+            }
+        })
+
+        // Make HouseholdLead
+        await prisma.householdLead.create({
+            data: {
+                householdId: household.id,
+                participantId: participant.id,
+            }
+        });
+
+        // Create membership
+        await prisma.membership.create({
+            data: {
+                status: 'ACTIVE',
+                householdId: household.id
+            }
+        })
+
+        // Mark them as arrived so they show up as "present" just in case limitToPresent is true
+        await prisma.visit.create({
+            data: {
+                participantId: participant.id,
+                arrived: new Date()
+            }
+        })
+        
+        console.log(`Added Test Member ${i} and marked as present.`);
+    }
+    console.log("Done!");
+}
+
+main().catch(console.error).finally(() => prisma.$disconnect())

@@ -1,0 +1,12 @@
+{
+  "name": "prisma-runtime-layer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared Lambda layer: the Prisma 7 driver-adapter runtime (Rust-free, WASM query compiler). Mounted at /opt/nodejs/node_modules for s-read, s-replay, monitoring-relay and monitoring-watchdog. NOT a Lambda function.",
+  "comment-version-lock": "@prisma/client and @prisma/adapter-pg MUST be pinned to the EXACT version used at `prisma generate` in packages/s-ingest-core and packages/monitoring-db. A generated client is version-locked to its runtime. Bump all three together.",
+  "dependencies": {
+    "@prisma/adapter-pg": "7.8.0",
+    "@prisma/client": "7.8.0",
+    "pg": "^8.13.0"
+  }
+}

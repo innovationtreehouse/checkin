@@ -1,0 +1,835 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+generator security {
+  provider = "node scripts/security-generator.js"
+  output   = "../src/security/generated/classifications.ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ToolLevel {
+  BASIC
+  DOF
+  CERTIFIED
+  INSTRUCTOR
+  MAY_CERTIFY_OTHERS
+}
+
+enum RSVPStatus {
+  ATTENDING
+  NOT_ATTENDING
+  NO_RESPONSE
+  MAYBE
+}
+
+enum AuditAction {
+  CREATE
+  EDIT
+  DELETE
+  BECOME_ADMIN
+}
+
+enum ProgramPhase {
+  PLANNING
+  UPCOMING
+  RUNNING
+  FINISHED
+}
+
+enum EnrollmentStatus {
+  OPEN
+  CLOSED
+}
+
+enum ProgramParticipantStatus {
+  PENDING
+  ACTIVE
+}
+
+model Participant {
+  /// @sensitivity:public
+  id            Int       @id @default(autoincrement())
+  /// @sensitivity:pii
+  googleId      String?   @unique
+  /// @sensitivity:pii
+  email         String?   @unique
+  /// @sensitivity:pii
+  phone         String?
+  /// @sensitivity:public
+  name          String?
+  /// @sensitivity:internal
+  emailVerified DateTime?
+  /// @sensitivity:public
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+
+  /// @sensitivity:pii
+  dob                  DateTime?
+  /// @sensitivity:internal
+  lastWaiverSign       DateTime?
+  /// @sensitivity:internal
+  waiverSignedBy       Int?
+  /// @sensitivity:internal
+  lastBackgroundCheck  DateTime?
+  /// @sensitivity:personal
+  notificationSettings Json?
+
+  /// @sensitivity:public
+  householdId Int
+  household   Household @relation(fields: [householdId], references: [id])
+
+  /// @sensitivity:personal
+  allergies String?
+
+  /// @sensitivity:internal
+  sysadmin                Boolean @default(false)
+  /// @sensitivity:public
+  boardMember             Boolean @default(false)
+  /// @sensitivity:internal
+  keyholder               Boolean @default(false)
+  /// @sensitivity:internal
+  backgroundCheckReviewer Boolean @default(false)
+
+  toolStatuses        ToolStatus[]
+  bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
+  householdLeads      HouseholdLead[]
+  corporationLeads    CorporationLead[]
+  corporationMembers  CorporationMember[]
+  programVolunteers   ProgramVolunteer[]
+  programParticipants ProgramParticipant[]
+  programsLed         Program[]                    @relation("ProgramLeadMentor")
+  feePayments         FeePayment[]
+  rsvps               RSVP[]
+  rawBadgeEvents      RawBadgeEvent[]
+  visits              Visit[]
+  eventsConfirmedBy   Event[]                      @relation("EventAttendanceConfirmer")
+
+  trustedAdultsAsCounterparty TrustedAdult[]       @relation("TrustedAdultCounterparty")
+  trustedAdultsDisclosed      TrustedAdult[]       @relation("TrustedAdultDiscloser")
+  trustedAdultReviewsDecided  TrustedAdultReview[] @relation("TrustedAdultDecider")
+}
+
+model Tool {
+  /// @sensitivity:public
+  id           Int          @id @default(autoincrement())
+  /// @sensitivity:public
+  name         String
+  /// @sensitivity:public
+  safetyGuide  String?
+  toolStatuses ToolStatus[]
+}
+
+model ToolStatus {
+  /// @sensitivity:public
+  userId Int
+  /// @sensitivity:public
+  toolId Int
+  /// @sensitivity:internal
+  level  ToolLevel
+
+  user Participant @relation(fields: [userId], references: [id])
+  tool Tool        @relation(fields: [toolId], references: [id])
+
+  @@id([userId, toolId])
+}
+
+model Household {
+  /// @sensitivity:public
+  id      Int     @id @default(autoincrement())
+  /// @sensitivity:public
+  name    String?
+  /// @sensitivity:personal
+  address String?
+
+  participants      Participant[]
+  leads             HouseholdLead[]
+  membership        Membership?
+  trustedAdults     TrustedAdult[]
+  emergencyContacts EmergencyContact[]
+}
+
+/// An emergency contact for a household. Modeled as a separate entity (1 household
+/// : many contacts) so external, non-family people can be linked. The invariant
+/// "an emergency contact is not a member of the same household" is enforced in
+/// application code (lib/emergencyContacts), not the database: a row is INVALID
+/// when conflictParticipantId is set, meaning it collides with a household member.
+model EmergencyContact {
+  /// @sensitivity:public
+  id          Int       @id @default(autoincrement())
+  /// @sensitivity:public
+  householdId Int
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  /// @sensitivity:personal
+  name         String
+  /// @sensitivity:personal
+  phone        String
+  /// @sensitivity:personal
+  email        String?
+  /// @sensitivity:personal
+  relationship String?
+  /// @sensitivity:public
+  priority     Int     @default(0)
+
+  // Normalized identity keys, used for the not-a-household-member check.
+  /// @sensitivity:personal
+  phoneDigits String
+  /// @sensitivity:personal
+  emailNorm   String?
+
+  // Soft-conflict state. Null conflictParticipantId == a valid contact. When a
+  // household member is found to be the same person as this contact, the id of
+  // that member is recorded here (the row is kept for audit, flagged invalid).
+  /// @sensitivity:internal
+  conflictParticipantId Int?
+  /// @sensitivity:internal
+  conflictedAt          DateTime?
+
+  /// @sensitivity:internal
+  createdAt DateTime @default(now())
+  /// @sensitivity:internal
+  updatedAt DateTime @updatedAt
+
+  @@index([householdId])
+  @@index([phoneDigits])
+}
+
+model HouseholdLead {
+  /// @sensitivity:public
+  householdId   Int
+  /// @sensitivity:public
+  participantId Int
+
+  household   Household   @relation(fields: [householdId], references: [id])
+  participant Participant @relation(fields: [participantId], references: [id])
+
+  @@id([householdId, participantId])
+}
+
+enum MembershipStatus {
+  NONE
+  ACTIVE
+  REVOKED
+  // Board denied this household membership. Unlike REVOKED (former member who keeps
+  // app access but loses facility privileges), DENIED blocks login for every member
+  // of the household — enforced in the auth jwt callback + middleware. A household
+  // containing a board member cannot be DENIED; remove the board role first.
+  DENIED
+}
+
+enum MembershipProcessKind {
+  INITIAL
+  RENEWAL
+}
+
+enum MembershipProcessStatus {
+  INTAKE
+  PENDING_EXTERNAL_ACTION
+  PENDING_BG_REVIEW
+  PENDING_PAYMENT
+  ACTIVE
+  BLOCKED
+  PENDING_RENEWAL
+  RENEWAL_PENDING_BG
+}
+
+enum AttestationResult {
+  APPROVE
+  REJECT
+}
+
+enum TrustedAdultOrigin {
+  SELF_DISCLOSED
+  STAFF_ENTERED
+}
+
+enum TrustedAdultReviewKind {
+  INITIAL
+  RENEWAL
+}
+
+enum TrustedAdultReviewStatus {
+  PENDING_BOARD_REVIEW
+  PENDING_SUBJECT_ACTION
+  APPROVED
+  DENIED
+  EXPIRED
+  REVOKED
+}
+
+enum TrustedAdultDecisionKind {
+  APPROVE
+  DENY
+  REQUEST_INFO
+}
+
+model Membership {
+  /// @sensitivity:public
+  id          Int              @id @default(autoincrement())
+  /// @sensitivity:public
+  since       DateTime         @default(now())
+  /// @sensitivity:public
+  status      MembershipStatus @default(NONE)
+  /// @sensitivity:public
+  isVolunteer Boolean          @default(false)
+
+  /// @sensitivity:public
+  householdId Int       @unique
+  household   Household @relation(fields: [householdId], references: [id])
+
+  processes MembershipProcess[]
+
+  @@index([status])
+}
+
+model MembershipProcess {
+  /// @sensitivity:public
+  id                    Int                     @id @default(autoincrement())
+  /// @sensitivity:public
+  membershipId          Int
+  membership            Membership              @relation(fields: [membershipId], references: [id])
+  /// @sensitivity:public
+  kind                  MembershipProcessKind
+  /// @sensitivity:internal
+  status                MembershipProcessStatus
+  /// @sensitivity:internal
+  stageEnteredAt        DateTime?               @default(now())
+  /// @sensitivity:public
+  createdAt             DateTime                @default(now())
+  /// @sensitivity:internal
+  zohoEnvelopeId        String?
+  /// @sensitivity:internal
+  zohoActionId          String?
+  /// @sensitivity:internal
+  contractSignedAt      DateTime?
+  /// @sensitivity:internal
+  bgConsentAt           DateTime?
+  /// @sensitivity:internal
+  shopifyDraftOrderId   String?
+  /// @sensitivity:personal
+  shopifyInvoiceUrl     String?
+  /// @sensitivity:internal
+  shopifyOrderId        String?
+  /// @sensitivity:internal
+  paidAt                DateTime?
+  /// @sensitivity:internal
+  certifiedById         Int?
+  /// @sensitivity:internal
+  renewalReminderSentAt DateTime?
+
+  attestations BackgroundCheckAttestation[]
+
+  @@index([membershipId])
+  @@index([status])
+}
+
+model BackgroundCheckAttestation {
+  /// @sensitivity:public
+  id              Int               @id @default(autoincrement())
+  /// @sensitivity:public
+  processId       Int
+  process         MembershipProcess @relation(fields: [processId], references: [id])
+  /// @sensitivity:public
+  reviewerId      Int
+  reviewer        Participant       @relation("BgAttestations", fields: [reviewerId], references: [id])
+  /// @sensitivity:internal
+  result          AttestationResult
+  /// @sensitivity:internal
+  markedVolunteer Boolean           @default(false)
+  /// @sensitivity:public
+  createdAt       DateTime          @default(now())
+
+  @@unique([processId, reviewerId])
+}
+
+model VolunteerDesignation {
+  /// @sensitivity:public
+  id          Int      @id @default(autoincrement())
+  /// @sensitivity:pii
+  email       String   @unique
+  /// @sensitivity:internal
+  createdById Int?
+  /// @sensitivity:public
+  createdAt   DateTime @default(now())
+}
+
+model BoardSettings {
+  /// @sensitivity:public
+  id                         Int       @id @default(1)
+  /// @sensitivity:public
+  normalDuesCents            Int       @default(0)
+  /// @sensitivity:public
+  volunteerDuesCents         Int       @default(0)
+  /// @sensitivity:public
+  membershipYearBoundary     DateTime?
+  /// Shopify variant ID of the membership product everyone checks out through.
+  /// The "Pay with Shopify" link is built from it as
+  /// https://<SHOPIFY_STORE_DOMAIN>/cart/<membershipVariantId>:1.
+  /// @sensitivity:internal
+  membershipVariantId        String?
+  /// Discount code (created in Shopify by the board) appended to the checkout
+  /// link for volunteer households so Shopify applies their discount.
+  /// @sensitivity:internal
+  volunteerDiscountCode      String?
+  /// How long a background check stays valid, in months. 0 = not yet configured
+  /// (the board must set the real Treehouse policy value before renewals re-check).
+  /// @sensitivity:public
+  bgRecheckMonths            Int       @default(0)
+  /// @sensitivity:internal
+  shopifyMembershipProductId String?
+  /// @sensitivity:internal
+  shopifyNormalVariantId     String?
+  /// @sensitivity:internal
+  shopifyVolunteerVariantId  String?
+  /// @sensitivity:internal
+  shopifyPriceSyncedAt       DateTime?
+  /// @sensitivity:internal
+  updatedAt                  DateTime  @updatedAt
+}
+
+/// Trusted Adult Management (Trusted Adults). A board-reviewed disclosure that
+/// one individual (the subject, always a Participant) holds an external
+/// relationship — familial, romantic, guardianship, financial, legal-restriction,
+/// etc. — with a counterparty who may be another Participant or someone outside
+/// the org. The durable relationship facts live here, entered once; each annual
+/// review cycle is a TrustedAdultReview row (like Membership/MembershipProcess), so
+/// a renewal reuses the facts without re-entry.
+model TrustedAdult {
+  /// @sensitivity:public
+  id                        Int                @id @default(autoincrement())
+  /// A Trusted Adult belongs to a HOUSEHOLD, not an individual (e.g. "Grandma can
+  /// pick up the Smith kids").
+  /// @sensitivity:public
+  householdId               Int
+  household                 Household          @relation(fields: [householdId], references: [id])
+  /// The trusted adult, if they are also a participant in the system.
+  /// @sensitivity:public
+  counterpartyParticipantId Int?
+  counterparty              Participant?       @relation("TrustedAdultCounterparty", fields: [counterpartyParticipantId], references: [id])
+  /// @sensitivity:personal
+  counterpartyName          String
+  /// @sensitivity:personal
+  counterpartyContact       String
+  /// The family's explanation for the BOARD — what this adult may or may not do,
+  /// restrictions, safeguarding context. Board + the household's own leads only
+  /// (pii tier is the board/family band here; program leads & keyholders never
+  /// receive it).
+  /// @sensitivity:pii
+  familyContext             String
+  /// @sensitivity:internal
+  origin                    TrustedAdultOrigin @default(SELF_DISCLOSED)
+  /// @sensitivity:internal
+  disclosedById             Int
+  disclosedBy               Participant        @relation("TrustedAdultDiscloser", fields: [disclosedById], references: [id])
+  /// @sensitivity:public
+  createdAt                 DateTime           @default(now())
+  /// @sensitivity:internal
+  updatedAt                 DateTime           @updatedAt
+
+  reviews TrustedAdultReview[]
+
+  @@index([householdId])
+}
+
+/// One review cycle for a TrustedAdult. A single board member decides it (no
+/// quorum). subjectParticipantId is denormalized from the parent so the security
+/// stripper can scope a nested review row to the subject (their_own).
+model TrustedAdultReview {
+  /// @sensitivity:public
+  id                   Int                    @id @default(autoincrement())
+  /// @sensitivity:public
+  trustedAdultId       Int
+  trustedAdult         TrustedAdult             @relation(fields: [trustedAdultId], references: [id])
+  /// Denormalized from the parent so the security stripper can scope a nested
+  /// review row to the household (their_households / program / keyholder).
+  /// @sensitivity:public
+  householdId          Int
+  /// @sensitivity:public
+  kind                 TrustedAdultReviewKind
+  /// @sensitivity:personal
+  status               TrustedAdultReviewStatus @default(PENDING_BOARD_REVIEW)
+  /// @sensitivity:internal
+  decidedById          Int?
+  decidedBy            Participant?             @relation("TrustedAdultDecider", fields: [decidedById], references: [id])
+  /// @sensitivity:internal
+  decision             TrustedAdultDecisionKind?
+  /// The board's PRIVATE reasoning. Board/sysadmin only (internal tier).
+  /// @sensitivity:internal
+  decisionNote         String?
+  /// The board's note shared OUTWARD on approval — what keyholders & program
+  /// leads need to act on ("Grandma can pick up Bobby"). Required to approve.
+  /// Visible to the family, board, program leads, and keyholders (personal tier).
+  /// @sensitivity:personal
+  sharedNote           String?
+  /// @sensitivity:personal
+  effectiveFrom        DateTime?
+  /// @sensitivity:personal
+  reviewBy             DateTime?
+  /// When the 30-day-before-expiry reminder email was sent (once).
+  /// @sensitivity:internal
+  expiryWarningSentAt  DateTime?
+  /// @sensitivity:public
+  createdAt            DateTime               @default(now())
+  /// @sensitivity:internal
+  updatedAt            DateTime               @updatedAt
+
+  @@index([trustedAdultId])
+  @@index([status])
+  @@index([householdId])
+}
+
+model Corporation {
+  /// @sensitivity:public
+  id           Int     @id @default(autoincrement())
+  /// @sensitivity:pii
+  primaryEmail String?
+  /// @sensitivity:personal
+  address      String?
+
+  leads   CorporationLead[]
+  members CorporationMember[]
+}
+
+model CorporationLead {
+  /// @sensitivity:public
+  corporationId Int
+  /// @sensitivity:public
+  participantId Int
+
+  corporation Corporation @relation(fields: [corporationId], references: [id])
+  participant Participant @relation(fields: [participantId], references: [id])
+
+  @@id([corporationId, participantId])
+}
+
+model CorporationMember {
+  /// @sensitivity:public
+  corporationId Int
+  /// @sensitivity:public
+  participantId Int
+
+  corporation Corporation @relation(fields: [corporationId], references: [id])
+  participant Participant @relation(fields: [participantId], references: [id])
+
+  @@id([corporationId, participantId])
+}
+
+model Program {
+  /// @sensitivity:public
+  id                             Int              @id @default(autoincrement())
+  /// @sensitivity:public
+  name                           String
+  /// @sensitivity:public
+  leadMentorId                   Int?
+  leadMentor                     Participant?     @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
+  /// @sensitivity:public
+  begin                          DateTime?
+  /// @sensitivity:public
+  end                            DateTime?
+  /// @sensitivity:public
+  phase                          ProgramPhase     @default(PLANNING)
+  /// @sensitivity:public
+  enrollmentStatus               EnrollmentStatus @default(CLOSED)
+  /// @sensitivity:public
+  memberOnly                     Boolean          @default(false)
+  /// @sensitivity:public
+  minAge                         Int?
+  /// @sensitivity:public
+  maxAge                         Int?
+  /// @sensitivity:public
+  maxParticipants                Int?
+  /// @sensitivity:personal
+  leadMentorNotificationSettings Json?
+
+  /// @sensitivity:public
+  /// Integer cents (e.g. 2599 = $25.99).
+  memberPrice               Int?
+  /// @sensitivity:public
+  /// Integer cents (e.g. 2599 = $25.99).
+  nonMemberPrice            Int?
+  /// @sensitivity:public
+  shopifyProductId          String?
+  /// @sensitivity:public
+  shopifyMemberVariantId    String?
+  /// @sensitivity:public
+  shopifyNonMemberVariantId String?
+
+  volunteers   ProgramVolunteer[]
+  participants ProgramParticipant[]
+  fees         Fee[]
+  events       Event[]
+}
+
+model ProgramVolunteer {
+  /// @sensitivity:public
+  programId     Int
+  /// @sensitivity:public
+  participantId Int
+  /// @sensitivity:internal
+  isCore        Boolean @default(false)
+
+  program     Program     @relation(fields: [programId], references: [id])
+  participant Participant @relation(fields: [participantId], references: [id])
+
+  @@id([programId, participantId])
+}
+
+model ProgramParticipant {
+  /// @sensitivity:public
+  programId            Int
+  /// @sensitivity:public
+  participantId        Int
+  /// @sensitivity:public
+  status               ProgramParticipantStatus @default(PENDING)
+  /// @sensitivity:personal
+  paymentPlanRequested Boolean                  @default(false)
+  /// @sensitivity:internal
+  pendingSince         DateTime?                @default(now())
+
+  program     Program     @relation(fields: [programId], references: [id])
+  participant Participant @relation(fields: [participantId], references: [id])
+
+  @@id([programId, participantId])
+}
+
+model Fee {
+  /// @sensitivity:public
+  id             Int    @id @default(autoincrement())
+  /// @sensitivity:public
+  programId      Int
+  /// @sensitivity:public
+  name           String
+  /// @sensitivity:public
+  /// Integer cents (e.g. 2599 = $25.99).
+  nonMemberPrice Int
+  /// @sensitivity:public
+  /// Integer cents (e.g. 2599 = $25.99).
+  memberPrice    Int
+
+  program  Program      @relation(fields: [programId], references: [id])
+  payments FeePayment[]
+}
+
+model FeePayment {
+  /// @sensitivity:public
+  feeId             Int
+  /// @sensitivity:public
+  participantId     Int
+  /// @sensitivity:personal
+  paidOn            DateTime? @default(now())
+  /// @sensitivity:personal
+  shopifyLink       String?
+  /// @sensitivity:personal
+  quickBooksInvoice String?
+  /// @sensitivity:personal
+  customNote        String?
+
+  fee         Fee         @relation(fields: [feeId], references: [id])
+  participant Participant @relation(fields: [participantId], references: [id])
+
+  @@id([feeId, participantId])
+}
+
+model Event {
+  /// @sensitivity:public
+  id          Int      @id @default(autoincrement())
+  /// @sensitivity:public
+  programId   Int?
+  /// @sensitivity:public
+  name        String
+  /// @sensitivity:public
+  start       DateTime
+  /// @sensitivity:public
+  end         DateTime
+  /// @sensitivity:public
+  description String?
+
+  /// @sensitivity:internal
+  attendanceConfirmedAt   DateTime?
+  /// @sensitivity:internal
+  attendanceConfirmedById Int?
+  attendanceConfirmedBy   Participant? @relation("EventAttendanceConfirmer", fields: [attendanceConfirmedById], references: [id])
+  /// @sensitivity:internal
+  postEventEmailSent      Boolean      @default(false)
+  /// @sensitivity:public
+  recurringGroupId        String?
+
+  program Program? @relation(fields: [programId], references: [id])
+  rsvps   RSVP[]
+  visits  Visit[]
+}
+
+model RSVP {
+  /// @sensitivity:public
+  eventId       Int
+  /// @sensitivity:public
+  participantId Int
+  /// @sensitivity:public
+  status        RSVPStatus
+  /// @sensitivity:internal
+  reminderSentAt DateTime?
+
+  event       Event       @relation(fields: [eventId], references: [id])
+  participant Participant @relation(fields: [participantId], references: [id])
+
+  @@id([eventId, participantId])
+}
+
+model RawBadgeEvent {
+  /// @sensitivity:internal
+  id            Int      @id @default(autoincrement())
+  /// @sensitivity:internal
+  participantId Int
+  /// @sensitivity:personal
+  time          DateTime @default(now())
+  /// @sensitivity:personal
+  location      String?
+
+  participant Participant @relation(fields: [participantId], references: [id])
+
+  @@index([participantId, time]) // Double-badge detection in /api/scan
+}
+
+model Visit {
+  /// @sensitivity:public
+  id                Int       @id @default(autoincrement())
+  /// @sensitivity:public
+  participantId     Int
+  /// @sensitivity:personal
+  arrived           DateTime
+  /// @sensitivity:personal
+  departed          DateTime?
+  /// @sensitivity:public
+  associatedEventId Int?
+
+  participant Participant @relation(fields: [participantId], references: [id])
+  event       Event?      @relation(fields: [associatedEventId], references: [id])
+
+  @@index([participantId, departed]) // Active visits lookup in /api/scan
+}
+
+model AuditLog {
+  /// @sensitivity:internal
+  id                      Int         @id @default(autoincrement())
+  /// @sensitivity:internal
+  time                    DateTime    @default(now())
+  /// @sensitivity:internal
+  actorId                 Int
+  /// @sensitivity:internal
+  action                  AuditAction
+  /// @sensitivity:internal
+  tableName               String
+  /// @sensitivity:internal
+  affectedEntityId        Int
+  /// @sensitivity:internal
+  secondaryAffectedEntity Int?
+  /// @sensitivity:internal
+  oldData                 Json?
+  /// @sensitivity:internal
+  newData                 Json?
+}
+
+model Account {
+  /// @sensitivity:internal
+  id                String  @id @default(cuid())
+  /// @sensitivity:internal
+  userId            Int     @map("participant_id")
+  /// @sensitivity:internal
+  type              String
+  /// @sensitivity:internal
+  provider          String
+  /// @sensitivity:internal
+  providerAccountId String
+  /// @sensitivity:secret
+  refresh_token     String? @db.Text
+  /// @sensitivity:secret
+  access_token      String? @db.Text
+  /// @sensitivity:internal
+  expires_at        Int?
+  /// @sensitivity:internal
+  token_type        String?
+  /// @sensitivity:internal
+  scope             String?
+  /// @sensitivity:secret
+  id_token          String? @db.Text
+  /// @sensitivity:internal
+  session_state     String?
+
+  user Participant @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  /// @sensitivity:internal
+  id           String      @id @default(cuid())
+  /// @sensitivity:secret
+  sessionToken String      @unique
+  /// @sensitivity:internal
+  userId       Int         @map("participant_id")
+  /// @sensitivity:internal
+  expires      DateTime
+  user         Participant @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  /// @sensitivity:internal
+  identifier String
+  /// @sensitivity:secret
+  token      String   @unique
+  /// @sensitivity:internal
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model ErrorLog {
+  /// @sensitivity:internal
+  id        Int      @id @default(autoincrement())
+  /// @sensitivity:internal
+  createdAt DateTime @default(now())
+  /// @sensitivity:internal
+  route     String?
+  /// @sensitivity:internal
+  message   String
+  /// @sensitivity:internal
+  stack     String?
+  /// @sensitivity:internal
+  context   Json?
+}
+
+model SystemMetric {
+  /// @sensitivity:internal
+  id        Int      @id @default(autoincrement())
+  /// @sensitivity:internal
+  timestamp DateTime @default(now())
+  /// @sensitivity:internal
+  metric    String
+  /// @sensitivity:internal
+  value     Float
+}
+
+/// Dev-instance activity ledger (DEV_DASHBOARD_DESIGN.md §6). Lives only in checkin_dev; records
+/// the last login / impersonate / macro / reset by REAL human identity so a shared dev instance
+/// shows who tested/reset last (no accidental clobbering). Never written in prod by construction;
+/// excluded from the reset truncation so the coordination history survives a reset.
+model DevLedger {
+  /// @sensitivity:internal
+  id        Int      @id @default(autoincrement())
+  /// @sensitivity:internal
+  action    String
+  /// @sensitivity:internal
+  realActor String
+  /// @sensitivity:internal
+  detail    String?
+  /// @sensitivity:internal
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

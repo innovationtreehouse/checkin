@@ -1,0 +1,114 @@
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { logger, newCorrelationId } from "./index.js";
+
+/** Spy on all three console sinks at once and parse back what each received. */
+function capture() {
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  const parse = (spy: typeof log) => spy.mock.calls.map((c) => JSON.parse(String(c[0])));
+  return {
+    log: () => parse(log),
+    warn: () => parse(warn),
+    error: () => parse(error),
+  };
+}
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("logger — level → console sink routing", () => {
+  it("info goes to console.log only", () => {
+    const c = capture();
+    logger.info("hello");
+    expect(c.log()).toHaveLength(1);
+    expect(c.warn()).toHaveLength(0);
+    expect(c.error()).toHaveLength(0);
+    expect(c.log()[0]).toMatchObject({ level: "info", msg: "hello" });
+  });
+
+  it("warn goes to console.warn only", () => {
+    const c = capture();
+    logger.warn("careful");
+    expect(c.warn()).toHaveLength(1);
+    expect(c.log()).toHaveLength(0);
+    expect(c.error()).toHaveLength(0);
+    expect(c.warn()[0]).toMatchObject({ level: "warn", msg: "careful" });
+  });
+
+  it("error goes to console.error only", () => {
+    const c = capture();
+    logger.error("boom");
+    expect(c.error()).toHaveLength(1);
+    expect(c.log()).toHaveLength(0);
+    expect(c.warn()).toHaveLength(0);
+    expect(c.error()[0]).toMatchObject({ level: "error", msg: "boom" });
+  });
+});
+
+describe("logger — line shape", () => {
+  it("writes one JSON object per call with an ISO-8601 timestamp", () => {
+    const c = capture();
+    logger.info("x");
+    const [line] = c.log();
+    expect(typeof line.time).toBe("string");
+    expect(line.time).toBe(new Date(line.time).toISOString());
+    expect(Number.isNaN(Date.parse(line.time))).toBe(false);
+  });
+
+  it("merges arbitrary structured fields into the line", () => {
+    const c = capture();
+    logger.info("ingest done", { service: "shopify-read", count: 42, ok: true });
+    const [line] = c.log();
+    expect(line.service).toBe("shopify-read");
+    expect(line.count).toBe(42);
+    expect(line.ok).toBe(true);
+  });
+
+  it("works with no fields argument", () => {
+    const c = capture();
+    expect(() => logger.info("bare")).not.toThrow();
+    expect(c.log()[0]).toMatchObject({ level: "info", msg: "bare" });
+  });
+});
+
+describe("logger — Error serialization", () => {
+  it("serializes an Error field to {name, message, stack} (not an empty object)", () => {
+    const c = capture();
+    const err = new TypeError("kaboom");
+    logger.error("failed", { err });
+    const [line] = c.error();
+    expect(line.err.name).toBe("TypeError");
+    expect(line.err.message).toBe("kaboom");
+    expect(typeof line.err.stack).toBe("string");
+    expect(line.err.stack.length).toBeGreaterThan(0);
+  });
+
+  it("serializes a nested Error, not just a top-level one", () => {
+    const c = capture();
+    logger.error("failed", { cause: { inner: new Error("deep") } });
+    const [line] = c.error();
+    expect(line.cause.inner.name).toBe("Error");
+    expect(line.cause.inner.message).toBe("deep");
+  });
+
+  it("leaves non-Error fields untouched alongside an Error", () => {
+    const c = capture();
+    logger.error("failed", { err: new Error("x"), attempt: 3 });
+    const [line] = c.error();
+    expect(line.attempt).toBe(3);
+    expect(line.err.message).toBe("x");
+  });
+});
+
+describe("newCorrelationId", () => {
+  it("returns a v4-shaped UUID", () => {
+    expect(newCorrelationId()).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  it("returns a fresh value each call", () => {
+    const ids = new Set(Array.from({ length: 100 }, () => newCorrelationId()));
+    expect(ids.size).toBe(100);
+  });
+});

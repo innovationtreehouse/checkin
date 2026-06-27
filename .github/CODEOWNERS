@@ -1,0 +1,33 @@
+# Files in this list require maintainer approval to change. They are the
+# "trust anchors" of the security policy layer — what data leaves the server,
+# to which role, through which channel. A contributor PR that touches these
+# files cannot merge without review.
+#
+# DO NOT remove paths from this file without understanding which guarantee
+# you are weakening. See docs/SECURITY-POLICY.md.
+
+# Schema annotations — the source of truth for field sensitivity.
+/prisma/schema.prisma                 @dkay
+
+# The policy layer itself.
+/src/security/                        @dkay
+
+# Authentication & session machinery.
+/src/lib/auth.ts                      @dkay
+/src/lib/auth-options.ts              @dkay
+
+# Contract tests that enforce the policy in CI.
+/tests/security/                      @dkay
+
+# CODEOWNERS itself and CI workflows — without protecting these, the rest
+# can be quietly disabled in a PR you'd never see.
+/.github/                             @dkay
+
+# The CI lint and the codegen — bypass routes if changed.
+/scripts/check-route-coverage.ts      @dkay
+/scripts/security-generator.js        @dkay
+/scripts/migrated-routes.txt          @dkay
+/scripts/tsconfig.json                @dkay
+
+# Git hooks.
+/.husky/                              @dkay

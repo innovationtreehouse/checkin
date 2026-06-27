@@ -1,0 +1,639 @@
+"use client";
+
+import { use, useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import {
+  Alert, Anchor, Badge, Box, Button, Card, Center, Checkbox, Container, Divider, Group,
+  Loader, NumberInput, Paper, Select, SimpleGrid, Stack, Table, Tabs, Text, TextInput, Title,
+} from '@mantine/core';
+import { AlertBanner } from '@/components/admin/AlertBanner';
+import { formatDateTime } from '@/lib/time';
+
+type ProgramDetail = {
+  id: number;
+  name: string;
+  begin: string | null;
+  end: string | null;
+  leadMentorId: number | null;
+  phase: string;
+  enrollmentStatus: string;
+  minAge: number | null;
+  maxAge: number | null;
+  maxParticipants: number | null;
+  memberOnly: boolean;
+  participants: {
+    participantId: number;
+    status: string;
+    joinedAt: string | null;
+    pendingSince: string | null;
+    participant: {
+      name: string | null;
+      email: string;
+      phone?: string | null;
+      household?: { emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[] } | null;
+    };
+  }[];
+  volunteers: { participantId: number; isCore: boolean; participant: { name: string | null; email: string } }[];
+  events: { id: number; name: string; start: string; end: string; attendanceConfirmedAt: string | null }[];
+  leadMentor: { name: string | null; email: string } | null;
+  memberPrice: number | null;
+  nonMemberPrice: number | null;
+  shopifyProductId: string | null;
+};
+
+type ParticipantOption = { id: number; name: string | null; email: string; dob?: string | null };
+
+const PHASE_BADGE: Record<string, { label: string; color: string }> = {
+  PLANNING: { label: 'Planning', color: 'gray' },
+  UPCOMING: { label: 'Upcoming', color: 'yellow' },
+  RUNNING: { label: 'Running', color: 'cyan' },
+  FINISHED: { label: 'Finished', color: 'teal' },
+};
+
+export default function ProgramDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  const [program, setProgram] = useState<ProgramDetail | null>(null);
+
+  // Form States
+  const [begin, setBegin] = useState("");
+  const [end, setEnd] = useState("");
+  const [minAge, setMinAge] = useState("");
+  const [maxAge, setMaxAge] = useState("");
+  const [maxParticipants, setMaxParticipants] = useState("");
+  const [phase, setPhase] = useState("PLANNING");
+  const [enrollmentStatus, setEnrollmentStatus] = useState("CLOSED");
+  const [memberOnly, setMemberOnly] = useState(false);
+  const [leadMentorIdInput, setLeadMentorIdInput] = useState("");
+  const [memberPrice, setMemberPrice] = useState("");
+  const [nonMemberPrice, setNonMemberPrice] = useState("");
+
+  const [newVolId, setNewVolId] = useState("");
+  const [newPartId, setNewPartId] = useState("");
+
+  const [volSearch, setVolSearch] = useState("");
+  const [volResults, setVolResults] = useState<ParticipantOption[]>([]);
+  const [volSearching, setVolSearching] = useState(false);
+
+  const [mentorSearch, setMentorSearch] = useState("");
+  const [mentorResults, setMentorResults] = useState<ParticipantOption[]>([]);
+  const [mentorSearching, setMentorSearching] = useState(false);
+  const [isEditingMentor, setIsEditingMentor] = useState(false);
+
+  const [partSearch, setPartSearch] = useState("");
+  const [partResults, setPartResults] = useState<ParticipantOption[]>([]);
+  const [partSearching, setPartSearching] = useState(false);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [activeTab, setActiveTab] = useState<'general' | 'roster' | 'events'>('general');
+
+  const fetchProgram = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/programs/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setProgram(data);
+        setBegin(data.begin ? data.begin.split('T')[0] : "");
+        setEnd(data.end ? data.end.split('T')[0] : "");
+        setMinAge(data.minAge !== null ? String(data.minAge) : "");
+        setMaxAge(data.maxAge !== null ? String(data.maxAge) : "");
+        setMaxParticipants(data.maxParticipants !== null ? String(data.maxParticipants) : "");
+        setPhase(data.phase || "PLANNING");
+        setEnrollmentStatus(data.enrollmentStatus || "CLOSED");
+        setMemberOnly(Boolean(data.memberOnly));
+        setLeadMentorIdInput(data.leadMentorId !== null ? String(data.leadMentorId) : "");
+        setMemberPrice(data.memberPrice !== null ? String(data.memberPrice / 100) : "");
+        setNonMemberPrice(data.nonMemberPrice !== null ? String(data.nonMemberPrice / 100) : "");
+        setMentorSearch(data.leadMentor ? `${data.leadMentor.name || 'Unnamed'} (${data.leadMentor.email})` : "");
+        setIsEditingMentor(false);
+      } else if (res.status === 404) {
+        setMessage("Program not found.");
+      } else {
+        setMessage("Failed to load program.");
+      }
+    } catch {
+      setMessage("Network error.");
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push('/');
+    } else if (status === "authenticated") {
+      fetchProgram();
+    }
+  }, [status, router, fetchProgram]);
+
+  const searchParticipants = useCallback(async (
+    query: string,
+    setResults: React.Dispatch<React.SetStateAction<ParticipantOption[]>>,
+    setLocalLoading: React.Dispatch<React.SetStateAction<boolean>>
+  ) => {
+    if (!query.trim()) { setResults([]); return; }
+    setLocalLoading(true);
+    try {
+      const res = await fetch(`/api/programs/${id}/eligible-participants?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setResults(data.members || []);
+      }
+    } finally {
+      setLocalLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (volSearch && !newVolId) searchParticipants(volSearch, setVolResults, setVolSearching);
+      else if (!volSearch) setVolResults([]);
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [volSearch, newVolId, searchParticipants]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (mentorSearch && !leadMentorIdInput) {
+        const searchMentors = async () => {
+          setMentorSearching(true);
+          try {
+            const res = await fetch(`/api/admin/participants/search?q=${encodeURIComponent(mentorSearch)}&filter=adults`);
+            if (res.ok) {
+              const data = await res.json();
+              setMentorResults(data.participants || []);
+            }
+          } finally {
+            setMentorSearching(false);
+          }
+        };
+        searchMentors();
+      } else if (!mentorSearch) {
+        setMentorResults([]);
+      }
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [mentorSearch, leadMentorIdInput]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (partSearch && !newPartId) searchParticipants(partSearch, setPartResults, setPartSearching);
+      else if (!partSearch) setPartResults([]);
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [partSearch, newPartId, searchParticipants]);
+
+  const handleSaveGeneral = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage("");
+    try {
+      const res = await fetch(`/api/programs/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          begin: begin || null,
+          end: end || null,
+          minAge: minAge ? parseInt(minAge) : null,
+          maxAge: maxAge ? parseInt(maxAge) : null,
+          maxParticipants: maxParticipants ? parseInt(maxParticipants) : null,
+          phase, enrollmentStatus, memberOnly,
+          leadMentorId: leadMentorIdInput ? parseInt(leadMentorIdInput) : null,
+          memberPrice: memberPrice || null,
+          nonMemberPrice: nonMemberPrice || null,
+        })
+      });
+      if (res.ok) {
+        setMessage("Settings updated successfully.");
+        fetchProgram();
+      } else {
+        const data = await res.json();
+        setMessage(data.error || "Failed to save settings.");
+      }
+    } catch {
+      setMessage("Network error.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddVolunteer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVolId) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/programs/${id}/volunteers`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ participantId: parseInt(newVolId) })
+      });
+      if (res.ok) { setNewVolId(""); setVolSearch(""); fetchProgram(); }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveVolunteer = async (participantId: number) => {
+    if (!confirm("Remove this volunteer?")) return;
+    try {
+      await fetch(`/api/programs/${id}/volunteers`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId }) });
+      fetchProgram();
+    } catch { }
+  };
+
+  const handleToggleCore = async (participantId: number, isCore: boolean) => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/programs/${id}/volunteers`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId, isCore }) });
+      if (res.ok) fetchProgram();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddParticipant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPartId) return;
+
+    const u = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
+    if (u?.sysadmin || u?.boardMember) {
+      if (!confirm("Warning: Adding a participant manually bypasses all payment requirements. Are you sure you wish to proceed?")) return;
+    }
+
+    setSaving(true);
+    setMessage("");
+    try {
+      const res = await fetch(`/api/programs/${id}/participants`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ participantId: parseInt(newPartId), override: true })
+      });
+      if (res.ok) { setNewPartId(""); setPartResults([]); setPartSearch(""); fetchProgram(); }
+      else {
+        const data = await res.json();
+        setMessage(data.error || "Failed to enroll participant.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveParticipant = async (participantId: number) => {
+    if (!confirm("Remove this participant?")) return;
+    try {
+      await fetch(`/api/programs/${id}/participants`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId }) });
+      fetchProgram();
+    } catch { }
+  };
+
+  if (loading || status === "loading") {
+    return <Center mih="60vh"><Loader /></Center>;
+  }
+
+  if (!session || !program) return (
+    <Container size="sm" py="xl">
+      <Card withBorder radius="md" padding="xl" ta="center">
+        <Title order={3}>{message || "Not Found"}</Title>
+        <Group justify="center" mt="lg"><Button onClick={() => router.push('/admin/programs')}>Back</Button></Group>
+      </Card>
+    </Container>
+  );
+
+  const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
+  const isAuthorized = program.leadMentorId === user?.id || user?.sysadmin || user?.boardMember;
+  const activeParticipants = program.participants.filter(p => p.status === 'ACTIVE');
+  const pendingParticipants = program.participants.filter(p => p.status === 'PENDING');
+
+  if (!isAuthorized) {
+    return (
+      <Container size="sm" py="xl">
+        <Card withBorder radius="md" padding="xl" ta="center">
+          <Title order={3}>Forbidden: Not authorized to manage this program.</Title>
+          <Group justify="center" mt="lg"><Button onClick={() => router.push('/admin/programs')}>Back</Button></Group>
+        </Card>
+      </Container>
+    );
+  }
+
+  const sortedVolunteers = program.volunteers ? [...program.volunteers].sort((a, b) => (b.isCore ? 1 : 0) - (a.isCore ? 1 : 0)) : [];
+  const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
+  const phaseBadge = PHASE_BADGE[program.phase];
+  // Pricing is fixed at creation; derive rather than track as state.
+  const isFree = program.memberPrice === null && program.nonMemberPrice === null;
+
+  const downloadQr = () => {
+    const url = `${window.location.origin}/programs/${program.id}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url)}`;
+    const link = document.createElement('a');
+    link.href = qrUrl;
+    link.download = `QR_${program.name.replace(/[^a-z0-9]/gi, '_')}.png`;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Shared absolute-positioned results dropdown for the mentor/volunteer/participant search boxes.
+  const renderSearchResults = (
+    results: ParticipantOption[],
+    onPick: (p: ParticipantOption) => void,
+    renderRight?: (p: ParticipantOption) => React.ReactNode,
+  ) => (
+    <Paper withBorder shadow="md" radius="sm" pos="absolute" left={0} right={0} style={{ zIndex: 10, maxHeight: 200, overflowY: 'auto' }}>
+      {results.map((p) => (
+        <Group key={p.id} justify="space-between" wrap="nowrap" p="sm" style={{ cursor: 'pointer', borderBottom: '1px solid var(--mantine-color-default-border)' }} onClick={() => onPick(p)}>
+          <div>
+            <Text fw={500}>{p.name || 'Unnamed'}</Text>
+            <Text size="xs" c="dimmed">{p.email}</Text>
+          </div>
+          {renderRight?.(p)}
+        </Group>
+      ))}
+    </Paper>
+  );
+
+  return (
+    <Container size="lg" py="md">
+      <Card withBorder radius="md" padding="lg">
+        <Group justify="space-between" align="center" wrap="wrap" mb="lg">
+          <Group align="center" gap="sm">
+            <Title order={1}>{program.name}</Title>
+            {phaseBadge && <Badge color={phaseBadge.color} variant="light" size="lg">{phaseBadge.label}</Badge>}
+          </Group>
+          <Button variant="default" onClick={() => router.push('/admin/programs')}>← Back to Programs</Button>
+        </Group>
+
+        <AlertBanner message={message} tone="info" mb="lg" />
+
+        <Tabs value={activeTab} onChange={(v) => setActiveTab((v as typeof activeTab) ?? 'general')}>
+          <Tabs.List mb="lg">
+            <Tabs.Tab value="general">General</Tabs.Tab>
+            <Tabs.Tab value="roster">Roster</Tabs.Tab>
+            <Tabs.Tab value="events">Events</Tabs.Tab>
+          </Tabs.List>
+
+          {/* GENERAL */}
+          <Tabs.Panel value="general">
+            <form onSubmit={handleSaveGeneral}>
+              <Stack mb="lg">
+                <Group wrap="wrap">
+                  <Button type="button" variant="light" onClick={downloadQr}>📷 Download QR Code</Button>
+                  <Button type="button" color="teal" variant="light" onClick={() => window.open(`/programs/${program.id}/register`, '_blank')}>🔗 Public Registration Page</Button>
+                  <Button type="button" variant="default" onClick={() => window.open(`/programs/${program.id}`, '_blank')}>📄 Public Details Page</Button>
+                </Group>
+
+                <Card withBorder radius="md" padding="md">
+                  <Group justify="space-around">
+                    <Stack gap={0} align="center"><Text fz="xl" fw={700}>{program.participants?.length || 0} {program.maxParticipants ? `/ ${program.maxParticipants}` : ''}</Text><Text size="sm" c="dimmed">Participants Enrolled</Text></Stack>
+                    <Divider orientation="vertical" />
+                    <Stack gap={0} align="center"><Text fz="xl" fw={700}>{program.volunteers?.length || 0}</Text><Text size="sm" c="dimmed">Assigned Volunteers</Text></Stack>
+                    <Divider orientation="vertical" />
+                    <Stack gap={0} align="center"><Text fz="xl" fw={700}>{program.events?.length || 0}</Text><Text size="sm" c="dimmed">Scheduled Sessions</Text></Stack>
+                  </Group>
+                </Card>
+
+                {program.shopifyProductId && (
+                  <Alert color="green" variant="light">✓ Pre-configured for Shopify Checkout (Product ID: {program.shopifyProductId})</Alert>
+                )}
+              </Stack>
+
+              <Stack>
+                <Card withBorder radius="md" padding="md">
+                  <Text fw={500} mb="sm">Lead Mentor / Program Coordinator</Text>
+                  {isSysAdminOrBoard ? (
+                    program.leadMentor && !isEditingMentor ? (
+                      <Group>
+                        <Text c="green">{program.leadMentor.name || 'Unnamed'} ({program.leadMentor.email})</Text>
+                        <Button size="xs" variant="default" type="button" onClick={() => { setIsEditingMentor(true); setMentorSearch(""); setLeadMentorIdInput(""); }}>Change</Button>
+                      </Group>
+                    ) : (
+                      <Box pos="relative">
+                        <Group gap="sm" align="center" wrap="nowrap">
+                          <TextInput style={{ flex: 1 }} value={mentorSearch} onChange={e => { setMentorSearch(e.currentTarget.value); setLeadMentorIdInput(""); }} placeholder="Search Adult Members..." />
+                          {program.leadMentor && (
+                            <Button size="xs" variant="subtle" color="red" type="button" onClick={() => { setIsEditingMentor(false); setLeadMentorIdInput(String(program.leadMentorId)); setMentorSearch(`${program.leadMentor?.name || 'Unnamed'} (${program.leadMentor?.email})`); }}>Cancel</Button>
+                          )}
+                        </Group>
+                        {mentorSearching && <Text size="xs" c="dimmed" mt={4}>Loading...</Text>}
+                        {mentorResults.length > 0 && !leadMentorIdInput && renderSearchResults(mentorResults, (p) => { setLeadMentorIdInput(p.id.toString()); setMentorSearch(`${p.name || 'Unnamed'} (${p.email})`); setMentorResults([]); })}
+                      </Box>
+                    )
+                  ) : (
+                    program.leadMentor ? <Text c="green">{program.leadMentor.name || 'Unnamed'} ({program.leadMentor.email})</Text> : <Text c="dimmed">No Lead Mentor Assigned</Text>
+                  )}
+                  <Text size="xs" c={isSysAdminOrBoard ? 'yellow' : 'dimmed'} mt="xs">
+                    {isSysAdminOrBoard ? '*You have permission to reassign this program.' : '*Only Administrators/Board Members can change the Lead Mentor.'}
+                  </Text>
+                </Card>
+
+                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                  <TextInput type="date" label="Start Date" value={begin} onChange={e => setBegin(e.currentTarget.value)} />
+                  <TextInput type="date" label="End Date" value={end} onChange={e => setEnd(e.currentTarget.value)} />
+                  <NumberInput label="Minimum Age (Optional)" value={minAge} onChange={v => setMinAge(String(v))} min={0} placeholder="e.g. 14" />
+                  <NumberInput label="Maximum Age (Optional)" value={maxAge} onChange={v => setMaxAge(String(v))} min={0} placeholder="e.g. 18" />
+                </SimpleGrid>
+
+                <div>
+                  <NumberInput label="Max Participants (Optional)" value={maxParticipants} onChange={v => setMaxParticipants(String(v))} min={1} placeholder="Leave blank for unlimited" description="Sets the inventory limit on Shopify. Leave blank for unlimited enrollment." />
+                  {(memberPrice || nonMemberPrice) && !maxParticipants && (
+                    <Alert color="yellow" variant="light" mt="xs">⚠️ No max participants set — Shopify will allow unlimited purchases for this program.</Alert>
+                  )}
+                </div>
+
+                <Checkbox checked={isFree} disabled label="This is a free program (Pricing cannot be changed)" />
+
+                {!isFree && (
+                  <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                    <NumberInput label="Member Price ($)" value={memberPrice} disabled />
+                    <NumberInput label="Non-Member Price ($)" value={nonMemberPrice} disabled />
+                  </SimpleGrid>
+                )}
+
+                <Checkbox checked={memberOnly} onChange={e => setMemberOnly(e.currentTarget.checked)} label="Member-Only Program" />
+
+                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                  <Select label="Program Phase" value={phase} onChange={v => setPhase(v ?? 'PLANNING')} allowDeselect={false}
+                    data={[
+                      { value: 'PLANNING', label: 'Planning (Draft)' },
+                      { value: 'UPCOMING', label: 'Upcoming (Published)' },
+                      { value: 'RUNNING', label: 'Currently Running' },
+                      { value: 'FINISHED', label: 'Finished' },
+                    ]} />
+                  <Select label="Enrollment Status" value={enrollmentStatus} onChange={v => setEnrollmentStatus(v ?? 'CLOSED')} allowDeselect={false}
+                    data={[
+                      { value: 'OPEN', label: 'Open for Enrollment' },
+                      { value: 'CLOSED', label: 'Closed for Enrollment (Full / Stopped)' },
+                    ]} />
+                </SimpleGrid>
+
+                <Button type="submit" color="green" disabled={saving || !leadMentorIdInput} loading={saving} style={{ alignSelf: 'flex-start' }}>
+                  Save Settings
+                </Button>
+              </Stack>
+            </form>
+          </Tabs.Panel>
+
+          {/* ROSTER */}
+          <Tabs.Panel value="roster">
+            <Stack gap="xl">
+              {/* Volunteers */}
+              <Card withBorder radius="md" padding="lg">
+                <Title order={4} mb="md">Volunteers ({program.volunteers.length})</Title>
+                <form onSubmit={handleAddVolunteer}>
+                  <Group align="flex-end" gap="md" mb="lg" wrap="wrap">
+                    <Box style={{ flex: 1, minWidth: 200, position: 'relative' }}>
+                      <TextInput label="Assign Volunteer (Name/Email)" value={volSearch} onChange={e => { setVolSearch(e.currentTarget.value); setNewVolId(""); }} placeholder="Start typing to search..." />
+                      {volSearching && <Text size="xs" c="dimmed" mt={4}>Loading...</Text>}
+                      {volResults.length > 0 && !newVolId && renderSearchResults(volResults, (p) => { setNewVolId(p.id.toString()); setVolSearch(`${p.name || 'Unnamed'} (${p.email})`); setVolResults([]); })}
+                    </Box>
+                    <Button type="submit" disabled={saving || !newVolId}>Add</Button>
+                  </Group>
+                </form>
+
+                {program.volunteers.length === 0 ? <Text c="dimmed">No volunteers assigned.</Text> : (
+                  <Stack gap="xs">
+                    {sortedVolunteers.map(v => (
+                      <Group key={v.participantId} justify="space-between" p="sm" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
+                        <Group gap="md" wrap="wrap">
+                          <Text fw={500}>{v.participant.name || 'Unnamed'} <Text component="span" c="dimmed" size="sm">({v.participant.email})</Text></Text>
+                          <Checkbox size="xs" checked={v.isCore} disabled={saving} onChange={e => handleToggleCore(v.participantId, e.currentTarget.checked)}
+                            label={<Text size="sm" c={v.isCore ? 'yellow' : undefined}>Core Volunteer</Text>} />
+                        </Group>
+                        <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveVolunteer(v.participantId)}>Remove</Button>
+                      </Group>
+                    ))}
+                  </Stack>
+                )}
+              </Card>
+
+              {/* Active Participants */}
+              <Card withBorder radius="md" padding="lg">
+                <Title order={4} mb="md">Active Participants ({activeParticipants.length})</Title>
+                <form onSubmit={handleAddParticipant}>
+                  <Group align="flex-end" gap="md" mb="lg" wrap="wrap">
+                    <Box style={{ flex: 1, minWidth: 200, position: 'relative' }}>
+                      <TextInput label="Assign Participant (Name/Email)" value={partSearch} onChange={e => { setPartSearch(e.currentTarget.value); setNewPartId(""); }} placeholder="Start typing to search..." />
+                      {partSearching && <Text size="xs" c="dimmed" mt={4}>Loading...</Text>}
+                      {partResults.length > 0 && !newPartId && renderSearchResults(
+                        partResults,
+                        (p) => { setNewPartId(p.id.toString()); setPartSearch(`${p.name || 'Unnamed'} (${p.email})`); setPartResults([]); },
+                        (p) => {
+                          if (!p.dob) return null;
+                          const age = Math.abs(new Date(Date.now() - new Date(p.dob).getTime()).getUTCFullYear() - 1970);
+                          let warning: string | null = null;
+                          if (program.minAge !== null && age < program.minAge) warning = `⚠️ Too Young (${age})`;
+                          if (program.maxAge !== null && age > program.maxAge) warning = `⚠️ Too Old (${age})`;
+                          return warning ? <Badge color="yellow" variant="light">{warning}</Badge> : null;
+                        },
+                      )}
+                    </Box>
+                    {!isSysAdminOrBoard ? (
+                      <Alert color="yellow" variant="light" style={{ flex: 1 }}>
+                        ⚠️ Program Leads cannot manually enroll participants. Participants must enroll themselves and complete payment via Shopify.
+                      </Alert>
+                    ) : (
+                      <Button type="submit" disabled={saving || !newPartId}>Enroll</Button>
+                    )}
+                  </Group>
+                </form>
+
+                {activeParticipants.length === 0 ? <Text c="dimmed">No active participants yet.</Text> : (
+                  <Stack gap="xs">
+                    {activeParticipants.map(p => (
+                      <Card key={p.participantId} withBorder radius="sm" padding="sm">
+                        <Group justify="space-between">
+                          <Text fw={700} c="blue">{p.participant.name || 'Unnamed'}</Text>
+                          <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveParticipant(p.participantId)}>Remove</Button>
+                        </Group>
+                        <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs" spacing="xs">
+                          <Text size="sm" c="dimmed"><strong>Email:</strong> {p.participant.email}</Text>
+                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone || 'N/A'}</Text>
+                          <Text size="sm" c="dimmed"><strong>Joined:</strong> {p.joinedAt ? formatDateTime(p.joinedAt) : 'N/A'}</Text>
+                          {p.participant.household && (
+                            <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
+                              <strong>Emergency Contact{(p.participant.household.emergencyContacts?.length ?? 0) > 1 ? 's' : ''}:</strong>{' '}
+                              {p.participant.household.emergencyContacts && p.participant.household.emergencyContacts.length > 0
+                                ? p.participant.household.emergencyContacts.map((c) => `${c.name} - ${c.phone}`).join('; ')
+                                : 'N/A'}
+                            </Text>
+                          )}
+                        </SimpleGrid>
+                      </Card>
+                    ))}
+                  </Stack>
+                )}
+              </Card>
+
+              {/* Pending Participants */}
+              <Card withBorder radius="md" padding="lg">
+                <Title order={4} mb="md">Pending Participants ({pendingParticipants.length})</Title>
+                {pendingParticipants.length === 0 ? <Text c="dimmed">No pending participants.</Text> : (
+                  <Stack gap="xs">
+                    {pendingParticipants.map(p => (
+                      <Card key={p.participantId} withBorder radius="sm" padding="sm">
+                        <Group justify="space-between">
+                          <Text fw={700} c="yellow">{p.participant.name || 'Unnamed'}</Text>
+                          <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveParticipant(p.participantId)}>Remove</Button>
+                        </Group>
+                        <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs" spacing="xs">
+                          <Text size="sm" c="dimmed"><strong>Email:</strong> {p.participant.email}</Text>
+                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone || 'N/A'}</Text>
+                          <Text size="sm" c="dimmed"><strong>Pending Since:</strong> {p.pendingSince ? formatDateTime(p.pendingSince) : 'Unknown'}</Text>
+                        </SimpleGrid>
+                      </Card>
+                    ))}
+                  </Stack>
+                )}
+              </Card>
+            </Stack>
+          </Tabs.Panel>
+
+          {/* EVENTS */}
+          <Tabs.Panel value="events">
+            <Group justify="space-between" align="center" mb="md">
+              <Title order={4}>Events ({program.events.length})</Title>
+              <Button variant="light" onClick={() => router.push(`/admin/events/new?programId=${program.id}`)}>+ Schedule Session(s)</Button>
+            </Group>
+            <Table.ScrollContainer minWidth={500}>
+              <Table verticalSpacing="sm" highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Event Name</Table.Th>
+                    <Table.Th>Start Time</Table.Th>
+                    <Table.Th ta="right">Actions</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {program.events.map(ev => {
+                    const isPastEvent = new Date(ev.end) < new Date();
+                    const needsConfirmation = isPastEvent && !ev.attendanceConfirmedAt;
+                    return (
+                      <Table.Tr key={ev.id}>
+                        <Table.Td fw={500}>{ev.name}</Table.Td>
+                        <Table.Td c="dimmed">{formatDateTime(ev.start)}</Table.Td>
+                        <Table.Td ta="right">
+                          {needsConfirmation ? (
+                            <Button component={Link} href={`/admin/events/${ev.id}`} size="compact-xs" color="yellow" variant="light">Confirm Attendance</Button>
+                          ) : (
+                            <Anchor component={Link} href={`/admin/events/${ev.id}`}>{isPastEvent ? 'Attendance →' : 'Edit Event →'}</Anchor>
+                          )}
+                        </Table.Td>
+                      </Table.Tr>
+                    );
+                  })}
+                  {program.events.length === 0 && (
+                    <Table.Tr><Table.Td colSpan={3} ta="center"><Text c="dimmed" py="md">No events scheduled.</Text></Table.Td></Table.Tr>
+                  )}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          </Tabs.Panel>
+        </Tabs>
+      </Card>
+    </Container>
+  );
+}

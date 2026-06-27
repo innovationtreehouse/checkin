@@ -1,0 +1,223 @@
+name: Deploy prod
+
+# Deploy the checkin app to the AWS prod environment when a release is
+# published in this repo. Mirrors deploy-dev.yml step-for-step (build an ARM64
+# image, run DB migrations, roll out the ECS service) with three differences:
+#   - trigger: a published GitHub release instead of a merge to main
+#   - guard:   the released commit must have a successful CI run
+#   - report:  a run step summary (releases have no comment thread to post to)
+#
+# Auth is GitHub OIDC (no static AWS keys) — assumes the checkin-deploy-prod
+# role defined in ~/projects/treehouse/aws/infra/modules/checkin/iam.tf.
+#
+# Cutting a release:
+#   gh release create v1.2.3 --target main --generate-notes
+# Publishing (not drafting) is what fires this. Re-publishing a draft works;
+# pre-releases deploy too — don't mark a release pre if it shouldn't ship.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write   # assume the deploy role via OIDC
+  contents: read    # checkout the released tag
+  checks: read      # verify the released commit has green CI
+
+concurrency:
+  group: checkin-deploy-prod
+  cancel-in-progress: false  # serialize deploys; never abandon one mid-rollout
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REGISTRY: 639595353568.dkr.ecr.us-east-2.amazonaws.com
+  ECR_REPOSITORY: checkin-prod
+  ECS_CLUSTER: checkin-prod
+  ECS_SERVICE: checkin-prod
+  APP_TASK_FAMILY: checkin-prod
+  MIGRATE_TASK_FAMILY: checkin-migrate-prod
+  DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-prod
+  APP_URL: https://ops.innovationtreehouse.org
+
+jobs:
+  deploy:
+    name: Build, migrate, roll out
+    runs-on: ubuntu-24.04-arm  # native ARM64 — task defs require arm64 images
+    environment:
+      name: production
+      url: https://ops.innovationtreehouse.org
+    steps:
+      - name: Checkout released tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Resolve released commit
+        id: vars
+        run: |
+          # release.target_commitish can be a branch name, so resolve the SHA
+          # from the checked-out tag itself.
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
+          echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Require green CI on the released commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.vars.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # A release can be cut from any commit; only ship ones CI has blessed.
+          CONCLUSION=$(gh api \
+            "repos/${{ github.repository }}/commits/$SHA/check-runs?check_name=Run%20Tests" \
+            --jq '[.check_runs[].conclusion] | first // "missing"')
+          echo "CI conclusion for $SHA: $CONCLUSION"
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "::error::Released commit $SHA has no successful CI run (got: $CONCLUSION). Refusing to deploy."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: build
+        env:
+          IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha }}
+          IMAGE_TAGGED: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.tag }}
+          # Public store domain baked into the client bundle (NEXT_PUBLIC_*, build-time).
+          NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN: ${{ vars.SHOPIFY_STORE_DOMAIN }}
+        run: |
+          set -euo pipefail
+          # Native arm64 runner -> a plain build produces the arm64 image the
+          # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
+          docker build \
+            --build-arg NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN="$NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN" \
+            -t "$IMAGE" -t "$IMAGE_TAGGED" .
+          docker push "$IMAGE"
+          docker push "$IMAGE_TAGGED"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Run database migrations
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: |
+          set -euo pipefail
+          # Register a new revision of the migrate task def pointing at the new
+          # image (run-task can't override the image, only command/env), keeping
+          # only the fields register-task-definition accepts. Goes through a real
+          # temp file: the runner's aws CLI cannot read file:///dev/stdin.
+          aws ecs describe-task-definition \
+            --task-definition "$MIGRATE_TASK_FAMILY" \
+            --query taskDefinition --output json \
+            | jq --arg IMG "$IMAGE" '
+                .containerDefinitions[0].image = $IMG
+                | {family, taskRoleArn, executionRoleArn, networkMode,
+                   containerDefinitions, requiresCompatibilities, cpu, memory,
+                   runtimePlatform}' > "$RUNNER_TEMP/migrate-taskdef.json"
+          MIGRATE_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "file://$RUNNER_TEMP/migrate-taskdef.json" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered migrate task def: $MIGRATE_ARN"
+
+          # Reuse the service's own network config (subnets / SG / public IP) so
+          # the one-off task lands exactly where the service runs.
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].networkConfiguration' --output json)
+
+          # The shared Aurora cluster is Serverless v2 with min capacity 0 and
+          # auto-pause: if it's idle at deploy time, the first connection races
+          # the ~30s resume and Prisma fails fast with P1001. Override the
+          # container command with a retry loop so the task survives the wake-up.
+          cat > "$RUNNER_TEMP/migrate-overrides.json" <<'EOF'
+          {
+            "containerOverrides": [{
+              "name": "checkin-migrate",
+              "command": ["sh", "-c",
+                "for i in 1 2 3 4 5; do npx prisma migrate deploy && exit 0; echo \"attempt $i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"]
+            }]
+          }
+          EOF
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$MIGRATE_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG" \
+            --overrides "file://$RUNNER_TEMP/migrate-overrides.json" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Migration task: $TASK_ARN"
+
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          echo "Migration exit code: $EXIT_CODE"
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Database migration failed (exit $EXIT_CODE)"
+            exit 1
+          fi
+
+      - name: Deploy to ECS
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: |
+          set -euo pipefail
+          # Register a new app task-def revision with the new image. The service
+          # has lifecycle.ignore_changes on task_definition, so CI owns rollout.
+          # Same temp-file dance as the migrate step (no /dev/stdin on the runner).
+          aws ecs describe-task-definition \
+            --task-definition "$APP_TASK_FAMILY" \
+            --query taskDefinition --output json \
+            | jq --arg IMG "$IMAGE" '
+                .containerDefinitions[0].image = $IMG
+                | {family, taskRoleArn, executionRoleArn, networkMode,
+                   containerDefinitions, volumes, placementConstraints,
+                   requiresCompatibilities, cpu, memory, runtimePlatform}' > "$RUNNER_TEMP/app-taskdef.json"
+          APP_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "file://$RUNNER_TEMP/app-taskdef.json" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered app task def: $APP_ARN"
+
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+            --task-definition "$APP_ARN" >/dev/null
+
+          echo "Waiting for the service to reach steady state..."
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+          echo "Service is stable."
+
+      - name: Report result
+        if: always()
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
+          SHORT_SHA: ${{ steps.vars.outputs.short_sha }}
+          STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        run: |
+          set -euo pipefail
+          if [ "$STATUS" = "success" ]; then
+            {
+              echo "### ✅ Released $TAG to prod"
+              echo "Commit \`$SHORT_SHA\` is live on [$APP_URL]($APP_URL)."
+              echo "- Image: \`$ECR_REPOSITORY:$TAG\`"
+              echo "- Migrations: applied · Service: stable"
+              echo "- [Release]($RELEASE_URL) · [Deploy run]($RUN_URL)"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### ❌ Prod deploy of $TAG failed (status: \`$STATUS\`)"
+              echo "- [Deploy run]($RUN_URL) — check the logs."
+              echo "- Prod still runs the previous image."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

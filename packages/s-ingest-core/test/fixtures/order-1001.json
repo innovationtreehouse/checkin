@@ -1,0 +1,43 @@
+{
+  "objectType": "ORDER",
+  "node": {
+    "id": "gid://shopify/Order/1001",
+    "legacyResourceId": "1001",
+    "name": "#1001",
+    "email": "buyer@example.com",
+    "customer": { "email": "buyer@example.com", "displayName": "Jane Buyer" },
+    "createdAt": "2026-02-01T10:00:00Z",
+    "processedAt": "2026-02-01T10:00:05Z",
+    "updatedAt": "2026-02-01T10:00:05Z",
+    "cancelledAt": null,
+    "test": false,
+    "displayFinancialStatus": "PAID",
+    "displayFulfillmentStatus": "FULFILLED",
+    "currentSubtotalPriceSet": { "shopMoney": { "amount": "100.00", "currencyCode": "USD" } },
+    "totalShippingPriceSet": { "shopMoney": { "amount": "0.00", "currencyCode": "USD" } },
+    "currentTotalTaxSet": { "shopMoney": { "amount": "0.00", "currencyCode": "USD" } },
+    "totalDiscountsSet": { "shopMoney": { "amount": "0.00", "currencyCode": "USD" } },
+    "currentTotalPriceSet": { "shopMoney": { "amount": "100.00", "currencyCode": "USD" } },
+    "totalRefundedSet": { "shopMoney": { "amount": "20.00", "currencyCode": "USD" } },
+    "lineItems": {
+      "nodes": [
+        {
+          "id": "gid://shopify/LineItem/2001",
+          "sku": "WIDGET-1",
+          "title": "Widget",
+          "quantity": 2,
+          "originalUnitPriceSet": { "shopMoney": { "amount": "50.00", "currencyCode": "USD" } },
+          "totalDiscountSet": { "shopMoney": { "amount": "0.00", "currencyCode": "USD" } }
+        }
+      ]
+    },
+    "refunds": [
+      {
+        "id": "gid://shopify/Refund/3001",
+        "createdAt": "2026-02-03T12:00:00Z",
+        "totalRefundedSet": { "shopMoney": { "amount": "20.00", "currencyCode": "USD" } },
+        "note": "Partial refund — one item returned"
+      }
+    ]
+  }
+}

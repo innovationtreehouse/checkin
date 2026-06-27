@@ -1,0 +1,326 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { EntityPicker } from "@/components/admin/EntityPicker";
+import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
+
+type HouseholdRef = {
+  id: number;
+  name: string | null;
+  participants: { id: number; name: string | null; email: string | null }[];
+};
+
+type ParticipantRow = {
+  id: number;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  household?: HouseholdRef | null;
+};
+
+export default function AdminParticipantsIndex() {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState<ParticipantRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    fetchParticipants();
+  }, []);
+
+  const fetchParticipants = async (query = "") => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/admin/participants/search?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      if (data.participants) {
+        setResults(data.participants);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [selectedParticipant, setSelectedParticipant] = useState<ParticipantRow | null>(null);
+  const [householdId, setHouseholdId] = useState("");
+  const [householdSearch, setHouseholdSearch] = useState("");
+  const [assigning, setAssigning] = useState(false);
+  const [showingNewHouseholdConfirm, setShowingNewHouseholdConfirm] = useState(false);
+
+  // Edit Participant State
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingParticipant, setEditingParticipant] = useState<ParticipantRow | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "" });
+  const [savingDetails, setSavingDetails] = useState(false);
+
+  // Admin edit of household's own info (name, address, emergency contact)
+  const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
+
+  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+    notifications.show({ message, color: type === 'error' ? 'red' : 'green' });
+  };
+
+  const closeAssign = () => {
+    setAssignModalOpen(false);
+    setSelectedParticipant(null);
+    setHouseholdSearch("");
+    setHouseholdId("");
+    setShowingNewHouseholdConfirm(false);
+  };
+
+  const handleAssignHousehold = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedParticipant) return;
+
+    // If pulling from an existing household into a NEW one, ask for confirmation
+    if (selectedParticipant.household && !householdId && !showingNewHouseholdConfirm) {
+      setShowingNewHouseholdConfirm(true);
+      return;
+    }
+
+    setAssigning(true);
+    try {
+      const res = await fetch(`/api/admin/participants/${selectedParticipant.id}/household`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          householdId: householdId ? parseInt(householdId) : undefined,
+          createNew: !householdId
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setResults(results.map(p => p.id === selectedParticipant.id ? data.participant : p));
+        closeAssign();
+        showNotification("Household assigned successfully!");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showNotification(data.error || "Failed to assign household", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showNotification("Network error", "error");
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const handleEditParticipant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingParticipant) return;
+    setSavingDetails(true);
+    try {
+      const res = await fetch(`/api/admin/participants/${editingParticipant.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setResults(results.map(p => p.id === editingParticipant.id ? { ...p, ...data.participant } : p));
+        setEditModalOpen(false);
+        setEditingParticipant(null);
+        showNotification("Participant updated successfully!");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showNotification(data.error || "Failed to update participant", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showNotification("Network error", "error");
+    } finally {
+      setSavingDetails(false);
+    }
+  };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchParticipants(searchQuery);
+  };
+
+  const canSubmitAssign = !selectedParticipant?.household || (selectedParticipant.household.participants.length > 1);
+  const canChangeHousehold = selectedParticipant?.household && selectedParticipant.household.participants.length === 1 && householdId;
+
+  return (
+    <Stack maw={1000} mx="auto">
+      <Group justify="space-between" align="flex-start" wrap="wrap">
+        <div>
+          <Title order={1}>Participants</Title>
+          <Text c="dimmed">Search and manage system participants and households.</Text>
+        </div>
+        <Group>
+          <Button variant="light" onClick={() => router.push('/admin/participants/import')}>Bulk Import</Button>
+          <Button color="green" onClick={() => router.push('/admin/participants/new')}>+ New Participant</Button>
+        </Group>
+      </Group>
+
+      <Card withBorder radius="md" padding="lg">
+        <form onSubmit={handleSearch}>
+          <Group>
+            <TextInput
+              style={{ flex: 1 }}
+              placeholder="Search by name or email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.currentTarget.value)}
+            />
+            <Button type="submit" disabled={loading} loading={loading}>Search</Button>
+          </Group>
+        </form>
+
+        <Box mt="lg">
+          {results.length > 0 ? (
+            <Stack gap="sm">
+              {results.map((p) => (
+                <Card key={p.id} withBorder radius="md" padding="md">
+                  <Group justify="space-between" wrap="wrap">
+                    <div>
+                      <Text fw={600}>{p.name}</Text>
+                      <Text size="sm" c="dimmed">{p.email || 'No email'}{p.phone ? ` • ${p.phone}` : ''}</Text>
+                    </div>
+                    <Group gap="md" wrap="wrap" align="center">
+                      <Text size="sm" c="dimmed">{p.household?.name || 'No household'}</Text>
+                      {p.household ? (
+                        <Button size="xs" variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
+                          Edit Household
+                        </Button>
+                      ) : (
+                        <Button size="xs" variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
+                          Assign Household
+                        </Button>
+                      )}
+                      <Button size="xs" variant="default" onClick={() => {
+                        setEditingParticipant(p);
+                        setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "" });
+                        setEditModalOpen(true);
+                      }}>
+                        Edit Details
+                      </Button>
+                    </Group>
+                  </Group>
+                </Card>
+              ))}
+            </Stack>
+          ) : searchQuery && !loading ? (
+            <Text ta="center" c="dimmed">No participants found.</Text>
+          ) : null}
+        </Box>
+      </Card>
+
+      {/* Assign household modal */}
+      <Modal opened={assignModalOpen} onClose={closeAssign} title={<Title order={4}>Assign Household to {selectedParticipant?.name}</Title>} size="lg">
+        {selectedParticipant?.household && (
+          <Paper withBorder radius="md" p="md" mb="md">
+            <Text size="sm" fw={600} c="dimmed" mb="xs">Current Household: {selectedParticipant.household.name}</Text>
+            <Text size="sm">
+              Members: {selectedParticipant.household.participants
+                .filter((p) => p.id !== selectedParticipant.id)
+                .map((p) => p.name || p.email)
+                .join(', ') || 'No other members'}
+            </Text>
+          </Paper>
+        )}
+
+        {showingNewHouseholdConfirm ? (
+          <Alert color="red" title="Are you sure?">
+            <Text size="sm" mb="md">
+              This will remove <strong>{selectedParticipant?.name}</strong> from their current family
+              household and start a brand new household for them alone.
+            </Text>
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setShowingNewHouseholdConfirm(false)}>Go Back</Button>
+              <Button color="red" onClick={handleAssignHousehold} loading={assigning}>Yes, Proceed</Button>
+            </Group>
+          </Alert>
+        ) : (
+          <form onSubmit={handleAssignHousehold}>
+            <EntityPicker<HouseholdRef>
+              label="Search for Existing Household"
+              description="If left blank, a new household will be created."
+              placeholder="Search households..."
+              selectedId={householdId || null}
+              selectedLabel={householdSearch}
+              search={async (q) => {
+                const res = await fetch(`/api/admin/households?q=${encodeURIComponent(q)}`);
+                if (!res.ok) return [];
+                const data = await res.json();
+                return data.households || [];
+              }}
+              getOptionLabel={(h) => h.name || `Household #${h.id}`}
+              getOptionDescription={(h) => h.participants.map((p) => p.name || p.email || 'Unnamed').join(', ') || 'Empty'}
+              onSelect={(h) => { setHouseholdId(h.id.toString()); setHouseholdSearch(h.name || `Household #${h.id}`); }}
+              onClear={() => { setHouseholdId(""); setHouseholdSearch(""); }}
+            />
+            <Group justify="flex-end" mt="lg">
+              <Button type="button" variant="default" onClick={closeAssign} disabled={assigning}>Cancel</Button>
+              {canSubmitAssign && (
+                <Button type="submit" color="green" disabled={assigning} loading={assigning}>
+                  {householdId ? "Add to Household" : (selectedParticipant?.household ? "Pull from household and start a new one" : "Create New Household")}
+                </Button>
+              )}
+              {canChangeHousehold && (
+                <Button type="submit" disabled={assigning} loading={assigning}>Change Household</Button>
+              )}
+            </Group>
+          </form>
+        )}
+      </Modal>
+
+      {/* Edit participant modal */}
+      <Modal opened={editModalOpen} onClose={() => { setEditModalOpen(false); setEditingParticipant(null); }} title={<Title order={4}>Edit Participant</Title>} size="lg">
+        <form onSubmit={handleEditParticipant}>
+          <Stack>
+            <TextInput label="Name" required value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.currentTarget.value }))} />
+            <TextInput type="email" label="Email Address" value={editForm.email} onChange={(e) => setEditForm(f => ({ ...f, email: e.currentTarget.value }))} />
+            <TextInput type="tel" label="Phone Number" value={editForm.phone} onChange={(e) => setEditForm(f => ({ ...f, phone: e.currentTarget.value }))} placeholder="(555) 123-4567" />
+            {editingParticipant?.household && (
+              <div>
+                <Text fw={500} size="sm" mb={4}>Household</Text>
+                <Paper withBorder radius="md" p="sm">
+                  <Group justify="space-between" wrap="wrap">
+                    <Text size="sm">{editingParticipant.household.name}</Text>
+                    <Group gap="xs">
+                      <Button size="xs" variant="light" onClick={() => {
+                        const hid = editingParticipant.household!.id;
+                        setEditModalOpen(false);
+                        setEditingParticipant(null);
+                        setEditHouseholdId(hid);
+                      }}>Edit Household Info</Button>
+                      <Button size="xs" variant="default" onClick={() => {
+                        setEditModalOpen(false);
+                        setSelectedParticipant(editingParticipant);
+                        setEditingParticipant(null);
+                        setAssignModalOpen(true);
+                      }}>Move to Another Household</Button>
+                    </Group>
+                  </Group>
+                </Paper>
+              </div>
+            )}
+          </Stack>
+          <Group justify="flex-end" mt="xl">
+            <Button type="button" variant="default" onClick={() => { setEditModalOpen(false); setEditingParticipant(null); }} disabled={savingDetails}>Cancel</Button>
+            <Button type="submit" disabled={savingDetails} loading={savingDetails}>Save Details</Button>
+          </Group>
+        </form>
+      </Modal>
+
+      {/* Admin edit of household's own info */}
+      <AdminEditHouseholdModal
+        householdId={editHouseholdId}
+        opened={editHouseholdId !== null}
+        onClose={() => setEditHouseholdId(null)}
+        onSaved={(h) => {
+          setResults(results.map(p =>
+            p.household?.id === h.id ? { ...p, household: { ...p.household, name: h.name } } : p
+          ));
+        }}
+      />
+    </Stack>
+  );
+}

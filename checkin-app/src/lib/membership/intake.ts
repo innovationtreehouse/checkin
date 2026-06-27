@@ -1,0 +1,362 @@
+import prisma from "@/lib/prisma";
+import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
+import { getExternalStatus } from "@/lib/membership/external";
+import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
+import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
+
+/**
+ * Membership intake service — the write/read model behind the "Join the
+ * Treehouse" application flow. All mutations are scoped to the caller's own
+ * household; callers must be a lead of that household (enforced here).
+ *
+ * Intake data lives in the real tables (Household + Participant), so the form
+ * is naturally resumable: returning applicants are re-served their saved data.
+ * A long-lived Membership (status NONE until paid) anchors the per-cycle
+ * MembershipProcess that tracks application progress.
+ */
+
+export class IntakeError extends Error {
+    /**
+     * @param fields  form field keys this error applies to, so the client can
+     *                highlight the offending inputs (e.g. an `incomplete` submit).
+     *                Keys match the intake form: "address", "emergencyContact",
+     *                "primaryName".
+     */
+    constructor(
+        public readonly code: "no_household" | "not_lead" | "already_member" | "no_process" | "incomplete" | "lead_limit",
+        message: string,
+        public readonly fields?: string[],
+    ) {
+        super(message);
+        this.name = "IntakeError";
+    }
+}
+
+/**
+ * A non-fatal thing the save couldn't do, reported back to the form so it can
+ * tell the applicant exactly what did and didn't happen. The rest of the save
+ * still goes through — partial saves are fine as long as they're transparent.
+ */
+export type IntakeRejection = {
+    section: "secondaryParent";
+    code: "lead_limit";
+    message: string;
+};
+
+type ParentInput = { id?: number; name?: string; email?: string; dob?: string | null; allergies?: string | null };
+type ChildInput = { id?: number; name?: string; email?: string | null; dob?: string | null; allergies?: string | null };
+
+export interface IntakeSaveInput {
+    household?: { address?: string; emergencyContactName?: string; emergencyContactPhone?: string };
+    primaryParent?: ParentInput;
+    secondaryParent?: ParentInput | null;
+    children?: ChildInput[];
+}
+
+async function loadUserWithHousehold(userId: number) {
+    return prisma.participant.findUnique({
+        where: { id: userId },
+        include: {
+            householdLeads: true,
+            household: {
+                include: {
+                    participants: { orderBy: { id: "asc" } },
+                    leads: true,
+                    membership: { include: { processes: true } },
+                    emergencyContacts: { orderBy: [{ priority: "asc" }, { id: "asc" }] },
+                },
+            },
+        },
+    });
+}
+
+function assertLead(user: NonNullable<Awaited<ReturnType<typeof loadUserWithHousehold>>>) {
+    if (!user.householdId) throw new IntakeError("no_household", "You must create a household first.");
+    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
+    if (!isLead && !user.sysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
+}
+
+/** Read the caller's current membership/application state, prefilled for the form. */
+export async function getIntakeState(userId: number) {
+    const user = await loadUserWithHousehold(userId);
+    if (!user) throw new IntakeError("no_household", "User not found.");
+
+    const household = user.household;
+    const membership = household?.membership ?? null;
+    // The current in-flight process of any kind (INITIAL or RENEWAL) — anything
+    // not yet ACTIVE. During renewal the membership stays ACTIVE while its RENEWAL
+    // process cycles, so we surface that here rather than the "you're a member" card.
+    const process = membership?.processes
+        .filter((p) => p.status !== "ACTIVE")
+        .sort((a, b) => b.id - a.id)[0] ?? null;
+
+    // Parents/guardians are the household leads; children are non-lead members.
+    const leadIds = new Set((household?.leads ?? []).map((l) => l.participantId));
+    const parents = (household?.participants ?? []).filter((p) => leadIds.has(p.id));
+    const children = (household?.participants ?? []).filter((p) => !leadIds.has(p.id));
+    const primary = parents.find((p) => p.id === userId) ?? null;
+    const secondary = parents.find((p) => p.id !== userId) ?? null;
+
+    const shape = (p: { id: number; name: string | null; email: string | null; dob: Date | null; allergies: string | null }) => ({
+        id: p.id,
+        name: p.name,
+        email: p.email,
+        dob: p.dob ? p.dob.toISOString().slice(0, 10) : null,
+        allergies: p.allergies,
+    });
+
+    const external = process ? await getExternalStatus(process) : null;
+
+    return {
+        hasHousehold: !!household,
+        membershipStatus: membership?.status ?? null,
+        process: process ? { id: process.id, kind: process.kind, status: process.status } : null,
+        external,
+        prefill: {
+            household: household
+                ? {
+                      name: household.name,
+                      address: household.address,
+                      // The primary (lowest-priority) contact backs the single-field
+                      // form. Shown even when flagged invalid so the lead can fix it.
+                      emergencyContactName: household.emergencyContacts[0]?.name ?? null,
+                      emergencyContactPhone: household.emergencyContacts[0]?.phone ?? null,
+                  }
+                : null,
+            primaryParent: primary ? shape(primary) : null,
+            secondaryParent: secondary ? shape(secondary) : null,
+            children: children.map(shape),
+        },
+    };
+}
+
+/**
+ * Begin (or resume) an INITIAL application for the caller's household. Ensures a
+ * household exists, anchors a Membership (status NONE), and opens a
+ * MembershipProcess at INTAKE. Idempotent: an in-flight process is returned as-is.
+ */
+export async function startIntake(userId: number) {
+    let user = await loadUserWithHousehold(userId);
+    if (!user) throw new IntakeError("no_household", "User not found.");
+
+    // Ensure a household exists, with the caller as a lead + parent.
+    if (!user.householdId) {
+        const lastName = (user.name || "").trim().split(/\s+/).pop() || "";
+        await prisma.household.create({
+            data: {
+                name: lastName ? `${lastName} Household` : "Household",
+                leads: { create: { participantId: userId } },
+                participants: { connect: { id: userId } },
+            },
+        });
+        user = await loadUserWithHousehold(userId);
+        if (!user) throw new IntakeError("no_household", "User not found.");
+    }
+
+    assertLead(user);
+    const householdId = user.householdId!;
+
+    if (user.household?.membership?.status === "ACTIVE") {
+        throw new IntakeError("already_member", "Your household is already an active member.");
+    }
+
+    const existing = user.household?.membership?.processes
+        .filter((p) => p.kind === "INITIAL" && IN_FLIGHT_INITIAL_STATUSES.includes(p.status))
+        .sort((a, b) => b.id - a.id)[0];
+    if (existing) return existing;
+
+    const membership = await prisma.membership.upsert({
+        where: { householdId },
+        create: { householdId, status: "NONE" },
+        update: {},
+    });
+
+    const process = await prisma.membershipProcess.create({
+        data: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
+    });
+
+    await prisma.auditLog.create({
+        data: {
+            actorId: userId,
+            action: "CREATE",
+            tableName: "MembershipProcess",
+            affectedEntityId: process.id,
+            newData: JSON.stringify({ membershipId: membership.id, kind: "INITIAL", status: "INTAKE" }),
+        },
+    });
+
+    return process;
+}
+
+/** Persist intake form data onto the caller's household + participants. Resumable; never deletes. */
+export async function saveIntake(userId: number, input: IntakeSaveInput) {
+    const user = await loadUserWithHousehold(userId);
+    if (!user) throw new IntakeError("no_household", "User not found.");
+    assertLead(user);
+    const householdId = user.householdId!;
+    const householdParticipantIds = new Set((user.household?.participants ?? []).map((p) => p.id));
+
+    const toDate = (d?: string | null) => (d ? new Date(d) : null);
+
+    // Promote a guardian to household lead. The per-household cap (#269) is a
+    // soft stop here, not a hard failure: the guardian's other details are still
+    // saved (above), and the rest of the form (children) still saves below. We
+    // collect the skipped promotion and hand it back so the form can say exactly
+    // what happened, instead of failing the whole save with a single error.
+    const rejections: IntakeRejection[] = [];
+    const addLeadOrRecord = async (participantId: number) => {
+        try {
+            await addHouseholdLead(prisma, householdId, participantId);
+        } catch (e) {
+            if (e instanceof HouseholdLeadLimitError) {
+                rejections.push({
+                    section: "secondaryParent",
+                    code: "lead_limit",
+                    message: `We saved this person's details, but your household already lists the maximum of ${MAX_HOUSEHOLD_LEADS} parents/guardians, so they weren't added as a second guardian. Update or remove an existing parent/guardian to change that.`,
+                });
+                return;
+            }
+            throw e;
+        }
+    };
+
+    if (input.household) {
+        if (input.household.address !== undefined) {
+            await prisma.household.update({ where: { id: householdId }, data: { address: input.household.address } });
+        }
+        // Emergency contact lives in its own table now; the single-field intake
+        // form maps onto the household's primary contact. Tolerant of partial
+        // saves; rejects (direction A) a contact that is a household member.
+        if (input.household.emergencyContactName !== undefined || input.household.emergencyContactPhone !== undefined) {
+            await upsertPrimaryContact(prisma, householdId, {
+                name: input.household.emergencyContactName,
+                phone: input.household.emergencyContactPhone,
+            });
+        }
+    }
+
+    // Primary parent is always the caller.
+    if (input.primaryParent) {
+        // The primary applicant is already a household lead (set at startIntake).
+        await prisma.participant.update({
+            where: { id: userId },
+            data: {
+                ...(input.primaryParent.name !== undefined && { name: input.primaryParent.name }),
+                ...(input.primaryParent.dob !== undefined && { dob: toDate(input.primaryParent.dob) }),
+                ...(input.primaryParent.allergies !== undefined && { allergies: input.primaryParent.allergies }),
+            },
+        });
+    }
+
+    // Secondary parent: update if it belongs to this household, else create.
+    if (input.secondaryParent) {
+        const sp = input.secondaryParent;
+        if (sp.id && householdParticipantIds.has(sp.id)) {
+            await prisma.participant.update({
+                where: { id: sp.id },
+                data: {
+                    ...(sp.name !== undefined && { name: sp.name }),
+                    ...(sp.dob !== undefined && { dob: toDate(sp.dob) }),
+                    ...(sp.allergies !== undefined && { allergies: sp.allergies }),
+                },
+            });
+            // A second guardian is a household lead (parent).
+            await addLeadOrRecord(sp.id);
+        } else if (sp.name || sp.email) {
+            const created = await prisma.participant.create({
+                data: {
+                    householdId,
+                    name: sp.name ?? null,
+                    ...(sp.email && { email: sp.email.toLowerCase() }),
+                    dob: toDate(sp.dob),
+                    allergies: sp.allergies ?? null,
+                },
+            });
+            await addLeadOrRecord(created.id);
+        }
+    }
+
+    // Children are non-lead household members. Update existing (own household
+    // only), create the rest. Never delete; never add a HouseholdLead row.
+    for (const child of input.children ?? []) {
+        if (child.id && householdParticipantIds.has(child.id)) {
+            await prisma.participant.update({
+                where: { id: child.id },
+                data: {
+                    ...(child.name !== undefined && { name: child.name }),
+                    ...(child.dob !== undefined && { dob: toDate(child.dob) }),
+                    ...(child.allergies !== undefined && { allergies: child.allergies }),
+                },
+            });
+        } else if (child.name) {
+            await prisma.participant.create({
+                data: {
+                    householdId,
+                    name: child.name,
+                    ...(child.email && { email: child.email.toLowerCase() }),
+                    dob: toDate(child.dob),
+                    allergies: child.allergies ?? null,
+                },
+            });
+        }
+    }
+
+    // Members added in this save (children / second parent) may collide with an
+    // existing emergency contact — re-evaluate and flag (direction B).
+    await reconcileHouseholdConflicts(prisma, householdId);
+
+    return { state: await getIntakeState(userId), rejections };
+}
+
+/**
+ * Submit a completed intake: validate the minimum required data and advance the
+ * in-flight INITIAL process from INTAKE to EXTERNAL (contract + BG consent).
+ */
+export async function submitIntake(userId: number) {
+    const user = await loadUserWithHousehold(userId);
+    if (!user) throw new IntakeError("no_household", "User not found.");
+    assertLead(user);
+
+    const household = user.household!;
+    const process = household.membership?.processes
+        .filter((p) => p.kind === "INITIAL" && p.status === "INTAKE")
+        .sort((a, b) => b.id - a.id)[0];
+    if (!process) throw new IntakeError("no_process", "No application is awaiting your information.");
+
+    // Each missing requirement carries the form field key to highlight + a label
+    // for the summary message.
+    const missing: { field: string; label: string }[] = [];
+    if (!household.address?.trim()) missing.push({ field: "address", label: "home address" });
+    // A household must keep >= 1 valid (non-member, complete) emergency contact.
+    const hasValidContact = household.emergencyContacts.some(
+        (c) => c.conflictParticipantId === null && c.name.trim() && c.phone.trim(),
+    );
+    if (!hasValidContact) missing.push({ field: "emergencyContact", label: "a valid emergency contact (someone outside the household)" });
+    const primary = household.participants.find((p) => p.id === userId);
+    if (!primary?.name?.trim()) missing.push({ field: "primaryName", label: "primary parent name" });
+    if (missing.length) {
+        throw new IntakeError(
+            "incomplete",
+            `Please complete: ${missing.map((m) => m.label).join(", ")}.`,
+            missing.map((m) => m.field),
+        );
+    }
+
+    const advanced = await prisma.membershipProcess.update({
+        where: { id: process.id },
+        data: { status: "PENDING_EXTERNAL_ACTION", stageEnteredAt: new Date() },
+    });
+
+    await prisma.auditLog.create({
+        data: {
+            actorId: userId,
+            action: "EDIT",
+            tableName: "MembershipProcess",
+            affectedEntityId: process.id,
+            oldData: JSON.stringify({ status: "INTAKE" }),
+            newData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION" }),
+        },
+    });
+
+    return advanced;
+}
