@@ -15,8 +15,6 @@ type AdminUser = { sysadmin?: boolean; boardMember?: boolean; keyholder?: boolea
 function adminTodoCountFor(href: string, counts: TodoCounts | null): number {
   if (!counts?.admin) return 0;
   switch (href) {
-    case "/admin/membership":
-      return counts.admin.membership;
     case "/admin/programs/pending":
       return counts.admin.programsPending;
     case "/admin/trusted-adults":

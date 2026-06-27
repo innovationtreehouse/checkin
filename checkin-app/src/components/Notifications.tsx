@@ -48,7 +48,7 @@ export default function Notifications() {
       {m.blocked > 0 && (
         <Button
           component={Link}
-          href="/admin/membership"
+          href="/membership-ops/applications"
           variant="light"
           color="red"
           rightSection={<Badge color="red" circle>{m.blocked}</Badge>}

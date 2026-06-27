@@ -30,10 +30,6 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
   {
     title: "People",
     links: [
-      { name: "Participants", href: "/admin/participants", icon: "👥", description: "Browse and manage participant profiles." },
-      { name: "Merge Participants", href: "/admin/participants/merge", icon: "🔗", description: "Combine duplicate participant records." },
-      { name: "Manage Memberships", href: "/admin/households", icon: "🏠", description: "Grant or revoke household facility membership." },
-      { name: "Membership Applications", href: "/admin/membership", icon: "📋", description: "Review and approve membership applications." },
       { name: "Membership Settings", href: "/admin/membership/settings", icon: "⚙️", description: "Configure dues and membership-year settings." },
       { name: "Pending Participants", href: "/admin/programs/pending", icon: "⏳", description: "Approve pending payment-plan requests." },
       { name: "Emergency Contacts", href: "/admin/emergency-contacts", icon: "🚑", description: "View participant emergency contacts." },

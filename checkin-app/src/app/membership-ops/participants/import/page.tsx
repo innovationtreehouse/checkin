@@ -120,7 +120,7 @@ export default function BulkImportParticipants() {
 
   return (
     <Stack maw={900} mx="auto">
-      <AdminPageHeader title="Bulk Import Participants" back={{ href: '/admin', label: '← Back to Admin' }} />
+      <AdminPageHeader title="Bulk Import Participants" back={{ href: '/membership-ops', label: '← Membership Ops' }} />
 
       {/* Step 1: Upload */}
       {!preview && !importResult && (

@@ -36,7 +36,7 @@ describe('middleware household-denial gate', () => {
     it('redirects a denied session to /access-denied', async () => {
         mockToken({ denied: true });
 
-        const res = await middleware(reqFor('/admin/households')) as unknown as { kind: string; location: string };
+        const res = await middleware(reqFor('/membership-ops/households')) as unknown as { kind: string; location: string };
 
         expect(res.kind).toBe('redirect');
         expect(res.location).toBe('http://localhost:4000/access-denied');
@@ -53,7 +53,7 @@ describe('middleware household-denial gate', () => {
     it('does not send a non-denied session to /access-denied', async () => {
         mockToken({ denied: false, hd: 'example.org', emailVerified: true });
 
-        const res = await middleware(reqFor('/admin/households')) as unknown as { location: string | null };
+        const res = await middleware(reqFor('/membership-ops/households')) as unknown as { location: string | null };
 
         expect(res.location).not.toBe('http://localhost:4000/access-denied');
     });

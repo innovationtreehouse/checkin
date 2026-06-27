@@ -121,7 +121,7 @@ function NewParticipantForm() {
   return (
     <Container size="md" py="md">
       <Card withBorder radius="md" padding="lg">
-        <AdminPageHeader title="Register New User" back={{ href: '/admin', label: '← Admin Hub' }} mb="md" />
+        <AdminPageHeader title="Register New User" back={{ href: '/membership-ops', label: '← Membership Ops' }} mb="md" />
 
         <Text c="dimmed" mb="lg">
           System Administrators can manually register a new participant into the database. When they

@@ -100,7 +100,7 @@ export default function AdminHouseholdsPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Manage Memberships" back={{ href: '/admin', label: '← Admin Hub' }} />
+      <AdminPageHeader title="Manage Memberships" back={{ href: '/membership-ops', label: '← Membership Ops' }} />
 
       <MembershipTabs active="households" />
 
@@ -166,7 +166,7 @@ export default function AdminHouseholdsPage() {
                       <Button
                         size="xs"
                         variant="light"
-                        onClick={() => router.push(`/admin/participants/new?householdId=${household.id}`)}
+                        onClick={() => router.push(`/membership-ops/participants/new?householdId=${household.id}`)}
                       >
                         + Add Participant
                       </Button>

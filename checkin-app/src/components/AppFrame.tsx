@@ -26,6 +26,7 @@ import {
   IconSun,
   IconTool,
   IconUser,
+  IconUsers,
 } from '@tabler/icons-react';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -77,6 +78,12 @@ const NAV_ITEMS: NavItem[] = [
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
   },
   {
+    href: '/membership-ops',
+    label: 'Membership Ops',
+    icon: <IconUsers size={18} />,
+    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+  },
+  {
     href: '/admin',
     label: 'Admin Ops',
     icon: <IconSettings size={18} />,
@@ -96,6 +103,9 @@ function todoCountFor(href: string, counts: TodoCounts | null): number {
       return counts.member.household.length;
     case '/programs':
       return counts.member.programs.length;
+    case '/membership-ops':
+      // Pending membership applications awaiting board review.
+      return counts.admin ? counts.admin.membership : 0;
     case '/admin':
       // Top-level roll-up of the board's queue; per-queue badges live in the admin sub-nav.
       return counts.admin
