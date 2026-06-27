@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
+import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
 import { createContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 
 interface ParentInput {
@@ -25,11 +26,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
         }
 
+        // Capacity is counted under a row lock inside the registration
+        // transaction below, so no _count is fetched here.
         const currentProgram = await prisma.program.findUnique({
-            where: { id: programId },
-            include: {
-                _count: { select: { participants: true } }
-            }
+            where: { id: programId }
         });
 
         if (!currentProgram) {
@@ -64,10 +64,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             }
         }
 
-        // Check Capacity
-        if (currentProgram.maxParticipants !== null && currentProgram._count.participants + participants.length > currentProgram.maxParticipants) {
-            return NextResponse.json({ error: `Not enough open spots. Only ${currentProgram.maxParticipants - currentProgram._count.participants} spots left.` }, { status: 400 });
-        }
+        // Capacity is re-checked under a row lock INSIDE the transaction below
+        // (this endpoint is public/unauthenticated, so it is trivially raced).
+        // The _count read above is stale by the time we write.
 
         // Check Enrollment Status
         if (currentProgram.enrollmentStatus === 'CLOSED') {
@@ -109,6 +108,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         // Transactionally create everything
         const result = await prisma.$transaction(async (tx) => {
+            // 0. Lock the program and re-check capacity against the committed
+            //    enrollment count, serializing concurrent registrations.
+            await lockProgramAndCheckCapacity(tx, programId, participants.length, currentProgram.maxParticipants);
+
             // 1. Create Household
             const household = await tx.household.create({
                 data: {
@@ -210,6 +213,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         });
 
     } catch (error) {
+        if (error instanceof ProgramCapacityError) {
+            return NextResponse.json({ error: `Not enough open spots. Only ${error.spotsLeft} spots left.` }, { status: 400 });
+        }
         if (error instanceof HouseholdLeadLimitError || error instanceof EmergencyContactError) {
             return NextResponse.json({ error: error.message }, { status: 400 });
         }
