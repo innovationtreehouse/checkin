@@ -285,10 +285,7 @@ export default function HouseholdPage() {
       <Stack>
         <TodoCard />
         <Card withBorder radius="md" padding="lg">
-          <Group justify="space-between" align="center" wrap="wrap" mb="md">
-            <Title order={1}>{household?.name || 'My Household'}</Title>
-            <Button variant="default" onClick={() => router.push('/')}>← Back</Button>
-          </Group>
+          <Title order={1} mb="md">{household?.name || 'My Household'}</Title>
 
           {household && (
             household.membership?.status === 'ACTIVE' ? (

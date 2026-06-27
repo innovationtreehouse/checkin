@@ -113,7 +113,7 @@ export async function createShopifyProgramVariants(name: string, memberPrice: nu
         variants.push({
             product_id: productId,
             option1: "Member",
-            price: (memberPrice).toFixed(2),
+            price: (memberPrice / 100).toFixed(2),
             requires_shipping: false,
             inventory_management: maxParticipants ? 'shopify' : null,
             inventory_policy: maxParticipants ? 'deny' : 'continue',
@@ -124,7 +124,7 @@ export async function createShopifyProgramVariants(name: string, memberPrice: nu
         variants.push({
             product_id: productId,
             option1: "Non-Member",
-            price: (nonMemberPrice).toFixed(2),
+            price: (nonMemberPrice / 100).toFixed(2),
             requires_shipping: false,
             inventory_management: maxParticipants ? 'shopify' : null,
             inventory_policy: maxParticipants ? 'deny' : 'continue',

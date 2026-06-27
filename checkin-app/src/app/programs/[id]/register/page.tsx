@@ -3,6 +3,7 @@
 import { use, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alert, Button, Card, Center, Container, Group, Loader, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { formatUSD } from '@inventory/money';
 
 type RegProgram = {
   name: string;
@@ -171,7 +172,7 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
           <Text c="dimmed" fz="lg">{program.name}</Text>
           {program.nonMemberPrice !== null && (
             <Text c="green" fz="lg">
-              Cost: ${program.nonMemberPrice} {participants.length > 1 ? `× ${participants.length}` : ''}
+              Cost: {formatUSD(program.nonMemberPrice)} {participants.length > 1 ? `× ${participants.length}` : ''}
             </Text>
           )}
         </Stack>

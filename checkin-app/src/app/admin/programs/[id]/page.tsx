@@ -108,8 +108,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         setEnrollmentStatus(data.enrollmentStatus || "CLOSED");
         setMemberOnly(Boolean(data.memberOnly));
         setLeadMentorIdInput(data.leadMentorId !== null ? String(data.leadMentorId) : "");
-        setMemberPrice(data.memberPrice !== null ? String(data.memberPrice) : "");
-        setNonMemberPrice(data.nonMemberPrice !== null ? String(data.nonMemberPrice) : "");
+        setMemberPrice(data.memberPrice !== null ? String(data.memberPrice / 100) : "");
+        setNonMemberPrice(data.nonMemberPrice !== null ? String(data.nonMemberPrice / 100) : "");
         setMentorSearch(data.leadMentor ? `${data.leadMentor.name || 'Unnamed'} (${data.leadMentor.email})` : "");
         setIsEditingMentor(false);
       } else if (res.status === 404) {
@@ -205,8 +205,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
           maxParticipants: maxParticipants ? parseInt(maxParticipants) : null,
           phase, enrollmentStatus, memberOnly,
           leadMentorId: leadMentorIdInput ? parseInt(leadMentorIdInput) : null,
-          memberPrice: memberPrice ? parseInt(memberPrice) : null,
-          nonMemberPrice: nonMemberPrice ? parseInt(nonMemberPrice) : null,
+          memberPrice: memberPrice || null,
+          nonMemberPrice: nonMemberPrice || null,
         })
       });
       if (res.ok) {

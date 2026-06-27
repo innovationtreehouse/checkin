@@ -280,6 +280,7 @@ export async function createProgram(prisma: Db): Promise<string> {
         },
     });
     await prisma.fee.create({
+        // Integer cents: $25.00 member / $40.00 non-member.
         data: { programId: program.id, name: "Materials", memberPrice: 2500, nonMemberPrice: 4000 },
     });
     const enrollees = await prisma.participant.findMany({ take: 2, orderBy: { id: "asc" } });

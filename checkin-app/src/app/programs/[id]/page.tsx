@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Alert, Anchor, Button, Card, Center, Container, Divider, Group, Loader, Radio, Stack, Text, Title } from '@mantine/core';
 import { formatDate } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
+import { formatUSD } from '@inventory/money';
 
 type ProgramDetail = {
   id: number;
@@ -255,8 +256,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             {(program.memberPrice !== null || program.nonMemberPrice !== null) && (
               <>
                 <Divider />
-                {program.memberPrice !== null && <Text><strong>Member Price:</strong> ${program.memberPrice}</Text>}
-                {program.nonMemberPrice !== null && <Text><strong>Non-Member Price:</strong> ${program.nonMemberPrice}</Text>}
+                {program.memberPrice !== null && <Text><strong>Member Price:</strong> {formatUSD(program.memberPrice)}</Text>}
+                {program.nonMemberPrice !== null && <Text><strong>Non-Member Price:</strong> {formatUSD(program.nonMemberPrice)}</Text>}
                 {(!program.memberPrice && !program.nonMemberPrice) && <Text><strong>Cost:</strong> Free</Text>}
               </>
             )}
