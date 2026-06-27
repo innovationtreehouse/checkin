@@ -105,8 +105,9 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Lead Mentor is required" }, { status: 400 });
         }
 
-        const mPrice = dollarsToCentsOrNull(memberPrice);
-        const nmPrice = dollarsToCentsOrNull(nonMemberPrice);
+        // Client sends a raw dollar string; tolerate a number too. Convert to cents here.
+        const mPrice = dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined);
+        const nmPrice = dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined);
         const maxPart = maxParticipants ? parseInt(maxParticipants, 10) : null;
 
         // Try to create Shopify entities
