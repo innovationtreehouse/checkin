@@ -305,6 +305,8 @@ model MembershipProcess {
   /// @sensitivity:internal
   zohoEnvelopeId        String?
   /// @sensitivity:internal
+  zohoActionId          String?
+  /// @sensitivity:internal
   contractSignedAt      DateTime?
   /// @sensitivity:internal
   bgConsentAt           DateTime?
