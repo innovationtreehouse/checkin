@@ -47,7 +47,6 @@ export async function GET(req: NextRequest) {
                             id: true,
                             email: true,
                             name: true,
-                            dob: true,
                             toolStatuses: {
                                 select: { toolId: true, level: true }
                             }
@@ -63,7 +62,6 @@ export async function GET(req: NextRequest) {
                     id: true,
                     email: true,
                     name: true,
-                    dob: true,
                     toolStatuses: {
                         select: { toolId: true, level: true }
                     }
@@ -71,29 +69,12 @@ export async function GET(req: NextRequest) {
             });
         }
 
-        const participantsWithAgeCategory = participantsData.map((participant) => {
-            const dob = participant.dob;
-            let ageCategory = "ADULT";
-
-            if (dob) {
-                const birthDate = new Date(dob);
-                const today = new Date();
-                let age = today.getFullYear() - birthDate.getFullYear();
-                const m = today.getMonth() - birthDate.getMonth();
-                if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-                if (age < 18) {
-                    ageCategory = "STUDENT";
-                }
-            }
-
-            return {
-                id: participant.id,
-                email: participant.email,
-                name: participant.name,
-                toolStatuses: participant.toolStatuses,
-                ageCategory,
-            };
-        });
+        const participants = participantsData.map((participant) => ({
+            id: participant.id,
+            email: participant.email,
+            name: participant.name,
+            toolStatuses: participant.toolStatuses,
+        }));
 
         const tools = await prisma.tool.findMany({
             orderBy: {
@@ -105,7 +86,7 @@ export async function GET(req: NextRequest) {
             }
         });
 
-        return NextResponse.json({ participants: participantsWithAgeCategory, tools });
+        return NextResponse.json({ participants, tools });
     } catch (error) {
         console.error("Certifications fetch error:", error);
         return NextResponse.json(
