@@ -330,11 +330,40 @@ describe('stripValue — nested EmergencyContact (the leak)', () => {
     });
 });
 
-describe('stripValue — _count preservation', () => {
-    it('preserves Prisma _count aggregate', () => {
+describe('stripValue — _count gating', () => {
+    it('preserves _count for a relation the view can see (Visit has a public field)', () => {
         const row = { id: 5, name: 'Me', _count: { visits: 3 } };
         const out = stripValue('Participant', row, ['public'], ctx({ selfId: 5 })) as Record<string, unknown>;
         expect(out._count).toEqual({ visits: 3 });
+    });
+
+    it('strips a _count the low-privilege view has no grant on', () => {
+        // RawBadgeEvent has no public field — its fields are personal/internal.
+        // A view with only `public` cannot see any RawBadgeEvent field, so the
+        // count of a Participant's rawBadgeEvents must not leak.
+        const row = { id: 5, name: 'Me', _count: { rawBadgeEvents: 9 } };
+        const out = stripValue('Participant', row, ['public'], ctx({ selfId: 5 })) as Record<string, unknown>;
+        expect(out._count).toBeUndefined();
+    });
+
+    it('passes that same _count to an authorized view', () => {
+        // `their_own:personal` on the caller's own row grants RawBadgeEvent's
+        // personal-tier fields (time/location), so the count is now visible.
+        const row = { id: 5, name: 'Me', _count: { rawBadgeEvents: 9 } };
+        const out = stripValue('Participant', row, ['their_own:personal', 'public'], ctx({ selfId: 5 })) as Record<string, unknown>;
+        expect(out._count).toEqual({ rawBadgeEvents: 9 });
+    });
+
+    it('strips only the ungranted keys from a mixed _count', () => {
+        const row = { id: 5, name: 'Me', _count: { visits: 3, rawBadgeEvents: 9 } };
+        const out = stripValue('Participant', row, ['public'], ctx({ selfId: 5 })) as Record<string, unknown>;
+        expect(out._count).toEqual({ visits: 3 });
+    });
+
+    it('drops unknown relation keys (fail-closed)', () => {
+        const row = { id: 5, name: 'Me', _count: { notARelation: 7 } };
+        const out = stripValue('Participant', row, ['public'], ctx({ selfId: 5 })) as Record<string, unknown>;
+        expect(out._count).toBeUndefined();
     });
 });
 

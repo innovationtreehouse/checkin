@@ -72,5 +72,9 @@ function stripForOutbound(
         if (!(relName in obj)) continue;
         result[relName] = stripForOutbound(relInfo.model, obj[relName], allowedTiers);
     }
+    // ponytail: no `_count` handling — it is intentionally not copied, so counts
+    // never leave on the wire (fail-closed). If a future surface needs `_count`,
+    // gate each key like the stripper does: pass only relations with a visible
+    // field, here meaning the target model has a field in `allowedTiers`.
     return result;
 }
