@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
+import { config } from "@/lib/config";
 import { verifyZohoToken, parseZohoWebhook, ZOHO_WEBHOOK_HEADER } from "@/lib/membership/contract/zoho";
 import { findProcessByEnvelope, markContractSigned } from "@/lib/membership/external";
 
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
  * which may advance the application to PENDING_BG_REVIEW. We never read contract content.
  */
 export async function POST(req: Request) {
-    if (!process.env.ZOHO_WEBHOOK_SECRET) {
+    if (!config.zohoWebhookSecret()) {
         logger.error("Zoho webhook received but ZOHO_WEBHOOK_SECRET is not configured.");
         return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
     }
