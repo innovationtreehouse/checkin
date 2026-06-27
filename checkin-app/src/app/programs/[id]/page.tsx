@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Alert, Anchor, Button, Card, Center, Container, Divider, Group, Loader, Radio, Stack, Text, Title } from '@mantine/core';
 import { formatDate } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
-import { formatUSD } from '@inventory/money';
+import { formatCents } from '@inventory/money';
 
 type ProgramDetail = {
   id: number;
@@ -17,8 +17,8 @@ type ProgramDetail = {
   leadMentor?: { name: string | null; email: string } | null;
   participants: { participantId: number, status?: string }[];
   enrollmentStatus: string;
-  memberPrice: number | null;
-  nonMemberPrice: number | null;
+  memberPriceCents: number | null;
+  nonMemberPriceCents: number | null;
   shopifyMemberVariantId: string | null;
   shopifyNonMemberVariantId: string | null;
   minAge: number | null;
@@ -147,7 +147,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       return;
     }
 
-    const isPayingOnShopify = !override && (program?.memberPrice || program?.nonMemberPrice);
+    const isPayingOnShopify = !override && (program?.memberPriceCents || program?.nonMemberPriceCents);
 
     setEnrolling(true);
     setMessage("");
@@ -220,7 +220,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const user = session?.user as SessionUser | undefined;
   const canManage = !!(session && (user?.sysadmin || user?.boardMember || user?.id === program.leadMentorId));
   const isClosed = program.enrollmentStatus === 'CLOSED';
-  const hasPrice = !!(program.memberPrice || program.nonMemberPrice);
+  const hasPrice = !!(program.memberPriceCents || program.nonMemberPriceCents);
   const alreadySelected = selectedParticipantId !== null && program.participants.some(p => p.participantId === selectedParticipantId);
 
   return (
@@ -253,12 +253,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   program.enrollmentStatus === 'WHITELIST' ? <Text component="span" c="yellow">Invite Only</Text> :
                     program.enrollmentStatus}
             </Text>
-            {(program.memberPrice !== null || program.nonMemberPrice !== null) && (
+            {(program.memberPriceCents !== null || program.nonMemberPriceCents !== null) && (
               <>
                 <Divider />
-                {program.memberPrice !== null && <Text><strong>Member Price:</strong> {formatUSD(program.memberPrice)}</Text>}
-                {program.nonMemberPrice !== null && <Text><strong>Non-Member Price:</strong> {formatUSD(program.nonMemberPrice)}</Text>}
-                {(!program.memberPrice && !program.nonMemberPrice) && <Text><strong>Cost:</strong> Free</Text>}
+                {program.memberPriceCents !== null && <Text><strong>Member Price:</strong> {formatCents(program.memberPriceCents)}</Text>}
+                {program.nonMemberPriceCents !== null && <Text><strong>Non-Member Price:</strong> {formatCents(program.nonMemberPriceCents)}</Text>}
+                {(!program.memberPriceCents && !program.nonMemberPriceCents) && <Text><strong>Cost:</strong> Free</Text>}
               </>
             )}
           </Stack>

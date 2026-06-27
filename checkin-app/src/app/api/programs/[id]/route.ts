@@ -105,8 +105,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             ...(maxAge !== undefined && { maxAge }),
             ...(maxParticipants !== undefined && { maxParticipants }),
             ...(leadMentorNotificationSettings !== undefined && { leadMentorNotificationSettings }),
-            ...(memberPrice !== undefined && { memberPrice: dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined) }),
-            ...(nonMemberPrice !== undefined && { nonMemberPrice: dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined) }),
+            ...(memberPrice !== undefined && { memberPriceCents: dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined) }),
+            ...(nonMemberPrice !== undefined && { nonMemberPriceCents: dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined) }),
         };
 
         const updatedProgram = await prisma.program.update({

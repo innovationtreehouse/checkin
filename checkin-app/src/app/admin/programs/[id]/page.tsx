@@ -38,8 +38,8 @@ type ProgramDetail = {
   volunteers: { participantId: number; isCore: boolean; participant: { name: string | null; email: string } }[];
   events: { id: number; name: string; start: string; end: string; attendanceConfirmedAt: string | null }[];
   leadMentor: { name: string | null; email: string } | null;
-  memberPrice: number | null;
-  nonMemberPrice: number | null;
+  memberPriceCents: number | null;
+  nonMemberPriceCents: number | null;
   shopifyProductId: string | null;
 };
 
@@ -108,8 +108,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         setEnrollmentStatus(data.enrollmentStatus || "CLOSED");
         setMemberOnly(Boolean(data.memberOnly));
         setLeadMentorIdInput(data.leadMentorId !== null ? String(data.leadMentorId) : "");
-        setMemberPrice(data.memberPrice !== null ? String(data.memberPrice / 100) : "");
-        setNonMemberPrice(data.nonMemberPrice !== null ? String(data.nonMemberPrice / 100) : "");
+        setMemberPrice(data.memberPriceCents !== null ? String(data.memberPriceCents / 100) : "");
+        setNonMemberPrice(data.nonMemberPriceCents !== null ? String(data.nonMemberPriceCents / 100) : "");
         setMentorSearch(data.leadMentor ? `${data.leadMentor.name || 'Unnamed'} (${data.leadMentor.email})` : "");
         setIsEditingMentor(false);
       } else if (res.status === 404) {
@@ -323,7 +323,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
   const phaseBadge = PHASE_BADGE[program.phase];
   // Pricing is fixed at creation; derive rather than track as state.
-  const isFree = program.memberPrice === null && program.nonMemberPrice === null;
+  const isFree = program.memberPriceCents === null && program.nonMemberPriceCents === null;
 
   const downloadQr = () => {
     const url = `${window.location.origin}/programs/${program.id}`;

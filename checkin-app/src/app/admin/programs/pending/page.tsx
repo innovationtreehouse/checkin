@@ -10,7 +10,7 @@ import { AlertBanner } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { formatDateTime } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
-import { formatUSD } from '@inventory/money';
+import { formatCents } from '@inventory/money';
 
 type PaymentPlanRequest = {
   programId: number;
@@ -24,8 +24,8 @@ type PaymentPlanRequest = {
   program: {
     id: number;
     name: string;
-    memberPrice: number | null;
-    nonMemberPrice: number | null;
+    memberPriceCents: number | null;
+    nonMemberPriceCents: number | null;
   };
 };
 
@@ -116,7 +116,7 @@ export default function PaymentPlansPage() {
         <>
           <Text fw={500}>{req.program.name}</Text>
           <Text size="sm" c="dimmed">
-            Price: M {formatUSD(req.program.memberPrice)} / NM {formatUSD(req.program.nonMemberPrice)}
+            Price: M {formatCents(req.program.memberPriceCents)} / NM {formatCents(req.program.nonMemberPriceCents)}
           </Text>
         </>
       ),
