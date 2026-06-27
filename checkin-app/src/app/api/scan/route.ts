@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
-import { processCheckin, processCheckout } from "@/lib/scan-service";
+import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/scan-service";
 import { logBackendError } from "@/lib/logger";
 import { config } from "@/lib/config";
 
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
         // and branches correctly. The lock auto-releases on commit/rollback.
         const authType = auth.type;
 
-        return await prisma.$transaction(async (tx) => {
+        const res = await prisma.$transaction(async (tx) => {
             // Per-participant lock. Serializes only same-participant scans;
             // different participants get different lock keys and never block.
             // $executeRaw (not $queryRaw): pg_advisory_xact_lock returns `void`,
@@ -139,6 +139,15 @@ export async function POST(req: NextRequest) {
             maxWait: 5000,
             timeout: 15000,
         });
+
+        // Facility-wide close runs here, AFTER the per-participant transaction
+        // commits and the advisory lock is released. Keeping the sweep + email
+        // kick out of the locked section means a last-keyholder close no longer
+        // blocks concurrent scans for other participants. No-op unless the
+        // response reports facilityClosed.
+        await finalizeFacilityClose(res);
+
+        return res;
     } catch (error) {
         console.error("Scan processing error:", error);
         await logBackendError(error, "POST /api/scan");
