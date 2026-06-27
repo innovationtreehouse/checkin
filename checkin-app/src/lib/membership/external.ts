@@ -62,26 +62,40 @@ export async function getExternalStatus(process: {
     };
 }
 
-/** If both external actions are done and we're still in EXTERNAL, advance to PENDING_BG_REVIEW. */
+/**
+ * If both external actions are done and we're still in EXTERNAL, advance to
+ * PENDING_BG_REVIEW. The conditional updateMany (status guard) is the atomic gate:
+ * two concurrent callers (Zoho webhook + board "mark bg consent") both reach here,
+ * but only the one whose updateMany flips PENDING_EXTERNAL_ACTION sees count === 1
+ * — so the audit row and reviewer ping fire exactly once, and a later status
+ * (BLOCKED/PENDING_PAYMENT) is never regressed. Mirrors review.ts `attest`.
+ */
 export async function advanceExternalIfComplete(processId: number) {
     const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
-    if (!process || process.status !== "PENDING_EXTERNAL_ACTION") return process;
+    if (!process) return process;
+    if (process.status !== "PENDING_EXTERNAL_ACTION") return process;
     if (!process.contractSignedAt || !process.bgConsentAt) return process;
 
-    const advanced = await prisma.membershipProcess.update({
-        where: { id: processId },
-        data: { status: "PENDING_BG_REVIEW", stageEnteredAt: new Date() },
+    const advanced = await prisma.$transaction(async (tx) => {
+        const { count } = await tx.membershipProcess.updateMany({
+            where: { id: processId, status: "PENDING_EXTERNAL_ACTION", contractSignedAt: { not: null }, bgConsentAt: { not: null } },
+            data: { status: "PENDING_BG_REVIEW", stageEnteredAt: new Date() },
+        });
+        if (count !== 1) return null; // lost the race or no longer eligible — no audit, no notify
+        await tx.auditLog.create({
+            data: {
+                actorId: SYSTEM_ACTOR,
+                action: "EDIT",
+                tableName: "MembershipProcess",
+                affectedEntityId: processId,
+                oldData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION" }),
+                newData: JSON.stringify({ status: "PENDING_BG_REVIEW" }),
+            },
+        });
+        return tx.membershipProcess.findUnique({ where: { id: processId } });
     });
-    await prisma.auditLog.create({
-        data: {
-            actorId: SYSTEM_ACTOR,
-            action: "EDIT",
-            tableName: "MembershipProcess",
-            affectedEntityId: processId,
-            oldData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION" }),
-            newData: JSON.stringify({ status: "PENDING_BG_REVIEW" }),
-        },
-    });
+    if (!advanced) return prisma.membershipProcess.findUnique({ where: { id: processId } });
+
     // Ping background-check reviewers that an application is ready (log-only until email is configured).
     await notifyReviewers();
     return advanced;
@@ -91,12 +105,19 @@ export async function advanceExternalIfComplete(processId: number) {
 export async function markContractSigned(processId: number, actorId: number = SYSTEM_ACTOR) {
     const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ExternalError("not_found", "Application not found.");
-    if (!process.contractSignedAt) {
-        await prisma.membershipProcess.update({ where: { id: processId }, data: { contractSignedAt: new Date() } });
-        await prisma.auditLog.create({
+    // Conditional on contractSignedAt: null — two concurrent Zoho webhook retries
+    // both see null, but only the winner's updateMany flips it (count === 1), so the
+    // audit row is written once.
+    await prisma.$transaction(async (tx) => {
+        const { count } = await tx.membershipProcess.updateMany({
+            where: { id: processId, contractSignedAt: null },
+            data: { contractSignedAt: new Date() },
+        });
+        if (count !== 1) return;
+        await tx.auditLog.create({
             data: { actorId, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, newData: JSON.stringify({ contractSignedAt: true }) },
         });
-    }
+    });
     return advanceExternalIfComplete(processId);
 }
 
@@ -104,12 +125,17 @@ export async function markContractSigned(processId: number, actorId: number = SY
 export async function markBgConsent(processId: number, actorId: number) {
     const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ExternalError("not_found", "Application not found.");
-    if (!process.bgConsentAt) {
-        await prisma.membershipProcess.update({ where: { id: processId }, data: { bgConsentAt: new Date() } });
-        await prisma.auditLog.create({
+    // Conditional on bgConsentAt: null so concurrent marks write the audit row once.
+    await prisma.$transaction(async (tx) => {
+        const { count } = await tx.membershipProcess.updateMany({
+            where: { id: processId, bgConsentAt: null },
+            data: { bgConsentAt: new Date() },
+        });
+        if (count !== 1) return;
+        await tx.auditLog.create({
             data: { actorId, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, newData: JSON.stringify({ bgConsentAt: true }) },
         });
-    }
+    });
     return advanceExternalIfComplete(processId);
 }
 
