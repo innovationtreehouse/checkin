@@ -10,13 +10,13 @@ export default function AdminEventsIndex() {
     {
       title: "Visit History",
       description: "View and edit past check-in/out records.",
-      link: "/admin/events/visits",
+      link: "/facility/visits",
       icon: "🕒",
     },
     {
       title: "Live Badge Logs",
       description: "Audit real-time RFID tap events across the facility.",
-      link: "/admin/events/badges",
+      link: "/facility/badges",
       icon: "📡",
     },
     {

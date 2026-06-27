@@ -16,6 +16,7 @@ import {
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
+  IconBuildingWarehouse,
   IconCalendarEvent,
   IconClipboardList,
   IconHome,
@@ -68,6 +69,12 @@ const NAV_ITEMS: NavItem[] = [
       !!u?.sysadmin ||
       !!u?.boardMember ||
       !!u?.toolStatuses?.some((ts) => ts.level === 'MAY_CERTIFY_OTHERS'),
+  },
+  {
+    href: '/facility',
+    label: 'Facility Ops',
+    icon: <IconBuildingWarehouse size={18} />,
+    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
   },
   {
     href: '/admin',

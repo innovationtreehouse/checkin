@@ -173,7 +173,7 @@ export default function PrintBadgesPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Print ID Badges" back={{ href: '/admin', label: '← Back to Admin Hub' }} />
+      <AdminPageHeader title="Print ID Badges" back={{ href: '/facility', label: '← Back to Facility Ops' }} />
 
       <Text c="dimmed">
         Select participants to generate double-sided standard Avery 5390 ID badges.
