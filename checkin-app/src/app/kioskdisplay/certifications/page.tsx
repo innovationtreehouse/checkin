@@ -13,7 +13,6 @@ type Participant = {
   id: number;
   email: string;
   name: string | null;
-  ageCategory?: "ADULT" | "STUDENT";
   toolStatuses: {
     toolId: number;
     level: ToolStatusLevel;
