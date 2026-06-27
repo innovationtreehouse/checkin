@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Card, Center, Container, Group, Loader, Stack, Tabs, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Box, Button, Card, Center, Container, Group, Loader, Stack, Tabs, Text, TextInput, Title } from '@mantine/core';
 
 export default function ShopOpsPage() {
   const { data: session, status } = useSession();
@@ -148,14 +148,29 @@ export default function ShopOpsPage() {
         )}
 
         <Tabs.Panel value="live" pt="lg">
-          <Stack gap="md" align="flex-start">
+          <Stack gap="md">
             <Text c="dimmed">
               View a live matrix of participants currently at the facility and their tool
               certifications.
             </Text>
-            <Button onClick={() => window.open('/kioskdisplay/certifications', '_blank')}>
-              Open Live Certifications Center
-            </Button>
+            {/* ponytail: iframe reuses the kiosk route as-is; embedding the component
+                inline fights its position:absolute inset:0 kiosk layout. */}
+            <Box
+              style={{
+                position: 'relative',
+                width: '100%',
+                height: '70vh',
+                border: '1px solid var(--mantine-color-default-border)',
+                borderRadius: 8,
+                overflow: 'hidden',
+              }}
+            >
+              <iframe
+                src="/kioskdisplay/certifications"
+                title="Live Certifications Center"
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
+              />
+            </Box>
           </Stack>
         </Tabs.Panel>
       </Tabs>
