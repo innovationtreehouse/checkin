@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
+import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -25,11 +26,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return NextResponse.json({ error: "participantId is required" }, { status: 400 });
         }
 
+        // Capacity is counted under a row lock inside the enroll transaction
+        // below, so no _count is fetched here.
         const currentProgram = await prisma.program.findUnique({
-            where: { id: programId },
-            include: {
-                _count: { select: { participants: true } }
-            }
+            where: { id: programId }
         });
         if (!currentProgram) {
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
@@ -67,13 +67,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
              return NextResponse.json({ error: "This bypasses all payment. Are you sure?", requiresOverride: true }, { status: 400 });
         }
 
-        // Validation Checks
-        if (!override || (!isSysAdminOrBoard)) {
-            // Check Capacity
-            if (currentProgram.maxParticipants !== null && currentProgram._count.participants >= currentProgram.maxParticipants) {
-                return NextResponse.json({ error: "Program has reached maximum capacity.", requiresOverride: true }, { status: 400 });
-            }
+        // When true, capacity/enrollment-status/age limits apply (a board
+        // override skips them). Capacity itself is re-checked under a row lock
+        // inside the transaction below — the _count read above is racy.
+        const enforceLimits = !override || (!isSysAdminOrBoard);
 
+        // Validation Checks
+        if (enforceLimits) {
             // Check Enrollment Status
             if (currentProgram.enrollmentStatus === 'CLOSED') {
                 return NextResponse.json({ error: "Program enrollment is currently closed.", requiresOverride: true }, { status: 400 });
@@ -101,12 +101,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // Default status is PENDING, unless board is bypassing or the program is free
         const initialStatus = ((isSysAdminOrBoard && override) || isFree) ? 'ACTIVE' : 'PENDING';
 
-        const enrollment = await prisma.programParticipant.create({
-            data: {
-                programId,
-                participantId,
-                status: initialStatus
+        const enrollment = await prisma.$transaction(async (tx) => {
+            // Re-check capacity under a row lock right before insert, so
+            // concurrent enrollers can't both pass a stale count and overfill.
+            if (enforceLimits) {
+                await lockProgramAndCheckCapacity(tx, programId, 1, currentProgram.maxParticipants);
             }
+            return tx.programParticipant.create({
+                data: {
+                    programId,
+                    participantId,
+                    status: initialStatus
+                }
+            });
         });
 
         await prisma.auditLog.create({
@@ -125,6 +132,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         return NextResponse.json({ success: true, enrollment });
     } catch (error) {
+        if (error instanceof ProgramCapacityError) {
+            return NextResponse.json({ error: "Program has reached maximum capacity.", requiresOverride: true }, { status: 400 });
+        }
         console.error("Enrollment creation error:", error);
         return NextResponse.json({ error: "Failed to enroll participant" }, { status: 500 });
     }

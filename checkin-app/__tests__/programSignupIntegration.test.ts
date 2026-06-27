@@ -25,9 +25,8 @@ jest.mock('@/lib/shopify', () => ({
 }));
 
 // Mock Prisma
-jest.mock('@/lib/prisma', () => ({
-  __esModule: true,
-  default: {
+jest.mock('@/lib/prisma', () => {
+  const mock = {
     participant: {
       create: jest.fn(),
       findUnique: jest.fn(),
@@ -65,12 +64,19 @@ jest.mock('@/lib/prisma', () => ({
       findUnique: jest.fn(),
       update: jest.fn(),
       deleteMany: jest.fn(),
+      count: jest.fn(),
     },
     auditLog: {
       create: jest.fn(),
     },
-  },
-}));
+    // Enroll route now wraps the insert in $transaction + a FOR UPDATE
+    // capacity check; run the callback against this same mock as the tx client.
+    $queryRaw: jest.fn(),
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (mock as any).$transaction = jest.fn((cb: (tx: typeof mock) => unknown) => cb(mock));
+  return { __esModule: true, default: mock };
+});
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockGetSession = require('next-auth/next').getServerSession;

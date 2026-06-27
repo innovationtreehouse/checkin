@@ -18,7 +18,11 @@ process.env.CHECKIN_ENV = 'dev';
 // on it too); @/lib/prisma reads TEST_DB_POOL_MAX when it first loads.
 {
   const { testPath } = expect.getState();
-  if (testPath && /scanConcurrency\.integration\.test\.[jt]sx?$/.test(testPath)) {
+  // Same reasoning for the program-capacity concurrency suites: they need a
+  // pool of >= 2 so their two enroll transactions run on separate connections,
+  // making the program-row FOR UPDATE lock (not pool-1 serialization) the thing
+  // that serializes them — matching production.
+  if (testPath && /(scanConcurrency|programsParticipantsConcurrency|programsPublicRegisterConcurrency)\.integration\.test\.[jt]sx?$/.test(testPath)) {
     process.env.TEST_DB_POOL_MAX = '2';
   }
 }
