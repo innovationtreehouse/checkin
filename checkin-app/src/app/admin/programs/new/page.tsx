@@ -54,8 +54,8 @@ export default function CreateProgramPage() {
           memberOnly,
           minAge: minAge ? parseInt(minAge) : null,
           maxAge: maxAge ? parseInt(maxAge) : null,
-          memberPrice: (!isFree && memberPrice) ? parseInt(memberPrice) : null,
-          nonMemberPrice: (!isFree && nonMemberPrice) ? parseInt(nonMemberPrice) : null,
+          memberPrice: (!isFree && memberPrice) ? memberPrice : null,
+          nonMemberPrice: (!isFree && nonMemberPrice) ? nonMemberPrice : null,
           maxParticipants: maxParticipants ? parseInt(maxParticipants) : null,
           leadMentorId: leadMentorId ? parseInt(leadMentorId) : null
         })

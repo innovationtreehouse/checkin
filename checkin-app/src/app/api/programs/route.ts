@@ -6,6 +6,7 @@ import { sendNotification } from "@/lib/notifications";
 import { createShopifyProgramVariants } from "@/lib/shopify";
 import { logBackendError } from "@/lib/logger";
 import { isActiveMember } from "@/lib/membership";
+import { dollarsToCentsOrNull } from "@inventory/money";
 
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
@@ -104,8 +105,8 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Lead Mentor is required" }, { status: 400 });
         }
 
-        const mPrice = memberPrice ? parseInt(memberPrice, 10) : null;
-        const nmPrice = nonMemberPrice ? parseInt(nonMemberPrice, 10) : null;
+        const mPrice = dollarsToCentsOrNull(memberPrice);
+        const nmPrice = dollarsToCentsOrNull(nonMemberPrice);
         const maxPart = maxParticipants ? parseInt(maxParticipants, 10) : null;
 
         // Try to create Shopify entities
