@@ -220,12 +220,20 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
 
         // Atomically claim the process for THIS request's ids. Two concurrent
         // POSTs can both pass the null check above and both create a Zoho request;
-        // the conditional update (zohoEnvelopeId still null) lets only the first
-        // writer win. If we lost the race (count 0), discard our just-created
-        // request and reuse the winner's stored ids so the process keeps a single
-        // canonical signing request — our orphaned Zoho request simply expires.
+        // this conditional update lets only the first writer win. If we lost the
+        // race (count 0), discard our just-created request and reuse the winner's
+        // stored ids so the process keeps a single canonical signing request — our
+        // orphaned Zoho request simply expires.
+        //
+        // The claim matches an INCOMPLETE pair (either id null), not just a null
+        // envelope: setZohoEnvelope (the legacy admin/email flow) stores
+        // zohoEnvelopeId WITHOUT an action id, which can't be embedded. That state
+        // must be claimable here or the create-trigger above (needs both ids) would
+        // re-create on every click and a `zohoEnvelopeId: null`-only claim would
+        // always lose — a permanent 409. Overwriting it points the process (and its
+        // webhook match) at the embeddable in-app request.
         const claim = await prisma.membershipProcess.updateMany({
-            where: { id: process.id, zohoEnvelopeId: null },
+            where: { id: process.id, OR: [{ zohoEnvelopeId: null }, { zohoActionId: null }] },
             data: { zohoEnvelopeId: created.requestId, zohoActionId: created.actionId },
         });
         if (claim.count === 0) {
