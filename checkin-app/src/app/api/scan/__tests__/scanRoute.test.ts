@@ -41,6 +41,7 @@ jest.mock('@/lib/logger', () => ({
 jest.mock('@/lib/scan-service', () => ({
     processCheckin: jest.fn(),
     processCheckout: jest.fn(),
+    finalizeFacilityClose: jest.fn().mockResolvedValue(undefined),
 }));
 
 describe('POST /api/scan', () => {

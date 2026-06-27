@@ -114,17 +114,19 @@ export async function processCheckout(
             }
 
             facilityClosed = true;
-            await db.visit.updateMany({
-                where: { departed: null },
-                data: { departed: new Date() }
-            });
 
-            // Trigger post-event emails on facility close
-            import("@/lib/postEventEmails").then(({ processPostEventEmails }) => {
-                processPostEventEmails({ forceImmediate: true }).catch(err => {
-                    console.error("Failed to run post-event emails on facility close:", err);
-                });
-            });
+            // The facility-wide sweep takes row locks on EVERY open visit, and
+            // the email kick fires its own DB queries. Neither may run inside the
+            // scan route's per-participant advisory-lock transaction: it would
+            // block concurrent scans for other participants and let the email run
+            // contend on the still-open transaction. When called standalone (root
+            // client — e.g. tests) we own the whole operation, so run them here;
+            // under the route's tx client the route runs both AFTER it commits
+            // (see finalizeFacilityClose / route.ts).
+            if ("$transaction" in db) {
+                await closeAllOpenVisits(db);
+                kickPostEventEmails();
+            }
         }
     }
 
@@ -139,4 +141,48 @@ export async function processCheckout(
         facilityClosed,
         signedRequest: authType === "kiosk",
     });
+}
+
+/** Mark every still-open visit as departed. Facility-wide, not participant-scoped:
+ *  a single atomic statement, so it needs no wrapping transaction. */
+async function closeAllOpenVisits(db: DbClient) {
+    await db.visit.updateMany({
+        where: { departed: null },
+        data: { departed: new Date() },
+    });
+}
+
+/** Fire-and-forget post-event email run on facility close. The dynamic import
+ *  AND the call are both in the promise chain, so an import or run failure is
+ *  logged, never an unhandled rejection. */
+function kickPostEventEmails() {
+    import("@/lib/postEventEmails")
+        .then(({ processPostEventEmails }) => processPostEventEmails({ forceImmediate: true }))
+        .catch(err => console.error("Failed to run post-event emails on facility close:", err));
+}
+
+/**
+ * Run the facility-wide visit close + post-event email kick AFTER the scan
+ * route's per-participant transaction has committed — off the advisory lock.
+ *
+ * processCheckout (under the lock, on the tx client) only *decides* whether the
+ * facility closed and reports it via `facilityClosed` in the response body; the
+ * route hands that response here once committed. A sweep failure is logged, not
+ * thrown, so it never turns an already-committed checkout into a 500.
+ */
+export async function finalizeFacilityClose(res: Response): Promise<void> {
+    let body: { facilityClosed?: boolean } | null;
+    try {
+        body = await res.clone().json();
+    } catch {
+        return; // non-JSON / empty body (e.g. debounce) — nothing to close
+    }
+    if (!body?.facilityClosed) return;
+
+    try {
+        await closeAllOpenVisits(prisma);
+    } catch (err) {
+        console.error("Failed to close facility-wide visits after scan:", err);
+    }
+    kickPostEventEmails();
 }
