@@ -199,7 +199,6 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
 
       <Group mb="md" align="center" wrap="wrap">
         <TextInput placeholder="Search tools..." value={search} onChange={e => setSearch(e.currentTarget.value)} style={{ flex: '1 1 220px' }} />
-        {isAdmin && <Button component={Link} href="/shop/tools/new" variant="light">+ New Tool</Button>}
       </Group>
 
       {filtered.length === 0 && <Text c="dimmed">No tools match.</Text>}
