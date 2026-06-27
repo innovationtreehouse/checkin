@@ -546,8 +546,10 @@ model Program {
   leadMentorNotificationSettings Json?
 
   /// @sensitivity:public
+  /// Integer cents (e.g. 2599 = $25.99).
   memberPrice               Int?
   /// @sensitivity:public
+  /// Integer cents (e.g. 2599 = $25.99).
   nonMemberPrice            Int?
   /// @sensitivity:public
   shopifyProductId          String?
@@ -602,8 +604,10 @@ model Fee {
   /// @sensitivity:public
   name           String
   /// @sensitivity:public
+  /// Integer cents (e.g. 2599 = $25.99).
   nonMemberPrice Int
   /// @sensitivity:public
+  /// Integer cents (e.g. 2599 = $25.99).
   memberPrice    Int
 
   program  Program      @relation(fields: [programId], references: [id])

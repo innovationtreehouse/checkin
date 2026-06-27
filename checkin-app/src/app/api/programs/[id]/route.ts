@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { isActiveMember } from "@/lib/membership";
+import { dollarsToCentsOrNull } from "@inventory/money";
 
 export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
     const programId = parseInt(params.id, 10);
@@ -83,7 +84,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, begin, end, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings } = body;
+        const { name, begin, end, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -104,6 +105,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             ...(maxAge !== undefined && { maxAge }),
             ...(maxParticipants !== undefined && { maxParticipants }),
             ...(leadMentorNotificationSettings !== undefined && { leadMentorNotificationSettings }),
+            ...(memberPrice !== undefined && { memberPrice: dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined) }),
+            ...(nonMemberPrice !== undefined && { nonMemberPrice: dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined) }),
         };
 
         const updatedProgram = await prisma.program.update({

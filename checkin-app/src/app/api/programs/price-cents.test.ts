@@ -1,0 +1,21 @@
+import { dollarsToCents, dollarsToCentsOrNull, formatUSD } from "@inventory/money";
+
+// Guards the dollars→cents store / cents→dollars display round-trip used by the
+// Program + Fee price API boundary. Cents must not truncate $25.99 → $25.
+describe("program/fee price cents round-trip", () => {
+  it("stores $25.99 as cents and renders it back without truncation", () => {
+    const cents = dollarsToCentsOrNull("25.99");
+    expect(cents).toBe(2599);
+    expect(formatUSD(cents)).toBe("$25.99");
+  });
+
+  it("treats empty/missing nullable price as null → '—'", () => {
+    expect(dollarsToCentsOrNull("")).toBeNull();
+    expect(dollarsToCentsOrNull(undefined)).toBeNull();
+    expect(formatUSD(null)).toBe("—");
+  });
+
+  it("required Fee price round-trips through cents", () => {
+    expect(formatUSD(dollarsToCents("40.00"))).toBe("$40.00");
+  });
+});
