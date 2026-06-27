@@ -1,7 +1,7 @@
 import { POST as CreateProgram } from '@/app/api/programs/route';
 import { POST as AddEvent } from '@/app/api/programs/[id]/events/route';
 import { POST as PublishProgram } from '@/app/api/programs/[id]/publish/route';
-import { POST as CreateHousehold, PATCH as AddHouseholdMember } from '@/app/api/household/route';
+import { PATCH as AddHouseholdMember } from '@/app/api/household/route';
 import { POST as EnrollParticipant } from '@/app/api/programs/[id]/participants/route';
 import { POST as ShopifyWebhook } from '@/app/api/webhooks/shopify/route';
 import prisma from '@/lib/prisma';
@@ -138,22 +138,8 @@ describe('Full Program Signup Integration Flow', () => {
         const publishRes = await PublishProgram(publishReq, { params: Promise.resolve({ id: String(programId) }) });
         expect(publishRes.status).toBe(200);
 
-        // 4. Lead user creates a household
+        // 4. Lead user (who already has a household from signup) adds a child member
         mockGetSession.mockResolvedValue({ user: { id: leadUserId } });
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: leadUserId, name: 'Lead', householdId: null });
-        (prisma.household.create as jest.Mock).mockResolvedValue({ id: householdId });
-        (prisma.membership.create as jest.Mock).mockResolvedValue({});
-
-        const createHouseholdReq = new Request('http://localhost/api/household', {
-            method: 'POST',
-        });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const createHouseholdRes = await CreateHousehold(createHouseholdReq as any, { type: 'session', user: { id: leadUserId } } as any);
-        expect(createHouseholdRes.status).toBe(201);
-        const createHouseholdData = await createHouseholdRes.json();
-        expect(createHouseholdData.household.id).toBe(householdId);
-
-        // 5. Lead user adds a child member to the household
         (prisma.participant.findUnique as jest.Mock).mockResolvedValueOnce({ id: leadUserId, householdId, householdLeads: [{ householdId, participantId: leadUserId }] });
         (prisma.participant.create as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId });
         // Adding a member reconciles emergency contacts (direction B); no contacts/members to flag here.

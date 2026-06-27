@@ -6,7 +6,7 @@
  * Tests GET, POST, and PATCH /api/household for regular users managing their household
  */
 
-import { GET, POST, PATCH } from '@/app/api/household/route';
+import { GET, PATCH } from '@/app/api/household/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -17,7 +17,6 @@ jest.mock('next-auth/next', () => ({
 describe('Household API Integration Tests', () => {
     let testUserId: number;
     let testMemberId: number;
-    let testNoHouseId: number;
     let testOtherHouseUserId: number;
     let householdId: number;
     let otherHouseholdId: number;
@@ -54,11 +53,6 @@ describe('Household API Integration Tests', () => {
         });
 
         // Setup mock database records
-        const userWithoutHousehold = await prisma.participant.create({
-            data: { email: 'nohouse-user-household-api-test@example.com', name: 'No House User', household: { create: {} } }
-        });
-        testNoHouseId = userWithoutHousehold.id;
-
         const household = await prisma.household.create({
             data: { name: 'Lead User Household', address: '123 Main' }
         });
@@ -95,7 +89,7 @@ describe('Household API Integration Tests', () => {
             where: { email: 'new-child-household-api-test@example.com' },
             select: { id: true, householdId: true }
         });
-        const currentIds = [testUserId, testMemberId, testNoHouseId, testOtherHouseUserId, ...(newDobs.map(u => u.id))];
+        const currentIds = [testUserId, testMemberId, testOtherHouseUserId, ...(newDobs.map(u => u.id))];
 
         // Collect every household referenced by the test participants (incl. the no-house user's own household)
         const participants = await prisma.participant.findMany({
@@ -154,32 +148,6 @@ describe('Household API Integration Tests', () => {
             expect(data.household).toBeDefined();
             expect(data.household.id).toBe(householdId);
             expect(data.household.participants.length).toBeGreaterThanOrEqual(2);
-        });
-    });
-
-    describe('POST /api/household', () => {
-        it('should block users who already have a household', async () => {
-            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
-
-            const req = new Request('http://localhost:4000/api/household', { method: 'POST' });
-            const res = await POST(req as unknown as import("next/server").NextRequest);
-            
-            expect(res.status).toBe(400);
-            const data = await res.json();
-            expect(data.error).toBe('User already belongs to a household');
-        });
-
-        it('should block creation since every participant now belongs to a household', async () => {
-            // householdId is now a required FK, so a household-less participant cannot exist and the
-            // create-household happy path is unreachable: the route always returns the 400 guard.
-            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testNoHouseId } });
-
-            const req = new Request('http://localhost:4000/api/household', { method: 'POST' });
-            const res = await POST(req as unknown as import("next/server").NextRequest);
-
-            expect(res.status).toBe(400);
-            const data = await res.json();
-            expect(data.error).toBe('User already belongs to a household');
         });
     });
 
