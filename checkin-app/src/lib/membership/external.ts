@@ -8,6 +8,7 @@ import {
     submitRequest,
     getAccessToken,
     getEmbeddedSignUrl,
+    getRequestStatus,
 } from "@/lib/membership/contract/zohoClient";
 import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
 
@@ -126,6 +127,42 @@ export async function setZohoEnvelope(processId: number, requestId: string, acto
 /** Find the in-flight process tied to a Zoho request id (for webhook matching). */
 export async function findProcessByEnvelope(requestId: string) {
     return prisma.membershipProcess.findFirst({ where: { zohoEnvelopeId: requestId } });
+}
+
+/**
+ * Pull the contract status from Zoho for the applicant's in-flight process and
+ * record it signed if Zoho says so. Called when the signer returns from embedded
+ * signing (?signed=1) so completion doesn't hinge on the inbound webhook — which
+ * is unreliable against a scale-to-zero dev instance that may be asleep when Zoho
+ * fires it. Best-effort: a Zoho hiccup is swallowed (the webhook is the backstop)
+ * and the current status is returned regardless. Returns null when the user has no
+ * in-flight signing process.
+ */
+export async function syncContractStatus(userId: number): Promise<ExternalStatus | null> {
+    const user = await prisma.participant.findUnique({
+        where: { id: userId },
+        include: { household: { include: { membership: { include: { processes: true } } } } },
+    });
+    // Same selection as the signing action: the latest process awaiting external action.
+    const process = (user?.household?.membership?.processes ?? [])
+        .filter((p) => p.status === "PENDING_EXTERNAL_ACTION")
+        .sort((a, b) => b.id - a.id)[0];
+    if (!process) return null;
+
+    if (!process.contractSignedAt && process.zohoEnvelopeId && config.zohoConfigured()) {
+        try {
+            const token = await getAccessToken();
+            if (await getRequestStatus(token, process.zohoEnvelopeId)) {
+                await markContractSigned(process.id, userId);
+            }
+        } catch (e) {
+            logger.error(`Zoho status sync failed for process ${process.id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+
+    // Re-read: markContractSigned may have flipped contractSignedAt (and advanced the phase).
+    const fresh = await prisma.membershipProcess.findUnique({ where: { id: process.id } });
+    return fresh ? getExternalStatus(fresh) : null;
 }
 
 /** Days an applicant has to sign before the Zoho request expires (mirrors the script's default). */

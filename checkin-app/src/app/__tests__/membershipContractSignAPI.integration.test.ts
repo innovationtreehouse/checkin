@@ -23,6 +23,7 @@ jest.mock('@/lib/membership/contract/zohoClient', () => ({
     createRequest: jest.fn().mockResolvedValue({ requestId: 'REQ-1', actionId: 'ACT-1', documentId: 'DOC-1' }),
     submitRequest: jest.fn().mockResolvedValue(undefined),
     getEmbeddedSignUrl: jest.fn().mockResolvedValue('https://sign.zoho.com/embed/xyz'),
+    getRequestStatus: jest.fn().mockResolvedValue(false),
 }));
 
 // Imported AFTER the mocks so the route picks up the mocked client.

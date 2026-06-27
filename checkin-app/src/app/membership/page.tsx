@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import type { MembershipProcessStatus, MembershipStatus } from "@/generated/prisma/client";
@@ -139,6 +139,43 @@ export default function MembershipPage() {
   useEffect(() => {
     if (sessionStatus === "authenticated") load();
     else if (sessionStatus === "unauthenticated") setLoading(false);
+  }, [sessionStatus, load]);
+
+  // Return from embedded signing: Zoho redirects back with ?signed=1 (or
+  // ?declined=1). Sync the contract status straight from Zoho rather than waiting
+  // on the inbound webhook (ops-dev is scale-to-zero and may be asleep when Zoho
+  // fires it), refresh, then strip the query so a manual reload doesn't re-run.
+  const signReturnHandled = useRef(false);
+  useEffect(() => {
+    if (sessionStatus !== "authenticated" || signReturnHandled.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const signed = params.get("signed") === "1";
+    const declined = params.get("declined") === "1";
+    if (!signed && !declined) return;
+    signReturnHandled.current = true;
+    window.history.replaceState(null, "", window.location.pathname);
+    if (declined) {
+      setMessage("You declined the agreement. You can restart signing when you're ready.");
+      setIsError(true);
+      return;
+    }
+    (async () => {
+      let signedNow = false;
+      try {
+        const res = await fetch("/api/membership/contract/sync", { method: "POST" });
+        const data = await res.json().catch(() => null);
+        signedNow = !!data?.status?.contractSigned;
+      } catch {
+        /* best-effort — the Zoho webhook is still a backstop */
+      }
+      await load();
+      setMessage(
+        signedNow
+          ? "Thanks — your signature was received."
+          : "Signature received — finalizing. If it doesn't update shortly, use “Refresh status”.",
+      );
+      setIsError(false);
+    })();
   }, [sessionStatus, load]);
 
   // When awaiting payment, fetch the dues amount and Shopify checkout link.
