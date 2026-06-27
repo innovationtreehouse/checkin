@@ -160,16 +160,15 @@ export default function AdminMembershipPage() {
 
   return (
     <Stack>
-      <div>
-        <Title order={1}>Membership Applications</Title>
-        <Text c="dimmed">
-          In-flight applications. Use the manual controls below to confirm the contract was signed
-          or that background-check consent was received. (The contract is also confirmed
-          automatically once the Zoho webhook is configured.)
-        </Text>
-      </div>
+      <Title order={1}>Membership Applications</Title>
 
       <MembershipTabs active="applications" />
+
+      <Text c="dimmed">
+        In-flight applications. Use the manual controls below to confirm the contract was signed
+        or that background-check consent was received. (The contract is also confirmed
+        automatically once the Zoho webhook is configured.)
+      </Text>
 
       <AlertBanner message={message} tone={isError ? 'error' : 'success'} />
 
