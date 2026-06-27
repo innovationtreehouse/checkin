@@ -1,0 +1,99 @@
+/**
+ * @jest-environment node
+ */
+/**
+ * Concurrency test for the EXTERNAL-phase advance: markContractSigned and
+ * markBgConsent both call advanceExternalIfComplete. Two concurrent callers (the
+ * Zoho webhook signing the contract + a board "mark bg consent" action) must
+ * advance the process to PENDING_BG_REVIEW exactly once — one audit row, one
+ * reviewer notification — and must never regress a process already past
+ * PENDING_EXTERNAL_ACTION. Regression guard for the TOCTOU race fixed in
+ * lib/membership/external.ts.
+ */
+
+import { markContractSigned, markBgConsent, advanceExternalIfComplete } from '@/lib/membership/external';
+import { notifyReviewers } from '@/lib/membership/review';
+import prisma from '@/lib/prisma';
+
+jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/membership/review', () => ({ notifyReviewers: jest.fn().mockResolvedValue(undefined) }));
+
+const TAG = 'external-concurrency-test';
+
+/** A fresh applicant household + membership + a process in the EXTERNAL phase. */
+async function makeExternalProcess(data: Record<string, unknown> = {}): Promise<number> {
+    const hh = await prisma.household.create({ data: { name: `Applicant ${TAG}` } });
+    const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
+    const proc = await prisma.membershipProcess.create({
+        data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION', ...data },
+    });
+    return proc.id;
+}
+
+async function advanceAudits(processId: number): Promise<number> {
+    const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true } });
+    return audits.filter((a) => String(a.newData).includes('"status":"PENDING_BG_REVIEW"')).length;
+}
+
+async function wipe() {
+    const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
+    const ids = hhs.map((h) => h.id);
+    if (ids.length) {
+        await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
+        await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.household.deleteMany({ where: { id: { in: ids } } });
+    }
+}
+
+describe('EXTERNAL advance concurrency', () => {
+    beforeAll(wipe);
+    beforeEach(() => (notifyReviewers as jest.Mock).mockClear());
+    afterAll(async () => {
+        await wipe();
+        await prisma.$disconnect();
+    });
+
+    it('concurrent contract-sign + bg-consent advance exactly once', async () => {
+        const processId = await makeExternalProcess();
+
+        // Both external actions land at the same instant; each triggers an advance attempt.
+        await Promise.all([
+            markContractSigned(processId),
+            markBgConsent(processId, 1),
+        ]);
+
+        const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        expect(proc?.status).toBe('PENDING_BG_REVIEW');
+
+        // Exactly one advance audit row + exactly one reviewer ping.
+        expect(await advanceAudits(processId)).toBe(1);
+        expect(notifyReviewers as jest.Mock).toHaveBeenCalledTimes(1);
+    });
+
+    it('second markContractSigned is a no-op (one contractSignedAt audit, idempotent)', async () => {
+        const processId = await makeExternalProcess();
+
+        await Promise.all([markContractSigned(processId), markContractSigned(processId)]);
+
+        const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true } });
+        const signedRows = audits.filter((a) => String(a.newData).includes('"contractSignedAt":true')).length;
+        expect(signedRows).toBe(1);
+    });
+
+    it('does not regress a process already past PENDING_EXTERNAL_ACTION', async () => {
+        // Both external actions are done, but the process has since moved to BLOCKED.
+        const processId = await makeExternalProcess({
+            contractSignedAt: new Date(),
+            bgConsentAt: new Date(),
+            status: 'BLOCKED',
+        });
+
+        const result = await advanceExternalIfComplete(processId);
+
+        expect(result?.status).toBe('BLOCKED');
+        const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        expect(proc?.status).toBe('BLOCKED');
+        expect(await advanceAudits(processId)).toBe(0);
+        expect(notifyReviewers as jest.Mock).not.toHaveBeenCalled();
+    });
+});
