@@ -8,6 +8,17 @@ on:
     branches:
       - main
   merge_group:
+  # Callable so the prod release flow can RE-RUN the full pipeline (tests + the
+  # deploy build/smoke) against the exact released tag before shipping — see
+  # deploy-prod.yml. `ref` is the tag/SHA to validate; empty (the default for
+  # push/PR/merge_group) means "the ref that triggered this run".
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref (tag or SHA) to check out and validate.'
+        type: string
+        required: false
+        default: ''
 
 jobs:
   # "Run Tests" and "Deploy build (no deploy)" are REQUIRED status checks on main.
@@ -27,6 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ inputs.ref }}   # empty on push/PR = default ref; the tag when called by deploy-prod
           fetch-depth: 0
       - id: detect
         env:
@@ -81,6 +93,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.app == 'true'
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}   # empty on push/PR = default ref; the tag when called by deploy-prod
 
       - name: Setup Node.js
         if: needs.changes.outputs.app == 'true'
@@ -173,6 +187,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.app == 'true'
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}   # empty on push/PR = default ref; the tag when called by deploy-prod
 
       # Mirrors deploy-dev.yml's build step minus `docker push`. Architecture is irrelevant
       # (the image is discarded), so the default x64 runner is fine — the deploy builds arm64

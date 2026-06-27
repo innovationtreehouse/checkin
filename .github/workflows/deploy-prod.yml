@@ -2,9 +2,17 @@ name: Deploy prod
 
 # Deploy the checkin app to the AWS prod environment when a release is
 # published in this repo. Mirrors deploy-dev.yml step-for-step (build an ARM64
-# image, run DB migrations, roll out the ECS service) with three differences:
+# image, run DB migrations, roll out the ECS service) with these differences:
 #   - trigger: a published GitHub release instead of a merge to main
-#   - guard:   the released commit must have a successful CI run
+#   - guard:   RE-RUNS the entire CI pipeline (tests + the deploy build/smoke)
+#              against the released tag — see the `validate` job. A release can
+#              be cut from ANY commit, and stale or partial check status on that
+#              commit is not trustworthy, so we revalidate from scratch rather
+#              than querying past check-runs. `deploy` needs `validate`.
+#   - gate:    `deploy` targets the `production` GitHub Environment, which holds
+#              the human-approval rule (required reviewers — one approval). The
+#              validate job runs first (no environment), so the reviewer approves
+#              a release that has already gone green on its own tag.
 #   - report:  a run step summary (releases have no comment thread to post to)
 #
 # Auth is GitHub OIDC (no static AWS keys) — assumes the checkin-deploy-prod
@@ -20,9 +28,8 @@ on:
     types: [published]
 
 permissions:
-  id-token: write   # assume the deploy role via OIDC
-  contents: read    # checkout the released tag
-  checks: read      # verify the released commit has green CI
+  id-token: write   # assume the deploy role via OIDC (deploy job only)
+  contents: read    # checkout the released tag (validate + deploy)
 
 concurrency:
   group: checkin-deploy-prod
@@ -40,8 +47,21 @@ env:
   APP_URL: https://ops.innovationtreehouse.org
 
 jobs:
+  # Re-run the FULL CI pipeline (lint, type-check, migration-drift, Jest, the
+  # security contract tests, AND the deploy build + boot/smoke) against the exact
+  # released tag. This is the H1 fix: a release tag can point at any commit, and
+  # we no longer trust whatever check status happened to exist there — we prove
+  # the released code green from scratch before a human is even asked to approve.
+  validate:
+    name: Revalidate CI on the released tag
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.event.release.tag_name }}
+    secrets: inherit
+
   deploy:
     name: Build, migrate, roll out
+    needs: validate   # do not build/migrate/roll out unless the tag re-passed all of CI
     runs-on: ubuntu-24.04-arm  # native ARM64 — task defs require arm64 images
     environment:
       name: production
@@ -61,22 +81,6 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
           echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
-
-      - name: Require green CI on the released commit
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHA: ${{ steps.vars.outputs.sha }}
-        run: |
-          set -euo pipefail
-          # A release can be cut from any commit; only ship ones CI has blessed.
-          CONCLUSION=$(gh api \
-            "repos/${{ github.repository }}/commits/$SHA/check-runs?check_name=Run%20Tests" \
-            --jq '[.check_runs[].conclusion] | first // "missing"')
-          echo "CI conclusion for $SHA: $CONCLUSION"
-          if [ "$CONCLUSION" != "success" ]; then
-            echo "::error::Released commit $SHA has no successful CI run (got: $CONCLUSION). Refusing to deploy."
-            exit 1
-          fi
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
