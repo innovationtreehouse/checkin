@@ -10,7 +10,8 @@
     "test": "jest --runInBand --forceExit",
     "test:ci": "jest --ci --runInBand --forceExit",
     "test:integration": "jest --ci --runInBand --forceExit --testPathIgnorePatterns=/node_modules/ --testRegex \"\\.integration\\.test\\.[jt]sx?$\"",
-    "check-route-coverage": "ts-node --project scripts/tsconfig.json scripts/check-route-coverage.ts"
+    "check-route-coverage": "ts-node --project scripts/tsconfig.json scripts/check-route-coverage.ts",
+    "import:zoho": "tsx scripts/import-zoho.ts"
   },
   "engines": {
     "node": ">=22"
