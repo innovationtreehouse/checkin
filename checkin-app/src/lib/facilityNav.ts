@@ -1,13 +1,13 @@
 /**
  * Single source of truth for the Facility Ops tools. Rendered both as the
- * persistent sidebar (facility/layout.tsx) and as the landing card grid on the
+ * persistent top tabs (facility/layout.tsx) and as the landing card grid on the
  * Facility Ops hub (/facility). Add a tool once here and it shows up in both.
  */
 export interface FacilityNavLink {
   name: string;
   href: string;
   icon: string;
-  /** One-line description shown on the hub landing grid (not in the sidebar). */
+  /** One-line description shown on the hub landing grid (not in the tabs). */
   description?: string;
 }
 
