@@ -155,6 +155,20 @@ describe('POST /api/membership/contract/sign', () => {
         await prisma.membershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: 'REQ-1', zohoActionId: 'ACT-1' } });
     });
 
+    it('recovers when an envelope id was stored without an action id (legacy admin/email flow)', async () => {
+        // setZohoEnvelope stores zohoEnvelopeId WITHOUT an action id — that pair
+        // can't be embedded, so the in-app flow must re-create and overwrite it
+        // rather than 409 forever on the incomplete pair.
+        await prisma.membershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: 'LEGACY-ENV', zohoActionId: null } });
+        asUser(leadId);
+        const res = await SIGN(signReq());
+        expect(res.status).toBe(200);
+        expect(zoho.createRequest).toHaveBeenCalledTimes(1);
+        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        expect(p?.zohoEnvelopeId).toBe('REQ-1'); // overwritten with the embeddable request
+        expect(p?.zohoActionId).toBe('ACT-1');
+    });
+
     it('409s when the application is not in the EXTERNAL phase', async () => {
         await prisma.membershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
         asUser(leadId);
