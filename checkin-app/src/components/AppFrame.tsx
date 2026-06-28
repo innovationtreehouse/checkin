@@ -117,30 +117,43 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-/** Todo-count badge value for a nav item, or 0 when nothing is due / unknown. */
-function todoCountFor(href: string, counts: TodoCounts | null): number {
-  if (!counts) return 0;
+type NavBadge = { count: number; color: string; label: string };
+
+/**
+ * The badge for a nav item, or null when nothing to show. Green = action the
+ * viewer must take; gray = live informational count (occupancy, running programs).
+ */
+function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge | null {
+  if (!counts) return null;
+  const green = (n: number, label: string): NavBadge | null =>
+    n > 0 ? { count: n, color: 'treehouseGreen', label } : null;
+  const gray = (n: number, label: string): NavBadge | null =>
+    n > 0 ? { count: n, color: 'gray', label } : null;
   switch (href) {
     case '/household':
-      return counts.member.household.length;
+      return green(counts.member.household.length, `${counts.member.household.length} items need attention`);
+    case '/kioskdisplay':
+      return gray(counts.building, `${counts.building} people currently in the building`);
     case '/programs':
-      return counts.member.programs.length;
+      return gray(counts.activePrograms, `${counts.activePrograms} active programs`);
     case '/membership-ops':
       // Pending membership applications awaiting board review.
-      return counts.admin ? counts.admin.membership : 0;
+      return green(counts.admin ? counts.admin.membership : 0, 'Pending membership reviews');
     case '/finance-ops':
       // Pending participants awaiting payment-plan approval.
-      return counts.admin ? counts.admin.programsPending : 0;
+      return green(counts.admin ? counts.admin.programsPending : 0, 'Pending payment-plan approvals');
     case '/safety':
       // Trusted-adult disclosures awaiting board review.
-      return counts.admin ? counts.admin.trustedAdults : 0;
-    case '/system-status':
+      return green(counts.admin ? counts.admin.trustedAdults : 0, 'Trusted-adult disclosures to review');
+    case '/system-status': {
       // Top-level roll-up of the board's queue; per-queue badges live in the admin sub-nav.
-      return counts.admin
+      const total = counts.admin
         ? counts.admin.membership + counts.admin.programsPending + counts.admin.trustedAdults
         : 0;
+      return green(total, `${total} board queue items`);
+    }
     default:
-      return 0;
+      return null;
   }
 }
 
@@ -267,7 +280,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
             // On the colored sidebar all text is white; the 'light' variant gives a soft
             // translucent overlay on the active item rather than a harsh solid fill.
             const sidebarText = onColoredSidebar ? 'var(--mantine-color-white)' : undefined;
-            const todoCount = todoCountFor(item.href, todoCounts);
+            const badge = navBadgeFor(item.href, todoCounts);
             return (
               <NavLink
                 key={item.href}
@@ -276,14 +289,14 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                 label={item.label}
                 leftSection={item.icon}
                 rightSection={
-                  todoCount > 0 ? (
+                  badge ? (
                     <Badge
                       size="xs"
-                      color="treehouseGreen"
+                      color={badge.color}
                       variant="filled"
-                      aria-label={`${todoCount} item${todoCount === 1 ? '' : 's'} need attention`}
+                      aria-label={badge.label}
                     >
-                      {todoCount}
+                      {badge.count}
                     </Badge>
                   ) : undefined
                 }

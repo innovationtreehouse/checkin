@@ -36,6 +36,10 @@ export type TodoItem = { key: string; label: string; href: string };
 export type TodoCounts = {
     // Member buckets are itemized so the UI can show *what* is due, not just a number.
     member: { household: TodoItem[]; programs: TodoItem[] };
+    // Informational gray badges (not action items): live building occupancy and
+    // how many programs are currently running.
+    building: number;
+    activePrograms: number;
     // Admin keys stay numeric — each admin nav link already deep-links to a page
     // that lists its own queue, so the number is enough.
     admin?: { membership: number; programsPending: number; trustedAdults: number };
@@ -137,7 +141,17 @@ export const GET = withAuth({}, async (_req, auth) => {
         }
     }
 
-    const result: TodoCounts = { member: { household: householdTodos, programs: programTodos } };
+    // Global informational counts (not scoped to the caller).
+    const [building, activePrograms] = await Promise.all([
+        prisma.visit.count({ where: { departed: null } }),
+        prisma.program.count({ where: { phase: "RUNNING" } }),
+    ]);
+
+    const result: TodoCounts = {
+        member: { household: householdTodos, programs: programTodos },
+        building,
+        activePrograms,
+    };
 
     // ---- Admin surface (board's own queue) — only for board/sysadmin ----
     if (user.sysadmin || user.boardMember) {
