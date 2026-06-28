@@ -4,11 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Button, Card, Center, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Center, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { formatDateTime } from '@/lib/time';
 
 type RsvpStatus = "ATTENDING" | "NOT_ATTENDING" | "MAYBE";
 
+// One row per (event, household member) — a lead sees a card per family member.
 type EventData = {
   id: number;
   name: string;
@@ -16,7 +17,8 @@ type EventData = {
   start: string;
   end: string;
   program: { name: string } | null;
-  rsvps: { status: RsvpStatus }[];
+  participant: { id: number; name: string | null };
+  rsvp: RsvpStatus | null;
 };
 
 const RSVP_OPTIONS: { status: RsvpStatus; label: string; color: string }[] = [
@@ -26,7 +28,7 @@ const RSVP_OPTIONS: { status: RsvpStatus; label: string; color: string }[] = [
 ];
 
 export default function ParticipantEventsDashboard() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const [events, setEvents] = useState<EventData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,23 +57,26 @@ export default function ParticipantEventsDashboard() {
     }
   }, [status, router, fetchEvents]);
 
-  const handleRSVP = async (eventId: number, newStatus: RsvpStatus) => {
-    // Optimistic update
+  const handleRSVP = async (eventId: number, participantId: number, newStatus: RsvpStatus) => {
+    // Optimistic update — only the targeted member's card.
     setEvents(prev => prev.map(ev =>
-      ev.id === eventId ? { ...ev, rsvps: [{ status: newStatus }] } : ev
+      ev.id === eventId && ev.participant.id === participantId ? { ...ev, rsvp: newStatus } : ev
     ));
 
     try {
       await fetch(`/api/events/${eventId}/rsvp`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify({ status: newStatus, participantId })
       });
     } catch {
       // Revert on failure by refetching
       fetchEvents();
     }
   };
+
+  // A household lead sees every member's events, so label whose each card is.
+  const showMembers = !!session?.user.householdLead;
 
   if (loading || status === "loading") {
     return <Center mih="60vh"><Loader /></Center>;
@@ -96,13 +101,16 @@ export default function ParticipantEventsDashboard() {
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
           {events.map((ev) => {
-            const userRSVP = ev.rsvps.length > 0 ? ev.rsvps[0].status : null;
+            const userRSVP = ev.rsvp;
             const startStr = formatDateTime(ev.start, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
             return (
-              <Card key={ev.id} withBorder radius="md" padding="lg">
+              <Card key={`${ev.id}-${ev.participant.id}`} withBorder radius="md" padding="lg">
                 <Stack gap="sm" h="100%">
                   <div>
+                    {showMembers && (
+                      <Badge variant="light" mb={4}>{ev.participant.name ?? 'Member'}</Badge>
+                    )}
                     {ev.program && (
                       <Text size="xs" c="cyan" fw={600} tt="uppercase">{ev.program.name}</Text>
                     )}
@@ -123,7 +131,7 @@ export default function ParticipantEventsDashboard() {
                           fullWidth
                           variant={userRSVP === opt.status ? 'filled' : 'default'}
                           color={opt.color}
-                          onClick={() => handleRSVP(ev.id, opt.status)}
+                          onClick={() => handleRSVP(ev.id, ev.participant.id, opt.status)}
                         >
                           {opt.label}
                         </Button>
