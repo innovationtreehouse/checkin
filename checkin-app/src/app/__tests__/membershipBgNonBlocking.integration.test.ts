@@ -15,6 +15,7 @@ import { markContractSigned, markBgConsent } from '@/lib/membership/external';
 import { attest } from '@/lib/membership/review';
 import { certifyPaymentPlan, activate } from '@/lib/membership/payment';
 import { submitIntake } from '@/lib/membership/intake';
+import { beginRenewal } from '@/lib/membership/renewal';
 import prisma from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
 
@@ -40,6 +41,18 @@ async function makeBoardMember(): Promise<number> {
         data: { email: `board-${TAG}@example.com`, name: 'Board', boardMember: true, household: { create: { name: `Board HH ${TAG}` } } },
     });
     return r.id;
+}
+
+/** ACTIVE membership + lead with a valid prior check + a PENDING_RENEWAL process. */
+async function makeFreshRenewal() {
+    const hh = await prisma.household.create({ data: { name: `Renewal ${TAG} ${Math.random()}` } });
+    const lead = await prisma.participant.create({
+        data: { email: `rlead-${Math.random()}-${TAG}@example.com`, name: 'R Lead', householdId: hh.id, lastBackgroundCheck: new Date() },
+    });
+    await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+    const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
+    const proc = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
+    return { membershipId: m.id, processId: proc.id };
 }
 
 /** Applicant household + a lead + membership + a process at the given status. */
@@ -191,6 +204,18 @@ describe('background check is non-blocking', () => {
         await markContractSigned(processId);
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
         await certifyPaymentPlan(processId, lead!.id);
+        expect(await statusOf(processId)).toBe('ACTIVE');
+        expect(await membershipStatusOf(membershipId)).toBe('ACTIVE');
+    });
+
+    it('renewal with a still-valid check → PENDING_PAYMENT + bgClearedAt, then paying activates (not stuck)', async () => {
+        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        const { membershipId, processId } = await makeFreshRenewal();
+        await beginRenewal(processId);
+        const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        expect(proc?.status).toBe('PENDING_PAYMENT');
+        expect(proc?.bgClearedAt).not.toBeNull(); // the bug: was null → paid renewal stuck forever
+        await activate(processId, { via: 'payment', shopifyOrderId: 'renew-pay' });
         expect(await statusOf(processId)).toBe('ACTIVE');
         expect(await membershipStatusOf(membershipId)).toBe('ACTIVE');
     });

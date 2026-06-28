@@ -276,7 +276,13 @@ export async function overrideBlocked(processId: number, actorId: number, action
         return { status: reviewStatus };
     }
 
-    const { activated, householdId } = await prisma.$transaction((tx) => clearBackgroundCheck(tx, processId, actorId));
+    // FOR UPDATE per clearBackgroundCheck's contract: serializes a board approve
+    // against a late payment webhook (activate also locks), so the override reads
+    // a fresh paidAt and converges to ACTIVE rather than parking it at PENDING_PAYMENT.
+    const { activated, householdId } = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "MembershipProcess" WHERE id = ${processId} FOR UPDATE`;
+        return clearBackgroundCheck(tx, processId, actorId);
+    });
     if (activated) await sendCongrats(householdId);
     const status: MembershipProcessStatus = activated ? "ACTIVE" : "PENDING_PAYMENT";
     return { status };
