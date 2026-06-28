@@ -92,7 +92,8 @@ describe('withAuth', () => {
 
         expect(res.status).toBe(200);
         expect(handler).toHaveBeenCalledTimes(1);
-        expect(handler.mock.calls[0][1]).toEqual({ type: 'kiosk' });
+        // calls tuple is typed empty (handler declares no params); cast to read forwarded auth.
+        expect((handler.mock.calls[0] as unknown[])[1]).toEqual({ type: 'kiosk' });
     });
 
     it('invokes the handler for a session holding a required role', async () => {
