@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
-import { logger } from "@/lib/logger";
+import { logger, logIntegrationError } from "@/lib/logger";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { rateLimit } from "@/lib/rate-limit";
 
@@ -130,6 +130,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
     } catch (error) {
         logger.error("Shopify webhook error:", error);
+        await logIntegrationError("shopify-webhook", error, { operation: "POST /api/webhooks/shopify" });
         return NextResponse.json({ error: "Webhook Error" }, { status: 500 });
     }
 }

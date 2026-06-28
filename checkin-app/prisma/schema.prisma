@@ -815,6 +815,26 @@ model SystemMetric {
   value     Float
 }
 
+/// Persisted external-integration / link failures (Shopify, etc.) surfaced on the
+/// System Status > Link Status tab. Previously these were only emailed to admins and
+/// never stored, so there was no view. Rolling log: rows auto-purge after 90 days.
+model IntegrationError {
+  /// @sensitivity:internal
+  id         Int       @id @default(autoincrement())
+  /// @sensitivity:internal
+  source     String
+  /// @sensitivity:internal
+  message    String
+  /// @sensitivity:internal
+  context    Json?
+  /// @sensitivity:internal
+  createdAt  DateTime  @default(now())
+  /// @sensitivity:internal
+  resolvedAt DateTime?
+
+  @@index([resolvedAt, createdAt])
+}
+
 /// Dev-instance activity ledger (DEV_DASHBOARD_DESIGN.md §6). Lives only in checkin_dev; records
 /// the last login / impersonate / macro / reset by REAL human identity so a shared dev instance
 /// shows who tested/reset last (no accidental clobbering). Never written in prod by construction;
