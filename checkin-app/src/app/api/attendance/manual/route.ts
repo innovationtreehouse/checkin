@@ -24,6 +24,13 @@ export async function POST(req: NextRequest) {
         const arrivalTime = new Date(arrived);
         const departureTime = departed ? new Date(departed) : null;
 
+        if (isNaN(arrivalTime.getTime())) {
+            return NextResponse.json({ error: "Invalid arrival time" }, { status: 400 });
+        }
+        if (departureTime && isNaN(departureTime.getTime())) {
+            return NextResponse.json({ error: "Invalid departure time" }, { status: 400 });
+        }
+
         if (departureTime && departureTime <= arrivalTime) {
             return NextResponse.json({ error: "Departure time must be after arrival time" }, { status: 400 });
         }
