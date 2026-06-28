@@ -25,8 +25,6 @@ export const GET = withAuth(
             });
 
             const orphans = students.filter(student => {
-                if (!student.household) return true;
-
                 const signedUpAdults = student.household.participants.filter(p => {
                     const isAdult = !p.dob || new Date(p.dob) <= eighteenYearsAgo;
                     return isAdult && p.googleId !== null;
