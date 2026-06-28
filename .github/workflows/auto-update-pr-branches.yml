@@ -16,21 +16,25 @@ name: Auto-update PR branches
 # Method: the GitHub "Update branch" API (merge main into the branch — no history
 # rewrite). Safe for a squash-merge repo; the merge commits vanish on squash.
 #
-# Trade-off (accepted): the update push is made with GITHUB_TOKEN, so it does NOT
-# re-run the PR's checks — GitHub suppresses workflow events triggered by
-# GITHUB_TOKEN. Branches stay mergeable and current; the merge queue runs the
-# authoritative CI when the PR is finally approved. (To also re-run each PR's CI
-# on update, swap GH_TOKEN for a PAT / GitHub App token secret.)
+# The update push is made with a Personal Access Token (the AUTO_UPDATE_PAT
+# secret), NOT the default GITHUB_TOKEN — so the merge into the branch DOES
+# re-trigger the PR's checks, re-validating it against fresh main. (GitHub
+# suppresses workflow events from GITHUB_TOKEN pushes, which would leave CI stale.)
+#
+# AUTO_UPDATE_PAT must be able to read PRs and push to this repo's branches:
+#   - fine-grained PAT: Contents = Read and write, Pull requests = Read and write
+#   - classic PAT: `repo` scope
+# A GitHub App installation token works equally well — store it as the same secret.
 
 on:
   schedule:
     - cron: '*/15 * * * *'   # every 15 minutes (GitHub may delay scheduled runs under load)
   workflow_dispatch: {}       # manual run for testing / catch-up
 
-# update-branch needs to push the merge to the head branch and read/act on PRs.
+# All GitHub API calls use AUTO_UPDATE_PAT (below), not GITHUB_TOKEN, so the
+# workflow's own token needs no elevated permissions.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 # Never let two sweeps overlap; a slow run should not stack on the next schedule.
 concurrency:
@@ -44,10 +48,15 @@ jobs:
     steps:
       - name: Update eligible PR branches
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PAT (or GitHub App token) so the branch update re-runs the PR's checks.
+          GH_TOKEN: ${{ secrets.AUTO_UPDATE_PAT }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::AUTO_UPDATE_PAT secret is not set. Add a PAT (fine-grained: Contents + Pull requests = Read and write; or classic: 'repo' scope) so branch updates re-run PR CI."
+            exit 1
+          fi
           OWNER="${GH_REPO%/*}"
           REPO="${GH_REPO#*/}"
           BASE="$(gh repo view "$GH_REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')"
