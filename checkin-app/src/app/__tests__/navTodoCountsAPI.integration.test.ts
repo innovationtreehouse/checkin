@@ -6,8 +6,10 @@
  *
  * Verifies the guiding rule of the nav badges: a count only includes items the
  * *viewer can resolve*. Member counts are scoped to the caller's household and
- * exclude board-owned states; the admin block appears only for board/sysadmin
- * and tallies the board's own queue.
+ * exclude reviewer/board states; the admin block appears only for board/sysadmin
+ * and tallies the board's own queue. The board's only actionable membership
+ * state is BLOCKED — the background-check review states (PENDING_BG_REVIEW /
+ * RENEWAL_PENDING_BG) are reviewer (RBAC) work and must NOT count for the board.
  */
 
 import { GET } from '@/app/api/nav/todo-counts/route';
@@ -39,7 +41,7 @@ describe('Nav todo-counts API', () => {
 
     beforeAll(async () => {
         // Household A: a lead with a full slate of *member-actionable* todos, plus
-        // one board-owned membership state that must NOT count for the member.
+        // one reviewer-owned membership state that must NOT count for the member.
         const lead = await prisma.participant.create({
             data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dob: new Date('1985-01-01'), household: { create: {} } },
         });
@@ -53,7 +55,7 @@ describe('Nav todo-counts API', () => {
         secondMemberId = second.id;
 
         // Membership with one member-actionable process (PENDING_PAYMENT) and one
-        // board-owned process (PENDING_BG_REVIEW).
+        // reviewer-owned process (PENDING_BG_REVIEW).
         const membership = await prisma.membership.create({
             data: { householdId: householdAId, status: 'ACTIVE' },
         });
@@ -141,7 +143,7 @@ describe('Nav todo-counts API', () => {
         expect(res.status).toBe(200);
         const data = await res.json();
         // emergency contact (1) + PENDING_PAYMENT (1) + PENDING_SUBJECT_ACTION (1)
-        // + expiring trusted adult (1) = 4. PENDING_BG_REVIEW is board-owned → excluded.
+        // + expiring trusted adult (1) = 4. PENDING_BG_REVIEW is reviewer-owned → excluded.
         expect(data.member.household).toHaveLength(4);
         expect(data.member.programs).toHaveLength(2);
         // Items carry a label + a deep link so the UI can show *what* is due.
@@ -164,8 +166,33 @@ describe('Nav todo-counts API', () => {
         expect(data.member.programs).toHaveLength(0);
         expect(data.admin).toBeDefined();
         // Global queues may hold other rows; assert our injected items are included.
-        expect(data.admin.membership).toBeGreaterThanOrEqual(1); // the PENDING_BG_REVIEW
+        // membership = BLOCKED only (see delta test below); the seeded PENDING_BG_REVIEW
+        // is reviewer work and no longer counts, so just assert it's a number.
+        expect(typeof data.admin.membership).toBe('number');
         expect(data.admin.programsPending).toBeGreaterThanOrEqual(1); // payment-plan requested
         expect(data.admin.trustedAdults).toBeGreaterThanOrEqual(1); // the PENDING_BOARD_REVIEW review
+    });
+
+    it('counts BLOCKED for the board but not the reviewer-owned review states', async () => {
+        const boardMembershipCount = async () => {
+            const res = await callAs({ id: boardId, householdId: householdBId, boardMember: true });
+            const data = await res.json();
+            return data.admin.membership as number;
+        };
+        const before = await boardMembershipCount();
+
+        // Reviewer (RBAC) work — surfaced by the reviewer notifications badge, not the
+        // board badge. Adding these must NOT move the board count.
+        const reviewerProcs = await prisma.$transaction([
+            prisma.membershipProcess.create({ data: { membershipId, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } }),
+            prisma.membershipProcess.create({ data: { membershipId, kind: 'RENEWAL', status: 'RENEWAL_PENDING_BG' } }),
+        ]);
+        expect(await boardMembershipCount()).toBe(before);
+
+        // BLOCKED is the board's one actionable state (override/reset) → +1.
+        const blocked = await prisma.membershipProcess.create({ data: { membershipId, kind: 'INITIAL', status: 'BLOCKED' } });
+        expect(await boardMembershipCount()).toBe(before + 1);
+
+        await prisma.membershipProcess.deleteMany({ where: { id: { in: [...reviewerProcs.map((p) => p.id), blocked.id] } } });
     });
 });
