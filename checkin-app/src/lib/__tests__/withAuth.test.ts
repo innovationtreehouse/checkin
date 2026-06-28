@@ -25,11 +25,8 @@ const mockPubKeys = getKioskPublicKeys as jest.Mock;
 const mockVerify = verifyKioskSignature as jest.Mock;
 
 // A handler we can assert was / wasn't reached. Returns 200 so a pass is distinguishable.
-// Typed args so mock.calls tuples expose the (req, auth) the gate forwards.
-const handler = jest.fn(
-    async (_req: unknown, _auth: unknown) =>
-        NextResponse.json({ ok: true }, { status: 200 })
-);
+// No declared params — jest.fn still records the (req, auth) the gate forwards in mock.calls.
+const handler = jest.fn(async () => NextResponse.json({ ok: true }, { status: 200 }));
 
 const sessionReq = () => new Request('http://localhost/api/whatever') as never;
 const kioskReq = () =>
