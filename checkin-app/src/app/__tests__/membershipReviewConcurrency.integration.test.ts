@@ -92,6 +92,9 @@ describe('attest() concurrency', () => {
         expect(statuses.filter((s) => s === 'PENDING_PAYMENT')).toHaveLength(1);
         expect(statuses.filter((s) => s === 'wrong_phase')).toHaveLength(1);
 
+        // The winner is whichever attest returned PENDING_PAYMENT — its id is what the advance audit must carry.
+        const winner = b.status === 'fulfilled' && (b.value as { status: string }).status === 'PENDING_PAYMENT' ? revB : revC;
+
         const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
         expect(proc?.status).toBe('PENDING_PAYMENT');
 
@@ -99,9 +102,21 @@ describe('attest() concurrency', () => {
         const attestations = await prisma.backgroundCheckAttestation.count({ where: { processId } });
         expect(attestations).toBe(2);
 
-        // advanceToPayment ran exactly once → exactly one PENDING_PAYMENT audit row.
-        const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true } });
-        const advances = audits.filter((a) => String(a.newData).includes('"status":"PENDING_PAYMENT"')).length;
-        expect(advances).toBe(1);
+        // advanceToPayment ran exactly once → exactly one PENDING_PAYMENT audit row, stamped with the winner's id.
+        const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true, actorId: true } });
+        const advances = audits.filter((a) => String(a.newData).includes('"status":"PENDING_PAYMENT"'));
+        expect(advances).toHaveLength(1);
+        expect(advances[0].actorId).toBe(winner); // not revA (prior approver) nor the loser
+    });
+
+    it('a REJECT audit carries the rejecting reviewer\'s id, not another reviewer\'s', async () => {
+        const processId = await makePendingProcess();
+        // revB rejects; revA never touches this process.
+        await attest(revB, processId, { result: 'REJECT' });
+
+        const blocked = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, orderBy: { id: 'desc' } });
+        expect(String(blocked?.newData)).toContain('"status":"BLOCKED"');
+        expect(blocked?.actorId).toBe(revB);
+        expect(blocked?.actorId).not.toBe(revA);
     });
 });
