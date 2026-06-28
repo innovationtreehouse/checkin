@@ -99,7 +99,7 @@ export default function AdminHouseholdsPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Manage Memberships" back={{ href: '/membership-ops', label: '← Membership Ops' }} />
+      <AdminPageHeader title="Manage Memberships" />
 
       <Text c="dimmed">
         View all households and toggle their official facility Membership status. Memberships grant
