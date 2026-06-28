@@ -11,5 +11,5 @@ export interface FinanceNavLink {
 }
 
 export const FINANCE_NAV_LINKS: FinanceNavLink[] = [
-  { name: "Pending Participants", href: "/finance-ops/pending", icon: "⏳", description: "Review and approve payment-plan requests." },
+  { name: "Payment Plan", href: "/finance-ops/payment-plan", icon: "⏳", description: "Review and approve payment-plan requests." },
 ];
