@@ -310,7 +310,6 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
               <Group gap="md" p="md" wrap="nowrap" style={{ cursor: 'pointer' }} onClick={() => toggle(member.id)}>
                 <div style={{ flex: 1, overflow: 'hidden' }}>
                   <Text fw={600} c={isOpen ? 'cyan' : undefined} truncate>{member.name ?? 'Unnamed'}</Text>
-                  <Text size="sm" c="dimmed" truncate>{member.email}</Text>
                 </div>
                 <Text c="dimmed" size="sm">{isOpen ? '▲' : '▼'}</Text>
               </Group>
