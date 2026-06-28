@@ -14,7 +14,7 @@ const TABS: { value: SettingsTab; label: string; href: string }[] = [
 /**
  * Shared tab bar across the Settings-area pages, so Membership Settings and
  * Role Assignment read as one section. Navigates on change (each tab is its own
- * route). Mirrors MembershipTabs.
+ * route).
  */
 export function SettingsTabs({ active }: { active: SettingsTab }) {
   const router = useRouter();

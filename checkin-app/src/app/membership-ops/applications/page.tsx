@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
-import { MembershipTabs } from "@/components/admin/MembershipTabs";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
@@ -161,8 +160,6 @@ export default function AdminMembershipPage() {
   return (
     <Stack>
       <Title order={1}>Membership Applications</Title>
-
-      <MembershipTabs active="applications" />
 
       <Text c="dimmed">
         In-flight applications. Use the manual controls below to confirm the contract was signed
