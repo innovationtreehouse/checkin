@@ -16,22 +16,22 @@ name: Auto-update PR branches
 # Method: the GitHub "Update branch" API (merge main into the branch — no history
 # rewrite). Safe for a squash-merge repo; the merge commits vanish on squash.
 #
-# The update push is made with a Personal Access Token (the AUTO_UPDATE_PAT
-# secret), NOT the default GITHUB_TOKEN — so the merge into the branch DOES
-# re-trigger the PR's checks, re-validating it against fresh main. (GitHub
-# suppresses workflow events from GITHUB_TOKEN pushes, which would leave CI stale.)
+# The update push is made with a GitHub App installation token (minted below),
+# NOT the default GITHUB_TOKEN — so the merge into the branch DOES re-trigger the
+# PR's checks, re-validating it against fresh main. (GitHub suppresses workflow
+# events from GITHUB_TOKEN pushes, which would leave CI stale.)
 #
-# AUTO_UPDATE_PAT must be able to read PRs and push to this repo's branches:
-#   - fine-grained PAT: Contents = Read and write, Pull requests = Read and write
-#   - classic PAT: `repo` scope
-# A GitHub App installation token works equally well — store it as the same secret.
+# Setup: a GitHub App with repo permissions Contents = Read and write and
+# Pull requests = Read and write, installed on this repo. Store its App ID as the
+# `AUTO_UPDATE_APP_ID` variable and its private key as the
+# `AUTO_UPDATE_APP_PRIVATE_KEY` secret.
 
 on:
   schedule:
     - cron: '*/15 * * * *'   # every 15 minutes (GitHub may delay scheduled runs under load)
   workflow_dispatch: {}       # manual run for testing / catch-up
 
-# All GitHub API calls use AUTO_UPDATE_PAT (below), not GITHUB_TOKEN, so the
+# All GitHub API calls use the minted App token (below), not GITHUB_TOKEN, so the
 # workflow's own token needs no elevated permissions.
 permissions:
   contents: read
@@ -46,17 +46,22 @@ jobs:
     name: Update lagging PR branches
     runs-on: ubuntu-latest
     steps:
+      # Mint a short-lived (~1h) installation token, auto-scoped to this repo.
+      # Fails loudly if AUTO_UPDATE_APP_ID / AUTO_UPDATE_APP_PRIVATE_KEY are unset.
+      - name: Mint installation token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.AUTO_UPDATE_APP_ID }}
+          private-key: ${{ secrets.AUTO_UPDATE_APP_PRIVATE_KEY }}
+
       - name: Update eligible PR branches
         env:
-          # PAT (or GitHub App token) so the branch update re-runs the PR's checks.
-          GH_TOKEN: ${{ secrets.AUTO_UPDATE_PAT }}
+          # App installation token so the branch update re-runs the PR's checks.
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::AUTO_UPDATE_PAT secret is not set. Add a PAT (fine-grained: Contents + Pull requests = Read and write; or classic: 'repo' scope) so branch updates re-run PR CI."
-            exit 1
-          fi
           OWNER="${GH_REPO%/*}"
           REPO="${GH_REPO#*/}"
           BASE="$(gh repo view "$GH_REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')"
