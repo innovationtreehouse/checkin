@@ -88,7 +88,7 @@ describe('Bulk import: preview vs commit consistency', () => {
         return fd;
     };
 
-    const call = async (handler: typeof COMMIT) => {
+    const call = async (handler: typeof COMMIT | typeof PREVIEW) => {
         const fd = csvForm();
         const req = new Request('http://localhost:4000/x', { method: 'POST', body: fd }) as unknown as Parameters<typeof COMMIT>[0];
         (req as unknown as { formData: () => Promise<FormData> }).formData = jest.fn().mockResolvedValue(fd);
