@@ -94,6 +94,22 @@ describe('Manual Attendance API Integration Tests', () => {
             expect(data.error).toBe('Arrival time is required');
         });
 
+        it('should return 400 Bad Request if arrival time is malformed', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testUserId }
+            });
+
+            const req = new Request('http://localhost:4000/api/attendance/manual', {
+                method: 'POST',
+                body: JSON.stringify({ arrived: 'not-a-date' })
+            });
+
+            const res = await POST(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('Invalid arrival time');
+        });
+
         it('should return 400 Bad Request if departure time is before arrival time', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testUserId }
