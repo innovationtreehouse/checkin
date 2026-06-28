@@ -4,6 +4,17 @@ import { sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { logger } from "@/lib/logger";
 
+type TxClient = Prisma.TransactionClient;
+
+/**
+ * Serialize all mutations of one TrustedAdult by taking a row lock on the parent.
+ * renew/withdraw/decide each read-check-write; without this lock two concurrent
+ * calls both pass the check and both write (TOCTOU). Mirrors lib/membership/review.ts.
+ */
+function lockTrustedAdult(tx: TxClient, taId: number) {
+    return tx.$queryRaw`SELECT id FROM "TrustedAdult" WHERE id = ${taId} FOR UPDATE`;
+}
+
 /**
  * Trusted Adult management.
  *
@@ -113,19 +124,18 @@ export async function createTrustedAdult(input: CreateInput) {
  * by a lead of the household.
  */
 export async function renewTrustedAdult(id: number, actorId: number) {
-    const ta = await prisma.trustedAdult.findUnique({
-        where: { id },
-        include: { reviews: { orderBy: { id: "desc" }, take: 1 } },
-    });
+    const ta = await prisma.trustedAdult.findUnique({ where: { id }, select: { id: true, householdId: true } });
     if (!ta) throw new TrustedAdultError("not_found", "Trusted adult not found.");
     await assertHouseholdLead(ta.householdId, actorId);
 
-    const latest = ta.reviews[0];
-    if (latest && (latest.status === "PENDING_BOARD_REVIEW" || latest.status === "PENDING_SUBJECT_ACTION")) {
-        throw new TrustedAdultError("already_open", "A review for this trusted adult is already in progress.");
-    }
-
+    // Lock the parent, re-read the latest review under the lock, then create. Without
+    // the lock two concurrent renews both see a terminal latest and both open a review.
     const review = await prisma.$transaction(async (tx) => {
+        await lockTrustedAdult(tx, ta.id);
+        const latest = await tx.trustedAdultReview.findFirst({ where: { trustedAdultId: ta.id }, orderBy: { id: "desc" } });
+        if (latest && (latest.status === "PENDING_BOARD_REVIEW" || latest.status === "PENDING_SUBJECT_ACTION")) {
+            throw new TrustedAdultError("already_open", "A review for this trusted adult is already in progress.");
+        }
         const created = await tx.trustedAdultReview.create({
             data: { trustedAdultId: ta.id, householdId: ta.householdId, kind: "RENEWAL", status: "PENDING_BOARD_REVIEW" },
         });
@@ -138,22 +148,19 @@ export async function renewTrustedAdult(id: number, actorId: number) {
 
 /** A household lead withdraws a Trusted Adult — sets the latest review REVOKED. */
 export async function withdrawTrustedAdult(id: number, actorId: number) {
-    const ta = await prisma.trustedAdult.findUnique({
-        where: { id },
-        include: { reviews: { orderBy: { id: "desc" }, take: 1 } },
-    });
+    const ta = await prisma.trustedAdult.findUnique({ where: { id }, select: { id: true, householdId: true } });
     if (!ta) throw new TrustedAdultError("not_found", "Trusted adult not found.");
     await assertHouseholdLead(ta.householdId, actorId);
 
-    const latest = ta.reviews[0];
-    if (!latest || latest.status === "REVOKED") throw new TrustedAdultError("wrong_phase", "Nothing to withdraw.");
-
-    const updated = await prisma.$transaction(async (tx) => {
-        const u = await tx.trustedAdultReview.update({ where: { id: latest.id }, data: { status: "REVOKED" } });
+    // Lock the parent so withdraw serializes against renew and decide on the same TA.
+    return prisma.$transaction(async (tx) => {
+        await lockTrustedAdult(tx, ta.id);
+        const latest = await tx.trustedAdultReview.findFirst({ where: { trustedAdultId: ta.id }, orderBy: { id: "desc" } });
+        if (!latest || latest.status === "REVOKED") throw new TrustedAdultError("wrong_phase", "Nothing to withdraw.");
+        const updated = await tx.trustedAdultReview.update({ where: { id: latest.id }, data: { status: "REVOKED" } });
         await audit(tx, actorId, ta.id, { status: latest.status }, { status: "REVOKED" });
-        return u;
+        return updated;
     });
-    return updated;
 }
 
 export interface DecideInput {
@@ -172,53 +179,63 @@ export interface DecideInput {
  *   REQUEST_INFO  -> PENDING_SUBJECT_ACTION (notify household)
  */
 export async function decideReview(reviewId: number, boardMemberId: number, input: DecideInput) {
-    const review = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
-    if (!review) throw new TrustedAdultError("not_found", "Review not found.");
-    if (review.status !== "PENDING_BOARD_REVIEW") {
-        throw new TrustedAdultError("wrong_phase", "This review is not awaiting board review.");
-    }
+    // Pure input validation — independent of locked state, so do it before the tx.
     if (input.decision === "APPROVE" && !input.sharedNote?.trim()) {
         throw new TrustedAdultError(
             "bad_input",
             "A shared note (what keyholders & program leads should know, e.g. who can pick up whom) is required to approve.",
         );
     }
-
-    const now = new Date();
-    const data: Record<string, unknown> = {
-        decidedById: boardMemberId,
-        decision: input.decision,
-        decisionNote: input.note?.trim() || null,
-    };
-    let status: string;
-    switch (input.decision) {
-        case "APPROVE":
-            status = "APPROVED";
-            data.effectiveFrom = now;
-            data.reviewBy = daysFromNow(now, APPROVAL_VALID_DAYS);
-            data.sharedNote = input.sharedNote!.trim();
-            break;
-        case "DENY":
-            status = "DENIED";
-            break;
-        case "REQUEST_INFO":
-            status = "PENDING_SUBJECT_ACTION";
-            break;
-        default:
-            throw new TrustedAdultError("bad_input", "Unknown decision.");
+    if (!["APPROVE", "DENY", "REQUEST_INFO"].includes(input.decision)) {
+        throw new TrustedAdultError("bad_input", "Unknown decision.");
     }
-    data.status = status;
 
-    const updated = await prisma.$transaction(async (tx) => {
-        const u = await tx.trustedAdultReview.update({ where: { id: reviewId }, data });
+    const head = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId }, select: { trustedAdultId: true } });
+    if (!head) throw new TrustedAdultError("not_found", "Review not found.");
+
+    // Lock the parent TA, then re-read the review under the lock and check its phase.
+    // Without this two board members both read PENDING_BOARD_REVIEW, both update, and
+    // both write an audit row — the loser leaving an orphan audit that contradicts state.
+    const result = await prisma.$transaction(async (tx) => {
+        await lockTrustedAdult(tx, head.trustedAdultId);
+        const review = await tx.trustedAdultReview.findUnique({ where: { id: reviewId } });
+        if (!review) throw new TrustedAdultError("not_found", "Review not found.");
+        if (review.status !== "PENDING_BOARD_REVIEW") {
+            throw new TrustedAdultError("wrong_phase", "This review is not awaiting board review.");
+        }
+
+        const now = new Date();
+        const data: Record<string, unknown> = {
+            decidedById: boardMemberId,
+            decision: input.decision,
+            decisionNote: input.note?.trim() || null,
+        };
+        let status: string;
+        switch (input.decision) {
+            case "APPROVE":
+                status = "APPROVED";
+                data.effectiveFrom = now;
+                data.reviewBy = daysFromNow(now, APPROVAL_VALID_DAYS);
+                data.sharedNote = input.sharedNote!.trim();
+                break;
+            case "DENY":
+                status = "DENIED";
+                break;
+            default:
+                status = "PENDING_SUBJECT_ACTION";
+                break;
+        }
+        data.status = status;
+
+        const updated = await tx.trustedAdultReview.update({ where: { id: reviewId }, data });
         await audit(tx, boardMemberId, review.trustedAdultId, { status: review.status }, { status, decision: input.decision });
-        return u;
+        return { updated, householdId: review.householdId };
     });
 
     if (input.decision === "REQUEST_INFO") {
-        await notifyHouseholdFamily(review.householdId, "The board needs more information about a trusted adult", input.note?.trim());
+        await notifyHouseholdFamily(result.householdId, "The board needs more information about a trusted adult", input.note?.trim());
     }
-    return updated;
+    return result.updated;
 }
 
 /** Board / sysadmin override: force a review to a terminal state regardless of phase. */
@@ -346,7 +363,7 @@ async function notifyHouseholdFamily(householdId: number, subject: string, body?
 }
 
 function audit(
-    db: Prisma.TransactionClient | typeof prisma,
+    db: TxClient | typeof prisma,
     actorId: number,
     taId: number,
     oldData: object,
