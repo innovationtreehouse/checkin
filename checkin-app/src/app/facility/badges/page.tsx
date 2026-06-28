@@ -15,11 +15,11 @@ type BadgeEvent = {
 };
 
 const COLUMNS: DataTableColumn<BadgeEvent>[] = [
-  { header: 'ID', render: (b) => b.id },
-  { header: 'Time', render: (b) => formatDateTime(b.time) },
-  { header: 'Participant', render: (b) => b.participant?.name || 'Unknown' },
-  { header: 'Email', render: (b) => b.participant?.email },
-  { header: 'Location', render: (b) => b.location || 'Front Door' },
+  { header: 'ID', render: (b) => b.id, sortBy: (b) => b.id },
+  { header: 'Time', render: (b) => formatDateTime(b.time), sortBy: (b) => b.time },
+  { header: 'Participant', render: (b) => b.participant?.name || 'Unknown', sortBy: (b) => b.participant?.name },
+  { header: 'Email', render: (b) => b.participant?.email, sortBy: (b) => b.participant?.email },
+  { header: 'Location', render: (b) => b.location || 'Front Door', sortBy: (b) => b.location },
 ];
 
 export default function AdminBadgesPage() {
