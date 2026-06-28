@@ -2,43 +2,19 @@
  * @jest-environment node
  */
 /**
- * Integration tests for three previously-untested write paths in
- * PATCH /api/events/[id] that can corrupt attendance / safety data:
+ * Integration tests for three write paths in PATCH /api/events/[id] that can
+ * corrupt attendance / safety data:
  *
- *   1. CANCEL (single + recurring series) — currently NON-TRANSACTIONAL.
- *   2. manualEditAttendance vs. an OPEN scan visit (Present update / Absent delete).
- *   3. PAST-EVENT edit re-clearing reminderSentAt (no guard exists).
+ *   1. CANCEL (single + recurring series) — transactional; visits NULLed, not deleted.
+ *   2. manualEditAttendance vs. an OPEN scan visit (Present update / Absent reject).
+ *   3. PAST-EVENT edit guard (editTime on a finished event is rejected).
  *
  * Harness mirrors eventRescheduleClearsReminder.integration.test.ts.
  *
- * ─── FLAGGED BUGS / BEHAVIORS (not fixed here — flag-don't-fix) ──────────────
- *
- * BUG 1 — single cancel is NOT transactional (route.ts:155-159).
- *   deleteMany(RSVP) → updateMany(Visit→null) → delete(Event) run as three
- *   separate writes. A failure between writes orphans visits (associatedEventId
- *   already nulled) or leaves RSVPs deleted with the event still alive. The
- *   series editTime path right above it (route.ts:149) already wraps its writes
- *   in prisma.$transaction — single cancel should too. LEFT UNFIXED + no
- *   partial-failure rollback test: forcing a mid-sequence failure needs a prisma
- *   mock (the route swallows nothing — the delete just has to throw), which is a
- *   code change to the route, and the top-line instruction is flag-don't-fix.
- *   Fix is a 3-line wrap matching route.ts:149.
- *
- * BUG 2 — manual "Absent" silently DELETES a live (open) check-in
- *   (route.ts:194-201). deleteMany keys on (participantId, associatedEventId)
- *   with no departed filter, so marking someone Absent erases the visit row
- *   proving they physically scanned in and are still on-site. That destroys a
- *   safety record (who is in the building). Asserted as current behavior below;
- *   flagged as likely wrong — an Absent edit on an OPEN visit should arguably be
- *   rejected, or close the visit rather than delete it.
- *
- * BUG 3 — no past-event guard (route.ts:171-176). Editing a finished event's
- *   start re-clears reminderSentAt. The cron's window is future-only
- *   (start gte now+2h, reminders/route.ts:38), so a past start is never picked
- *   up and no stale reminder actually fires — see the regression test below,
- *   which locks that in. The clear itself is still latent garbage: the only
- *   thing preventing a past-event reminder is the cron window, not any guard on
- *   the write. A start guard (PATCH past event → 400) would be the real fix.
+ * BUG 2 (manual "Absent" deleting a live/open check-in) is now FIXED: an Absent
+ * edit against an OPEN visit (departed = null) is rejected with 400 so the row
+ * proving the participant is physically on-site survives. Only CLOSED visits are
+ * removed on an Absent correction. See the manualEditAttendance block below.
  */
 import { PATCH } from '@/app/api/events/[id]/route';
 import { GET as cronReminders } from '@/app/api/cron/reminders/route';
@@ -201,55 +177,89 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
         });
     });
 
-    describe('manualEditAttendance — Absent on a live (open) check-in', () => {
-        // BUG 2: deleting an OPEN visit erases the record that this person is
-        // physically on-site. Asserting current behavior; flagged above.
-        it('DELETES the open visit (destroys the live check-in / safety record)', async () => {
-            const event = await makeEvent('manual-absent', -1 * HOUR);
+    describe('manualEditAttendance — Absent vs open/closed visits', () => {
+        // An OPEN visit (departed = null) is proof the participant physically
+        // scanned in and is still on-site. Marking them Absent must NOT erase it.
+        it('rejects Absent on a live (open) check-in and keeps the visit', async () => {
+            const event = await makeEvent('manual-absent-open', -1 * HOUR);
             await prisma.visit.create({
                 data: { participantId, arrived: new Date(Date.now() - 30 * MIN), departed: null, associatedEventId: event.id },
+            });
+
+            const res = await patch(event.id, { action: 'manualEditAttendance', participantId, status: 'Absent' });
+            expect(res.status).toBe(400);
+
+            const visits = await prisma.visit.findMany({ where: { participantId, associatedEventId: event.id } });
+            expect(visits.length).toBe(1); // open visit survives
+        });
+
+        it('deletes a closed (departed) visit when marking Absent', async () => {
+            const event = await makeEvent('manual-absent-closed', -2 * HOUR);
+            await prisma.visit.create({
+                data: {
+                    participantId,
+                    arrived: new Date(Date.now() - 90 * MIN),
+                    departed: new Date(Date.now() - 60 * MIN),
+                    associatedEventId: event.id,
+                },
             });
 
             const res = await patch(event.id, { action: 'manualEditAttendance', participantId, status: 'Absent' });
             expect(res.status).toBe(200);
 
             const visits = await prisma.visit.findMany({ where: { participantId, associatedEventId: event.id } });
-            expect(visits.length).toBe(0); // open visit silently removed
+            expect(visits.length).toBe(0); // closed visit removed
+        });
+
+        it('rejects and deletes nothing when an open visit coexists with a closed one', async () => {
+            const event = await makeEvent('manual-absent-mix', -2 * HOUR);
+            await prisma.visit.create({
+                data: {
+                    participantId,
+                    arrived: new Date(Date.now() - 110 * MIN),
+                    departed: new Date(Date.now() - 80 * MIN),
+                    associatedEventId: event.id,
+                },
+            });
+            await prisma.visit.create({
+                data: { participantId, arrived: new Date(Date.now() - 30 * MIN), departed: null, associatedEventId: event.id },
+            });
+
+            const res = await patch(event.id, { action: 'manualEditAttendance', participantId, status: 'Absent' });
+            expect(res.status).toBe(400);
+
+            // All-or-nothing: the open visit blocks the edit, so the closed one stays too.
+            const visits = await prisma.visit.findMany({ where: { participantId, associatedEventId: event.id } });
+            expect(visits.length).toBe(2);
         });
     });
 
-    // ─── 3. PAST-EVENT GUARD (regression) ───────────────────────────────────
+    // ─── 3. PAST-EVENT GUARD ────────────────────────────────────────────────
 
-    describe('past-event editTime — reminder is not re-sent', () => {
-        // BUG 3: editing a past event re-clears reminderSentAt with no guard.
-        // The cron's future-only window is the only thing stopping a stale
-        // past-event reminder. This locks that in.
-        it('clears reminderSentAt but the cron does NOT re-notify for a past start', async () => {
+    describe('past-event editTime — rejected', () => {
+        // Editing a finished event is blocked (400) before any write, so a stale
+        // reminderSentAt is never re-cleared and no past-event reminder can re-arm.
+        it('rejects the edit and leaves reminderSentAt untouched', async () => {
             const event = await makeEvent('past-edit', -2 * HOUR);
+            const sentAt = new Date();
             await prisma.rSVP.create({
-                data: { eventId: event.id, participantId, status: 'ATTENDING', reminderSentAt: new Date() },
+                data: { eventId: event.id, participantId, status: 'ATTENDING', reminderSentAt: sentAt },
             });
 
-            // Edit the (still past) start. Route clears reminderSentAt unconditionally.
             const newStart = new Date(Date.now() - 90 * MIN);
             const res = await patch(event.id, { action: 'editTime', start: newStart.toISOString() });
-            expect(res.status).toBe(200);
+            expect(res.status).toBe(400);
 
-            const cleared = await prisma.rSVP.findUnique({
+            // Guard fires before the clear → reminderSentAt preserved.
+            const rsvp = await prisma.rSVP.findUnique({
                 where: { eventId_participantId: { eventId: event.id, participantId } },
             });
-            expect(cleared!.reminderSentAt).toBeNull(); // route DID re-clear (latent bug)
+            expect(rsvp!.reminderSentAt).not.toBeNull();
 
-            // Cron window is [now+2h, now+2h15m]; a past start is excluded → no send.
+            // And the cron still won't re-notify for a past start.
             const cron = await cronReminders(cronReq());
             expect(cron.status).toBe(200);
             expect((sendNotification as jest.Mock).mock.calls.length).toBe(0);
-
-            // And reminderSentAt stays null because the cron never touched it.
-            const after = await prisma.rSVP.findUnique({
-                where: { eventId_participantId: { eventId: event.id, participantId } },
-            });
-            expect(after!.reminderSentAt).toBeNull();
         });
     });
 });
