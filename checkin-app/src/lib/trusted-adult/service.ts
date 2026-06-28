@@ -297,7 +297,7 @@ async function notifyBoard(): Promise<void> {
                     ? sendEmail(
                           b.email,
                           "Trusted adult: a disclosure needs board review",
-                          `<p>A trusted-adult disclosure is awaiting board review. <a href="${base}/admin/trusted-adults">Review it</a>.</p>`,
+                          `<p>A trusted-adult disclosure is awaiting board review. <a href="${base}/safety/trusted-adults">Review it</a>.</p>`,
                       ).catch((e) => logger.error("Board trusted-adult ping failed:", e))
                     : Promise.resolve(),
             ),

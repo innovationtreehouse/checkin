@@ -19,10 +19,12 @@ import {
   IconBuildingWarehouse,
   IconCalendarEvent,
   IconClipboardList,
+  IconCoin,
   IconHome,
   IconLogout,
   IconMoon,
   IconSettings,
+  IconShieldCheck,
   IconSun,
   IconTool,
   IconUser,
@@ -57,12 +59,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/household', label: 'My Household', icon: <IconHome size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/programs', label: 'Programs', icon: <IconCalendarEvent size={18} />, visible: () => true },
   {
-    href: '/trusted-adults/pickup',
-    label: 'Pickup List',
-    icon: <IconClipboardList size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder,
-  },
-  {
     href: '/shop',
     label: 'Shop Ops',
     icon: <IconTool size={18} />,
@@ -82,6 +78,18 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Membership Ops',
     icon: <IconUsers size={18} />,
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+  },
+  {
+    href: '/finance-ops',
+    label: 'Finance Ops',
+    icon: <IconCoin size={18} />,
+    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+  },
+  {
+    href: '/safety',
+    label: 'Safety',
+    icon: <IconShieldCheck size={18} />,
+    visible: (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder,
   },
   {
     href: '/admin',
@@ -106,6 +114,12 @@ function todoCountFor(href: string, counts: TodoCounts | null): number {
     case '/membership-ops':
       // Pending membership applications awaiting board review.
       return counts.admin ? counts.admin.membership : 0;
+    case '/finance-ops':
+      // Pending participants awaiting payment-plan approval.
+      return counts.admin ? counts.admin.programsPending : 0;
+    case '/safety':
+      // Trusted-adult disclosures awaiting board review.
+      return counts.admin ? counts.admin.trustedAdults : 0;
     case '/admin':
       // Top-level roll-up of the board's queue; per-queue badges live in the admin sub-nav.
       return counts.admin
