@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Button, Center, Group, Loader, Stack, Text, Title } from '@mantine/core';
+import { Button, Center, Loader, Stack, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
@@ -123,13 +123,6 @@ export default function PendingParticipantsPage() {
 
   return (
     <Stack>
-      <Group justify="space-between" align="flex-start" wrap="wrap">
-        <div>
-          <Title order={1}>Finance Operations</Title>
-          <Text c="dimmed">Payments and billing review.</Text>
-        </div>
-      </Group>
-
       <Text c="dimmed">
         Review pending participants who have clicked the &quot;Request Payment Plan&quot; button.
         Approving a request marks the user as ACTIVE and exempts them from the 7-day automated

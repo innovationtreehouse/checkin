@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Badge, Box, Card, Group, Stack, Text, Title } from "@mantine/core";
+import { Badge, Box, Card, Group, Stack, Text } from "@mantine/core";
 
 type UnclaimedHousehold = {
   id: number;
@@ -31,7 +31,6 @@ export default function UnclaimedHouseholdsIndex() {
   return (
     <Stack maw={1000} mx="auto">
       <div>
-        <Title order={1}>Unclaimed Accounts</Title>
         <Text c="dimmed">Households with at least one member who has an email but has never signed in with Google.</Text>
       </div>
 

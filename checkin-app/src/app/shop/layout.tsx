@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Alert, Button, Card, Center, Container, Group, Loader, Tabs, Text, Title } from "@mantine/core";
+import { Alert, Button, Card, Center, Container, Loader, Tabs, Title } from "@mantine/core";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { SHOP_NAV_LINKS, shopRoles } from "@/lib/shopNav";
 
@@ -64,13 +64,6 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <Container size="lg" pb="md">
-      <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap">
-        <div>
-          <Title order={1}>Shop Operations</Title>
-          <Text c="dimmed">Centralized hub for tool management and safety certifications.</Text>
-        </div>
-      </Group>
-
       <Tabs
         value={active}
         onChange={(value) => {

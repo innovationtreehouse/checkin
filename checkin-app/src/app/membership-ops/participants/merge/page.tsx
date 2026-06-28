@@ -236,7 +236,6 @@ export default function MergeParticipants() {
   return (
     <Stack maw={1000} mx="auto">
       <div>
-        <Title order={1}>Merge Participants</Title>
         <Text c="dimmed">
           Combine two participant records. The data from the merged record (visits, programs, etc)
           will be moved to the kept record. The merged record will be tombstoned.
