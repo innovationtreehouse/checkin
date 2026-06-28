@@ -244,9 +244,35 @@ describe('Program Participants API Integration Tests', () => {
              });
              const res = await POST(req as unknown as import("next/server").NextRequest, createParams(exactAgeProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.success).toBe(true);
+        });
+
+        // INTENT LOCK: a board/sysadmin override DELIBERATELY overfills a program
+        // past maxParticipants. The override is a confirmed action (the route first
+        // returns requiresOverride:true) and is meant to bypass every soft limit —
+        // closed enrollment, age, AND capacity. This 200 is correct, not a bug.
+        // The non-override path still cannot overbook (see the 400 test above and
+        // programsParticipantsConcurrency.integration.test.ts). Do not "fix" the
+        // capacity bypass at route.ts enforceLimits to make this fail.
+        it('should allow an admin override to enroll into a FULL program (deliberate overfill)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${fullProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: adminId, override: true })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(fullProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.success).toBe(true);
+             expect(data.enrollment.status).toBe('ACTIVE'); // override → confirmed/paid bypass
+
+             // Program is now intentionally over its cap of 1.
+             const enrolled = await prisma.programParticipant.count({ where: { programId: fullProgramId } });
+             expect(enrolled).toBe(2);
         });
     });
 
