@@ -235,6 +235,7 @@ describe('Public Program Registration API Integration Tests', () => {
         it('should successfully register a family with correct PENDING status and return Shopify URL', async () => {
             const req = new Request(`http://localhost:4000/api/programs/${standardProgramId}/public-register`, {
                 method: 'POST',
+                headers: { 'x-forwarded-for': '203.0.113.1' }, // own rate-limit bucket so earlier block tests don't 429 this
                 body: JSON.stringify({
                     parents: [{ name: 'Test Primary Parent', email: 'test-primary-parent@example.com', phone: '555-123-4444' }],
                     emergencyContact: { name: 'Aunt Sue', phone: '555-999-8888' },
@@ -278,6 +279,7 @@ describe('Public Program Registration API Integration Tests', () => {
             const uniqueEmail = `mom-free-${Date.now()}@test.com`;
             const req = new Request(`http://localhost:4000/api/programs/${freeProgramId}/public-register`, {
                 method: 'POST',
+                headers: { 'x-forwarded-for': '203.0.113.2' }, // own rate-limit bucket so earlier block tests don't 429 this
                 body: JSON.stringify({
                     parents: [{ name: 'Mom Free', email: uniqueEmail, phone: '555-111-3333' }],
                     emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
