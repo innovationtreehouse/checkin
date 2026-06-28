@@ -37,7 +37,7 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
           <Alert color="red" mb="md">
             Forbidden: You require the Admin, Board Member, or Certifier role to view this page.
           </Alert>
-          <Button onClick={() => router.push("/dashboard")}>Back to Dashboard</Button>
+          <Button onClick={() => router.push("/")}>Back to Home</Button>
         </Card>
       </Container>
     );

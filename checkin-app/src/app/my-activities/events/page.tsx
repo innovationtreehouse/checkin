@@ -79,10 +79,7 @@ export default function ParticipantEventsDashboard() {
 
   return (
     <Stack>
-      <Group justify="space-between" align="center" wrap="wrap">
-        <Title order={1}>My Upcoming Events</Title>
-        <Button component={Link} href="/dashboard" variant="default">← Back to Dashboard</Button>
-      </Group>
+      <Title order={1}>My Upcoming Events</Title>
 
       {message && <Alert color="red">{message}</Alert>}
 

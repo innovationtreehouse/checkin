@@ -16,6 +16,7 @@ import {
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
+  IconActivity,
   IconAdjustments,
   IconBriefcase,
   IconBuildingWarehouse,
@@ -58,6 +59,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/household', label: 'My Household', icon: <IconHome size={18} />, visible: (_u, signedIn) => signedIn },
+  { href: '/my-activities', label: 'My Activities', icon: <IconActivity size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/kioskdisplay', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/programs', label: 'Programs', icon: <IconCalendarEvent size={18} />, visible: () => true },
   {
