@@ -76,6 +76,9 @@ describe('Program Settings API Integration Tests', () => {
         const existingUserIds = [adminId, leadId, newLeadId, commonId].filter(id => id !== undefined);
 
         if (targetProgramId) {
+            await prisma.programParticipant.deleteMany({
+                where: { programId: targetProgramId }
+            });
             await prisma.program.deleteMany({
                 where: { id: targetProgramId }
             });
@@ -164,6 +167,84 @@ describe('Program Settings API Integration Tests', () => {
              expect(data.success).toBe(true);
              expect(data.program.leadMentorId).toBe(newLeadId);
              expect(data.program.phase).toBe('RUNNING');
+        });
+
+        it('should reject a negative maxParticipants with 400', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ maxParticipants: -5 })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(400);
+        });
+
+        it('should reject a zero maxParticipants with 400', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ maxParticipants: 0 })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(400);
+        });
+
+        it('should reject shrinking maxParticipants below current enrollment and not persist it', async () => {
+             // Enroll 2 participants.
+             await prisma.programParticipant.createMany({
+                 data: [
+                     { programId: targetProgramId, participantId: commonId, status: 'ACTIVE' },
+                     { programId: targetProgramId, participantId: leadId, status: 'PENDING' },
+                 ]
+             });
+
+             const before = await prisma.program.findUnique({ where: { id: targetProgramId } });
+
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ maxParticipants: 1 }) // below enrollment of 2
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(400);
+
+             const data = await res.json();
+             expect(data.error).toMatch(/current enrollment of 2/);
+
+             // Value did NOT persist.
+             const after = await prisma.program.findUnique({ where: { id: targetProgramId } });
+             expect(after?.maxParticipants).toBe(before?.maxParticipants);
+        });
+
+        it('should allow editing maxAge after creation (regression: was non-updatable)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ maxAge: 18 })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.program.maxAge).toBe(18);
+
+             const persisted = await prisma.program.findUnique({ where: { id: targetProgramId } });
+             expect(persisted?.maxAge).toBe(18);
+        });
+
+        it('should reject minAge greater than maxAge with 400', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ minAge: 30, maxAge: 10 })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(400);
         });
     });
 });
