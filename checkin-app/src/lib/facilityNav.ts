@@ -1,7 +1,6 @@
 /**
- * Single source of truth for the Facility Ops tools. Rendered both as the
- * persistent top tabs (facility/layout.tsx) and as the landing card grid on the
- * Facility Ops hub (/facility). Add a tool once here and it shows up in both.
+ * Single source of truth for the Facility Ops tools. Rendered as the persistent
+ * top tabs (facility/layout.tsx); /facility itself redirects to the first tab.
  */
 export interface FacilityNavLink {
   name: string;
