@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import * as xlsx from "xlsx";
+import { parseImportDob } from "@/lib/importDob";
 
 type RowStatus = "ready" | "update" | "warning" | "error";
 
@@ -135,14 +136,9 @@ export async function POST(req: NextRequest) {
             }
 
             // Check: DOB parsing
-            let parsedDob: Date | undefined;
-            if (dobString) {
-                const d = new Date(dobString);
-                if (isNaN(d.getTime())) {
-                    warnings.push(`Could not parse date of birth: "${dobString}"`);
-                } else {
-                    parsedDob = d;
-                }
+            const parsedDob = parseImportDob(dobString);
+            if (dobString && !parsedDob) {
+                warnings.push(`Could not parse date of birth: "${dobString}"`);
             }
 
             // Check: student without parent email
