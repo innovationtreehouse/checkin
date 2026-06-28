@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Center, Group, Loader, SegmentedControl, Select, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
+import { Card, Center, Group, Loader, SegmentedControl, Select, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
 type PeriodType = "week" | "month" | "quarter" | "year";
@@ -88,10 +88,7 @@ export default function ParticipationTrendsPage() {
 
   return (
     <Stack>
-      <div>
-        <Title order={1}>📈 Participation Trends</Title>
-        <Text c="dimmed">Facility usage metrics across time periods and programs.</Text>
-      </div>
+      <Text c="dimmed">Facility usage metrics across time periods and programs.</Text>
 
       <Group justify="space-between" wrap="wrap">
         <SegmentedControl

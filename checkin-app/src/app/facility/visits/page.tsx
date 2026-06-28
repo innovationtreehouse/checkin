@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Button, Center, Group, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
@@ -87,8 +86,6 @@ export default function AdminVisitsPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Visit History" back={{ href: '/facility', label: '← Facility Ops' }} />
-
       <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 
       <Table.ScrollContainer minWidth={800}>
