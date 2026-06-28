@@ -89,7 +89,7 @@ type GithubCommit = {
   commit: { message: string };
 };
 
-function SystemVersionBox() {
+export function SystemVersionBox() {
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [commits, setCommits] = useState<GithubCommit[]>([]);
@@ -193,7 +193,7 @@ function SystemVersionBox() {
   );
 }
 
-export default function SystemHealthPage() {
+export function BadgeScanChart() {
   const [stats, setStats] = useState<DailyStat[] | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -210,31 +210,20 @@ export default function SystemHealthPage() {
   }, []);
 
   return (
-    <Stack>
-      <div>
-        <Title order={1}>System Health</Title>
-        <Text c="dimmed">
-          Monitor the backend performance and round-trip response times for Kiosk functionality.
-        </Text>
-      </div>
+    <Card withBorder radius="md" padding="lg">
+      <Title order={4}>Badge Scan Response Times (Last 30 Days)</Title>
+      <Text c="dimmed" size="sm" mb="lg">
+        This graph displays the operational latency of the badge scanning system. Lower values
+        indicate faster responses.
+      </Text>
 
-      <SystemVersionBox />
-
-      <Card withBorder radius="md" padding="lg">
-        <Title order={4}>Badge Scan Response Times (Last 30 Days)</Title>
-        <Text c="dimmed" size="sm" mb="lg">
-          This graph displays the operational latency of the badge scanning system. Lower values
-          indicate faster responses.
-        </Text>
-
-        {loading ? (
-          <Center py="xl"><Loader /></Center>
-        ) : stats ? (
-          <SvgLineChart data={stats} />
-        ) : (
-          <Center py="xl"><Text c="red">Failed to load metrics.</Text></Center>
-        )}
-      </Card>
-    </Stack>
+      {loading ? (
+        <Center py="xl"><Loader /></Center>
+      ) : stats ? (
+        <SvgLineChart data={stats} />
+      ) : (
+        <Center py="xl"><Text c="red">Failed to load metrics.</Text></Center>
+      )}
+    </Card>
   );
 }

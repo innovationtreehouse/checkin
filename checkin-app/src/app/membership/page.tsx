@@ -391,7 +391,7 @@ export default function MembershipPage() {
   const isRenewal = state?.process?.kind === "RENEWAL";
 
   return (
-    <Container size="lg" py="md">
+    <Container size="lg" pb="md">
       <Group justify="space-between" align="center" wrap="wrap" mb="lg">
         <Title order={1}>Treehouse Membership</Title>
         <Button component={Link} href="/" variant="default">← Home</Button>

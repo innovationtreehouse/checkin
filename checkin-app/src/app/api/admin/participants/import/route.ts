@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { authenticateRequest } from "@/lib/auth";
 import * as xlsx from "xlsx";
 import { logBackendError } from "@/lib/logger";
@@ -99,8 +100,11 @@ export async function POST(req: NextRequest) {
         };
 
         // Helper: ensure an active household membership exists for a household
-        const ensureHouseholdMembership = async (householdId: number) => {
-            await prisma.membership.upsert({
+        const ensureHouseholdMembership = async (
+            householdId: number,
+            db: Prisma.TransactionClient = prisma,
+        ) => {
+            await db.membership.upsert({
                 where: { householdId },
                 create: { householdId, status: 'ACTIVE' },
                 update: { status: 'ACTIVE' },
@@ -341,9 +345,8 @@ export async function POST(req: NextRequest) {
                             where: { householdId: sourceHouseholdId }
                         });
 
-                        // Enforce the 2-lead cap (#269) BEFORE mutating: this
-                        // block isn't transactional, so reject the merge up front
-                        // rather than leave participants half-moved on a throw.
+                        // Enforce the 2-lead cap (#269) BEFORE mutating: reject
+                        // the merge up front rather than start a doomed transaction.
                         const projectedLeadIds = new Set(
                             (await prisma.householdLead.findMany({
                                 where: { householdId: targetHouseholdId },
@@ -356,31 +359,35 @@ export async function POST(req: NextRequest) {
                             throw new HouseholdLeadLimitError(targetHouseholdId);
                         }
 
-                        // Move all participants from source to target
-                        await prisma.participant.updateMany({
-                            where: { householdId: sourceHouseholdId },
-                            data: { householdId: targetHouseholdId }
+                        // Atomic: if any step throws, the whole merge rolls back so
+                        // participants are never left half-moved between households.
+                        await prisma.$transaction(async (tx) => {
+                            // Move all participants from source to target
+                            await tx.participant.updateMany({
+                                where: { householdId: sourceHouseholdId },
+                                data: { householdId: targetHouseholdId }
+                            });
+
+                            // Move all leads from source to target
+                            for (const lead of sourceLeads) {
+                                await addHouseholdLead(tx, targetHouseholdId, lead.participantId);
+                            }
+
+                            // Delete memberships and leads from the old source household
+                            await tx.membership.deleteMany({ where: { householdId: sourceHouseholdId } });
+                            await tx.householdLead.deleteMany({ where: { householdId: sourceHouseholdId } });
+
+                            // Finally delete the source household (empty now, so the
+                            // RESTRICT FK allows it)
+                            await tx.household.delete({ where: { id: sourceHouseholdId } });
+
+                            // If the row that initiated the merge is an adult with an email, ensure they are a lead
+                            if (pr.email) {
+                                await addHouseholdLead(tx, targetHouseholdId, participantId);
+                            }
+
+                            await ensureHouseholdMembership(targetHouseholdId, tx);
                         });
-
-                        // Move all leads from source to target
-                        for (const lead of sourceLeads) {
-                            await addHouseholdLead(prisma, targetHouseholdId, lead.participantId);
-                        }
-
-                        // Delete memberships and leads from the old source household
-                        await prisma.membership.deleteMany({ where: { householdId: sourceHouseholdId } });
-                        await prisma.householdLead.deleteMany({ where: { householdId: sourceHouseholdId } });
-
-                        // Finally delete the source household (empty now, so the
-                        // RESTRICT FK allows it)
-                        await prisma.household.delete({ where: { id: sourceHouseholdId } });
-
-                        // If the row that initiated the merge is an adult with an email, ensure they are a lead
-                        if (pr.email) {
-                            await addHouseholdLead(prisma, targetHouseholdId, participantId);
-                        }
-
-                        await ensureHouseholdMembership(targetHouseholdId);
                     } else {
                         errors.push(`Row ${pr.index + 2} (${pr.fullName}): Could not find participant "${pr.sameHouseholdAs}" for household association`);
                     }

@@ -45,7 +45,7 @@ export default function MyProgramsDashboard() {
   if (!session) return null;
 
   return (
-    <Container size="lg" py="md">
+    <Container size="lg" pb="md">
       <Group justify="space-between" align="center" mb="md" wrap="wrap">
         <Title order={1}>My Programs</Title>
         <Button variant="default" onClick={() => router.push('/programs')}>

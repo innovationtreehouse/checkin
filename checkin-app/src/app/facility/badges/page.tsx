@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Center, Loader, Stack } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { formatDateTime } from '@/lib/time';
@@ -16,11 +15,11 @@ type BadgeEvent = {
 };
 
 const COLUMNS: DataTableColumn<BadgeEvent>[] = [
-  { header: 'ID', render: (b) => b.id },
-  { header: 'Time', render: (b) => formatDateTime(b.time) },
-  { header: 'Participant', render: (b) => b.participant?.name || 'Unknown' },
-  { header: 'Email', render: (b) => b.participant?.email },
-  { header: 'Location', render: (b) => b.location || 'Front Door' },
+  { header: 'ID', render: (b) => b.id, sortBy: (b) => b.id },
+  { header: 'Time', render: (b) => formatDateTime(b.time), sortBy: (b) => b.time },
+  { header: 'Participant', render: (b) => b.participant?.name || 'Unknown', sortBy: (b) => b.participant?.name },
+  { header: 'Email', render: (b) => b.participant?.email, sortBy: (b) => b.participant?.email },
+  { header: 'Location', render: (b) => b.location || 'Front Door', sortBy: (b) => b.location },
 ];
 
 export default function AdminBadgesPage() {
@@ -58,8 +57,6 @@ export default function AdminBadgesPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Raw Badge Events" back={{ href: '/facility', label: '← Facility Ops' }} />
-
       <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 
       <DataTable columns={COLUMNS} rows={badges} getRowKey={(b) => b.id} emptyMessage="No badge events." />

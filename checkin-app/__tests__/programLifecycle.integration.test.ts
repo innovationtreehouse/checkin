@@ -68,8 +68,8 @@ describe('Program Lifecycle Integration Tests', () => {
             data: {
                 name: "Integration Test Program",
                 leadMentorId,
-                memberPrice: 50,
-                nonMemberPrice: 100,
+                memberPriceCents: 50,
+                nonMemberPriceCents: 100,
                 shopifyProductId: "test-prod",
                 shopifyMemberVariantId: "test-mem-var",
                 shopifyNonMemberVariantId: "test-non-var",

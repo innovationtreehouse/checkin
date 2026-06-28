@@ -224,7 +224,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const alreadySelected = selectedParticipantId !== null && program.participants.some(p => p.participantId === selectedParticipantId);
 
   return (
-    <Container size="md" py="md">
+    <Container size="md" pb="md">
       <Card withBorder radius="md" padding="lg">
         <Group justify="space-between" align="center" wrap="wrap" mb="lg">
           <Title order={1}>{program.name}</Title>

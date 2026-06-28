@@ -37,6 +37,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             return NextResponse.json({ error: "Event not found" }, { status: 404 });
         }
 
+        // Can't RSVP to an event that already finished. Use end (not start) so an
+        // in-progress event still accepts RSVPs.
+        if (event.end.getTime() < Date.now()) {
+            return NextResponse.json({ error: "Cannot RSVP to a past event" }, { status: 400 });
+        }
+
         if (event.programId) {
             const isEnrolled = await prisma.programParticipant.findUnique({
                 where: {

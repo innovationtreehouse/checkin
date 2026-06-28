@@ -16,6 +16,7 @@ import {
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
+  IconAdjustments,
   IconBuildingWarehouse,
   IconCalendarEvent,
   IconClipboardList,
@@ -55,8 +56,8 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/kioskdisplay', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/household', label: 'My Household', icon: <IconHome size={18} />, visible: (_u, signedIn) => signedIn },
+  { href: '/kioskdisplay', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/programs', label: 'Programs', icon: <IconCalendarEvent size={18} />, visible: () => true },
   {
     href: '/shop',
@@ -95,6 +96,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/admin',
     label: 'Admin Ops',
     icon: <IconSettings size={18} />,
+    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+  },
+  {
+    href: '/settings',
+    label: 'Settings',
+    icon: <IconAdjustments size={18} />,
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
   },
 ];

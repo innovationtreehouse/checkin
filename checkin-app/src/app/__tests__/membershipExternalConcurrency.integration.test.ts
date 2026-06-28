@@ -68,6 +68,12 @@ describe('EXTERNAL advance concurrency', () => {
         // Exactly one advance audit row + exactly one reviewer ping.
         expect(await advanceAudits(processId)).toBe(1);
         expect(notifyReviewers as jest.Mock).toHaveBeenCalledTimes(1);
+
+        // Each mutation's audit row carries its own actor: SYSTEM_ACTOR for the contract sign
+        // (default), the board member's id (1) for the bg-consent mark.
+        const all = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true, actorId: true } });
+        expect(all.find((a) => String(a.newData).includes('"contractSignedAt":true'))?.actorId).toBe(0);
+        expect(all.find((a) => String(a.newData).includes('"bgConsentAt":true'))?.actorId).toBe(1);
     });
 
     it('second markContractSigned is a no-op (one contractSignedAt audit, idempotent)', async () => {
@@ -75,9 +81,10 @@ describe('EXTERNAL advance concurrency', () => {
 
         await Promise.all([markContractSigned(processId), markContractSigned(processId)]);
 
-        const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true } });
-        const signedRows = audits.filter((a) => String(a.newData).includes('"contractSignedAt":true')).length;
-        expect(signedRows).toBe(1);
+        const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true, actorId: true } });
+        const signed = audits.filter((a) => String(a.newData).includes('"contractSignedAt":true'));
+        expect(signed).toHaveLength(1);
+        expect(signed[0].actorId).toBe(0); // markContractSigned default actor = SYSTEM_ACTOR
     });
 
     it('does not regress a process already past PENDING_EXTERNAL_ACTION', async () => {

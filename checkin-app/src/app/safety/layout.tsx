@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 
 export default function SafetyLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -43,13 +44,13 @@ export default function SafetyLayout({ children }: { children: React.ReactNode }
         }}
         mb="md"
       >
-        <Tabs.List>
+        <ScrollableTabsList>
           {tabs.map((t) => (
             <Tabs.Tab key={t.href} value={t.href}>
               {t.name}
             </Tabs.Tab>
           ))}
-        </Tabs.List>
+        </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
     </>
