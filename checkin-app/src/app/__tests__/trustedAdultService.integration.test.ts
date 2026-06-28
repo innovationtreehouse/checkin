@@ -222,3 +222,126 @@ describe('Trusted Adults service', () => {
         expect(JSON.parse(String(revokeAudit?.newData))).toMatchObject({ status: 'REVOKED', override: 'revoke' });
     });
 });
+
+// Edge cases for the nightly expiry sweep. runExpirySweep returns DB-wide
+// warned/expired counts, so these use exact === assertions — a loose >= would hide
+// a sweep that double-counts or mis-targets. That exactness is safe only because no
+// other APPROVED rows qualify during a run: this describe runs after the block
+// above (whose afterAll already wiped its rows) and the seed creates no trusted
+// adults, so the only qualifiers are the rows each test crafts under SWEEP_TAG.
+describe('runExpirySweep edge cases', () => {
+    const SWEEP_TAG = 'trustedadult-sweep-test';
+    const DAY = 86400000;
+    let householdId = 0;
+    let leadId = 0;
+
+    async function wipe() {
+        const hhs = await prisma.household.findMany({ where: { name: { contains: SWEEP_TAG } }, select: { id: true } });
+        const ids = hhs.map((h) => h.id);
+        if (ids.length) {
+            await prisma.trustedAdultReview.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.trustedAdult.deleteMany({ where: { householdId: { in: ids } } });
+        }
+        await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.household.deleteMany({ where: { id: { in: ids } } });
+    }
+
+    // Create a review in any status with a chosen reviewBy — bypasses the service so
+    // we can seed DENIED/REVOKED/PENDING rows the public API never produces directly.
+    async function seedReview(
+        status: 'APPROVED' | 'PENDING_BOARD_REVIEW' | 'DENIED' | 'REVOKED',
+        reviewBy: Date | null,
+        expiryWarningSentAt: Date | null = null,
+    ) {
+        const ta = await prisma.trustedAdult.create({
+            data: {
+                householdId,
+                counterpartyName: `Sweep ${SWEEP_TAG}`,
+                counterpartyContact: 'sweep@example.com',
+                familyContext: 'ctx',
+                disclosedById: leadId,
+            },
+        });
+        return prisma.trustedAdultReview.create({
+            data: { householdId, trustedAdultId: ta.id, kind: 'INITIAL', status, reviewBy, expiryWarningSentAt },
+        });
+    }
+
+    beforeAll(async () => {
+        await wipe();
+        const hh = await prisma.household.create({ data: { name: `Sweep HH ${SWEEP_TAG}` } });
+        householdId = hh.id;
+        const lead = await prisma.participant.create({ data: { name: 'SweepLead', email: `sweeplead-${SWEEP_TAG}@ex.com`, householdId: hh.id } });
+        leadId = lead.id;
+        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+    });
+
+    afterAll(async () => {
+        await wipe();
+        await prisma.$disconnect();
+    });
+
+    // Each test crafts its own rows, so clear them (and the email spy) between tests.
+    beforeEach(async () => {
+        await prisma.trustedAdultReview.deleteMany({ where: { householdId } });
+        await prisma.trustedAdult.deleteMany({ where: { householdId } });
+        sendEmail.mockClear();
+    });
+
+    it('ignores non-APPROVED reviews even when reviewBy has passed', async () => {
+        const now = new Date();
+        const past = new Date(now.getTime() - 5 * DAY);
+        const pending = await seedReview('PENDING_BOARD_REVIEW', past);
+        const denied = await seedReview('DENIED', past);
+        const revoked = await seedReview('REVOKED', past);
+
+        const run = await runExpirySweep(now);
+        expect(run.warned).toBe(0);
+        expect(run.expired).toBe(0);
+        expect(sendEmail).not.toHaveBeenCalled();
+
+        for (const r of [pending, denied, revoked]) {
+            const after = await prisma.trustedAdultReview.findUnique({ where: { id: r.id } });
+            expect(after!.status).toBe(r.status); // untouched
+            expect(after!.expiryWarningSentAt).toBeNull(); // no warn stamp
+        }
+    });
+
+    it('warns once: a second sweep returns warned 0 and sends no second email', async () => {
+        const now = new Date();
+        const soon = new Date(now.getTime() + 10 * DAY); // inside the 30-day warn window, still future
+        const r = await seedReview('APPROVED', soon);
+
+        const first = await runExpirySweep(now);
+        expect(first.warned).toBe(1);
+        expect(first.expired).toBe(0);
+        expect(sendEmail).toHaveBeenCalledTimes(1);
+        expect(sendEmail).toHaveBeenCalledWith(`sweeplead-${SWEEP_TAG}@ex.com`, expect.stringContaining('expiring'), expect.any(String));
+        const warned = await prisma.trustedAdultReview.findUnique({ where: { id: r.id } });
+        expect(warned!.expiryWarningSentAt).not.toBeNull();
+
+        sendEmail.mockClear();
+        const second = await runExpirySweep(now);
+        expect(second.warned).toBe(0); // guard holds
+        expect(second.expired).toBe(0);
+        expect(sendEmail).not.toHaveBeenCalled();
+    });
+
+    it('expires at the boundary: reviewBy == now and reviewBy in the past both EXPIRE, never warn', async () => {
+        const now = new Date();
+        const atNow = await seedReview('APPROVED', new Date(now.getTime())); // reviewBy === now → lte:now, not gt:now
+        const past = await seedReview('APPROVED', new Date(now.getTime() - 1 * DAY)); // already lapsed
+
+        const run = await runExpirySweep(now);
+        expect(run.warned).toBe(0); // boundary row expires, it does not get a fresh warning
+        expect(run.expired).toBe(2);
+        expect(sendEmail).not.toHaveBeenCalled();
+
+        for (const r of [atNow, past]) {
+            const after = await prisma.trustedAdultReview.findUnique({ where: { id: r.id } });
+            expect(after!.status).toBe('EXPIRED');
+            expect(after!.expiryWarningSentAt).toBeNull(); // expired, never warned
+        }
+    });
+});
