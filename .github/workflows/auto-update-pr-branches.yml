@@ -23,7 +23,7 @@ name: Auto-update PR branches
 #
 # Setup: a GitHub App with repo permissions Contents = Read and write and
 # Pull requests = Read and write, installed on this repo. Store its App ID as the
-# `AUTO_UPDATE_APP_ID` variable and its private key as the
+# `AUTO_UPDATE_APP_ID` secret and its private key as the
 # `AUTO_UPDATE_APP_PRIVATE_KEY` secret.
 
 on:
@@ -52,7 +52,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.AUTO_UPDATE_APP_ID }}
+          app-id: ${{ secrets.AUTO_UPDATE_APP_ID }}
           private-key: ${{ secrets.AUTO_UPDATE_APP_PRIVATE_KEY }}
 
       - name: Update eligible PR branches
