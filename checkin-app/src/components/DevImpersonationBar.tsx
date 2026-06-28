@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
 import { useIsDevInstance } from "@/components/EnvProvider";
 
@@ -13,11 +14,26 @@ import { useIsDevInstance } from "@/components/EnvProvider";
  * through the single persona-mint flow.
  */
 export default function DevImpersonationBar() {
+    // useSearchParams needs a Suspense boundary (mirrors AppFrame's AppFrameInner wrap).
+    return (
+        <Suspense fallback={null}>
+            <DevImpersonationBarInner />
+        </Suspense>
+    );
+}
+
+function DevImpersonationBarInner() {
     const { data: session } = useSession();
     const isDevInstance = useIsDevInstance();
+    const searchParams = useSearchParams();
     const [busy, setBusy] = useState(false);
 
     const signedIn = !!session?.user;
+
+    // Kiosk mode strips all chrome (see AppFrame); the dev bar must vanish too, else it
+    // overlaps the full-screen kiosk view (e.g. Live Certifications). Same condition as AppFrame.
+    const isKioskMode = searchParams.get("mode") === "kiosk" || !!searchParams.get("sig");
+    if (isKioskMode) return null;
 
     if (!isDevInstance || !signedIn) return null;
 
