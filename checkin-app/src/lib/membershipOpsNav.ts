@@ -1,14 +1,12 @@
 /**
- * Single source of truth for the Membership Ops tools. Rendered both as the
- * persistent sidebar (membership-ops/layout.tsx) and as the landing card grid
- * on the Membership Ops hub (/membership-ops). Add a tool once here and it
- * shows up in both.
+ * Single source of truth for the Membership Ops tools. Rendered as the top tab
+ * bar in membership-ops/layout.tsx; the hub (/membership-ops) redirects to the
+ * first entry. Add a tool once here and it shows up as a tab.
  */
 export interface MembershipOpsNavLink {
   name: string;
   href: string;
   icon: string;
-  /** One-line description shown on the hub landing grid (not in the sidebar). */
   description?: string;
 }
 
