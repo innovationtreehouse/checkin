@@ -221,4 +221,46 @@ describe('Trusted Adults service', () => {
         expect(revokeAudit?.actorId).toBe(boardId);
         expect(JSON.parse(String(revokeAudit?.newData))).toMatchObject({ status: 'REVOKED', override: 'revoke' });
     });
+
+    // overrideReview's defining job: force a terminal state regardless of the review's
+    // CURRENT phase (no phase guard, unlike decideReview). These pin that contract by
+    // overriding reviews that are ALREADY terminal, and assert the audit oldData.status
+    // reflects the prior terminal state — not a fresh PENDING one.
+
+    it('override-revokes a LIVE APPROVED review and audits the prior APPROVED state', async () => {
+        const ta = await discloseOne();
+        await decideReview(ta.reviews[0].id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
+
+        const revoked = await overrideReview(ta.reviews[0].id, boardId, 'revoke');
+        expect(revoked.status).toBe('REVOKED');
+
+        const audit = await latestAudit(ta.id);
+        expect(JSON.parse(String(audit?.oldData))).toMatchObject({ status: 'APPROVED' });
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'REVOKED', override: 'revoke' });
+    });
+
+    it('override-approves an already DENIED review and audits the prior DENIED state', async () => {
+        const ta = await discloseOne();
+        await decideReview(ta.reviews[0].id, boardId, { decision: 'DENY' });
+
+        const approved = await overrideReview(ta.reviews[0].id, boardId, 'approve', SHARED);
+        expect(approved.status).toBe('APPROVED');
+
+        const audit = await latestAudit(ta.id);
+        expect(JSON.parse(String(audit?.oldData))).toMatchObject({ status: 'DENIED' });
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', override: 'approve' });
+    });
+
+    it('re-overrides an already-overridden terminal review with no phase guard', async () => {
+        const ta = await discloseOne();
+        await overrideReview(ta.reviews[0].id, boardId, 'revoke'); // terminal: REVOKED
+
+        // No wrong_phase / throw — board can flip a terminal review again.
+        const reapproved = await overrideReview(ta.reviews[0].id, boardId, 'approve', SHARED);
+        expect(reapproved.status).toBe('APPROVED');
+
+        const audit = await latestAudit(ta.id);
+        expect(JSON.parse(String(audit?.oldData))).toMatchObject({ status: 'REVOKED' });
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', override: 'approve' });
+    });
 });
