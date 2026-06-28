@@ -1,5 +1,5 @@
 // Sysadmin telemetry viewer: returns the 100 most recent AuditLog rows for
-// forensic review. No UI consumer yet — called ad-hoc / from integration tests.
+// forensic review. Backs the "Audit Log" tab on /system-status.
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
