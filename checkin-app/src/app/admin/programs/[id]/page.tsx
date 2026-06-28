@@ -10,7 +10,7 @@ import {
 } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
-import { formatDateTime } from '@/lib/time';
+import { formatDateTime, calculateAge } from '@/lib/time';
 
 type ProgramDetail = {
   id: number;
@@ -524,7 +524,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         (p) => { setNewPartId(p.id.toString()); setPartSearch(`${p.name || 'Unnamed'} (${p.email})`); setPartResults([]); },
                         (p) => {
                           if (!p.dob) return null;
-                          const age = Math.abs(new Date(Date.now() - new Date(p.dob).getTime()).getUTCFullYear() - 1970);
+                          const age = calculateAge(p.dob, program.begin ?? undefined);
                           let warning: string | null = null;
                           if (program.minAge !== null && age < program.minAge) warning = `⚠️ Too Young (${age})`;
                           if (program.maxAge !== null && age > program.maxAge) warning = `⚠️ Too Old (${age})`;
