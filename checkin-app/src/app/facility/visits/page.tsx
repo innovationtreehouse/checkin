@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
-import { Button, Center, Group, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Button, Center, Group, Loader, Stack, Table, Text, TextInput, UnstyledButton } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
@@ -24,6 +24,44 @@ export default function AdminVisitsPage() {
 
   const [editingVisitId, setEditingVisitId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ arrived: "", departed: "" });
+
+  type SortKey = 'id' | 'participant' | 'event' | 'arrived' | 'departed';
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'arrived', dir: 'desc' });
+
+  const sortValue = (v: Visit, key: SortKey): string | number => {
+    switch (key) {
+      case 'id': return v.id;
+      case 'participant': return (v.participant?.name || v.participant?.email || '').toLowerCase();
+      case 'event': return (v.event?.name || 'Open Facility').toLowerCase();
+      case 'arrived': return v.arrived ? Date.parse(v.arrived) : 0;
+      case 'departed': return v.departed ? Date.parse(v.departed) : 0;
+    }
+  };
+
+  const sortedVisits = useMemo(() => {
+    return [...visits].sort((a, b) => {
+      const av = sortValue(a, sort.key);
+      const bv = sortValue(b, sort.key);
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+  }, [visits, sort]);
+
+  const toggleSort = (key: SortKey) =>
+    setSort((s) => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
+
+  const SortableTh = ({ k, label }: { k: SortKey; label: string }) => (
+    <Table.Th>
+      <UnstyledButton onClick={() => toggleSort(k)} style={{ font: 'inherit' }}>
+        <Group gap={4} wrap="nowrap">
+          <span>{label}</span>
+          <Text component="span" c={sort.key === k ? undefined : 'dimmed'} size="xs">
+            {sort.key === k ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}
+          </Text>
+        </Group>
+      </UnstyledButton>
+    </Table.Th>
+  );
 
   const fetchVisits = useCallback(async () => {
     try {
@@ -95,16 +133,16 @@ export default function AdminVisitsPage() {
         <Table verticalSpacing="sm" highlightOnHover>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>ID</Table.Th>
-              <Table.Th>Participant</Table.Th>
-              <Table.Th>Event</Table.Th>
-              <Table.Th>Arrived</Table.Th>
-              <Table.Th>Departed</Table.Th>
+              <SortableTh k="id" label="ID" />
+              <SortableTh k="participant" label="Participant" />
+              <SortableTh k="event" label="Event" />
+              <SortableTh k="arrived" label="Arrived" />
+              <SortableTh k="departed" label="Departed" />
               <Table.Th>Actions</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {visits.map((v) => (
+            {sortedVisits.map((v) => (
               <Table.Tr key={v.id}>
                 <Table.Td>{v.id}</Table.Td>
                 <Table.Td>{v.participant?.name || v.participant?.email}</Table.Td>
