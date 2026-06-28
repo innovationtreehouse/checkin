@@ -73,7 +73,7 @@ export default function PublicProgramsDirectory() {
               checked={activeOnly}
               onChange={(e) => setActiveOnly(e.currentTarget.checked)}
             />
-            <Button component={Link} href="/admin/programs/new" color="green" variant="light">
+            <Button component={Link} href="/program-ops/new" color="green" variant="light">
               + New Program
             </Button>
           </Group>

@@ -299,7 +299,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     <Container size="sm" py="xl">
       <Card withBorder radius="md" padding="xl" ta="center">
         <Title order={3}>{message || "Not Found"}</Title>
-        <Group justify="center" mt="lg"><Button onClick={() => router.push('/admin/programs')}>Back</Button></Group>
+        <Group justify="center" mt="lg"><Button onClick={() => router.push('/program-ops/programs')}>Back</Button></Group>
       </Card>
     </Container>
   );
@@ -314,7 +314,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       <Container size="sm" py="xl">
         <Card withBorder radius="md" padding="xl" ta="center">
           <Title order={3}>Forbidden: Not authorized to manage this program.</Title>
-          <Group justify="center" mt="lg"><Button onClick={() => router.push('/admin/programs')}>Back</Button></Group>
+          <Group justify="center" mt="lg"><Button onClick={() => router.push('/program-ops/programs')}>Back</Button></Group>
         </Card>
       </Container>
     );
@@ -365,7 +365,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
             <Title order={1}>{program.name}</Title>
             {phaseBadge && <Badge color={phaseBadge.color} variant="light" size="lg">{phaseBadge.label}</Badge>}
           </Group>
-          <Button variant="default" onClick={() => router.push('/admin/programs')}>← Back to Programs</Button>
+          <Button variant="default" onClick={() => router.push('/program-ops/programs')}>← Back to Programs</Button>
         </Group>
 
         <AlertBanner message={message} tone="info" mb="lg" />
