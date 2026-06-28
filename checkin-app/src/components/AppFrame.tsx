@@ -276,7 +276,19 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
       </AppShell.Header>
 
       {showNav && (
-        <AppShell.Navbar p="md" bg={brand.nav.sidebar}>
+        <AppShell.Navbar
+          p="md"
+          bg={brand.nav.sidebar}
+          // On the dark sidebar, Mantine's hover fill for non-active items is the near-white
+          // `default-hover` token, which left white labels invisible (white-on-white, #284).
+          // Scope that token to a translucent white so hovering just lightens the purple and the
+          // white label stays readable — and it works in dark mode too, unlike a fixed color.
+          style={
+            onColoredSidebar
+              ? ({ '--mantine-color-default-hover': 'rgba(255, 255, 255, 0.12)' } as React.CSSProperties)
+              : undefined
+          }
+        >
           {visibleItems.map((item) => {
             const active = isActive(pathname, item.href);
             // On the colored sidebar all text is white; the 'light' variant gives a soft
