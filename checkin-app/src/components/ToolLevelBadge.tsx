@@ -29,6 +29,9 @@ const LEVELS: Record<ToolLevel, { label: string; short: string; dot: string; bg:
  */
 export const toolLevelDot = (level: ToolLevel): string => (LEVELS[level] ?? LEVELS.none).dot;
 
+/** Full human label for a level (e.g. "Shop Certifier") — for tooltips/titles. */
+export const toolLevelLabel = (level: ToolLevel): string => (LEVELS[level] ?? LEVELS.none).label;
+
 /** Map a raw Prisma ToolLevel enum string (or null) to our key. */
 export function toToolLevel(enumValue: string | null | undefined): ToolLevel {
   switch (enumValue) {
