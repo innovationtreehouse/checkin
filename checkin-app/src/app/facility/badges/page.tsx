@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Center, Loader, Stack } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { formatDateTime } from '@/lib/time';
@@ -58,8 +57,6 @@ export default function AdminBadgesPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Raw Badge Events" back={{ href: '/facility', label: '← Facility Ops' }} />
-
       <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
 
       <DataTable columns={COLUMNS} rows={badges} getRowKey={(b) => b.id} emptyMessage="No badge events." />
