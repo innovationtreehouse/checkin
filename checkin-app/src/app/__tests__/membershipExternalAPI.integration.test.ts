@@ -134,6 +134,45 @@ describe('Membership EXTERNAL phase API', () => {
         expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
     });
 
+    it('rejects (500) a completed Zoho webhook when the secret is unset, with no mutation', async () => {
+        const { processId } = await makeProcess(`C ${TAG}`, 'zoho-C');
+        delete process.env.ZOHO_WEBHOOK_SECRET;
+        try {
+            const res = await ZOHO_WEBHOOK(zohoReq({ requests: { request_id: 'zoho-C', request_status: 'completed' } }, SECRET));
+            // Route bails before token verify when the secret is unconfigured.
+            expect(res.status).toBe(500);
+        } finally {
+            process.env.ZOHO_WEBHOOK_SECRET = SECRET;
+        }
+        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        expect(p?.contractSignedAt).toBeNull();
+        expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
+    });
+
+    it('replaying the same completed Zoho webhook is a safe no-op (no double-advance, single audit row)', async () => {
+        const { processId } = await makeProcess(`D ${TAG}`, 'zoho-D');
+        const req = () => ZOHO_WEBHOOK(zohoReq({ requests: { request_id: 'zoho-D', request_status: 'completed' } }, SECRET));
+        // Fresh process: the contract-signed webhook is the only thing that audits it.
+        const auditCount = () =>
+            prisma.auditLog.count({ where: { tableName: 'MembershipProcess', affectedEntityId: processId } });
+
+        const first = await req();
+        expect(first.status).toBe(200);
+        const afterFirst = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        expect(afterFirst?.contractSignedAt).not.toBeNull();
+        expect(afterFirst?.status).toBe('PENDING_EXTERNAL_ACTION'); // no BG consent → stays EXTERNAL
+        expect(await auditCount()).toBe(1);
+
+        // Zoho retries at-least-once: replay the identical signed payload.
+        const second = await req();
+        expect(second.status).toBe(200);
+        const afterSecond = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        // State identical: same signed timestamp, same phase, no second audit row.
+        expect(afterSecond?.contractSignedAt?.getTime()).toBe(afterFirst?.contractSignedAt?.getTime());
+        expect(afterSecond?.status).toBe(afterFirst?.status);
+        expect(await auditCount()).toBe(1);
+    });
+
     it('ignores a non-completed Zoho event without changing state', async () => {
         const res = await ZOHO_WEBHOOK(zohoReq({ requests: { request_id: 'zoho-B', request_status: 'inprogress' } }, SECRET));
         expect(res.status).toBe(200);

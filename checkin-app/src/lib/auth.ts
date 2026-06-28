@@ -25,6 +25,7 @@ export async function authenticateRequest(
             method, path, body || '',
             req.headers.get('x-kiosk-timestamp'),
             req.headers.get('x-kiosk-signature'),
+            req.headers.get('x-kiosk-nonce'),
             pubKeys
         );
         if (result.ok) return { type: 'kiosk' };

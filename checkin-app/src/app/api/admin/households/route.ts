@@ -143,12 +143,38 @@ export const POST = withAuth(
                     create: { householdId, status: "ACTIVE" },
                     update: { status: "ACTIVE" }
                 });
+                if (auth.type === 'session') {
+                    await prisma.auditLog.create({
+                        data: {
+                            actorId: auth.user.id,
+                            action: "EDIT",
+                            tableName: "Membership",
+                            affectedEntityId: membership.id,
+                            secondaryAffectedEntity: householdId,
+                            oldData: { status: existingMembership?.status ?? "NONE" },
+                            newData: { status: "ACTIVE" }
+                        }
+                    });
+                }
                 return NextResponse.json({ success: true, membership });
             } else if (existingMembership && existingMembership.status === "ACTIVE") {
-                await prisma.membership.update({
+                const membership = await prisma.membership.update({
                     where: { householdId },
                     data: { status: "REVOKED" }
                 });
+                if (auth.type === 'session') {
+                    await prisma.auditLog.create({
+                        data: {
+                            actorId: auth.user.id,
+                            action: "EDIT",
+                            tableName: "Membership",
+                            affectedEntityId: membership.id,
+                            secondaryAffectedEntity: householdId,
+                            oldData: { status: "ACTIVE" },
+                            newData: { status: "REVOKED" }
+                        }
+                    });
+                }
                 return NextResponse.json({ success: true, message: "Membership deactivated" });
             }
 

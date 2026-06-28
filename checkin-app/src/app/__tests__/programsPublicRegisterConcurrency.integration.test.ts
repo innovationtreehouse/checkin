@@ -60,8 +60,8 @@ describe('POST /api/programs/[id]/public-register concurrency (capacity lock)', 
                 phase: 'RUNNING',
                 enrollmentStatus: 'OPEN',
                 maxParticipants: 1, // exactly one seat
-                memberPrice: null,
-                nonMemberPrice: null, // free → no payment/checkout path
+                memberPriceCents: null,
+                nonMemberPriceCents: null, // free → no payment/checkout path
             },
         });
         programId = program.id;

@@ -1,3 +1,4 @@
+import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/email-templates/base";
@@ -82,23 +83,26 @@ export async function createTrustedAdult(input: CreateInput) {
     const household = await prisma.household.findUnique({ where: { id: input.householdId }, select: { id: true } });
     if (!household) throw new TrustedAdultError("not_found", "Household not found.");
 
-    const ta = await prisma.trustedAdult.create({
-        data: {
-            householdId: input.householdId,
-            counterpartyParticipantId: input.counterpartyParticipantId ?? null,
-            counterpartyName: input.counterpartyName.trim(),
-            counterpartyContact: input.counterpartyContact.trim(),
-            familyContext: input.familyContext.trim(),
-            origin: input.origin ?? "SELF_DISCLOSED",
-            disclosedById: input.disclosedById || SYSTEM_ACTOR,
-            reviews: {
-                create: { householdId: input.householdId, kind: "INITIAL", status: "PENDING_BOARD_REVIEW" },
+    const ta = await prisma.$transaction(async (tx) => {
+        const created = await tx.trustedAdult.create({
+            data: {
+                householdId: input.householdId,
+                counterpartyParticipantId: input.counterpartyParticipantId ?? null,
+                counterpartyName: input.counterpartyName.trim(),
+                counterpartyContact: input.counterpartyContact.trim(),
+                familyContext: input.familyContext.trim(),
+                origin: input.origin ?? "SELF_DISCLOSED",
+                disclosedById: input.disclosedById || SYSTEM_ACTOR,
+                reviews: {
+                    create: { householdId: input.householdId, kind: "INITIAL", status: "PENDING_BOARD_REVIEW" },
+                },
             },
-        },
-        include: { reviews: true },
+            include: { reviews: true },
+        });
+        await audit(tx, input.disclosedById, created.id, {}, { created: true, status: "PENDING_BOARD_REVIEW" }, "CREATE");
+        return created;
     });
 
-    await audit(input.disclosedById, ta.id, {}, { created: true, status: "PENDING_BOARD_REVIEW" }, "CREATE");
     await notifyBoard();
     return ta;
 }
@@ -121,10 +125,13 @@ export async function renewTrustedAdult(id: number, actorId: number) {
         throw new TrustedAdultError("already_open", "A review for this trusted adult is already in progress.");
     }
 
-    const review = await prisma.trustedAdultReview.create({
-        data: { trustedAdultId: ta.id, householdId: ta.householdId, kind: "RENEWAL", status: "PENDING_BOARD_REVIEW" },
+    const review = await prisma.$transaction(async (tx) => {
+        const created = await tx.trustedAdultReview.create({
+            data: { trustedAdultId: ta.id, householdId: ta.householdId, kind: "RENEWAL", status: "PENDING_BOARD_REVIEW" },
+        });
+        await audit(tx, actorId, ta.id, {}, { renewal: created.id, status: "PENDING_BOARD_REVIEW" }, "CREATE");
+        return created;
     });
-    await audit(actorId, ta.id, {}, { renewal: review.id, status: "PENDING_BOARD_REVIEW" }, "CREATE");
     await notifyBoard();
     return review;
 }
@@ -141,8 +148,11 @@ export async function withdrawTrustedAdult(id: number, actorId: number) {
     const latest = ta.reviews[0];
     if (!latest || latest.status === "REVOKED") throw new TrustedAdultError("wrong_phase", "Nothing to withdraw.");
 
-    const updated = await prisma.trustedAdultReview.update({ where: { id: latest.id }, data: { status: "REVOKED" } });
-    await audit(actorId, ta.id, { status: latest.status }, { status: "REVOKED" });
+    const updated = await prisma.$transaction(async (tx) => {
+        const u = await tx.trustedAdultReview.update({ where: { id: latest.id }, data: { status: "REVOKED" } });
+        await audit(tx, actorId, ta.id, { status: latest.status }, { status: "REVOKED" });
+        return u;
+    });
     return updated;
 }
 
@@ -199,8 +209,11 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
     }
     data.status = status;
 
-    const updated = await prisma.trustedAdultReview.update({ where: { id: reviewId }, data });
-    await audit(boardMemberId, review.trustedAdultId, { status: review.status }, { status, decision: input.decision });
+    const updated = await prisma.$transaction(async (tx) => {
+        const u = await tx.trustedAdultReview.update({ where: { id: reviewId }, data });
+        await audit(tx, boardMemberId, review.trustedAdultId, { status: review.status }, { status, decision: input.decision });
+        return u;
+    });
 
     if (input.decision === "REQUEST_INFO") {
         await notifyHouseholdFamily(review.householdId, "The board needs more information about a trusted adult", input.note?.trim());
@@ -231,8 +244,11 @@ export async function overrideReview(reviewId: number, actorId: number, action: 
         data.status = "REVOKED";
     }
 
-    const updated = await prisma.trustedAdultReview.update({ where: { id: reviewId }, data });
-    await audit(actorId, review.trustedAdultId, { status: review.status }, { status: data.status, override: action });
+    const updated = await prisma.$transaction(async (tx) => {
+        const u = await tx.trustedAdultReview.update({ where: { id: reviewId }, data });
+        await audit(tx, actorId, review.trustedAdultId, { status: review.status }, { status: data.status, override: action });
+        return u;
+    });
     return updated;
 }
 
@@ -266,8 +282,10 @@ export async function runExpirySweep(now: Date) {
     });
     let expired = 0;
     for (const r of lapsed) {
-        await prisma.trustedAdultReview.update({ where: { id: r.id }, data: { status: "EXPIRED" } });
-        await audit(SYSTEM_ACTOR, r.trustedAdultId, { status: r.status }, { status: "EXPIRED" });
+        await prisma.$transaction(async (tx) => {
+            await tx.trustedAdultReview.update({ where: { id: r.id }, data: { status: "EXPIRED" } });
+            await audit(tx, SYSTEM_ACTOR, r.trustedAdultId, { status: r.status }, { status: "EXPIRED" });
+        });
         expired++;
     }
 
@@ -328,13 +346,14 @@ async function notifyHouseholdFamily(householdId: number, subject: string, body?
 }
 
 function audit(
+    db: Prisma.TransactionClient | typeof prisma,
     actorId: number,
     taId: number,
     oldData: object,
     newData: object,
     action: "CREATE" | "EDIT" = "EDIT",
 ) {
-    return prisma.auditLog.create({
+    return db.auditLog.create({
         data: {
             actorId: actorId || SYSTEM_ACTOR,
             action,

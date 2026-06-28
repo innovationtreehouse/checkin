@@ -332,8 +332,17 @@ export async function resolveAccess(
             case 'public':
                 return { allowed: true };
             case 'authenticated':
-            case 'self':
                 return { allowed: auth.type === 'session' };
+            case 'self': {
+                if (auth.type !== 'session') return { allowed: false };
+                // Bind to the resource id param. No id param (e.g. GET /api/profile)
+                // → 'self' just means authenticated; the handler scopes to
+                // auth.user.id itself. Present-but-mismatched → fail closed.
+                const target = params.id ?? params.participantId;
+                if (target === undefined) return { allowed: true };
+                const targetId = parseInt(target, 10);
+                return { allowed: !isNaN(targetId) && targetId === auth.user.id };
+            }
             case 'kiosk':
                 return { allowed: auth.type === 'kiosk' };
             case 'program-lead-mentor': {
