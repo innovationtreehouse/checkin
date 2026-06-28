@@ -93,8 +93,8 @@ const NAV_ITEMS: NavItem[] = [
     visible: (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder,
   },
   {
-    href: '/admin',
-    label: 'Admin Ops',
+    href: '/system-status',
+    label: 'System Status',
     icon: <IconSettings size={18} />,
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
   },
@@ -127,7 +127,7 @@ function todoCountFor(href: string, counts: TodoCounts | null): number {
     case '/safety':
       // Trusted-adult disclosures awaiting board review.
       return counts.admin ? counts.admin.trustedAdults : 0;
-    case '/admin':
+    case '/system-status':
       // Top-level roll-up of the board's queue; per-queue badges live in the admin sub-nav.
       return counts.admin
         ? counts.admin.membership + counts.admin.programsPending + counts.admin.trustedAdults
