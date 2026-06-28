@@ -103,7 +103,7 @@ export async function beginRenewal(processId: number) {
         });
         if (nextStatus === "RENEWAL_PENDING_BG") await notifyReviewers();
     }
-    return prisma.membershipProcess.findUnique({ where: { id: processId } });
+    return prisma.membershipProcess.findUniqueOrThrow({ where: { id: processId } });
 }
 
 /**
