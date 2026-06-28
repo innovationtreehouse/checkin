@@ -161,6 +161,13 @@ describe('Sensitive route authorization', () => {
             expect((await ShopCertsGet(req(otherUrl()))).status).toBe(200);
         });
 
+        it('200 for a tool certifier (MAY_CERTIFY_OTHERS) reading any participant id', async () => {
+            mockSession.mockResolvedValue({
+                user: { id: plainId, toolStatuses: [{ toolId: 1, level: 'MAY_CERTIFY_OTHERS' }] },
+            });
+            expect((await ShopCertsGet(req(otherUrl()))).status).toBe(200);
+        });
+
         it('200 for a sysadmin reading any participant id', async () => {
             mockSession.mockResolvedValue({ user: { id: plainId, sysadmin: true } });
             expect((await ShopCertsGet(req(otherUrl()))).status).toBe(200);

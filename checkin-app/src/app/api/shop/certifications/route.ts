@@ -38,10 +38,15 @@ export async function GET(req: Request) {
 
         if (participantIdParam) {
             targetUserId = parseInt(participantIdParam, 10);
-            // IDOR guard: a member may only read their own certs. Privileged roles
-            // (same gate as ?all=true) may read anyone's. Certifier is per-tool, not a
-            // session flag, so it isn't a privileged role here.
-            const isPrivileged = session.user?.sysadmin || session.user?.boardMember;
+            // IDOR guard: a member may only read their own certs. The shop-manage UI
+            // exposes this per-person lookup to Admin/Board/Certifier (the "By Person"
+            // tab), so match that set: sysadmin, boardMember, or anyone holding
+            // MAY_CERTIFY_OTHERS on any tool. `level` is @sensitivity:internal — not
+            // public — so a plain member reading another id is denied.
+            const isCertifier = (session.user?.toolStatuses ?? []).some(
+                (ts: { level: string }) => ts.level === 'MAY_CERTIFY_OTHERS'
+            );
+            const isPrivileged = session.user?.sysadmin || session.user?.boardMember || isCertifier;
             if (targetUserId !== session.user.id && !isPrivileged) {
                 return NextResponse.json({ error: "Forbidden" }, { status: 403 });
             }
