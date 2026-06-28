@@ -42,6 +42,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         }
 
         if (publish) {
+            // Publishing resets phase->UPCOMING, enrollment->OPEN. Only valid out of a
+            // pre-launch phase (PLANNING/UPCOMING). Re-publishing a RUNNING or FINISHED
+            // program would silently resurrect it — reject terminal/active phases.
+            if (currentProgram.phase === 'RUNNING' || currentProgram.phase === 'FINISHED') {
+                return NextResponse.json({ error: `Cannot publish a program that is already ${currentProgram.phase.toLowerCase()}.` }, { status: 409 });
+            }
             // Validation rules for publishing
             if (!currentProgram.leadMentorId) {
                 return NextResponse.json({ error: "Cannot publish a program without a Lead Mentor assigned" }, { status: 400 });
