@@ -13,7 +13,7 @@
 
 import { syncContractStatus } from '@/lib/membership/external';
 import { POST as SYNC_ROUTE } from '@/app/api/membership/contract/sync/route';
-import { getRequestStatus, getAccessToken } from '@/lib/membership/contract/zohoClient';
+import { getRequestStatus } from '@/lib/membership/contract/zohoClient';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
