@@ -485,7 +485,7 @@ export function ToolManagementPanel() {
 
 export default function ToolManagementPage() {
   return (
-    <Container size="lg" py="md">
+    <Container size="lg" pb="md">
       <Title order={1} mb="lg">Tools &amp; Certifications</Title>
       <ToolManagementPanel />
     </Container>

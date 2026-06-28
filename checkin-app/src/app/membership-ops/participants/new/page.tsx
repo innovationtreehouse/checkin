@@ -119,7 +119,7 @@ function NewParticipantForm() {
   const submitDisabled = saving || (!studentSelected && !email && !householdId) || (studentSelected && !parentEmail && !householdId);
 
   return (
-    <Container size="md" py="md">
+    <Container size="md" pb="md">
       <Card withBorder radius="md" padding="lg">
         <AdminPageHeader title="Register New User" back={{ href: '/membership-ops', label: '← Membership Ops' }} mb="md" />
 

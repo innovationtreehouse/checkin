@@ -41,7 +41,7 @@ export default function ManualAttendance() {
   };
 
   return (
-    <Container size="sm" py="md">
+    <Container size="sm" pb="md">
       <Card withBorder radius="md" padding="lg">
         <Group justify="space-between" align="center" wrap="wrap" mb="md">
           <Title order={1}>Manual Time Entry</Title>

@@ -165,7 +165,7 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
   }
 
   return (
-    <Container size="md" py="md">
+    <Container size="md" pb="md">
       <Card withBorder radius="md" padding="lg">
         <Stack align="center" gap={4} mb="lg">
           <Title order={1}>Register for Program</Title>

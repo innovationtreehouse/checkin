@@ -95,7 +95,7 @@ export default function MembershipReviewPage() {
   }
 
   return (
-    <Container size="md" py="md">
+    <Container size="md" pb="md">
       <Group justify="space-between" align="center" wrap="wrap" mb="md">
         <Title order={1}>Background-check review</Title>
         <Button component={Link} href="/" variant="default">← Home</Button>

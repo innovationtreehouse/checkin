@@ -83,7 +83,7 @@ export default function ShopOpsPage() {
   }
 
   return (
-    <Container size="lg" py="md">
+    <Container size="lg" pb="md">
       <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap">
         <div>
           <Title order={1}>Shop Operations</Title>
