@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, Stack, Text, Title } from "@mantine/core";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
@@ -21,6 +22,9 @@ interface QueueItem {
 
 export default function MembershipReviewPage() {
   const { status: sessionStatus } = useSession();
+  // Inside the Membership Ops section the tab bar already labels this page, so the
+  // h1 is redundant there; keep it on the standalone /membership/review route.
+  const inOps = usePathname().startsWith("/membership-ops");
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
@@ -97,7 +101,7 @@ export default function MembershipReviewPage() {
   return (
     <Container size="md" pb="md">
       <Group justify="space-between" align="center" wrap="wrap" mb="md">
-        <Title order={1}>Background-check review</Title>
+        {!inOps && <Title order={1}>Background-check review</Title>}
         <Button component={Link} href="/" variant="default">← Home</Button>
       </Group>
 
