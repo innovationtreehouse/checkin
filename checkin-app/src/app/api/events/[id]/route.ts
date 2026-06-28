@@ -104,6 +104,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                 return NextResponse.json({ error: "Forbidden: Only Lead Mentors or Admins can edit/cancel events" }, { status: 403 });
             }
 
+            // Block edits to an event that has already finished. Re-clearing
+            // reminderSentAt on a past event is meaningless and would re-arm a
+            // stale reminder; today only the cron's future-only window stops it
+            // from firing. Use end (not start) so an in-progress event still edits.
+            if (body.action === 'editTime' && event.end.getTime() < Date.now()) {
+                return NextResponse.json({ error: "Cannot edit a past event" }, { status: 400 });
+            }
+
             const { start, end, applyToFuture } = body;
 
             const timeShiftStartMs = start ? new Date(start).getTime() - event.start.getTime() : 0;
