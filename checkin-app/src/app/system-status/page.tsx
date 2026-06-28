@@ -4,6 +4,7 @@ import { Card, Center, Group, List, Loader, SimpleGrid, Stack, Tabs, Text, Title
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { BadgeScanChart, SystemVersionBox } from "@/components/admin/SystemHealthPanels";
 import { LinkStatusPanel } from "@/components/admin/LinkStatusPanel";
+import { ErrorLogPanel } from "@/components/admin/ErrorLogPanel";
 
 export default function SystemStatusIndex() {
   const { loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
@@ -22,6 +23,7 @@ export default function SystemStatusIndex() {
       <Tabs.List mb="md">
         <Tabs.Tab value="system-status">System Status</Tabs.Tab>
         <Tabs.Tab value="link-status">Link Status</Tabs.Tab>
+        <Tabs.Tab value="errors">Errors</Tabs.Tab>
       </Tabs.List>
 
       <Tabs.Panel value="system-status">
@@ -77,6 +79,10 @@ export default function SystemStatusIndex() {
 
       <Tabs.Panel value="link-status">
         <LinkStatusPanel />
+      </Tabs.Panel>
+
+      <Tabs.Panel value="errors">
+        <ErrorLogPanel />
       </Tabs.Panel>
     </Tabs>
   );
