@@ -16,6 +16,7 @@ import {
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
+  IconAdjustments,
   IconBuildingWarehouse,
   IconCalendarEvent,
   IconClipboardList,
@@ -95,6 +96,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/admin',
     label: 'Admin Ops',
     icon: <IconSettings size={18} />,
+    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+  },
+  {
+    href: '/settings',
+    label: 'Settings',
+    icon: <IconAdjustments size={18} />,
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
   },
 ];
