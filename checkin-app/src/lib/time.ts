@@ -51,12 +51,16 @@ export function fromDatetimeLocal(value: string | null | undefined): string {
 
 /**
  * Returns the calendar age in whole years for the given DOB, decremented if
- * this year's birthday hasn't happened yet. Canonical implementation — use
+ * the birthday hasn't happened yet as of `asOf`. Canonical implementation — use
  * this everywhere instead of inline epoch-diff age math.
+ *
+ * `asOf` defaults to now (the common case). Program age gates pass the program's
+ * start date so the bound is judged as-of when the program begins, not when the
+ * person happens to register.
  */
-export function calculateAge(dob: Date | string): number {
+export function calculateAge(dob: Date | string, asOf: Date | string = new Date()): number {
     const birthDate = new Date(dob);
-    const today = new Date();
+    const today = new Date(asOf);
     let age = today.getFullYear() - birthDate.getFullYear();
     const m = today.getMonth() - birthDate.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;

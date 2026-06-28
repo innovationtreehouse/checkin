@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
-import { formatDate, formatTime, formatDateTime } from '@/lib/time';
+import { formatDate, formatTime, formatDateTime, calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
@@ -319,7 +319,7 @@ export default function HouseholdPage() {
               <SimpleGrid cols={{ base: 1, sm: 2 }} mb="lg">
                 {sortedMembers.map((p) => {
                   const memberIsLead = isLead(p.id);
-                  const isAdult = p.dob && (new Date().getFullYear() - new Date(p.dob).getFullYear() >= 18);
+                  const isAdult = p.dob && calculateAge(p.dob) >= 18;
                   return (
                     <Card key={p.id} withBorder radius="md" padding="md">
                       {editingMemberId === p.id ? (
@@ -329,7 +329,7 @@ export default function HouseholdPage() {
                             <TextInput size="xs" type="email" label="Email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.currentTarget.value })} />
                             <TextInput size="xs" type="date" label="Date of Birth" value={editForm.dob} onChange={(e) => setEditForm({ ...editForm, dob: e.currentTarget.value })} />
                             <TextInput size="xs" type="tel" label="Phone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.currentTarget.value })} />
-                            {p.id !== userId && editForm.dob && (new Date().getFullYear() - new Date(editForm.dob).getFullYear() >= 18) && (
+                            {p.id !== userId && editForm.dob && calculateAge(editForm.dob) >= 18 && (
                               <Checkbox label="Household Lead" checked={editForm.isLead} onChange={(e) => setEditForm({ ...editForm, isLead: e.currentTarget.checked })} />
                             )}
                             <Group gap="xs">

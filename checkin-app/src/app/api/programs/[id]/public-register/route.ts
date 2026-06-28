@@ -6,6 +6,7 @@ import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads
 import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
 import { createContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 import { rateLimit, rateLimitEmail } from "@/lib/rate-limit";
+import { calculateAge } from "@/lib/time";
 
 interface ParentInput {
     name: string;
@@ -101,9 +102,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     if (!p.dob) {
                         return NextResponse.json({ error: `Date of Birth is required for participant ${p.name} to verify age constraints.` }, { status: 400 });
                     }
-                    const ageDifMs = Date.now() - new Date(p.dob).getTime();
-                    const ageDate = new Date(ageDifMs);
-                    const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+                    // Judge age as of the program's start date; fall back to now
+                    // for dateless ("TBD") programs.
+                    const age = calculateAge(p.dob, currentProgram.begin ?? undefined);
                     if (currentProgram.minAge !== null && age < currentProgram.minAge) {
                         return NextResponse.json({ error: `Participant ${p.name} must be at least ${currentProgram.minAge} years old.` }, { status: 400 });
                     }

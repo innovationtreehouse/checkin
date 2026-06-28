@@ -9,6 +9,8 @@ import { POST as createProgram } from '@/app/api/programs/route';
 import { PATCH as updateProgramSettings } from '@/app/api/programs/[id]/settings/route';
 import { POST as enrollParticipant } from '@/app/api/programs/[id]/participants/route';
 import { POST as markAttendance } from '@/app/api/events/[id]/attendance/route';
+import { PUT as editParticipant } from '@/app/api/admin/participants/[id]/route';
+import { POST as reassignHousehold } from '@/app/api/admin/participants/[id]/household/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 // Mock NextAuth
@@ -212,5 +214,48 @@ describe('AuditLog Integration Tests', () => {
         const newDataString = log?.newData as string;
         const newData = JSON.parse(newDataString);
         expect(newData.validatedParticipants).toContain(testParticipantId);
+    });
+
+    it('should generate an AuditLog when an Admin edits participant PII', async () => {
+        await prisma.auditLog.deleteMany({ where: { tableName: 'Participant' } });
+
+        const req = new Request(`http://localhost:4000/api/admin/participants/${testParticipantId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ name: 'Edited Audit Name', email: 'edited-audit-test@example.com' })
+        });
+
+        const res = await editParticipant(req as never, { params: Promise.resolve({ id: testParticipantId.toString() }) });
+        expect(res.status).toBe(200);
+
+        const logs = await prisma.auditLog.findMany({
+            where: { tableName: 'Participant', affectedEntityId: testParticipantId }
+        });
+        expect(logs).toHaveLength(1);
+        expect(logs[0].action).toBe('EDIT');
+        expect(logs[0].actorId).toBe(testAdminId);
+        const newData = logs[0].newData as { name: string };
+        expect(newData.name).toBe('Edited Audit Name');
+    });
+
+    it('should generate an AuditLog when an Admin reassigns a participant household', async () => {
+        await prisma.auditLog.deleteMany({ where: { tableName: 'Participant' } });
+
+        const newHousehold = await prisma.household.create({ data: { name: 'Audit Target Household' } });
+
+        const req = new Request(`http://localhost:4000/api/admin/participants/${testParticipantId}/household`, {
+            method: 'POST',
+            body: JSON.stringify({ householdId: newHousehold.id })
+        });
+
+        const res = await reassignHousehold(req as never, { params: Promise.resolve({ id: testParticipantId.toString() }) });
+        expect(res.status).toBe(200);
+
+        const logs = await prisma.auditLog.findMany({
+            where: { tableName: 'Participant', affectedEntityId: testParticipantId }
+        });
+        expect(logs).toHaveLength(1);
+        expect(logs[0].action).toBe('EDIT');
+        const newData = logs[0].newData as { householdId: number };
+        expect(newData.householdId).toBe(newHousehold.id);
     });
 });

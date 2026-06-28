@@ -87,10 +87,8 @@ describe('Membership renewal', () => {
         await prisma.$disconnect();
     });
 
-    it('cron rejects missing/invalid bearer', async () => {
-        expect((await CRON(cronReq(null))).status).toBe(401);
-        expect((await CRON(cronReq('wrong'))).status).toBe(401);
-    });
+    // Cron auth negatives are covered centrally in src/lib/__tests__/cronAuth.test.ts;
+    // the valid-bearer smoke ('cron runs with a valid bearer') stays below.
 
     it('nextBoundary rolls to next year when the date has passed', () => {
         const boundary = new Date(Date.UTC(2020, 7, 1)); // Aug 1

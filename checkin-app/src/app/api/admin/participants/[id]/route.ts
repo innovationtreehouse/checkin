@@ -32,12 +32,28 @@ export async function PUT(
             return NextResponse.json({ error: "No fields to update provided" }, { status: 400 });
         }
 
+        const prior = await prisma.participant.findUnique({
+            where: { id },
+            select: { name: true, email: true, phone: true },
+        });
+
         const updatedParticipant = await prisma.participant.update({
             where: { id },
             data: updateData,
             include: {
                 household: true
             }
+        });
+
+        await prisma.auditLog.create({
+            data: {
+                actorId: auth.user.id,
+                action: "EDIT",
+                tableName: "Participant",
+                affectedEntityId: id,
+                oldData: prior ?? undefined,
+                newData: updateData,
+            },
         });
 
         const formatted = {

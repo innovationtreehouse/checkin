@@ -6,6 +6,7 @@ import * as xlsx from "xlsx";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { parseImportDob } from "@/lib/importDob";
+import { calculateAge } from "@/lib/time";
 
 export async function POST(req: NextRequest) {
     try {
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest) {
             dob?: Date;
             address?: string;
         }, db: Prisma.TransactionClient = prisma) => {
-            const isAdult = !data.dob || (new Date().getFullYear() - data.dob.getFullYear()) >= 18;
+            const isAdult = !data.dob || calculateAge(data.dob) >= 18;
             const participant = await db.participant.create({
                 data: {
                     ...(data.email && { email: data.email }),
