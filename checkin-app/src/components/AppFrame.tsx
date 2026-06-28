@@ -55,8 +55,8 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/kioskdisplay', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/household', label: 'My Household', icon: <IconHome size={18} />, visible: (_u, signedIn) => signedIn },
+  { href: '/kioskdisplay', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/programs', label: 'Programs', icon: <IconCalendarEvent size={18} />, visible: () => true },
   {
     href: '/shop',
