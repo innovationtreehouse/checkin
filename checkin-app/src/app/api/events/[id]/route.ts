@@ -119,12 +119,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
                 if (body.action === 'cancel') {
                     const eventIds = futureEvents.map(e => e.id);
-                    // Cleanup RSVPs and Visits first to avoid foreign key constraints
-                    await prisma.rSVP.deleteMany({ where: { eventId: { in: eventIds } } });
-                    await prisma.visit.updateMany({ where: { associatedEventId: { in: eventIds } }, data: { associatedEventId: null } });
-                    // Delete all future events in series
-                    await prisma.event.deleteMany({ where: { id: { in: eventIds } } });
-                    
+                    // Cleanup RSVPs and Visits first to avoid foreign key constraints.
+                    // All three writes in one transaction so a mid-way failure rolls back.
+                    await prisma.$transaction([
+                        prisma.rSVP.deleteMany({ where: { eventId: { in: eventIds } } }),
+                        prisma.visit.updateMany({ where: { associatedEventId: { in: eventIds } }, data: { associatedEventId: null } }),
+                        prisma.event.deleteMany({ where: { id: { in: eventIds } } }),
+                    ]);
+
                     return NextResponse.json({ success: true, count: futureEvents.length });
                 } else if (body.action === 'editTime') {
                     const ops: Prisma.PrismaPromise<unknown>[] = futureEvents.map(fe => {
@@ -153,9 +155,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             } else {
                 // Apply ONLY to this single event
                 if (body.action === 'cancel') {
-                    await prisma.rSVP.deleteMany({ where: { eventId: event.id } });
-                    await prisma.visit.updateMany({ where: { associatedEventId: event.id }, data: { associatedEventId: null } });
-                    await prisma.event.delete({ where: { id: event.id } });
+                    // All three writes in one transaction so a mid-way failure rolls back.
+                    await prisma.$transaction([
+                        prisma.rSVP.deleteMany({ where: { eventId: event.id } }),
+                        prisma.visit.updateMany({ where: { associatedEventId: event.id }, data: { associatedEventId: null } }),
+                        prisma.event.delete({ where: { id: event.id } }),
+                    ]);
                     return NextResponse.json({ success: true });
                 } else if (body.action === 'editTime') {
                     const startChanged = timeShiftStartMs !== 0;
