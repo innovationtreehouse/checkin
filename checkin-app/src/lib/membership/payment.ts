@@ -94,40 +94,48 @@ export async function ensurePaymentLinkForUser(userId: number) {
 }
 
 /**
- * The single activation path. Flips the membership ACTIVE, marks the process
- * ACTIVE + paid, records how (Shopify order id or certifying board member), and
- * sends one congratulations email. Idempotent: a no-op if already ACTIVE.
+ * The single payment path. Records the payment (paidAt + how), then gates on the
+ * background check: if it has already cleared (bgClearedAt set), flip the
+ * membership ACTIVE and send one congrats email; otherwise hold the process at
+ * PENDING_BG_CLEARANCE — paid, but membership stays INACTIVE until two reviewers
+ * approve (review.ts › clearBackgroundCheck then flips ACTIVE).
+ *
+ * FOR UPDATE serializes against the review path's attest() transaction, which
+ * takes the same row lock — so the payment/clearance race can't lose an update.
+ * Idempotent: a no-op if already paid (Shopify retries an orders/paid webhook
+ * routinely), already active, or blocked (a late webhook must not resurrect a
+ * failed application).
  */
 export async function activate(
     processId: number,
     opts: { via: "payment" | "certified"; actorId?: number; shopifyOrderId?: string },
 ) {
-    const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
-    if (!process) throw new PaymentError("not_found", "Application not found.");
-    const membership = await prisma.membership.findUnique({ where: { id: process.membershipId }, select: { householdId: true } });
-    if (!membership) throw new PaymentError("not_found", "Membership not found.");
+    const result = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "MembershipProcess" WHERE id = ${processId} FOR UPDATE`;
+        const process = await tx.membershipProcess.findUnique({ where: { id: processId } });
+        if (!process) throw new PaymentError("not_found", "Application not found.");
+        if (process.paidAt || process.status === "ACTIVE" || process.status === "BLOCKED") {
+            return { kind: "noop" as const }; // retry / already done / failed — skip audit + email
+        }
+        const membership = await tx.membership.findUnique({ where: { id: process.membershipId }, select: { householdId: true } });
+        if (!membership) throw new PaymentError("not_found", "Membership not found.");
 
-    const now = new Date();
-    // The flip + membership update + audit row are one transaction, and the flip
-    // is CONDITIONAL on status != ACTIVE. Under Read Committed, two concurrent
-    // updateMany re-check the WHERE against the just-committed row, so exactly one
-    // sees count === 1 and the rest see 0 — no row lock needed. Shopify retries
-    // an orders/paid webhook routinely; this makes activate() truly idempotent
-    // (no duplicate audit rows, no duplicate congrats emails).
-    const flipped = await prisma.$transaction(async (tx) => {
-        const { count } = await tx.membershipProcess.updateMany({
-            where: { id: processId, status: { not: "ACTIVE" } },
-            data: {
-                status: "ACTIVE",
-                stageEnteredAt: now,
-                paidAt: now,
-                ...(opts.shopifyOrderId ? { shopifyOrderId: opts.shopifyOrderId } : {}),
-                ...(opts.via === "certified" && opts.actorId ? { certifiedById: opts.actorId } : {}),
-            },
+        const now = new Date();
+        const paidData = {
+            paidAt: now,
+            stageEnteredAt: now,
+            ...(opts.shopifyOrderId ? { shopifyOrderId: opts.shopifyOrderId } : {}),
+            ...(opts.via === "certified" && opts.actorId ? { certifiedById: opts.actorId } : {}),
+        };
+        const activating = !!process.bgClearedAt;
+
+        await tx.membershipProcess.update({
+            where: { id: processId },
+            data: { ...paidData, status: activating ? "ACTIVE" : "PENDING_BG_CLEARANCE" },
         });
-        if (count === 0) return false; // already ACTIVE — a retry; skip audit + email
-
-        await tx.membership.update({ where: { id: process.membershipId }, data: { status: "ACTIVE" } });
+        if (activating) {
+            await tx.membership.update({ where: { id: process.membershipId }, data: { status: "ACTIVE" } });
+        }
         await tx.auditLog.create({
             data: {
                 actorId: opts.actorId ?? SYSTEM_ACTOR,
@@ -135,15 +143,15 @@ export async function activate(
                 tableName: "MembershipProcess",
                 affectedEntityId: processId,
                 oldData: JSON.stringify({ status: process.status }),
-                newData: JSON.stringify({ status: "ACTIVE", via: opts.via }),
+                newData: JSON.stringify(activating ? { status: "ACTIVE", via: opts.via } : { status: "PENDING_BG_CLEARANCE", via: opts.via, paid: true }),
             },
         });
-        return true;
+        return activating ? { kind: "active" as const, householdId: membership.householdId } : { kind: "held" as const };
     });
 
     // Email outside the transaction: a slow/failed send must not roll back the
     // activation, and we only send when this call is the one that flipped it.
-    if (flipped) await sendCongrats(membership.householdId);
+    if (result.kind === "active") await sendCongrats(result.householdId);
     return prisma.membershipProcess.findUnique({ where: { id: processId } });
 }
 
@@ -165,7 +173,8 @@ export async function activateByProcessId(processId: number, shopifyOrderId: str
     return activate(processId, { via: "payment", shopifyOrderId });
 }
 
-async function sendCongrats(householdId: number) {
+/** Send the one "welcome — your membership is active" email to a household's leads. */
+export async function sendCongrats(householdId: number) {
     try {
         const leads = await prisma.householdLead.findMany({
             where: { householdId },

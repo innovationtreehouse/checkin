@@ -23,6 +23,8 @@ interface ProcessRow {
   zohoEnvelopeId: string | null;
   contractSignedAt: string | null;
   bgConsentAt: string | null;
+  bgClearedAt: string | null;
+  paidAt: string | null;
   attestations: Attestation[];
   membership: {
     householdId: number;
@@ -36,6 +38,7 @@ const STATUS_COLORS: Record<string, string> = {
   PENDING_EXTERNAL_ACTION: "blue",
   PENDING_BG_REVIEW: "grape",
   PENDING_PAYMENT: "orange",
+  PENDING_BG_CLEARANCE: "grape",
   BLOCKED: "red",
   PENDING_RENEWAL: "teal",
   RENEWAL_PENDING_BG: "grape",
@@ -43,6 +46,14 @@ const STATUS_COLORS: Record<string, string> = {
 
 const statusColor = (status: string) => STATUS_COLORS[status] || "gray";
 const statusLabel = (status: string) => status.replace(/_/g, " ");
+
+// The background check is a parallel track: an application still needs review
+// when it hasn't cleared and is past consent (mirrors review.ts isAwaitingBgReview).
+const awaitingBg = (r: ProcessRow) =>
+  !r.bgClearedAt &&
+  (r.status === "PENDING_BG_REVIEW" ||
+    r.status === "RENEWAL_PENDING_BG" ||
+    ((r.status === "PENDING_PAYMENT" || r.status === "PENDING_BG_CLEARANCE") && !!r.bgConsentAt));
 
 export default function AdminMembershipPage() {
   const [rows, setRows] = useState<ProcessRow[]>([]);
@@ -231,9 +242,9 @@ export default function AdminMembershipPage() {
                 </Group>
               )}
 
-              {r.status === "PENDING_BG_REVIEW" && (
+              {awaitingBg(r) && (
                 <Text size="sm" c="dimmed" mt="md">
-                  Awaiting reviewers — <Text component="span" fw={600}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</Text> approvals recorded.
+                  Background check (in parallel) — <Text component="span" fw={600}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</Text> approvals recorded.
                 </Text>
               )}
 
@@ -241,9 +252,15 @@ export default function AdminMembershipPage() {
                 <Group mt="md" gap="md" wrap="wrap" align="center">
                   <Text size="sm" c="dimmed">Awaiting payment.</Text>
                   <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => certify(r.id)}>
-                    Certify payment plan → activate
+                    Certify payment plan → {r.bgClearedAt ? "activate" : "(holds for background check)"}
                   </Button>
                 </Group>
+              )}
+
+              {r.status === "PENDING_BG_CLEARANCE" && (
+                <Text size="sm" c="dimmed" mt="md">
+                  Paid — membership activates automatically once the background check clears.
+                </Text>
               )}
 
               {r.status === "BLOCKED" && (
