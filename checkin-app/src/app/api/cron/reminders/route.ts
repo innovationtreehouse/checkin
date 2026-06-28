@@ -63,9 +63,10 @@ export async function GET(req: Request) {
                 const promise = Promise.resolve(sendNotification(rsvp.participantId, 'EVENT_STARTING_SOON', {
                     eventName: event.name,
                     hours: 2
-                })).then(async () => {
-                    // Mark sent only after the notification resolves, so a send failure
-                    // leaves it eligible for the next run rather than silently dropped.
+                })).then(async (ok) => {
+                    // Mark sent only when the notification actually delivered, so a send
+                    // failure leaves it eligible for the next run rather than silently dropped.
+                    if (!ok) return;
                     await prisma.rSVP.update({
                         where: {
                             eventId_participantId: {

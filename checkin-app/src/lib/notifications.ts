@@ -19,14 +19,19 @@ export type NotificationEvent =
     | 'CHECKIN'
     | 'CHECKOUT';
 
-export async function sendNotification(userId: number, eventType: NotificationEvent, payload: Record<string, unknown>) {
+/**
+ * @returns true if delivery succeeded or there was nothing to send (don't retry),
+ *          false if the send failed (caller should retry).
+ */
+export async function sendNotification(userId: number, eventType: NotificationEvent, payload: Record<string, unknown>): Promise<boolean> {
     try {
         const user = await prisma.participant.findUnique({
             where: { id: userId },
             select: { email: true, notificationSettings: true, name: true }
         });
 
-        if (!user || !user.email) return;
+        // No user / no address: nothing can ever be sent here — treat as done, not retryable.
+        if (!user || !user.email) return true;
 
         // Construct message based on type
         let message = "";
@@ -61,12 +66,15 @@ export async function sendNotification(userId: number, eventType: NotificationEv
         const settings = user.notificationSettings as unknown as Record<string, boolean>;
         const wantsEmail = settings?.email !== false; // Active by default
 
-        if (wantsEmail) {
-            await sendEmail(user.email, subject, `<p>${escapeHtml(message)}</p>`);
-        }
+        // Email disabled: return true so a user who opted out isn't retried forever.
+        if (!wantsEmail) return true;
+
+        const ok = await sendEmail(user.email, subject, `<p>${escapeHtml(message)}</p>`);
+        return ok;
 
     } catch (error) {
         console.error("Failed to sequence notification:", error);
+        return false;
     }
 }
 
