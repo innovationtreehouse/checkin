@@ -43,12 +43,17 @@ function makeKeypair() {
     const rawPublicHex = (publicKey.export({ format: 'der', type: 'spki' }) as Buffer)
         .subarray(-32)
         .toString('hex');
-    const sign = (ts: string, method: string, path: string, body: string) =>
-        crypto.sign(null, Buffer.from(`${ts}:${method}:${path}:${body}`), privateKey).toString('hex');
+    // Mirrors verify-kiosk.ts:80 — nonce is bound INTO the signed payload.
+    const sign = (ts: string, nonce: string, method: string, path: string, body: string) =>
+        crypto.sign(null, Buffer.from(`${ts}:${nonce}:${method}:${path}:${body}`), privateKey).toString('hex');
     return { rawPublicHex, sign };
 }
 
 const nowSec = () => Math.floor(Date.now() / 1000);
+// Per-request unique nonce — the verifier rejects reused nonces as replays,
+// so every valid-signature case must use a fresh one.
+let nonceCounter = 0;
+const freshNonce = () => `nonce-${TAG}-${nonceCounter++}`;
 
 /** Build a /api/scan POST request, optionally with kiosk signature headers. */
 function scanReq(body: string, headers?: Record<string, string>) {
@@ -127,10 +132,12 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
         it('valid signature → 200 and records the check-in', async () => {
             const body = JSON.stringify({ participantId: kioskId });
             const ts = String(nowSec());
-            const sig = signer.sign(ts, 'POST', '/api/scan', body);
+            const nonce = freshNonce();
+            const sig = signer.sign(ts, nonce, 'POST', '/api/scan', body);
 
             const res = await POST(scanReq(body, {
                 'x-kiosk-timestamp': ts,
+                'x-kiosk-nonce': nonce,
                 'x-kiosk-signature': sig,
             }));
 
@@ -149,10 +156,12 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             const signedBody = JSON.stringify({ participantId: kioskId });
             const sentBody = JSON.stringify({ participantId: kioskId, tampered: true });
             const ts = String(nowSec());
-            const sig = signer.sign(ts, 'POST', '/api/scan', signedBody);
+            const nonce = freshNonce();
+            const sig = signer.sign(ts, nonce, 'POST', '/api/scan', signedBody);
 
             const res = await POST(scanReq(sentBody, {
                 'x-kiosk-timestamp': ts,
+                'x-kiosk-nonce': nonce,
                 'x-kiosk-signature': sig,
             }));
 
@@ -161,19 +170,50 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             expect(visits).toBe(0);
         });
 
-        it('replayed / stale timestamp (older than the 60s window) → 401', async () => {
+        it('stale timestamp (older than the 60s window) → 401', async () => {
             const body = JSON.stringify({ participantId: kioskId });
             const ts = String(nowSec() - 61);
-            const sig = signer.sign(ts, 'POST', '/api/scan', body); // correctly signed, just stale
+            const nonce = freshNonce();
+            const sig = signer.sign(ts, nonce, 'POST', '/api/scan', body); // correctly signed, just stale
 
             const res = await POST(scanReq(body, {
                 'x-kiosk-timestamp': ts,
+                'x-kiosk-nonce': nonce,
                 'x-kiosk-signature': sig,
             }));
 
             expect(res.status).toBe(401);
             const visits = await prisma.visit.count({ where: { participantId: kioskId } });
             expect(visits).toBe(0);
+        });
+
+        it('replayed nonce (same nonce reused across two valid requests) → second 401 "Replay detected"', async () => {
+            const nonce = freshNonce(); // deliberately reused below
+
+            const body1 = JSON.stringify({ participantId: kioskId });
+            const ts1 = String(nowSec());
+            const sig1 = signer.sign(ts1, nonce, 'POST', '/api/scan', body1);
+            const res1 = await POST(scanReq(body1, {
+                'x-kiosk-timestamp': ts1,
+                'x-kiosk-nonce': nonce,
+                'x-kiosk-signature': sig1,
+            }));
+            expect(res1.status).toBe(200); // first use of the nonce: accepted
+
+            // Re-sign with the SAME nonce (fresh timestamp + valid sig), so only the
+            // replay cache — not the timestamp window or signature — can reject it.
+            const ts2 = String(nowSec());
+            const sig2 = signer.sign(ts2, nonce, 'POST', '/api/scan', body1);
+            const res2 = await POST(scanReq(body1, {
+                'x-kiosk-timestamp': ts2,
+                'x-kiosk-nonce': nonce,
+                'x-kiosk-signature': sig2,
+            }));
+
+            expect(res2.status).toBe(401);
+            // Only the first request checked in; the replay changed nothing.
+            const events = await prisma.rawBadgeEvent.count({ where: { participantId: kioskId } });
+            expect(events).toBe(1);
         });
 
         it('missing kiosk headers AND no session cookie, non-local env → 401', async () => {
