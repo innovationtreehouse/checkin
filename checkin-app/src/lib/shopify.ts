@@ -4,6 +4,7 @@
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/email-templates/base";
+import { logIntegrationError } from "@/lib/logger";
 
 let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
@@ -208,6 +209,13 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
     if (productId) {
         console.error("[Shopify] Orphaned product after variant failure, manual cleanup needed:", productId);
     }
+
+    // Persist for System Status > Link Status (was email-only before).
+    await logIntegrationError("shopify", error, {
+        operation: "createShopifyProgramVariants",
+        program: name,
+        orphanedProductId: productId ?? null,
+    });
 
     try {
         const admins = await prisma.participant.findMany({
