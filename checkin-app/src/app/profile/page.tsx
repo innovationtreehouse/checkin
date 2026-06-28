@@ -122,7 +122,7 @@ export default function ProfilePage() {
   if (!session) return null; // Fallback while router redirects
 
   return (
-    <Container size="sm" py="md">
+    <Container size="sm" pb="md">
       <Stack>
         <Card withBorder radius="md" padding="lg">
           <Title order={1}>My Profile</Title>

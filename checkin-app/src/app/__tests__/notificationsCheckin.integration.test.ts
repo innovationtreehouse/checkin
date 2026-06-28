@@ -13,12 +13,17 @@ describe("sendCheckinNotifications()", () => {
     let householdId: number;
 
     beforeEach(async () => {
-        // Clean up (participants before households — the FK is RESTRICT)
+        // Clean up (children before households — the FKs are RESTRICT). The household
+        // delete is global (any participant-less household), so the membership chain
+        // for those households must go first or Membership_householdId_fkey blocks it.
         await prisma.visit.deleteMany();
         await prisma.householdLead.deleteMany();
         await prisma.participant.deleteMany({
             where: { email: { contains: "notify-test" } }
         });
+        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { household: { participants: { none: {} } } } } } });
+        await prisma.membershipProcess.deleteMany({ where: { membership: { household: { participants: { none: {} } } } } });
+        await prisma.membership.deleteMany({ where: { household: { participants: { none: {} } } } });
         await prisma.household.deleteMany({
             where: { participants: { none: {} } }
         });
@@ -67,6 +72,9 @@ describe("sendCheckinNotifications()", () => {
         await prisma.participant.deleteMany({
             where: { email: { contains: "notify-test" } }
         });
+        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { household: { participants: { none: {} } } } } } });
+        await prisma.membershipProcess.deleteMany({ where: { membership: { household: { participants: { none: {} } } } } });
+        await prisma.membership.deleteMany({ where: { household: { participants: { none: {} } } } });
         await prisma.household.deleteMany({
             where: { participants: { none: {} } }
         });

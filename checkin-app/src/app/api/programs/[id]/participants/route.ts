@@ -67,9 +67,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
              return NextResponse.json({ error: "This bypasses all payment. Are you sure?", requiresOverride: true }, { status: 400 });
         }
 
-        // When true, capacity/enrollment-status/age limits apply (a board
-        // override skips them). Capacity itself is re-checked under a row lock
-        // inside the transaction below — the _count read above is racy.
+        // ponytail: a confirmed board/sysadmin override INTENTIONALLY bypasses
+        // every soft limit — closed enrollment, age, AND capacity — so the board
+        // can deliberately overfill a program. This is intent, not a missing
+        // guard: see the requiresOverride:true responses the UI turns into a
+        // confirm button. Normal users always hit enforceLimits=true and cannot
+        // overbook (capacity is locked under FOR UPDATE in the tx below; tested in
+        // programsParticipantsConcurrency.integration.test.ts and the FULL-program
+        // override test in programsParticipantsAPI.integration.test.ts). Do not
+        // narrow this so it also gates normal users.
         const enforceLimits = !override || (!isSysAdminOrBoard);
 
         // Validation Checks

@@ -6,6 +6,7 @@ import { Alert, Card, Group, List, SimpleGrid, Stack, Text, Title } from "@manti
 import { IconAlertTriangle } from "@tabler/icons-react";
 import Link from "next/link";
 import { ADMIN_NAV_SECTIONS } from "@/lib/adminNav";
+import { BadgeScanChart, SystemVersionBox } from "@/components/admin/SystemHealthPanels";
 
 type Orphan = { id: number; name?: string | null; email?: string | null };
 
@@ -120,6 +121,10 @@ export default function AdminDashboardIndex() {
           </List>
         </Card>
       </SimpleGrid>
+
+      <SystemVersionBox />
+
+      <BadgeScanChart />
     </Stack>
   );
 }

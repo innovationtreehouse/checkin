@@ -1,4 +1,6 @@
-import { Center, Loader, Table, Text } from "@mantine/core";
+import { useState } from "react";
+import { Center, Group, Loader, Table, Text, UnstyledButton } from "@mantine/core";
+import { IconChevronDown, IconChevronUp, IconSelector } from "@tabler/icons-react";
 
 export interface DataTableColumn<T> {
   /** Column header content. */
@@ -7,6 +9,12 @@ export interface DataTableColumn<T> {
   render: (row: T) => React.ReactNode;
   /** Horizontal alignment for the header + cells in this column. */
   align?: "left" | "center" | "right";
+  /**
+   * Makes the column sortable: returns the value to sort this row by. Numbers
+   * sort numerically, everything else by localeCompare; null/undefined sort
+   * last. Omit to leave the column unsortable (e.g. an actions column).
+   */
+  sortBy?: (row: T) => string | number | null | undefined;
 }
 
 export interface DataTableProps<T> {
@@ -40,16 +48,66 @@ export function DataTable<T>({
   emptyMessage = "No records found.",
   rowProps,
 }: DataTableProps<T>) {
+  const [sort, setSort] = useState<{ index: number; dir: "asc" | "desc" } | null>(null);
+
+  const toggleSort = (index: number) =>
+    setSort((cur) =>
+      cur?.index === index
+        ? cur.dir === "asc"
+          ? { index, dir: "desc" }
+          : null
+        : { index, dir: "asc" },
+    );
+
+  const sortBy = sort && columns[sort.index]?.sortBy;
+  const sortedRows = sortBy
+    ? [...rows].sort((a, b) => {
+        const av = sortBy(a);
+        const bv = sortBy(b);
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1; // nulls last
+        if (bv == null) return -1;
+        const cmp =
+          typeof av === "number" && typeof bv === "number"
+            ? av - bv
+            : String(av).localeCompare(String(bv));
+        return sort!.dir === "asc" ? cmp : -cmp;
+      })
+    : rows;
+
   return (
     <Table.ScrollContainer minWidth={minWidth}>
       <Table verticalSpacing="sm" highlightOnHover>
         <Table.Thead>
           <Table.Tr>
-            {columns.map((col, i) => (
-              <Table.Th key={i} ta={col.align}>
-                {col.header}
-              </Table.Th>
-            ))}
+            {columns.map((col, i) => {
+              if (!col.sortBy) {
+                return (
+                  <Table.Th key={i} ta={col.align}>
+                    {col.header}
+                  </Table.Th>
+                );
+              }
+              const active = sort?.index === i;
+              const Icon = !active
+                ? IconSelector
+                : sort!.dir === "asc"
+                  ? IconChevronUp
+                  : IconChevronDown;
+              return (
+                <Table.Th key={i} ta={col.align}>
+                  <UnstyledButton
+                    onClick={() => toggleSort(i)}
+                    style={{ display: "inline-flex", verticalAlign: "middle" }}
+                  >
+                    <Group gap={4} wrap="nowrap">
+                      {col.header}
+                      <Icon size={14} stroke={1.5} />
+                    </Group>
+                  </UnstyledButton>
+                </Table.Th>
+              );
+            })}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -70,7 +128,7 @@ export function DataTable<T>({
               </Table.Td>
             </Table.Tr>
           ) : (
-            rows.map((row) => (
+            sortedRows.map((row) => (
               <Table.Tr key={getRowKey(row)} {...(rowProps?.(row) ?? {})}>
                 {columns.map((col, i) => (
                   <Table.Td key={i} ta={col.align}>

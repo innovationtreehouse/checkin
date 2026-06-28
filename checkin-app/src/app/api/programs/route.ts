@@ -93,6 +93,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Forbidden: Only Admin or Board Members can create programs" }, { status: 403 });
     }
 
+    // Hoisted so the catch can name an orphaned Shopify product (created, but DB write failed) for manual cleanup.
+    let shopifyData: { shopifyProductId: string, shopifyMemberVariantId: string | null, shopifyNonMemberVariantId: string | null } | null = null;
+
     try {
         const body = await req.json();
         const { name, leadMentorId, begin, end, memberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
@@ -111,8 +114,6 @@ export async function POST(req: Request) {
         const maxPart = maxParticipants ? parseInt(maxParticipants, 10) : null;
 
         // Try to create Shopify entities
-        let shopifyData: { shopifyProductId: string, shopifyMemberVariantId: string | null, shopifyNonMemberVariantId: string | null } | null = null;
-        
         // Only try to create if at least one price is provided. Otherwise it's a free program.
         if ((mPrice && mPrice > 0) || (nmPrice && nmPrice > 0)) {
             shopifyData = await createShopifyProgramVariants(name, mPrice, nmPrice, maxPart);
@@ -157,6 +158,9 @@ export async function POST(req: Request) {
 
         return NextResponse.json(responseObj);
     } catch (error: unknown) {
+        if (shopifyData?.shopifyProductId) {
+            console.error("[Shopify] Orphaned product after program DB write failed, manual cleanup needed:", shopifyData.shopifyProductId);
+        }
         await logBackendError(error, "POST /api/programs");
         return NextResponse.json({ error: "Failed to create program" }, { status: 500 });
     }

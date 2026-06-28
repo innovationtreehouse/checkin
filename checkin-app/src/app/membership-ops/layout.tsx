@@ -7,6 +7,7 @@ import { MEMBERSHIP_OPS_NAV_LINKS } from "@/lib/membershipOpsNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import type { TodoCounts } from "@/app/api/nav/todo-counts/route";
+import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 
 /** Board-queue count for a Membership Ops nav link, or 0 when nothing is due / unknown. */
 function membershipTodoCountFor(href: string, counts: TodoCounts | null): number {
@@ -47,7 +48,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
         Membership Ops
       </Text>
       <Tabs value={activeTab} onChange={(value) => value && router.push(value)}>
-        <Tabs.List>
+        <ScrollableTabsList>
           {MEMBERSHIP_OPS_NAV_LINKS.map((link) => {
             const todoCount = membershipTodoCountFor(link.href, todoCounts);
             return (
@@ -72,7 +73,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
               </Tabs.Tab>
             );
           })}
-        </Tabs.List>
+        </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
     </Stack>

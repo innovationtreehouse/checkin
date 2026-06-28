@@ -8,6 +8,7 @@ Usage:
 
 import json
 import os
+import secrets
 import sys
 import time
 from nacl.signing import SigningKey
@@ -28,11 +29,15 @@ def load_signing_key(path):
 
 
 def sign_request(signing_key, method, path, body=""):
+    # Nonce bound into the signed message + single-use server-side → no replay
+    # within the 60s window. Server must verify the same format.
     timestamp = str(int(time.time()))
-    message = f"{timestamp}:{method}:{path}:{body}".encode()
+    nonce = secrets.token_hex(16)
+    message = f"{timestamp}:{nonce}:{method}:{path}:{body}".encode()
     signature = signing_key.sign(message).signature.hex()
     return {
         "X-Kiosk-Timestamp": timestamp,
+        "X-Kiosk-Nonce": nonce,
         "X-Kiosk-Signature": signature,
     }
 

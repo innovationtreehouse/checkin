@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 export const POST = withAuth(
     { roles: ['sysadmin', 'boardMember'] },
-    async (req) => {
+    async (req, auth) => {
         try {
             const body = await req.json();
             const { keepId, mergeId } = body;
@@ -73,10 +73,19 @@ export const POST = withAuth(
                     });
                 }
 
-                await tx.visit.updateMany({
+                const moved = {
+                    visits: 0,
+                    programParticipants: { migrated: 0, deleted: 0 },
+                    programVolunteers: { migrated: 0, deleted: 0 },
+                    rsvps: { migrated: 0, deleted: 0 },
+                    feePayments: { migrated: 0, deleted: 0 },
+                    toolStatuses: { migrated: 0, deleted: 0 },
+                };
+
+                moved.visits = (await tx.visit.updateMany({
                     where: { participantId: mergeId },
                     data: { participantId: keepId }
-                });
+                })).count;
 
                 // Instead of failing on unique constraints, we migrate manually:
                 for (const pp of mergeParticipant.programParticipants) {
@@ -85,10 +94,12 @@ export const POST = withAuth(
                             where: { programId_participantId: { programId: pp.programId, participantId: mergeId } },
                             data: { participantId: keepId }
                         });
+                        moved.programParticipants.migrated++;
                     } else {
                         await tx.programParticipant.delete({
                             where: { programId_participantId: { programId: pp.programId, participantId: mergeId } }
                         });
+                        moved.programParticipants.deleted++;
                     }
                 }
 
@@ -98,10 +109,12 @@ export const POST = withAuth(
                             where: { programId_participantId: { programId: pv.programId, participantId: mergeId } },
                             data: { participantId: keepId }
                         });
+                        moved.programVolunteers.migrated++;
                     } else {
                         await tx.programVolunteer.delete({
                             where: { programId_participantId: { programId: pv.programId, participantId: mergeId } }
                         });
+                        moved.programVolunteers.deleted++;
                     }
                 }
 
@@ -111,10 +124,12 @@ export const POST = withAuth(
                             where: { eventId_participantId: { eventId: rsvp.eventId, participantId: mergeId } },
                             data: { participantId: keepId }
                         });
+                        moved.rsvps.migrated++;
                     } else {
                         await tx.rSVP.delete({
                             where: { eventId_participantId: { eventId: rsvp.eventId, participantId: mergeId } }
                         });
+                        moved.rsvps.deleted++;
                     }
                 }
 
@@ -124,10 +139,12 @@ export const POST = withAuth(
                             where: { feeId_participantId: { feeId: fee.feeId, participantId: mergeId } },
                             data: { participantId: keepId }
                         });
+                        moved.feePayments.migrated++;
                     } else {
                         await tx.feePayment.delete({
                             where: { feeId_participantId: { feeId: fee.feeId, participantId: mergeId } }
                         });
+                        moved.feePayments.deleted++;
                     }
                 }
 
@@ -137,10 +154,12 @@ export const POST = withAuth(
                             where: { userId_toolId: { toolId: tool.toolId, userId: mergeId } },
                             data: { userId: keepId }
                         });
+                        moved.toolStatuses.migrated++;
                     } else {
                         await tx.toolStatus.delete({
                             where: { userId_toolId: { toolId: tool.toolId, userId: mergeId } }
                         });
+                        moved.toolStatuses.deleted++;
                     }
                 }
 
@@ -160,6 +179,25 @@ export const POST = withAuth(
                         name: `${mergeParticipant.name || 'Unknown'} (Merged into ${keepId})`,
                     }
                 });
+
+                // ponytail: audit only — undo is unimplemented; merge is still irreversible.
+                if (auth.type === 'session') {
+                    await tx.auditLog.create({
+                        data: {
+                            actorId: auth.user.id,
+                            action: "DELETE",
+                            tableName: "Participant",
+                            affectedEntityId: keepId,
+                            secondaryAffectedEntity: mergeId,
+                            oldData: {
+                                id: mergeParticipant.id,
+                                name: mergeParticipant.name,
+                                email: mergeParticipant.email,
+                            },
+                            newData: { keepId, moved },
+                        }
+                    });
+                }
             });
 
             return NextResponse.json({ success: true });

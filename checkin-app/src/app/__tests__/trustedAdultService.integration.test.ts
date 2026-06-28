@@ -63,6 +63,12 @@ describe('Trusted Adults service', () => {
 
     beforeEach(() => sendEmail.mockClear());
 
+    // Newest audit row for a trusted adult. Each action appends one row keyed by the
+    // TrustedAdult id, so "newest" is the row the just-run action wrote. Queries
+    // prisma.auditLog directly so it survives the audit() write becoming transactional.
+    const latestAudit = (taId: number) =>
+        prisma.auditLog.findFirst({ where: { tableName: 'TrustedAdult', affectedEntityId: taId }, orderBy: { id: 'desc' } });
+
     async function discloseOne() {
         return createTrustedAdult({
             householdId,
@@ -80,6 +86,11 @@ describe('Trusted Adults service', () => {
         expect(ta.reviews[0].kind).toBe('INITIAL');
         expect(ta.reviews[0].status).toBe('PENDING_BOARD_REVIEW');
         expect(sendEmail).toHaveBeenCalled(); // board notified
+
+        const audit = await latestAudit(ta.id);
+        expect(audit?.actorId).toBe(leadId); // the disclosing lead, not SYSTEM_ACTOR
+        expect(audit?.action).toBe('CREATE');
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ created: true, status: 'PENDING_BOARD_REVIEW' });
     });
 
     it('rejects a disclosure missing name, contact, or family context', async () => {
@@ -105,6 +116,10 @@ describe('Trusted Adults service', () => {
         const days = (out.reviewBy!.getTime() - before) / 86400000;
         expect(days).toBeGreaterThan(360);
         expect(days).toBeLessThan(370);
+
+        const audit = await latestAudit(ta.id);
+        expect(audit?.actorId).toBe(boardId); // the deciding board member
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', decision: 'APPROVE' });
     });
 
     it('REQUEST_INFO moves to PENDING_SUBJECT_ACTION and emails the family', async () => {
@@ -112,6 +127,24 @@ describe('Trusted Adults service', () => {
         const out = await decideReview(ta.reviews[0].id, boardId, { decision: 'REQUEST_INFO', note: 'Please clarify dates.' });
         expect(out.status).toBe('PENDING_SUBJECT_ACTION');
         expect(sendEmail).toHaveBeenCalledWith(`lead-${TAG}@ex.com`, expect.stringContaining('more information'), expect.any(String));
+
+        const audit = await latestAudit(ta.id);
+        expect(audit?.actorId).toBe(boardId);
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'PENDING_SUBJECT_ACTION', decision: 'REQUEST_INFO' });
+    });
+
+    it('audit records the deciding/overriding board member on DENY and override-deny', async () => {
+        const ta = await discloseOne();
+        await decideReview(ta.reviews[0].id, boardId, { decision: 'DENY' });
+        const denyAudit = await latestAudit(ta.id);
+        expect(denyAudit?.actorId).toBe(boardId);
+        expect(JSON.parse(String(denyAudit?.newData))).toMatchObject({ status: 'DENIED', decision: 'DENY' });
+
+        const ta2 = await discloseOne();
+        await overrideReview(ta2.reviews[0].id, boardId, 'deny');
+        const overrideAudit = await latestAudit(ta2.id);
+        expect(overrideAudit?.actorId).toBe(boardId);
+        expect(JSON.parse(String(overrideAudit?.newData))).toMatchObject({ status: 'DENIED', override: 'deny' });
     });
 
     it('renewal opens a fresh review reusing the same trusted adult, and refuses while one is open', async () => {
@@ -121,6 +154,12 @@ describe('Trusted Adults service', () => {
         expect(review.kind).toBe('RENEWAL');
         expect(review.status).toBe('PENDING_BOARD_REVIEW');
         expect(review.trustedAdultId).toBe(ta.id);
+
+        const audit = await latestAudit(ta.id);
+        expect(audit?.actorId).toBe(leadId); // the renewing lead
+        expect(audit?.action).toBe('CREATE');
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ renewal: review.id, status: 'PENDING_BOARD_REVIEW' });
+
         await expect(renewTrustedAdult(ta.id, leadId)).rejects.toMatchObject({ code: 'already_open' });
     });
 
@@ -150,6 +189,11 @@ describe('Trusted Adults service', () => {
         expect(expireRun.expired).toBeGreaterThanOrEqual(1);
         const expired = await prisma.trustedAdultReview.findUnique({ where: { id: r.id } });
         expect(expired!.status).toBe('EXPIRED');
+
+        // The system, not a person, drives the nightly expiry transition.
+        const audit = await latestAudit(ta.id);
+        expect(audit?.actorId).toBe(0); // SYSTEM_ACTOR
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'EXPIRED' });
     });
 
     it('a lead can withdraw; board override can force-revoke; force-approve needs a note', async () => {
@@ -158,12 +202,23 @@ describe('Trusted Adults service', () => {
         const latest = await prisma.trustedAdultReview.findFirst({ where: { trustedAdultId: ta.id }, orderBy: { id: 'desc' } });
         expect(latest!.status).toBe('REVOKED');
 
+        const withdrawAudit = await latestAudit(ta.id);
+        expect(withdrawAudit?.actorId).toBe(leadId); // the withdrawing lead
+        expect(JSON.parse(String(withdrawAudit?.newData))).toMatchObject({ status: 'REVOKED' });
+
         const ta2 = await discloseOne();
         const reviewId = ta2.reviews[0].id;
         await expect(overrideReview(reviewId, boardId, 'approve')).rejects.toMatchObject({ code: 'bad_input' });
         const approved = await overrideReview(reviewId, boardId, 'approve', SHARED);
         expect(approved.status).toBe('APPROVED');
+        const approveAudit = await latestAudit(ta2.id);
+        expect(approveAudit?.actorId).toBe(boardId); // the overriding board member
+        expect(JSON.parse(String(approveAudit?.newData))).toMatchObject({ status: 'APPROVED', override: 'approve' });
+
         const revoked = await overrideReview(reviewId, boardId, 'revoke');
         expect(revoked.status).toBe('REVOKED');
+        const revokeAudit = await latestAudit(ta2.id);
+        expect(revokeAudit?.actorId).toBe(boardId);
+        expect(JSON.parse(String(revokeAudit?.newData))).toMatchObject({ status: 'REVOKED', override: 'revoke' });
     });
 });

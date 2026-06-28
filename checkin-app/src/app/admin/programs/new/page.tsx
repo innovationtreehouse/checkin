@@ -84,7 +84,7 @@ export default function CreateProgramPage() {
   if (!ready) return null;
 
   return (
-    <Container size="md" py="md">
+    <Container size="md" pb="md">
       <Card withBorder radius="md" padding="lg">
         <AdminPageHeader title="Create Program" back={{ href: '/programs', label: '← Back to Programs' }} mb="md" />
 

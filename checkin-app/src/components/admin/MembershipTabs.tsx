@@ -2,13 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { Tabs } from "@mantine/core";
+import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 
-export type MembershipTab = "applications" | "households" | "settings";
+export type MembershipTab = "applications" | "households";
 
 const TABS: { value: MembershipTab; label: string; href: string }[] = [
   { value: "applications", label: "Applications", href: "/membership-ops/applications" },
   { value: "households", label: "Manage Memberships", href: "/membership-ops/households" },
-  { value: "settings", label: "Settings", href: "/admin/membership/settings" },
 ];
 
 /**
@@ -28,13 +28,13 @@ export function MembershipTabs({ active }: { active: MembershipTab }) {
       }}
       mb="md"
     >
-      <Tabs.List>
+      <ScrollableTabsList>
         {TABS.map((t) => (
           <Tabs.Tab key={t.value} value={t.value}>
             {t.label}
           </Tabs.Tab>
         ))}
-      </Tabs.List>
+      </ScrollableTabsList>
     </Tabs>
   );
 }
