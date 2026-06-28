@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Alert, Button, Card, Center, Checkbox, Group, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
-import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 
@@ -147,8 +146,6 @@ export default function MembershipSettingsPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Settings" />
-
       <SettingsTabs active="membership" />
 
       <AlertBanner message={message} tone={isError ? 'warning' : 'success'} />
