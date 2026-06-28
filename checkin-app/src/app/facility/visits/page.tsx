@@ -15,6 +15,18 @@ type Visit = {
   event?: { name?: string | null } | null;
 };
 
+type SortKey = 'id' | 'participant' | 'event' | 'arrived' | 'departed';
+
+const sortValue = (v: Visit, key: SortKey): string | number => {
+  switch (key) {
+    case 'id': return v.id;
+    case 'participant': return (v.participant?.name || v.participant?.email || '').toLowerCase();
+    case 'event': return (v.event?.name || 'Open Facility').toLowerCase();
+    case 'arrived': return v.arrived ? Date.parse(v.arrived) : 0;
+    case 'departed': return v.departed ? Date.parse(v.departed) : 0;
+  }
+};
+
 export default function AdminVisitsPage() {
   const { ready, loading: authLoading } = useRequireRole(['sysadmin']);
 
@@ -25,18 +37,7 @@ export default function AdminVisitsPage() {
   const [editingVisitId, setEditingVisitId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ arrived: "", departed: "" });
 
-  type SortKey = 'id' | 'participant' | 'event' | 'arrived' | 'departed';
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'arrived', dir: 'desc' });
-
-  const sortValue = (v: Visit, key: SortKey): string | number => {
-    switch (key) {
-      case 'id': return v.id;
-      case 'participant': return (v.participant?.name || v.participant?.email || '').toLowerCase();
-      case 'event': return (v.event?.name || 'Open Facility').toLowerCase();
-      case 'arrived': return v.arrived ? Date.parse(v.arrived) : 0;
-      case 'departed': return v.departed ? Date.parse(v.departed) : 0;
-    }
-  };
 
   const sortedVisits = useMemo(() => {
     return [...visits].sort((a, b) => {
