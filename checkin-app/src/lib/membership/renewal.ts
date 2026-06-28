@@ -1,3 +1,4 @@
+import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { logger } from "@/lib/logger";
@@ -56,15 +57,17 @@ export async function runRenewalSweep(now: Date) {
 
     const memberships = await prisma.membership.findMany({
         where: { status: "ACTIVE" },
-        select: { id: true, householdId: true, processes: { where: { kind: "RENEWAL", createdAt: { gte: windowStart } }, select: { id: true } } },
+        // "Already open" = an in-flight RENEWAL by status (matches the partial unique
+        // index + openRenewalsForAllActive), not the leakier createdAt window.
+        select: { id: true, householdId: true, processes: { where: { kind: "RENEWAL", status: { in: ["PENDING_RENEWAL", "RENEWAL_PENDING_BG", "PENDING_PAYMENT"] } }, select: { id: true } } },
     });
 
     let opened = 0;
     let skipped = 0;
     for (const m of memberships) {
         if (m.processes.length > 0) { skipped++; continue; } // already opened this cycle
-        await createRenewalProcess(m.id, m.householdId, now, { remind: true, boundary });
-        opened++;
+        const p = await createRenewalProcess(m.id, m.householdId, now, { remind: true, boundary });
+        if (p) opened++; else skipped++; // null = concurrent run beat us to it
     }
 
     return { opened, skipped, boundary: boundary.toISOString() };
@@ -87,19 +90,44 @@ export async function beginRenewal(processId: number) {
     const bgFresh = await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0);
 
     const nextStatus = bgFresh ? "PENDING_PAYMENT" : "RENEWAL_PENDING_BG";
-    const updated = await prisma.membershipProcess.update({ where: { id: processId }, data: { status: nextStatus, stageEnteredAt: new Date() } });
-    await prisma.auditLog.create({
-        data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, oldData: JSON.stringify({ status: "PENDING_RENEWAL" }), newData: JSON.stringify({ status: nextStatus }) },
+    // Conditional on status PENDING_RENEWAL: a double-submit has both callers reach
+    // here, but only the winner's updateMany flips it (count === 1) — so the audit
+    // row and reviewer ping fire exactly once. Mirrors external.ts markContractSigned.
+    const { count } = await prisma.membershipProcess.updateMany({
+        where: { id: processId, status: "PENDING_RENEWAL" },
+        data: { status: nextStatus, stageEnteredAt: new Date() },
     });
-    if (nextStatus === "RENEWAL_PENDING_BG") await notifyReviewers();
-    return updated;
+    if (count === 1) {
+        await prisma.auditLog.create({
+            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, oldData: JSON.stringify({ status: "PENDING_RENEWAL" }), newData: JSON.stringify({ status: nextStatus }) },
+        });
+        if (nextStatus === "RENEWAL_PENDING_BG") await notifyReviewers();
+    }
+    return prisma.membershipProcess.findUniqueOrThrow({ where: { id: processId } });
 }
 
-/** Create one PENDING_RENEWAL process (+ audit, optional reminder). */
-async function createRenewalProcess(membershipId: number, householdId: number, now: Date, opts: { remind: boolean; boundary: Date }) {
-    const process = await prisma.membershipProcess.create({
-        data: { membershipId, kind: "RENEWAL", status: "PENDING_RENEWAL", renewalReminderSentAt: opts.remind ? now : null },
-    });
+/**
+ * Create one PENDING_RENEWAL process (+ audit, optional reminder), or no-op if one
+ * is already in flight. The check-then-act in the callers is NOT atomic, so the
+ * partial unique index `membership_one_inflight_renewal` is the real guard: a
+ * concurrent sweep/admin-button/double-click that wins the insert leaves the loser
+ * here catching P2002 and returning null — no duplicate audit row, no duplicate
+ * household reminder. Returns null when the create lost the race. The index, not
+ * this catch, is the guarantee; we stay lazy and skip the pre-insert advisory lock.
+ */
+export async function createRenewalProcess(membershipId: number, householdId: number, now: Date, opts: { remind: boolean; boundary: Date }) {
+    let process;
+    try {
+        process = await prisma.membershipProcess.create({
+            data: { membershipId, kind: "RENEWAL", status: "PENDING_RENEWAL", renewalReminderSentAt: opts.remind ? now : null },
+        });
+    } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+            logger.info("Renewal already in flight for membership %d — concurrent open, skipping", membershipId);
+            return null;
+        }
+        throw e;
+    }
     await prisma.auditLog.create({
         data: { actorId: SYSTEM_ACTOR, action: "CREATE", tableName: "MembershipProcess", affectedEntityId: process.id, newData: JSON.stringify({ kind: "RENEWAL", status: "PENDING_RENEWAL" }) },
     });
@@ -130,8 +158,8 @@ export async function openRenewalsForAllActive(now: Date, opts: { sendReminders?
     let skipped = 0;
     for (const m of memberships) {
         if (m.processes.length > 0) { skipped++; continue; }
-        await createRenewalProcess(m.id, m.householdId, now, { remind: !!opts.sendReminders, boundary });
-        opened++;
+        const p = await createRenewalProcess(m.id, m.householdId, now, { remind: !!opts.sendReminders, boundary });
+        if (p) opened++; else skipped++; // null = concurrent run beat us to it
     }
     return { opened, skipped };
 }
