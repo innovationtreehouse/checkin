@@ -130,7 +130,7 @@ model ToolStatus {
   userId Int
   /// @sensitivity:public
   toolId Int
-  /// @sensitivity:internal
+  /// @sensitivity:member
   level  ToolLevel
 
   user Participant @relation(fields: [userId], references: [id])

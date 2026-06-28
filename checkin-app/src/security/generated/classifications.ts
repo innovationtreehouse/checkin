@@ -30,7 +30,7 @@ export const classifications = {
     ToolStatus: {
         userId: 'public',
         toolId: 'public',
-        level: 'internal',
+        level: 'member',
     },
     Household: {
         id: 'public',
