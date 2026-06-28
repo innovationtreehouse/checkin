@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
                 "",
                 req.headers.get("x-kiosk-timestamp"),
                 req.headers.get("x-kiosk-signature"),
+                req.headers.get("x-kiosk-nonce"),
                 pubKeys
             );
             if (!result.ok) {
