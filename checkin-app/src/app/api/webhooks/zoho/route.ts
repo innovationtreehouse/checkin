@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { config } from "@/lib/config";
 import { verifyZohoToken, parseZohoWebhook, ZOHO_WEBHOOK_HEADER } from "@/lib/membership/contract/zoho";
 import { findProcessByEnvelope, markContractSigned } from "@/lib/membership/external";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,10 @@ export const dynamic = "force-dynamic";
  * which may advance the application to PENDING_BG_REVIEW. We never read contract content.
  */
 export async function POST(req: Request) {
+    // Guard BEFORE the token verify so a flood can't burn CPU on signature checks.
+    const limited = rateLimit(req, { name: "webhook-zoho", limit: 60, windowMs: 60_000 });
+    if (limited) return limited;
+
     if (!config.zohoWebhookSecret()) {
         logger.error("Zoho webhook received but ZOHO_WEBHOOK_SECRET is not configured.");
         return NextResponse.json({ error: "Configuration Error" }, { status: 500 });

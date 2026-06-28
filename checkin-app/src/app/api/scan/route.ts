@@ -5,9 +5,15 @@ import { apiError } from "@/lib/api-response";
 import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/scan-service";
 import { logBackendError } from "@/lib/logger";
 import { config } from "@/lib/config";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
     const startTime = Date.now();
+
+    // High cap: kiosks burst and a whole facility may share one NAT IP.
+    const limited = rateLimit(req, { name: "scan", limit: 300, windowMs: 60_000 });
+    if (limited) return limited;
+
     try {
         const rawBody = await req.text();
 
