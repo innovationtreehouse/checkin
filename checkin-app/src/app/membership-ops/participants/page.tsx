@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Table, Text, TextInput, Title, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { IconChevronDown, IconChevronUp, IconSelector } from "@tabler/icons-react";
 import { EntityPicker } from "@/components/admin/EntityPicker";
 import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
 
@@ -212,13 +213,20 @@ export default function AdminParticipantsIndex() {
                       { key: "name", label: "Name" },
                       { key: "email", label: "Email" },
                       { key: "household", label: "Household" },
-                    ] as const).map((c) => (
-                      <Table.Th key={c.key}>
-                        <UnstyledButton onClick={() => toggleSort(c.key)} style={{ fontWeight: 600, fontSize: "inherit" }}>
-                          {c.label}{sortBy === c.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
-                        </UnstyledButton>
-                      </Table.Th>
-                    ))}
+                    ] as const).map((c) => {
+                      const active = sortBy === c.key;
+                      const Icon = !active ? IconSelector : sortDir === "asc" ? IconChevronUp : IconChevronDown;
+                      return (
+                        <Table.Th key={c.key}>
+                          <UnstyledButton onClick={() => toggleSort(c.key)} style={{ fontWeight: 600, fontSize: "inherit" }}>
+                            <Group gap={4} wrap="nowrap">
+                              {c.label}
+                              <Icon size={14} stroke={1.5} />
+                            </Group>
+                          </UnstyledButton>
+                        </Table.Th>
+                      );
+                    })}
                     <Table.Th>Actions</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
