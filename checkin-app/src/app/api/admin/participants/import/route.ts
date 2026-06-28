@@ -55,8 +55,8 @@ export async function POST(req: NextRequest) {
 
         // Helper: look up a participant's household. Every participant has one
         // (householdId is a required FK).
-        const ensureHousehold = async (participantId: number): Promise<number> => {
-            const participant = await prisma.participant.findUnique({ where: { id: participantId } });
+        const ensureHousehold = async (participantId: number, db: Prisma.TransactionClient = prisma): Promise<number> => {
+            const participant = await db.participant.findUnique({ where: { id: participantId } });
             if (!participant) throw new Error(`Participant ${participantId} not found`);
             return participant.householdId;
         };
@@ -68,9 +68,9 @@ export async function POST(req: NextRequest) {
             name: string;
             dob?: Date;
             address?: string;
-        }) => {
+        }, db: Prisma.TransactionClient = prisma) => {
             const isAdult = !data.dob || (new Date().getFullYear() - data.dob.getFullYear()) >= 18;
-            const participant = await prisma.participant.create({
+            const participant = await db.participant.create({
                 data: {
                     ...(data.email && { email: data.email }),
                     name: data.name,
@@ -84,16 +84,16 @@ export async function POST(req: NextRequest) {
                 }
             });
             if (isAdult) {
-                await addHouseholdLead(prisma, participant.householdId, participant.id);
+                await addHouseholdLead(db, participant.householdId, participant.id);
             }
             return participant;
         };
 
         // Helper: addresses live on the household, not the participant.
         // A CSV address overwrites the row's household address when provided.
-        const applyAddressToHousehold = async (householdId: number, address: string) => {
+        const applyAddressToHousehold = async (householdId: number, address: string, db: Prisma.TransactionClient = prisma) => {
             if (!address) return;
-            await prisma.household.update({
+            await db.household.update({
                 where: { id: householdId },
                 data: { address }
             });
@@ -183,84 +183,90 @@ export async function POST(req: NextRequest) {
 
         for (const pr of parsedRows) {
             try {
-                let participantId: number;
+                // Each row's writes run in one transaction so a row either fully
+                // lands or fully rolls back — no half-linked participants left behind.
+                const participantId = await prisma.$transaction(async (tx) => {
+                    let participantId: number;
 
-                if (pr.email) {
-                    let participant = await prisma.participant.findUnique({ where: { email: pr.email } });
-                    if (participant) {
-                        participant = await prisma.participant.update({
-                            where: { id: participant.id },
-                            data: {
-                                name: pr.fullName,
-                                dob: pr.parsedDob ?? participant.dob,
-                            }
-                        });
-                        await applyAddressToHousehold(participant.householdId, pr.address);
-                    } else {
-                        participant = await createParticipantWithHousehold({
-                            email: pr.email,
-                            name: pr.fullName,
-                            dob: pr.parsedDob,
-                            address: pr.address,
-                        });
-                    }
-                    participantId = participant.id;
-                    participantByEmail.set(pr.email.toLowerCase(), participantId);
-                } else if (pr.parentEmail) {
-                    // Ensure parent exists (new parents get their own household)
-                    let parent = await prisma.participant.findUnique({ where: { email: pr.parentEmail } });
-                    if (!parent) {
-                        parent = await createParticipantWithHousehold({
-                            email: pr.parentEmail,
-                            name: pr.parentEmail.split('@')[0],
-                        });
-                        participantByEmail.set(pr.parentEmail.toLowerCase(), parent.id);
-                    }
-
-                    const parentHouseholdId = await ensureHousehold(parent.id);
-
-                    // Find or create child in that household
-                    let participant = await prisma.participant.findFirst({
-                        where: { householdId: parentHouseholdId, name: pr.fullName }
-                    });
-                    if (participant) {
-                        participant = await prisma.participant.update({
-                            where: { id: participant.id },
-                            data: {
-                                dob: pr.parsedDob ?? participant.dob,
-                            }
-                        });
-                    } else {
-                        participant = await prisma.participant.create({
-                            data: {
+                    if (pr.email) {
+                        let participant = await tx.participant.findUnique({ where: { email: pr.email } });
+                        if (participant) {
+                            participant = await tx.participant.update({
+                                where: { id: participant.id },
+                                data: {
+                                    name: pr.fullName,
+                                    dob: pr.parsedDob ?? participant.dob,
+                                }
+                            });
+                            await applyAddressToHousehold(participant.householdId, pr.address, tx);
+                        } else {
+                            participant = await createParticipantWithHousehold({
+                                email: pr.email,
                                 name: pr.fullName,
                                 dob: pr.parsedDob,
-                                householdId: parentHouseholdId
-                            }
+                                address: pr.address,
+                            }, tx);
+                        }
+                        participantId = participant.id;
+                        participantByEmail.set(pr.email.toLowerCase(), participantId);
+                    } else if (pr.parentEmail) {
+                        // Ensure parent exists (new parents get their own household)
+                        let parent = await tx.participant.findUnique({ where: { email: pr.parentEmail } });
+                        if (!parent) {
+                            parent = await createParticipantWithHousehold({
+                                email: pr.parentEmail,
+                                name: pr.parentEmail.split('@')[0],
+                            }, tx);
+                            participantByEmail.set(pr.parentEmail.toLowerCase(), parent.id);
+                        }
+
+                        const parentHouseholdId = await ensureHousehold(parent.id, tx);
+
+                        // Find or create child in that household
+                        let participant = await tx.participant.findFirst({
+                            where: { householdId: parentHouseholdId, name: pr.fullName }
                         });
-                    }
-                    participantId = participant.id;
-                    await applyAddressToHousehold(parentHouseholdId, pr.address);
+                        if (participant) {
+                            participant = await tx.participant.update({
+                                where: { id: participant.id },
+                                data: {
+                                    dob: pr.parsedDob ?? participant.dob,
+                                }
+                            });
+                        } else {
+                            participant = await tx.participant.create({
+                                data: {
+                                    name: pr.fullName,
+                                    dob: pr.parsedDob,
+                                    householdId: parentHouseholdId
+                                }
+                            });
+                        }
+                        participantId = participant.id;
+                        await applyAddressToHousehold(parentHouseholdId, pr.address, tx);
 
-                    // Ensure membership
-                    await ensureHouseholdMembership(parentHouseholdId);
-                } else {
-                    // No email, no parent email — find by name/DOB
-                    const matchQuery: { name: string; dob?: Date } = { name: pr.fullName };
-                    if (pr.parsedDob) matchQuery.dob = pr.parsedDob;
-
-                    let participant = await prisma.participant.findFirst({ where: matchQuery });
-                    if (participant) {
-                        await applyAddressToHousehold(participant.householdId, pr.address);
+                        // Ensure membership
+                        await ensureHouseholdMembership(parentHouseholdId, tx);
                     } else {
-                        participant = await createParticipantWithHousehold({
-                            name: pr.fullName,
-                            dob: pr.parsedDob,
-                            address: pr.address,
-                        });
+                        // No email, no parent email — find by name/DOB
+                        const matchQuery: { name: string; dob?: Date } = { name: pr.fullName };
+                        if (pr.parsedDob) matchQuery.dob = pr.parsedDob;
+
+                        let participant = await tx.participant.findFirst({ where: matchQuery });
+                        if (participant) {
+                            await applyAddressToHousehold(participant.householdId, pr.address, tx);
+                        } else {
+                            participant = await createParticipantWithHousehold({
+                                name: pr.fullName,
+                                dob: pr.parsedDob,
+                                address: pr.address,
+                            }, tx);
+                        }
+                        participantId = participant.id;
                     }
-                    participantId = participant.id;
-                }
+
+                    return participantId;
+                });
 
                 participantByName.set(pr.fullName.toLowerCase(), participantId);
                 insertedOrUpdatedCount++;
