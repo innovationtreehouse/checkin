@@ -71,7 +71,6 @@ async function loadUserWithHousehold(userId: number) {
 }
 
 function assertLead(user: NonNullable<Awaited<ReturnType<typeof loadUserWithHousehold>>>) {
-    if (!user.householdId) throw new IntakeError("no_household", "You must create a household first.");
     const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
     if (!isLead && !user.sysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
 }
@@ -136,33 +135,8 @@ export async function getIntakeState(userId: number) {
  * MembershipProcess at INTAKE. Idempotent: an in-flight process is returned as-is.
  */
 export async function startIntake(userId: number) {
-    let user = await loadUserWithHousehold(userId);
+    const user = await loadUserWithHousehold(userId);
     if (!user) throw new IntakeError("no_household", "User not found.");
-
-    // Ensure a household exists, with the caller as a lead + parent.
-    if (!user.householdId) {
-        // Serialize on the participant: two concurrent startIntake calls would
-        // both pass the check above and each create a household (each with its
-        // own INITIAL process), since nothing ties a new household uniquely back
-        // to the participant. Take a per-participant advisory xact lock (same
-        // pattern as the scan route) and re-read inside the transaction; the
-        // second caller then observes the first household and skips the create.
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${userId})`;
-            const fresh = await tx.participant.findUnique({ where: { id: userId }, select: { householdId: true } });
-            if (fresh?.householdId) return; // a racing call already created it
-            const lastName = (user!.name || "").trim().split(/\s+/).pop() || "";
-            await tx.household.create({
-                data: {
-                    name: lastName ? `${lastName} Household` : "Household",
-                    leads: { create: { participantId: userId } },
-                    participants: { connect: { id: userId } },
-                },
-            });
-        });
-        user = await loadUserWithHousehold(userId);
-        if (!user) throw new IntakeError("no_household", "User not found.");
-    }
 
     assertLead(user);
     const householdId = user.householdId!;
