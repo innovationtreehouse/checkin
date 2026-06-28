@@ -1,9 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Badge, Box, Center, Flex, Loader, NavLink, Paper, Stack, Text } from "@mantine/core";
+import { Badge, Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { MEMBERSHIP_OPS_NAV_LINKS } from "@/lib/membershipOpsNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
@@ -17,6 +16,7 @@ function membershipTodoCountFor(href: string, counts: TodoCounts | null): number
 
 export default function MembershipOpsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: session } = useSession();
   const sessionUser = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
   const { loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
@@ -35,39 +35,46 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
 
   if (!ready) return null;
 
+  // Longest-prefix match so sub-routes (e.g. /participants/123) keep their parent tab active.
+  const activeTab =
+    [...MEMBERSHIP_OPS_NAV_LINKS]
+      .sort((a, b) => b.href.length - a.href.length)
+      .find((l) => pathname === l.href || pathname.startsWith(l.href + "/"))?.href ?? null;
+
   return (
-    <Flex gap="md" align="flex-start" wrap="wrap">
-      <Paper withBorder p="xs" style={{ width: 240, flexShrink: 0 }}>
-        <Text fw={800} size="lg" c="blue" px="sm" py="xs">
-          Membership Ops
-        </Text>
-        {MEMBERSHIP_OPS_NAV_LINKS.map((link) => {
-          const todoCount = membershipTodoCountFor(link.href, todoCounts);
-          return (
-            <NavLink
-              key={link.href}
-              component={Link}
-              href={link.href}
-              label={link.name}
-              leftSection={<span>{link.icon}</span>}
-              rightSection={
-                todoCount > 0 ? (
-                  <Badge
-                    size="xs"
-                    color="treehouseGreen"
-                    variant="filled"
-                    aria-label={`${todoCount} item${todoCount === 1 ? "" : "s"} need attention`}
-                  >
-                    {todoCount}
-                  </Badge>
-                ) : undefined
-              }
-              active={pathname === link.href}
-            />
-          );
-        })}
-      </Paper>
-      <Box style={{ flex: 1, minWidth: 0 }}>{children}</Box>
-    </Flex>
+    <Stack>
+      <Text fw={800} size="lg" c="blue">
+        Membership Ops
+      </Text>
+      <Tabs value={activeTab} onChange={(value) => value && router.push(value)}>
+        <Tabs.List>
+          {MEMBERSHIP_OPS_NAV_LINKS.map((link) => {
+            const todoCount = membershipTodoCountFor(link.href, todoCounts);
+            return (
+              <Tabs.Tab
+                key={link.href}
+                value={link.href}
+                leftSection={<span>{link.icon}</span>}
+                rightSection={
+                  todoCount > 0 ? (
+                    <Badge
+                      size="xs"
+                      color="treehouseGreen"
+                      variant="filled"
+                      aria-label={`${todoCount} item${todoCount === 1 ? "" : "s"} need attention`}
+                    >
+                      {todoCount}
+                    </Badge>
+                  ) : undefined
+                }
+              >
+                {link.name}
+              </Tabs.Tab>
+            );
+          })}
+        </Tabs.List>
+      </Tabs>
+      <Box style={{ minWidth: 0 }}>{children}</Box>
+    </Stack>
   );
 }
