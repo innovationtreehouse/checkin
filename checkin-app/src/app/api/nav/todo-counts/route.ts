@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import type { MembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
+import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/service";
 
 /**
  * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
@@ -42,7 +43,7 @@ export type TodoCounts = {
     activePrograms: number;
     // Admin keys stay numeric — each admin nav link already deep-links to a page
     // that lists its own queue, so the number is enough.
-    admin?: { membership: number; programsPending: number; trustedAdults: number };
+    admin?: { membership: number; programsPending: number; trustedAdults: number; householdsMissingContact: number };
 };
 
 // What a member-actionable membership process means, in plain terms.
@@ -155,7 +156,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // ---- Admin surface (board's own queue) — only for board/sysadmin ----
     if (user.sysadmin || user.boardMember) {
-        const [membership, programsPending, trustedAdults] = await Promise.all([
+        const [membership, programsPending, trustedAdults, householdsMissingContact] = await Promise.all([
             prisma.membershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -165,8 +166,9 @@ export const GET = withAuth({}, async (_req, auth) => {
             prisma.trustedAdultReview.count({
                 where: { status: "PENDING_BOARD_REVIEW" },
             }),
+            countHouseholdsMissingValidContact(),
         ]);
-        result.admin = { membership, programsPending, trustedAdults };
+        result.admin = { membership, programsPending, trustedAdults, householdsMissingContact };
     }
 
     return NextResponse.json(result);

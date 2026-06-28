@@ -32,6 +32,7 @@ import {
   IconTool,
   IconUser,
   IconUsers,
+  IconUserSearch,
 } from '@tabler/icons-react';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -90,6 +91,12 @@ const NAV_ITEMS: NavItem[] = [
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
   },
   {
+    href: '/membership-audit',
+    label: 'Membership Audit',
+    icon: <IconUserSearch size={18} />,
+    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+  },
+  {
     href: '/program-ops',
     label: 'Program Ops',
     icon: <IconBriefcase size={18} />,
@@ -141,6 +148,9 @@ function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge | null {
     case '/membership-ops':
       // Pending membership applications awaiting board review.
       return green(counts.admin ? counts.admin.membership : 0, 'Pending membership reviews');
+    case '/membership-audit':
+      // Active/in-intake households with no valid emergency contact.
+      return green(counts.admin ? counts.admin.householdsMissingContact : 0, 'Households missing an emergency contact');
     case '/finance-ops':
       // Pending participants awaiting payment-plan approval.
       return green(counts.admin ? counts.admin.programsPending : 0, 'Pending payment-plan approvals');
