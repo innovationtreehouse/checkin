@@ -11,6 +11,7 @@
 import { GET as EmergencyGet } from '@/app/api/admin/emergency-contacts/route';
 import { GET as SearchGet } from '@/app/api/admin/participants/search/route';
 import { GET as DevPersonasGet } from '@/app/api/auth/dev-personas/route';
+import { GET as CertsGet } from '@/app/api/kiosk/certifications/route';
 import prisma from '@/lib/prisma';
 
 jest.mock('next-auth/next', () => ({
@@ -110,6 +111,28 @@ describe('Sensitive route authorization', () => {
             const hit = json.participants.find((p: { id: number }) => p.id === searchTargetId);
             expect(hit).toBeDefined();
             expect(hit.phone).toBe('555-0101');
+        });
+    });
+
+    describe('GET /api/kiosk/certifications', () => {
+        const url = `http://localhost/api/kiosk/certifications?limit_to_present=false`;
+
+        it('401 when unauthenticated (no session, no kiosk key on cloud dev)', async () => {
+            mockSession.mockResolvedValue(null);
+            expect((await CertsGet(req(url))).status).toBe(401);
+        });
+
+        it('403 for a plain member — the roster + minor PII must not leak', async () => {
+            mockSession.mockResolvedValue({ user: { id: plainId } });
+            expect((await CertsGet(req(url))).status).toBe(403);
+        });
+
+        it('200 for a keyholder, returning the roster', async () => {
+            mockSession.mockResolvedValue({ user: { id: plainId, keyholder: true } });
+            const res = await CertsGet(req(url));
+            expect(res.status).toBe(200);
+            const json = await res.json();
+            expect(Array.isArray(json.participants)).toBe(true);
         });
     });
 
