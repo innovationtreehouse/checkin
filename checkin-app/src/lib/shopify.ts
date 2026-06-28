@@ -77,6 +77,9 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
     return null;
   }
 
+  // Hoisted so the catch can name an orphaned product (created, but variants/DB failed) for manual cleanup.
+  let productId: string | number | null = null;
+
   try {
     // Determine product title
     const productTitle = `Program Enrollment: ${name}`;
@@ -105,7 +108,7 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
     }
 
     const productData = await productRes.json();
-    const productId = productData.product.id;
+    productId = productData.product.id;
 
     // 2. Create Variants
     const variants = [];
@@ -195,13 +198,16 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
     }
 
     return {
-        shopifyProductId: productId.toString(),
+        shopifyProductId: productId!.toString(),
         shopifyMemberVariantId: memberVariantId,
         shopifyNonMemberVariantId: nonMemberVariantId
     };
 
   } catch (error) {
     console.error("[Shopify Error] Failed to create product/variants:", error);
+    if (productId) {
+        console.error("[Shopify] Orphaned product after variant failure, manual cleanup needed:", productId);
+    }
 
     try {
         const admins = await prisma.participant.findMany({
