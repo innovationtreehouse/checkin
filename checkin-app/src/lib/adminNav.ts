@@ -22,12 +22,6 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
     links: [{ name: "Dashboard", href: "/admin", icon: "📊" }],
   },
   {
-    title: "Operations",
-    links: [
-      { name: "System Health", href: "/admin/systemhealth", icon: "🫀", description: "Service and integration status." },
-    ],
-  },
-  {
     title: "People",
     links: [
       { name: "Membership Settings", href: "/admin/membership/settings", icon: "⚙️", description: "Configure dues and membership-year settings." },
