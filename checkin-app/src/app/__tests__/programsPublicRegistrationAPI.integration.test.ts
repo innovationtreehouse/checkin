@@ -256,12 +256,12 @@ describe('Public Program Registration API Integration Tests', () => {
         // drift that triggers the off-by-one only surfaces in Jan/Feb, so the
         // frozen instant is required for these to be deterministic year-round.
         // Date faked only (timers left real) so Prisma's pg pool keeps working.
-        const FAKE_TIMER_OPTS = {
+        const FAKE_TIMER_OPTS: Parameters<typeof jest.useFakeTimers>[0] = {
             doNotFake: [
                 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval',
                 'setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask',
                 'requestAnimationFrame', 'cancelAnimationFrame', 'hrtime', 'performance',
-            ] as const,
+            ],
             now: new Date('2026-01-01T12:00:00.000Z'),
         };
         const BOUNDARY_DOB = '2008-01-02T12:00:00.000Z'; // calendar-age 17 at the frozen now; buggy math -> 18
