@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Box, Button, Card, Center, Container, Group, Loader, Stack, Tabs, Text, TextInput, Title } from '@mantine/core';
+import { ToolManagementPanel } from './tools/page';
 
 export default function ShopOpsPage() {
   const { data: session, status } = useSession();
@@ -137,12 +138,12 @@ export default function ShopOpsPage() {
 
         {isCertifier && (
           <Tabs.Panel value="manage" pt="lg">
-            <Stack gap="md" align="flex-start">
+            <Stack gap="md">
               <Text c="dimmed">
                 Browse all tools and safety guides, drill into certifications by tool or person, and
                 grant clearance levels.
               </Text>
-              <Button onClick={() => router.push('/shop/tools')}>Manage Tools &amp; Certifications</Button>
+              <ToolManagementPanel />
             </Stack>
           </Tabs.Panel>
         )}
