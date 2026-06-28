@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Center, Group, Loader, Stack, Table, Text, TextInput, UnstyledButton } from '@mantine/core';
+import { IconChevronDown, IconChevronUp, IconSelector } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
@@ -50,18 +51,20 @@ export default function AdminVisitsPage() {
   const toggleSort = (key: SortKey) =>
     setSort((s) => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
 
-  const SortableTh = ({ k, label }: { k: SortKey; label: string }) => (
-    <Table.Th>
-      <UnstyledButton onClick={() => toggleSort(k)} style={{ font: 'inherit' }}>
-        <Group gap={4} wrap="nowrap">
-          <span>{label}</span>
-          <Text component="span" c={sort.key === k ? undefined : 'dimmed'} size="xs">
-            {sort.key === k ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}
-          </Text>
-        </Group>
-      </UnstyledButton>
-    </Table.Th>
-  );
+  const SortableTh = ({ k, label }: { k: SortKey; label: string }) => {
+    const active = sort.key === k;
+    const Icon = !active ? IconSelector : sort.dir === 'asc' ? IconChevronUp : IconChevronDown;
+    return (
+      <Table.Th>
+        <UnstyledButton onClick={() => toggleSort(k)} style={{ font: 'inherit' }}>
+          <Group gap={4} wrap="nowrap">
+            <span>{label}</span>
+            <Icon size={14} stroke={1.5} />
+          </Group>
+        </UnstyledButton>
+      </Table.Th>
+    );
+  };
 
   const fetchVisits = useCallback(async () => {
     try {
