@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Table, Text, TextInput, Title, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { EntityPicker } from "@/components/admin/EntityPicker";
 import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
@@ -25,7 +25,36 @@ export default function AdminParticipantsIndex() {
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<ParticipantRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [sortBy, setSortBy] = useState<"id" | "name" | "email" | "household">("id");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const router = useRouter();
+
+  const toggleSort = (col: "id" | "name" | "email" | "household") => {
+    if (sortBy === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(col);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedResults = [...results].sort((a, b) => {
+    let av: string | number;
+    let bv: string | number;
+    if (sortBy === "id") {
+      av = a.id;
+      bv = b.id;
+    } else if (sortBy === "household") {
+      av = (a.household?.name || "").toLowerCase();
+      bv = (b.household?.name || "").toLowerCase();
+    } else {
+      av = (a[sortBy] || "").toLowerCase();
+      bv = (b[sortBy] || "").toLowerCase();
+    }
+    if (av < bv) return sortDir === "asc" ? -1 : 1;
+    if (av > bv) return sortDir === "asc" ? 1 : -1;
+    return 0;
+  });
 
   useEffect(() => {
     fetchParticipants();
@@ -175,37 +204,57 @@ export default function AdminParticipantsIndex() {
 
         <Box mt="lg">
           {results.length > 0 ? (
-            <Stack gap="sm">
-              {results.map((p) => (
-                <Card key={p.id} withBorder radius="md" padding="md">
-                  <Group justify="space-between" wrap="wrap">
-                    <div>
-                      <Text fw={600}>{p.name}</Text>
-                      <Text size="sm" c="dimmed">{p.email || 'No email'}{p.phone ? ` • ${p.phone}` : ''}</Text>
-                    </div>
-                    <Group gap="md" wrap="wrap" align="center">
-                      <Text size="sm" c="dimmed">{p.household?.name || 'No household'}</Text>
-                      {p.household ? (
-                        <Button size="xs" variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
-                          Edit Household
-                        </Button>
-                      ) : (
-                        <Button size="xs" variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
-                          Assign Household
-                        </Button>
-                      )}
-                      <Button size="xs" variant="default" onClick={() => {
-                        setEditingParticipant(p);
-                        setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "" });
-                        setEditModalOpen(true);
-                      }}>
-                        Edit Details
-                      </Button>
-                    </Group>
-                  </Group>
-                </Card>
-              ))}
-            </Stack>
+            <Table.ScrollContainer minWidth={700}>
+              <Table striped highlightOnHover withTableBorder verticalSpacing="xs">
+                <Table.Thead>
+                  <Table.Tr>
+                    {([
+                      { key: "id", label: "ID" },
+                      { key: "name", label: "Name" },
+                      { key: "email", label: "Email" },
+                      { key: "household", label: "Household" },
+                    ] as const).map((c) => (
+                      <Table.Th key={c.key}>
+                        <UnstyledButton onClick={() => toggleSort(c.key)} style={{ fontWeight: 600, fontSize: "inherit" }}>
+                          {c.label}{sortBy === c.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                        </UnstyledButton>
+                      </Table.Th>
+                    ))}
+                    <Table.Th>Actions</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {sortedResults.map((p) => (
+                    <Table.Tr key={p.id}>
+                      <Table.Td c="dimmed">{p.id}</Table.Td>
+                      <Table.Td fw={600}>{p.name}</Table.Td>
+                      <Table.Td>{p.email || <Text span c="dimmed">No email</Text>}</Table.Td>
+                      <Table.Td>{p.household?.name || <Text span c="dimmed">No household</Text>}</Table.Td>
+                      <Table.Td>
+                        <Group gap="xs" wrap="nowrap">
+                          {p.household ? (
+                            <Button size="xs" variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
+                              Household
+                            </Button>
+                          ) : (
+                            <Button size="xs" variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
+                              Assign
+                            </Button>
+                          )}
+                          <Button size="xs" variant="default" onClick={() => {
+                            setEditingParticipant(p);
+                            setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "" });
+                            setEditModalOpen(true);
+                          }}>
+                            Details
+                          </Button>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
           ) : searchQuery && !loading ? (
             <Text ta="center" c="dimmed">No participants found.</Text>
           ) : null}
