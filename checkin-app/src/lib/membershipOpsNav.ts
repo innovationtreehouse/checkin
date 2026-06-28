@@ -16,4 +16,5 @@ export const MEMBERSHIP_OPS_NAV_LINKS: MembershipOpsNavLink[] = [
   { name: "Manage Memberships", href: "/membership-ops/households", icon: "🏠", description: "Grant or revoke household facility membership." },
   { name: "Membership Applications", href: "/membership-ops/applications", icon: "📋", description: "Review and approve membership applications." },
   { name: "Unclaimed Accounts", href: "/membership-ops/unclaimed", icon: "📨", description: "Households with an email but no Google sign-in yet." },
+  { name: "Background-check Review", href: "/membership-ops/review", icon: "🔍", description: "Review submitted membership background checks." },
 ];
