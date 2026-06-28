@@ -145,12 +145,7 @@ export default function PrintBadgesPage() {
     { header: 'ID', render: (p) => <Text span c="dimmed">#{p.id}</Text> },
     {
       header: 'Name',
-      render: (p) => (
-        <>
-          <Text fw={600}>{p.name || 'N/A'}</Text>
-          <Text size="sm" c="dimmed">{p.email}</Text>
-        </>
-      ),
+      render: (p) => <Text fw={600}>{p.name || 'N/A'}</Text>,
     },
     {
       header: 'Membership',
