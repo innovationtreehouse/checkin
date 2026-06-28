@@ -65,6 +65,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             include: { household: true }
         });
 
+        await prisma.auditLog.create({
+            data: {
+                actorId: auth.user.id,
+                action: "EDIT",
+                tableName: "Participant",
+                affectedEntityId: participantId,
+                oldData: { householdId: participant.householdId },
+                newData: { householdId: targetHouseholdId, createNew: Boolean(createNew) },
+            },
+        });
+
         if (participant.householdId && participant.householdId !== targetHouseholdId) {
             await prisma.householdLead.deleteMany({
                 where: {
