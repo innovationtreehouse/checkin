@@ -244,6 +244,8 @@ export const authOptions: NextAuthOptions = {
                                 level: true
                             }
                         },
+                        // One row is enough to mark this participant a household lead.
+                        householdLeads: { take: 1, select: { participantId: true } },
                         household: { include: { membership: true } }
                     }
                 }));
@@ -281,6 +283,8 @@ export const authOptions: NextAuthOptions = {
                                 level: true
                             }
                         },
+                        // One row is enough to mark this participant a household lead.
+                        householdLeads: { take: 1, select: { participantId: true } },
                         household: { include: { membership: true } }
                     }
                 }));
@@ -308,6 +312,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.boardMember = token.boardMember;
                 session.user.backgroundCheckReviewer = token.backgroundCheckReviewer;
                 session.user.householdId = token.householdId;
+                session.user.householdLead = token.householdLead ?? false;
                 session.user.toolStatuses = token.toolStatuses || [];
                 session.user.impersonatedBy = token.impersonatedBy ?? null;
                 // Surface the org-gate claims so dev-only server actions (assertDevActor) can

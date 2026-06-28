@@ -11,6 +11,9 @@ export type ClaimSourceParticipant = {
     backgroundCheckReviewer: boolean;
     householdId: number;
     toolStatuses: { toolId: number; level: string }[];
+    // Any row here means this participant leads a household (the relation is already
+    // filtered to their own leads). Empty/absent → not a lead.
+    householdLeads?: { participantId: number }[];
     household?: { membership?: { status: MembershipStatus } | null } | null;
 };
 
@@ -32,5 +35,6 @@ export function assignParticipantClaims(token: JWT, p: ClaimSourceParticipant): 
     token.boardMember = denied ? false : p.boardMember;
     token.backgroundCheckReviewer = denied ? false : p.backgroundCheckReviewer;
     token.householdId = p.householdId;
+    token.householdLead = denied ? false : (p.householdLeads?.length ?? 0) > 0;
     token.toolStatuses = denied ? [] : p.toolStatuses;
 }
