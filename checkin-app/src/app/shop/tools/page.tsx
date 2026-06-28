@@ -8,6 +8,7 @@ import {
   Modal, Select, Stack, Table, Tabs, Text, TextInput, Title,
 } from '@mantine/core';
 import { ToolLevelBadge, toToolLevel } from '@/components/ToolLevelBadge';
+import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 
 type Tool = {
   id: number;
@@ -207,8 +208,8 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
           const isOpen = expanded === tool.id;
           return (
             <Card key={tool.id} withBorder radius="md" padding={0} style={isOpen ? { borderColor: 'var(--mantine-color-cyan-5)' } : undefined}>
-              <Group gap="md" p="md" wrap="nowrap" style={{ cursor: 'pointer' }} onClick={() => toggle(tool.id)}>
-                <Text fw={600} c={isOpen ? 'cyan' : undefined} style={{ flex: 1 }}>{tool.name}</Text>
+              <Group gap="md" p="md" wrap="wrap" style={{ cursor: 'pointer' }} onClick={() => toggle(tool.id)}>
+                <Text fw={600} c={isOpen ? 'cyan' : undefined} style={{ flex: '1 1 160px', minWidth: 120 }}>{tool.name}</Text>
                 <Text size="sm" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{tool._count?.toolStatuses ?? '?'} certified</Text>
                 {tool.safetyGuide ? (
                   <Anchor href={tool.safetyGuide} target="_blank" rel="noopener noreferrer" size="sm" onClick={(e) => e.stopPropagation()}>Safety Guide ↗</Anchor>
@@ -460,11 +461,11 @@ export function ToolManagementPanel() {
 
   return (
     <Tabs value={tab} onChange={(v) => setTab(v as Tab)} keepMounted={false}>
-      <Tabs.List mb="md">
+      <ScrollableTabsList mb="md">
         <Tabs.Tab value="tools">All Tools</Tabs.Tab>
         <Tabs.Tab value="person">By Person</Tabs.Tab>
         {isAdmin && <Tabs.Tab value="all">All Assignments</Tabs.Tab>}
-      </Tabs.List>
+      </ScrollableTabsList>
 
       <Tabs.Panel value="tools">
         <ToolsTab tools={tools} members={members} isAdmin={!!isAdmin} isCertifier={!!isCertifier} onToolsChange={reloadTools} />

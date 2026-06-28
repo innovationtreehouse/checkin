@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Box, Button, Card, Center, Container, Group, Loader, Stack, Tabs, Text, TextInput, Title } from '@mantine/core';
 import { ToolManagementPanel } from './tools/page';
+import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 
 export default function ShopOpsPage() {
   const { data: session, status } = useSession();
@@ -92,11 +93,11 @@ export default function ShopOpsPage() {
       </Group>
 
       <Tabs defaultValue={isAdmin ? 'create' : isCertifier ? 'manage' : 'live'}>
-        <Tabs.List>
+        <ScrollableTabsList>
           {isAdmin && <Tabs.Tab value="create">✨ Create Tool</Tabs.Tab>}
           {isCertifier && <Tabs.Tab value="manage">📋 Manage Tools &amp; Certifications</Tabs.Tab>}
           <Tabs.Tab value="live">📊 Live Certifications Center</Tabs.Tab>
-        </Tabs.List>
+        </ScrollableTabsList>
 
         {isAdmin && (
           <Tabs.Panel value="create" pt="lg">
