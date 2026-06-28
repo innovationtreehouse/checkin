@@ -524,7 +524,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         (p) => { setNewPartId(p.id.toString()); setPartSearch(`${p.name || 'Unnamed'} (${p.email})`); setPartResults([]); },
                         (p) => {
                           if (!p.dob) return null;
-                          const age = calculateAge(p.dob);
+                          const age = calculateAge(p.dob, program.begin ?? undefined);
                           let warning: string | null = null;
                           if (program.minAge !== null && age < program.minAge) warning = `⚠️ Too Young (${age})`;
                           if (program.maxAge !== null && age > program.maxAge) warning = `⚠️ Too Old (${age})`;

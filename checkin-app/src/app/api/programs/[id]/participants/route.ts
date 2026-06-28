@@ -91,7 +91,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 if (!participantData?.dob) {
                     return NextResponse.json({ error: "Participant Date of Birth is missing.", requiresOverride: true }, { status: 400 });
                 }
-                const age = calculateAge(participantData.dob);
+                // Age as of program start; now for dateless programs.
+                const age = calculateAge(participantData.dob, currentProgram.begin ?? undefined);
                 if (currentProgram.minAge !== null && age < currentProgram.minAge) {
                     return NextResponse.json({ error: `Participant must be at least ${currentProgram.minAge} years old.`, requiresOverride: true }, { status: 400 });
                 }

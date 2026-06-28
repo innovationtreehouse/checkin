@@ -102,7 +102,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     if (!p.dob) {
                         return NextResponse.json({ error: `Date of Birth is required for participant ${p.name} to verify age constraints.` }, { status: 400 });
                     }
-                    const age = calculateAge(p.dob);
+                    // Judge age as of the program's start date; fall back to now
+                    // for dateless ("TBD") programs.
+                    const age = calculateAge(p.dob, currentProgram.begin ?? undefined);
                     if (currentProgram.minAge !== null && age < currentProgram.minAge) {
                         return NextResponse.json({ error: `Participant ${p.name} must be at least ${currentProgram.minAge} years old.` }, { status: 400 });
                     }

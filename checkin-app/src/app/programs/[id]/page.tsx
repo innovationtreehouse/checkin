@@ -304,7 +304,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                         if (!member.dob) {
                           ageError = "DOB missing";
                         } else {
-                          const age = calculateAge(member.dob);
+                          const age = calculateAge(member.dob, program.begin ?? undefined);
                           if (program.minAge !== null && age < program.minAge) ageError = "Too young";
                           if (program.maxAge !== null && age > program.maxAge) ageError = "Too old";
                         }

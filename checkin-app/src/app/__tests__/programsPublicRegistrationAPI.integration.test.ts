@@ -20,11 +20,12 @@ describe('Public Program Registration API Integration Tests', () => {
     let fullProgramId: number;
     let exactAgeProgramId: number;
     let maxAgeBoundaryProgramId: number;
+    let startBasisProgramId: number;
     let existingParticipantId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const testEmails = ['test-primary-parent@example.com', 'existing-user-test@example.com', 'max-age-boundary-parent@example.com'];
+        const testEmails = ['test-primary-parent@example.com', 'existing-user-test@example.com', 'max-age-boundary-parent@example.com', 'start-basis-parent@example.com'];
         const existingUsers = await prisma.participant.findMany({
             where: { email: { in: testEmails } },
             select: { id: true }
@@ -99,10 +100,17 @@ describe('Public Program Registration API Integration Tests', () => {
             data: { name: 'Max Age Boundary Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', maxAge: 17 }
         });
         maxAgeBoundaryProgramId = maxAgeBoundaryProgram.id;
+
+        // Free, minAge 18, starts 2026-09-01. Used to prove the age gate judges
+        // age as of the program START date, not registration time.
+        const startBasisProgram = await prisma.program.create({
+            data: { name: 'Start Basis Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', minAge: 18, begin: new Date('2026-09-01T00:00:00.000Z') }
+        });
+        startBasisProgramId = startBasisProgram.id;
     });
 
     afterAll(async () => {
-        const testEmails = ['test-primary-parent@example.com', 'existing-user-test@example.com', 'max-age-boundary-parent@example.com'];
+        const testEmails = ['test-primary-parent@example.com', 'existing-user-test@example.com', 'max-age-boundary-parent@example.com', 'start-basis-parent@example.com'];
         const existingUsers = await prisma.participant.findMany({
             where: { email: { in: testEmails } },
             select: { id: true, householdId: true }
@@ -110,7 +118,7 @@ describe('Public Program Registration API Integration Tests', () => {
         const existingUserIds = existingUsers.map(u => u.id);
         const householdIds = existingUsers.map(u => u.householdId).filter(id => id !== null) as number[];
 
-        const validProgramIds = [standardProgramId, freeProgramId, fullProgramId, exactAgeProgramId, maxAgeBoundaryProgramId].filter(id => id !== undefined);
+        const validProgramIds = [standardProgramId, freeProgramId, fullProgramId, exactAgeProgramId, maxAgeBoundaryProgramId, startBasisProgramId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
             await prisma.programParticipant.deleteMany({
@@ -300,6 +308,30 @@ describe('Public Program Registration API Integration Tests', () => {
                 expect(res.status).toBe(400);
                 const data = await res.json();
                 expect(data.error).toMatch(/at least 18/i);
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        it('should judge age as of the program START date, not registration time', async () => {
+            // startBasisProgram: minAge 18, begins 2026-09-01. Clock frozen at
+            // 2026-01-01, applicant born 2008-06-15 => age 17 NOW but 18 by the
+            // start date. Registration-time math would reject; start-date math admits.
+            jest.useFakeTimers(FAKE_TIMER_OPTS);
+            try {
+                const req = new Request(`http://localhost:4000/api/programs/${startBasisProgramId}/public-register`, {
+                    method: 'POST',
+                    headers: { 'x-forwarded-for': '203.0.113.12' },
+                    body: JSON.stringify({
+                        parents: [{ name: 'Boundary Parent', email: 'start-basis-parent@example.com', phone: '555-123-9999' }],
+                        emergencyContact: { name: 'Aunt Sue', phone: '555-999-9988' },
+                        participants: [{ name: 'Turns Eighteen', dob: '2008-06-15T12:00:00.000Z' }]
+                    })
+                });
+                const res = await POST(req as unknown as import("next/server").NextRequest, createParams(startBasisProgramId) as unknown as never);
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.success).toBe(true);
             } finally {
                 jest.useRealTimers();
             }
