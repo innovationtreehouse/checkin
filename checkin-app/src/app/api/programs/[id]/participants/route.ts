@@ -141,9 +141,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (error instanceof ProgramCapacityError) {
             return NextResponse.json({ error: "Program has reached maximum capacity.", requiresOverride: true }, { status: 400 });
         }
+        // P2002 = unique violation on the @@id([programId, participantId]) PK.
+        // Benign double-submit (UI double-click) re-enrolls the same participant;
+        // return 409 instead of a 500.
+        if (isPrismaError(error, 'P2002')) {
+            return NextResponse.json({ error: "Participant is already enrolled in this program." }, { status: 409 });
+        }
         console.error("Enrollment creation error:", error);
         return NextResponse.json({ error: "Failed to enroll participant" }, { status: 500 });
     }
+}
+
+// Prisma known-request errors carry a string `code`. Duck-typed so we don't
+// pull in the generated Prisma namespace just for one check.
+function isPrismaError(error: unknown, code: string): boolean {
+    return typeof error === 'object' && error !== null && 'code' in error
+        && (error as { code: unknown }).code === code;
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -206,6 +219,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
         return NextResponse.json({ success: true, enrollment });
     } catch (error) {
+        // P2025 = row to delete not found. Benign double-submit (participant
+        // already un-enrolled); idempotent 200 instead of a 500.
+        if (isPrismaError(error, 'P2025')) {
+            return NextResponse.json({ success: true, idempotent: true });
+        }
         console.error("Enrollment deletion error:", error);
         return NextResponse.json({ error: "Failed to remove participant" }, { status: 500 });
     }

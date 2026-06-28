@@ -274,6 +274,33 @@ describe('Program Participants API Integration Tests', () => {
              const enrolled = await prisma.programParticipant.count({ where: { programId: fullProgramId } });
              expect(enrolled).toBe(2);
         });
+
+        it('should return 409 (not 500) when enrolling the same participant twice', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const enroll = () => POST(
+                 new Request(`http://localhost:4000/api/programs/${freeProgramId}/participants`, {
+                     method: 'POST',
+                     body: JSON.stringify({ participantId: leadId }) // self-enroll into free program
+                 }) as unknown as import("next/server").NextRequest,
+                 createParams(freeProgramId) as unknown as never
+             );
+
+             const first = await enroll();
+             expect(first.status).toBe(200);
+
+             // Double-submit (UI double-click) — must be a clean 409, not a 500.
+             const second = await enroll();
+             expect(second.status).toBe(409);
+             const data = await second.json();
+             expect(data.error).toMatch(/already enrolled/i);
+
+             // No duplicate row, no corruption: exactly one enrollment exists.
+             const count = await prisma.programParticipant.count({
+                 where: { programId: freeProgramId, participantId: leadId }
+             });
+             expect(count).toBe(1);
+        });
     });
 
     describe('DELETE /api/programs/[id]/participants', () => {
@@ -326,7 +353,22 @@ describe('Program Participants API Integration Tests', () => {
              });
              const res = await DELETE(req as unknown as import("next/server").NextRequest, createParams(fullProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
+             const data = await res.json();
+             expect(data.success).toBe(true);
+        });
+
+        it('should be idempotent (200, not 500) when un-enrolling a participant twice', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: otherId } });
+
+             // otherId already self-removed from fullProgram in the test above.
+             // A second delete hits a missing row (Prisma P2025) — must stay 200.
+             const req = new Request(`http://localhost:4000/api/programs/${fullProgramId}/participants`, {
+                 method: 'DELETE',
+                 body: JSON.stringify({ participantId: otherId })
+             });
+             const res = await DELETE(req as unknown as import("next/server").NextRequest, createParams(fullProgramId) as unknown as never);
+             expect(res.status).toBe(200);
              const data = await res.json();
              expect(data.success).toBe(true);
         });
