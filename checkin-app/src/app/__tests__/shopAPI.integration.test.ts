@@ -290,6 +290,14 @@ describe('Shop API Integration Tests', () => {
              expect(data.success).toBe(true);
              expect(data.certification.level).toBe('BASIC');
              expect(data.certification.userId).toBe(commonId);
+
+             // Audit: first grant on this participant+tool → CREATE, no prior data.
+             const auditRows = await prisma.auditLog.findMany({
+                 where: { tableName: 'ToolStatus', actorId: certifierId, affectedEntityId: commonId, secondaryAffectedEntity: mockToolId }
+             });
+             expect(auditRows.length).toBe(1);
+             expect(auditRows[0].action).toBe('CREATE');
+             expect(auditRows[0].oldData).toBeNull();
         });
 
         it('should forbid a Certifier from promoting someone to MAY_CERTIFY_OTHERS', async () => {
@@ -311,6 +319,15 @@ describe('Shop API Integration Tests', () => {
              const data = await res.json();
              expect(data.success).toBe(true);
              expect(data.certification.level).toBe('MAY_CERTIFY_OTHERS');
+
+             // Audit: a prior status (BASIC) now exists → EDIT, with old data captured.
+             const auditRows = await prisma.auditLog.findMany({
+                 where: { tableName: 'ToolStatus', actorId: adminId, affectedEntityId: commonId, secondaryAffectedEntity: mockToolId }
+             });
+             expect(auditRows.length).toBe(1);
+             expect(auditRows[0].action).toBe('EDIT');
+             expect(auditRows[0].oldData).not.toBeNull();
+             expect(JSON.parse(auditRows[0].oldData as string).level).toBe('BASIC');
         });
     });
 });
