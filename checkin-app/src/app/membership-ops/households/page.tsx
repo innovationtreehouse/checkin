@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Button, Center, Group, List, Loader, Stack, Table, Text } from '@mantine/core';
+import { Button, Center, Group, List, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { AdminEditHouseholdModal } from '@/components/admin/AdminEditHouseholdModal';
@@ -23,6 +23,7 @@ export default function AdminHouseholdsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
+  const [filter, setFilter] = useState("");
 
   const fetchHouseholds = useCallback(async () => {
     try {
@@ -96,6 +97,17 @@ export default function AdminHouseholdsPage() {
     return null;
   }
 
+  const q = filter.trim().toLowerCase();
+  const filtered = q
+    ? households.filter((h) =>
+        (h.name || `Household #${h.id}`).toLowerCase().includes(q) ||
+        (h.participants?.some((p) =>
+          (p.name || '').toLowerCase().includes(q) ||
+          (p.email || '').toLowerCase().includes(q)
+        ) ?? false)
+      )
+    : households;
+
   return (
     <Stack>
       <Text c="dimmed">
@@ -105,6 +117,13 @@ export default function AdminHouseholdsPage() {
       </Text>
 
       <AlertBanner message={error} tone="error" />
+
+      <TextInput
+        placeholder="Filter by household or participant name/email"
+        value={filter}
+        onChange={(e) => setFilter(e.currentTarget.value)}
+        maw={400}
+      />
 
       <Table.ScrollContainer minWidth={600}>
         <Table verticalSpacing="sm" highlightOnHover>
@@ -117,7 +136,7 @@ export default function AdminHouseholdsPage() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {households.map((household) => {
+            {filtered.map((household) => {
               const status = household.membership?.status;
               const hasActiveMembership = status === "ACTIVE";
               const isDenied = status === "DENIED";
@@ -201,7 +220,7 @@ export default function AdminHouseholdsPage() {
               );
             })}
 
-            {households.length === 0 && (
+            {filtered.length === 0 && (
               <Table.Tr>
                 <Table.Td colSpan={4} ta="center">
                   <Text c="dimmed" py="md">No households found.</Text>
