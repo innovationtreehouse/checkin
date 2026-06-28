@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { activityMembers } from "@/lib/household/activityMembers";
 
 export async function GET() {
     const session = await getServerSession(authOptions);
@@ -11,39 +12,65 @@ export async function GET() {
     }
 
     try {
-        const userId = session.user.id;
+        // Self, or every household member when the session is a household lead.
+        const members = await activityMembers(session);
+        const memberIds = members.map(m => m.id);
+        const memberById = new Map(members.map(m => [m.id, m]));
 
-        // Get programs the user is in
-        const enrolledPrograms = await prisma.programParticipant.findMany({
-            where: { participantId: userId },
-            select: { programId: true }
-        });
-        const volunteerPrograms = await prisma.programVolunteer.findMany({
-            where: { participantId: userId },
-            select: { programId: true }
-        });
+        // Which members are tied to which programs (enrolled or volunteering).
+        const [enrolled, volunteers] = await Promise.all([
+            prisma.programParticipant.findMany({
+                where: { participantId: { in: memberIds } },
+                select: { participantId: true, programId: true }
+            }),
+            prisma.programVolunteer.findMany({
+                where: { participantId: { in: memberIds } },
+                select: { participantId: true, programId: true }
+            })
+        ]);
 
-        const programIds = [
-            ...enrolledPrograms.map(p => p.programId),
-            ...volunteerPrograms.map(p => p.programId)
-        ];
+        const programMembers = new Map<number, Set<number>>();
+        for (const { programId, participantId } of [...enrolled, ...volunteers]) {
+            let set = programMembers.get(programId);
+            if (!set) programMembers.set(programId, (set = new Set()));
+            set.add(participantId);
+        }
 
-        // Fetch upcoming events for these programs
         const events = await prisma.event.findMany({
             where: {
-                programId: { in: programIds },
+                programId: { in: [...programMembers.keys()] },
                 end: { gte: new Date() } // Only upcoming
             },
-            orderBy: { start: 'asc' },
+            orderBy: { start: "asc" },
             include: {
                 program: { select: { name: true } },
                 rsvps: {
-                    where: { participantId: userId }
+                    where: { participantId: { in: memberIds } },
+                    select: { participantId: true, status: true }
                 }
             }
         });
 
-        return NextResponse.json(events);
+        // One card per (event, member-in-that-program), each with that member's
+        // own RSVP — so a household lead can respond for each family member.
+        const rows = events.flatMap((ev: typeof events[number]) => {
+            const attendees = ev.programId ? programMembers.get(ev.programId) : undefined;
+            if (!attendees) return [];
+            return memberIds
+                .filter(id => attendees.has(id))
+                .map(pid => ({
+                    id: ev.id,
+                    name: ev.name,
+                    description: ev.description,
+                    start: ev.start,
+                    end: ev.end,
+                    program: ev.program,
+                    participant: memberById.get(pid),
+                    rsvp: ev.rsvps.find((r: typeof ev.rsvps[number]) => r.participantId === pid)?.status ?? null
+                }));
+        });
+
+        return NextResponse.json(rows);
     } catch (error) {
         console.error("Failed to fetch user events:", error);
         return NextResponse.json({ error: "Failed to fetch events" }, { status: 500 });
