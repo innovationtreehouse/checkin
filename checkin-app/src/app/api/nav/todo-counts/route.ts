@@ -17,13 +17,18 @@ import type { MembershipProcessStatus, TrustedAdultReviewStatus } from "@/genera
  */
 
 // Membership process statuses the household itself must act on. Mirrors
-// IN_FLIGHT_INITIAL_STATUSES minus the board-only PENDING_BG_REVIEW, plus the
-// member-driven PENDING_RENEWAL. PENDING_BG_REVIEW / RENEWAL_PENDING_BG / BLOCKED
-// are board actions and never count here.
+// IN_FLIGHT_INITIAL_STATUSES minus the reviewer/board states, plus the
+// member-driven PENDING_RENEWAL.
 const MEMBER_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["INTAKE", "PENDING_EXTERNAL_ACTION", "PENDING_PAYMENT", "PENDING_RENEWAL"];
 
-// Membership statuses awaiting the board.
-const BOARD_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["PENDING_BG_REVIEW", "RENEWAL_PENDING_BG", "BLOCKED"];
+// Membership statuses the board itself can act on. The board's only
+// membership-queue action is overriding/resetting a BLOCKED application
+// (governance escape hatch — see overrideBlocked in src/lib/membership/review.ts).
+// PENDING_BG_REVIEW / RENEWAL_PENDING_BG are background-check-reviewer (RBAC,
+// role backgroundCheckReviewer) work, surfaced by the reviewer notifications
+// badge (src/lib/membership/notifications.ts) — NOT the board. The board can
+// still SEE those in the applications list, but they don't count here.
+const BOARD_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["BLOCKED"];
 
 const APPROVED_STATUSES: TrustedAdultReviewStatus[] = ["APPROVED"];
 
