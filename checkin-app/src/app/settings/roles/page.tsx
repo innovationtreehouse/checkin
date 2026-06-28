@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Center, Checkbox, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { SettingsTabs } from '@/components/admin/SettingsTabs';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 
@@ -99,8 +98,6 @@ export default function RoleAssignmentPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Settings" />
-
       <SettingsTabs active="roles" />
 
       <Text c="dimmed">

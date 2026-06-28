@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import type { MembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
+import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/service";
 
 /**
  * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
@@ -17,13 +18,18 @@ import type { MembershipProcessStatus, TrustedAdultReviewStatus } from "@/genera
  */
 
 // Membership process statuses the household itself must act on. Mirrors
-// IN_FLIGHT_INITIAL_STATUSES minus the board-only PENDING_BG_REVIEW, plus the
-// member-driven PENDING_RENEWAL. PENDING_BG_REVIEW / RENEWAL_PENDING_BG / BLOCKED
-// are board actions and never count here.
+// IN_FLIGHT_INITIAL_STATUSES minus the reviewer/board states, plus the
+// member-driven PENDING_RENEWAL.
 const MEMBER_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["INTAKE", "PENDING_EXTERNAL_ACTION", "PENDING_PAYMENT", "PENDING_RENEWAL"];
 
-// Membership statuses awaiting the board.
-const BOARD_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["PENDING_BG_REVIEW", "RENEWAL_PENDING_BG", "BLOCKED"];
+// Membership statuses the board itself can act on. The board's only
+// membership-queue action is overriding/resetting a BLOCKED application
+// (governance escape hatch — see overrideBlocked in src/lib/membership/review.ts).
+// PENDING_BG_REVIEW / RENEWAL_PENDING_BG are background-check-reviewer (RBAC,
+// role backgroundCheckReviewer) work, surfaced by the reviewer notifications
+// badge (src/lib/membership/notifications.ts) — NOT the board. The board can
+// still SEE those in the applications list, but they don't count here.
+const BOARD_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["BLOCKED"];
 
 const APPROVED_STATUSES: TrustedAdultReviewStatus[] = ["APPROVED"];
 
@@ -36,9 +42,13 @@ export type TodoItem = { key: string; label: string; href: string };
 export type TodoCounts = {
     // Member buckets are itemized so the UI can show *what* is due, not just a number.
     member: { household: TodoItem[]; programs: TodoItem[] };
+    // Informational gray badges (not action items): live building occupancy and
+    // how many programs are currently running.
+    building: number;
+    activePrograms: number;
     // Admin keys stay numeric — each admin nav link already deep-links to a page
     // that lists its own queue, so the number is enough.
-    admin?: { membership: number; programsPending: number; trustedAdults: number };
+    admin?: { membership: number; programsPending: number; trustedAdults: number; householdsMissingContact: number };
 };
 
 // What a member-actionable membership process means, in plain terms.
@@ -137,11 +147,21 @@ export const GET = withAuth({}, async (_req, auth) => {
         }
     }
 
-    const result: TodoCounts = { member: { household: householdTodos, programs: programTodos } };
+    // Global informational counts (not scoped to the caller).
+    const [building, activePrograms] = await Promise.all([
+        prisma.visit.count({ where: { departed: null } }),
+        prisma.program.count({ where: { phase: "RUNNING" } }),
+    ]);
+
+    const result: TodoCounts = {
+        member: { household: householdTodos, programs: programTodos },
+        building,
+        activePrograms,
+    };
 
     // ---- Admin surface (board's own queue) — only for board/sysadmin ----
     if (user.sysadmin || user.boardMember) {
-        const [membership, programsPending, trustedAdults] = await Promise.all([
+        const [membership, programsPending, trustedAdults, householdsMissingContact] = await Promise.all([
             prisma.membershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -151,8 +171,9 @@ export const GET = withAuth({}, async (_req, auth) => {
             prisma.trustedAdultReview.count({
                 where: { status: "PENDING_BOARD_REVIEW" },
             }),
+            countHouseholdsMissingValidContact(),
         ]);
-        result.admin = { membership, programsPending, trustedAdults };
+        result.admin = { membership, programsPending, trustedAdults, householdsMissingContact };
     }
 
     return NextResponse.json(result);

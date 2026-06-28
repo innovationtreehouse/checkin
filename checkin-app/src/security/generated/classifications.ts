@@ -30,7 +30,7 @@ export const classifications = {
     ToolStatus: {
         userId: 'public',
         toolId: 'public',
-        level: 'internal',
+        level: 'member',
     },
     Household: {
         id: 'public',
@@ -277,6 +277,14 @@ export const classifications = {
         metric: 'internal',
         value: 'internal',
     },
+    IntegrationError: {
+        id: 'internal',
+        source: 'internal',
+        message: 'internal',
+        context: 'internal',
+        createdAt: 'internal',
+        resolvedAt: 'internal',
+    },
     DevLedger: {
         id: 'internal',
         action: 'internal',
@@ -420,6 +428,8 @@ export const relations = {
     ErrorLog: {
     },
     SystemMetric: {
+    },
+    IntegrationError: {
     },
     DevLedger: {
     },

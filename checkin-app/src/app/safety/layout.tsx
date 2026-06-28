@@ -27,9 +27,10 @@ export default function SafetyLayout({ children }: { children: React.ReactNode }
 
   if (!ready) return null;
 
-  // Emergency Contacts is the index route; Trusted Adults is board-only.
+  // Trusted Adults is board-only. /safety redirects to the first tab.
   const tabs = [
-    { name: "🚑 Emergency Contacts", href: "/safety" },
+    { name: "🚑 Emergency Contacts", href: "/safety/emergency-contacts" },
+    { name: "📞 Board Contact Info", href: "/safety/board-contacts" },
     { name: "📋 Pickup List", href: "/safety/pickup" },
     ...(isBoard ? [{ name: "🔗 Trusted Adults", href: "/safety/trusted-adults" }] : []),
   ];

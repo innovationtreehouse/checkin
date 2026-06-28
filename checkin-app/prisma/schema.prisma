@@ -130,7 +130,7 @@ model ToolStatus {
   userId Int
   /// @sensitivity:public
   toolId Int
-  /// @sensitivity:internal
+  /// @sensitivity:member
   level  ToolLevel
 
   user Participant @relation(fields: [userId], references: [id])
@@ -813,6 +813,26 @@ model SystemMetric {
   metric    String
   /// @sensitivity:internal
   value     Float
+}
+
+/// Persisted external-integration / link failures (Shopify, etc.) surfaced on the
+/// System Status > Link Status tab. Previously these were only emailed to admins and
+/// never stored, so there was no view. Rolling log: rows auto-purge after 90 days.
+model IntegrationError {
+  /// @sensitivity:internal
+  id         Int       @id @default(autoincrement())
+  /// @sensitivity:internal
+  source     String
+  /// @sensitivity:internal
+  message    String
+  /// @sensitivity:internal
+  context    Json?
+  /// @sensitivity:internal
+  createdAt  DateTime  @default(now())
+  /// @sensitivity:internal
+  resolvedAt DateTime?
+
+  @@index([resolvedAt, createdAt])
 }
 
 /// Dev-instance activity ledger (DEV_DASHBOARD_DESIGN.md §6). Lives only in checkin_dev; records

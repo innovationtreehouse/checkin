@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
-import { logger } from "@/lib/logger";
+import { logger, logIntegrationError } from "@/lib/logger";
 import { activateByProcessId } from "@/lib/membership/payment";
+import { rateLimit } from "@/lib/rate-limit";
 
 // Shopify Webhook for `orders/paid` or `orders/create`
 // Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE
 export async function POST(req: Request) {
+    // Guard BEFORE the HMAC verify so a flood can't burn CPU on signature checks.
+    const limited = rateLimit(req, { name: "webhook-shopify", limit: 60, windowMs: 60_000 });
+    if (limited) return limited;
+
     const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
 
     if (!secret) {
@@ -125,6 +130,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
     } catch (error) {
         logger.error("Shopify webhook error:", error);
+        await logIntegrationError("shopify-webhook", error, { operation: "POST /api/webhooks/shopify" });
         return NextResponse.json({ error: "Webhook Error" }, { status: 500 });
     }
 }

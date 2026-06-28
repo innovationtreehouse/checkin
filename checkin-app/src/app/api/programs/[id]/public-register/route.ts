@@ -5,6 +5,7 @@ import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
 import { createContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
+import { rateLimit, rateLimitEmail } from "@/lib/rate-limit";
 
 interface ParentInput {
     name: string;
@@ -19,6 +20,11 @@ interface ParticipantInput {
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
+
+    // Unauthenticated + writes to the DB and emails a caller-supplied address:
+    // the email-bomb / DB-spam target. Cap per source IP before any work.
+    const ipLimited = rateLimit(req, { name: "public-register", limit: 5, windowMs: 60_000 });
+    if (ipLimited) return ipLimited;
 
     try {
         const programId = parseInt(id, 10);
@@ -48,6 +54,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (!participants || participants.length === 0) {
             return NextResponse.json({ error: "At least one participant is required." }, { status: 400 });
         }
+
+        // Second limit keyed on the normalized primary email so an attacker can't
+        // bomb one victim by rotating plus-tag / dotted variants of their address.
+        const emailLimited = rateLimitEmail(parents[0].email, { name: "public-register", limit: 3, windowMs: 3_600_000 });
+        if (emailLimited) return emailLimited;
 
         // The not-a-household-member rule (phone/email/name) is enforced when the
         // contact is created inside the transaction, against every household

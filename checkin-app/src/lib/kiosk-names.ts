@@ -1,7 +1,9 @@
 type NamedEntity = {
     id: number;
     name: string | null;
-    email: string;
+    // Optional: some feeds (e.g. the certifications grid) resolve the email-prefix
+    // fallback server-side and omit the raw address entirely.
+    email?: string;
 };
 
 /**
@@ -11,8 +13,8 @@ type NamedEntity = {
 function parseName(entity: NamedEntity): { first: string; last: string } {
     const raw = entity.name?.trim();
     if (!raw) {
-        // Fallback to email prefix
-        return { first: entity.email.split("@")[0], last: "" };
+        // Fallback to email prefix when present (may be omitted — see NamedEntity).
+        return { first: entity.email?.split("@")[0] ?? "", last: "" };
     }
 
     // Handle "Last, First" format

@@ -11,8 +11,8 @@ type ToolStatusLevel = "BASIC" | "DOF" | "CERTIFIED" | "INSTRUCTOR" | "MAY_CERTI
 
 type Participant = {
   id: number;
-  email: string;
-  name: string | null;
+  // Display name resolved server-side (real name, else email-prefix); never the raw email (#329).
+  name: string;
   toolStatuses: {
     toolId: number;
     level: ToolStatusLevel;
@@ -100,10 +100,10 @@ function KioskCertificationsInner() {
     return name.split(/\s+/).map(word => (word.length > MAX_WORD_LEN ? word.slice(0, MAX_WORD_LEN - 1) + '.' : word));
   };
 
-  // Sort users alphabetically by first name (fallback to email prefix)
+  // Sort users alphabetically by first name (name is server-resolved, email-prefix included)
   const sortAlphabetically = (a: Participant, b: Participant) => {
-    const nameA = a.name || a.email.split('@')[0];
-    const nameB = b.name || b.email.split('@')[0];
+    const nameA = a.name;
+    const nameB = b.name;
     const getFirstName = (name: string) => {
       if (name.includes(',')) return name.split(',')[1].trim().toLowerCase();
       return name.split(' ')[0].toLowerCase();
@@ -131,7 +131,7 @@ function KioskCertificationsInner() {
     <tr key={participant.id} style={{ borderBottom: index % 2 === 1 ? '3px solid var(--mantine-color-default-border)' : cellBorder }}>
       <td style={{ padding: isKioskMode ? '0.5rem 0.75rem' : '0.75rem 1rem', position: 'sticky', left: 0, background: 'var(--mantine-color-body)', zIndex: 5, borderRight: cellBorder }}>
         <Text fw={isKioskMode ? 700 : 500} fz={isKioskMode ? '1.1rem' : undefined} truncate>
-          {displayNames.get(participant.id) || participant.name || participant.email.split('@')[0]}
+          {displayNames.get(participant.id) || participant.name}
         </Text>
       </td>
       {tools.map((tool) => {
