@@ -59,6 +59,12 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/household', label: 'My Household', icon: <IconHome size={18} />, visible: (_u, signedIn) => signedIn },
+  {
+    href: '/safety',
+    label: 'Safety',
+    icon: <IconShieldCheck size={18} />,
+    visible: (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder,
+  },
   { href: '/my-activities', label: 'My Activities', icon: <IconActivity size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/kioskdisplay', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/programs', label: 'Programs', icon: <IconCalendarEvent size={18} />, visible: () => true },
@@ -94,12 +100,6 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Finance Ops',
     icon: <IconCoin size={18} />,
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
-  },
-  {
-    href: '/safety',
-    label: 'Safety',
-    icon: <IconShieldCheck size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder,
   },
   {
     href: '/system-status',
