@@ -205,7 +205,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             }
 
             if (status === 'Absent') {
-                // Remove the visit associated with this event for this participant
+                // An open visit (departed = null) means they physically scanned in
+                // and are currently on-site. Deleting it would destroy the live
+                // roster of who's in the building — reject instead.
+                const openVisit = await prisma.visit.findFirst({
+                    where: {
+                        participantId: Number(participantId),
+                        associatedEventId: eventId,
+                        departed: null
+                    }
+                });
+                if (openVisit) {
+                    return NextResponse.json({ error: "Participant is currently checked in — check them out before marking Absent" }, { status: 400 });
+                }
+                // Only closed visits remain; safe to remove on an Absent correction.
                 await prisma.visit.deleteMany({
                     where: {
                         participantId: Number(participantId),
