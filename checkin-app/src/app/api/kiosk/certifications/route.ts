@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
-// Serves the full participant roster + PII (email, name, minor flag, tool certs).
-// Same data class as /api/attendance, so the same gate: a valid kiosk signature, or
+// Serves the participant roster for the tool-certification grid: id, a display name, and
+// tool certs. The raw email is read only to resolve the name fallback and never leaves the
+// DB (#329). Same data class as /api/attendance, so the same gate: a valid kiosk signature, or
 // a privileged session (sysadmin/boardMember/keyholder). A plain member session gets
 // 403 — withAuth handles the kiosk path, role check, denied-household, and local dev.
 export const GET = withAuth(
@@ -48,8 +49,9 @@ export const GET = withAuth(
 
         const participants = participantsData.map((participant) => ({
             id: participant.id,
-            email: participant.email,
-            name: participant.name,
+            // The grid only ever shows a display name, so resolve the name-or-email-prefix
+            // fallback here and drop the raw address from the response (#329).
+            name: participant.name?.trim() || participant.email?.split("@")[0] || "",
             toolStatuses: participant.toolStatuses,
         }));
 
