@@ -17,6 +17,7 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconAdjustments,
+  IconBriefcase,
   IconBuildingWarehouse,
   IconCalendarEvent,
   IconClipboardList,
@@ -78,6 +79,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/membership-ops',
     label: 'Membership Ops',
     icon: <IconUsers size={18} />,
+    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+  },
+  {
+    href: '/program-ops',
+    label: 'Program Ops',
+    icon: <IconBriefcase size={18} />,
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
   },
   {

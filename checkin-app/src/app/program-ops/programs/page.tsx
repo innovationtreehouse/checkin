@@ -39,7 +39,7 @@ export default function AdminProgramsIndex() {
           <Title order={1}>Programs</Title>
           <Text c="dimmed">Manage recurring programs and curriculum tracks.</Text>
         </div>
-        <Button color="green" onClick={() => router.push('/admin/programs/new')}>
+        <Button color="green" onClick={() => router.push('/program-ops/new')}>
           + New Program
         </Button>
       </Group>
