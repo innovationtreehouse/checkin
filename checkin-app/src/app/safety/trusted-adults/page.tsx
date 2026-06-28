@@ -15,6 +15,7 @@ import {
     Title,
 } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
+import { useRequireRole } from "@/hooks/useRequireRole";
 
 interface Review {
     id: number;
@@ -60,6 +61,7 @@ const STATUS_COLORS: Record<string, string> = {
 const label = (s: string) => s.replace(/_/g, " ");
 
 export default function AdminTrustedAdultsPage() {
+    const { ready, loading: authLoading } = useRequireRole(["sysadmin", "boardMember"]);
     const [items, setItems] = useState<TrustedAdult[]>([]);
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState<number | null>(null);
@@ -81,8 +83,8 @@ export default function AdminTrustedAdultsPage() {
     }, []);
 
     useEffect(() => {
-        load();
-    }, [load]);
+        if (ready) load();
+    }, [ready, load]);
 
     const decide = async (reviewId: number, decision: string, extra?: Record<string, unknown>) => {
         setBusyId(reviewId);
@@ -127,13 +129,15 @@ export default function AdminTrustedAdultsPage() {
         }
     };
 
-    if (loading) {
+    if (authLoading || loading) {
         return (
             <Center h={200}>
                 <Loader />
             </Center>
         );
     }
+
+    if (!ready) return null;
 
     return (
         <Stack p="md">

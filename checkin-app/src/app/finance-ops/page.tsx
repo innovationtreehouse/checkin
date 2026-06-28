@@ -3,9 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Button, Center, Loader, Stack, Text, Title } from '@mantine/core';
+import { Button, Center, Container, Group, Loader, Stack, Tabs, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { formatDateTime } from '@/lib/time';
@@ -29,7 +28,7 @@ type PaymentPlanRequest = {
   };
 };
 
-export default function PaymentPlansPage() {
+export default function FinanceOpsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
@@ -59,7 +58,7 @@ export default function PaymentPlansPage() {
     } else if (status === "authenticated") {
       const user = session.user;
       if (!user?.sysadmin && !user?.boardMember) {
-        router.push('/admin');
+        router.push('/');
       }
       fetchRequests();
     }
@@ -95,9 +94,7 @@ export default function PaymentPlansPage() {
 
   const user = session.user;
   if (!user.boardMember && !user.sysadmin) {
-    return (
-      <Center mih="60vh"><Title order={2}>Forbidden</Title></Center>
-    );
+    return <Center mih="60vh"><Title order={2}>Forbidden</Title></Center>;
   }
 
   const columns: DataTableColumn<PaymentPlanRequest>[] = [
@@ -137,23 +134,38 @@ export default function PaymentPlansPage() {
   ];
 
   return (
-    <Stack>
-      <AdminPageHeader title="Payment Plan Requests" back={{ href: '/admin', label: '← Back to Admin' }} />
+    <Container size="lg" py="md">
+      <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap">
+        <div>
+          <Title order={1}>Finance Operations</Title>
+          <Text c="dimmed">Payments and billing review.</Text>
+        </div>
+      </Group>
 
-      <Text c="dimmed">
-        Review pending participants who have clicked the &quot;Request Payment Plan&quot; button.
-        Approving a request marks the user as ACTIVE and exempts them from the 7-day automated
-        removal cron job.
-      </Text>
+      <Tabs defaultValue="pending">
+        <Tabs.List>
+          <Tabs.Tab value="pending">⏳ Pending Participants</Tabs.Tab>
+        </Tabs.List>
 
-      <AlertBanner message={message} tone="error" />
+        <Tabs.Panel value="pending" pt="lg">
+          <Stack>
+            <Text c="dimmed">
+              Review pending participants who have clicked the &quot;Request Payment Plan&quot; button.
+              Approving a request marks the user as ACTIVE and exempts them from the 7-day automated
+              removal cron job.
+            </Text>
 
-      <DataTable
-        columns={columns}
-        rows={requests}
-        getRowKey={(req) => `${req.programId}-${req.participantId}`}
-        emptyMessage="No pending payment plan requests."
-      />
-    </Stack>
+            <AlertBanner message={message} tone="error" />
+
+            <DataTable
+              columns={columns}
+              rows={requests}
+              getRowKey={(req) => `${req.programId}-${req.participantId}`}
+              emptyMessage="No pending payment plan requests."
+            />
+          </Stack>
+        </Tabs.Panel>
+      </Tabs>
+    </Container>
   );
 }

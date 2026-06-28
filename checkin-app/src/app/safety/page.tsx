@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { Badge, Button, Card, Center, Group, List, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Badge, Card, Center, Group, List, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
 type ParticipantInfo = {
@@ -40,7 +39,6 @@ type EmergencyContactInfo = {
 
 export default function EmergencyContactsPage() {
   const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember', 'keyholder']);
-  const router = useRouter();
 
   const [households, setHouseholds] = useState<Household[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,10 +92,7 @@ export default function EmergencyContactsPage() {
   if (error) {
     return (
       <Center mih="60vh">
-        <Stack align="center">
-          <Title order={3} c="red">{error}</Title>
-          <Button onClick={() => router.push('/admin')}>Back to Admin</Button>
-        </Stack>
+        <Title order={3} c="red">{error}</Title>
       </Center>
     );
   }

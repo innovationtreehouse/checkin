@@ -225,7 +225,7 @@ export default function Home() {
                     color="red"
                     fullWidth
                     leftSection={<IconUrgent size={18} />}
-                    onClick={() => router.push('/admin/emergency-contacts')}
+                    onClick={() => router.push('/safety')}
                   >
                     Emergency Contacts
                   </Button>
