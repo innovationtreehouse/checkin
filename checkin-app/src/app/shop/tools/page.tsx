@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import {
   Alert, Anchor, Button, Card, Center, Collapse, Container, Group, Loader,
   Modal, Select, Stack, Table, Tabs, Text, TextInput, Title,
@@ -413,9 +412,9 @@ function AllTab() {
   );
 }
 
-// ---- Main page ----
+// ---- Embeddable panel (no outer Container/header) ----
 
-export default function ToolManagementPage() {
+export function ToolManagementPanel() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const hasFetched = useRef(false);
@@ -440,7 +439,7 @@ export default function ToolManagementPage() {
   }, [status, router]);
 
   if (loading || status === "loading") {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <Center mih="40vh"><Loader /></Center>;
   }
 
   const isSysadmin = session?.user?.sysadmin;
@@ -452,13 +451,7 @@ export default function ToolManagementPage() {
 
   if (!isCertifier && !isAdmin) {
     return (
-      <Container size="sm" py="xl">
-        <Card withBorder radius="md" padding="xl">
-          <Title order={2} mb="sm">Access Denied</Title>
-          <Alert color="red" mb="md">Forbidden: You require the Admin, Board Member, or Certifier role.</Alert>
-          <Button onClick={() => router.push('/shop')}>Back to Shop Ops</Button>
-        </Card>
-      </Container>
+      <Alert color="red">Forbidden: You require the Admin, Board Member, or Certifier role.</Alert>
     );
   }
 
@@ -467,31 +460,35 @@ export default function ToolManagementPage() {
   };
 
   return (
+    <Tabs value={tab} onChange={(v) => setTab(v as Tab)} keepMounted={false}>
+      <Tabs.List mb="md">
+        <Tabs.Tab value="tools">All Tools</Tabs.Tab>
+        <Tabs.Tab value="person">By Person</Tabs.Tab>
+        {isAdmin && <Tabs.Tab value="all">All Assignments</Tabs.Tab>}
+      </Tabs.List>
+
+      <Tabs.Panel value="tools">
+        <ToolsTab tools={tools} members={members} isAdmin={!!isAdmin} isCertifier={!!isCertifier} onToolsChange={reloadTools} />
+      </Tabs.Panel>
+      <Tabs.Panel value="person">
+        <PersonTab members={members} tools={tools} isCertifier={!!isCertifier} isAdmin={!!isAdmin} />
+      </Tabs.Panel>
+      {isAdmin && (
+        <Tabs.Panel value="all">
+          <AllTab />
+        </Tabs.Panel>
+      )}
+    </Tabs>
+  );
+}
+
+// ---- Main page ----
+
+export default function ToolManagementPage() {
+  return (
     <Container size="lg" py="md">
-      <Group justify="space-between" align="center" wrap="wrap" mb="lg">
-        <Title order={1}>Tools &amp; Certifications</Title>
-        <Button component={Link} href="/shop" variant="default">← Shop Dashboard</Button>
-      </Group>
-
-      <Tabs value={tab} onChange={(v) => setTab(v as Tab)} keepMounted={false}>
-        <Tabs.List mb="md">
-          <Tabs.Tab value="tools">All Tools</Tabs.Tab>
-          <Tabs.Tab value="person">By Person</Tabs.Tab>
-          {isAdmin && <Tabs.Tab value="all">All Assignments</Tabs.Tab>}
-        </Tabs.List>
-
-        <Tabs.Panel value="tools">
-          <ToolsTab tools={tools} members={members} isAdmin={!!isAdmin} isCertifier={!!isCertifier} onToolsChange={reloadTools} />
-        </Tabs.Panel>
-        <Tabs.Panel value="person">
-          <PersonTab members={members} tools={tools} isCertifier={!!isCertifier} isAdmin={!!isAdmin} />
-        </Tabs.Panel>
-        {isAdmin && (
-          <Tabs.Panel value="all">
-            <AllTab />
-          </Tabs.Panel>
-        )}
-      </Tabs>
+      <Title order={1} mb="lg">Tools &amp; Certifications</Title>
+      <ToolManagementPanel />
     </Container>
   );
 }
