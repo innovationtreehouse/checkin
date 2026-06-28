@@ -164,6 +164,31 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
         expect(await reminderSentAt(event.id)).toEqual(before);
     });
 
+    it('rejects editTime on a past event and leaves reminderSentAt untouched', async () => {
+        // Event already finished (started 3h ago, ended 2h ago).
+        const start = new Date(Date.now() - 3 * HOUR);
+        const event = await prisma.event.create({
+            data: {
+                name: `${TAG} past`,
+                start,
+                end: new Date(start.getTime() + HOUR),
+                description: 'reschedule',
+            },
+        });
+        await prisma.rSVP.create({
+            data: { eventId: event.id, participantId, status: 'ATTENDING', reminderSentAt: new Date() },
+        });
+        const before = await reminderSentAt(event.id);
+        expect(before).not.toBeNull();
+
+        const newStart = new Date(Date.now() + 2 * HOUR);
+        const res = await patch(event.id, { action: 'editTime', start: newStart.toISOString() });
+        expect(res.status).toBe(400);
+
+        // Reminder state preserved — a finished event's reminder must not be re-armed.
+        expect(await reminderSentAt(event.id)).toEqual(before);
+    });
+
     it('clears reminderSentAt across a series when applyToFuture shifts the start', async () => {
         const group = `${TAG}-group`;
         const first = await makeEvent('series-1', 2 * HOUR + 5 * MIN, group);

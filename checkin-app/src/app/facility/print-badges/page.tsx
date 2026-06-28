@@ -7,7 +7,6 @@ import QRCode from "qrcode";
 import { pdf } from "@react-pdf/renderer";
 import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
 import { DataTable, type DataTableColumn } from "@/components/admin/DataTable";
 import BadgeDocument from "@/components/admin/BadgeDocument";
 import StickerDocument from "@/components/admin/StickerDocument";
@@ -146,12 +145,7 @@ export default function PrintBadgesPage() {
     { header: 'ID', render: (p) => <Text span c="dimmed">#{p.id}</Text> },
     {
       header: 'Name',
-      render: (p) => (
-        <>
-          <Text fw={600}>{p.name || 'N/A'}</Text>
-          <Text size="sm" c="dimmed">{p.email}</Text>
-        </>
-      ),
+      render: (p) => <Text fw={600}>{p.name || 'N/A'}</Text>,
     },
     {
       header: 'Membership',
@@ -173,8 +167,6 @@ export default function PrintBadgesPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Print ID Badges" back={{ href: '/facility', label: '← Back to Facility Ops' }} />
-
       <Text c="dimmed">
         Select participants to generate double-sided standard Avery 5390 ID badges.
       </Text>

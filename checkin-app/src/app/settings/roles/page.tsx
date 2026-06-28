@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Center, Checkbox, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { SettingsTabs } from '@/components/admin/SettingsTabs';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 
 type UserRole = {
@@ -98,7 +99,9 @@ export default function RoleAssignmentPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Role Assignment" back={{ href: '/admin', label: '← Back to Admin Hub' }} />
+      <AdminPageHeader title="Settings" />
+
+      <SettingsTabs active="roles" />
 
       <Text c="dimmed">
         Manage administrative privileges and access levels for community members. Checkboxes save

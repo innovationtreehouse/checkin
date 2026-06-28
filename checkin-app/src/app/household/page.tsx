@@ -281,7 +281,7 @@ export default function HouseholdPage() {
   });
 
   return (
-    <Container size="md" py="md">
+    <Container size="md" pb="md">
       <Stack>
         <TodoCard />
         <Card withBorder radius="md" padding="lg">

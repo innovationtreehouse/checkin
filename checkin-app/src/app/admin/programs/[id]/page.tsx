@@ -9,6 +9,7 @@ import {
   Loader, NumberInput, Paper, Select, SimpleGrid, Stack, Table, Tabs, Text, TextInput, Title,
 } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
+import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 import { formatDateTime } from '@/lib/time';
 
 type ProgramDetail = {
@@ -357,7 +358,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   );
 
   return (
-    <Container size="lg" py="md">
+    <Container size="lg" pb="md">
       <Card withBorder radius="md" padding="lg">
         <Group justify="space-between" align="center" wrap="wrap" mb="lg">
           <Group align="center" gap="sm">
@@ -370,11 +371,11 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         <AlertBanner message={message} tone="info" mb="lg" />
 
         <Tabs value={activeTab} onChange={(v) => setActiveTab((v as typeof activeTab) ?? 'general')}>
-          <Tabs.List mb="lg">
+          <ScrollableTabsList mb="lg">
             <Tabs.Tab value="general">General</Tabs.Tab>
             <Tabs.Tab value="roster">Roster</Tabs.Tab>
             <Tabs.Tab value="events">Events</Tabs.Tab>
-          </Tabs.List>
+          </ScrollableTabsList>
 
           {/* GENERAL */}
           <Tabs.Panel value="general">

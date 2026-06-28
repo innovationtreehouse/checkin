@@ -4,10 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
-  Alert, Anchor, Button, Card, Center, Collapse, Container, Group, Loader,
-  Modal, Select, Stack, Table, Tabs, Text, TextInput, Title,
+  Alert, Anchor, Button, Card, Center, Collapse, Group, Loader,
+  Modal, Select, Stack, Table, Tabs, Text, TextInput,
 } from '@mantine/core';
 import { ToolLevelBadge, toToolLevel } from '@/components/ToolLevelBadge';
+import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 
 type Tool = {
   id: number;
@@ -207,8 +208,8 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
           const isOpen = expanded === tool.id;
           return (
             <Card key={tool.id} withBorder radius="md" padding={0} style={isOpen ? { borderColor: 'var(--mantine-color-cyan-5)' } : undefined}>
-              <Group gap="md" p="md" wrap="nowrap" style={{ cursor: 'pointer' }} onClick={() => toggle(tool.id)}>
-                <Text fw={600} c={isOpen ? 'cyan' : undefined} style={{ flex: 1 }}>{tool.name}</Text>
+              <Group gap="md" p="md" wrap="wrap" style={{ cursor: 'pointer' }} onClick={() => toggle(tool.id)}>
+                <Text fw={600} c={isOpen ? 'cyan' : undefined} style={{ flex: '1 1 160px', minWidth: 120 }}>{tool.name}</Text>
                 <Text size="sm" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{tool._count?.toolStatuses ?? '?'} certified</Text>
                 {tool.safetyGuide ? (
                   <Anchor href={tool.safetyGuide} target="_blank" rel="noopener noreferrer" size="sm" onClick={(e) => e.stopPropagation()}>Safety Guide ↗</Anchor>
@@ -310,7 +311,6 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
               <Group gap="md" p="md" wrap="nowrap" style={{ cursor: 'pointer' }} onClick={() => toggle(member.id)}>
                 <div style={{ flex: 1, overflow: 'hidden' }}>
                   <Text fw={600} c={isOpen ? 'cyan' : undefined} truncate>{member.name ?? 'Unnamed'}</Text>
-                  <Text size="sm" c="dimmed" truncate>{member.email}</Text>
                 </div>
                 <Text c="dimmed" size="sm">{isOpen ? '▲' : '▼'}</Text>
               </Group>
@@ -461,11 +461,11 @@ export function ToolManagementPanel() {
 
   return (
     <Tabs value={tab} onChange={(v) => setTab(v as Tab)} keepMounted={false}>
-      <Tabs.List mb="md">
+      <ScrollableTabsList mb="md">
         <Tabs.Tab value="tools">All Tools</Tabs.Tab>
         <Tabs.Tab value="person">By Person</Tabs.Tab>
         {isAdmin && <Tabs.Tab value="all">All Assignments</Tabs.Tab>}
-      </Tabs.List>
+      </ScrollableTabsList>
 
       <Tabs.Panel value="tools">
         <ToolsTab tools={tools} members={members} isAdmin={!!isAdmin} isCertifier={!!isCertifier} onToolsChange={reloadTools} />
@@ -479,16 +479,5 @@ export function ToolManagementPanel() {
         </Tabs.Panel>
       )}
     </Tabs>
-  );
-}
-
-// ---- Main page ----
-
-export default function ToolManagementPage() {
-  return (
-    <Container size="lg" py="md">
-      <Title order={1} mb="lg">Tools &amp; Certifications</Title>
-      <ToolManagementPanel />
-    </Container>
   );
 }

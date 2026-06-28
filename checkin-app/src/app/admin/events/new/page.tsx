@@ -205,7 +205,7 @@ function NewEventForm() {
 
 export default function NewEventPage() {
   return (
-    <Container size="md" py="md">
+    <Container size="md" pb="md">
       <Suspense fallback={<Center mih="60vh"><Loader /></Center>}>
         <NewEventForm />
       </Suspense>

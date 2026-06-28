@@ -161,6 +161,11 @@ describe('Membership payment API', () => {
         const proc = await prisma.membershipProcess.findUnique({ where: { id: certProc } });
         expect(proc?.status).toBe('ACTIVE');
         expect(proc?.certifiedById).toBe(leadId);
+
+        // The audit row records WHO certified — the acting board member, not SYSTEM_ACTOR.
+        const audit = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: certProc }, orderBy: { id: 'desc' } });
+        expect(audit?.actorId).toBe(leadId);
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'ACTIVE' });
     });
 
     it('non-board cannot certify', async () => {

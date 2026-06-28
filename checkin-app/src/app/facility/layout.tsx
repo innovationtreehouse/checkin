@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { FACILITY_NAV_LINKS } from "@/lib/facilityNav";
+import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
 export default function FacilityLayout({ children }: { children: React.ReactNode }) {
@@ -35,13 +36,13 @@ export default function FacilityLayout({ children }: { children: React.ReactNode
         }}
         mb="md"
       >
-        <Tabs.List>
+        <ScrollableTabsList>
           {FACILITY_NAV_LINKS.map((link) => (
             <Tabs.Tab key={link.href} value={link.href} leftSection={<span>{link.icon}</span>}>
               {link.name}
             </Tabs.Tab>
           ))}
-        </Tabs.List>
+        </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
     </>
