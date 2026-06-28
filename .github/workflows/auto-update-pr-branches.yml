@@ -1,0 +1,130 @@
+name: Auto-update PR branches
+
+# Keep in-flight PR branches current with the default branch during fast sprints.
+#
+# Scope (deliberately narrow): a PR is updated only when it is
+#   - "merge when ready" — auto-merge is enabled (the author intends it to land
+#     the moment it's eligible), AND
+#   - green — its latest commit's status-check rollup is SUCCESS, AND
+#   - NOT yet approved — so it has not entered the merge queue.
+# Such PRs are queued up to merge as soon as a reviewer approves; keeping them on
+# top of main means approval → merge queue is friction-free. Once a PR IS
+# approved it enters the merge queue, which updates and validates it itself, so we
+# leave those alone. Drafts, cross-repo (fork) PRs, and PRs already sitting in the
+# merge queue are skipped.
+#
+# Method: the GitHub "Update branch" API (merge main into the branch — no history
+# rewrite). Safe for a squash-merge repo; the merge commits vanish on squash.
+#
+# Trade-off (accepted): the update push is made with GITHUB_TOKEN, so it does NOT
+# re-run the PR's checks — GitHub suppresses workflow events triggered by
+# GITHUB_TOKEN. Branches stay mergeable and current; the merge queue runs the
+# authoritative CI when the PR is finally approved. (To also re-run each PR's CI
+# on update, swap GH_TOKEN for a PAT / GitHub App token secret.)
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # every 15 minutes (GitHub may delay scheduled runs under load)
+  workflow_dispatch: {}       # manual run for testing / catch-up
+
+# update-branch needs to push the merge to the head branch and read/act on PRs.
+permissions:
+  contents: write
+  pull-requests: write
+
+# Never let two sweeps overlap; a slow run should not stack on the next schedule.
+concurrency:
+  group: auto-update-pr-branches
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update lagging PR branches
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update eligible PR branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          OWNER="${GH_REPO%/*}"
+          REPO="${GH_REPO#*/}"
+          BASE="$(gh repo view "$GH_REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')"
+          echo "Scanning open PRs targeting '$BASE' in $GH_REPO ..."
+
+          # Open PRs to the default branch + the fields we filter on. mergeQueueEntry
+          # is non-null only while a PR is in the merge queue. (First 100 — ample for a
+          # sprint; extend with pagination if the open-PR count ever exceeds that.)
+          prs="$(gh api graphql \
+            -f owner="$OWNER" -f repo="$REPO" -f base="$BASE" \
+            -f query='
+              query($owner:String!, $repo:String!, $base:String!) {
+                repository(owner:$owner, name:$repo) {
+                  pullRequests(states:OPEN, baseRefName:$base, first:100) {
+                    nodes {
+                      number
+                      isDraft
+                      isCrossRepository
+                      reviewDecision
+                      headRefName
+                      headRefOid
+                      autoMergeRequest { enabledAt }
+                      mergeQueueEntry { id }
+                      commits(last:1) { nodes { commit { statusCheckRollup { state } } } }
+                    }
+                  }
+                }
+              }' \
+            --jq '
+              .data.repository.pullRequests.nodes[]
+              | select(.isDraft == false)
+              | select(.isCrossRepository == false)                                          # same-repo only — GITHUB_TOKEN cannot push fork branches
+              | select(.autoMergeRequest != null)                                            # "merge when ready" is enabled
+              | select(.mergeQueueEntry == null)                                             # not already in the merge queue
+              | select(.reviewDecision != "APPROVED")                                        # not yet approved → not headed into the queue
+              | select((.commits.nodes[0].commit.statusCheckRollup.state // "") == "SUCCESS") # latest pipeline is green
+              | "\(.number)\t\(.headRefName)\t\(.headRefOid)"
+            ')"
+
+          if [ -z "$prs" ]; then
+            echo "No eligible PRs to update."
+            echo "_No eligible PRs to update._" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          updated=0; current=0; skipped=0
+          # A per-PR failure (conflict, head moved, protected branch) must not fail the sweep.
+          while IFS=$'\t' read -r num head oid; do
+            [ -n "${num:-}" ] || continue
+
+            behind="$(gh api "repos/$OWNER/$REPO/compare/$BASE...$head" --jq '.behind_by' 2>/dev/null || echo 0)"
+            if [ "${behind:-0}" -le 0 ]; then
+              echo "PR #$num ($head): already current with $BASE — skipping."
+              current=$((current + 1))
+              continue
+            fi
+
+            echo "PR #$num ($head): $behind commit(s) behind $BASE — updating..."
+            # expected_head_sha guards against a race: if the author pushed since we
+            # queried, the API 422s and we skip rather than clobber.
+            if gh api --method PUT "repos/$OWNER/$REPO/pulls/$num/update-branch" \
+                 -f expected_head_sha="$oid" >/dev/null 2>&1; then
+              echo "  ✓ update queued for PR #$num"
+              updated=$((updated + 1))
+            else
+              echo "  ✗ PR #$num could not be updated (merge conflict, head moved, or protected) — skipping."
+              skipped=$((skipped + 1))
+            fi
+          done <<< "$prs"
+
+          echo "Done. updated=$updated already-current=$current skipped=$skipped"
+          {
+            echo "### Auto-update PR branches"
+            echo ""
+            echo "| result | count |"
+            echo "| --- | --- |"
+            echo "| updated | $updated |"
+            echo "| already current | $current |"
+            echo "| skipped (conflict / race / protected) | $skipped |"
+          } >> "$GITHUB_STEP_SUMMARY"
