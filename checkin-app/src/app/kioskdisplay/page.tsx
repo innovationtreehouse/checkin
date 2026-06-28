@@ -200,8 +200,8 @@ function KioskDisplayInner() {
     }
   };
 
-  const handleForceCheckout = async (visitId: number) => {
-    if (!confirm("Are you sure you want to force checkout this user?")) return;
+  const handleForceCheckout = async (visitId: number, isSelf: boolean = false) => {
+    if (!isSelf && !confirm("Are you sure you want to force checkout this user?")) return;
     setCheckingOut(visitId);
     try {
       const res = await fetch("/api/attendance", {
@@ -210,7 +210,7 @@ function KioskDisplayInner() {
         body: JSON.stringify({ visitId }),
       });
       if (res.ok) refreshAttendance();
-      else alert("Failed to force checkout.");
+      else alert(isSelf ? "Failed to check out." : "Failed to force checkout.");
     } catch (e) {
       console.error(e);
       alert("Network error.");
@@ -284,7 +284,7 @@ function KioskDisplayInner() {
             )}
           </Box>
           {showCheckout && (
-            <Button size="compact-xs" color="red" variant="light" onClick={() => handleForceCheckout(visit.id)} disabled={checkingOut === visit.id}>
+            <Button size="compact-xs" color="red" variant="light" onClick={() => handleForceCheckout(visit.id, visit.participant.id === (session?.user as SessionUser)?.id)} disabled={checkingOut === visit.id}>
               {checkingOut === visit.id ? "..." : "Out"}
             </Button>
           )}
