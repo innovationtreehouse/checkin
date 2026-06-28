@@ -11,6 +11,9 @@ const createJestConfig = nextJest({
 // excluded from the default run so `npm run test:ci` works without a DB.
 // Run them with `npm run test:integration` against a live database.
 const customJestConfig = {
+    // 'default' keeps jest's built-in output; ours appends a loud summary of
+    // tests that failed by THROWING (schema/mock rot) vs honest assertions.
+    reporters: ['default', '<rootDir>/test/failureClassifierReporter.js'],
     setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
     testEnvironment: 'jest-environment-jsdom',
     moduleNameMapper: {
