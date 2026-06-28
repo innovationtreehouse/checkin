@@ -149,6 +149,14 @@ export async function activate(
 
 /** Board override: certify a payment plan and activate without a Shopify payment. */
 export async function certifyPaymentPlan(processId: number, actorId: number) {
+    // Unlike the webhook path, a board certify is a deliberate action — reject
+    // (not silently no-op) when the process isn't actually awaiting payment, so
+    // certifying an already-ACTIVE or still-in-review grant surfaces a 409
+    // instead of a misleading success. activate()'s own conditional flip stays
+    // idempotent for the webhook/self-serve callers.
+    const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+    if (!process) throw new PaymentError("not_found", "Application not found.");
+    if (process.status !== "PENDING_PAYMENT") throw new PaymentError("wrong_phase", "This application is not awaiting payment.");
     return activate(processId, { via: "certified", actorId });
 }
 

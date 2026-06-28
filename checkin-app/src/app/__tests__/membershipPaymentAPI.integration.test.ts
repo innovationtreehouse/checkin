@@ -168,6 +168,30 @@ describe('Membership payment API', () => {
         expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'ACTIVE' });
     });
 
+    it('certify on a non-PENDING_PAYMENT process is rejected (409 wrong_phase, no state change)', async () => {
+        asBoard(leadId);
+        const bg = await makeProc('Bg', false);
+        await prisma.membershipProcess.update({ where: { id: bg.processId }, data: { status: 'PENDING_BG_REVIEW' } });
+
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: bg.processId }) }) as never);
+        expect(res.status).toBe(409);
+        expect((await res.json()).code).toBe('wrong_phase');
+
+        // No state change: status untouched and no activation audit row written.
+        const proc = await prisma.membershipProcess.findUnique({ where: { id: bg.processId } });
+        expect(proc?.status).toBe('PENDING_BG_REVIEW');
+        expect(proc?.paidAt).toBeNull();
+        const audit = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: bg.processId } });
+        expect(audit).toBeNull();
+    });
+
+    it('certify on a non-existent process returns 404', async () => {
+        asBoard(leadId);
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: 999999999 }) }) as never);
+        expect(res.status).toBe(404);
+        expect((await res.json()).code).toBe('not_found');
+    });
+
     it('non-board cannot certify', async () => {
         asUser(leadId);
         const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: 1 }) }) as never);
