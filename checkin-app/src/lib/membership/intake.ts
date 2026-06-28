@@ -141,13 +141,24 @@ export async function startIntake(userId: number) {
 
     // Ensure a household exists, with the caller as a lead + parent.
     if (!user.householdId) {
-        const lastName = (user.name || "").trim().split(/\s+/).pop() || "";
-        await prisma.household.create({
-            data: {
-                name: lastName ? `${lastName} Household` : "Household",
-                leads: { create: { participantId: userId } },
-                participants: { connect: { id: userId } },
-            },
+        // Serialize on the participant: two concurrent startIntake calls would
+        // both pass the check above and each create a household (each with its
+        // own INITIAL process), since nothing ties a new household uniquely back
+        // to the participant. Take a per-participant advisory xact lock (same
+        // pattern as the scan route) and re-read inside the transaction; the
+        // second caller then observes the first household and skips the create.
+        await prisma.$transaction(async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${userId})`;
+            const fresh = await tx.participant.findUnique({ where: { id: userId }, select: { householdId: true } });
+            if (fresh?.householdId) return; // a racing call already created it
+            const lastName = (user!.name || "").trim().split(/\s+/).pop() || "";
+            await tx.household.create({
+                data: {
+                    name: lastName ? `${lastName} Household` : "Household",
+                    leads: { create: { participantId: userId } },
+                    participants: { connect: { id: userId } },
+                },
+            });
         });
         user = await loadUserWithHousehold(userId);
         if (!user) throw new IntakeError("no_household", "User not found.");
