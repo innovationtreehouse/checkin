@@ -11,7 +11,8 @@
 import { GET as EmergencyGet } from '@/app/api/admin/emergency-contacts/route';
 import { GET as SearchGet } from '@/app/api/admin/participants/search/route';
 import { GET as DevPersonasGet } from '@/app/api/auth/dev-personas/route';
-import { GET as CertsGet } from '@/app/api/kiosk/certifications/route';
+import { GET as KioskCertsGet } from '@/app/api/kiosk/certifications/route';
+import { GET as ShopCertsGet } from '@/app/api/shop/certifications/route';
 import prisma from '@/lib/prisma';
 
 jest.mock('next-auth/next', () => ({
@@ -119,20 +120,50 @@ describe('Sensitive route authorization', () => {
 
         it('401 when unauthenticated (no session, no kiosk key on cloud dev)', async () => {
             mockSession.mockResolvedValue(null);
-            expect((await CertsGet(req(url))).status).toBe(401);
+            expect((await KioskCertsGet(req(url))).status).toBe(401);
         });
 
         it('403 for a plain member — the roster + minor PII must not leak', async () => {
             mockSession.mockResolvedValue({ user: { id: plainId } });
-            expect((await CertsGet(req(url))).status).toBe(403);
+            expect((await KioskCertsGet(req(url))).status).toBe(403);
         });
 
         it('200 for a keyholder, returning the roster', async () => {
             mockSession.mockResolvedValue({ user: { id: plainId, keyholder: true } });
-            const res = await CertsGet(req(url));
+            const res = await KioskCertsGet(req(url));
             expect(res.status).toBe(200);
             const json = await res.json();
             expect(Array.isArray(json.participants)).toBe(true);
+        });
+    });
+
+    describe('GET /api/shop/certifications (per-participant IDOR)', () => {
+        const otherUrl = () => `http://localhost/api/shop/certifications?participantId=${searchTargetId}`;
+
+        it('401 when unauthenticated', async () => {
+            mockSession.mockResolvedValue(null);
+            expect((await ShopCertsGet(req(otherUrl()))).status).toBe(401);
+        });
+
+        it('200 for a member reading their own certs', async () => {
+            mockSession.mockResolvedValue({ user: { id: plainId } });
+            const res = await ShopCertsGet(req(`http://localhost/api/shop/certifications?participantId=${plainId}`));
+            expect(res.status).toBe(200);
+        });
+
+        it('403 for a member reading another participant id', async () => {
+            mockSession.mockResolvedValue({ user: { id: plainId } });
+            expect((await ShopCertsGet(req(otherUrl()))).status).toBe(403);
+        });
+
+        it('200 for a board member reading any participant id', async () => {
+            mockSession.mockResolvedValue({ user: { id: plainId, boardMember: true } });
+            expect((await ShopCertsGet(req(otherUrl()))).status).toBe(200);
+        });
+
+        it('200 for a sysadmin reading any participant id', async () => {
+            mockSession.mockResolvedValue({ user: { id: plainId, sysadmin: true } });
+            expect((await ShopCertsGet(req(otherUrl()))).status).toBe(200);
         });
     });
 

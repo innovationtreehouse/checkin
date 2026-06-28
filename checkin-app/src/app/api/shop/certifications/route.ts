@@ -38,6 +38,13 @@ export async function GET(req: Request) {
 
         if (participantIdParam) {
             targetUserId = parseInt(participantIdParam, 10);
+            // IDOR guard: a member may only read their own certs. Privileged roles
+            // (same gate as ?all=true) may read anyone's. Certifier is per-tool, not a
+            // session flag, so it isn't a privileged role here.
+            const isPrivileged = session.user?.sysadmin || session.user?.boardMember;
+            if (targetUserId !== session.user.id && !isPrivileged) {
+                return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            }
         }
 
         let whereClause: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
