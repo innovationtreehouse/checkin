@@ -16,6 +16,7 @@ import { attest } from '@/lib/membership/review';
 import { certifyPaymentPlan, activate } from '@/lib/membership/payment';
 import { submitIntake } from '@/lib/membership/intake';
 import prisma from '@/lib/prisma';
+import { sendEmail } from '@/lib/email';
 
 jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
 
@@ -29,6 +30,14 @@ async function makeReviewer(label: string): Promise<number> {
             backgroundCheckReviewer: true,
             household: { create: { name: `${label} HH ${TAG}` } },
         },
+    });
+    return r.id;
+}
+
+/** A board member (notifyBoardPaidReject's recipient) in their own household. */
+async function makeBoardMember(): Promise<number> {
+    const r = await prisma.participant.create({
+        data: { email: `board-${TAG}@example.com`, name: 'Board', boardMember: true, household: { create: { name: `Board HH ${TAG}` } } },
     });
     return r.id;
 }
@@ -77,6 +86,7 @@ describe('background check is non-blocking', () => {
         prevBgRecheckMonths = (await prisma.boardSettings.findUnique({ where: { id: 1 } }))?.bgRecheckMonths ?? 0;
         revA = await makeReviewer('RevA');
         revB = await makeReviewer('RevB');
+        await makeBoardMember(); // recipient for the paid-reject refund alert
     });
     afterAll(async () => {
         await wipe();
@@ -134,6 +144,33 @@ describe('background check is non-blocking', () => {
         await attest(revA, processId, { result: 'REJECT' });
         expect(await statusOf(processId)).toBe('BLOCKED');
         expect(await membershipStatusOf(membershipId)).toBe('NONE');
+    });
+
+    it('reject BEFORE the payment webhook → payment still recorded + board notified (no dropped money)', async () => {
+        const { processId, membershipId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        await markContractSigned(processId);
+        await markBgConsent(processId, revA);            // → PENDING_PAYMENT
+        await attest(revA, processId, { result: 'APPROVE' });
+        await attest(revB, processId, { result: 'REJECT' }); // → BLOCKED, not yet paid
+        expect(await statusOf(processId)).toBe('BLOCKED');
+
+        (sendEmail as jest.Mock).mockClear();
+        await activate(processId, { via: 'payment', shopifyOrderId: 'late-pay' }); // webhook lands after the reject
+
+        const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        expect(proc?.status).toBe('BLOCKED');                 // not resurrected
+        expect(proc?.paidAt).not.toBeNull();                  // payment recorded, not dropped
+        expect(proc?.shopifyOrderId).toBe('late-pay');
+        expect(await membershipStatusOf(membershipId)).toBe('NONE');
+        expect(sendEmail as jest.Mock).toHaveBeenCalled();    // board alerted for refund
+
+        // Webhook retry is idempotent: paidAt unchanged, no second alert.
+        const firstPaidAt = proc?.paidAt?.getTime();
+        (sendEmail as jest.Mock).mockClear();
+        await activate(processId, { via: 'payment', shopifyOrderId: 'late-pay' });
+        const proc2 = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        expect(proc2?.paidAt?.getTime()).toBe(firstPaidAt);
+        expect(sendEmail as jest.Mock).not.toHaveBeenCalled();
     });
 
     it('a still-valid prior check auto-clears at submit — no consent needed, pay activates directly', async () => {

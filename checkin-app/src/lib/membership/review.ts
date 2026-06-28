@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { logger } from "@/lib/logger";
 import { sendCongrats } from "@/lib/membership/payment";
+import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
 
 type TxClient = Prisma.TransactionClient;
 
@@ -99,34 +100,6 @@ export async function notifyReviewers(): Promise<void> {
         );
     } catch (e) {
         logger.error("notifyReviewers failed:", e);
-    }
-}
-
-/**
- * Email board members that a household which ALREADY PAID was blocked at
- * background-check review, so a refund can be arranged out-of-band. (We never
- * move money automatically.)
- */
-export async function notifyBoardPaidReject(processId: number): Promise<void> {
-    try {
-        const board = await prisma.participant.findMany({
-            where: { boardMember: true, email: { not: null } },
-            select: { email: true },
-        });
-        const base = process.env.NEXTAUTH_URL ?? "";
-        await Promise.all(
-            board.map((b) =>
-                b.email
-                    ? sendEmail(
-                          b.email,
-                          "Membership: a paid application was blocked at background check",
-                          `<p>A household that already paid did not pass background-check review (application #${processId}). The membership has <strong>not</strong> been activated and a refund may be needed — please review and contact the household. <a href="${base}/membership-ops/applications">Open applications</a></p>`,
-                      ).catch((e) => logger.error("Paid-reject board ping failed:", e))
-                    : Promise.resolve(),
-            ),
-        );
-    } catch (e) {
-        logger.error("notifyBoardPaidReject failed:", e);
     }
 }
 

@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { logger } from "@/lib/logger";
+import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
 
 /**
  * Payment phase (PENDING_PAYMENT -> ACTIVE).
@@ -102,9 +103,13 @@ export async function ensurePaymentLinkForUser(userId: number) {
  *
  * FOR UPDATE serializes against the review path's attest() transaction, which
  * takes the same row lock — so the payment/clearance race can't lose an update.
- * Idempotent: a no-op if already paid (Shopify retries an orders/paid webhook
- * routinely), already active, or blocked (a late webhook must not resurrect a
- * failed application).
+ * Idempotent: a no-op only once the payment is already recorded (Shopify retries
+ * an orders/paid webhook routinely) or the membership is already active.
+ *
+ * BLOCKED is NOT a silent no-op: if the check was rejected before the payment
+ * webhook landed, the money is already at Shopify. We record the payment (keeping
+ * the application BLOCKED — never activate without a valid check) and alert the
+ * board to refund, rather than dropping the payment on the floor.
  */
 export async function activate(
     processId: number,
@@ -114,24 +119,40 @@ export async function activate(
         await tx.$queryRaw`SELECT id FROM "MembershipProcess" WHERE id = ${processId} FOR UPDATE`;
         const process = await tx.membershipProcess.findUnique({ where: { id: processId } });
         if (!process) throw new PaymentError("not_found", "Application not found.");
-        if (process.paidAt || process.status === "ACTIVE" || process.status === "BLOCKED") {
-            return { kind: "noop" as const }; // retry / already done / failed — skip audit + email
+        // Already recorded this payment (webhook retry) or already active → nothing to do.
+        if (process.paidAt || process.status === "ACTIVE") {
+            return { kind: "noop" as const };
         }
         const membership = await tx.membership.findUnique({ where: { id: process.membershipId }, select: { householdId: true } });
         if (!membership) throw new PaymentError("not_found", "Membership not found.");
 
         const now = new Date();
-        const paidData = {
-            paidAt: now,
-            stageEnteredAt: now,
+        const payMeta = {
             ...(opts.shopifyOrderId ? { shopifyOrderId: opts.shopifyOrderId } : {}),
             ...(opts.via === "certified" && opts.actorId ? { certifiedById: opts.actorId } : {}),
         };
-        const activating = !!process.bgClearedAt;
 
+        // Reject landed before the payment: record the payment but stay BLOCKED
+        // (don't resurrect / don't bump stageEnteredAt) and flag for refund.
+        if (process.status === "BLOCKED") {
+            await tx.membershipProcess.update({ where: { id: processId }, data: { paidAt: now, ...payMeta } });
+            await tx.auditLog.create({
+                data: {
+                    actorId: opts.actorId ?? SYSTEM_ACTOR,
+                    action: "EDIT",
+                    tableName: "MembershipProcess",
+                    affectedEntityId: processId,
+                    oldData: JSON.stringify({ status: "BLOCKED" }),
+                    newData: JSON.stringify({ status: "BLOCKED", via: opts.via, paid: true, refundNeeded: true }),
+                },
+            });
+            return { kind: "paid_while_blocked" as const };
+        }
+
+        const activating = !!process.bgClearedAt;
         await tx.membershipProcess.update({
             where: { id: processId },
-            data: { ...paidData, status: activating ? "ACTIVE" : "PENDING_BG_CLEARANCE" },
+            data: { paidAt: now, stageEnteredAt: now, ...payMeta, status: activating ? "ACTIVE" : "PENDING_BG_CLEARANCE" },
         });
         if (activating) {
             await tx.membership.update({ where: { id: process.membershipId }, data: { status: "ACTIVE" } });
@@ -149,9 +170,10 @@ export async function activate(
         return activating ? { kind: "active" as const, householdId: membership.householdId } : { kind: "held" as const };
     });
 
-    // Email outside the transaction: a slow/failed send must not roll back the
-    // activation, and we only send when this call is the one that flipped it.
+    // Side effects outside the transaction: a slow/failed send must not roll back
+    // the write, and only the call that actually recorded the change emits one.
     if (result.kind === "active") await sendCongrats(result.householdId);
+    if (result.kind === "paid_while_blocked") await notifyBoardPaidReject(processId);
     return prisma.membershipProcess.findUnique({ where: { id: processId } });
 }
 

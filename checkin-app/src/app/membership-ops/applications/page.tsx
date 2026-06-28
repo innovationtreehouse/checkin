@@ -265,12 +265,17 @@ export default function AdminMembershipPage() {
 
               {r.status === "BLOCKED" && (
                 <Alert color="red" variant="light" mt="md" title="🚨 Blocked at background review — needs board attention.">
+                  {r.paidAt && (
+                    <Text size="sm" c="red" fw={700} mb="sm">
+                      💸 This household already paid — a refund is likely needed (membership was not activated).
+                    </Text>
+                  )}
                   <Group gap="sm" wrap="wrap">
                     <Button size="xs" fz={15} variant="default" disabled={busyId === r.id} onClick={() => override(r.id, "reset")}>
                       Reset for re-review
                     </Button>
                     <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => override(r.id, "approve")}>
-                      Override → payment
+                      Override → {r.paidAt ? "activate" : "payment"}
                     </Button>
                   </Group>
                 </Alert>
