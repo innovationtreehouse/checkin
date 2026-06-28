@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
@@ -159,8 +159,6 @@ export default function AdminMembershipPage() {
 
   return (
     <Stack>
-      <Title order={1}>Membership Applications</Title>
-
       <Text c="dimmed">
         In-flight applications. Use the manual controls below to confirm the contract was signed
         or that background-check consent was received. (The contract is also confirmed

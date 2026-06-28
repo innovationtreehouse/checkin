@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { Button, Center, Group, List, Loader, Stack, Table, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
@@ -99,8 +98,6 @@ export default function AdminHouseholdsPage() {
 
   return (
     <Stack>
-      <AdminPageHeader title="Manage Memberships" back={{ href: '/membership-ops', label: '← Membership Ops' }} />
-
       <Text c="dimmed">
         View all households and toggle their official facility Membership status. Memberships grant
         shop access and other organizational privileges. Denying membership blocks login for every

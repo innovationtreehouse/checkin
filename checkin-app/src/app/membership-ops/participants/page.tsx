@@ -180,7 +180,6 @@ export default function AdminParticipantsIndex() {
     <Stack maw={1000} mx="auto">
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <div>
-          <Title order={1}>Participants</Title>
           <Text c="dimmed">Search and manage system participants and households.</Text>
         </div>
         <Group>

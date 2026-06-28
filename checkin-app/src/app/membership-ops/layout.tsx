@@ -44,9 +44,6 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
 
   return (
     <Stack>
-      <Text fw={800} size="lg" c="blue">
-        Membership Ops
-      </Text>
       <Tabs value={activeTab} onChange={(value) => value && router.push(value)}>
         <ScrollableTabsList>
           {MEMBERSHIP_OPS_NAV_LINKS.map((link) => {
