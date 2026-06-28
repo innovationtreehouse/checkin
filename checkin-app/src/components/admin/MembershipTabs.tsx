@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Tabs } from "@mantine/core";
+import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 
 export type MembershipTab = "applications" | "households" | "settings";
 
@@ -28,13 +29,13 @@ export function MembershipTabs({ active }: { active: MembershipTab }) {
       }}
       mb="md"
     >
-      <Tabs.List>
+      <ScrollableTabsList>
         {TABS.map((t) => (
           <Tabs.Tab key={t.value} value={t.value}>
             {t.label}
           </Tabs.Tab>
         ))}
-      </Tabs.List>
+      </ScrollableTabsList>
     </Tabs>
   );
 }

@@ -10,6 +10,7 @@ import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { formatDateTime } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
+import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 
 type PaymentPlanRequest = {
   programId: number;
@@ -146,9 +147,9 @@ export default function FinanceOpsPage() {
       </Group>
 
       <Tabs defaultValue="pending">
-        <Tabs.List>
+        <ScrollableTabsList>
           <Tabs.Tab value="pending">⏳ Pending Participants</Tabs.Tab>
-        </Tabs.List>
+        </ScrollableTabsList>
 
         <Tabs.Panel value="pending" pt="lg">
           <Stack>

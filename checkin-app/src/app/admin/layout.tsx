@@ -63,8 +63,12 @@ export default function AdminLayout({
   }
 
   return (
-    <Flex gap="md" align="flex-start" wrap="wrap">
-      <Paper withBorder p="xs" style={{ width: 240, flexShrink: 0 }}>
+    <Flex
+      gap="md"
+      direction={{ base: "column", sm: "row" }}
+      align={{ base: "stretch", sm: "flex-start" }}
+    >
+      <Paper withBorder p="xs" w={{ base: "100%", sm: 240 }} style={{ flexShrink: 0 }}>
         <Text fw={800} size="lg" c="blue" px="sm" py="xs">
           Admin Ops
         </Text>
