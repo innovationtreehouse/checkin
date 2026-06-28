@@ -121,6 +121,11 @@ describe('Event Attendance API Integration Tests', () => {
         await prisma.visit.deleteMany({
             where: { participantId: { in: [testParticipant1Id, testParticipant2Id] } }
         });
+        // Clear audit rows so each test asserts exactly its own write.
+        // testEventId is fresh per run, so this is leak-proof.
+        await prisma.auditLog.deleteMany({
+            where: { tableName: 'Visit', affectedEntityId: testEventId }
+        });
     });
 
     describe('POST /api/events/[id]/attendance', () => {
@@ -187,6 +192,17 @@ describe('Event Attendance API Integration Tests', () => {
             expect(visits.length).toBe(1);
             expect(visits[0].arrived).not.toBeNull();
             expect(visits[0].departed).not.toBeNull();
+
+            // Audit: exactly one row crediting the acting lead mentor.
+            const auditRows = await prisma.auditLog.findMany({
+                where: { tableName: 'Visit', affectedEntityId: testEventId }
+            });
+            expect(auditRows.length).toBe(1);
+            expect(auditRows[0].actorId).toBe(testLeadMentorId);
+            expect(auditRows[0].action).toBe('EDIT');
+            expect(JSON.parse(auditRows[0].newData as string)).toEqual({
+                validatedParticipants: [testParticipant1Id]
+            });
         });
 
         it('should link an existing unassociated visit that overlaps with the event', async () => {
@@ -224,6 +240,17 @@ describe('Event Attendance API Integration Tests', () => {
             expect(visits.length).toBe(1); // Should only be the one we created
             expect(visits[0].associatedEventId).toBe(testEventId); // It was successfully linked
             expect(visits[0].arrived.getTime()).toBe(earlyArrival.getTime()); // Validates it used the existing visit
+
+            // Audit: exactly one row crediting the acting admin.
+            const auditRows = await prisma.auditLog.findMany({
+                where: { tableName: 'Visit', affectedEntityId: testEventId }
+            });
+            expect(auditRows.length).toBe(1);
+            expect(auditRows[0].actorId).toBe(testAdminId);
+            expect(auditRows[0].action).toBe('EDIT');
+            expect(JSON.parse(auditRows[0].newData as string)).toEqual({
+                validatedParticipants: [testParticipant2Id]
+            });
         });
     });
 });
