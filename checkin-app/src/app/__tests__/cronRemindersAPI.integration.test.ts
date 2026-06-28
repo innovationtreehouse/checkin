@@ -12,7 +12,8 @@ import { sendNotification } from '@/lib/notifications';
 
 // Mock the notification sender
 jest.mock('@/lib/notifications', () => ({
-    sendNotification: jest.fn()
+    // sendNotification resolves boolean; the route only stamps/counts on a truthy result.
+    sendNotification: jest.fn().mockResolvedValue(true)
 }));
 
 describe('Cron Reminders API Integration Tests', () => {

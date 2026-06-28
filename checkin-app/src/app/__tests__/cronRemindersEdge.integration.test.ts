@@ -6,7 +6,6 @@
  *
  * The existing cronRemindersAPI test only covers the happy path with a valid
  * secret and a single in-window event. These add:
- *   - the auth rejections (missing / wrong / unconfigured CRON_SECRET)
  *   - window selection at the inside/outside boundaries of the [now+2h, +2h15m] range
  *   - idempotency: a second run does NOT re-send, because the route now stamps
  *     RSVP.reminderSentAt after sending and excludes already-reminded RSVPs.
@@ -16,7 +15,9 @@ import prisma from '@/lib/prisma';
 import { sendNotification } from '@/lib/notifications';
 
 jest.mock('@/lib/notifications', () => ({
-    sendNotification: jest.fn().mockResolvedValue(undefined),
+    // Resolves true (the real signature is Promise<boolean>); the route stamps
+    // reminderSentAt only on a truthy result, which is what makes the second run idempotent.
+    sendNotification: jest.fn().mockResolvedValue(true),
 }));
 
 const SECRET = 'reminders-edge-secret';
@@ -78,23 +79,9 @@ describe('GET /api/cron/reminders — auth & window edges', () => {
         return event.id;
     }
 
-    it('returns 401 when the authorization header is missing', async () => {
-        const res = await GET(cronReq());
-        expect(res.status).toBe(401);
-        expect(sendNotification).not.toHaveBeenCalled();
-    });
-
-    it('returns 401 when the bearer token is wrong', async () => {
-        const res = await GET(cronReq('Bearer not-the-secret'));
-        expect(res.status).toBe(401);
-        expect(sendNotification).not.toHaveBeenCalled();
-    });
-
-    it('returns 401 when CRON_SECRET is not configured', async () => {
-        delete process.env.CRON_SECRET;
-        const res = await GET(cronReq(`Bearer ${SECRET}`));
-        expect(res.status).toBe(401);
-    });
+    // Cron auth (missing / wrong / unconfigured secret) is covered centrally in
+    // src/lib/__tests__/cronAuth.test.ts; this file only exercises the route's
+    // window-selection and idempotency edges.
 
     it('selects only events inside the [now+2h, now+2h15m] window', async () => {
         await makeEvent('inside-early', 2 * HOUR + 1 * MIN);   // just inside lower bound
