@@ -143,16 +143,11 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
 
       const data = await res.json();
       if (res.ok) {
-        setSubmitted(true); // clears the unsaved-changes guard before any redirect
-        if (data.checkoutUrl) {
-          setSuccess("Registration started! Redirecting you to checkout...");
-          // Defer one tick so React flushes the guard effect (dirty→false)
-          // before the full-page nav, else beforeunload would still prompt.
-          setTimeout(() => { window.location.href = data.checkoutUrl; }, 0);
-        } else {
-          setSuccess("Registration successful! Check your email for confirmation.");
-          setTimeout(() => router.push(`/programs/${id}`), 3000);
-        }
+        setSubmitted(true); // clears the unsaved-changes guard now the form is done
+        // Double opt-in: nothing is enrolled until the confirmation link is
+        // clicked, so always send the user to check their inbox (the checkout
+        // redirect now happens on the confirm page after the writes succeed).
+        setSuccess(data.message || "Almost done! Check your email for a link to confirm your registration.");
       } else {
         setError(data.error || "Failed to register.");
         setSubmitting(false);

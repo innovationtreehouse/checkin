@@ -170,9 +170,12 @@ describe("PublicRegistrationPage", () => {
     );
   });
 
-  it("redirects to Shopify checkout when registration returns a checkout URL", async () => {
+  it("shows the check-your-email prompt on successful submit (double opt-in, no immediate redirect)", async () => {
+    // Double opt-in: submitting enrolls nothing and never redirects to checkout —
+    // it emails a confirmation link, and the checkout redirect (for paid programs)
+    // happens on the confirm page after the writes succeed.
     mockFetchJson({
-      "/api/programs/1/public-register": { checkoutUrl: "https://shop.example.com/checkout" },
+      "/api/programs/1/public-register": { success: true, pending: true, message: "Almost done! Check your email for a link to confirm your registration." },
       "/api/programs/1": program,
     });
     renderPage();
@@ -181,7 +184,8 @@ describe("PublicRegistrationPage", () => {
     fireEvent.change(screen.getAllByLabelText("Full Name", { exact: false })[1], { target: { value: "Jane Doe" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Pay & Register via Shopify" }));
-    expect(await screen.findByText("Registration started! Redirecting you to checkout...")).toBeInTheDocument();
+    expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it("shows a server error message when registration fails", async () => {

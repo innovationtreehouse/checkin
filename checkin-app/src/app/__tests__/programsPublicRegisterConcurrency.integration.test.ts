@@ -2,25 +2,29 @@
  * @jest-environment node
  */
 /**
- * Concurrency regression test for POST /api/programs/[id]/public-register.
+ * Concurrency regression test for the public registration capacity lock.
  *
  * Capacity used to be checked against a `_count` read BEFORE the create
- * transaction. Two near-simultaneous public registrations for the last seat
- * both read count==max-1, both passed, and both inserted — overfilling the
- * program. This endpoint is public/unauthenticated, so it is trivially raced.
+ * transaction. Two near-simultaneous registrations for the last seat both read
+ * count==max-1, both passed, and both inserted — overfilling the program. This
+ * flow is public/unauthenticated, so it is trivially raced.
  *
- * The fix locks the Program row (SELECT ... FOR UPDATE) and re-counts INSIDE
- * the existing transaction before creating enrollments. This test fires two
- * concurrent registrations for a 1-seat program and asserts exactly one
- * succeeds and the program is not overfilled.
+ * The fix locks the Program row (SELECT ... FOR UPDATE) and re-counts INSIDE the
+ * create transaction. That transaction now lives in the double-opt-in *confirm*
+ * step, so this test fires two concurrent confirmations (with pre-built tokens,
+ * which is exactly what the confirmation links carry) for a 1-seat program and
+ * asserts exactly one succeeds and the program is not overfilled.
  *
  * (jest.setup.js gives this suite TEST_DB_POOL_MAX=2 so the two transactions
  * run on separate connections; the FOR UPDATE lock is then the only thing
  * serializing them, exactly as in production. With pool 1 the assertions pass
  * even without the lock.)
  */
-import { POST } from '@/app/api/programs/[id]/public-register/route';
+import { POST as CONFIRM } from '@/app/api/programs/[id]/public-register/confirm/route';
+import { encodeRegistrationToken } from '@/lib/registrationToken';
 import prisma from '@/lib/prisma';
+
+process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || 'test-secret-conc';
 
 jest.mock('@/lib/notifications', () => ({
     sendNotification: jest.fn().mockResolvedValue(true),
@@ -28,7 +32,7 @@ jest.mock('@/lib/notifications', () => ({
 
 const NAME_TAG = 'PublicRegConcurrency Test';
 
-describe('POST /api/programs/[id]/public-register concurrency (capacity lock)', () => {
+describe('public-register/confirm concurrency (capacity lock)', () => {
     let programId: number;
 
     async function cleanup() {
@@ -71,21 +75,24 @@ describe('POST /api/programs/[id]/public-register concurrency (capacity lock)', 
 
     const params = (id: number) => ({ params: Promise.resolve({ id: id.toString() }) });
 
-    function registration(idx: number) {
-        return new Request(`http://localhost:4000/api/programs/${programId}/public-register`, {
+    // A confirmation request carrying the same payload the email link would.
+    function confirmation(idx: number) {
+        const token = encodeRegistrationToken({
+            programId,
+            parents: [{ name: `Parent ${idx}`, email: `pubreg-conc-${idx}@example.com`, phone: `555-000-000${idx}` }],
+            emergencyContact: { name: `Aunt ${idx}`, phone: `555-111-222${idx}` },
+            participants: [{ name: `Kid ${idx}`, dob: '2015-01-01' }],
+        });
+        return new Request(`http://localhost:4000/api/programs/${programId}/public-register/confirm`, {
             method: 'POST',
-            body: JSON.stringify({
-                parents: [{ name: `Parent ${idx}`, email: `pubreg-conc-${idx}@example.com`, phone: `555-000-000${idx}` }],
-                emergencyContact: { name: `Aunt ${idx}`, phone: `555-111-222${idx}` },
-                participants: [{ name: `Kid ${idx}`, dob: '2015-01-01' }],
-            }),
+            body: JSON.stringify({ token }),
         });
     }
 
-    it('two concurrent registrations for the last seat → exactly one succeeds, no overfill', async () => {
+    it('two concurrent confirmations for the last seat → exactly one succeeds, no overfill', async () => {
         const [resA, resB] = await Promise.all([
-            POST(registration(1) as unknown as import('next/server').NextRequest, params(programId) as unknown as never),
-            POST(registration(2) as unknown as import('next/server').NextRequest, params(programId) as unknown as never),
+            CONFIRM(confirmation(1) as unknown as import('next/server').NextRequest, params(programId) as unknown as never),
+            CONFIRM(confirmation(2) as unknown as import('next/server').NextRequest, params(programId) as unknown as never),
         ]);
 
         const statuses = [resA.status, resB.status].sort();

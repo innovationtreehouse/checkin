@@ -58,6 +58,11 @@ const ALLOWLIST = new Set<string>([
     // getOptionalSessionUser doesn't apply. Abuse is bounded by IP + email rate
     // limits inside the handler (see the "email-bomb / DB-spam target" comment).
     'programs/[id]/public-register/route.ts',
+    // Step 2 of the same deliberately-anonymous public registration flow. Auth is
+    // the encrypted, tamper-proof confirmation token (proves email control), not a
+    // session — so withAuth would 401 the public and it isn't a session read.
+    // Abuse is bounded by the IP rate limit inside the handler.
+    'programs/[id]/public-register/confirm/route.ts',
 ]);
 
 const HTTP_METHODS = 'GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS';

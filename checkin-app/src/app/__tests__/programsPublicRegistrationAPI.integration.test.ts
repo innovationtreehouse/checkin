@@ -2,17 +2,29 @@
  * @jest-environment node
  */
 /**
- * Integration Tests for Public Program Registration API
- * Tests POST /api/programs/[id]/public-register
+ * Integration Tests for Public Program Registration API (double opt-in).
+ * Step 1: POST /api/programs/[id]/public-register        — validate + email a token, no writes.
+ * Step 2: POST /api/programs/[id]/public-register/confirm — token → create everything.
  */
 
 import { POST } from '@/app/api/programs/[id]/public-register/route';
+import { POST as CONFIRM } from '@/app/api/programs/[id]/public-register/confirm/route';
 import prisma from '@/lib/prisma';
+
+// A signing secret is required for the confirmation token.
+process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || 'test-secret-public-reg';
 
 // Mock Notifications
 jest.mock('@/lib/notifications', () => ({
     sendNotification: jest.fn().mockResolvedValue(true)
 }));
+
+// Mock the mailer so we can capture the confirmation token out of the email.
+jest.mock('@/lib/email', () => ({
+    sendEmail: jest.fn().mockResolvedValue(true)
+}));
+import { sendEmail } from '@/lib/email';
+const mockedSendEmail = sendEmail as jest.Mock;
 
 describe('Public Program Registration API Integration Tests', () => {
     let standardProgramId: number;
@@ -31,7 +43,7 @@ describe('Public Program Registration API Integration Tests', () => {
             select: { id: true }
         });
         const existingUserIds = existingUsers.map(u => u.id);
-        
+
         await prisma.programParticipant.deleteMany({
             where: { personId: { in: existingUserIds } }
         });
@@ -39,7 +51,7 @@ describe('Public Program Registration API Integration Tests', () => {
         await prisma.program.deleteMany({
             where: { name: { contains: 'Public Reg Test' } }
         });
-        
+
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: existingUserIds } }
         });
@@ -47,7 +59,7 @@ describe('Public Program Registration API Integration Tests', () => {
         await prisma.householdLead.deleteMany({
             where: { personId: { in: existingUserIds } }
         });
-        
+
         await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
@@ -60,11 +72,11 @@ describe('Public Program Registration API Integration Tests', () => {
 
         // Create mock programs
         const standardProgram = await prisma.program.create({
-            data: { 
-                name: 'Standard Public Reg Test', 
-                phase: 'RUNNING', 
-                enrollmentStatus: 'OPEN', 
-                orgMemberPriceCents: 1000, 
+            data: {
+                name: 'Standard Public Reg Test',
+                phase: 'RUNNING',
+                enrollmentStatus: 'OPEN',
+                orgMemberPriceCents: 1000,
                 nonOrgMemberPriceCents: 1500,
                 shopifyNonOrgMemberVariantId: '123456789'
             }
@@ -77,9 +89,9 @@ describe('Public Program Registration API Integration Tests', () => {
         freeProgramId = freeProgram.id;
 
         const fullProgram = await prisma.program.create({
-            data: { 
-                name: 'Full Public Reg Test', 
-                phase: 'RUNNING', 
+            data: {
+                name: 'Full Public Reg Test',
+                phase: 'RUNNING',
                 enrollmentStatus: 'OPEN',
                 maxParticipants: 1,
                 participants: {
@@ -134,7 +146,7 @@ describe('Public Program Registration API Integration Tests', () => {
                 where: { id: { in: validProgramIds } }
             });
         }
-        
+
         if (existingUserIds.length > 0) {
             await prisma.auditLog.deleteMany({
                 where: { actorId: { in: existingUserIds } }
@@ -168,84 +180,59 @@ describe('Public Program Registration API Integration Tests', () => {
         }
     });
 
+    beforeEach(() => mockedSendEmail.mockClear());
+
     const createParams = (id: number) => ({ params: Promise.resolve({ id: id.toString() }) });
 
-    describe('POST /api/programs/[id]/public-register', () => {
+    // Each request gets a distinct client IP so the per-IP rate limiter (module
+    // global) doesn't bleed across the many calls this suite makes.
+    let ipSeq = 0;
+    const makeReq = (id: number, body: unknown, suffix = '') =>
+        new Request(`http://localhost:4000/api/programs/${id}/public-register${suffix}`, {
+            method: 'POST',
+            headers: { 'x-forwarded-for': `10.0.0.${++ipSeq}` },
+            body: JSON.stringify(body),
+        });
+
+    // Run step 1 (request) and return the confirmation token captured from the email.
+    const requestAndGetToken = async (id: number, body: unknown): Promise<string> => {
+        const res = await POST(makeReq(id, body) as unknown as never, createParams(id) as unknown as never);
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.pending).toBe(true);
+        expect(data.checkoutUrl).toBeUndefined(); // no writes / no checkout at request time
+        const html = mockedSendEmail.mock.calls.at(-1)?.[2] as string;
+        const m = html.match(/token=([^"&]+)/);
+        if (!m) throw new Error('no confirmation token found in email');
+        return decodeURIComponent(m[1]);
+    };
+
+    // Run step 2 (confirm) for a token.
+    const confirm = (id: number, token: string) =>
+        CONFIRM(makeReq(id, { token }, '/confirm') as unknown as never, createParams(id) as unknown as never);
+
+    describe('Step 1: POST /api/programs/[id]/public-register', () => {
 
         it('should block if primary parent is missing', async () => {
-            const req = new Request(`http://localhost:4000/api/programs/${standardProgramId}/public-register`, {
-                method: 'POST',
-                body: JSON.stringify({
-                    parents: [],
-                    emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
-                    participants: [{ name: 'Timmy', dob: '2010-01-01' }]
-                })
-            });
-            const res = await POST(req as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
+            const res = await POST(makeReq(standardProgramId, {
+                parents: [],
+                emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
+                participants: [{ name: 'Timmy', dob: '2010-01-01' }]
+            }) as unknown as never, createParams(standardProgramId) as unknown as never);
             expect(res.status).toBe(400);
-            const data = await res.json();
-            expect(data.error).toMatch(/Primary parent/i);
-        });
-
-        it('should block if emergency phone matches parent phone', async () => {
-            const req = new Request(`http://localhost:4000/api/programs/${standardProgramId}/public-register`, {
-                method: 'POST',
-                body: JSON.stringify({
-                    parents: [{ name: 'Dad', email: 'dad@test.com', phone: '(555) 123-4567' }],
-                    emergencyContact: { name: 'Aunt Sue', phone: '5551234567' }, // Same digits
-                    participants: [{ name: 'Timmy', dob: '2010-01-01' }]
-                })
-            });
-            const res = await POST(req as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
-            expect(res.status).toBe(400);
-            const data = await res.json();
-            // The not-a-household-member rule now blocks this (matched on phone) with a unified message.
-            expect(data.error).toMatch(/can't be its emergency contact|outside the household/i);
-        });
-
-        it('should block if parent email already exists', async () => {
-            const req = new Request(`http://localhost:4000/api/programs/${standardProgramId}/public-register`, {
-                method: 'POST',
-                body: JSON.stringify({
-                    parents: [{ name: 'Dad', email: 'existing-user-test@example.com', phone: '555-111-2222' }],
-                    emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
-                    participants: [{ name: 'Timmy', dob: '2010-01-01' }]
-                })
-            });
-            const res = await POST(req as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
-            expect(res.status).toBe(400);
-            const data = await res.json();
-            expect(data.error).toMatch(/already exists/i);
-        });
-
-        it('should block if program is full', async () => {
-            const req = new Request(`http://localhost:4000/api/programs/${fullProgramId}/public-register`, {
-                method: 'POST',
-                body: JSON.stringify({
-                    parents: [{ name: 'Mom', email: 'mom1@test.com', phone: '555-111-2222' }],
-                    emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
-                    participants: [{ name: 'Timmy', dob: '2010-01-01' }]
-                })
-            });
-            const res = await POST(req as unknown as import("next/server").NextRequest, createParams(fullProgramId) as unknown as never);
-            expect(res.status).toBe(400);
-            const data = await res.json();
-            expect(data.error).toMatch(/open spots/i);
+            expect((await res.json()).error).toMatch(/Primary parent/i);
+            expect(mockedSendEmail).not.toHaveBeenCalled();
         });
 
         it('should block if participant does not meet age constraints', async () => {
-            const req = new Request(`http://localhost:4000/api/programs/${exactAgeProgramId}/public-register`, {
-                method: 'POST',
-                body: JSON.stringify({
-                    parents: [{ name: 'Mom', email: 'mom2@test.com', phone: '555-111-2222' }],
-                    emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
-                    participants: [{ name: 'Timmy', dob: '2015-01-01' }] // Under 18
-                })
-            });
-            const res = await POST(req as unknown as import("next/server").NextRequest, createParams(exactAgeProgramId) as unknown as never);
+            const res = await POST(makeReq(exactAgeProgramId, {
+                parents: [{ name: 'Mom', email: 'mom2@test.com', phone: '555-111-2222' }],
+                emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
+                participants: [{ name: 'Timmy', dob: '2015-01-01' }] // Under 18
+            }) as unknown as never, createParams(exactAgeProgramId) as unknown as never);
             expect(res.status).toBe(400);
-            const data = await res.json();
-            expect(data.error).toMatch(/at least 18/i);
+            expect((await res.json()).error).toMatch(/at least 18/i);
+            expect(mockedSendEmail).not.toHaveBeenCalled();
         });
 
         // Regression: the old inline epoch-delta age math
@@ -394,22 +381,76 @@ describe('Public Program Registration API Integration Tests', () => {
             }
         });
 
-        it('should successfully register a family with correct PENDING status and return Shopify URL', async () => {
-            const req = new Request(`http://localhost:4000/api/programs/${standardProgramId}/public-register`, {
-                method: 'POST',
-                headers: { 'x-forwarded-for': '203.0.113.1' }, // own rate-limit bucket so earlier block tests don't 429 this
-                body: JSON.stringify({
-                    parents: [{ name: 'Test Primary Parent', email: 'test-primary-parent@example.com', phone: '555-123-4444' }],
-                    emergencyContact: { name: 'Aunt Sue', phone: '555-999-8888' },
-                    participants: [
-                        { name: 'Test Primary Parent' }, // implicitly matches parent by name
-                        { name: 'Timmy Test', dob: '2010-05-05' }
-                    ]
-                })
+        it('returns the same neutral response whether or not the email exists (no enumeration)', async () => {
+            const known = await POST(makeReq(standardProgramId, {
+                parents: [{ name: 'Dad', email: 'existing-user-test@example.com', phone: '555-111-2222' }],
+                emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
+                participants: [{ name: 'Timmy', dob: '2010-01-01' }]
+            }) as unknown as never, createParams(standardProgramId) as unknown as never);
+            const unknownEmail = await POST(makeReq(standardProgramId, {
+                parents: [{ name: 'Dad', email: 'brand-new-nobody@example.com', phone: '555-111-2222' }],
+                emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
+                participants: [{ name: 'Timmy', dob: '2010-01-01' }]
+            }) as unknown as never, createParams(standardProgramId) as unknown as never);
+            expect(known.status).toBe(unknownEmail.status);
+            expect(await known.json()).toEqual(await unknownEmail.json());
+        });
+    });
+
+    describe('Step 2: POST /api/programs/[id]/public-register/confirm', () => {
+
+        it('rejects an invalid / garbage token', async () => {
+            const res = await confirm(standardProgramId, 'not-a-real-token');
+            expect(res.status).toBe(400);
+            expect((await res.json()).error).toMatch(/invalid or has expired/i);
+        });
+
+        it('should block if parent email already exists', async () => {
+            const token = await requestAndGetToken(standardProgramId, {
+                parents: [{ name: 'Dad', email: 'existing-user-test@example.com', phone: '555-111-2222' }],
+                emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
+                participants: [{ name: 'Timmy', dob: '2010-01-01' }]
             });
-            const res = await POST(req as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
+            const res = await confirm(standardProgramId, token);
+            expect(res.status).toBe(400);
+            expect((await res.json()).error).toMatch(/already exists/i);
+        });
+
+        it('should block if emergency phone matches parent phone', async () => {
+            const token = await requestAndGetToken(standardProgramId, {
+                parents: [{ name: 'Dad', email: 'dad@test.com', phone: '(555) 123-4567' }],
+                emergencyContact: { name: 'Aunt Sue', phone: '5551234567' }, // Same digits
+                participants: [{ name: 'Timmy', dob: '2010-01-01' }]
+            });
+            const res = await confirm(standardProgramId, token);
+            expect(res.status).toBe(400);
+            // The not-a-household-member rule blocks this (matched on phone).
+            expect((await res.json()).error).toMatch(/can't be its emergency contact|outside the household/i);
+        });
+
+        it('should block if program is full', async () => {
+            const token = await requestAndGetToken(fullProgramId, {
+                parents: [{ name: 'Mom', email: 'mom1@test.com', phone: '555-111-2222' }],
+                emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
+                participants: [{ name: 'Timmy', dob: '2010-01-01' }]
+            });
+            const res = await confirm(fullProgramId, token);
+            expect(res.status).toBe(400);
+            expect((await res.json()).error).toMatch(/open spots/i);
+        });
+
+        it('should successfully register a family with PENDING status and return Shopify URL', async () => {
+            const token = await requestAndGetToken(standardProgramId, {
+                parents: [{ name: 'Test Primary Parent', email: 'test-primary-parent@example.com', phone: '555-123-4444' }],
+                emergencyContact: { name: 'Aunt Sue', phone: '555-999-8888' },
+                participants: [
+                    { name: 'Test Primary Parent' }, // implicitly matches parent by name
+                    { name: 'Timmy Test', dob: '2010-05-05' }
+                ]
+            });
+            const res = await confirm(standardProgramId, token);
             expect(res.status).toBe(200);
-            
+
             const data = await res.json();
             expect(data.success).toBe(true);
             expect(data.checkoutUrl).toContain('123456789:2'); // Variant ID : quantity
@@ -448,21 +489,18 @@ describe('Public Program Registration API Integration Tests', () => {
             const overflowEmail = `overflow-parent-${Date.now()}@test.com`;
             const householdsBefore = await prisma.household.count();
             try {
-                const req = new Request(`http://localhost:4000/api/programs/${overflowProgram.id}/public-register`, {
-                    method: 'POST',
-                    headers: { 'x-forwarded-for': '203.0.113.30' }, // own rate-limit bucket
-                    body: JSON.stringify({
-                        parents: [{ name: 'Overflow Parent', email: overflowEmail, phone: '555-300-1111' }],
-                        emergencyContact: { name: 'Aunt Sue', phone: '555-300-2222' },
-                        // 3 children into a 2-seat program: 0 enrolled + 3 > 2.
-                        participants: [
-                            { name: 'Kid A', dob: '2012-01-01' },
-                            { name: 'Kid B', dob: '2013-01-01' },
-                            { name: 'Kid C', dob: '2014-01-01' },
-                        ]
-                    })
+                // Capacity + the all-or-nothing rollback live in the confirm step now.
+                const token = await requestAndGetToken(overflowProgram.id, {
+                    parents: [{ name: 'Overflow Parent', email: overflowEmail, phone: '555-300-1111' }],
+                    emergencyContact: { name: 'Aunt Sue', phone: '555-300-2222' },
+                    // 3 children into a 2-seat program: 0 enrolled + 3 > 2.
+                    participants: [
+                        { name: 'Kid A', dob: '2012-01-01' },
+                        { name: 'Kid B', dob: '2013-01-01' },
+                        { name: 'Kid C', dob: '2014-01-01' },
+                    ]
                 });
-                const res = await POST(req as unknown as import("next/server").NextRequest, createParams(overflowProgram.id) as unknown as never);
+                const res = await confirm(overflowProgram.id, token);
                 expect(res.status).toBe(400);
                 const data = await res.json();
                 expect(data.error).toMatch(/open spots/i);
@@ -484,20 +522,15 @@ describe('Public Program Registration API Integration Tests', () => {
         });
 
         it('should set status to ACTIVE if the program is free', async () => {
-            // Need a new unique parent because the first one is already generated
             const uniqueEmail = `mom-free-${Date.now()}@test.com`;
-            const req = new Request(`http://localhost:4000/api/programs/${freeProgramId}/public-register`, {
-                method: 'POST',
-                headers: { 'x-forwarded-for': '203.0.113.2' }, // own rate-limit bucket so earlier block tests don't 429 this
-                body: JSON.stringify({
-                    parents: [{ name: 'Mom Free', email: uniqueEmail, phone: '555-111-3333' }],
-                    emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
-                    participants: [{ name: 'Timmy', dob: '2010-01-01' }]
-                })
+            const token = await requestAndGetToken(freeProgramId, {
+                parents: [{ name: 'Mom Free', email: uniqueEmail, phone: '555-111-3333' }],
+                emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },
+                participants: [{ name: 'Timmy', dob: '2010-01-01' }]
             });
-            const res = await POST(req as unknown as import("next/server").NextRequest, createParams(freeProgramId) as unknown as never);
+            const res = await confirm(freeProgramId, token);
             expect(res.status).toBe(200);
-            
+
             const data = await res.json();
             expect(data.success).toBe(true);
             expect(data.checkoutUrl).toBeNull();
