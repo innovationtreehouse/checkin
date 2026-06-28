@@ -9,18 +9,30 @@ describe("Merge Participants API", () => {
     let pKeepId: number;
     let pMergeId: number;
     let householdId: number;
+    let actorId: number;
 
     beforeEach(async () => {
-        // Setup mock session as a sysadmin
-        mockGetServerSession.mockResolvedValue({
-            user: { email: "admin@checkme.in", sysadmin: true }
-        });
-
         // Create a household for the participants (every participant must belong to one)
         const hh = await prisma.household.create({
             data: { name: "Merge Test Household" }
         });
         householdId = hh.id;
+
+        // The acting board member — audit rows record actorId from the session.
+        const actor = await prisma.participant.create({
+            data: {
+                name: "Board Actor",
+                email: "actor@checkme.in",
+                householdId: hh.id,
+                boardMember: true,
+            }
+        });
+        actorId = actor.id;
+
+        // Setup mock session as the board member
+        mockGetServerSession.mockResolvedValue({
+            user: { id: actorId, email: "actor@checkme.in", boardMember: true }
+        });
 
         // Create two participants
         const pKeep = await prisma.participant.create({
@@ -48,7 +60,8 @@ describe("Merge Participants API", () => {
         await prisma.visit.deleteMany({ where: { participantId: { in: [pKeepId, pMergeId] } } });
         await prisma.programParticipant.deleteMany({ where: { participantId: { in: [pKeepId, pMergeId] } } });
         await prisma.householdLead.deleteMany({ where: { participantId: { in: [pKeepId, pMergeId] } } });
-        await prisma.participant.deleteMany({ where: { id: { in: [pKeepId, pMergeId] } } });
+        await prisma.auditLog.deleteMany({ where: { actorId } });
+        await prisma.participant.deleteMany({ where: { id: { in: [pKeepId, pMergeId, actorId] } } });
         if (householdId) {
             await prisma.household.deleteMany({ where: { id: householdId } });
         }
@@ -87,6 +100,29 @@ describe("Merge Participants API", () => {
         expect(merged?.email).toContain("merged-");
         expect(merged?.email).toContain("@deleted.checkme.in");
         expect(merged?.phone).toBeNull();
+    });
+
+    it("should write an AuditLog row capturing the merge", async () => {
+        await prisma.visit.create({
+            data: { participantId: pMergeId, arrived: new Date() }
+        });
+
+        const req = new Request("http://localhost/api/admin/participants/merge", {
+            method: "POST",
+            body: JSON.stringify({ keepId: pKeepId, mergeId: pMergeId })
+        }) as unknown as import('next/server').NextRequest;
+
+        const res = await POST(req);
+        expect(res.status).toBe(200);
+
+        const log = await prisma.auditLog.findFirst({
+            where: { tableName: "Participant", affectedEntityId: pKeepId, secondaryAffectedEntity: pMergeId }
+        });
+        expect(log).not.toBeNull();
+        expect(log?.actorId).toBe(actorId);
+        const newData = log?.newData as { keepId: number; moved: { visits: number } };
+        expect(newData.keepId).toBe(pKeepId);
+        expect(newData.moved.visits).toBe(1);
     });
 
     it("should fail to merge if merged user is the lead of a household with other members", async () => {
