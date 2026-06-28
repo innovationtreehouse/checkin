@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
-  Alert, Anchor, Button, Card, Center, Collapse, Container, Group, Loader,
-  Modal, Select, Stack, Table, Tabs, Text, TextInput, Title,
+  Alert, Anchor, Button, Card, Center, Collapse, Group, Loader,
+  Modal, Select, Stack, Table, Tabs, Text, TextInput,
 } from '@mantine/core';
 import { ToolLevelBadge, toToolLevel } from '@/components/ToolLevelBadge';
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
@@ -479,16 +479,5 @@ export function ToolManagementPanel() {
         </Tabs.Panel>
       )}
     </Tabs>
-  );
-}
-
-// ---- Main page ----
-
-export default function ToolManagementPage() {
-  return (
-    <Container size="lg" pb="md">
-      <Title order={1} mb="lg">Tools &amp; Certifications</Title>
-      <ToolManagementPanel />
-    </Container>
   );
 }
