@@ -3,6 +3,11 @@
  *
  * Token grammar:
  *   'public'                — public-tier fields, always visible (no row gate)
+ *   'member'                — member-tier fields; flat token (no row gate) like
+ *                             'public', but held only by authenticated members.
+ *                             Granted to authenticated-session views, NOT to
+ *                             anonymous/kiosk views. A member view holds BOTH
+ *                             'member' and 'public'; anon holds only 'public'.
  *   '<scope>:<tier>'        — tier ∈ {pii, personal, internal}; the grant
  *                             applies on rows where the caller holds <scope>
  *   scope = 'everyones'     — broad grant; held on every row by default, but a
@@ -15,6 +20,7 @@
  * Field visibility (per row):
  *   - field.tier === 'secret'        → never
  *   - field.tier === 'public'        → iff view includes 'public'
+ *   - field.tier === 'member'        → iff view includes 'member'
  *   - otherwise (pii/personal/internal):
  *       iff view includes 'everyones:<tier>',
  *       OR view includes '<scope>:<tier>' for some <scope> the caller holds
@@ -32,7 +38,7 @@ export type { Models, FieldsOf };
 export { classifications };
 
 export type SensitiveTier = 'pii' | 'personal' | 'internal';
-export type Tier = 'public' | SensitiveTier | 'secret';
+export type Tier = 'public' | 'member' | SensitiveTier | 'secret';
 
 export type Scope =
     | 'everyones'
@@ -46,7 +52,7 @@ export type Scope =
     | 'keyholders'
     | 'all_current_visitors';
 
-export type Token = 'public' | `${Scope}:${SensitiveTier}`;
+export type Token = 'public' | 'member' | `${Scope}:${SensitiveTier}`;
 
 /**
  * Role vocabulary. Roles are properties of the caller (sometimes parameterised
@@ -89,8 +95,11 @@ const VALID_ROLES = new Set<Role>([
     'programCoreVolunteer',
 ]);
 
-export function parseToken(t: string): { scope: Scope; tier: SensitiveTier } | 'public' | null {
+export function parseToken(
+    t: string,
+): { scope: Scope; tier: SensitiveTier } | 'public' | 'member' | null {
     if (t === 'public') return 'public';
+    if (t === 'member') return 'member';
     const colon = t.indexOf(':');
     if (colon < 1) return null;
     const scope = t.slice(0, colon);
@@ -213,10 +222,11 @@ export function fieldVisible(
 ): boolean {
     if (tier === 'secret') return false;
     if (tier === 'public') return tokens.includes('public');
+    if (tier === 'member') return tokens.includes('member');
     for (const tok of tokens) {
-        if (tok === 'public') continue;
+        if (tok === 'public' || tok === 'member') continue;
         const parsed = parseToken(tok);
-        if (parsed === null || parsed === 'public') continue;
+        if (parsed === null || parsed === 'public' || parsed === 'member') continue;
         if (parsed.tier !== tier) continue;
         // 'everyones' is a normal scope here: scopesHeld() seeds it for every
         // row EXCEPT a row-scoped model whose scope key is absent, which fails
