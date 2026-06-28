@@ -9,6 +9,26 @@ jest.mock('@/lib/email', () => ({
     sendEmail: jest.fn().mockResolvedValue(true)
 }));
 
+// Per-visit failure injection: the route checks out every open visit via
+// processVisitCheckout under Promise.allSettled. We wrap the real function so
+// that only the visit ids we opt in (mockBadVisitIds) reject; every other id
+// runs the genuine DB logic. `mock`-prefixed name so jest's hoist allows the
+// factory to close over it.
+const mockBadVisitIds = new Set<number>();
+jest.mock('@/lib/attendanceTransitions', () => {
+    const actual = jest.requireActual('@/lib/attendanceTransitions');
+    return {
+        __esModule: true,
+        ...actual,
+        processVisitCheckout: jest.fn((visitId: number, checkoutTime: Date, db?: unknown) => {
+            if (mockBadVisitIds.has(visitId)) {
+                return Promise.reject(new Error(`Simulated checkout failure for visit ${visitId}`));
+            }
+            return actual.processVisitCheckout(visitId, checkoutTime, db);
+        }),
+    };
+});
+
 describe('Cron Nightly API Integration Tests', () => {
     let boardMemberId: number;
     let keyholderId: number;
@@ -143,6 +163,115 @@ describe('Cron Nightly API Integration Tests', () => {
                 `Action Required: Confirm Attendance for Test Event - Nightly`,
                 expect.stringContaining('Review & Confirm Attendance')
             );
+        });
+
+        const cronReq = () => {
+            process.env.CRON_SECRET = 'test-secret';
+            return new Request('http://localhost:4000/api/cron/nightly', {
+                method: 'GET',
+                headers: { 'authorization': 'Bearer test-secret' }
+            });
+        };
+
+        // Close any visit still open from a prior test so the route's global
+        // `departed: null` sweep counts only the visits this test creates.
+        async function closeAllOpenVisits() {
+            await prisma.visit.updateMany({
+                where: { departed: null },
+                data: { departed: new Date() }
+            });
+        }
+
+        const systemNotifyCount = () =>
+            prisma.auditLog.count({ where: { tableName: 'SYSTEM_NOTIFY' } });
+
+        it('keeps checking out good visits when ONE visit fails, still notifies the board, and returns 200', async () => {
+            await closeAllOpenVisits();
+            await prisma.auditLog.deleteMany();
+
+            const arrived = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+            // An extra plain participant (no program enrollment -> simple close path)
+            // so we have two GOOD visits whose `departed` we can assert by id.
+            const extra = await prisma.participant.create({
+                data: { email: 'extra-nightly@example.com', name: 'Extra User', household: { create: {} } }
+            });
+
+            const badVisit = await prisma.visit.create({
+                data: { participantId: keyholderId, arrived } // keyholder -> triggers board notify
+            });
+            const goodVisitA = await prisma.visit.create({
+                data: { participantId: normalUserId, arrived }
+            });
+            const goodVisitB = await prisma.visit.create({
+                data: { participantId: extra.id, arrived }
+            });
+
+            mockBadVisitIds.clear();
+            mockBadVisitIds.add(badVisit.id); // keyholder's checkout will throw
+
+            try {
+                const res = await GET(cronReq());
+
+                // Route survives the bad visit instead of 500-ing.
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.success).toBe(true);
+
+                // 2 good visits checked out; the bad one is NOT counted as success.
+                expect(data.facilityClose.checkedOutCount).toBe(2);
+
+                // Board still notified even though the keyholder's checkout failed
+                // (notification derives from the abandoned-visit list, not results).
+                expect(data.facilityClose.boardNotified).toBe(true);
+                expect(await systemNotifyCount()).toBe(1);
+
+                // Good visits really departed; the failed one stays open.
+                const a = await prisma.visit.findUnique({ where: { id: goodVisitA.id } });
+                const b = await prisma.visit.findUnique({ where: { id: goodVisitB.id } });
+                const bad = await prisma.visit.findUnique({ where: { id: badVisit.id } });
+                expect(a?.departed).not.toBeNull();
+                expect(b?.departed).not.toBeNull();
+                expect(bad?.departed).toBeNull();
+            } finally {
+                mockBadVisitIds.clear();
+            }
+        });
+
+        it('is idempotent on re-run: second sweep checks out nothing, writes no new audit, sends no email', async () => {
+            await closeAllOpenVisits();
+            await prisma.auditLog.deleteMany();
+            mockBadVisitIds.clear();
+
+            // Let the post-event email fire again on run 1 so we can prove run 2 does not re-send.
+            await prisma.event.update({ where: { id: eventId }, data: { postEventEmailSent: false } });
+
+            const arrived = new Date(Date.now() - 2 * 60 * 60 * 1000);
+            await prisma.visit.create({ data: { participantId: keyholderId, arrived } });
+            await prisma.visit.create({ data: { participantId: normalUserId, arrived, associatedEventId: eventId } });
+
+            // --- Run 1: real work happens ---
+            const res1 = await GET(cronReq());
+            expect(res1.status).toBe(200);
+            const data1 = await res1.json();
+            expect(data1.facilityClose.checkedOutCount).toBe(2);
+            expect(data1.facilityClose.boardNotified).toBe(true);
+            expect(data1.postEvents.emailsSent).toBe(1);
+            expect(await systemNotifyCount()).toBe(1);
+            expect(sendEmail).toHaveBeenCalledTimes(1);
+
+            jest.clearAllMocks();
+
+            // --- Run 2: overlap/retry must be a no-op ---
+            const res2 = await GET(cronReq());
+            expect(res2.status).toBe(200);
+            const data2 = await res2.json();
+            expect(data2.facilityClose.checkedOutCount).toBe(0); // nothing left open
+            expect(data2.facilityClose.boardNotified).toBe(false); // no abandoned keyholder
+            expect(data2.postEvents.emailsSent).toBe(0); // email already sent
+
+            expect(await systemNotifyCount()).toBe(1); // no NEW force-checkout audit row
+            expect(sendEmail).not.toHaveBeenCalled(); // no duplicate board/post-event email
         });
     });
 });
