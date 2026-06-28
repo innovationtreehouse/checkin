@@ -21,11 +21,4 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
     title: "Dashboard",
     links: [{ name: "Dashboard", href: "/admin", icon: "📊" }],
   },
-  {
-    title: "People",
-    links: [
-      { name: "Membership Settings", href: "/admin/membership/settings", icon: "⚙️", description: "Configure dues and membership-year settings." },
-      { name: "Role Assignment", href: "/admin/roles", icon: "🔐", description: "Assign admin / board / keyholder roles." },
-    ],
-  },
 ];
