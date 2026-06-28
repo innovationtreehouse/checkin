@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
+import { calculateAge } from "@/lib/time";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -90,9 +91,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 if (!participantData?.dob) {
                     return NextResponse.json({ error: "Participant Date of Birth is missing.", requiresOverride: true }, { status: 400 });
                 }
-                const ageDifMs = Date.now() - new Date(participantData.dob).getTime();
-                const ageDate = new Date(ageDifMs);
-                const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+                const age = calculateAge(participantData.dob);
                 if (currentProgram.minAge !== null && age < currentProgram.minAge) {
                     return NextResponse.json({ error: `Participant must be at least ${currentProgram.minAge} years old.`, requiresOverride: true }, { status: 400 });
                 }

@@ -50,15 +50,24 @@ export function fromDatetimeLocal(value: string | null | undefined): string {
 }
 
 /**
- * Returns true if the person with the given DOB is under 18 years old.
- * Canonical implementation — use this everywhere instead of inline age checks.
+ * Returns the calendar age in whole years for the given DOB, decremented if
+ * this year's birthday hasn't happened yet. Canonical implementation — use
+ * this everywhere instead of inline epoch-diff age math.
  */
-export function isMinor(dob: Date | string | null | undefined): boolean {
-    if (!dob) return false;
+export function calculateAge(dob: Date | string): number {
     const birthDate = new Date(dob);
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const m = today.getMonth() - birthDate.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-    return age < 18;
+    return age;
+}
+
+/**
+ * Returns true if the person with the given DOB is under 18 years old.
+ * Canonical implementation — use this everywhere instead of inline age checks.
+ */
+export function isMinor(dob: Date | string | null | undefined): boolean {
+    if (!dob) return false;
+    return calculateAge(dob) < 18;
 }
