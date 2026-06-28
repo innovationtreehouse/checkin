@@ -16,6 +16,9 @@
 import {
     createTrustedAdult,
     decideReview,
+    overrideReview,
+    renewTrustedAdult,
+    runExpirySweep,
     withdrawTrustedAdult,
 } from '@/lib/trusted-adult/service';
 import prisma from '@/lib/prisma';
@@ -121,5 +124,67 @@ describe('Trusted Adults — mutation + audit are atomic', () => {
 
         const after = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
         expect(after!.status).toBe('PENDING_BOARD_REVIEW'); // NOT REVOKED
+    });
+
+    it('createTrustedAdult: a failing audit rolls back the whole create — no TA, review, or audit row', async () => {
+        const taBefore = await prisma.trustedAdult.count({ where: { householdId } });
+        const auditBefore = await prisma.auditLog.count();
+
+        const spy = breakAuditInTransaction();
+        await expect(discloseOne()).rejects.toThrow('forced audit failure');
+        spy.mockRestore();
+
+        // TA + its INITIAL review are created inside the same tx as the audit — all roll back.
+        expect(await prisma.trustedAdult.count({ where: { householdId } })).toBe(taBefore);
+        expect(await prisma.auditLog.count()).toBe(auditBefore);
+    });
+
+    it('renewTrustedAdult: a failing audit rolls back the RENEWAL — no new review, no audit row', async () => {
+        const ta = await discloseOne();
+        // Renew is allowed only when the latest review is terminal; withdraw to REVOKED first.
+        await withdrawTrustedAdult(ta.id, leadId);
+
+        const reviewsBefore = await prisma.trustedAdultReview.count({ where: { trustedAdultId: ta.id } });
+        const auditBefore = await prisma.auditLog.count();
+
+        const spy = breakAuditInTransaction();
+        await expect(renewTrustedAdult(ta.id, leadId)).rejects.toThrow('forced audit failure');
+        spy.mockRestore();
+
+        expect(await prisma.trustedAdultReview.count({ where: { trustedAdultId: ta.id } })).toBe(reviewsBefore);
+        expect(await prisma.auditLog.count()).toBe(auditBefore);
+    });
+
+    it('overrideReview: a failing audit rolls back the force-DENY — status stays PENDING_BOARD_REVIEW', async () => {
+        const ta = await discloseOne();
+        const reviewId = ta.reviews[0].id;
+        const auditBefore = await prisma.auditLog.count();
+
+        const spy = breakAuditInTransaction();
+        await expect(overrideReview(reviewId, boardId, 'deny')).rejects.toThrow('forced audit failure');
+        spy.mockRestore();
+
+        const after = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
+        expect(after!.status).toBe('PENDING_BOARD_REVIEW'); // NOT DENIED
+        expect(after!.decision).toBeNull();
+        expect(await prisma.auditLog.count()).toBe(auditBefore);
+    });
+
+    it('runExpirySweep: a failing audit rolls back the EXPIRED transition — status stays APPROVED', async () => {
+        const ta = await discloseOne();
+        const reviewId = ta.reviews[0].id;
+        await decideReview(reviewId, boardId, { decision: 'APPROVE', sharedNote: 'Grandma may pick up the kids.' });
+        // Push reviewBy into the past so the sweep treats this approval as lapsed.
+        await prisma.trustedAdultReview.update({ where: { id: reviewId }, data: { reviewBy: new Date('2000-01-01T00:00:00Z') } });
+
+        const auditBefore = await prisma.auditLog.count();
+
+        const spy = breakAuditInTransaction();
+        await expect(runExpirySweep(new Date())).rejects.toThrow('forced audit failure');
+        spy.mockRestore();
+
+        const after = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
+        expect(after!.status).toBe('APPROVED'); // NOT EXPIRED
+        expect(await prisma.auditLog.count()).toBe(auditBefore);
     });
 });
