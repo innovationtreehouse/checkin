@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
 // Custom jest reporter: splits failures into "assertion" (a real expect()
 // mismatch — the code under test misbehaved) vs "thrown" (the test crashed in
 // setup/route before its assertions ran — renamed Prisma fields, incomplete
@@ -79,7 +78,6 @@ class FailureClassifierReporter {
             `  ${thrown.length} thrown failure(s). These crashed before their assertions — the invariant they guard may be unprotected.`,
         )
         out.push(bar, '')
-        // eslint-disable-next-line no-console
         console.log(out.join('\n'))
     }
 }
