@@ -5,9 +5,10 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { BadgeScanChart, SystemVersionBox } from "@/components/admin/SystemHealthPanels";
 import { LinkStatusPanel } from "@/components/admin/LinkStatusPanel";
 import { ErrorLogPanel } from "@/components/admin/ErrorLogPanel";
+import { AuditLogPanel } from "@/components/admin/AuditLogPanel";
 
 export default function SystemStatusIndex() {
-  const { loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
+  const { user, loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
 
   if (loading) {
     return (
@@ -24,6 +25,7 @@ export default function SystemStatusIndex() {
         <Tabs.Tab value="system-status">System Status</Tabs.Tab>
         <Tabs.Tab value="link-status">Link Status</Tabs.Tab>
         <Tabs.Tab value="errors">Errors</Tabs.Tab>
+        {user?.sysadmin && <Tabs.Tab value="audit-log">Audit Log</Tabs.Tab>}
       </Tabs.List>
 
       <Tabs.Panel value="system-status">
@@ -84,6 +86,12 @@ export default function SystemStatusIndex() {
       <Tabs.Panel value="errors">
         <ErrorLogPanel />
       </Tabs.Panel>
+
+      {user?.sysadmin && (
+        <Tabs.Panel value="audit-log">
+          <AuditLogPanel />
+        </Tabs.Panel>
+      )}
     </Tabs>
   );
 }
