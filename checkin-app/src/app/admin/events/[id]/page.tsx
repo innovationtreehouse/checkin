@@ -299,7 +299,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   };
 
   return (
-    <Container size="lg" py="md">
+    <Container size="lg" pb="md">
       <Card withBorder radius="md" padding="lg">
         <Group justify="space-between" align="flex-start" wrap="wrap" mb="lg">
           <div>

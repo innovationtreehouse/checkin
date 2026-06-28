@@ -357,7 +357,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   );
 
   return (
-    <Container size="lg" py="md">
+    <Container size="lg" pb="md">
       <Card withBorder radius="md" padding="lg">
         <Group justify="space-between" align="center" wrap="wrap" mb="lg">
           <Group align="center" gap="sm">
