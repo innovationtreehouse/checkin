@@ -5,6 +5,7 @@ import { authenticateRequest } from "@/lib/auth";
 import * as xlsx from "xlsx";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
+import { parseImportDob } from "@/lib/importDob";
 
 export async function POST(req: NextRequest) {
     try {
@@ -149,19 +150,7 @@ export async function POST(req: NextRequest) {
                 continue;
             }
 
-            let parsedDob: Date | undefined;
-            if (dobString) {
-                // xlsx might parse it as an Excel serial number if no bookType provided, handle it if so
-                if (/^\d+(\.\d+)?$/.test(dobString)) {
-                    // Excel serial number
-                    const serial = parseFloat(dobString);
-                    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-                    parsedDob = new Date(excelEpoch.getTime() + serial * 86400000);
-                } else {
-                    const d = new Date(dobString);
-                    if (!isNaN(d.getTime())) parsedDob = d;
-                }
-            }
+            const parsedDob = parseImportDob(dobString);
 
             parsedRows.push({
                 index: i,
