@@ -146,7 +146,7 @@ export default function MembershipSettingsPage() {
   };
 
   return (
-    <Stack maw={820} mx="auto">
+    <Stack>
       <AdminPageHeader title="Settings" />
 
       <SettingsTabs active="membership" />
