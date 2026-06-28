@@ -100,6 +100,7 @@ export default function FinanceOpsPage() {
   const columns: DataTableColumn<PaymentPlanRequest>[] = [
     {
       header: 'Participant',
+      sortBy: (req) => req.participant.name?.toLowerCase() ?? req.participant.email.toLowerCase(),
       render: (req) => (
         <>
           <Text fw={500}>{req.participant.name}</Text>
@@ -109,6 +110,7 @@ export default function FinanceOpsPage() {
     },
     {
       header: 'Program',
+      sortBy: (req) => req.program.name.toLowerCase(),
       render: (req) => (
         <>
           <Text fw={500}>{req.program.name}</Text>
@@ -120,6 +122,7 @@ export default function FinanceOpsPage() {
     },
     {
       header: 'Requested On',
+      sortBy: (req) => req.pendingSince, // ISO string sorts chronologically
       render: (req) => <Text size="sm" c="dimmed">{formatDateTime(req.pendingSince)}</Text>,
     },
     {
