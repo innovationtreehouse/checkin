@@ -16,6 +16,8 @@ jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 jest.mock('@/lib/membership/contract/agreementDocument', () => ({
     ...jest.requireActual('@/lib/membership/contract/agreementDocument'),
     loadAgreementPdf: jest.fn().mockResolvedValue({ pdf: Buffer.from('%PDF-1.4'), lastPageNo: 0, pageWidth: 612, pageHeight: 792 }),
+    // Dev watermark step re-parses the stub PDF (not a real PDF) → passthrough so it doesn't crash.
+    stampWatermark: jest.fn(async (pdf) => pdf),
 }));
 jest.mock('@/lib/membership/contract/zohoClient', () => ({
     ZohoError: class ZohoError extends Error {},
