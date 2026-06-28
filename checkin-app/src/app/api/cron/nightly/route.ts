@@ -37,11 +37,18 @@ export async function GET(req: Request) {
         let boardNotified = false;
 
         if (abandonedVisits.length > 0) {
-            // Force everybody out concurrently
-            await Promise.all(
+            // Force everybody out concurrently. One bad checkout must not abort the rest.
+            const results = await Promise.allSettled(
                 abandonedVisits.map((visit) => processVisitCheckout(visit.id, now))
             );
-            checkedOutCount += abandonedVisits.length;
+            results.forEach((result, i) => {
+                if (result.status === "fulfilled") {
+                    checkedOutCount += 1;
+                } else {
+                    const visit = abandonedVisits[i];
+                    console.error(`Failed to check out visit ${visit.id} (participant ${visit.participant.email}):`, result.reason);
+                }
+            });
 
             // If at least one was a keyholder, the facility was left "Open". We need to alert the board.
             const abandonedKeyholders = abandonedVisits.filter(v => v.participant.keyholder);
