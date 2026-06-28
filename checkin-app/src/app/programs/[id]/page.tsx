@@ -4,7 +4,7 @@ import { use, useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Anchor, Button, Card, Center, Container, Divider, Group, Loader, Radio, Stack, Text, Title } from '@mantine/core';
-import { formatDate } from '@/lib/time';
+import { formatDate, calculateAge } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 
@@ -304,9 +304,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                         if (!member.dob) {
                           ageError = "DOB missing";
                         } else {
-                          const ageDifMs = Date.now() - new Date(member.dob).getTime();
-                          const ageDate = new Date(ageDifMs);
-                          const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+                          const age = calculateAge(member.dob);
                           if (program.minAge !== null && age < program.minAge) ageError = "Too young";
                           if (program.maxAge !== null && age > program.maxAge) ageError = "Too old";
                         }
