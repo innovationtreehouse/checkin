@@ -7,6 +7,7 @@ import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program
 import { createContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 import { rateLimit, rateLimitEmail } from "@/lib/rate-limit";
 import { calculateAge } from "@/lib/time";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
 interface ParentInput {
     name: string;
@@ -49,9 +50,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (!parents || parents.length === 0 || !parents[0].name || !parents[0].email || !parents[0].phone) {
             return NextResponse.json({ error: "Primary parent/guardian information is required." }, { status: 400 });
         }
+        if (!isValidPhone(parents[0].phone)) {
+            return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
+        }
         if (!emergencyContact || !emergencyContact.name || !emergencyContact.phone) {
             return NextResponse.json({ error: "Emergency contact is required." }, { status: 400 });
         }
+        // Emergency-contact phone format is enforced in createContact below.
         if (!participants || participants.length === 0) {
             return NextResponse.json({ error: "At least one participant is required." }, { status: 400 });
         }

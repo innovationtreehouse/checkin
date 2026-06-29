@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isValidEmail } from '@/lib/emergencyContacts/identity';
+import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
 import {
   Alert,
   Box,
@@ -64,6 +65,15 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (needsPhone && !isValidPhone(phone)) {
+      setError(PHONE_ERROR);
+      return;
+    }
+    if (needsEmergencyContact && !isValidPhone(emergencyContactPhone)) {
+      setError(`Emergency contact: ${PHONE_ERROR}`);
+      return;
+    }
     if (needsEmergencyContact && emergencyContactEmail.trim() && !isValidEmail(emergencyContactEmail)) {
       setError("That emergency contact email doesn't look right.");
       return;
@@ -134,6 +144,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                 placeholder="(555) 123-4567"
                 value={phone}
                 onChange={(e) => setPhone(e.currentTarget.value)}
+                error={phone && !isValidPhone(phone) ? PHONE_ERROR : undefined}
                 required
               />
             )}
@@ -161,6 +172,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                     placeholder="(555) 987-6543"
                     value={emergencyContactPhone}
                     onChange={(e) => setEmergencyContactPhone(e.currentTarget.value)}
+                    error={emergencyContactPhone && !isValidPhone(emergencyContactPhone) ? PHONE_ERROR : undefined}
                     required
                   />
                   <TextInput

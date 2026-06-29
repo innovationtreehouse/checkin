@@ -8,10 +8,9 @@
  * (20260612000000_emergency_contact_entity) so stored keys stay comparable.
  */
 
-/** Strip everything but digits. `"(555) 010-0"` -> `"5550100"`. */
-export function normalizePhone(phone: string | null | undefined): string {
-    return (phone ?? "").replace(/\D/g, "");
-}
+/** Strip everything but digits. Shared with the app-wide phone validator. */
+import { normalizePhone } from "@/lib/phone";
+export { normalizePhone };
 
 /** Lowercase + trim; empty -> null. */
 export function normalizeEmail(email: string | null | undefined): string | null {
