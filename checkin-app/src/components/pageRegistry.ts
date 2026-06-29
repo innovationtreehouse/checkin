@@ -116,5 +116,4 @@ export const REGISTRY_EXCLUDED: string[] = [
   '/access-denied',          // error surface, not a destination
   '/signin',                 // auth surface
   '/settings',               // redirects to /settings/membership
-  '/membership/review',      // canonical copy is /membership-ops/review
 ];
