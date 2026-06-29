@@ -37,7 +37,7 @@ export default function Notifications() {
       {m.pendingReviews > 0 && (
         <Button
           component={Link}
-          href="/membership/review"
+          href="/membership-ops/review"
           variant="light"
           color="grape"
           rightSection={<Badge color="grape" circle>{m.pendingReviews}</Badge>}
