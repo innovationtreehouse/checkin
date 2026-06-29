@@ -1,0 +1,48 @@
+# Dockerized DEVELOPMENT server for flow tests (checkin-app/flow-tests/*.flow.test.ts).
+#
+# Runs the app with `next dev` — NOT the production image (deploy/docker-compose.yml)
+# — on purpose: persona-mint login (how flow tests authenticate) is gated on
+# NODE_ENV != production, and the prod image pins NODE_ENV=production. The app
+# container installs deps, pushes the schema, seeds the debug personas, then
+# serves on :4000. Flow tests run inside this container (see flow-tests.yml).
+services:
+  db:
+    image: public.ecr.aws/docker/library/postgres:15
+    environment:
+      POSTGRES_USER: prisma
+      POSTGRES_PASSWORD: prismapassword
+      POSTGRES_DB: checkmein
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prisma -d checkmein"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  app:
+    image: node:24-bookworm-slim
+    working_dir: /repo
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://prisma:prismapassword@db:5432/checkmein?schema=public
+      CHECKIN_ENV: local            # enables persona-mint login + keyless kiosk
+      NEXTAUTH_URL: http://localhost:4000
+      NEXTAUTH_SECRET: flow-test-secret
+      GOOGLE_CLIENT_ID: flow-test    # present-but-dummy; persona-mint doesn't use them
+      GOOGLE_CLIENT_SECRET: flow-test
+    volumes:
+      - ..:/repo
+    ports:
+      - "4000:4000"
+    command:
+      - sh
+      - -lc
+      - npm ci && cd checkin-app && npx prisma generate && npx prisma db push && npx prisma db seed && npm run dev
+    healthcheck:
+      # Up = the dev server answers an auth route. start_period covers npm ci + seed + first compile.
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/api/auth/csrf').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 240s
