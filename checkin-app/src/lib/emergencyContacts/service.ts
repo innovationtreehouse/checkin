@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import type { Prisma, EmergencyContact } from "@/generated/prisma/client";
 import { identityKeys, sameIdentity, identityMatchReason, normalizeEmail, normalizePhone } from "./identity";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
 /**
  * Emergency-contact write/read model. Enforces the not-a-household-member rule
@@ -78,6 +79,9 @@ function cleaned(input: ContactInput) {
 function requireComplete(input: ContactInput) {
     if (!input.name?.trim() || !input.phone?.trim()) {
         throw new EmergencyContactError("incomplete", "An emergency contact needs both a name and a phone number.");
+    }
+    if (!isValidPhone(input.phone)) {
+        throw new EmergencyContactError("incomplete", PHONE_ERROR);
     }
 }
 
@@ -169,6 +173,10 @@ export async function upsertPrimaryContact(
     const phone = (fields.phone ?? "").trim();
     const email = (fields.email ?? "").trim() || null;
     if (!name && !phone && !email) return null;
+
+    if (phone && !isValidPhone(phone)) {
+        throw new EmergencyContactError("incomplete", PHONE_ERROR);
+    }
 
     const complete = !!name && !!phone;
     if (complete) await assertExternal(db, householdId, { name, phone, email });

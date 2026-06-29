@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
 export async function PUT(
     request: NextRequest,
@@ -26,7 +27,12 @@ export async function PUT(
         const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
         if (body.name !== undefined) updateData.name = body.name;
         if (body.email !== undefined) updateData.email = body.email;
-        if (body.phone !== undefined) updateData.phone = body.phone;
+        if (body.phone !== undefined) {
+            if (body.phone !== "" && body.phone !== null && !isValidPhone(body.phone)) {
+                return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
+            }
+            updateData.phone = body.phone;
+        }
 
         if (Object.keys(updateData).length === 0) {
             return NextResponse.json({ error: "No fields to update provided" }, { status: 400 });

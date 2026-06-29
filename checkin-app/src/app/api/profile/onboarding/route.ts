@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuth } from "@/lib/auth";
 import { upsertPrimaryContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
 export const POST = withAuth(
     {},
@@ -23,6 +24,9 @@ export const POST = withAuth(
             }
 
             if (phone !== undefined) {
+                if (phone !== "" && !isValidPhone(phone)) {
+                    return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
+                }
                 await prisma.participant.update({
                     where: { id: userId },
                     data: { phone }

@@ -65,7 +65,7 @@ describe("Emergency Contacts API — removal prohibition", () => {
 
     it("blocks removing the only valid contact", async () => {
         asUser(leadId);
-        const created = await (await POST(postReq({ name: "Aunt May", phone: "555-2000" }))).json();
+        const created = await (await POST(postReq({ name: "Aunt May", phone: "555-555-2000" }))).json();
         const res = await DELETE(delReq(), delCtx(created.contact.id));
         expect(res.status).toBe(400);
         expect((await res.json()).error).toMatch(/at least one valid emergency contact|second emergency contact/i);
@@ -76,8 +76,8 @@ describe("Emergency Contacts API — removal prohibition", () => {
 
     it("allows removal once a second valid contact exists", async () => {
         asUser(leadId);
-        const a = await (await POST(postReq({ name: "Aunt May", phone: "555-2000" }))).json();
-        await (await POST(postReq({ name: "Neighbor Bob", phone: "555-4000" }))).json();
+        const a = await (await POST(postReq({ name: "Aunt May", phone: "555-555-2000" }))).json();
+        await (await POST(postReq({ name: "Neighbor Bob", phone: "555-555-4000" }))).json();
         const res = await DELETE(delReq(), delCtx(a.contact.id));
         expect(res.status).toBe(200);
         const list = await (await GET(getReq())).json();
@@ -114,12 +114,12 @@ describe("Emergency Contacts API — removal prohibition", () => {
         const B = await makeHouseholdWithLead("boundaryB");
 
         asUser(B.leadId);
-        const cB = await (await POST(postReq({ name: "B Contact", phone: "555-7000" }))).json();
+        const cB = await (await POST(postReq({ name: "B Contact", phone: "555-555-7000" }))).json();
 
         // Lead of A scopes to A's household; B's contact is invisible -> 404.
         asUser(A.leadId);
         expect((await DELETE(delReq(), delCtx(cB.contact.id))).status).toBe(404);
-        expect((await PATCH(patchReq({ name: "Hacked", phone: "555-0000" }), delCtx(cB.contact.id))).status).toBe(404);
+        expect((await PATCH(patchReq({ name: "Hacked", phone: "555-555-0000" }), delCtx(cB.contact.id))).status).toBe(404);
 
         const still = await prisma.emergencyContact.findUnique({ where: { id: cB.contact.id } });
         expect(still).not.toBeNull();
@@ -129,10 +129,10 @@ describe("Emergency Contacts API — removal prohibition", () => {
     it("the owning lead's DELETE and PATCH each write an audit row with actor + household", async () => {
         const A = await makeHouseholdWithLead("audit");
         asUser(A.leadId);
-        const c1 = await (await POST(postReq({ name: "May", phone: "555-1000" }))).json();
-        const c2 = await (await POST(postReq({ name: "Bob", phone: "555-2000" }))).json();
+        const c1 = await (await POST(postReq({ name: "May", phone: "555-555-1000" }))).json();
+        const c2 = await (await POST(postReq({ name: "Bob", phone: "555-555-2000" }))).json();
 
-        const pr = await PATCH(patchReq({ name: "May Updated", phone: "555-1111" }), delCtx(c1.contact.id));
+        const pr = await PATCH(patchReq({ name: "May Updated", phone: "555-555-1111" }), delCtx(c1.contact.id));
         expect(pr.status).toBe(200);
         const patchLog = await expectAuditRow(prisma, { action: "EDIT", tableName: "EmergencyContact", affectedEntityId: c1.contact.id });
         expect(patchLog.actorId).toBe(A.leadId);

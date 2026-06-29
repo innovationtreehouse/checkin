@@ -11,6 +11,7 @@ import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isOrgAccount } from '@/lib/orgAccount';
 import { pickAddress, type StructuredAddress } from '@/lib/address';
+import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
 
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
@@ -154,6 +155,10 @@ export default function HouseholdPage() {
 
   const handleSaveContact = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isValidPhone(contactForm.phone)) {
+      setContactError(PHONE_ERROR);
+      return;
+    }
     setSavingContact(true);
     setContactError("");
     try {
@@ -244,6 +249,10 @@ export default function HouseholdPage() {
   const handleEditMember = async (e: React.FormEvent, participantId: number) => {
     e.preventDefault();
     setMessage("");
+    if (editForm.phone && !isValidPhone(editForm.phone)) {
+      setMessage(PHONE_ERROR);
+      return;
+    }
     try {
       const res = await fetch('/api/household/member', {
         method: 'PATCH',
@@ -362,7 +371,7 @@ export default function HouseholdPage() {
                             <TextInput size="xs" label="Name" required value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.currentTarget.value })} />
                             <TextInput size="xs" type="email" label="Email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.currentTarget.value })} />
                             <TextInput size="xs" type="date" label="Date of Birth" value={editForm.dob} onChange={(e) => setEditForm({ ...editForm, dob: e.currentTarget.value })} />
-                            <TextInput size="xs" type="tel" label="Phone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.currentTarget.value })} />
+                            <TextInput size="xs" type="tel" label="Phone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.currentTarget.value })} error={editForm.phone && !isValidPhone(editForm.phone) ? PHONE_ERROR : undefined} />
                             {p.id !== userId && editForm.dob && calculateAge(editForm.dob) >= 18 && (
                               <Checkbox label="Household Lead" checked={editForm.isLead} onChange={(e) => setEditForm({ ...editForm, isLead: e.currentTarget.checked })} />
                             )}
@@ -499,7 +508,7 @@ export default function HouseholdPage() {
                     <Stack gap="xs" mt="sm">
                       <SimpleGrid cols={{ base: 1, sm: 2 }}>
                         <TextInput label="Contact Name" required value={contactForm.name} onChange={(e) => setContactForm({ ...contactForm, name: e.currentTarget.value })} placeholder="Full Name" />
-                        <TextInput type="tel" label="Phone" required value={contactForm.phone} onChange={(e) => setContactForm({ ...contactForm, phone: e.currentTarget.value })} placeholder="(555) 555-5555" />
+                        <TextInput type="tel" label="Phone" required value={contactForm.phone} onChange={(e) => setContactForm({ ...contactForm, phone: e.currentTarget.value })} placeholder="(555) 555-5555" error={contactForm.phone && !isValidPhone(contactForm.phone) ? PHONE_ERROR : undefined} />
                         <TextInput type="email" label="Email (optional)" value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.currentTarget.value })} />
                         <TextInput label="Relationship (optional)" value={contactForm.relationship} onChange={(e) => setContactForm({ ...contactForm, relationship: e.currentTarget.value })} placeholder="Aunt, Neighbor…" />
                       </SimpleGrid>

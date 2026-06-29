@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
 export const PATCH = withAuth(
     {},
@@ -16,6 +17,11 @@ export const PATCH = withAuth(
 
             if (!participantId) {
                 return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
+            }
+
+            // Phone is optional for a member, but if supplied it must be valid.
+            if (phone !== undefined && phone !== "" && !isValidPhone(phone)) {
+                return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
             }
 
             const user = await prisma.participant.findUnique({ where: { id: userId }, include: { householdLeads: true } });
