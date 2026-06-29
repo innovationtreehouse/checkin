@@ -24,6 +24,7 @@ import {
   IconClipboardList,
   IconCoin,
   IconHome,
+  IconList,
   IconLogout,
   IconMoon,
   IconSettings,
@@ -120,6 +121,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: <IconAdjustments size={18} />,
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
   },
+  { href: '/index', label: 'Index', icon: <IconList size={18} />, visible: (_u, signedIn) => signedIn },
 ];
 
 function isActive(pathname: string, href: string): boolean {
