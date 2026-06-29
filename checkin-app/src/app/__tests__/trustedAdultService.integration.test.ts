@@ -53,7 +53,7 @@ describe('Trusted Adults service', () => {
         const outHh = await prisma.household.create({ data: { name: `Outsider HH ${TAG}` } });
         outsiderId = (await prisma.participant.create({ data: { name: 'Outsider', householdId: outHh.id } })).id;
         const boardHh = await prisma.household.create({ data: { name: `Board HH ${TAG}` } });
-        boardId = (await prisma.participant.create({ data: { name: 'Boardie', boardMember: true, householdId: boardHh.id } })).id;
+        boardId = (await prisma.participant.create({ data: { name: 'Boardie', email: `board-${TAG}@ex.com`, boardMember: true, householdId: boardHh.id } })).id;
     });
 
     afterAll(async () => {
