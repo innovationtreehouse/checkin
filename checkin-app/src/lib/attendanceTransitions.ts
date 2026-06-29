@@ -91,13 +91,13 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         where: { id: visitId }
     });
 
-    if (!originalVisit || originalVisit.departed) {
+    if (!originalVisit || originalVisit.departedAt) {
         return []; // Already checked out or doesn't exist
     }
 
     // Chunks recreated below are all segments of one physical visit: they keep
     // the original arrival's source and take `source` as their departure channel.
-    const { participantId, arrived, arrivedVia } = originalVisit;
+    const { participantId, arrivedAt, arrivedVia } = originalVisit;
 
     const relevantProgramIds = await getRelevantProgramIds(participantId, db);
 
@@ -105,7 +105,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         // No programs enrolled, just close the visit normally
         return [await db.visit.update({
             where: { id: visitId },
-            data: { departed: checkoutTime, departedVia: source }
+            data: { departedAt: checkoutTime, departedVia: source }
         })];
     }
 
@@ -115,7 +115,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
             programId: { in: relevantProgramIds },
             // An event overlaps if it starts before checkout time AND ends after arrival time
             start: { lt: checkoutTime },
-            end: { gt: arrived }
+            end: { gt: arrivedAt }
         },
         orderBy: { start: 'asc' }
     });
@@ -124,7 +124,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         // No relevant events during their stay, just close normally
         return [await db.visit.update({
             where: { id: visitId },
-            data: { departed: checkoutTime, departedVia: source }
+            data: { departedAt: checkoutTime, departedVia: source }
         })];
     }
 
@@ -137,7 +137,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         });
 
         const createdVisits = [];
-        let currentIterStart = arrived;
+        let currentIterStart = arrivedAt;
 
         for (let i = 0; i < eventsDuringStay.length; i++) {
             const event = eventsDuringStay[i];
@@ -151,8 +151,8 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
                     createdVisits.push(await tx.visit.create({
                         data: {
                             participantId,
-                            arrived: currentIterStart,
-                            departed: gapEnd,
+                            arrivedAt: currentIterStart,
+                            departedAt: gapEnd,
                             arrivedVia,
                             departedVia: source,
                             associatedEventId: null
@@ -181,8 +181,8 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
                 createdVisits.push(await tx.visit.create({
                     data: {
                         participantId,
-                        arrived: eventVisitStart,
-                        departed: eventVisitEnd,
+                        arrivedAt: eventVisitStart,
+                        departedAt: eventVisitEnd,
                         arrivedVia,
                         departedVia: source,
                         associatedEventId: event.id
@@ -197,8 +197,8 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
             createdVisits.push(await tx.visit.create({
                 data: {
                     participantId,
-                    arrived: currentIterStart,
-                    departed: checkoutTime,
+                    arrivedAt: currentIterStart,
+                    departedAt: checkoutTime,
                     arrivedVia,
                     departedVia: source,
                     associatedEventId: null

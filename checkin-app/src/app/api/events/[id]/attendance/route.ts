@@ -49,10 +49,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 where: {
                     participantId: { in: participantIds },
                     associatedEventId: null,
-                    arrived: { lte: event.end },
+                    arrivedAt: { lte: event.end },
                     OR: [
-                        { departed: null },
-                        { departed: { gte: event.start } }
+                        { departedAt: null },
+                        { departedAt: { gte: event.start } }
                     ]
                 }
             });
@@ -93,8 +93,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                         data: {
                             participantId: pId,
                             associatedEventId: eventId,
-                            arrived: event.start,
-                            departed: event.end,
+                            arrivedAt: event.start,
+                            departedAt: event.end,
                             arrivedVia: "WEB",
                             departedVia: "WEB"
                         }

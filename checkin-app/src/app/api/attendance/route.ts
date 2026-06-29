@@ -173,7 +173,7 @@ export async function POST(req: Request) {
             const activeVisit = await prisma.visit.findFirst({
                 where: {
                     participantId: participant.id,
-                    departed: null
+                    departedAt: null
                 }
             });
 
@@ -187,7 +187,7 @@ export async function POST(req: Request) {
             const newVisit = await prisma.visit.create({
                 data: {
                     participantId: participant.id,
-                    arrived: arrivalTime,
+                    arrivedAt: arrivalTime,
                     arrivedVia: "WEB",
                     associatedEventId: eventId
                 }

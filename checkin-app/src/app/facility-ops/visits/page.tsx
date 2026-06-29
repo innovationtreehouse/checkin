@@ -11,8 +11,8 @@ type VisitSource = 'SCANNER' | 'WEB' | 'SYSTEM';
 
 type Visit = {
   id: number;
-  arrived: string | null;
-  departed?: string | null;
+  arrivedAt: string | null;
+  departedAt?: string | null;
   arrivedVia?: VisitSource | null;
   departedVia?: VisitSource | null;
   participant?: { name?: string | null; email?: string | null } | null;
@@ -35,15 +35,15 @@ const SourceIcon = ({ via }: { via?: VisitSource | null }) => {
   );
 };
 
-type SortKey = 'id' | 'participant' | 'event' | 'arrived' | 'departed';
+type SortKey = 'id' | 'participant' | 'event' | 'arrivedAt' | 'departedAt';
 
 const sortValue = (v: Visit, key: SortKey): string | number => {
   switch (key) {
     case 'id': return v.id;
     case 'participant': return (v.participant?.name || v.participant?.email || '').toLowerCase();
     case 'event': return (v.event?.name || 'Open Facility').toLowerCase();
-    case 'arrived': return v.arrived ? Date.parse(v.arrived) : 0;
-    case 'departed': return v.departed ? Date.parse(v.departed) : 0;
+    case 'arrivedAt': return v.arrivedAt ? Date.parse(v.arrivedAt) : 0;
+    case 'departedAt': return v.departedAt ? Date.parse(v.departedAt) : 0;
   }
 };
 
@@ -55,9 +55,9 @@ export default function AdminVisitsPage() {
   const [message, setMessage] = useState("");
 
   const [editingVisitId, setEditingVisitId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState({ arrived: "", departed: "" });
+  const [editForm, setEditForm] = useState({ arrivedAt: "", departedAt: "" });
 
-  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'arrived', dir: 'desc' });
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'arrivedAt', dir: 'desc' });
 
   const sortedVisits = useMemo(() => {
     return [...visits].sort((a, b) => {
@@ -112,8 +112,8 @@ export default function AdminVisitsPage() {
 
     setEditingVisitId(visit.id);
     setEditForm({
-      arrived: toDatetimeLocal(visit.arrived),
-      departed: toDatetimeLocal(visit.departed ?? null)
+      arrivedAt: toDatetimeLocal(visit.arrivedAt),
+      departedAt: toDatetimeLocal(visit.departedAt ?? null)
     });
   };
 
@@ -124,8 +124,8 @@ export default function AdminVisitsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           visitId: id,
-          arrived: editForm.arrived ? fromDatetimeLocal(editForm.arrived) : undefined,
-          departed: editForm.departed ? fromDatetimeLocal(editForm.departed) : undefined
+          arrivedAt: editForm.arrivedAt ? fromDatetimeLocal(editForm.arrivedAt) : undefined,
+          departedAt: editForm.departedAt ? fromDatetimeLocal(editForm.departedAt) : undefined
         })
       });
       if (res.ok) {
@@ -157,8 +157,8 @@ export default function AdminVisitsPage() {
               <SortableTh k="id" label="ID" />
               <SortableTh k="participant" label="Participant" />
               <SortableTh k="event" label="Event" />
-              <SortableTh k="arrived" label="Arrived" />
-              <SortableTh k="departed" label="Departed" />
+              <SortableTh k="arrivedAt" label="Arrived" />
+              <SortableTh k="departedAt" label="Departed" />
               <Table.Th>Actions</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -175,16 +175,16 @@ export default function AdminVisitsPage() {
                       <TextInput
                         type="datetime-local"
                         size="xs"
-                        value={editForm.arrived}
-                        onChange={(e) => setEditForm({ ...editForm, arrived: e.currentTarget.value })}
+                        value={editForm.arrivedAt}
+                        onChange={(e) => setEditForm({ ...editForm, arrivedAt: e.currentTarget.value })}
                       />
                     </Table.Td>
                     <Table.Td>
                       <TextInput
                         type="datetime-local"
                         size="xs"
-                        value={editForm.departed}
-                        onChange={(e) => setEditForm({ ...editForm, departed: e.currentTarget.value })}
+                        value={editForm.departedAt}
+                        onChange={(e) => setEditForm({ ...editForm, departedAt: e.currentTarget.value })}
                       />
                     </Table.Td>
                     <Table.Td>
@@ -198,14 +198,14 @@ export default function AdminVisitsPage() {
                   <>
                     <Table.Td>
                       <Group gap={6} wrap="nowrap">
-                        <span>{formatDateTime(v.arrived)}</span>
+                        <span>{formatDateTime(v.arrivedAt)}</span>
                         <SourceIcon via={v.arrivedVia} />
                       </Group>
                     </Table.Td>
                     <Table.Td>
-                      {v.departed ? (
+                      {v.departedAt ? (
                         <Group gap={6} wrap="nowrap">
-                          <span>{formatDateTime(v.departed)}</span>
+                          <span>{formatDateTime(v.departedAt)}</span>
                           <SourceIcon via={v.departedVia} />
                         </Group>
                       ) : <Text component="span" c="yellow">Active</Text>}

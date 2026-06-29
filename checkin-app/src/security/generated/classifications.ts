@@ -239,8 +239,8 @@ export const classifications = {
     Visit: {
         id: 'public',
         participantId: 'public',
-        arrived: 'personal',
-        departed: 'personal',
+        arrivedAt: 'personal',
+        departedAt: 'personal',
         arrivedVia: 'public',
         departedVia: 'public',
         associatedEventId: 'public',

@@ -220,7 +220,7 @@ describe('AuditLog Integration Tests', () => {
         testEventId = event.id;
 
         const visit = await prisma.visit.create({
-            data: { participantId: testParticipantId, arrived: new Date(Date.now() - 100000), departed: new Date(Date.now() + 100000) }
+            data: { participantId: testParticipantId, arrivedAt: new Date(Date.now() - 100000), departedAt: new Date(Date.now() + 100000) }
         });
         testVisitId = visit.id;
 
@@ -374,7 +374,7 @@ describe('AuditLog Integration Tests', () => {
     it('visit edit (PATCH /admin/visits) writes one AuditLog snapshotting the visit', async () => {
         const owner = await makeParticipant('visit-owner');
         const visit = await prisma.visit.create({
-            data: { participantId: owner.id, arrived: new Date(), departed: new Date() },
+            data: { participantId: owner.id, arrivedAt: new Date(), departedAt: new Date() },
             select: { id: true },
         });
         createdVisitIds.push(visit.id);
@@ -382,7 +382,7 @@ describe('AuditLog Integration Tests', () => {
         const newArrived = new Date('2020-01-01T10:00:00.000Z');
         const req = new Request('http://localhost:4000/api/facility/visits', {
             method: 'PATCH',
-            body: JSON.stringify({ visitId: visit.id, arrived: newArrived.toISOString() }),
+            body: JSON.stringify({ visitId: visit.id, arrivedAt: newArrived.toISOString() }),
         });
 
         const res = await updateVisit(req as never);

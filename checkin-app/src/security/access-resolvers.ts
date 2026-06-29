@@ -86,7 +86,7 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
 
     if (ctx.isKeyholder) {
         const visits = await prisma.visit.findMany({
-            where: { departed: null },
+            where: { departedAt: null },
             select: { participantId: true },
         });
         for (const v of visits) ctx.activeVisitorIds.add(v.participantId);
@@ -223,7 +223,7 @@ export function scopesHeld(
         case 'Visit': {
             const participantId = num(row.participantId);
             if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            if (ctx.isKeyholder && row.departed == null) {
+            if (ctx.isKeyholder && row.departedAt == null) {
                 scopes.add('all_current_visitors');
             }
             break;

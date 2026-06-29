@@ -8,8 +8,8 @@ import { formatDate, formatTime, formatDateTime } from '@/lib/time';
 
 type ProfileVisit = {
   id: number;
-  arrived: string;
-  departed?: string | null;
+  arrivedAt: string;
+  departedAt?: string | null;
   event?: { name?: string | null } | null;
 };
 
@@ -162,11 +162,11 @@ export default function ProfilePage() {
                   <Group justify="space-between" wrap="wrap">
                     <div>
                       <Text fw={600}>{v.event?.name || 'General Facility Visit'}</Text>
-                      <Text size="sm" c="dimmed">{formatDateTime(v.arrived)}</Text>
+                      <Text size="sm" c="dimmed">{formatDateTime(v.arrivedAt)}</Text>
                     </div>
                     <Text size="sm">
-                      {v.departed ? (
-                        <Text component="span" c="green">Departed {formatTime(v.departed)}</Text>
+                      {v.departedAt ? (
+                        <Text component="span" c="green">Departed {formatTime(v.departedAt)}</Text>
                       ) : (
                         <Text component="span" c="yellow">Active Visit</Text>
                       )}

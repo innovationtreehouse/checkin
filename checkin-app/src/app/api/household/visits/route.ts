@@ -41,12 +41,12 @@ export const GET = withAuth(
                     participant: {
                         householdId: user.householdId
                     },
-                    arrived: {
+                    arrivedAt: {
                         gte: startDate,
                         lte: endDate
                     }
                 },
-                orderBy: { arrived: 'desc' },
+                orderBy: { arrivedAt: 'desc' },
                 include: {
                     participant: { select: { id: true, name: true } },
                     event: { select: { id: true, name: true } }

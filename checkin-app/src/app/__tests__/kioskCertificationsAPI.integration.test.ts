@@ -79,7 +79,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         await prisma.visit.create({
-            data: { participantId: testUserId, arrived: new Date() }
+            data: { participantId: testUserId, arrivedAt: new Date() }
         });
     });
 

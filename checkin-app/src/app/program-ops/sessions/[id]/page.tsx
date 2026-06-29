@@ -35,8 +35,8 @@ type EventData = {
   visits: {
     id: number;
     participantId: number;
-    arrived: string;
-    departed: string | null;
+    arrivedAt: string;
+    departedAt: string | null;
   }[];
 };
 
@@ -151,8 +151,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           action: 'manualEditAttendance',
           participantId: editingAttendance.participantId,
           status: manualStatus,
-          arrived: manualStatus === 'Present' ? fromDatetimeLocal(manualArrived) : null,
-          departed: manualStatus === 'Present' && manualDeparted ? fromDatetimeLocal(manualDeparted) : null
+          arrivedAt: manualStatus === 'Present' ? fromDatetimeLocal(manualArrived) : null,
+          departedAt: manualStatus === 'Present' && manualDeparted ? fromDatetimeLocal(manualDeparted) : null
         })
       });
       if (res.ok) {
@@ -249,9 +249,9 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
               const visit = eventData.visits.find(v => v.participantId === member.participantId);
               let statusEl;
               if (visit) {
-                const arriveTime = new Date(visit.arrived).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const leaveTime = visit.departed ? new Date(visit.departed).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Still Here';
-                statusEl = <Text component="span" c="green">Arrived: {arriveTime} {visit.departed ? `| Left: ${leaveTime}` : ''}</Text>;
+                const arriveTime = new Date(visit.arrivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const leaveTime = visit.departedAt ? new Date(visit.departedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Still Here';
+                statusEl = <Text component="span" c="green">Arrived: {arriveTime} {visit.departedAt ? `| Left: ${leaveTime}` : ''}</Text>;
               } else {
                 statusEl = <Text component="span" c="red">Absent</Text>;
               }
@@ -273,8 +273,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
                           setEditingAttendance(member);
                           if (visit) {
                             setManualStatus("Present");
-                            setManualArrived(toDatetimeLocal(visit.arrived));
-                            setManualDeparted(visit.departed ? toDatetimeLocal(visit.departed) : "");
+                            setManualArrived(toDatetimeLocal(visit.arrivedAt));
+                            setManualDeparted(visit.departedAt ? toDatetimeLocal(visit.departedAt) : "");
                           } else {
                             setManualStatus("Absent");
                             setManualArrived(toDatetimeLocal(eventData.start));

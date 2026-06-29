@@ -94,15 +94,15 @@ describe('Household Visits API Integration Tests', () => {
         // Create visits for the test household
         await prisma.visit.createMany({
             data: [
-                { participantId: leadUser.id, arrived: new Date(now.getTime() - 1000) }, // Just now
-                { participantId: memberUser.id, arrived: new Date(now.getTime() - 86400000) }, // 1 day ago
-                { participantId: leadUser.id, arrived: new Date(now.getTime() - 864000000) }, // 10 days ago (outside 7 day window)
+                { participantId: leadUser.id, arrivedAt: new Date(now.getTime() - 1000) }, // Just now
+                { participantId: memberUser.id, arrivedAt: new Date(now.getTime() - 86400000) }, // 1 day ago
+                { participantId: leadUser.id, arrivedAt: new Date(now.getTime() - 864000000) }, // 10 days ago (outside 7 day window)
             ]
         });
 
         // Create visit for other household
         await prisma.visit.create({
-            data: { participantId: otherUser.id, arrived: new Date(now.getTime() - 2000) }
+            data: { participantId: otherUser.id, arrivedAt: new Date(now.getTime() - 2000) }
         });
     });
 

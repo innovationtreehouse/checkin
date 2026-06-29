@@ -113,12 +113,12 @@ describe('General Attendance API Integration Tests', () => {
 
         // Create initial active visits
         const commonVisit = await prisma.visit.create({
-            data: { participantId: commonId, arrived: new Date() }
+            data: { participantId: commonId, arrivedAt: new Date() }
         });
         activeVisitId = commonVisit.id;
 
         const childVisit = await prisma.visit.create({
-            data: { participantId: householdChildId, arrived: new Date() }
+            data: { participantId: householdChildId, arrivedAt: new Date() }
         });
         childActiveVisitId = childVisit.id;
     });
@@ -238,7 +238,7 @@ describe('General Attendance API Integration Tests', () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: householdLeadId, householdId: 1, householdLead: true } });
 
              // Note: First we must clear the child's visit to simulate checking them back in
-             await prisma.visit.update({ where: { id: childActiveVisitId }, data: { departed: new Date() } });
+             await prisma.visit.update({ where: { id: childActiveVisitId }, data: { departedAt: new Date() } });
 
              const req = new Request(`http://localhost:4000/api/attendance`, {
                  method: 'POST',
@@ -320,7 +320,7 @@ describe('General Attendance API Integration Tests', () => {
         it('should block a common user from checking out another user', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             // Admin hasn't departed
+             // Admin hasn't departedAt
              const req = new Request(`http://localhost:4000/api/attendance`, {
                  method: 'DELETE',
                  body: JSON.stringify({ visitId: childActiveVisitId }) // the child's visit
@@ -346,7 +346,7 @@ describe('General Attendance API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.visit.departed).not.toBeNull();
+             expect(data.visit.departedAt).not.toBeNull();
         });
     });
 });

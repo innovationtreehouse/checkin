@@ -167,9 +167,9 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // Global informational counts (not scoped to the caller).
     const [building, buildingHousehold, activePrograms] = await Promise.all([
-        prisma.visit.count({ where: { departed: null } }),
+        prisma.visit.count({ where: { departedAt: null } }),
         user.householdId
-            ? prisma.visit.count({ where: { departed: null, participant: { householdId: user.householdId } } })
+            ? prisma.visit.count({ where: { departedAt: null, participant: { householdId: user.householdId } } })
             : Promise.resolve(0),
         prisma.program.count({ where: { phase: "RUNNING" } }),
     ]);
