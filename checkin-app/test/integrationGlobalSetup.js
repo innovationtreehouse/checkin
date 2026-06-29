@@ -71,7 +71,6 @@ module.exports = async function integrationGlobalSetup(globalConfig) {
             await admin.query(`DROP DATABASE IF EXISTS "${db}" WITH (FORCE)`)
             await admin.query(`CREATE DATABASE "${db}" TEMPLATE "${template}"`)
         }
-        // eslint-disable-next-line no-console
         console.log(`[integration] ${maxWorkers} worker DB(s) ready (run ${runId})`)
     } finally {
         await admin.end()
