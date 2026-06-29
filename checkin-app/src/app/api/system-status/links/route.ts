@@ -11,11 +11,11 @@ export const GET = withAuth(
             const ninetyDaysAgo = new Date();
             ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
             prisma.integrationErrorLog
-                .deleteMany({ where: { createdAt: { lt: ninetyDaysAgo } } })
+                .deleteMany({ where: { timestamp: { lt: ninetyDaysAgo } } })
                 .catch((err: unknown) => console.error("Failed to purge old integration errors:", err));
 
             const errors = await prisma.integrationErrorLog.findMany({
-                orderBy: [{ resolvedAt: "asc" }, { createdAt: "desc" }],
+                orderBy: [{ resolvedAt: "asc" }, { timestamp: "desc" }],
                 take: 200,
             });
 

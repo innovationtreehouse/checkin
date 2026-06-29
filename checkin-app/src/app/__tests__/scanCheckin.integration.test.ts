@@ -122,7 +122,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
         // Backdate the badge event so the second scan is past the 3s debounce window.
         await prisma.rawBadgeLog.updateMany({
             where: { participantId: normalId },
-            data: { time: new Date(Date.now() - 5000) },
+            data: { timestamp: new Date(Date.now() - 5000) },
         });
 
         // Second scan → check-out.

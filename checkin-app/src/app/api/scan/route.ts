@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
             const recentScan = await tx.rawBadgeLog.findFirst({
                 where: {
                     participantId: participant.id,
-                    time: {
+                    timestamp: {
                         gte: threeSecondsAgo
                     }
                 }

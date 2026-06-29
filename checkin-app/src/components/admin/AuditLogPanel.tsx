@@ -17,7 +17,7 @@ import {
 
 type AuditLog = {
   id: number;
-  time: string;
+  timestamp: string;
   actorId: number;
   actorName: string | null;
   action: "CREATE" | "EDIT" | "DELETE" | "BECOME_ADMIN";
@@ -141,8 +141,8 @@ export function AuditLogPanel() {
                 {data.logs.map((l) => (
                   <Table.Tr key={l.id}>
                     <Table.Td style={{ whiteSpace: "nowrap" }}>
-                      <div>{new Date(l.time).toLocaleDateString()}</div>
-                      <div>{new Date(l.time).toLocaleTimeString()}</div>
+                      <div>{new Date(l.timestamp).toLocaleDateString()}</div>
+                      <div>{new Date(l.timestamp).toLocaleTimeString()}</div>
                     </Table.Td>
                     <Table.Td>
                       <Badge size="sm" color={ACTION_COLOR[l.action]}>

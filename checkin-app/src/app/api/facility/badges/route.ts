@@ -8,7 +8,7 @@ export const GET = withAuth(
         try {
             const badges = await prisma.rawBadgeLog.findMany({
                 take: 200,
-                orderBy: { time: "desc" },
+                orderBy: { timestamp: "desc" },
                 include: {
                     participant: {
                         select: { name: true, email: true },

@@ -18,7 +18,7 @@ type IntegrationError = {
   source: string;
   message: string;
   context: unknown;
-  createdAt: string;
+  timestamp: string;
   resolvedAt: string | null;
 };
 
@@ -90,7 +90,7 @@ export function LinkStatusPanel() {
                   </Badge>
                 )}
                 <Text size="xs" c="dimmed">
-                  {new Date(e.createdAt).toLocaleString()}
+                  {new Date(e.timestamp).toLocaleString()}
                 </Text>
               </Group>
               <Text size="sm">{e.message}</Text>

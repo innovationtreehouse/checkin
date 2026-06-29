@@ -5,7 +5,7 @@ import { Card, Center, Code, Loader, Stack, Table, Text, Title } from "@mantine/
 
 type ErrorLogRow = {
   id: number;
-  createdAt: string;
+  timestamp: string;
   route: string | null;
   message: string;
   stack: string | null;
@@ -70,7 +70,7 @@ export function ErrorLogPanel() {
                   style={{ cursor: "pointer" }}
                 >
                   <Table.Td style={{ whiteSpace: "nowrap" }}>
-                    {new Date(e.createdAt).toLocaleString()}
+                    {new Date(e.timestamp).toLocaleString()}
                   </Table.Td>
                   <Table.Td>{e.route ? <Code>{e.route}</Code> : <Text c="dimmed">—</Text>}</Table.Td>
                   <Table.Td>{e.message}</Table.Td>

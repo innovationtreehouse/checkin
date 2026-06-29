@@ -98,7 +98,7 @@ describe('POST /api/scan', () => {
         }) as unknown as import('next/server').NextRequest;
 
         (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: 1 });
-        (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue({ time: new Date(Date.now() - 1000) });
+        (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue({ timestamp: new Date(Date.now() - 1000) });
 
         const res = await POST(req);
         expect(res.status).toBe(200);

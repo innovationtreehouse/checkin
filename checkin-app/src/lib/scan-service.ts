@@ -94,12 +94,12 @@ export async function processCheckout(
 
                 const recentEvents = await db.rawBadgeLog.findMany({
                     where: { participantId: participant.id },
-                    orderBy: { time: "desc" },
+                    orderBy: { timestamp: "desc" },
                     take: 2
                 });
 
                 if (recentEvents.length === 2) {
-                    const timeDiff = recentEvents[0].time.getTime() - recentEvents[1].time.getTime();
+                    const timeDiff = recentEvents[0].timestamp.getTime() - recentEvents[1].timestamp.getTime();
                     if (timeDiff <= 12000) {
                         confirmForceClose = true;
                     }
