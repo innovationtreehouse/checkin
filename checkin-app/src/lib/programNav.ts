@@ -17,5 +17,6 @@ export interface ProgramNavLink {
 export const PROGRAM_NAV_LINKS: ProgramNavLink[] = [
   { name: "All Programs", href: "/program-ops/programs", icon: "📚", description: "Browse and manage recurring programs." },
   { name: "New Program", href: "/program-ops/new", icon: "✨", description: "Create a new program or curriculum track." },
-  { name: "Events", href: "/program-ops/sessions", icon: "📅", description: "Schedule sessions and audit facility logs." },
+  { name: "One Time Events", href: "/program-ops/events", icon: "📋", description: "Browse all one-off / standalone events." },
+  { name: "New One Time Event", href: "/program-ops/sessions", icon: "📅", description: "Schedule a one-off event or manual session." },
 ];
