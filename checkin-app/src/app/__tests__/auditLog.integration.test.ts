@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * Integration Test for Audit Logs
  * Ensures that various actions across the system correctly generate an AuditLog.
