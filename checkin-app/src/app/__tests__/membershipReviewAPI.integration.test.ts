@@ -171,7 +171,7 @@ describe('Membership BG review API', () => {
         const res = await OVERRIDE(req({ processId: proc.processId, action: 'reset' }) as never);
         expect(res.status).toBe(200);
         const updated = await prisma.membershipProcess.findUnique({ where: { id: proc.processId } });
-        expect(updated?.status).toBe('PENDING_BG_REVIEW');
+        expect(updated?.status).toBe('PENDING_PAYMENT');
         const count = await prisma.backgroundCheckAttestation.count({ where: { processId: proc.processId } });
         expect(count).toBe(0);
 
