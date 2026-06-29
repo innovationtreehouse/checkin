@@ -171,6 +171,7 @@ describe('Nav todo-counts API', () => {
         expect(typeof data.admin.membership).toBe('number');
         expect(data.admin.programsPending).toBeGreaterThanOrEqual(1); // payment-plan requested
         expect(data.admin.trustedAdults).toBeGreaterThanOrEqual(1); // the PENDING_BOARD_REVIEW review
+        expect(typeof data.admin.unclaimedHouseholds).toBe('number'); // households with an unclaimed account
     });
 
     it('counts BLOCKED for the board but not the reviewer-owned review states', async () => {

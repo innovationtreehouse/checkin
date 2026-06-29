@@ -39,13 +39,19 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
       .find((l) => pathname === l.href || pathname.startsWith(l.href + "/"))?.href ?? null;
 
   const missingContact = todoCounts?.admin?.householdsMissingContact ?? 0;
+  const unclaimed = todoCounts?.admin?.unclaimedHouseholds ?? 0;
 
   return (
     <Stack>
       <Tabs value={activeTab} onChange={(value) => value && router.push(value)}>
         <ScrollableTabsList>
           {NAV_LINKS.map((link) => {
-            const count = link.href === "/membership-audit/emergency-contacts" ? missingContact : 0;
+            // Gray badges: these gaps are on the household, not something the board can fix.
+            const isEmergency = link.href === "/membership-audit/emergency-contacts";
+            const count = isEmergency ? missingContact : unclaimed;
+            const label = isEmergency
+              ? `${count} household${count === 1 ? "" : "s"} missing an emergency contact`
+              : `${count} unclaimed account household${count === 1 ? "" : "s"}`;
             return (
               <Tabs.Tab
                 key={link.href}
@@ -55,9 +61,9 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
                   count > 0 ? (
                     <Badge
                       size="xs"
-                      color="treehouseGreen"
+                      color="gray"
                       variant="filled"
-                      aria-label={`${count} household${count === 1 ? "" : "s"} missing an emergency contact`}
+                      aria-label={label}
                     >
                       {count}
                     </Badge>

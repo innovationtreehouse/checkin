@@ -148,9 +148,12 @@ function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge | null {
     case '/membership-ops':
       // Pending membership applications awaiting board review.
       return green(counts.admin ? counts.admin.membership : 0, 'Pending membership reviews');
-    case '/membership-audit':
-      // Active/in-intake households with no valid emergency contact.
-      return green(counts.admin ? counts.admin.householdsMissingContact : 0, 'Households missing an emergency contact');
+    case '/membership-audit': {
+      // Gray: gaps the household must close, not the board — missing emergency
+      // contacts plus accounts created at registration but never claimed.
+      const total = counts.admin ? counts.admin.householdsMissingContact + counts.admin.unclaimedHouseholds : 0;
+      return gray(total, 'Households missing an emergency contact or with an unclaimed account');
+    }
     case '/finance-ops':
       // Pending participants awaiting payment-plan approval.
       return green(counts.admin ? counts.admin.programsPending : 0, 'Pending payment-plan approvals');
