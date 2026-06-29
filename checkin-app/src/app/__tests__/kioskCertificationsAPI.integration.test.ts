@@ -133,7 +133,10 @@ describe('Kiosk Certifications API Integration Tests', () => {
              const res = await GET(req as unknown as NextRequest);
              expect(res.status).toBe(401);
              const data = await res.json();
-             expect(data.error).toBe('Invalid Signature');
+             // A bad kiosk signature falls through to the session check (here: no session),
+             // so withAuth fails closed with the generic 401. The verifier's own error string
+             // is intentionally not surfaced to the caller.
+             expect(data.error).toBe('Unauthorized');
         });
 
         it('should return active visits and tools if Kiosk signature is valid', async () => {
@@ -169,7 +172,9 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         it('should return active visits and tools for authenticated web users', async () => {
-            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
+            // This endpoint is privileged (sysadmin/boardMember/keyholder or kiosk); a plain
+            // member session gets 403. Grant a role flag so the session passes the gate.
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId, keyholder: true } });
             (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
 
             const req = new Request('http://localhost:4000/api/kiosk/certifications', { method: 'GET' });
