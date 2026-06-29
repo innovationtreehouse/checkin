@@ -18,9 +18,10 @@ concurrency:
 
 env:
   AWS_REGION: us-east-2
-  # Same OIDC deploy role the deploy workflows use — needs ecr-public:GetAuthorizationToken
-  # + sts:GetServiceBearerToken, and its trust policy must allow this repo's workflows.
-  DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-dev
+  # Dedicated least-privilege OIDC role (ecr-public auth only) — defined in the
+  # infra repo as checkin-ci-pull-${env}. Separate from the deploy role, which is
+  # intentionally ECR-free. Requires infra PR innovationtreehouse/infra#110 applied.
+  PULL_ROLE: arn:aws:iam::639595353568:role/checkin-ci-pull-dev
 
 jobs:
   flow:
@@ -35,7 +36,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ env.DEPLOY_ROLE }}
+          role-to-assume: ${{ env.PULL_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR Public
