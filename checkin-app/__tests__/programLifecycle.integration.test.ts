@@ -33,7 +33,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 googleId: "test-auth-board",
                 sysadmin: false,
                 boardMember: true,
-                dob: new Date('1990-01-01'),
+                dateOfBirth: new Date('1990-01-01'),
                 household: { create: {} }
             }
         });
@@ -45,7 +45,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 name: "Mentor Tester",
                 email: "mentor@test.com",
                 googleId: "test-auth-mentor",
-                dob: new Date('1985-01-01'),
+                dateOfBirth: new Date('1985-01-01'),
                 household: { create: {} }
             }
         });
@@ -57,7 +57,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 name: "Standard Tester",
                 email: "participant@test.com",
                 googleId: "test-auth-std",
-                dob: new Date('2000-01-01'),
+                dateOfBirth: new Date('2000-01-01'),
                 household: { create: {} }
             }
         });
