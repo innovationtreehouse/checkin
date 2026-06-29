@@ -9,6 +9,7 @@ import {
 } from "@mantine/core";
 import { formatTime } from "@/lib/time";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
+import { AttendanceTabs } from "./AttendanceTabs";
 
 type Participant = {
   id: number;
@@ -318,6 +319,11 @@ function KioskDisplayInner() {
 
   return (
     <Box p="md" style={isKioskMode ? { cursor: "none" } : undefined}>
+      {!isKioskMode && (
+        <Box style={{ maxWidth: 1200, margin: "0 auto" }}>
+          <AttendanceTabs />
+        </Box>
+      )}
       <Card withBorder radius="md" padding="lg" style={{ width: "100%", maxWidth: 1200, margin: "0 auto" }}>
         {/* Check-in button — hidden in kiosk mode */}
         {!isKioskMode && (

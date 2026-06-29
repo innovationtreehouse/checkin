@@ -26,7 +26,9 @@ jest.mock('next-auth/next', () => ({
 }));
 
 jest.mock('@/lib/notifications', () => ({
-    sendNotification: jest.fn().mockResolvedValue(undefined),
+    // sendNotification resolves boolean delivery status; cron stamps reminderSentAt
+    // only on a truthy result, so the mock must mimic a successful send.
+    sendNotification: jest.fn().mockResolvedValue(true),
 }));
 
 const TAG = 'reschedule-clears-test';
