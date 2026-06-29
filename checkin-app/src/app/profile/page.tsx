@@ -136,7 +136,7 @@ export default function ProfilePage() {
               <TextInput type="date" label="Date of Birth" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.currentTarget.value })} />
 
               <Text size="sm" c="dimmed">
-                Your address is managed on the <Anchor href="/household">Household</Anchor> page.
+                Your address is managed on the <Anchor href="/my-household">Household</Anchor> page.
               </Text>
 
               <Button type="submit" disabled={saving} loading={saving} mt="sm">

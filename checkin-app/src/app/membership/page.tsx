@@ -23,6 +23,7 @@ interface ExternalStatus {
   contractSigned: boolean;
   contractStarted: boolean;
   bgConsented: boolean;
+  bgCleared: boolean;
   deepLinkUrl: string | null;
 }
 
@@ -312,7 +313,7 @@ export default function MembershipPage() {
         setFieldErrors({});
         hydrate(data.state);
         notifyNavRefresh();
-        flash("Submitted! Next: sign your contract and consent to a background check.");
+        flash("Submitted! Next: sign your contract and start your background check — then you can pay right away.");
         setWarnings(saveWarnings);
       } else {
         // The server may flag fields the client can't check locally (e.g. an
@@ -434,7 +435,7 @@ export default function MembershipPage() {
           </Text>
           <Text c="dimmed" mb="md">
             Did anything change — new members, address, phone, or email?{" "}
-            <Anchor component={Link} href="/household">Update your household details first</Anchor>.
+            <Anchor component={Link} href="/my-household">Update your household details first</Anchor>.
           </Text>
           <Button color="green" disabled={saving} loading={saving} onClick={renew}>Renew now</Button>
         </Card>
@@ -529,10 +530,11 @@ export default function MembershipPage() {
               <Card withBorder radius="md" padding="lg">
                 <Stack gap="md">
                   <div>
-                    <Title order={2}>Two quick steps</Title>
+                    <Title order={2}>Sign &amp; start your background check</Title>
                     <Text c="dimmed">
-                      These can be done in any order. We&apos;ll move you forward automatically once
-                      both are complete.
+                      Once your agreement is signed and your background check is underway, we&apos;ll
+                      move you straight to payment — you won&apos;t have to wait for the check to come
+                      back.
                     </Text>
                   </div>
 
@@ -548,15 +550,27 @@ export default function MembershipPage() {
                     </Stack>
                   </ExternalTask>
 
-                  <ExternalTask done={!!state.external?.bgConsented} title="Consent to a background check" doneText="Background-check consent received.">
-                    {state.external?.deepLinkUrl ? (
-                      <Button component="a" href={state.external.deepLinkUrl} target="_blank" rel="noopener noreferrer">
-                        Consent on Averity →
-                      </Button>
-                    ) : (
-                      <Text c="dimmed">The background-check link isn&apos;t available yet. Please check back shortly.</Text>
-                    )}
-                  </ExternalTask>
+                  {state.external?.bgCleared ? (
+                    <ExternalTask done title="Background check" doneText="Your household&apos;s background check is still valid — no new check needed.">
+                      <Text c="dimmed" />
+                    </ExternalTask>
+                  ) : (
+                    <ExternalTask done={!!state.external?.bgConsented} title="Start your background check" doneText="Background check started — we&apos;ll finish it in the background.">
+                      <Stack gap="xs" align="flex-start">
+                        <Text c="dimmed">
+                          Consent to your background check on Averity. It runs in the background — you
+                          can keep going and pay while it completes.
+                        </Text>
+                        {state.external?.deepLinkUrl ? (
+                          <Button component="a" href={state.external.deepLinkUrl} target="_blank" rel="noopener noreferrer">
+                            Consent on Averity →
+                          </Button>
+                        ) : (
+                          <Text c="dimmed">The background-check link isn&apos;t available yet. Please check back shortly.</Text>
+                        )}
+                      </Stack>
+                    </ExternalTask>
+                  )}
 
                   <Button variant="default" disabled={saving} onClick={load} style={{ alignSelf: "flex-start" }}>
                     Refresh status
@@ -578,6 +592,12 @@ export default function MembershipPage() {
                     ) : (
                       <Text c="yellow" mt="md">The payment link isn&apos;t available yet. Please check back shortly.</Text>
                     )}
+                    {!state.external?.bgCleared && (
+                      <Alert color="blue" variant="light" mt="md">
+                        Your background check is being reviewed in the background — you can pay now.
+                        Your membership activates as soon as both the payment and the check are done.
+                      </Alert>
+                    )}
                     <Text size="sm" c="dimmed" mt="lg">
                       To discuss alternative arrangements, please email{" "}
                       <Anchor href="mailto:finance@innovationtreehouse.org">finance@innovationtreehouse.org</Anchor>.
@@ -586,6 +606,15 @@ export default function MembershipPage() {
                 ) : (
                   <Text c="dimmed">Preparing your invoice…</Text>
                 )}
+              </Card>
+            ) : inStatus === "PENDING_BG_CLEARANCE" ? (
+              <Card withBorder radius="md" padding="lg">
+                <Title order={2} mb="sm">Payment received 🎉</Title>
+                <Text c="dimmed">
+                  Thanks — your dues are paid. We&apos;re just finishing your background check. Your
+                  membership activates automatically the moment it clears, and we&apos;ll email you
+                  then. Nothing else to do.
+                </Text>
               </Card>
             ) : (
               <Card withBorder radius="md" padding="xl">

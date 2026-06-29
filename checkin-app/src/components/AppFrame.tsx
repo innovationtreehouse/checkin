@@ -59,7 +59,7 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/household', label: 'My Household', icon: <IconHome size={18} />, visible: (_u, signedIn) => signedIn },
+  { href: '/my-household', label: 'My Household', icon: <IconHome size={18} />, visible: (_u, signedIn) => signedIn },
   {
     href: '/safety',
     label: 'Safety',
@@ -67,10 +67,10 @@ const NAV_ITEMS: NavItem[] = [
     visible: (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder,
   },
   { href: '/my-activities', label: 'My Activities', icon: <IconActivity size={18} />, visible: (_u, signedIn) => signedIn },
-  { href: '/kioskdisplay', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
+  { href: '/attendance', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/programs', label: 'Programs', icon: <IconCalendarEvent size={18} />, visible: () => true },
   {
-    href: '/shop',
+    href: '/shop-ops',
     label: 'Shop Ops',
     icon: <IconTool size={18} />,
     visible: (u) =>
@@ -79,7 +79,7 @@ const NAV_ITEMS: NavItem[] = [
       !!u?.toolStatuses?.some((ts) => ts.level === 'MAY_CERTIFY_OTHERS'),
   },
   {
-    href: '/facility',
+    href: '/facility-ops',
     label: 'Facility Ops',
     icon: <IconBuildingWarehouse size={18} />,
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
@@ -139,9 +139,9 @@ function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge | null {
   const gray = (n: number, label: string): NavBadge | null =>
     n > 0 ? { count: n, color: 'gray', label } : null;
   switch (href) {
-    case '/household':
+    case '/my-household':
       return green(counts.member.household.length, `${counts.member.household.length} items need attention`);
-    case '/kioskdisplay':
+    case '/attendance':
       return gray(counts.building, `${counts.building} people currently in the building`);
     case '/programs':
       return gray(counts.activePrograms, `${counts.activePrograms} active programs`);

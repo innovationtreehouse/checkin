@@ -10,6 +10,7 @@ import { POST } from '@/app/api/admin/participants/route';
 import { PUT } from '@/app/api/admin/participants/[id]/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { expectAuditRow, auditJson } from '@/test-helpers/expectAuditRow';
 
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
@@ -284,7 +285,15 @@ describe('Admin Participants API Integration Tests', () => {
             const dbCheck = await prisma.participant.findUnique({ where: { id: editUser.id } });
             expect(dbCheck?.name).toBe('Updated Name');
             expect(dbCheck?.phone).toBe('5551234567');
-            
+
+            // PII edits MUST leave an audit trail naming the acting admin and the
+            // before/after of the field — a regression dropping the actor or the
+            // log fails right here.
+            const log = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'Participant', affectedEntityId: editUser.id });
+            expect(log.actorId).toBe(testAdminId);
+            expect(auditJson(log.oldData).name).toBe('Original Name');
+            expect(auditJson(log.newData).name).toBe('Updated Name');
+
             // Cleanup is handled by afterEach
         });
     });

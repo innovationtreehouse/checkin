@@ -5,7 +5,7 @@
  * Integration tests for syncContractStatus — the PRIMARY contract-completion path
  * in dev (the Zoho webhook is unreliable against a scale-to-zero instance). Pulls
  * the signing status from Zoho on the signing-return (?signed=1), records the
- * contract signed, and advances the process to PENDING_BG_REVIEW when BG consent
+ * contract signed, and advances the process to PENDING_PAYMENT when BG consent
  * is already present. Best-effort: a Zoho hiccup is swallowed.
  *
  * Zoho is mocked (getAccessToken / getRequestStatus) like the other external tests.
@@ -18,7 +18,7 @@ import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
-// Advancing to PENDING_BG_REVIEW pings reviewers; don't hit Resend in tests.
+// Advancing to PENDING_PAYMENT pings reviewers; don't hit Resend in tests.
 jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
 // Mock the whole Zoho client so no real OAuth/HTTP happens. Only getAccessToken +
 // getRequestStatus are exercised by syncContractStatus; the rest are stubs.
@@ -65,7 +65,7 @@ async function audits(processId: number) {
     });
     return {
         signed: rows.filter((r) => String(r.newData).includes('"contractSignedAt":true')),
-        advanced: rows.filter((r) => String(r.newData).includes('"status":"PENDING_BG_REVIEW"')),
+        advanced: rows.filter((r) => String(r.newData).includes('"status":"PENDING_PAYMENT"')),
     };
 }
 
@@ -105,7 +105,7 @@ describe('syncContractStatus', () => {
         await prisma.$disconnect();
     });
 
-    it('HAPPY: Zoho signed=true records contractSignedAt and (with bgConsent present) advances to PENDING_BG_REVIEW', async () => {
+    it('HAPPY: Zoho signed=true records contractSignedAt and (with bgConsent present) advances to PENDING_PAYMENT', async () => {
         const { userId, processId } = await makeApplicant({ bgConsentAt: new Date() });
         mockGetRequestStatus.mockResolvedValue(true);
 
@@ -114,7 +114,7 @@ describe('syncContractStatus', () => {
         expect(status?.contractSigned).toBe(true);
         const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
         expect(p?.contractSignedAt).not.toBeNull();
-        expect(p?.status).toBe('PENDING_BG_REVIEW');
+        expect(p?.status).toBe('PENDING_PAYMENT');
 
         // Contract-signed audit is attributed to the signing applicant (actorId = userId).
         const a = await audits(processId);
@@ -157,7 +157,7 @@ describe('syncContractStatus', () => {
         await syncContractStatus(userId);
 
         const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
-        expect(p?.status).toBe('PENDING_BG_REVIEW');
+        expect(p?.status).toBe('PENDING_PAYMENT');
         const a = await audits(processId);
         expect(a.signed).toHaveLength(1);
         expect(a.advanced).toHaveLength(1);

@@ -45,7 +45,7 @@ export default function ManualAttendance() {
       <Card withBorder radius="md" padding="lg">
         <Group justify="space-between" align="center" wrap="wrap" mb="md">
           <Title order={1}>Manual Time Entry</Title>
-          <Button variant="default" onClick={() => router.push("/kioskdisplay")}>
+          <Button variant="default" onClick={() => router.push("/attendance")}>
             ← Back to Attendance
           </Button>
         </Group>

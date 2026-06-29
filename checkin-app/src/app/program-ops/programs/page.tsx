@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Badge, Button, Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { Anchor, Badge, Button, Group, Stack, Text } from "@mantine/core";
+import { DataTable, type DataTableColumn } from "@/components/admin/DataTable";
 
 type Program = {
   id: number;
@@ -32,56 +34,65 @@ export default function AdminProgramsIndex() {
       });
   }, []);
 
+  const columns: DataTableColumn<Program>[] = [
+    {
+      header: "Program",
+      render: (p) => <Text fw={600}>{p.name}</Text>,
+      sortBy: (p) => p.name,
+    },
+    {
+      header: "Participants",
+      align: "right",
+      render: (p) => p._count?.participants ?? 0,
+      sortBy: (p) => p._count?.participants ?? 0,
+    },
+    {
+      header: "Events",
+      align: "right",
+      render: (p) => p._count?.events ?? 0,
+      sortBy: (p) => p._count?.events ?? 0,
+    },
+    {
+      header: "Status",
+      render: (p) => (
+        <Group gap="xs" wrap="nowrap">
+          {p.phase === 'PLANNING' && (
+            <Badge color="yellow" variant="light">Planning / Not Published</Badge>
+          )}
+          <Badge color={p.memberOnly ? 'grape' : 'blue'} variant="light">
+            {p.memberOnly ? 'Member Only' : 'Public'}
+          </Badge>
+        </Group>
+      ),
+      sortBy: (p) => p.phase === 'PLANNING' ? 'Planning' : (p.memberOnly ? 'Member Only' : 'Public'),
+    },
+    {
+      header: "",
+      align: "right",
+      render: (p) => (
+        <Anchor component={Link} href={`/program-ops/programs/${p.id}`} fw={500}>
+          View →
+        </Anchor>
+      ),
+    },
+  ];
+
   return (
     <Stack>
       <Group justify="space-between" align="flex-start" wrap="wrap">
-        <div>
-          <Title order={1}>Programs</Title>
-          <Text c="dimmed">Manage recurring programs and curriculum tracks.</Text>
-        </div>
+        <Text c="dimmed">Manage recurring programs and curriculum tracks.</Text>
         <Button color="green" onClick={() => router.push('/program-ops/new')}>
           + New Program
         </Button>
       </Group>
 
-      {loading ? (
-        <Center py="xl"><Loader /></Center>
-      ) : programs.length === 0 ? (
-        <Card withBorder radius="md" padding="xl" ta="center">
-          <Text c="dimmed">No programs found. Create your first one!</Text>
-        </Card>
-      ) : (
-        <Stack gap="sm">
-          {programs.map((program) => (
-            <Card
-              key={program.id}
-              withBorder
-              radius="md"
-              padding="md"
-              onClick={() => router.push(`/program-ops/programs/${program.id}`)}
-              style={{ cursor: 'pointer' }}
-            >
-              <Group justify="space-between" wrap="nowrap">
-                <div>
-                  <Text fw={600}>{program.name}</Text>
-                  <Text size="sm" c="dimmed">
-                    {program._count?.participants || 0} Participants • {program._count?.events || 0} Events
-                  </Text>
-                </div>
-                <Group gap="xs">
-                  {program.phase === 'PLANNING' && (
-                    <Badge color="yellow" variant="light">Planning / Not Published</Badge>
-                  )}
-                  <Badge color={program.memberOnly ? 'grape' : 'blue'} variant="light">
-                    {program.memberOnly ? 'Member Only' : 'Public'}
-                  </Badge>
-                  <Text fz="lg">→</Text>
-                </Group>
-              </Group>
-            </Card>
-          ))}
-        </Stack>
-      )}
+      <DataTable
+        columns={columns}
+        rows={programs}
+        getRowKey={(p) => p.id}
+        loading={loading}
+        emptyMessage="No programs found. Create your first one!"
+      />
     </Stack>
   );
 }
