@@ -6,6 +6,7 @@ import { Badge, Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { PageContainer } from "@/components/ui/PageContainer";
 import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 
 export default function SafetyLayout({ children }: { children: React.ReactNode }) {
@@ -43,7 +44,7 @@ export default function SafetyLayout({ children }: { children: React.ReactNode }
   const active = tabs.find((t) => pathname === t.href)?.href ?? null;
 
   return (
-    <>
+    <PageContainer>
       <Tabs
         value={active}
         onChange={(value) => {
@@ -64,6 +65,6 @@ export default function SafetyLayout({ children }: { children: React.ReactNode }
         </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
-    </>
+    </PageContainer>
   );
 }

@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { FACILITY_NAV_LINKS } from "@/lib/facilityNav";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { PageContainer } from "@/components/ui/PageContainer";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
 export default function FacilityLayout({ children }: { children: React.ReactNode }) {
@@ -28,7 +29,7 @@ export default function FacilityLayout({ children }: { children: React.ReactNode
   const active = FACILITY_NAV_LINKS.find((link) => pathname === link.href)?.href ?? null;
 
   return (
-    <>
+    <PageContainer>
       <Tabs
         value={active}
         onChange={(value) => {
@@ -45,6 +46,6 @@ export default function FacilityLayout({ children }: { children: React.ReactNode
         </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
-    </>
+    </PageContainer>
   );
 }

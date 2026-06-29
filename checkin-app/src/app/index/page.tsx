@@ -3,7 +3,8 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { Container, NavLink, Stack, Text, TextInput, Title } from '@mantine/core';
+import { NavLink, Stack, Text, TextInput, Title } from '@mantine/core';
+import { PageContainer } from '@/components/ui/PageContainer';
 import { IconSearch } from '@tabler/icons-react';
 import { PAGES, type RegistryUser } from '@/components/pageRegistry';
 
@@ -38,7 +39,7 @@ export default function IndexPage() {
   }, [matches]);
 
   return (
-    <Container size="sm" p="md">
+    <PageContainer>
       <Title order={2} mb="md">Index</Title>
       <TextInput
         placeholder="Search pages…"
@@ -71,6 +72,6 @@ export default function IndexPage() {
           ))}
         </Stack>
       )}
-    </Container>
+    </PageContainer>
   );
 }

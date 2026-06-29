@@ -45,6 +45,9 @@ export type TodoCounts = {
     // Informational gray badges (not action items): live building occupancy and
     // how many programs are currently running.
     building: number;
+    // Of the people currently in the building, how many belong to the caller's
+    // household — lets the Attendance badge show "mine" (green) vs "others" (gray).
+    buildingHousehold: number;
     activePrograms: number;
     // Admin keys stay numeric — each admin nav link already deep-links to a page
     // that lists its own queue, so the number is enough.
@@ -163,14 +166,18 @@ export const GET = withAuth({}, async (_req, auth) => {
     }
 
     // Global informational counts (not scoped to the caller).
-    const [building, activePrograms] = await Promise.all([
+    const [building, buildingHousehold, activePrograms] = await Promise.all([
         prisma.visit.count({ where: { departed: null } }),
+        user.householdId
+            ? prisma.visit.count({ where: { departed: null, participant: { householdId: user.householdId } } })
+            : Promise.resolve(0),
         prisma.program.count({ where: { phase: "RUNNING" } }),
     ]);
 
     const result: TodoCounts = {
         member: { household: householdTodos, programs: programTodos },
         building,
+        buildingHousehold,
         activePrograms,
     };
 

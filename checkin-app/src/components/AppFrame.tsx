@@ -134,20 +134,27 @@ function isActive(pathname: string, href: string): boolean {
 type NavBadge = { count: number; color: string; label: string };
 
 /**
- * The badge for a nav item, or null when nothing to show. Green = action the
- * viewer must take; gray = live informational count (occupancy, running programs).
+ * Badges for a nav item (0, 1, or 2). Green = action the viewer must take, or
+ * the viewer's own household; gray = live informational count (others'
+ * occupancy, running programs). Attendance shows two: my household vs everyone
+ * else currently in the building.
  */
-function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge | null {
-  if (!counts) return null;
-  const green = (n: number, label: string): NavBadge | null =>
-    n > 0 ? { count: n, color: 'treehouseGreen', label } : null;
-  const gray = (n: number, label: string): NavBadge | null =>
-    n > 0 ? { count: n, color: 'gray', label } : null;
+function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[] {
+  if (!counts) return [];
+  const green = (n: number, label: string): NavBadge[] =>
+    n > 0 ? [{ count: n, color: 'treehouseGreen', label }] : [];
+  const gray = (n: number, label: string): NavBadge[] =>
+    n > 0 ? [{ count: n, color: 'gray', label }] : [];
   switch (href) {
     case '/my-household':
       return green(counts.member.household.length, `${counts.member.household.length} items need attention`);
-    case '/attendance':
-      return gray(counts.building, `${counts.building} people currently in the building`);
+    case '/attendance': {
+      const mine = counts.buildingHousehold;
+      return [
+        ...green(mine, `${mine} from your household currently in the building`),
+        ...gray(counts.building, `${counts.building} people currently in the building`),
+      ];
+    }
     case '/programs':
       return gray(counts.activePrograms, `${counts.activePrograms} active programs`);
     case '/membership-ops':
@@ -171,7 +178,7 @@ function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge | null {
     // badges it. A roll-up here just duplicates those numbers under an
     // unrelated label.
     default:
-      return null;
+      return [];
   }
 }
 
@@ -317,7 +324,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
             // On the colored sidebar all text is white; the 'light' variant gives a soft
             // translucent overlay on the active item rather than a harsh solid fill.
             const sidebarText = onColoredSidebar ? 'var(--mantine-color-white)' : undefined;
-            const badge = navBadgeFor(item.href, todoCounts);
+            const badges = navBadgeFor(item.href, todoCounts);
             return (
               <NavLink
                 key={item.href}
@@ -327,15 +334,20 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                 label={item.label}
                 leftSection={item.icon}
                 rightSection={
-                  badge ? (
-                    <Badge
-                      size="md"
-                      color={badge.color}
-                      variant="filled"
-                      aria-label={badge.label}
-                    >
-                      {badge.count}
-                    </Badge>
+                  badges.length > 0 ? (
+                    <Group gap={4} wrap="nowrap">
+                      {badges.map((badge) => (
+                        <Badge
+                          key={badge.color}
+                          size="md"
+                          color={badge.color}
+                          variant="filled"
+                          aria-label={badge.label}
+                        >
+                          {badge.count}
+                        </Badge>
+                      ))}
+                    </Group>
                   ) : undefined
                 }
                 active={active}
