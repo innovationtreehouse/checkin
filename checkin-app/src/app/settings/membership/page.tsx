@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Alert, Button, Card, Center, Checkbox, Group, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { AlertBanner } from "@/components/admin/AlertBanner";
+import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
 
 interface Settings {
   normalDuesCents: number;
@@ -41,6 +42,12 @@ export default function MembershipSettingsPage() {
   const [variantId, setVariantId] = useState("");
   const [discountCode, setDiscountCode] = useState("");
 
+  // Snapshot of the dues-form values as last loaded/saved; isDirty compares it to
+  // current state to drive the unsaved-changes guard.
+  // ponytail: guards the main Save-button form only. The volunteer-designation
+  // and go-live cards below are separate save flows — wire them if they grow edits.
+  const [initial, setInitial] = useState<Record<string, string> | null>(null);
+
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [newEmail, setNewEmail] = useState("");
 
@@ -62,12 +69,21 @@ export default function MembershipSettingsPage() {
       ]);
       if (sRes.ok) {
         const { settings } = (await sRes.json()) as { settings: Settings };
-        setNormalDues(dollars(settings.normalDuesCents));
-        setVolunteerDues(dollars(settings.volunteerDuesCents));
-        setBgRecheckMonths(String(settings.bgRecheckMonths ?? 0));
-        setBoundary(settings.membershipYearBoundary ? settings.membershipYearBoundary.slice(0, 10) : "");
-        setVariantId(settings.membershipVariantId ?? "");
-        setDiscountCode(settings.volunteerDiscountCode ?? "");
+        const snap = {
+          normalDues: dollars(settings.normalDuesCents),
+          volunteerDues: dollars(settings.volunteerDuesCents),
+          bgRecheckMonths: String(settings.bgRecheckMonths ?? 0),
+          boundary: settings.membershipYearBoundary ? settings.membershipYearBoundary.slice(0, 10) : "",
+          variantId: settings.membershipVariantId ?? "",
+          discountCode: settings.volunteerDiscountCode ?? "",
+        };
+        setNormalDues(snap.normalDues);
+        setVolunteerDues(snap.volunteerDues);
+        setBgRecheckMonths(snap.bgRecheckMonths);
+        setBoundary(snap.boundary);
+        setVariantId(snap.variantId);
+        setDiscountCode(snap.discountCode);
+        setInitial(snap);
       }
       if (dRes.ok) setDesignations((await dRes.json()).designations || []);
     } finally {
@@ -143,6 +159,11 @@ export default function MembershipSettingsPage() {
     } catch { flash("Network error.", true); }
     finally { setSaving(false); }
   };
+
+  const isDirty =
+    !!initial &&
+    !shallowEqual(initial, { normalDues, volunteerDues, bgRecheckMonths, boundary, variantId, discountCode });
+  useUnsavedGuard(isDirty);
 
   return (
     <Stack>

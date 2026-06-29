@@ -5,12 +5,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Box, Center, Loader, Tabs } from "@mantine/core";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 import { MY_ACTIVITIES_NAV_LINKS } from "@/lib/myActivitiesNav";
 
 export default function MyActivitiesLayout({ children }: { children: React.ReactNode }) {
   const { status } = useSession();
   const pathname = usePathname();
   const router = useRouter();
+  const confirmNav = useConfirmNav();
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/");
@@ -37,7 +39,7 @@ export default function MyActivitiesLayout({ children }: { children: React.React
       <Tabs
         value={active}
         onChange={(value) => {
-          if (value && value !== active) router.push(value);
+          if (value && value !== active && confirmNav()) router.push(value);
         }}
         mb="md"
       >

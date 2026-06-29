@@ -42,6 +42,7 @@ import { brand } from '@/brand';
 import { useIsDevInstance } from '@/components/EnvProvider';
 import { BuildInfoFooter } from '@/components/BuildInfoFooter';
 import { useTodoCounts } from '@/hooks/useTodoCounts';
+import { useConfirmNav } from '@/components/UnsavedChangesProvider';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 
 type SessionUser = {
@@ -193,6 +194,12 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const isDevInstance = useIsDevInstance();
+  const confirmNav = useConfirmNav();
+  // Shared chokepoint for every in-app link in the frame: if the current page has
+  // unsaved edits and the user declines the confirm, cancel the navigation.
+  const guardNav = (e: { preventDefault: () => void }) => {
+    if (!confirmNav()) e.preventDefault();
+  };
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure(false);
   // Fetch before any early return so the hook order stays stable (rules of hooks).
   const todoCounts = useTodoCounts(!!session);
@@ -215,7 +222,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   const onColoredSidebar = !!brand.nav.sidebar;
 
   const brandEl = (
-    <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+    <Link href="/" onNavigate={guardNav} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
       {brand.logo ? (
         <Image src={brand.logo.src} alt={brand.logo.alt} width={brand.logo.width} height={brand.logo.height} priority />
       ) : (
@@ -236,6 +243,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
       <Button
         component={Link}
         href="/profile"
+        onNavigate={guardNav}
         variant="subtle"
         leftSection={<IconUser size={16} />}
       >
@@ -310,6 +318,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 component={Link}
                 href={item.href}
+                onNavigate={guardNav}
                 label={item.label}
                 leftSection={item.icon}
                 rightSection={

@@ -6,10 +6,12 @@ import { Badge, Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 
 export default function SafetyLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const confirmNav = useConfirmNav();
   const { data: session } = useSession();
   const sessionUser = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
   const isBoard = !!(sessionUser?.sysadmin || sessionUser?.boardMember);
@@ -45,7 +47,7 @@ export default function SafetyLayout({ children }: { children: React.ReactNode }
       <Tabs
         value={active}
         onChange={(value) => {
-          if (value && value !== active) router.push(value);
+          if (value && value !== active && confirmNav()) router.push(value);
         }}
         mb="md"
       >

@@ -9,6 +9,7 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import type { TodoCounts } from "@/app/api/nav/todo-counts/route";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 
 /** Informational count for a Membership Ops nav link, or 0 when none / unknown. */
 function membershipTodoCountFor(href: string, counts: TodoCounts | null): number {
@@ -19,6 +20,7 @@ function membershipTodoCountFor(href: string, counts: TodoCounts | null): number
 export default function MembershipOpsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const confirmNav = useConfirmNav();
   const { data: session } = useSession();
   const sessionUser = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
   const { loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
@@ -55,7 +57,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
 
   return (
     <Stack>
-      <Tabs value={activeTab} onChange={(value) => value && router.push(value)}>
+      <Tabs value={activeTab} onChange={(value) => { if (value && confirmNav()) router.push(value); }}>
         <ScrollableTabsList>
           {MEMBERSHIP_OPS_NAV_LINKS.map((link) => {
             const todoCount = membershipTodoCountFor(link.href, todoCounts);
