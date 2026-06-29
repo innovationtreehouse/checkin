@@ -13,9 +13,11 @@ import {
     Text,
     Textarea,
     Title,
+    Tooltip,
 } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
 
 interface Review {
     id: number;
@@ -61,7 +63,7 @@ const STATUS_COLORS: Record<string, string> = {
 const label = (s: string) => s.replace(/_/g, " ");
 
 export default function AdminTrustedAdultsPage() {
-    const { ready, loading: authLoading } = useRequireRole(["sysadmin", "boardMember"]);
+    const { ready, loading: authLoading, user } = useRequireRole(["sysadmin", "boardMember"]);
     const [items, setItems] = useState<TrustedAdult[]>([]);
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState<number | null>(null);
@@ -163,6 +165,14 @@ export default function AdminTrustedAdultsPage() {
                 const status = latest?.status ?? "PENDING_BOARD_REVIEW";
                 const pending = status === "PENDING_BOARD_REVIEW";
                 const sharedVal = latest ? shared[latest.id] ?? "" : "";
+                // Conflict of interest: can't review your own household's trusted adult, nor
+                // one where you are the counterparty. Backend enforces the same rule.
+                const isSelf = isTrustedAdultConflict({
+                    actorParticipantId: user?.id,
+                    actorHouseholdId: user?.householdId,
+                    taHouseholdId: ta.household?.id,
+                    taCounterpartyParticipantId: ta.counterparty?.id,
+                });
                 return (
                     <Card key={ta.id} withBorder radius="md" padding="md">
                         <Group gap="xs">
@@ -201,31 +211,38 @@ export default function AdminTrustedAdultsPage() {
                                     value={sharedVal}
                                     onChange={(e) => setShared((s) => ({ ...s, [latest.id]: e.currentTarget.value }))}
                                 />
-                                <Group gap="xs">
-                                    <Button
-                                        size="xs" fz={15}
-                                        color="green"
-                                        loading={busyId === latest.id}
-                                        disabled={!sharedVal.trim()}
-                                        onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
-                                    >
-                                        Approve
-                                    </Button>
-                                    <Button size="xs" fz={15} color="red" loading={busyId === latest.id} onClick={() => decide(latest.id, "DENY")}>
-                                        Deny
-                                    </Button>
-                                    <Button
-                                        size="xs" fz={15}
-                                        variant="light"
-                                        loading={busyId === latest.id}
-                                        onClick={() => {
-                                            const note = window.prompt("What information do you need from the family?") ?? "";
-                                            decide(latest.id, "REQUEST_INFO", { note });
-                                        }}
-                                    >
-                                        Request info
-                                    </Button>
-                                </Group>
+                                <Tooltip
+                                    label="You can't review your own household's trusted adult — another board member must decide."
+                                    multiline w={260}
+                                    disabled={!isSelf}
+                                >
+                                    <Group gap="xs">
+                                        <Button
+                                            size="xs" fz={15}
+                                            color="green"
+                                            loading={busyId === latest.id}
+                                            disabled={isSelf || !sharedVal.trim()}
+                                            onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
+                                        >
+                                            Approve
+                                        </Button>
+                                        <Button size="xs" fz={15} color="red" loading={busyId === latest.id} disabled={isSelf} onClick={() => decide(latest.id, "DENY")}>
+                                            Deny
+                                        </Button>
+                                        <Button
+                                            size="xs" fz={15}
+                                            variant="light"
+                                            loading={busyId === latest.id}
+                                            disabled={isSelf}
+                                            onClick={() => {
+                                                const note = window.prompt("What information do you need from the family?") ?? "";
+                                                decide(latest.id, "REQUEST_INFO", { note });
+                                            }}
+                                        >
+                                            Request info
+                                        </Button>
+                                    </Group>
+                                </Tooltip>
                             </Stack>
                         )}
 
