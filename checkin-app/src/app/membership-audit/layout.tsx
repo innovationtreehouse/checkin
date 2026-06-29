@@ -61,7 +61,7 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
                   count > 0 ? (
                     <Badge
                       size="md"
-                      color="treehouseGreen"
+                      color="gray"
                       variant="filled"
                       aria-label={label}
                     >
