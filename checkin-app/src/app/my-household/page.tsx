@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
-import { formatDate, formatVisitRange, formatDateTime, calculateAge } from '@/lib/time';
+import { formatDate, calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
@@ -27,7 +27,6 @@ type HouseholdData = {
 } & Partial<StructuredAddress> | null;
 
 const blankContactForm = { id: null as number | null, name: "", phone: "", email: "", relationship: "" };
-type Visit = { id: number; participant?: { name: string }; event?: { name: string }; arrivedAt: string; departedAt?: string };
 
 export default function HouseholdPage() {
   const { data: session, status } = useSession();
@@ -43,9 +42,6 @@ export default function HouseholdPage() {
   const [editingMemberId, setEditingMemberId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ name: "", email: "", dob: "", phone: "", isLead: false });
 
-  const [visits, setVisits] = useState<Visit[]>([]);
-  const [filterDate, setFilterDate] = useState("");
-  const [settings, setSettings] = useState({ emailDependentCheckins: false });
   const [address, setAddress] = useState<StructuredAddress>(blankAddress);
   // Snapshot of the address as last loaded/saved; isDirty compares it to current
   // state to drive the unsaved-changes guard.
@@ -70,11 +66,7 @@ export default function HouseholdPage() {
 
   const fetchHousehold = useCallback(async () => {
     try {
-      const [res, visitRes, profileRes] = await Promise.all([
-        fetch('/api/household'),
-        fetch(`/api/household/visits?date=${filterDate}`),
-        fetch('/api/profile')
-      ]);
+      const res = await fetch('/api/household');
       if (res.ok) {
         const data = await res.json();
         setHousehold(data.household);
@@ -83,20 +75,12 @@ export default function HouseholdPage() {
         setAddress(loaded);
         setInitialAddress(loaded);
       }
-      if (visitRes.ok) {
-        const data = await visitRes.json();
-        setVisits(data.visits || []);
-      }
-      if (profileRes.ok) {
-        const data = await profileRes.json();
-        setSettings({ emailDependentCheckins: data.profile.notificationSettings?.emailDependentCheckins || false });
-      }
     } catch {
       setMessage("Network error loading household.");
     } finally {
       setLoading(false);
     }
-  }, [filterDate]);
+  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -110,22 +94,13 @@ export default function HouseholdPage() {
   const handleSaveSettings = async () => {
     setSavingSettings(true);
     try {
-      const profileRes = await fetch('/api/profile');
-      const profileData = await profileRes.json();
-      const currentSettings = profileData.profile?.notificationSettings || {};
-
-      const res = await fetch('/api/profile', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notificationSettings: { ...currentSettings, emailDependentCheckins: settings.emailDependentCheckins } })
-      });
       const householdRes = await fetch('/api/household/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(address)
       });
 
-      if (res.ok && householdRes.ok) {
+      if (householdRes.ok) {
         setMessage("Settings updated successfully!");
         fetchHousehold();
         notifyNavRefresh();
@@ -136,26 +111,6 @@ export default function HouseholdPage() {
       setMessage("Network error saving settings.");
     } finally {
       setSavingSettings(false);
-    }
-  };
-
-  // Receipts toggle persists immediately — no Update button. Optimistic flip,
-  // revert on failure so the checkbox never lies about what's in the DB.
-  const handleToggleReceipts = async (checked: boolean) => {
-    setSettings({ ...settings, emailDependentCheckins: checked });
-    try {
-      const profileRes = await fetch('/api/profile');
-      const profileData = await profileRes.json();
-      const currentSettings = profileData.profile?.notificationSettings || {};
-      const res = await fetch('/api/profile', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notificationSettings: { ...currentSettings, emailDependentCheckins: checked } })
-      });
-      if (!res.ok) throw new Error();
-    } catch {
-      setSettings({ ...settings, emailDependentCheckins: !checked });
-      setMessage("Failed to update receipt setting.");
     }
   };
 
@@ -542,58 +497,6 @@ export default function HouseholdPage() {
           </Card>
         )}
 
-        {household && (
-          <Card withBorder radius="md" padding="lg">
-            <Group justify="space-between" align="center" wrap="wrap" mb="xs">
-              <Title order={3}>Household Check-ins</Title>
-              <TextInput
-                type="date"
-                label="Lookup Date"
-                size="xs"
-                value={filterDate || new Date().toISOString().split('T')[0]}
-                onChange={(e) => setFilterDate(e.currentTarget.value)}
-              />
-            </Group>
-
-            {viewerIsLead && (
-              <Checkbox
-                mb="md"
-                checked={settings.emailDependentCheckins}
-                onChange={(e) => handleToggleReceipts(e.currentTarget.checked)}
-                label="Email me realtime receipts when my dependents check in/out"
-              />
-            )}
-
-            <Text size="sm" c="dimmed" mb="lg">
-              {filterDate ? (
-                <>Showing activity from <strong>{formatDate(new Date(filterDate).getTime() - 7 * 24 * 60 * 60 * 1000)}</strong> to <strong>{formatDate(new Date(filterDate).getTime() + 7 * 24 * 60 * 60 * 1000)}</strong></>
-              ) : (
-                <>Showing activity for the <strong>past 7 days</strong></>
-              )}
-            </Text>
-
-            {visits.length === 0 ? (
-              <Text c="dimmed">No historical visits found for your household.</Text>
-            ) : (
-              <Stack gap="xs">
-                {visits.map((v) => (
-                  <Paper key={v.id} withBorder radius="md" p="md">
-                    <Group justify="space-between">
-                      <div>
-                        <Text fw={600} c="blue">{v.participant?.name || 'Unnamed Member'}</Text>
-                        <Text size="sm" component="span">{v.event?.name || 'General Facility Visit'} </Text>
-                        <Text size="sm" c="dimmed" component="span">• {formatDateTime(v.arrivedAt, { dateStyle: 'short', timeStyle: 'short' })} • {formatVisitRange(v.arrivedAt, v.departedAt)}</Text>
-                      </div>
-                      {!v.departedAt && (
-                        <Text size="sm" component="span" c="yellow">Active Visit</Text>
-                      )}
-                    </Group>
-                  </Paper>
-                ))}
-              </Stack>
-            )}
-          </Card>
-        )}
       </Stack>
     </PageContainer>
   );
