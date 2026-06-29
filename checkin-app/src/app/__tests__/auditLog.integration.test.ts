@@ -11,6 +11,10 @@ import { POST as enrollParticipant } from '@/app/api/programs/[id]/participants/
 import { POST as markAttendance } from '@/app/api/events/[id]/attendance/route';
 import { PUT as editParticipant } from '@/app/api/admin/participants/[id]/route';
 import { POST as reassignHousehold } from '@/app/api/admin/participants/[id]/household/route';
+import { PATCH as updateRoles } from '@/app/api/admin/roles/route';
+import { POST as mergeParticipants } from '@/app/api/admin/participants/merge/route';
+import { PATCH as updateHousehold } from '@/app/api/admin/households/[id]/route';
+import { PATCH as updateVisit } from '@/app/api/admin/visits/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 // Mock NextAuth
@@ -28,6 +32,24 @@ describe('AuditLog Integration Tests', () => {
     let testProgramId: number;
     let testEventId: number;
     let testVisitId: number;
+
+    // TAG-scoped throwaway entities for the admin-writer cases below, tracked by
+    // id so afterAll cleans exactly what these tests made (no unfiltered deleteMany).
+    const TAG = 'audit-writers';
+    const createdParticipantIds: number[] = [];
+    const createdHouseholdIds: number[] = [];
+    const createdVisitIds: number[] = [];
+
+    async function makeParticipant(suffix: string) {
+        const p = await prisma.participant.create({
+            // 'audit-test' substring also matches the beforeAll backstop sweep.
+            data: { email: `${TAG}-${suffix}-audit-test@example.com`, name: `${TAG} ${suffix}`, household: { create: {} } },
+            select: { id: true, householdId: true },
+        });
+        createdParticipantIds.push(p.id);
+        if (p.householdId) createdHouseholdIds.push(p.householdId);
+        return p;
+    }
 
     beforeAll(async () => {
         // Clean up any leaked state from previous runs
@@ -55,6 +77,19 @@ describe('AuditLog Integration Tests', () => {
     });
 
     afterAll(async () => {
+        // TAG-scoped cleanup for the admin-writer cases (FK-safe order). Audit rows
+        // they wrote all carry actorId=testAdminId and are swept by the block below.
+        if (createdVisitIds.length > 0) {
+            await prisma.visit.deleteMany({ where: { id: { in: createdVisitIds } } });
+        }
+        if (createdParticipantIds.length > 0) {
+            await prisma.householdLead.deleteMany({ where: { participantId: { in: createdParticipantIds } } });
+            await prisma.participant.deleteMany({ where: { id: { in: createdParticipantIds } } });
+        }
+        if (createdHouseholdIds.length > 0) {
+            await prisma.household.deleteMany({ where: { id: { in: createdHouseholdIds } } });
+        }
+
         // Clean up
         if (testParticipantId !== undefined) {
             await prisma.visit.deleteMany({ where: { participantId: testParticipantId } });
@@ -257,5 +292,105 @@ describe('AuditLog Integration Tests', () => {
         expect(logs[0].action).toBe('EDIT');
         const newData = logs[0].newData as { householdId: number };
         expect(newData.householdId).toBe(newHousehold.id);
+    });
+
+    // --- Additional high-stakes privilege / write coverage ---
+    // Each asserts the route persists EXACTLY ONE AuditLog row with the right
+    // actor (acting session user), action, table, affected entity, and newData.
+    // Scoped by affectedEntityId on fresh TAG entities so they don't collide with
+    // the Participant-table cleanup the two cases above perform.
+
+    it('role grant (PATCH /admin/roles) writes one AuditLog with the privilege change', async () => {
+        const target = await makeParticipant('role-target');
+
+        const req = new Request('http://localhost:4000/api/admin/roles', {
+            method: 'PATCH',
+            body: JSON.stringify({ targetUserId: target.id, keyholder: true }),
+        });
+
+        const res = await updateRoles(req as never);
+        expect(res.status).toBe(200);
+
+        const logs = await prisma.auditLog.findMany({
+            where: { action: 'EDIT', tableName: 'Participant', affectedEntityId: target.id },
+        });
+        expect(logs).toHaveLength(1);
+        expect(logs[0].actorId).toBe(testAdminId);
+        expect((logs[0].newData as { keyholder?: boolean }).keyholder).toBe(true);
+    });
+
+    it('participant merge (POST /admin/participants/merge) writes one AuditLog tombstoning the merged id', async () => {
+        const keep = await makeParticipant('merge-keep');
+        const merge = await makeParticipant('merge-from');
+
+        const req = new Request('http://localhost:4000/api/admin/participants/merge', {
+            method: 'POST',
+            body: JSON.stringify({ keepId: keep.id, mergeId: merge.id }),
+        });
+
+        const res = await mergeParticipants(req as never);
+        const data = await res.json();
+        if (res.status !== 200) console.error('Merge error:', data);
+        expect(res.status).toBe(200);
+
+        const logs = await prisma.auditLog.findMany({
+            where: {
+                action: 'DELETE',
+                tableName: 'Participant',
+                affectedEntityId: keep.id,
+                secondaryAffectedEntity: merge.id,
+            },
+        });
+        expect(logs).toHaveLength(1);
+        expect(logs[0].actorId).toBe(testAdminId);
+        expect((logs[0].newData as { keepId?: number }).keepId).toBe(keep.id);
+        expect((logs[0].oldData as { id?: number }).id).toBe(merge.id);
+    });
+
+    it('household edit (PATCH /admin/households/[id]) writes one AuditLog with before/after', async () => {
+        const household = await prisma.household.create({ data: { name: `${TAG} household orig` }, select: { id: true } });
+        createdHouseholdIds.push(household.id);
+
+        const req = new Request(`http://localhost:4000/api/admin/households/${household.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ name: 'Audit Edited Household' }),
+        });
+
+        const res = await updateHousehold(req as never, { params: Promise.resolve({ id: household.id.toString() }) });
+        expect(res.status).toBe(200);
+
+        const logs = await prisma.auditLog.findMany({
+            where: { action: 'EDIT', tableName: 'Household', affectedEntityId: household.id },
+        });
+        expect(logs).toHaveLength(1);
+        expect(logs[0].actorId).toBe(testAdminId);
+        // Route stringifies oldData/newData.
+        expect(JSON.parse(logs[0].newData as string).name).toBe('Audit Edited Household');
+        expect(JSON.parse(logs[0].oldData as string).name).toBe(`${TAG} household orig`);
+    });
+
+    it('visit edit (PATCH /admin/visits) writes one AuditLog snapshotting the visit', async () => {
+        const owner = await makeParticipant('visit-owner');
+        const visit = await prisma.visit.create({
+            data: { participantId: owner.id, arrived: new Date(), departed: new Date() },
+            select: { id: true },
+        });
+        createdVisitIds.push(visit.id);
+
+        const newArrived = new Date('2020-01-01T10:00:00.000Z');
+        const req = new Request('http://localhost:4000/api/admin/visits', {
+            method: 'PATCH',
+            body: JSON.stringify({ visitId: visit.id, arrived: newArrived.toISOString() }),
+        });
+
+        const res = await updateVisit(req as never);
+        expect(res.status).toBe(200);
+
+        const logs = await prisma.auditLog.findMany({
+            where: { action: 'EDIT', tableName: 'Visit', affectedEntityId: visit.id },
+        });
+        expect(logs).toHaveLength(1);
+        expect(logs[0].actorId).toBe(testAdminId);
+        expect((logs[0].newData as { id?: number }).id).toBe(visit.id);
     });
 });
