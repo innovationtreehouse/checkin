@@ -26,6 +26,7 @@ import {
   IconHome,
   IconList,
   IconLogout,
+  IconMail,
   IconMoon,
   IconSettings,
   IconShieldCheck,
@@ -71,6 +72,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/my-activities', label: 'My Activities', icon: <IconActivity size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/attendance', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/programs', label: 'Programs', icon: <IconCalendarEvent size={18} />, visible: () => true },
+  { href: '/communication', label: 'Communication', icon: <IconMail size={18} />, visible: (_u, signedIn) => signedIn },
   {
     href: '/shop-ops',
     label: 'Shop Ops',
