@@ -183,5 +183,39 @@ describe('Manual Attendance API Integration Tests', () => {
             expect(new Date(data.visit.arrived).toISOString()).toBe(arrived.toISOString());
             expect(data.visit.departed).toBeNull();
         });
+
+        it('dedups a SERIAL double-submit: second POST returns the same open visit, only one in DB', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testUserId }
+            });
+
+            // Isolate: drop any open visit left by earlier tests so the count is unambiguous.
+            await prisma.visit.deleteMany({ where: { participantId: testUserId, departed: null } });
+
+            const arrived = new Date(Date.now() - 600000).toISOString(); // 10 min ago, open (no departure)
+            const makeReq = () => new Request('http://localhost:4000/api/attendance/manual', {
+                method: 'POST',
+                body: JSON.stringify({ arrived })
+            }) as unknown as import("next/server").NextRequest;
+
+            // Two submits, strictly one after the other (not the pool-2 concurrency harness):
+            // the route's re-check-then-return path must dedup on its own.
+            const res1 = await POST(makeReq());
+            expect(res1.status).toBe(201);
+            const first = (await res1.json()).visit;
+
+            const res2 = await POST(makeReq());
+            expect(res2.status).toBe(201);
+            const second = (await res2.json()).visit;
+
+            // The re-check returned the existing open visit instead of creating a new one.
+            expect(second.id).toBe(first.id);
+
+            const openVisits = await prisma.visit.findMany({
+                where: { participantId: testUserId, departed: null }
+            });
+            expect(openVisits.length).toBe(1);
+            expect(openVisits[0].id).toBe(first.id);
+        });
     });
 });
