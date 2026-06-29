@@ -130,7 +130,7 @@ export function AuditLogPanel() {
             <Table striped highlightOnHover withTableBorder verticalSpacing={4} fz="xs">
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th w={150}>Time</Table.Th>
+                  <Table.Th w={110}>Time</Table.Th>
                   <Table.Th w={90}>Action</Table.Th>
                   <Table.Th>Entity</Table.Th>
                   <Table.Th>Actor</Table.Th>
@@ -141,7 +141,8 @@ export function AuditLogPanel() {
                 {data.logs.map((l) => (
                   <Table.Tr key={l.id}>
                     <Table.Td style={{ whiteSpace: "nowrap" }}>
-                      {new Date(l.time).toLocaleString()}
+                      <div>{new Date(l.time).toLocaleDateString()}</div>
+                      <div>{new Date(l.time).toLocaleTimeString()}</div>
                     </Table.Td>
                     <Table.Td>
                       <Badge size="sm" color={ACTION_COLOR[l.action]}>
