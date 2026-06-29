@@ -27,7 +27,7 @@ export async function GET(req: Request) {
         if (abandonedVisits.length > 0) {
             // Force everybody out concurrently. One bad checkout must not abort the rest.
             const results = await Promise.allSettled(
-                abandonedVisits.map((visit) => processVisitCheckout(visit.id, now))
+                abandonedVisits.map((visit) => processVisitCheckout(visit.id, now, undefined, "SYSTEM"))
             );
             results.forEach((result, i) => {
                 if (result.status === "fulfilled") {

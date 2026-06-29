@@ -34,6 +34,14 @@ enum AuditAction {
   BECOME_ADMIN
 }
 
+/// How a visit arrival/departure was recorded.
+/// SCANNER = physical kiosk badge, WEB = admin/dashboard UI, SYSTEM = automated (facility-close sweep, nightly cron).
+enum VisitSource {
+  SCANNER
+  WEB
+  SYSTEM
+}
+
 enum ProgramPhase {
   PLANNING
   UPCOMING
@@ -754,6 +762,10 @@ model Visit {
   arrived           DateTime
   /// @sensitivity:personal
   departed          DateTime?
+  /// @sensitivity:public
+  arrivedVia        VisitSource?
+  /// @sensitivity:public
+  departedVia       VisitSource?
   /// @sensitivity:public
   associatedEventId Int?
 

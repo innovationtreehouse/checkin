@@ -86,7 +86,7 @@ export async function findAssociatedEventAt(participantId: number, targetTime: D
  * 
  * It returns the final list of visits spanning their arrival to departure.
  */
-export async function processVisitCheckout(visitId: number, checkoutTime: Date, db: DbClient = prisma) {
+export async function processVisitCheckout(visitId: number, checkoutTime: Date, db: DbClient = prisma, source: "SCANNER" | "WEB" | "SYSTEM" = "WEB") {
     const originalVisit = await db.visit.findUnique({
         where: { id: visitId }
     });
@@ -95,7 +95,9 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         return []; // Already checked out or doesn't exist
     }
 
-    const { participantId, arrived } = originalVisit;
+    // Chunks recreated below are all segments of one physical visit: they keep
+    // the original arrival's source and take `source` as their departure channel.
+    const { participantId, arrived, arrivedVia } = originalVisit;
 
     const relevantProgramIds = await getRelevantProgramIds(participantId, db);
 
@@ -103,7 +105,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         // No programs enrolled, just close the visit normally
         return [await db.visit.update({
             where: { id: visitId },
-            data: { departed: checkoutTime }
+            data: { departed: checkoutTime, departedVia: source }
         })];
     }
 
@@ -122,7 +124,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         // No relevant events during their stay, just close normally
         return [await db.visit.update({
             where: { id: visitId },
-            data: { departed: checkoutTime }
+            data: { departed: checkoutTime, departedVia: source }
         })];
     }
 
@@ -151,6 +153,8 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
                             participantId,
                             arrived: currentIterStart,
                             departed: gapEnd,
+                            arrivedVia,
+                            departedVia: source,
                             associatedEventId: null
                         }
                     }));
@@ -179,6 +183,8 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
                         participantId,
                         arrived: eventVisitStart,
                         departed: eventVisitEnd,
+                        arrivedVia,
+                        departedVia: source,
                         associatedEventId: event.id
                     }
                 }));
@@ -193,6 +199,8 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
                     participantId,
                     arrived: currentIterStart,
                     departed: checkoutTime,
+                    arrivedVia,
+                    departedVia: source,
                     associatedEventId: null
                 }
             }));
