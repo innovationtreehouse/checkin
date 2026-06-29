@@ -15,14 +15,14 @@ import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
 
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
-type Member = { id: number; name?: string; email?: string; dob?: string; phone?: string };
+type Member = { id: number; name?: string; email?: string; dateOfBirth?: string; phone?: string };
 type EmergencyContact = { id: number; name: string; phone: string; email?: string | null; relationship?: string | null; priority: number; invalid: boolean };
 type HouseholdData = {
   id?: number;
   name?: string;
   leads?: Array<{ participantId: number }>;
   participants?: Member[];
-  membership?: { status?: string; since?: string; isVolunteer?: boolean } | null;
+  membership?: { status?: string; memberSince?: string; isVolunteer?: boolean } | null;
 } & Partial<StructuredAddress> | null;
 
 const blankContactForm = { id: null as number | null, name: "", phone: "", email: "", relationship: "" };
@@ -314,9 +314,9 @@ export default function HouseholdPage() {
     const isLeadA = isLead(a.id) ? 1 : 0;
     const isLeadB = isLead(b.id) ? 1 : 0;
     if (isLeadA !== isLeadB) return isLeadB - isLeadA;
-    if (a.dob && b.dob) return new Date(a.dob).getTime() - new Date(b.dob).getTime();
-    if (a.dob) return -1;
-    if (b.dob) return 1;
+    if (a.dateOfBirth && b.dateOfBirth) return new Date(a.dateOfBirth).getTime() - new Date(b.dateOfBirth).getTime();
+    if (a.dateOfBirth) return -1;
+    if (b.dateOfBirth) return 1;
     return (a.name || "").localeCompare(b.name || "");
   });
 
@@ -331,7 +331,7 @@ export default function HouseholdPage() {
             household.membership?.status === 'ACTIVE' ? (
               <Alert color="green" mb="lg">
                 <Group gap="xs" wrap="wrap">
-                  <Text fw={600}>✓ Member{household.membership.since ? ` since ${formatDate(household.membership.since)}` : ''}</Text>
+                  <Text fw={600}>✓ Member{household.membership.memberSince ? ` since ${formatDate(household.membership.memberSince)}` : ''}</Text>
                   {household.membership.isVolunteer && <Badge color="green" variant="light">Volunteer-only family</Badge>}
                 </Group>
               </Alert>
@@ -359,7 +359,7 @@ export default function HouseholdPage() {
               <SimpleGrid cols={{ base: 1, sm: 2 }} mb="lg">
                 {sortedMembers.map((p) => {
                   const memberIsLead = isLead(p.id);
-                  const isAdult = p.dob && calculateAge(p.dob) >= 18;
+                  const isAdult = p.dateOfBirth && calculateAge(p.dateOfBirth) >= 18;
                   // A household lead needs a phone on file — flag the box so the
                   // lead can see exactly which member to fix (mirrors the nav todo).
                   const leadMissingPhone = memberIsLead && !p.phone;
@@ -395,7 +395,7 @@ export default function HouseholdPage() {
                             {viewerIsLead && (
                               <Button size="compact-xs" variant="subtle" color="gray" onClick={() => {
                                 setEditingMemberId(p.id);
-                                setEditForm({ name: p.name || "", email: p.email || "", dob: p.dob ? new Date(p.dob).toISOString().split('T')[0] : "", phone: p.phone || "", isLead: memberIsLead });
+                                setEditForm({ name: p.name || "", email: p.email || "", dob: p.dateOfBirth ? new Date(p.dateOfBirth).toISOString().split('T')[0] : "", phone: p.phone || "", isLead: memberIsLead });
                               }}>Edit</Button>
                             )}
                           </Group>

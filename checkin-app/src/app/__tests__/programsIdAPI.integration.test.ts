@@ -75,7 +75,7 @@ describe('Individual Program API Integration Tests', () => {
                         membership: {
                             create: {
                                 status: 'ACTIVE',
-                                since: new Date()
+                                memberSince: new Date()
                             }
                         }
                     }

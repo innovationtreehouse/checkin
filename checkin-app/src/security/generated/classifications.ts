@@ -10,7 +10,7 @@ export const classifications = {
         name: 'public',
         emailVerified: 'internal',
         image: 'public',
-        dob: 'pii',
+        dateOfBirth: 'pii',
         lastWaiverSign: 'internal',
         waiverSignedBy: 'internal',
         lastBackgroundCheck: 'internal',
@@ -62,7 +62,7 @@ export const classifications = {
     },
     Membership: {
         id: 'public',
-        since: 'public',
+        memberSince: 'public',
         status: 'public',
         isVolunteer: 'public',
         householdId: 'public',
@@ -207,7 +207,7 @@ export const classifications = {
     FeePayment: {
         feeId: 'public',
         participantId: 'public',
-        paidOn: 'personal',
+        paidAt: 'personal',
         shopifyLink: 'personal',
         quickBooksInvoice: 'personal',
         customNote: 'personal',

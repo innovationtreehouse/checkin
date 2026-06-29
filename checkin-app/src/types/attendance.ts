@@ -13,7 +13,7 @@ export type VisitWithDetails = Prisma.VisitGetPayload<{
                 name: true;
                 keyholder: true;
                 sysadmin: true;
-                dob: true;
+                dateOfBirth: true;
                 householdId: true;
                 phone: true;
                 household: {

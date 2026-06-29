@@ -180,7 +180,7 @@ describe('Full Program Signup Integration Flow', () => {
             maxParticipants: null,
             _count: { participants: 0 }
         });
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dob: new Date('2015-01-01') });
+        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dateOfBirth: new Date('2015-01-01') });
         (prisma.householdLead.findUnique as jest.Mock).mockResolvedValue({ householdId, participantId: leadUserId });
         (prisma.programParticipant.create as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'PENDING' });
 
@@ -237,7 +237,7 @@ describe('Full Program Signup Integration Flow', () => {
             maxParticipants: null,
             _count: { participants: 0 }
         });
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dob: new Date('2015-01-01') });
+        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dateOfBirth: new Date('2015-01-01') });
         (prisma.householdLead.findUnique as jest.Mock).mockResolvedValue(null); // Not a lead
 
         const enrollReq = new Request(`http://localhost/api/programs/${programId}/participants`, {

@@ -43,14 +43,14 @@ describe('Nav todo-counts API', () => {
         // Household A: a lead with a full slate of *member-actionable* todos, plus
         // one reviewer-owned membership state that must NOT count for the member.
         const lead = await prisma.participant.create({
-            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dob: new Date('1985-01-01'), phone: '555-0001', household: { create: {} } },
+            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dateOfBirth: new Date('1985-01-01'), phone: '555-0001', household: { create: {} } },
         });
         leadId = lead.id;
         householdAId = lead.householdId;
         await prisma.householdLead.create({ data: { householdId: householdAId, participantId: leadId } });
 
         const second = await prisma.participant.create({
-            data: { email: `member2-${TAG}@example.com`, name: 'Member A2', dob: new Date('1987-01-01'), householdId: householdAId },
+            data: { email: `member2-${TAG}@example.com`, name: 'Member A2', dateOfBirth: new Date('1987-01-01'), householdId: householdAId },
         });
         secondMemberId = second.id;
 
@@ -109,7 +109,7 @@ describe('Nav todo-counts API', () => {
 
         // Household B: a board member with no household todos of their own.
         const board = await prisma.participant.create({
-            data: { email: `board-${TAG}@example.com`, name: 'Board B', dob: new Date('1980-01-01'), phone: '555-0000', boardMember: true, household: { create: {} } },
+            data: { email: `board-${TAG}@example.com`, name: 'Board B', dateOfBirth: new Date('1980-01-01'), phone: '555-0000', boardMember: true, household: { create: {} } },
         });
         boardId = board.id;
         householdBId = board.householdId;

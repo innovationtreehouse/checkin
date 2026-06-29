@@ -17,7 +17,7 @@ type Participant = {
   name?: string | null;
   keyholder: boolean;
   sysadmin: boolean;
-  dob?: string | null;
+  dateOfBirth?: string | null;
   householdId?: number | null;
   phone?: string | null;
   household?: { emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[] } | null;
@@ -79,14 +79,14 @@ function KioskDisplayInner() {
 
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
   const keyholderList = fullAttendance.filter(v => v.participant.keyholder);
-  const volunteerList = fullAttendance.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
-  const studentList = fullAttendance.filter(v => isStudent(v.participant.dob));
+  const volunteerList = fullAttendance.filter(v => !v.participant.keyholder && !isStudent(v.participant.dateOfBirth));
+  const studentList = fullAttendance.filter(v => isStudent(v.participant.dateOfBirth));
 
   const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
   const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
   const householdKeyholders = limitedHousehold.filter(v => v.participant.keyholder);
-  const householdVolunteers = limitedHousehold.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
-  const householdStudents = limitedHousehold.filter(v => isStudent(v.participant.dob));
+  const householdVolunteers = limitedHousehold.filter(v => !v.participant.keyholder && !isStudent(v.participant.dateOfBirth));
+  const householdStudents = limitedHousehold.filter(v => isStudent(v.participant.dateOfBirth));
 
   const isCheckedIn = isFull
     ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)

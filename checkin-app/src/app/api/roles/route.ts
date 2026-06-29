@@ -14,7 +14,7 @@ export const GET = withAuth(
                     id: true,
                     email: true,
                     name: true,
-                    dob: true,
+                    dateOfBirth: true,
                     sysadmin: true,
                     boardMember: true,
                     keyholder: true,
@@ -23,9 +23,9 @@ export const GET = withAuth(
                 orderBy: { name: "asc" },
             });
             // Don't leak dob (PII); expose only a youth flag for filtering.
-            const participants = rows.map(({ dob, ...p }: (typeof rows)[number]) => ({
+            const participants = rows.map(({ dateOfBirth, ...p }: (typeof rows)[number]) => ({
                 ...p,
-                isYouth: dob != null && dob > eighteenYearsAgo,
+                isYouth: dateOfBirth != null && dateOfBirth > eighteenYearsAgo,
             }));
             return NextResponse.json({ participants });
         } catch (error) {

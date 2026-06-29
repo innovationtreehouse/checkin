@@ -39,7 +39,7 @@ export default function ProfilePage() {
           name: data.profile.name || "",
           email: data.profile.email || "",
           phone: data.profile.phone || "",
-          dob: data.profile.dob ? new Date(data.profile.dob).toISOString().split('T')[0] : ""
+          dob: data.profile.dateOfBirth ? new Date(data.profile.dateOfBirth).toISOString().split('T')[0] : ""
         });
       } else {
         setMessage("Failed to load profile.");

@@ -42,7 +42,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const participantData = await prisma.participant.findUnique({
             where: { id: participantId },
-            select: { dob: true, householdId: true }
+            select: { dateOfBirth: true, householdId: true }
         });
 
         let isHouseholdLead = false;
@@ -96,11 +96,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
             // Check Age
             if (currentProgram.minAge !== null || currentProgram.maxAge !== null) {
-                if (!participantData?.dob) {
+                if (!participantData?.dateOfBirth) {
                     return NextResponse.json({ error: "Participant Date of Birth is missing.", requiresOverride: true }, { status: 400 });
                 }
                 // Age as of program start; now for dateless programs.
-                const age = calculateAge(participantData.dob, currentProgram.begin ?? undefined);
+                const age = calculateAge(participantData.dateOfBirth, currentProgram.begin ?? undefined);
                 if (currentProgram.minAge !== null && age < currentProgram.minAge) {
                     return NextResponse.json({ error: `Participant must be at least ${currentProgram.minAge} years old.`, requiresOverride: true }, { status: 400 });
                 }
