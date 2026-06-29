@@ -20,7 +20,7 @@ export async function GET() {
     try {
         const requests = await prisma.programParticipant.findMany({
             where: {
-                paymentPlanRequested: true,
+                isPaymentPlanRequested: true,
                 status: 'PENDING'
             },
             include: {
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
             },
             data: {
                 status: 'ACTIVE',
-                paymentPlanRequested: false, // cleared since it's approved
+                isPaymentPlanRequested: false, // cleared since it's approved
                 pendingSince: null // reset
             }
         });

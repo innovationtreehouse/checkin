@@ -26,7 +26,7 @@ export const GET = handler("GET /api/membership-ops/applications", async () => {
             bgConsentAt: true,
             bgClearedAt: true,
             paidAt: true,
-            attestations: { select: { id: true, result: true, markedVolunteer: true } },
+            attestations: { select: { id: true, result: true, isMarkedVolunteer: true } },
             membership: {
                 select: {
                     householdId: true,

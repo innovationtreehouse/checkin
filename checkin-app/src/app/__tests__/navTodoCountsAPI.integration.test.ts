@@ -105,7 +105,7 @@ describe('Nav todo-counts API', () => {
         program1Id = program1.id;
         program2Id = program2.id;
         await prisma.programParticipant.create({ data: { programId: program1Id, participantId: leadId, status: 'PENDING' } });
-        await prisma.programParticipant.create({ data: { programId: program2Id, participantId: secondMemberId, status: 'PENDING', paymentPlanRequested: true } });
+        await prisma.programParticipant.create({ data: { programId: program2Id, participantId: secondMemberId, status: 'PENDING', isPaymentPlanRequested: true } });
 
         // Household B: a board member with no household todos of their own.
         const board = await prisma.participant.create({

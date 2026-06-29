@@ -121,7 +121,7 @@ describe('Membership BG review API', () => {
 
         // rev2 approves with volunteer checkbox -> advances
         as(rev2, { backgroundCheckReviewer: true });
-        const r2 = await ATTEST(req({ processId: proc.processId, result: 'APPROVE', markedVolunteer: true }) as never);
+        const r2 = await ATTEST(req({ processId: proc.processId, result: 'APPROVE', isMarkedVolunteer: true }) as never);
         expect((await r2.json()).outcome.status).toBe('PENDING_PAYMENT');
 
         const updated = await prisma.membershipProcess.findUnique({ where: { id: proc.processId } });

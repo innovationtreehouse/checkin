@@ -368,7 +368,7 @@ model BackgroundCheckAttestation {
   /// @sensitivity:internal
   result          AttestationResult
   /// @sensitivity:internal
-  markedVolunteer Boolean           @default(false)
+  isMarkedVolunteer Boolean           @default(false)
   /// @sensitivity:public
   createdAt       DateTime          @default(now())
 
@@ -645,7 +645,7 @@ model ProgramParticipant {
   /// @sensitivity:public
   status               ProgramParticipantStatus @default(PENDING)
   /// @sensitivity:personal
-  paymentPlanRequested Boolean                  @default(false)
+  isPaymentPlanRequested Boolean                  @default(false)
   /// @sensitivity:internal
   pendingSince         DateTime?                @default(now())
 
