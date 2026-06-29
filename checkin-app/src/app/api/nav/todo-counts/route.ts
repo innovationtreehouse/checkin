@@ -87,7 +87,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 select: { participantId: true },
             })) !== null;
 
-        const [hh, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
+        const [hh, leadsMissingPhone, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
             isLead
                 ? prisma.household.findUnique({
                       where: { id: householdId },
@@ -102,6 +102,14 @@ export const GET = withAuth({}, async (_req, auth) => {
                       },
                   })
                 : Promise.resolve(null),
+            // A household lead with no phone on file is an actionable gap — the
+            // page highlights the member box; this drives the nav badge count.
+            isLead
+                ? prisma.householdLead.findMany({
+                      where: { householdId, OR: [{ participant: { phone: null } }, { participant: { phone: "" } }] },
+                      select: { participant: { select: { id: true, name: true } } },
+                  })
+                : Promise.resolve([]),
             prisma.membershipProcess.findMany({
                 where: { membership: { householdId }, status: { in: MEMBER_ACTIONABLE_MEMBERSHIP } },
                 select: { id: true, status: true },
@@ -124,6 +132,9 @@ export const GET = withAuth({}, async (_req, auth) => {
 
         if (!!hh && hh.emergencyContacts.length === 0) {
             householdTodos.push({ key: "emergency-contact", label: "Add a household emergency contact", href: "/my-household#emergency-contact" });
+        }
+        for (const l of leadsMissingPhone) {
+            householdTodos.push({ key: `lead-phone-${l.participant.id}`, label: `Add a phone number for ${l.participant.name ?? "the household lead"}`, href: "/my-household" });
         }
         for (const p of membershipProcs) {
             householdTodos.push({
