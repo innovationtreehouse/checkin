@@ -42,7 +42,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // Authorization: only the participant themselves, a lead of their household,
         // the program's lead mentor, or a sysadmin/board member may request a payment
         // plan for this enrollment. Without this gate any authenticated user could flip
-        // paymentPlanRequested on an arbitrary participant's enrollment (IDOR).
+        // isPaymentPlanRequested on an arbitrary participant's enrollment (IDOR).
         const currentUserId = (session.user as { id: number }).id;
         const isSelf = currentUserId === participantId;
         const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin
@@ -71,7 +71,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 programId_participantId: { programId, participantId }
             },
             data: {
-                paymentPlanRequested: true
+                isPaymentPlanRequested: true
             }
         });
 

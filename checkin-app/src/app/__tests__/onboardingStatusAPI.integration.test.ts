@@ -45,7 +45,7 @@ describe('Onboarding Status API Integration Tests', () => {
             data: {
                 email: 'adult-onboarding-status-test@example.com',
                 name: 'Adult No Phone',
-                dob: new Date('1990-01-01'),
+                dateOfBirth: new Date('1990-01-01'),
                 household: { create: {} }
             }
         });
@@ -56,7 +56,7 @@ describe('Onboarding Status API Integration Tests', () => {
             data: {
                 email: 'minor-onboarding-status-test@example.com',
                 name: 'Minor No Phone',
-                dob: minorDob(),
+                dateOfBirth: minorDob(),
                 household: { create: {} }
             }
         });

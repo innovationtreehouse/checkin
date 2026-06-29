@@ -3,10 +3,10 @@
  */
 /**
  * Integration Tests for Admin Roles API
- * Tests GET and PATCH /api/admin/roles for fetching and updating user roles
+ * Tests GET and PATCH /api/roles for fetching and updating user roles
  */
 
-import { GET, PATCH } from '@/app/api/admin/roles/route';
+import { GET, PATCH } from '@/app/api/roles/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -52,7 +52,7 @@ describe('Admin Roles API Integration Tests', () => {
         testUserId = user.id;
 
         const targetUser = await prisma.participant.create({
-            data: { email: 'target-roles-api-test@example.com', name: 'Target Roles Test', dob: new Date('1990-01-01'), household: { create: {} } }
+            data: { email: 'target-roles-api-test@example.com', name: 'Target Roles Test', dateOfBirth: new Date('1990-01-01'), household: { create: {} } }
         });
         testTargetUserId = targetUser.id;
 
@@ -60,7 +60,7 @@ describe('Admin Roles API Integration Tests', () => {
         const tenYearsAgo = new Date(now.getFullYear() - 10, now.getMonth(), now.getDate());
         
         const student = await prisma.participant.create({
-            data: { email: 'student-roles-api-test@example.com', name: 'Student Roles Test', dob: tenYearsAgo, household: { create: {} } }
+            data: { email: 'student-roles-api-test@example.com', name: 'Student Roles Test', dateOfBirth: tenYearsAgo, household: { create: {} } }
         });
         testStudentId = student.id;
     });
@@ -77,11 +77,11 @@ describe('Admin Roles API Integration Tests', () => {
         });
     });
 
-    describe('GET /api/admin/roles', () => {
+    describe('GET /api/roles', () => {
         it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
 
-             const req = new Request('http://localhost:4000/api/admin/roles', { method: 'GET' });
+             const req = new Request('http://localhost:4000/api/roles', { method: 'GET' });
 
              const res = await GET(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(401);
@@ -92,7 +92,7 @@ describe('Admin Roles API Integration Tests', () => {
                  user: { id: testUserId }
              });
 
-             const req = new Request('http://localhost:4000/api/admin/roles', { method: 'GET' });
+             const req = new Request('http://localhost:4000/api/roles', { method: 'GET' });
 
              const res = await GET(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(403);
@@ -101,12 +101,12 @@ describe('Admin Roles API Integration Tests', () => {
              expect(data.error).toContain('Forbidden');
         });
 
-        it('should return all adult participants for a sysadmin', async () => {
+        it('should return all participants (youth flagged, dob hidden) for a sysadmin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testSysAdminId, sysadmin: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/roles', { method: 'GET' });
+            const req = new Request('http://localhost:4000/api/roles', { method: 'GET' });
 
             const res = await GET(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
@@ -117,15 +117,22 @@ describe('Admin Roles API Integration Tests', () => {
 
             const ids = data.participants.map((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.id);
             expect(ids).toContain(testTargetUserId);
-            expect(ids).not.toContain(testStudentId); // Students are filtered out
+            // Youth are returned (client filters via "Hide Youth"), flagged isYouth; dob is not leaked.
+            expect(ids).toContain(testStudentId);
+            const adult = data.participants.find((p: { id?: number }) => p.id === testTargetUserId);
+            const student = data.participants.find((p: { id?: number }) => p.id === testStudentId);
+            expect(adult.isYouth).toBe(false);
+            expect(student.isYouth).toBe(true);
+            expect(adult).not.toHaveProperty('dateOfBirth');
+            expect(student).not.toHaveProperty('dateOfBirth');
         });
     });
 
-    describe('PATCH /api/admin/roles', () => {
+    describe('PATCH /api/roles', () => {
         it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
 
-             const req = new Request('http://localhost:4000/api/admin/roles', {
+             const req = new Request('http://localhost:4000/api/roles', {
                  method: 'PATCH',
                  body: JSON.stringify({ targetUserId: testTargetUserId, boardMember: true })
              });
@@ -139,7 +146,7 @@ describe('Admin Roles API Integration Tests', () => {
                  user: { id: testUserId }
              });
 
-             const req = new Request('http://localhost:4000/api/admin/roles', {
+             const req = new Request('http://localhost:4000/api/roles', {
                  method: 'PATCH',
                  body: JSON.stringify({ targetUserId: testTargetUserId, boardMember: true })
              });
@@ -153,7 +160,7 @@ describe('Admin Roles API Integration Tests', () => {
                 user: { id: testSysAdminId, sysadmin: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/roles', {
+            const req = new Request('http://localhost:4000/api/roles', {
                 method: 'PATCH',
                 body: JSON.stringify({ boardMember: true })
             });
@@ -167,7 +174,7 @@ describe('Admin Roles API Integration Tests', () => {
                 user: { id: testBoardMemberId, boardMember: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/roles', {
+            const req = new Request('http://localhost:4000/api/roles', {
                 method: 'PATCH',
                 body: JSON.stringify({ targetUserId: testTargetUserId, sysadmin: true })
             });
@@ -184,7 +191,7 @@ describe('Admin Roles API Integration Tests', () => {
                 user: { id: testBoardMemberId, boardMember: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/roles', {
+            const req = new Request('http://localhost:4000/api/roles', {
                 method: 'PATCH',
                 body: JSON.stringify({ targetUserId: testTargetUserId, boardMember: true })
             });
@@ -205,7 +212,7 @@ describe('Admin Roles API Integration Tests', () => {
                 user: { id: testSysAdminId, sysadmin: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/roles', {
+            const req = new Request('http://localhost:4000/api/roles', {
                 method: 'PATCH',
                 body: JSON.stringify({ targetUserId: testTargetUserId, sysadmin: true })
             });

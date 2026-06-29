@@ -32,8 +32,8 @@ export async function GET(req: Request) {
         if (activeOnly) {
             andClauses.push({
                 OR: [
-                    { end: null },
-                    { end: { gte: new Date() } }
+                    { endAt: null },
+                    { endAt: { gte: new Date() } }
                 ]
             });
         }
@@ -66,7 +66,7 @@ export async function GET(req: Request) {
 
         const programs = await prisma.program.findMany({
             where: andClauses.length > 0 ? { AND: andClauses } : undefined,
-            orderBy: { begin: 'asc' },
+            orderBy: { startAt: 'asc' },
             include: {
                 _count: {
                     select: {
@@ -93,9 +93,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Forbidden: Only Admin or Board Members can create programs" }, { status: 403 });
     }
 
+    // Hoisted so the catch can name an orphaned Shopify product (created, but DB write failed) for manual cleanup.
+    let shopifyData: { shopifyProductId: string, shopifyMemberVariantId: string | null, shopifyNonMemberVariantId: string | null } | null = null;
+
     try {
         const body = await req.json();
-        const { name, leadMentorId, begin, end, memberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
+        const { name, leadMentorId, startAt, endAt, memberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
 
         if (!name) {
             return NextResponse.json({ error: "Program name is required" }, { status: 400 });
@@ -111,8 +114,6 @@ export async function POST(req: Request) {
         const maxPart = maxParticipants ? parseInt(maxParticipants, 10) : null;
 
         // Try to create Shopify entities
-        let shopifyData: { shopifyProductId: string, shopifyMemberVariantId: string | null, shopifyNonMemberVariantId: string | null } | null = null;
-        
         // Only try to create if at least one price is provided. Otherwise it's a free program.
         if ((mPrice && mPrice > 0) || (nmPrice && nmPrice > 0)) {
             shopifyData = await createShopifyProgramVariants(name, mPrice, nmPrice, maxPart);
@@ -122,8 +123,8 @@ export async function POST(req: Request) {
             data: {
                 name,
                 leadMentorId: parseInt(leadMentorId, 10),
-                begin: begin ? new Date(begin) : null,
-                end: end ? new Date(end) : null,
+                startAt: startAt ? new Date(startAt) : null,
+                endAt: endAt ? new Date(endAt) : null,
                 memberOnly: memberOnly || false,
                 minAge: minAge || null,
                 maxAge: maxAge || null,
@@ -157,6 +158,9 @@ export async function POST(req: Request) {
 
         return NextResponse.json(responseObj);
     } catch (error: unknown) {
+        if (shopifyData?.shopifyProductId) {
+            console.error("[Shopify] Orphaned product after program DB write failed, manual cleanup needed:", shopifyData.shopifyProductId);
+        }
         await logBackendError(error, "POST /api/programs");
         return NextResponse.json({ error: "Failed to create program" }, { status: 500 });
     }

@@ -10,7 +10,7 @@ export const classifications = {
         name: 'public',
         emailVerified: 'internal',
         image: 'public',
-        dob: 'pii',
+        dateOfBirth: 'pii',
         lastWaiverSign: 'internal',
         waiverSignedBy: 'internal',
         lastBackgroundCheck: 'internal',
@@ -30,12 +30,16 @@ export const classifications = {
     ToolStatus: {
         userId: 'public',
         toolId: 'public',
-        level: 'internal',
+        level: 'member',
     },
     Household: {
         id: 'public',
         name: 'public',
-        address: 'personal',
+        line1: 'personal',
+        line2: 'personal',
+        city: 'personal',
+        state: 'personal',
+        postalCode: 'personal',
     },
     EmergencyContact: {
         id: 'public',
@@ -58,7 +62,7 @@ export const classifications = {
     },
     Membership: {
         id: 'public',
-        since: 'public',
+        memberSince: 'public',
         status: 'public',
         isVolunteer: 'public',
         householdId: 'public',
@@ -74,6 +78,7 @@ export const classifications = {
         zohoActionId: 'internal',
         contractSignedAt: 'internal',
         bgConsentAt: 'internal',
+        bgClearedAt: 'internal',
         shopifyDraftOrderId: 'internal',
         shopifyInvoiceUrl: 'personal',
         shopifyOrderId: 'internal',
@@ -86,7 +91,7 @@ export const classifications = {
         processId: 'public',
         reviewerId: 'public',
         result: 'internal',
-        markedVolunteer: 'internal',
+        isMarkedVolunteer: 'internal',
         createdAt: 'public',
     },
     VolunteerDesignation: {
@@ -109,12 +114,19 @@ export const classifications = {
         shopifyPriceSyncedAt: 'internal',
         updatedAt: 'internal',
     },
+    AppSettings: {
+        id: 'public',
+        timezone: 'public',
+        locale: 'public',
+        updatedAt: 'public',
+    },
     TrustedAdult: {
         id: 'public',
         householdId: 'public',
         counterpartyParticipantId: 'public',
         counterpartyName: 'personal',
-        counterpartyContact: 'personal',
+        counterpartyPhone: 'personal',
+        counterpartyEmail: 'personal',
         familyContext: 'pii',
         origin: 'internal',
         disclosedById: 'internal',
@@ -140,7 +152,11 @@ export const classifications = {
     Corporation: {
         id: 'public',
         primaryEmail: 'pii',
-        address: 'personal',
+        line1: 'personal',
+        line2: 'personal',
+        city: 'personal',
+        state: 'personal',
+        postalCode: 'personal',
     },
     CorporationLead: {
         corporationId: 'public',
@@ -154,8 +170,8 @@ export const classifications = {
         id: 'public',
         name: 'public',
         leadMentorId: 'public',
-        begin: 'public',
-        end: 'public',
+        startAt: 'public',
+        endAt: 'public',
         phase: 'public',
         enrollmentStatus: 'public',
         memberOnly: 'public',
@@ -178,7 +194,7 @@ export const classifications = {
         programId: 'public',
         participantId: 'public',
         status: 'public',
-        paymentPlanRequested: 'personal',
+        isPaymentPlanRequested: 'personal',
         pendingSince: 'internal',
     },
     Fee: {
@@ -191,7 +207,7 @@ export const classifications = {
     FeePayment: {
         feeId: 'public',
         participantId: 'public',
-        paidOn: 'personal',
+        paidAt: 'personal',
         shopifyLink: 'personal',
         quickBooksInvoice: 'personal',
         customNote: 'personal',
@@ -200,8 +216,8 @@ export const classifications = {
         id: 'public',
         programId: 'public',
         name: 'public',
-        start: 'public',
-        end: 'public',
+        startAt: 'public',
+        endAt: 'public',
         description: 'public',
         attendanceConfirmedAt: 'internal',
         attendanceConfirmedById: 'internal',
@@ -214,22 +230,24 @@ export const classifications = {
         status: 'public',
         reminderSentAt: 'internal',
     },
-    RawBadgeEvent: {
+    RawBadgeLog: {
         id: 'internal',
         participantId: 'internal',
-        time: 'personal',
+        timestamp: 'personal',
         location: 'personal',
     },
     Visit: {
         id: 'public',
         participantId: 'public',
-        arrived: 'personal',
-        departed: 'personal',
+        arrivedAt: 'personal',
+        departedAt: 'personal',
+        arrivedVia: 'public',
+        departedVia: 'public',
         associatedEventId: 'public',
     },
     AuditLog: {
         id: 'internal',
-        time: 'internal',
+        timestamp: 'internal',
         actorId: 'internal',
         action: 'internal',
         tableName: 'internal',
@@ -265,17 +283,25 @@ export const classifications = {
     },
     ErrorLog: {
         id: 'internal',
-        createdAt: 'internal',
+        timestamp: 'internal',
         route: 'internal',
         message: 'internal',
         stack: 'internal',
         context: 'internal',
     },
-    SystemMetric: {
+    SystemMetricLog: {
         id: 'internal',
         timestamp: 'internal',
         metric: 'internal',
         value: 'internal',
+    },
+    IntegrationErrorLog: {
+        id: 'internal',
+        source: 'internal',
+        message: 'internal',
+        context: 'internal',
+        timestamp: 'internal',
+        resolvedAt: 'internal',
     },
     DevLedger: {
         id: 'internal',
@@ -301,7 +327,7 @@ export const relations = {
         programsLed: { model: 'Program', isList: true },
         feePayments: { model: 'FeePayment', isList: true },
         rsvps: { model: 'RSVP', isList: true },
-        rawBadgeEvents: { model: 'RawBadgeEvent', isList: true },
+        rawBadgeLogs: { model: 'RawBadgeLog', isList: true },
         visits: { model: 'Visit', isList: true },
         eventsConfirmedBy: { model: 'Event', isList: true },
         trustedAdultsAsCounterparty: { model: 'TrustedAdult', isList: true },
@@ -344,6 +370,8 @@ export const relations = {
     VolunteerDesignation: {
     },
     BoardSettings: {
+    },
+    AppSettings: {
     },
     TrustedAdult: {
         household: { model: 'Household', isList: false },
@@ -400,7 +428,7 @@ export const relations = {
         event: { model: 'Event', isList: false },
         participant: { model: 'Participant', isList: false },
     },
-    RawBadgeEvent: {
+    RawBadgeLog: {
         participant: { model: 'Participant', isList: false },
     },
     Visit: {
@@ -419,7 +447,9 @@ export const relations = {
     },
     ErrorLog: {
     },
-    SystemMetric: {
+    SystemMetricLog: {
+    },
+    IntegrationErrorLog: {
     },
     DevLedger: {
     },

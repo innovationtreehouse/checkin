@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import type { Prisma, EmergencyContact } from "@/generated/prisma/client";
-import { identityKeys, sameIdentity, normalizeEmail, normalizePhone } from "./identity";
+import { identityKeys, sameIdentity, identityMatchReason, normalizeEmail, normalizePhone } from "./identity";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
 /**
  * Emergency-contact write/read model. Enforces the not-a-household-member rule
@@ -79,6 +80,9 @@ function requireComplete(input: ContactInput) {
     if (!input.name?.trim() || !input.phone?.trim()) {
         throw new EmergencyContactError("incomplete", "An emergency contact needs both a name and a phone number.");
     }
+    if (!isValidPhone(input.phone)) {
+        throw new EmergencyContactError("incomplete", PHONE_ERROR);
+    }
 }
 
 /**
@@ -89,9 +93,14 @@ export async function assertExternal(db: Db, householdId: number, input: Contact
     const members = await loadMembers(db, householdId);
     const match = matchingMember(input, members);
     if (match) {
+        const reason = identityMatchReason(identityKeys(input), identityKeys(match));
+        const memberName = match.name?.trim() || "a household member";
+        const why = reason === "phone" ? `the phone number matches ${memberName}`
+            : reason === "email" ? `the email matches ${memberName}`
+            : `the name matches ${memberName}`;
         throw new EmergencyContactError(
             "is_member",
-            `${input.name?.trim() || "That person"} is part of this household and can't be its emergency contact. Choose someone outside the household.`,
+            `${input.name?.trim() || "That person"} is part of this household and can't be its emergency contact — ${why}. Choose someone outside the household.`,
         );
     }
 }
@@ -158,19 +167,26 @@ export async function deleteContact(db: Db, householdId: number, contactId: numb
 export async function upsertPrimaryContact(
     db: Db,
     householdId: number,
-    fields: { name?: string | null; phone?: string | null },
+    fields: { name?: string | null; phone?: string | null; email?: string | null },
 ): Promise<EmergencyContact | null> {
     const name = (fields.name ?? "").trim();
     const phone = (fields.phone ?? "").trim();
-    if (!name && !phone) return null;
+    const email = (fields.email ?? "").trim() || null;
+    if (!name && !phone && !email) return null;
+
+    if (phone && !isValidPhone(phone)) {
+        throw new EmergencyContactError("incomplete", PHONE_ERROR);
+    }
 
     const complete = !!name && !!phone;
-    if (complete) await assertExternal(db, householdId, { name, phone });
+    if (complete) await assertExternal(db, householdId, { name, phone, email });
 
     const data = {
         name,
         phone,
+        email,
         phoneDigits: normalizePhone(phone),
+        emailNorm: normalizeEmail(email),
         ...(complete && { conflictParticipantId: null, conflictedAt: null }),
     };
 
@@ -257,18 +273,20 @@ export async function reconcileAndWarn(db: Db, householdId: number): Promise<Eme
 }
 
 /**
- * Notifications source: member/in-intake households that have zero valid
- * emergency contacts (the "lead didn't remediate" alarm). A household is in
- * scope when it has an ACTIVE membership or an in-flight membership process.
+ * The predicate behind both the notification count and the Membership Audit list
+ * view: member/in-intake households with zero valid emergency contacts (the
+ * "lead didn't remediate" alarm). A household is in scope when it has an ACTIVE
+ * membership or an in-flight membership process. Returns the household ids so
+ * callers can either count them or hydrate them.
  */
-export async function countHouseholdsMissingValidContact(db: Db = prisma): Promise<number> {
+export async function findHouseholdsMissingValidContact(db: Db = prisma): Promise<number[]> {
     const scoped = await db.household.findMany({
         where: {
             membership: { is: { OR: [{ status: "ACTIVE" }, { processes: { some: { status: { not: "ACTIVE" } } } }] } },
         },
         select: { id: true },
     });
-    if (scoped.length === 0) return 0;
+    if (scoped.length === 0) return [];
     const withValid = await db.emergencyContact.findMany({
         where: {
             householdId: { in: scoped.map((h) => h.id) },
@@ -280,5 +298,9 @@ export async function countHouseholdsMissingValidContact(db: Db = prisma): Promi
         distinct: ["householdId"],
     });
     const validSet = new Set(withValid.map((c) => c.householdId));
-    return scoped.filter((h) => !validSet.has(h.id)).length;
+    return scoped.filter((h) => !validSet.has(h.id)).map((h) => h.id);
+}
+
+export async function countHouseholdsMissingValidContact(db: Db = prisma): Promise<number> {
+    return (await findHouseholdsMissingValidContact(db)).length;
 }

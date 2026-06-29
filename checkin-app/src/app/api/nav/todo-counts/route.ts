@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import type { MembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
+import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/service";
+import { ORG_DOMAIN } from "@/lib/config";
 
 /**
  * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
@@ -17,13 +19,18 @@ import type { MembershipProcessStatus, TrustedAdultReviewStatus } from "@/genera
  */
 
 // Membership process statuses the household itself must act on. Mirrors
-// IN_FLIGHT_INITIAL_STATUSES minus the board-only PENDING_BG_REVIEW, plus the
-// member-driven PENDING_RENEWAL. PENDING_BG_REVIEW / RENEWAL_PENDING_BG / BLOCKED
-// are board actions and never count here.
+// IN_FLIGHT_INITIAL_STATUSES minus the reviewer/board states, plus the
+// member-driven PENDING_RENEWAL.
 const MEMBER_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["INTAKE", "PENDING_EXTERNAL_ACTION", "PENDING_PAYMENT", "PENDING_RENEWAL"];
 
-// Membership statuses awaiting the board.
-const BOARD_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["PENDING_BG_REVIEW", "RENEWAL_PENDING_BG", "BLOCKED"];
+// Membership statuses the board itself can act on. The board's only
+// membership-queue action is overriding/resetting a BLOCKED application
+// (governance escape hatch — see overrideBlocked in src/lib/membership/review.ts).
+// PENDING_BG_REVIEW / RENEWAL_PENDING_BG are background-check-reviewer (RBAC,
+// role backgroundCheckReviewer) work, surfaced by the reviewer notifications
+// badge (src/lib/membership/notifications.ts) — NOT the board. The board can
+// still SEE those in the applications list, but they don't count here.
+const BOARD_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["BLOCKED"];
 
 const APPROVED_STATUSES: TrustedAdultReviewStatus[] = ["APPROVED"];
 
@@ -36,9 +43,29 @@ export type TodoItem = { key: string; label: string; href: string };
 export type TodoCounts = {
     // Member buckets are itemized so the UI can show *what* is due, not just a number.
     member: { household: TodoItem[]; programs: TodoItem[] };
+    // Informational gray badges (not action items): live building occupancy and
+    // how many programs are currently running.
+    building: number;
+    // Of the people currently in the building, how many belong to the caller's
+    // household — lets the Attendance badge show "mine" (green) vs "others" (gray).
+    buildingHousehold: number;
+    activePrograms: number;
     // Admin keys stay numeric — each admin nav link already deep-links to a page
     // that lists its own queue, so the number is enough.
-    admin?: { membership: number; programsPending: number; trustedAdults: number };
+    // `membership` = board-actionable (BLOCKED, green). `applicationsTotal` =
+    // every in-flight (non-ACTIVE) application, the gray count shown on the
+    // Applications tab — mirrors what /api/admin/membership lists.
+    // `brokenHouseholds` = households with no lead at all (green).
+    // `memberFamilies` = total member families (gray), shown on the Manage Memberships tab:
+    // households with >=1 non-org-email (or null-email) participant. Staff households hold
+    // only the org-email lead, so they fall out.
+    admin?: { membership: number; applicationsTotal: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number };
+    // Lead surface: programs the caller runs (program.leadMentorId). Present only
+    // when they lead ≥1 program — drives the staff "My Programs" nav item's
+    // visibility and its green badge (sum of pending attendance to confirm).
+    // `pending` mirrors the post-event email's targets (ended events not yet
+    // confirmed), deep-linked to the existing confirm screen. No new capability.
+    lead?: { programs: { id: number; name: string; pending: TodoItem[] }[] };
 };
 
 // What a member-actionable membership process means, in plain terms.
@@ -77,7 +104,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 select: { participantId: true },
             })) !== null;
 
-        const [hh, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
+        const [hh, leadsMissingPhone, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
             isLead
                 ? prisma.household.findUnique({
                       where: { id: householdId },
@@ -92,6 +119,14 @@ export const GET = withAuth({}, async (_req, auth) => {
                       },
                   })
                 : Promise.resolve(null),
+            // A household lead with no phone on file is an actionable gap — the
+            // page highlights the member box; this drives the nav badge count.
+            isLead
+                ? prisma.householdLead.findMany({
+                      where: { householdId, OR: [{ participant: { phone: null } }, { participant: { phone: "" } }] },
+                      select: { participant: { select: { id: true, name: true } } },
+                  })
+                : Promise.resolve([]),
             prisma.membershipProcess.findMany({
                 where: { membership: { householdId }, status: { in: MEMBER_ACTIONABLE_MEMBERSHIP } },
                 select: { id: true, status: true },
@@ -113,7 +148,10 @@ export const GET = withAuth({}, async (_req, auth) => {
         ]);
 
         if (!!hh && hh.emergencyContacts.length === 0) {
-            householdTodos.push({ key: "emergency-contact", label: "Add a household emergency contact", href: "/household#emergency-contact" });
+            householdTodos.push({ key: "emergency-contact", label: "Add a household emergency contact", href: "/my-household#emergency-contact" });
+        }
+        for (const l of leadsMissingPhone) {
+            householdTodos.push({ key: `lead-phone-${l.participant.id}`, label: `Add a phone number for ${l.participant.name ?? "the household lead"}`, href: "/my-household" });
         }
         for (const p of membershipProcs) {
             householdTodos.push({
@@ -137,22 +175,96 @@ export const GET = withAuth({}, async (_req, auth) => {
         }
     }
 
-    const result: TodoCounts = { member: { household: householdTodos, programs: programTodos } };
+    // Global informational counts (not scoped to the caller).
+    const [building, buildingHousehold, activePrograms] = await Promise.all([
+        prisma.visit.count({ where: { departedAt: null } }),
+        user.householdId
+            ? prisma.visit.count({ where: { departedAt: null, participant: { householdId: user.householdId } } })
+            : Promise.resolve(0),
+        prisma.program.count({ where: { phase: "RUNNING" } }),
+    ]);
+
+    const result: TodoCounts = {
+        member: { household: householdTodos, programs: programTodos },
+        building,
+        buildingHousehold,
+        activePrograms,
+    };
+
+    // ---- Lead surface (programs the caller runs as lead mentor) ----
+    // Same targets as the post-event email (src/lib/postEventEmails.ts): events
+    // that have ended with attendance not yet confirmed, in a program the caller
+    // leads. Surfaced in-app additively; the email keeps firing. Each item deep-
+    // links to the existing confirm screen — no new capability, no new PII.
+    const ledPrograms = await prisma.program.findMany({
+        where: { leadMentorId: user.id },
+        select: { id: true, name: true },
+    });
+    if (ledPrograms.length > 0) {
+        const pendingEvents = await prisma.event.findMany({
+            where: {
+                programId: { in: ledPrograms.map((p) => p.id) },
+                endAt: { lte: new Date() },
+                attendanceConfirmedAt: null,
+            },
+            select: { id: true, name: true, programId: true },
+            orderBy: { endAt: "asc" },
+        });
+        const pendingByProgram = new Map<number, TodoItem[]>();
+        for (const e of pendingEvents) {
+            if (e.programId === null) continue;
+            const items = pendingByProgram.get(e.programId) ?? [];
+            items.push({
+                key: `attendance-${e.id}`,
+                label: `Confirm attendance for ${e.name}`,
+                href: `/program-ops/sessions/${e.id}?from=my-programs`,
+            });
+            pendingByProgram.set(e.programId, items);
+        }
+        result.lead = {
+            programs: ledPrograms.map((p) => ({ id: p.id, name: p.name, pending: pendingByProgram.get(p.id) ?? [] })),
+        };
+    }
 
     // ---- Admin surface (board's own queue) — only for board/sysadmin ----
     if (user.sysadmin || user.boardMember) {
-        const [membership, programsPending, trustedAdults] = await Promise.all([
+        const [membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies] = await Promise.all([
             prisma.membershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
+            // Every in-flight application the Applications page lists (status != ACTIVE).
+            prisma.membershipProcess.count({
+                where: { status: { not: "ACTIVE" } },
+            }),
             prisma.programParticipant.count({
-                where: { status: "PENDING", paymentPlanRequested: true },
+                where: { status: "PENDING", isPaymentPlanRequested: true },
             }),
             prisma.trustedAdultReview.count({
                 where: { status: "PENDING_BOARD_REVIEW" },
             }),
+            countHouseholdsMissingValidContact(),
+            // Households with an account created at registration that nobody has
+            // claimed via Google sign-in yet. Mirrors /api/membership-audit/unclaimed-households.
+            prisma.household.count({
+                where: { participants: { some: { email: { not: null }, googleId: null } } },
+            }),
+            // "Broken" households: no household lead at all. Mirrors
+            // /api/admin/broken-households. Includes empty households.
+            prisma.household.count({
+                where: { leads: { none: {} } },
+            }),
+            // Member families: households with >=1 non-org-email participant. A null email is
+            // not an org address, but Prisma's `NOT endsWith` skips null rows — list it
+            // explicitly so null-email members (e.g. children) count.
+            prisma.household.count({
+                where: {
+                    participants: {
+                        some: { OR: [{ email: null }, { NOT: { email: { endsWith: `@${ORG_DOMAIN}` } } }] },
+                    },
+                },
+            }),
         ]);
-        result.admin = { membership, programsPending, trustedAdults };
+        result.admin = { membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies };
     }
 
     return NextResponse.json(result);

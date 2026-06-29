@@ -3,10 +3,10 @@
  */
 /**
  * Integration Tests for Admin Visits API
- * Tests GET and PATCH /api/admin/visits for viewing and editing check-in records
+ * Tests GET and PATCH /api/facility/visits for viewing and editing check-in records
  */
 
-import { GET, PATCH } from '@/app/api/admin/visits/route';
+import { GET, PATCH } from '@/app/api/facility/visits/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -57,7 +57,7 @@ describe('Admin Visits API Integration Tests', () => {
         const visit = await prisma.visit.create({
             data: {
                 participantId: testUserId,
-                arrived: new Date(Date.now() - 3600000), // 1 hour ago
+                arrivedAt: new Date(Date.now() - 3600000), // 1 hour ago
             }
         });
         testVisitId = visit.id;
@@ -76,11 +76,11 @@ describe('Admin Visits API Integration Tests', () => {
         });
     });
 
-    describe('GET /api/admin/visits', () => {
+    describe('GET /api/facility/visits', () => {
         it('should return 401 Unauthorized without session', async () => {
             (getServerSession as jest.Mock).mockResolvedValue(null);
 
-            const req = new Request('http://localhost:4000/api/admin/visits', {
+            const req = new Request('http://localhost:4000/api/facility/visits', {
                 method: 'GET'
             });
 
@@ -93,7 +93,7 @@ describe('Admin Visits API Integration Tests', () => {
                 user: { id: testUserId }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/visits', {
+            const req = new Request('http://localhost:4000/api/facility/visits', {
                 method: 'GET'
             });
 
@@ -106,7 +106,7 @@ describe('Admin Visits API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/visits', {
+            const req = new Request('http://localhost:4000/api/facility/visits', {
                 method: 'GET'
             });
 
@@ -122,13 +122,13 @@ describe('Admin Visits API Integration Tests', () => {
         });
     });
 
-    describe('PATCH /api/admin/visits', () => {
+    describe('PATCH /api/facility/visits', () => {
         it('should return 401 Unauthorized without session', async () => {
             (getServerSession as jest.Mock).mockResolvedValue(null);
 
-            const req = new Request('http://localhost:4000/api/admin/visits', {
+            const req = new Request('http://localhost:4000/api/facility/visits', {
                 method: 'PATCH',
-                body: JSON.stringify({ visitId: testVisitId, departed: new Date().toISOString() })
+                body: JSON.stringify({ visitId: testVisitId, departedAt: new Date().toISOString() })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
@@ -140,9 +140,9 @@ describe('Admin Visits API Integration Tests', () => {
                 user: { id: testUserId }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/visits', {
+            const req = new Request('http://localhost:4000/api/facility/visits', {
                 method: 'PATCH',
-                body: JSON.stringify({ visitId: testVisitId, departed: new Date().toISOString() })
+                body: JSON.stringify({ visitId: testVisitId, departedAt: new Date().toISOString() })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
@@ -154,9 +154,9 @@ describe('Admin Visits API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/visits', {
+            const req = new Request('http://localhost:4000/api/facility/visits', {
                 method: 'PATCH',
-                body: JSON.stringify({ departed: new Date().toISOString() })
+                body: JSON.stringify({ departedAt: new Date().toISOString() })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
@@ -175,18 +175,18 @@ describe('Admin Visits API Integration Tests', () => {
             });
 
             const now = new Date();
-            const req = new Request('http://localhost:4000/api/admin/visits', {
+            const req = new Request('http://localhost:4000/api/facility/visits', {
                 method: 'PATCH',
-                body: JSON.stringify({ visitId: testVisitId, departed: now.toISOString() })
+                body: JSON.stringify({ visitId: testVisitId, departedAt: now.toISOString() })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
             const data = await res.json();
-            expect(new Date(data.visit.departed).toISOString()).toBe(now.toISOString());
+            expect(new Date(data.visit.departedAt).toISOString()).toBe(now.toISOString());
 
             const updatedVisit = await prisma.visit.findUnique({ where: { id: testVisitId } });
-            expect(updatedVisit?.departed?.toISOString()).toBe(now.toISOString());
+            expect(updatedVisit?.departedAt?.toISOString()).toBe(now.toISOString());
 
             const currentAuditLogs = await prisma.auditLog.count({
                 where: { actorId: testAdminId, action: 'EDIT', tableName: 'Visit' }

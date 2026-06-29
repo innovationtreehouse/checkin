@@ -104,35 +104,45 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                 return NextResponse.json({ error: "Forbidden: Only Lead Mentors or Admins can edit/cancel events" }, { status: 403 });
             }
 
-            const { start, end, applyToFuture } = body;
+            // Block edits to an event that has already finished. Re-clearing
+            // reminderSentAt on a past event is meaningless and would re-arm a
+            // stale reminder; today only the cron's future-only window stops it
+            // from firing. Use endAt (not startAt) so an in-progress event still edits.
+            if (body.action === 'editTime' && event.endAt.getTime() < Date.now()) {
+                return NextResponse.json({ error: "Cannot edit a past event" }, { status: 400 });
+            }
 
-            const timeShiftStartMs = start ? new Date(start).getTime() - event.start.getTime() : 0;
-            const timeShiftEndMs = end ? new Date(end).getTime() - event.end.getTime() : 0;
+            const { startAt, endAt, applyToFuture } = body;
+
+            const timeShiftStartMs = startAt ? new Date(startAt).getTime() - event.startAt.getTime() : 0;
+            const timeShiftEndMs = endAt ? new Date(endAt).getTime() - event.endAt.getTime() : 0;
 
             if (applyToFuture && event.recurringGroupId) {
                 const futureEvents = await prisma.event.findMany({
                     where: {
                         recurringGroupId: event.recurringGroupId,
-                        start: { gte: event.start }
+                        startAt: { gte: event.startAt }
                     }
                 });
 
                 if (body.action === 'cancel') {
                     const eventIds = futureEvents.map(e => e.id);
-                    // Cleanup RSVPs and Visits first to avoid foreign key constraints
-                    await prisma.rSVP.deleteMany({ where: { eventId: { in: eventIds } } });
-                    await prisma.visit.updateMany({ where: { associatedEventId: { in: eventIds } }, data: { associatedEventId: null } });
-                    // Delete all future events in series
-                    await prisma.event.deleteMany({ where: { id: { in: eventIds } } });
-                    
+                    // Cleanup RSVPs and Visits first to avoid foreign key constraints.
+                    // All three writes in one transaction so a mid-way failure rolls back.
+                    await prisma.$transaction([
+                        prisma.rSVP.deleteMany({ where: { eventId: { in: eventIds } } }),
+                        prisma.visit.updateMany({ where: { associatedEventId: { in: eventIds } }, data: { associatedEventId: null } }),
+                        prisma.event.deleteMany({ where: { id: { in: eventIds } } }),
+                    ]);
+
                     return NextResponse.json({ success: true, count: futureEvents.length });
                 } else if (body.action === 'editTime') {
                     const ops: Prisma.PrismaPromise<unknown>[] = futureEvents.map(fe => {
                         return prisma.event.update({
                             where: { id: fe.id },
                             data: {
-                                start: new Date(fe.start.getTime() + timeShiftStartMs),
-                                end: new Date(fe.end.getTime() + timeShiftEndMs)
+                                startAt: new Date(fe.startAt.getTime() + timeShiftStartMs),
+                                endAt: new Date(fe.endAt.getTime() + timeShiftEndMs)
                             }
                         });
                     });
@@ -153,17 +163,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             } else {
                 // Apply ONLY to this single event
                 if (body.action === 'cancel') {
-                    await prisma.rSVP.deleteMany({ where: { eventId: event.id } });
-                    await prisma.visit.updateMany({ where: { associatedEventId: event.id }, data: { associatedEventId: null } });
-                    await prisma.event.delete({ where: { id: event.id } });
+                    // All three writes in one transaction so a mid-way failure rolls back.
+                    await prisma.$transaction([
+                        prisma.rSVP.deleteMany({ where: { eventId: event.id } }),
+                        prisma.visit.updateMany({ where: { associatedEventId: event.id }, data: { associatedEventId: null } }),
+                        prisma.event.delete({ where: { id: event.id } }),
+                    ]);
                     return NextResponse.json({ success: true });
                 } else if (body.action === 'editTime') {
                     const startChanged = timeShiftStartMs !== 0;
                     const updatedEvent = await prisma.event.update({
                         where: { id: event.id },
                         data: {
-                            start: start ? new Date(start) : event.start,
-                            end: end ? new Date(end) : event.end
+                            startAt: startAt ? new Date(startAt) : event.startAt,
+                            endAt: endAt ? new Date(endAt) : event.endAt
                         }
                     });
                     // Rescheduled to a new start → attendees become eligible for a fresh
@@ -185,14 +198,27 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                 return NextResponse.json({ error: "Forbidden: Not authorized to edit attendance" }, { status: 403 });
             }
 
-            const { participantId, status, arrived, departed } = body;
+            const { participantId, status, arrivedAt, departedAt } = body;
 
             if (!participantId || !status) {
                 return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
             }
 
             if (status === 'Absent') {
-                // Remove the visit associated with this event for this participant
+                // An open visit (departedAt = null) means they physically scanned in
+                // and are currently on-site. Deleting it would destroy the live
+                // roster of who's in the building — reject instead.
+                const openVisit = await prisma.visit.findFirst({
+                    where: {
+                        participantId: Number(participantId),
+                        associatedEventId: eventId,
+                        departedAt: null
+                    }
+                });
+                if (openVisit) {
+                    return NextResponse.json({ error: "Participant is currently checked in — check them out before marking Absent" }, { status: 400 });
+                }
+                // Only closed visits remain; safe to remove on an Absent correction.
                 await prisma.visit.deleteMany({
                     where: {
                         participantId: Number(participantId),
@@ -200,7 +226,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                     }
                 });
             } else if (status === 'Present') {
-                if (!arrived) {
+                if (!arrivedAt) {
                     return NextResponse.json({ error: "Arrival time is required for Present status" }, { status: 400 });
                 }
 
@@ -216,8 +242,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                     await prisma.visit.update({
                         where: { id: existingVisit.id },
                         data: {
-                            arrived: new Date(arrived),
-                            departed: departed ? new Date(departed) : null
+                            arrivedAt: new Date(arrivedAt),
+                            departedAt: departedAt ? new Date(departedAt) : null,
+                            arrivedVia: "WEB",
+                            departedVia: departedAt ? "WEB" : null
                         }
                     });
                 } else {
@@ -225,8 +253,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                         data: {
                             participantId: Number(participantId),
                             associatedEventId: eventId,
-                            arrived: new Date(arrived),
-                            departed: departed ? new Date(departed) : null
+                            arrivedAt: new Date(arrivedAt),
+                            departedAt: departedAt ? new Date(departedAt) : null,
+                            arrivedVia: "WEB",
+                            departedVia: departedAt ? "WEB" : null
                         }
                     });
                 }

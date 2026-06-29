@@ -1,6 +1,29 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import '@testing-library/jest-dom'
 
+// Integration tier (A+B): point THIS worker at its own cloned database before
+// any test module loads @/lib/prisma. integrationGlobalSetup.js created one DB
+// per worker, namespaced by run id + worker id; here we just select ours. No-op
+// for unit runs (INTEGRATION_DB unset).
+if (process.env.INTEGRATION_DB && process.env.TEST_BASE_URL && process.env.TEST_RUN_ID) {
+  const u = new URL(process.env.TEST_BASE_URL);
+  u.pathname = `/checkin_test_${process.env.TEST_RUN_ID}_${process.env.JEST_WORKER_ID || '1'}`;
+  process.env.DATABASE_URL = u.toString();
+
+  // Each integration file builds its own prisma pool (fresh module registry per
+  // file). Close it when the file finishes, or pools accumulate across the
+  // worker's files and exhaust the shared Postgres server's max_connections.
+  // disposeExternalPool (set in prisma.ts under test) makes $disconnect actually
+  // end the pg pool.
+  afterAll(async () => {
+    try {
+      await require('@/lib/prisma').default.$disconnect();
+    } catch {
+      // No prisma loaded in this file, or already disconnected — nothing to free.
+    }
+  });
+}
+
 // Tests run as a non-production environment. Previously this was implicit via
 // NODE_ENV=test; under the single CHECKIN_ENV flag we declare it explicitly so
 // prod-only gates (e.g. the scan self-check-in block) stay off during tests.
@@ -22,7 +45,7 @@ process.env.CHECKIN_ENV = 'dev';
   // pool of >= 2 so their two enroll transactions run on separate connections,
   // making the program-row FOR UPDATE lock (not pool-1 serialization) the thing
   // that serializes them — matching production.
-  if (testPath && /(scanConcurrency|programsParticipantsConcurrency|programsPublicRegisterConcurrency)\.integration\.test\.[jt]sx?$/.test(testPath)) {
+  if (testPath && /(scanConcurrency|attendanceManualConcurrency|attendanceManualCheckinConcurrency|programsParticipantsConcurrency|programsPublicRegisterConcurrency|trustedAdultConcurrency|householdLeadsConcurrency)\.integration\.test\.[jt]sx?$/.test(testPath)) {
     process.env.TEST_DB_POOL_MAX = '2';
   }
 }

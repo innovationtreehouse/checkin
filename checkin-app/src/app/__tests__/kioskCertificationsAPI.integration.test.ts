@@ -3,10 +3,10 @@
  */
 /**
  * Integration Tests for Kiosk Certifications API
- * Tests GET /api/kiosk/certifications to secure participant tool statuses for active shop users
+ * Tests GET /api/kioskdisplay/certifications to secure participant tool statuses for active shop users
  */
 
-import { GET } from '@/app/api/kiosk/certifications/route';
+import { GET } from '@/app/api/kioskdisplay/certifications/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { getKioskPublicKeys, verifyKioskSignature } from '@/lib/verify-kiosk';
@@ -79,7 +79,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         await prisma.visit.create({
-            data: { participantId: testUserId, arrived: new Date() }
+            data: { participantId: testUserId, arrivedAt: new Date() }
         });
     });
 
@@ -107,12 +107,12 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
     });
 
-    describe('GET /api/kiosk/certifications', () => {
+    describe('GET /api/kioskdisplay/certifications', () => {
         it('should return 401 Unauthorized without session or Kiosk header', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
              (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
 
-             const req = new Request('http://localhost:4000/api/kiosk/certifications', { method: 'GET' });
+             const req = new Request('http://localhost:4000/api/kioskdisplay/certifications', { method: 'GET' });
              const res = await GET(req as unknown as NextRequest);
              expect(res.status).toBe(401);
         });
@@ -122,7 +122,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
              (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
              (verifyKioskSignature as jest.Mock).mockReturnValue({ ok: false, status: 401, error: 'Invalid Signature' });
 
-             const req = new Request('http://localhost:4000/api/kiosk/certifications', { 
+             const req = new Request('http://localhost:4000/api/kioskdisplay/certifications', { 
                  method: 'GET',
                  headers: new Headers({
                      'x-kiosk-signature': 'bad-sig',
@@ -133,7 +133,10 @@ describe('Kiosk Certifications API Integration Tests', () => {
              const res = await GET(req as unknown as NextRequest);
              expect(res.status).toBe(401);
              const data = await res.json();
-             expect(data.error).toBe('Invalid Signature');
+             // A bad kiosk signature falls through to the session check (here: no session),
+             // so withAuth fails closed with the generic 401. The verifier's own error string
+             // is intentionally not surfaced to the caller.
+             expect(data.error).toBe('Unauthorized');
         });
 
         it('should return active visits and tools if Kiosk signature is valid', async () => {
@@ -141,7 +144,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
              (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
              (verifyKioskSignature as jest.Mock).mockReturnValue({ ok: true });
 
-             const req = new Request('http://localhost:4000/api/kiosk/certifications', { 
+             const req = new Request('http://localhost:4000/api/kioskdisplay/certifications', { 
                  method: 'GET',
                  headers: new Headers({
                      'x-kiosk-signature': 'good-sig',
@@ -159,6 +162,9 @@ describe('Kiosk Certifications API Integration Tests', () => {
              const visitMatches = data.participants.filter((v: {id: number}) => v.id === testUserId);
              expect(visitMatches.length).toBe(1);
              expect(visitMatches[0].toolStatuses.some((t: {toolId: number, level: string}) => t.toolId === toolId && t.level === 'CERTIFIED')).toBe(true);
+             // Returns a display name and never the raw email — data minimization (#329).
+             expect(visitMatches[0].name).toBe('User Kiosk Test');
+             expect('email' in visitMatches[0]).toBe(false);
              
              const toolMatches = data.tools.filter((t: {id: number}) => t.id === toolId);
              expect(toolMatches.length).toBe(1);
@@ -166,10 +172,12 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         it('should return active visits and tools for authenticated web users', async () => {
-            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
+            // This endpoint is privileged (sysadmin/boardMember/keyholder or kiosk); a plain
+            // member session gets 403. Grant a role flag so the session passes the gate.
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId, keyholder: true } });
             (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
 
-            const req = new Request('http://localhost:4000/api/kiosk/certifications', { method: 'GET' });
+            const req = new Request('http://localhost:4000/api/kioskdisplay/certifications', { method: 'GET' });
             const res = await GET(req as unknown as NextRequest);
             expect(res.status).toBe(200);
 

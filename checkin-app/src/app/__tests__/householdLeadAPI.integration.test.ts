@@ -148,10 +148,10 @@ describe('Household Lead API Integration Tests', () => {
             const res = await POST(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(403);
             const data = await res.json();
-            expect(data.error).toBe('Only household leads or sysadmins can promote members');
+            expect(data.error).toBe('Only household leads, board members, or sysadmins can promote members');
         });
 
-        it('should return 404 Not Found if trying to promote a member outside of your household', async () => {
+        it('should return 403 Forbidden if a non-privileged lead tries to promote a member outside of their household', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testLeadId } });
 
             const req = new Request('http://localhost:4000/api/household/lead', {
@@ -160,9 +160,9 @@ describe('Household Lead API Integration Tests', () => {
             });
 
             const res = await POST(req as unknown as import("next/server").NextRequest);
-            expect(res.status).toBe(404);
+            expect(res.status).toBe(403);
             const data = await res.json();
-            expect(data.error).toBe('Member not found in your household');
+            expect(data.error).toBe('Only household leads, board members, or sysadmins can promote members');
         });
 
         it('should return successfully when user is already a lead', async () => {

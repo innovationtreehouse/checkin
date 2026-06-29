@@ -4,6 +4,8 @@ import { use, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alert, Button, Card, Center, Container, Group, Loader, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
 import { formatCents } from '@inventory/money';
+import { useUnsavedGuard } from '@/components/UnsavedChangesProvider';
+import { isRegistrationDirty } from './dirty';
 
 type RegProgram = {
   name: string;
@@ -37,8 +39,14 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
   const [participants, setParticipants] = useState<{ name: string; dob: string }[]>([{ name: '', dob: '' }]);
 
   const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // Public page: no app sidebar, so the native beforeunload from the guard infra
+  // is the whole protection. Dirty once any field is typed; cleared on submit so
+  // the post-submit redirect doesn't prompt.
+  useUnsavedGuard(!submitted && isRegistrationDirty(parents, emergencyContact, participants));
 
   useEffect(() => {
     const fetchProgram = async () => {
@@ -130,9 +138,12 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
 
       const data = await res.json();
       if (res.ok) {
+        setSubmitted(true); // clears the unsaved-changes guard before any redirect
         if (data.checkoutUrl) {
           setSuccess("Registration started! Redirecting you to checkout...");
-          window.location.href = data.checkoutUrl;
+          // Defer one tick so React flushes the guard effect (dirty→false)
+          // before the full-page nav, else beforeunload would still prompt.
+          setTimeout(() => { window.location.href = data.checkoutUrl; }, 0);
         } else {
           setSuccess("Registration successful! Check your email for confirmation.");
           setTimeout(() => router.push(`/programs/${id}`), 3000);
@@ -165,7 +176,7 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
   }
 
   return (
-    <Container size="md" py="md">
+    <Container size="md" pb="md">
       <Card withBorder radius="md" padding="lg">
         <Stack align="center" gap={4} mb="lg">
           <Title order={1}>Register for Program</Title>

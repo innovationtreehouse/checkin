@@ -5,12 +5,13 @@ import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Center, Checkbox, Divider, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { formatDate } from '@/lib/time';
+import { PageContainer } from '@/components/ui/PageContainer';
 
 type ProgramSummary = {
   id: number;
   name: string;
-  begin: string | null;
-  end: string | null;
+  startAt: string | null;
+  endAt: string | null;
   memberOnly: boolean;
   phase: string;
   enrollmentStatus: string;
@@ -58,7 +59,8 @@ export default function PublicProgramsDirectory() {
   }
 
   return (
-    <Stack>
+    <PageContainer>
+      <Stack>
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <div>
           <Title order={1}>Programs Directory</Title>
@@ -73,7 +75,7 @@ export default function PublicProgramsDirectory() {
               checked={activeOnly}
               onChange={(e) => setActiveOnly(e.currentTarget.checked)}
             />
-            <Button component={Link} href="/admin/programs/new" color="green" variant="light">
+            <Button component={Link} href="/program-ops/new" color="green" variant="light">
               + New Program
             </Button>
           </Group>
@@ -102,8 +104,8 @@ export default function PublicProgramsDirectory() {
                 </Group>
 
                 <Text c="dimmed" style={{ flex: 1 }} mb="md">
-                  {program.begin ? formatDate(program.begin) : 'Start Date TBD'}
-                  {program.end ? ` - ${formatDate(program.end)}` : ' (Ongoing)'}
+                  {program.startAt ? formatDate(program.startAt) : 'Start Date TBD'}
+                  {program.endAt ? ` - ${formatDate(program.endAt)}` : ' (Ongoing)'}
                 </Text>
 
                 <Card withBorder radius="sm" padding="xs" mb="md">
@@ -130,7 +132,7 @@ export default function PublicProgramsDirectory() {
                     View Details
                   </Button>
                   {canManage && (
-                    <Button component={Link} href={`/admin/programs/${program.id}`} variant="light" color="green">
+                    <Button component={Link} href={`/program-ops/programs/${program.id}`} variant="light" color="green">
                       Manage
                     </Button>
                   )}
@@ -140,6 +142,8 @@ export default function PublicProgramsDirectory() {
           })}
         </SimpleGrid>
       )}
-    </Stack>
+      </Stack>
+    </PageContainer>
   );
 }
+

@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
-import { MembershipTabs } from "@/components/admin/MembershipTabs";
+import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
@@ -14,7 +13,7 @@ interface Participant {
 interface Attestation {
   id: number;
   result: string;
-  markedVolunteer: boolean;
+  isMarkedVolunteer: boolean;
 }
 interface ProcessRow {
   id: number;
@@ -24,6 +23,8 @@ interface ProcessRow {
   zohoEnvelopeId: string | null;
   contractSignedAt: string | null;
   bgConsentAt: string | null;
+  bgClearedAt: string | null;
+  paidAt: string | null;
   attestations: Attestation[];
   membership: {
     householdId: number;
@@ -37,6 +38,7 @@ const STATUS_COLORS: Record<string, string> = {
   PENDING_EXTERNAL_ACTION: "blue",
   PENDING_BG_REVIEW: "grape",
   PENDING_PAYMENT: "orange",
+  PENDING_BG_CLEARANCE: "grape",
   BLOCKED: "red",
   PENDING_RENEWAL: "teal",
   RENEWAL_PENDING_BG: "grape",
@@ -44,6 +46,14 @@ const STATUS_COLORS: Record<string, string> = {
 
 const statusColor = (status: string) => STATUS_COLORS[status] || "gray";
 const statusLabel = (status: string) => status.replace(/_/g, " ");
+
+// The background check is a parallel track: an application still needs review
+// when it hasn't cleared and is past consent (mirrors review.ts isAwaitingBgReview).
+const awaitingBg = (r: ProcessRow) =>
+  !r.bgClearedAt &&
+  (r.status === "PENDING_BG_REVIEW" ||
+    r.status === "RENEWAL_PENDING_BG" ||
+    ((r.status === "PENDING_PAYMENT" || r.status === "PENDING_BG_CLEARANCE") && !!r.bgConsentAt));
 
 export default function AdminMembershipPage() {
   const [rows, setRows] = useState<ProcessRow[]>([]);
@@ -55,7 +65,7 @@ export default function AdminMembershipPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/membership");
+      const res = await fetch("/api/membership-ops/applications");
       if (res.ok) {
         const data = await res.json();
         setRows(data.processes || []);
@@ -71,7 +81,7 @@ export default function AdminMembershipPage() {
     setBusyId(processId);
     setMessage("");
     try {
-      const res = await fetch("/api/admin/membership/external", {
+      const res = await fetch("/api/membership-ops/applications/external", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ processId, action, ...extra }),
@@ -98,7 +108,7 @@ export default function AdminMembershipPage() {
     setBusyId(processId);
     setMessage("");
     try {
-      const res = await fetch("/api/admin/membership/review-override", {
+      const res = await fetch("/api/membership-ops/applications/review-override", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ processId, action }),
@@ -125,7 +135,7 @@ export default function AdminMembershipPage() {
     setBusyId(processId);
     setMessage("");
     try {
-      const res = await fetch("/api/admin/membership/certify-payment", {
+      const res = await fetch("/api/membership-ops/applications/certify-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ processId }),
@@ -160,10 +170,6 @@ export default function AdminMembershipPage() {
 
   return (
     <Stack>
-      <Title order={1}>Membership Applications</Title>
-
-      <MembershipTabs active="applications" />
-
       <Text c="dimmed">
         In-flight applications. Use the manual controls below to confirm the contract was signed
         or that background-check consent was received. (The contract is also confirmed
@@ -218,7 +224,7 @@ export default function AdminMembershipPage() {
                     {r.contractSignedAt ? (
                       <Text c="green" fw={600}>✓ Signed</Text>
                     ) : (
-                      <Button size="xs" disabled={busyId === r.id} onClick={() => act(r.id, "mark-contract")}>
+                      <Button size="xs" fz={15} disabled={busyId === r.id} onClick={() => act(r.id, "mark-contract")}>
                         Confirm contract signed
                       </Button>
                     )}
@@ -228,7 +234,7 @@ export default function AdminMembershipPage() {
                     {r.bgConsentAt ? (
                       <Text c="green" fw={600}>✓ Received</Text>
                     ) : (
-                      <Button size="xs" variant="default" disabled={busyId === r.id} onClick={() => act(r.id, "mark-bg-consent")}>
+                      <Button size="xs" fz={15} variant="default" disabled={busyId === r.id} onClick={() => act(r.id, "mark-bg-consent")}>
                         Confirm BG consent
                       </Button>
                     )}
@@ -236,29 +242,40 @@ export default function AdminMembershipPage() {
                 </Group>
               )}
 
-              {r.status === "PENDING_BG_REVIEW" && (
+              {awaitingBg(r) && (
                 <Text size="sm" c="dimmed" mt="md">
-                  Awaiting reviewers — <Text component="span" fw={600}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</Text> approvals recorded.
+                  Background check (in parallel) — <Text component="span" fw={600}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</Text> approvals recorded.
                 </Text>
               )}
 
               {r.status === "PENDING_PAYMENT" && (
                 <Group mt="md" gap="md" wrap="wrap" align="center">
                   <Text size="sm" c="dimmed">Awaiting payment.</Text>
-                  <Button size="xs" color="green" disabled={busyId === r.id} onClick={() => certify(r.id)}>
-                    Certify payment plan → activate
+                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => certify(r.id)}>
+                    Certify payment plan → {r.bgClearedAt ? "activate" : "(holds for background check)"}
                   </Button>
                 </Group>
               )}
 
+              {r.status === "PENDING_BG_CLEARANCE" && (
+                <Text size="sm" c="dimmed" mt="md">
+                  Paid — membership activates automatically once the background check clears.
+                </Text>
+              )}
+
               {r.status === "BLOCKED" && (
                 <Alert color="red" variant="light" mt="md" title="🚨 Blocked at background review — needs board attention.">
+                  {r.paidAt && (
+                    <Text size="sm" c="red" fw={700} mb="sm">
+                      💸 This household already paid — a refund is likely needed (membership was not activated).
+                    </Text>
+                  )}
                   <Group gap="sm" wrap="wrap">
-                    <Button size="xs" variant="default" disabled={busyId === r.id} onClick={() => override(r.id, "reset")}>
+                    <Button size="xs" fz={15} variant="default" disabled={busyId === r.id} onClick={() => override(r.id, "reset")}>
                       Reset for re-review
                     </Button>
-                    <Button size="xs" color="green" disabled={busyId === r.id} onClick={() => override(r.id, "approve")}>
-                      Override → payment
+                    <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => override(r.id, "approve")}>
+                      Override → {r.paidAt ? "activate" : "payment"}
                     </Button>
                   </Group>
                 </Alert>

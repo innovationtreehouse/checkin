@@ -12,7 +12,8 @@ import { sendNotification } from '@/lib/notifications';
 
 // Mock the notification sender
 jest.mock('@/lib/notifications', () => ({
-    sendNotification: jest.fn()
+    // sendNotification resolves boolean; the route only stamps/counts on a truthy result.
+    sendNotification: jest.fn().mockResolvedValue(true)
 }));
 
 describe('Cron Reminders API Integration Tests', () => {
@@ -57,8 +58,8 @@ describe('Cron Reminders API Integration Tests', () => {
         const upcomingEvent = await prisma.event.create({
             data: {
                 name: 'Cron Test Event - Upcoming',
-                start: twoHoursFiveMinsFromNow,
-                end: new Date(twoHoursFiveMinsFromNow.getTime() + 3600000),
+                startAt: twoHoursFiveMinsFromNow,
+                endAt: new Date(twoHoursFiveMinsFromNow.getTime() + 3600000),
                 description: 'Test Event'
             }
         });
@@ -68,8 +69,8 @@ describe('Cron Reminders API Integration Tests', () => {
         const pastEvent = await prisma.event.create({
             data: {
                 name: 'Cron Test Event - Past',
-                start: new Date(now.getTime() - 3600000),
-                end: new Date(now.getTime() + 3600000),
+                startAt: new Date(now.getTime() - 3600000),
+                endAt: new Date(now.getTime() + 3600000),
                 description: 'Test Event'
             }
         });
@@ -79,8 +80,8 @@ describe('Cron Reminders API Integration Tests', () => {
         const farFutureEvent = await prisma.event.create({
             data: {
                 name: 'Cron Test Event - Far Future',
-                start: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-                end: new Date(now.getTime() + 25 * 60 * 60 * 1000),
+                startAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+                endAt: new Date(now.getTime() + 25 * 60 * 60 * 1000),
                 description: 'Test Event'
             }
         });

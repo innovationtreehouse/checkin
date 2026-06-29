@@ -5,6 +5,9 @@ import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
 import { createContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
+import { rateLimit, rateLimitEmail } from "@/lib/rate-limit";
+import { calculateAge } from "@/lib/time";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
 interface ParentInput {
     name: string;
@@ -19,6 +22,11 @@ interface ParticipantInput {
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
+
+    // Unauthenticated + writes to the DB and emails a caller-supplied address:
+    // the email-bomb / DB-spam target. Cap per source IP before any work.
+    const ipLimited = rateLimit(req, { name: "public-register", limit: 5, windowMs: 60_000 });
+    if (ipLimited) return ipLimited;
 
     try {
         const programId = parseInt(id, 10);
@@ -42,12 +50,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (!parents || parents.length === 0 || !parents[0].name || !parents[0].email || !parents[0].phone) {
             return NextResponse.json({ error: "Primary parent/guardian information is required." }, { status: 400 });
         }
+        if (!isValidPhone(parents[0].phone)) {
+            return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
+        }
         if (!emergencyContact || !emergencyContact.name || !emergencyContact.phone) {
             return NextResponse.json({ error: "Emergency contact is required." }, { status: 400 });
         }
+        // Emergency-contact phone format is enforced in createContact below.
         if (!participants || participants.length === 0) {
             return NextResponse.json({ error: "At least one participant is required." }, { status: 400 });
         }
+
+        // Second limit keyed on the normalized primary email so an attacker can't
+        // bomb one victim by rotating plus-tag / dotted variants of their address.
+        const emailLimited = rateLimitEmail(parents[0].email, { name: "public-register", limit: 3, windowMs: 3_600_000 });
+        if (emailLimited) return emailLimited;
 
         // The not-a-household-member rule (phone/email/name) is enforced when the
         // contact is created inside the transaction, against every household
@@ -90,9 +107,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     if (!p.dob) {
                         return NextResponse.json({ error: `Date of Birth is required for participant ${p.name} to verify age constraints.` }, { status: 400 });
                     }
-                    const ageDifMs = Date.now() - new Date(p.dob).getTime();
-                    const ageDate = new Date(ageDifMs);
-                    const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+                    // Judge age as of the program's start date; fall back to now
+                    // for dateless ("TBD") programs.
+                    const age = calculateAge(p.dob, currentProgram.startAt ?? undefined);
                     if (currentProgram.minAge !== null && age < currentProgram.minAge) {
                         return NextResponse.json({ error: `Participant ${p.name} must be at least ${currentProgram.minAge} years old.` }, { status: 400 });
                     }
@@ -151,7 +168,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     const newParticipant = await tx.participant.create({
                         data: {
                             name: p.name,
-                            dob: p.dob ? new Date(p.dob) : null,
+                            dateOfBirth: p.dob ? new Date(p.dob) : null,
                             householdId: household.id,
                         }
                     });

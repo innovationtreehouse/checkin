@@ -7,7 +7,7 @@
  */
 
 import { GET as REVIEW_QUEUE, POST as ATTEST } from '@/app/api/membership/reviews/route';
-import { POST as OVERRIDE } from '@/app/api/admin/membership/review-override/route';
+import { POST as OVERRIDE } from '@/app/api/membership-ops/applications/review-override/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -35,6 +35,16 @@ describe('Membership BG review API', () => {
         await prisma.householdLead.create({ data: { householdId: hh.id, participantId: parent.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
         const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } });
+        return { householdId: hh.id, membershipId: m.id, processId: p.id };
+    }
+
+    // Build a process in an arbitrary kind/status (for non-BLOCKED + renewal-branch tests).
+    async function makeProcess(label: string, kind: 'INITIAL' | 'RENEWAL', status: 'PENDING_PAYMENT' | 'RENEWAL_PENDING_BG') {
+        const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
+        const parent = await prisma.participant.create({ data: { name: `${label} Parent`, householdId: hh.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: parent.id } });
+        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
+        const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind, status } });
         return { householdId: hh.id, membershipId: m.id, processId: p.id };
     }
 
@@ -111,7 +121,7 @@ describe('Membership BG review API', () => {
 
         // rev2 approves with volunteer checkbox -> advances
         as(rev2, { backgroundCheckReviewer: true });
-        const r2 = await ATTEST(req({ processId: proc.processId, result: 'APPROVE', markedVolunteer: true }) as never);
+        const r2 = await ATTEST(req({ processId: proc.processId, result: 'APPROVE', isMarkedVolunteer: true }) as never);
         expect((await r2.json()).outcome.status).toBe('PENDING_PAYMENT');
 
         const updated = await prisma.membershipProcess.findUnique({ where: { id: proc.processId } });
@@ -120,6 +130,11 @@ describe('Membership BG review API', () => {
         expect(membership?.isVolunteer).toBe(true);
         const parent = await prisma.participant.findFirst({ where: { householdId: proc.householdId, householdLeads: { some: { householdId: proc.householdId } } } });
         expect(parent?.lastBackgroundCheck).not.toBeNull();
+
+        // The advance audit records the reviewer whose attestation triggered it (rev2), not rev1/SYSTEM.
+        const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId }, orderBy: { id: 'desc' } });
+        const advance = audits.find((a) => String(a.newData).includes('"status":"PENDING_PAYMENT"'));
+        expect(advance?.actorId).toBe(rev2);
     });
 
     it('applies volunteer status from a pre-designation (dot-insensitive), without a checkbox', async () => {
@@ -140,6 +155,11 @@ describe('Membership BG review API', () => {
         expect((await res.json()).outcome.status).toBe('BLOCKED');
         const updated = await prisma.membershipProcess.findUnique({ where: { id: proc.processId } });
         expect(updated?.status).toBe('BLOCKED');
+
+        // The BLOCKED audit records the rejecting reviewer.
+        const audit = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId }, orderBy: { id: 'desc' } });
+        expect(audit?.actorId).toBe(rev1);
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'BLOCKED' });
     });
 
     it('board reset on a BLOCKED app clears attestations and returns it to review', async () => {
@@ -151,9 +171,14 @@ describe('Membership BG review API', () => {
         const res = await OVERRIDE(req({ processId: proc.processId, action: 'reset' }) as never);
         expect(res.status).toBe(200);
         const updated = await prisma.membershipProcess.findUnique({ where: { id: proc.processId } });
-        expect(updated?.status).toBe('PENDING_BG_REVIEW');
+        expect(updated?.status).toBe('PENDING_PAYMENT');
         const count = await prisma.backgroundCheckAttestation.count({ where: { processId: proc.processId } });
         expect(count).toBe(0);
+
+        // The reset audit records the acting board member and the action.
+        const audit = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId }, orderBy: { id: 'desc' } });
+        expect(audit?.actorId).toBe(board);
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ action: 'board reset' });
     });
 
     it('board override-approve on a BLOCKED app forces it to PENDING_PAYMENT', async () => {
@@ -166,6 +191,41 @@ describe('Membership BG review API', () => {
         expect(res.status).toBe(200);
         const updated = await prisma.membershipProcess.findUnique({ where: { id: proc.processId } });
         expect(updated?.status).toBe('PENDING_PAYMENT');
+
+        // The advance audit records the acting board member.
+        const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId }, orderBy: { id: 'desc' } });
+        const advance = audits.find((a) => String(a.newData).includes('"status":"PENDING_PAYMENT"'));
+        expect(advance?.actorId).toBe(board);
+    });
+
+    it('override (approve/reset) on a non-BLOCKED process is rejected (409 wrong_phase), status unchanged', async () => {
+        const proc = await makeProcess('NotBlocked', 'INITIAL', 'PENDING_PAYMENT');
+        as(board, { boardMember: true });
+
+        for (const action of ['approve', 'reset'] as const) {
+            const res = await OVERRIDE(req({ processId: proc.processId, action }) as never);
+            expect(res.status).toBe(409);
+            expect((await res.json()).code).toBe('wrong_phase');
+            const after = await prisma.membershipProcess.findUnique({ where: { id: proc.processId } });
+            expect(after?.status).toBe('PENDING_PAYMENT');
+        }
+    });
+
+    it('board reset on a BLOCKED RENEWAL returns it to RENEWAL_PENDING_BG (not PENDING_BG_REVIEW), attestations cleared', async () => {
+        const proc = await makeProcess('RenewalReset', 'RENEWAL', 'RENEWAL_PENDING_BG');
+
+        // A reject from an eligible reviewer (different household) blocks it.
+        as(rev1, { backgroundCheckReviewer: true });
+        const rej = await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never);
+        expect((await rej.json()).outcome.status).toBe('BLOCKED');
+
+        as(board, { boardMember: true });
+        const res = await OVERRIDE(req({ processId: proc.processId, action: 'reset' }) as never);
+        expect(res.status).toBe(200);
+        // Renewal branch: must restore the RENEWAL review phase, not the INITIAL one.
+        const after = await prisma.membershipProcess.findUnique({ where: { id: proc.processId } });
+        expect(after?.status).toBe('RENEWAL_PENDING_BG');
+        expect(await prisma.backgroundCheckAttestation.count({ where: { processId: proc.processId } })).toBe(0);
     });
 
     it('non-board cannot override', async () => {

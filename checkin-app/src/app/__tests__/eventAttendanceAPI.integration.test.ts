@@ -82,8 +82,8 @@ describe('Event Attendance API Integration Tests', () => {
             data: {
                 name: 'Attendance Test Event',
                 programId: testProgramId,
-                start: pastStart,
-                end: pastEnd
+                startAt: pastStart,
+                endAt: pastEnd
             }
         });
         testEventId = event.id;
@@ -120,6 +120,12 @@ describe('Event Attendance API Integration Tests', () => {
         // Clear visits created during tests
         await prisma.visit.deleteMany({
             where: { participantId: { in: [testParticipant1Id, testParticipant2Id] } }
+        });
+        // Clear audit rows so each test asserts exactly its own write.
+        // Per-Visit audit rows carry the event in secondaryAffectedEntity;
+        // testEventId is fresh per run, so this is leak-proof.
+        await prisma.auditLog.deleteMany({
+            where: { tableName: 'Visit', secondaryAffectedEntity: testEventId }
         });
     });
 
@@ -185,8 +191,23 @@ describe('Event Attendance API Integration Tests', () => {
                 where: { participantId: testParticipant1Id, associatedEventId: testEventId }
             });
             expect(visits.length).toBe(1);
-            expect(visits[0].arrived).not.toBeNull();
-            expect(visits[0].departed).not.toBeNull();
+            expect(visits[0].arrivedAt).not.toBeNull();
+            expect(visits[0].departedAt).not.toBeNull();
+
+            // Audit: exactly one row keyed by the new Visit's PK, event in
+            // secondaryAffectedEntity, crediting the acting lead mentor.
+            const auditRows = await prisma.auditLog.findMany({
+                where: { tableName: 'Visit', secondaryAffectedEntity: testEventId }
+            });
+            expect(auditRows.length).toBe(1);
+            expect(auditRows[0].actorId).toBe(testLeadMentorId);
+            expect(auditRows[0].action).toBe('CREATE');
+            expect(auditRows[0].affectedEntityId).toBe(visits[0].id);
+            expect(JSON.parse(auditRows[0].newData as string)).toEqual({
+                participantId: testParticipant1Id,
+                associatedEventId: testEventId,
+                synthetic: true
+            });
         });
 
         it('should link an existing unassociated visit that overlaps with the event', async () => {
@@ -196,13 +217,13 @@ describe('Event Attendance API Integration Tests', () => {
 
             // Create a general visit that overlaps with the event
             const event = await prisma.event.findUnique({ where: { id: testEventId } });
-            const earlyArrival = new Date(event!.start.getTime() - 30 * 60 * 1000); // Arrived 30 mins before event
+            const earlyArrival = new Date(event!.startAt.getTime() - 30 * 60 * 1000); // Arrived 30 mins before event
             
             await prisma.visit.create({
                 data: {
                     participantId: testParticipant2Id,
-                    arrived: earlyArrival,
-                    departed: null, // Still active
+                    arrivedAt: earlyArrival,
+                    departedAt: null, // Still active
                 }
             });
 
@@ -223,7 +244,22 @@ describe('Event Attendance API Integration Tests', () => {
             });
             expect(visits.length).toBe(1); // Should only be the one we created
             expect(visits[0].associatedEventId).toBe(testEventId); // It was successfully linked
-            expect(visits[0].arrived.getTime()).toBe(earlyArrival.getTime()); // Validates it used the existing visit
+            expect(visits[0].arrivedAt.getTime()).toBe(earlyArrival.getTime()); // Validates it used the existing visit
+
+            // Audit: exactly one row keyed by the linked Visit's PK, event in
+            // secondaryAffectedEntity, crediting the acting admin.
+            const auditRows = await prisma.auditLog.findMany({
+                where: { tableName: 'Visit', secondaryAffectedEntity: testEventId }
+            });
+            expect(auditRows.length).toBe(1);
+            expect(auditRows[0].actorId).toBe(testAdminId);
+            expect(auditRows[0].action).toBe('EDIT');
+            expect(auditRows[0].affectedEntityId).toBe(visits[0].id);
+            expect(JSON.parse(auditRows[0].newData as string)).toEqual({
+                participantId: testParticipant2Id,
+                associatedEventId: testEventId,
+                synthetic: false
+            });
         });
     });
 });

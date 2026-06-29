@@ -1,29 +1,17 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
+import { requireCronSecret } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 
 export async function GET(req: Request) {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || !authHeader) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const expectedHeader = `Bearer ${cronSecret}`;
-    const providedBuffer = Buffer.from(authHeader);
-    const expectedBuffer = Buffer.from(expectedHeader);
-
-    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const denied = requireCronSecret(req);
+    if (denied) return denied;
 
     try {
         const now = new Date();
         const pendingParticipants = await prisma.programParticipant.findMany({
             where: {
                 status: 'PENDING',
-                paymentPlanRequested: false,
+                isPaymentPlanRequested: false,
                 pendingSince: { not: null }
             },
             include: {

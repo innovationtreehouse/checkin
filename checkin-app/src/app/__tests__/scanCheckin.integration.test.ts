@@ -72,12 +72,12 @@ describe('POST /api/scan — real check-in/out logic', () => {
     afterEach(async () => {
         // Reset facility state between cases so each test controls who is present.
         await prisma.visit.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
     });
 
     afterAll(async () => {
         await prisma.visit.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
         await prisma.participant.deleteMany({ where: { id: { in: [keyholderId, normalId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [keyholderHouseholdId, normalHouseholdId] } } });
     });
@@ -101,12 +101,12 @@ describe('POST /api/scan — real check-in/out logic', () => {
 
         const visit = await prisma.visit.findFirst({ where: { participantId: keyholderId } });
         expect(visit).not.toBeNull();
-        expect(visit?.departed).toBeNull();
+        expect(visit?.departedAt).toBeNull();
     });
 
-    it('orders check-in then check-out on a second scan: arrived set first, departed after', async () => {
+    it('orders check-in then check-out on a second scan: arrivedAt set first, departedAt after', async () => {
         // Seed an open keyholder visit so the facility is open for the normal user.
-        await prisma.visit.create({ data: { participantId: keyholderId, arrived: new Date() } });
+        await prisma.visit.create({ data: { participantId: keyholderId, arrivedAt: new Date() } });
 
         // First scan → check-in.
         const checkinRes = await POST(scanReq(normalId));
@@ -114,15 +114,15 @@ describe('POST /api/scan — real check-in/out logic', () => {
         expect((await checkinRes.json()).type).toBe('checkin');
 
         const openVisit = await prisma.visit.findFirst({
-            where: { participantId: normalId, departed: null },
+            where: { participantId: normalId, departedAt: null },
         });
         expect(openVisit).not.toBeNull();
-        expect(openVisit?.arrived).toBeInstanceOf(Date);
+        expect(openVisit?.arrivedAt).toBeInstanceOf(Date);
 
         // Backdate the badge event so the second scan is past the 3s debounce window.
-        await prisma.rawBadgeEvent.updateMany({
+        await prisma.rawBadgeLog.updateMany({
             where: { participantId: normalId },
-            data: { time: new Date(Date.now() - 5000) },
+            data: { timestamp: new Date(Date.now() - 5000) },
         });
 
         // Second scan → check-out.
@@ -132,15 +132,15 @@ describe('POST /api/scan — real check-in/out logic', () => {
 
         const closedVisit = await prisma.visit.findFirst({
             where: { participantId: normalId },
-            orderBy: { arrived: 'desc' },
+            orderBy: { arrivedAt: 'desc' },
         });
-        expect(closedVisit?.departed).toBeInstanceOf(Date);
+        expect(closedVisit?.departedAt).toBeInstanceOf(Date);
         // Ordering invariant: departure never precedes arrival.
-        expect(closedVisit!.departed!.getTime()).toBeGreaterThanOrEqual(closedVisit!.arrived.getTime());
+        expect(closedVisit!.departedAt!.getTime()).toBeGreaterThanOrEqual(closedVisit!.arrivedAt.getTime());
     });
 
     it('silently debounces a repeated scan within 3 seconds (no second visit)', async () => {
-        await prisma.visit.create({ data: { participantId: keyholderId, arrived: new Date() } });
+        await prisma.visit.create({ data: { participantId: keyholderId, arrivedAt: new Date() } });
 
         const first = await POST(scanReq(normalId));
         expect((await first.json()).type).toBe('checkin');
@@ -151,7 +151,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
         expect(json.type).toBe('ignored_debounce');
 
         // The debounced scan must NOT have flipped the open visit to checked-out.
-        const open = await prisma.visit.count({ where: { participantId: normalId, departed: null } });
+        const open = await prisma.visit.count({ where: { participantId: normalId, departedAt: null } });
         expect(open).toBe(1);
     });
 

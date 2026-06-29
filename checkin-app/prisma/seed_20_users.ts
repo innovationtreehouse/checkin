@@ -15,7 +15,7 @@ async function main() {
     for (let i = 1; i <= 20; i++) {
         // Create household
         const household = await prisma.household.create({
-            data: { name: `Test Family ${i}`, address: `123 Test St ${i}` }
+            data: { name: `Test Family ${i}`, line1: `123 Test St ${i}` }
         })
 
         // Create participant
@@ -43,11 +43,11 @@ async function main() {
             }
         })
 
-        // Mark them as arrived so they show up as "present" just in case limitToPresent is true
+        // Mark them as arrivedAt so they show up as "present" just in case limitToPresent is true
         await prisma.visit.create({
             data: {
                 participantId: participant.id,
-                arrived: new Date()
+                arrivedAt: new Date()
             }
         })
         

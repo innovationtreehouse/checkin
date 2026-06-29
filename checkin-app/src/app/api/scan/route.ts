@@ -5,9 +5,15 @@ import { apiError } from "@/lib/api-response";
 import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/scan-service";
 import { logBackendError } from "@/lib/logger";
 import { config } from "@/lib/config";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
     const startTime = Date.now();
+
+    // High cap: kiosks burst and a whole facility may share one NAT IP.
+    const limited = rateLimit(req, { name: "scan", limit: 300, windowMs: 60_000 });
+    if (limited) return limited;
+
     try {
         const rawBody = await req.text();
 
@@ -93,10 +99,10 @@ export async function POST(req: NextRequest) {
             // 4. Double scan debounce check (3 seconds) — now under the lock, so
             // it sees the committed badge event of any racing scan ahead of it.
             const threeSecondsAgo = new Date(Date.now() - 3000);
-            const recentScan = await tx.rawBadgeEvent.findFirst({
+            const recentScan = await tx.rawBadgeLog.findFirst({
                 where: {
                     participantId: participant.id,
-                    time: {
+                    timestamp: {
                         gte: threeSecondsAgo
                     }
                 }
@@ -111,7 +117,7 @@ export async function POST(req: NextRequest) {
             }
 
             // 5. Record raw badge event
-            await tx.rawBadgeEvent.create({
+            await tx.rawBadgeLog.create({
                 data: {
                     participantId: participant.id,
                     location: "Main Entrance",
@@ -122,9 +128,9 @@ export async function POST(req: NextRequest) {
             const activeVisit = await tx.visit.findFirst({
                 where: {
                     participantId: participant.id,
-                    departed: null,
+                    departedAt: null,
                 },
-                orderBy: { arrived: "desc" },
+                orderBy: { arrivedAt: "desc" },
             });
 
             if (activeVisit) {
@@ -154,7 +160,7 @@ export async function POST(req: NextRequest) {
         return apiError("Internal Server Error while processing scan.", 500);
     } finally {
         const durationMs = Date.now() - startTime;
-        prisma.systemMetric.create({
+        prisma.systemMetricLog.create({
             data: {
                 metric: "scan_response_time",
                 value: durationMs,

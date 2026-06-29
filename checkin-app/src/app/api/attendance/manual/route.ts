@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { logBackendError } from "@/lib/logger";
 
@@ -14,14 +15,21 @@ export async function POST(req: NextRequest) {
 
         const userId = session.user.id;
         const body = await req.json();
-        const { arrived, departed } = body;
+        const { arrivedAt, departedAt } = body;
 
-        if (!arrived) {
+        if (!arrivedAt) {
             return NextResponse.json({ error: "Arrival time is required" }, { status: 400 });
         }
 
-        const arrivalTime = new Date(arrived);
-        const departureTime = departed ? new Date(departed) : null;
+        const arrivalTime = new Date(arrivedAt);
+        const departureTime = departedAt ? new Date(departedAt) : null;
+
+        if (isNaN(arrivalTime.getTime())) {
+            return NextResponse.json({ error: "Invalid arrival time" }, { status: 400 });
+        }
+        if (departureTime && isNaN(departureTime.getTime())) {
+            return NextResponse.json({ error: "Invalid departure time" }, { status: 400 });
+        }
 
         if (departureTime && departureTime <= arrivalTime) {
             return NextResponse.json({ error: "Departure time must be after arrival time" }, { status: 400 });
@@ -29,19 +37,43 @@ export async function POST(req: NextRequest) {
 
         const eventId = await findAssociatedEventAt(userId, arrivalTime);
 
-        const visit = await prisma.visit.create({
-            data: {
-                participantId: userId,
-                arrived: arrivalTime,
-                departed: departureTime,
-                associatedEventId: eventId
+        // Creating an open visit (no departure) is a read-modify-write on this
+        // participant's visit state, just like /api/scan. Take the same
+        // per-participant advisory xact lock and re-check for an existing open
+        // visit before creating, so two concurrent manual submits — or a manual
+        // submit racing a kiosk scan — can't leave two open visits for one
+        // participant (checkout closes only one, the other lingers forever).
+        const visit = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(userId)})`;
+
+            // Only an open visit carries dedup-able state; a closed one (departure
+            // provided) is just a historical record, so multiple are fine.
+            if (!departureTime) {
+                const openVisit = await tx.visit.findFirst({
+                    where: { participantId: userId, departedAt: null }
+                });
+                if (openVisit) return openVisit;
             }
+
+            return await tx.visit.create({
+                data: {
+                    participantId: userId,
+                    arrivedAt: arrivalTime,
+                    departedAt: departureTime,
+                    arrivedVia: "WEB",
+                    departedVia: departureTime ? "WEB" : null,
+                    associatedEventId: eventId
+                }
+            });
+        }, {
+            maxWait: 5000,
+            timeout: 15000,
         });
 
         // If a departure time was provided, we process the checkout logic directly 
         // to handle any back-to-back event transitions.
         if (departureTime) {
-             await processVisitCheckout(visit.id, departureTime);
+             await processVisitCheckout(visit.id, departureTime, undefined, "WEB");
         }
 
         await prisma.auditLog.create({
@@ -50,7 +82,7 @@ export async function POST(req: NextRequest) {
                 action: "CREATE",
                 tableName: "Visit",
                 affectedEntityId: visit.id,
-                newData: JSON.stringify({ arrived, departed, type: "manual_entry" })
+                newData: JSON.stringify({ arrivedAt, departedAt, type: "manual_entry" })
             }
         });
 

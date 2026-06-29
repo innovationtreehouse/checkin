@@ -15,6 +15,8 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconAlertTriangle, IconPlus } from "@tabler/icons-react";
+import { validateContact } from "@/lib/trusted-adult/contact";
+import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
     PENDING_BOARD_REVIEW: { label: "Awaiting board review", color: "yellow" },
@@ -37,7 +39,8 @@ interface Review {
 interface TrustedAdult {
     id: number;
     counterpartyName: string | null;
-    counterpartyContact: string | null;
+    counterpartyPhone: string | null;
+    counterpartyEmail: string | null;
     familyContext: string;
     createdAt: string;
     reviews: Review[];
@@ -57,7 +60,8 @@ export default function TrustedAdultPanel() {
     const [error, setError] = useState<string | null>(null);
 
     const [counterpartyName, setCounterpartyName] = useState("");
-    const [counterpartyContact, setCounterpartyContact] = useState("");
+    const [counterpartyPhone, setCounterpartyPhone] = useState("");
+    const [counterpartyEmail, setCounterpartyEmail] = useState("");
     const [familyContext, setFamilyContext] = useState("");
 
     const load = useCallback(() => {
@@ -78,7 +82,7 @@ export default function TrustedAdultPanel() {
             const res = await fetch("/api/trusted-adults", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ counterpartyName, counterpartyContact, familyContext }),
+                body: JSON.stringify({ counterpartyName, counterpartyPhone, counterpartyEmail, familyContext }),
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
@@ -87,7 +91,8 @@ export default function TrustedAdultPanel() {
             }
             close();
             setCounterpartyName("");
-            setCounterpartyContact("");
+            setCounterpartyPhone("");
+            setCounterpartyEmail("");
             setFamilyContext("");
             load();
         } finally {
@@ -104,7 +109,11 @@ export default function TrustedAdultPanel() {
         }
     }
 
-    const canSubmit = counterpartyName.trim() && counterpartyContact.trim() && familyContext.trim();
+    const contactResult = validateContact({ phone: counterpartyPhone, email: counterpartyEmail });
+    const contactError = "error" in contactResult ? contactResult.error : null;
+    // Don't nag before they've typed anything in either contact field.
+    const showContactError = (counterpartyPhone.trim() || counterpartyEmail.trim()) && contactError;
+    const canSubmit = counterpartyName.trim() && !contactError && familyContext.trim();
 
     return (
         <Stack gap="sm">
@@ -113,7 +122,7 @@ export default function TrustedAdultPanel() {
                     Name an adult outside your household who the board should know about (e.g. who may pick up your
                     kids). The board reviews each one; an approval is valid for one year.
                 </Text>
-                <Button size="xs" leftSection={<IconPlus size={14} />} onClick={open} style={{ flexShrink: 0 }}>
+                <Button size="xs" fz={15} leftSection={<IconPlus size={14} />} onClick={open} style={{ flexShrink: 0 }}>
                     Add a trusted adult
                 </Button>
             </Group>
@@ -145,9 +154,7 @@ export default function TrustedAdultPanel() {
                                     <Text fw={600} size="sm">{ta.counterpartyName || "Trusted adult"}</Text>
                                     <Badge color={meta.color} size="sm">{meta.label}</Badge>
                                 </Group>
-                                {ta.counterpartyContact && (
-                                    <Text size="xs" c="dimmed" mt={2}>Contact: {ta.counterpartyContact}</Text>
-                                )}
+                                <TrustedAdultContact phone={ta.counterpartyPhone} email={ta.counterpartyEmail} />
                                 <Text size="sm" mt={4}>{ta.familyContext}</Text>
                                 {latest?.sharedNote && (
                                     <Text size="sm" mt={4} c="teal">
@@ -163,12 +170,12 @@ export default function TrustedAdultPanel() {
                             </div>
                             <Group gap="xs" style={{ flexShrink: 0 }}>
                                 {latest && isRenewable(status) && (
-                                    <Button size="xs" variant="light" onClick={() => act(ta.id, "renew")}>
+                                    <Button size="xs" fz={15} variant="light" onClick={() => act(ta.id, "renew")}>
                                         Resubmit
                                     </Button>
                                 )}
                                 {latest && status !== "REVOKED" && (
-                                    <Button size="xs" variant="subtle" color="red" onClick={() => act(ta.id, "withdraw")}>
+                                    <Button size="xs" fz={15} variant="subtle" color="red" onClick={() => act(ta.id, "withdraw")}>
                                         Withdraw
                                     </Button>
                                 )}
@@ -187,10 +194,18 @@ export default function TrustedAdultPanel() {
                         required
                     />
                     <TextInput
-                        label="Their contact (phone or email)"
-                        value={counterpartyContact}
-                        onChange={(e) => setCounterpartyContact(e.currentTarget.value)}
-                        required
+                        label="Their phone"
+                        description="Phone or email is required — at least one."
+                        type="tel"
+                        value={counterpartyPhone}
+                        onChange={(e) => setCounterpartyPhone(e.currentTarget.value)}
+                    />
+                    <TextInput
+                        label="Their email"
+                        type="email"
+                        value={counterpartyEmail}
+                        onChange={(e) => setCounterpartyEmail(e.currentTarget.value)}
+                        error={showContactError ? contactError : undefined}
                     />
                     <Textarea
                         label="For the board: what may this adult do, and any limits?"

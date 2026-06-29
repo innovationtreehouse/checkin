@@ -1,39 +1,74 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { NAV_COUNTS_EVENT } from "@/lib/nav-refresh";
 import type { TodoCounts } from "@/app/api/nav/todo-counts/route";
 
+// One shared snapshot for every consumer (nav badge, sub-nav tabs, todo card).
+// Each hook instance used to own its own state + fetch, so two badges reading the
+// same numbers could land on different snapshots (e.g. nav showed 96 while the
+// tabs summed to 97) whenever they fetched at slightly different times. A single
+// module-level store keeps them in lockstep.
+let counts: TodoCounts | null = null;
+let inFlight: Promise<void> | null = null;
+let refetchQueued = false;
+const listeners = new Set<() => void>();
+
+function emit() {
+    for (const listener of listeners) listener();
+}
+
+function fetchCounts() {
+    // Dedupe concurrent fetches; if a refresh event arrives mid-flight, run one
+    // more pass afterward so the latest mutation is reflected.
+    if (inFlight) {
+        refetchQueued = true;
+        return;
+    }
+    inFlight = fetch("/api/nav/todo-counts")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+            if (data) {
+                counts = data as TodoCounts;
+                emit();
+            }
+        })
+        .catch(() => {
+            // Badges are best-effort; a failed fetch just leaves the last value.
+        })
+        .finally(() => {
+            inFlight = null;
+            if (refetchQueued) {
+                refetchQueued = false;
+                fetchCounts();
+            }
+        });
+}
+
 /**
- * Fetch nav todo-count badges and keep them live. Refetches on mount and whenever
- * a mutation site fires NAV_COUNTS_EVENT (see src/lib/nav-refresh.ts). Returns null
- * until the first response (so callers render no badge), and when disabled.
+ * Read nav todo-count badges, kept live and consistent across all consumers.
+ * Refetches on mount and whenever a mutation site fires NAV_COUNTS_EVENT (see
+ * src/lib/nav-refresh.ts). Returns null until the first response and when disabled.
  */
 export function useTodoCounts(enabled: boolean): TodoCounts | null {
-    const [counts, setCounts] = useState<TodoCounts | null>(null);
-
-    // Kept as a .then chain (not async/await) so the setState lands in a callback
-    // — the effect body never sets state synchronously.
-    const fetchCounts = useCallback(() => {
-        fetch("/api/nav/todo-counts")
-            .then((res) => (res.ok ? res.json() : null))
-            .then((data) => {
-                if (data) setCounts(data as TodoCounts);
-            })
-            .catch(() => {
-                // Badges are best-effort; a failed fetch just leaves the last value.
-            });
+    const subscribe = useCallback((onChange: () => void) => {
+        listeners.add(onChange);
+        return () => listeners.delete(onChange);
     }, []);
+    const snapshot = useSyncExternalStore(
+        subscribe,
+        () => counts,
+        () => null,
+    );
 
     useEffect(() => {
-        if (enabled) {
-            fetchCounts();
-            const handler = () => fetchCounts();
-            window.addEventListener(NAV_COUNTS_EVENT, handler);
-            return () => window.removeEventListener(NAV_COUNTS_EVENT, handler);
-        }
-    }, [enabled, fetchCounts]);
+        if (!enabled) return;
+        fetchCounts();
+        const handler = () => fetchCounts();
+        window.addEventListener(NAV_COUNTS_EVENT, handler);
+        return () => window.removeEventListener(NAV_COUNTS_EVENT, handler);
+    }, [enabled]);
 
     // When disabled (e.g. signed out) report no counts rather than a stale value.
-    return enabled ? counts : null;
+    return enabled ? snapshot : null;
 }

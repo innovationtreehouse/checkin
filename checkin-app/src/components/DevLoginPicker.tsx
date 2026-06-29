@@ -12,7 +12,7 @@ interface Persona {
   boardMember: boolean;
   keyholder: boolean;
   backgroundCheckReviewer: boolean;
-  dob: string | null;
+  dateOfBirth: string | null;
   householdId: number | null;
   toolStatuses: { toolId: number; level: string }[];
 }
@@ -56,8 +56,8 @@ export default function DevLoginPicker() {
     if (p.backgroundCheckReviewer) badges.push({ label: "BG Reviewer", color: "teal" });
     if (p.toolStatuses?.length > 0) badges.push({ label: "Certified", color: "green" });
     if (p.householdId) badges.push({ label: "Household", color: "indigo" });
-    if (p.dob && now !== null) {
-      const age = Math.floor((now - new Date(p.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+    if (p.dateOfBirth && now !== null) {
+      const age = Math.floor((now - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
       if (age < 18) badges.push({ label: `Student (${age})`, color: "pink" });
     }
     return badges;

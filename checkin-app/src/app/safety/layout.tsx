@@ -2,16 +2,24 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
+import { Badge, Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { useTodoCounts } from "@/hooks/useTodoCounts";
+import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { PageContainer } from "@/components/ui/PageContainer";
+import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 
 export default function SafetyLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const confirmNav = useConfirmNav();
   const { data: session } = useSession();
   const sessionUser = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
   const isBoard = !!(sessionUser?.sysadmin || sessionUser?.boardMember);
   const { loading, ready } = useRequireRole(["sysadmin", "boardMember", "keyholder"]);
+  // Trusted-adult disclosures awaiting board review — same count as the Safety nav badge.
+  const counts = useTodoCounts(isBoard);
+  const taCount = counts?.admin?.trustedAdults ?? 0;
 
   if (loading) {
     return (
@@ -26,32 +34,37 @@ export default function SafetyLayout({ children }: { children: React.ReactNode }
 
   if (!ready) return null;
 
-  // Emergency Contacts is the index route; Trusted Adults is board-only.
-  const tabs = [
-    { name: "🚑 Emergency Contacts", href: "/safety" },
+  // Trusted Adults is board-only. /safety redirects to the first tab.
+  const tabs: { name: string; href: string; count?: number }[] = [
+    { name: "🚑 Emergency Contacts", href: "/safety/emergency-contacts" },
+    { name: "📞 Board Contact Info", href: "/safety/board-contacts" },
     { name: "📋 Pickup List", href: "/safety/pickup" },
-    ...(isBoard ? [{ name: "🔗 Trusted Adults", href: "/safety/trusted-adults" }] : []),
+    ...(isBoard ? [{ name: "🔗 Trusted Adults", href: "/safety/trusted-adults", count: taCount }] : []),
   ];
   const active = tabs.find((t) => pathname === t.href)?.href ?? null;
 
   return (
-    <>
+    <PageContainer>
       <Tabs
         value={active}
         onChange={(value) => {
-          if (value && value !== active) router.push(value);
+          if (value && value !== active && confirmNav()) router.push(value);
         }}
         mb="md"
       >
-        <Tabs.List>
+        <ScrollableTabsList>
           {tabs.map((t) => (
-            <Tabs.Tab key={t.href} value={t.href}>
+            <Tabs.Tab
+              key={t.href}
+              value={t.href}
+              rightSection={t.count ? <Badge size="xs" circle color="green">{t.count}</Badge> : undefined}
+            >
               {t.name}
             </Tabs.Tab>
           ))}
-        </Tabs.List>
+        </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
-    </>
+    </PageContainer>
   );
 }

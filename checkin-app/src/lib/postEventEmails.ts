@@ -35,7 +35,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
     while (true) {
         // Find events that have ended before the cutoff, haven't had an email sent yet, and attendance is not confirmed.
         const whereClause: Prisma.EventWhereInput = {
-            end: { lte: cutoffTime },
+            endAt: { lte: cutoffTime },
             postEventEmailSent: false,
             attendanceConfirmedAt: null,
             programId: { not: null },
@@ -113,7 +113,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
             const actualVisits = event.visits.length;
 
             const baseUrl = config.baseUrl();
-            const eventLink = `${baseUrl}/admin/events/${event.id}`;
+            const eventLink = `${baseUrl}/program-ops/sessions/${event.id}`;
 
             const emailHtml = postEventTemplate({
                 eventName: event.name,

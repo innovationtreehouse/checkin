@@ -51,10 +51,10 @@ export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
     return { MembershipProcess: queue };
 });
 
-// POST /api/membership/reviews — submit an attestation { processId, result, markedVolunteer }.
+// POST /api/membership/reviews — submit an attestation { processId, result, isMarkedVolunteer }.
 export const POST = withAuth({ roles: ["backgroundCheckReviewer"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    let body: { processId?: number; result?: "APPROVE" | "REJECT"; markedVolunteer?: boolean };
+    let body: { processId?: number; result?: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean };
     try {
         body = await req.json();
     } catch {
@@ -64,7 +64,7 @@ export const POST = withAuth({ roles: ["backgroundCheckReviewer"] }, async (req,
         return NextResponse.json({ error: "processId and result (APPROVE|REJECT) are required" }, { status: 400 });
     }
     try {
-        const outcome = await attest(auth.user.id, body.processId, { result: body.result, markedVolunteer: body.markedVolunteer });
+        const outcome = await attest(auth.user.id, body.processId, { result: body.result, isMarkedVolunteer: body.isMarkedVolunteer });
         return NextResponse.json({ outcome });
     } catch (error) {
         if (error instanceof ReviewError) {

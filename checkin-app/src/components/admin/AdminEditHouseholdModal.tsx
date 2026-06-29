@@ -3,27 +3,36 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Group, Loader, Modal, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { pickAddress, type StructuredAddress } from "@/lib/address";
 
 export type AdminHousehold = {
   id: number;
   name: string | null;
-  address: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
-};
+} & Partial<StructuredAddress>;
 
 type FormState = {
   name: string;
-  address: string;
+  line1: string;
+  line2: string;
+  city: string;
+  state: string;
+  postalCode: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
 };
 
-const EMPTY: FormState = { name: "", address: "", emergencyContactName: "", emergencyContactPhone: "" };
+const EMPTY: FormState = { name: "", line1: "", line2: "", city: "", state: "", postalCode: "", emergencyContactName: "", emergencyContactPhone: "" };
+
+/** Deep-compares flat string form state. Exported for unit test. */
+export function isFormDirty(a: FormState, b: FormState): boolean {
+  return JSON.stringify(a) !== JSON.stringify(b);
+}
 
 /**
  * Admin/board editor for a household's own info. Denser than the member-facing
- * `/household` editor and reachable from any admin surface that has a household id.
+ * `/my-household` editor and reachable from any admin surface that has a household id.
  *
  * Saving is intentionally two-step: the form gates behind an "are you using admin
  * powers" confirmation dialog — not a data-confirmation, but an acknowledgement
@@ -44,6 +53,7 @@ export function AdminEditHouseholdModal({
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
+  const [initial, setInitial] = useState<FormState>(EMPTY);
   const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
@@ -53,17 +63,20 @@ export function AdminEditHouseholdModal({
     setConfirming(false);
     (async () => {
       try {
-        const res = await fetch(`/api/admin/households?id=${householdId}`);
+        const res = await fetch(`/api/membership-ops/households?id=${householdId}`);
         const data = await res.json();
         const h: AdminHousehold | null = data.household;
         if (cancelled) return;
         if (h) {
-          setForm({
+          const a = pickAddress(h);
+          const loaded: FormState = {
             name: h.name || "",
-            address: h.address || "",
+            line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "",
             emergencyContactName: h.emergencyContactName || "",
             emergencyContactPhone: h.emergencyContactPhone || "",
-          });
+          };
+          setForm(loaded);
+          setInitial(loaded);
           setDisplayName(h.name || `Household #${h.id}`);
         }
       } catch {
@@ -79,11 +92,19 @@ export function AdminEditHouseholdModal({
 
   const update = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
 
+  // Gate every dismiss path (X, backdrop, escape, Cancel) behind a discard
+  // prompt when the form has unsaved edits. handleSave calls onClose directly
+  // so a successful save never prompts.
+  const requestClose = () => {
+    if (isFormDirty(form, initial) && !window.confirm("Discard unsaved changes?")) return;
+    onClose();
+  };
+
   const handleSave = async () => {
     if (householdId == null) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/admin/households/${householdId}`, {
+      const res = await fetch(`/api/membership-ops/households/${householdId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -109,7 +130,7 @@ export function AdminEditHouseholdModal({
     <>
       <Modal
         opened={opened}
-        onClose={onClose}
+        onClose={requestClose}
         size="lg"
         title={<Title order={4}>Edit Household Info{displayName ? ` — ${displayName}` : ""}</Title>}
       >
@@ -129,11 +150,22 @@ export function AdminEditHouseholdModal({
               placeholder="The Smith Family"
             />
             <TextInput
-              label="Primary Address"
-              value={form.address}
-              onChange={(e) => update({ address: e.currentTarget.value })}
-              placeholder="123 Main St, City, ST 12345"
+              label="Street Address"
+              value={form.line1}
+              onChange={(e) => update({ line1: e.currentTarget.value })}
+              placeholder="123 Main St"
             />
+            <TextInput
+              label="Apt / Suite (optional)"
+              value={form.line2}
+              onChange={(e) => update({ line2: e.currentTarget.value })}
+              placeholder="Apt 4B"
+            />
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+              <TextInput label="City" value={form.city} onChange={(e) => update({ city: e.currentTarget.value })} />
+              <TextInput label="State" maxLength={2} value={form.state} onChange={(e) => update({ state: e.currentTarget.value })} placeholder="TX" />
+              <TextInput label="ZIP" value={form.postalCode} onChange={(e) => update({ postalCode: e.currentTarget.value })} placeholder="78701" />
+            </SimpleGrid>
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <TextInput
                 label="Emergency Contact Name"
@@ -150,7 +182,7 @@ export function AdminEditHouseholdModal({
               />
             </SimpleGrid>
             <Group justify="flex-end" mt="md">
-              <Button variant="default" onClick={onClose}>
+              <Button variant="default" onClick={requestClose}>
                 Cancel
               </Button>
               <Button color="green" onClick={() => setConfirming(true)}>

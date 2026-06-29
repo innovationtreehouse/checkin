@@ -31,7 +31,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
                     },
                 },
             },
-            events: { orderBy: { start: 'asc' } },
+            events: { orderBy: { startAt: 'asc' } },
             fees: true,
             leadMentor: true,
         },
@@ -84,7 +84,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, begin, end, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice } = body;
+        const { name, startAt, endAt, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -96,8 +96,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         const updateData: Record<string, unknown> = {
             ...(name !== undefined && { name }),
             ...(leadMentorId !== undefined && { leadMentorId }),
-            ...(begin !== undefined && { begin: begin ? new Date(begin) : null }),
-            ...(end !== undefined && { end: end ? new Date(end) : null }),
+            ...(startAt !== undefined && { startAt: startAt ? new Date(startAt) : null }),
+            ...(endAt !== undefined && { endAt: endAt ? new Date(endAt) : null }),
             ...(memberOnly !== undefined && { memberOnly }),
             ...(phase !== undefined && { phase }),
             ...(enrollmentStatus !== undefined && { enrollmentStatus }),

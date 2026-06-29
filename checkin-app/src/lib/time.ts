@@ -1,3 +1,7 @@
+// ponytail: default/fallback timezone. The editable org timezone lives in AppSettings
+// (lib/appSettings.ts) and is honored server-side (event creation, trends). Client-side
+// display helpers below still use this constant — wire them to AppSettings via a layout
+// provider if/when a second-region deploy needs client display in a non-Central zone.
 export const APP_TIMEZONE = 'America/Chicago';
 
 /**
@@ -22,6 +26,23 @@ export function formatTime(date: Date | string | number | null | undefined, opti
 export function formatDateTime(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
     if (!date) return '';
     return new Date(date).toLocaleString(undefined, { timeZone: APP_TIMEZONE, ...options });
+}
+
+/**
+ * Visit time range for display: "1:35 PM-2:19 PM (44 minutes)" once departed,
+ * or "1:35 PM-" while still active (no end time, no length — too dynamic).
+ * Times are shown without seconds.
+ */
+export function formatVisitRange(
+    arrived: Date | string | number | null | undefined,
+    departed?: Date | string | number | null | undefined,
+): string {
+    if (!arrived) return '';
+    const hm: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
+    const start = formatTime(arrived, hm);
+    if (!departed) return `${start}-`;
+    const mins = Math.round((new Date(departed).getTime() - new Date(arrived).getTime()) / 60000);
+    return `${start}-${formatTime(departed, hm)} (${mins} minute${mins === 1 ? '' : 's'})`;
 }
 
 /**
@@ -50,15 +71,28 @@ export function fromDatetimeLocal(value: string | null | undefined): string {
 }
 
 /**
+ * Returns the calendar age in whole years for the given DOB, decremented if
+ * the birthday hasn't happened yet as of `asOf`. Canonical implementation — use
+ * this everywhere instead of inline epoch-diff age math.
+ *
+ * `asOf` defaults to now (the common case). Program age gates pass the program's
+ * start date so the bound is judged as-of when the program begins, not when the
+ * person happens to register.
+ */
+export function calculateAge(dob: Date | string, asOf: Date | string = new Date()): number {
+    const birthDate = new Date(dob);
+    const today = new Date(asOf);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age;
+}
+
+/**
  * Returns true if the person with the given DOB is under 18 years old.
  * Canonical implementation — use this everywhere instead of inline age checks.
  */
 export function isMinor(dob: Date | string | null | undefined): boolean {
     if (!dob) return false;
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const m = today.getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-    return age < 18;
+    return calculateAge(dob) < 18;
 }

@@ -37,25 +37,54 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         const {
             name,
             leadMentorId,
-            begin,
-            end,
+            startAt,
+            endAt,
             phase,
             enrollmentStatus,
             memberOnly,
             minAge,
+            maxAge,
             maxParticipants,
             leadMentorNotificationSettings
         } = body;
 
+        // Age range sanity. Use effective values (body overrides current) so a
+        // one-sided edit can't leave minAge > maxAge.
+        const effMinAge = minAge !== undefined ? minAge : currentProgram.minAge;
+        const effMaxAge = maxAge !== undefined ? maxAge : currentProgram.maxAge;
+        if (minAge != null && minAge < 0) {
+            return NextResponse.json({ error: "minAge cannot be negative" }, { status: 400 });
+        }
+        if (maxAge != null && maxAge < 0) {
+            return NextResponse.json({ error: "maxAge cannot be negative" }, { status: 400 });
+        }
+        if (effMinAge != null && effMaxAge != null && effMinAge > effMaxAge) {
+            return NextResponse.json({ error: "minAge cannot exceed maxAge" }, { status: 400 });
+        }
+
+        // maxParticipants: null = uncapped (allowed). Otherwise must be a
+        // positive int and not below current enrollment, else the capacity lock
+        // perma-rejects everyone. Mirrors the all-rows count in capacity.ts.
+        if (maxParticipants !== undefined && maxParticipants !== null) {
+            if (typeof maxParticipants !== "number" || !Number.isInteger(maxParticipants) || maxParticipants <= 0) {
+                return NextResponse.json({ error: "maxParticipants must be a positive integer" }, { status: 400 });
+            }
+            const enrolled = await prisma.programParticipant.count({ where: { programId } });
+            if (maxParticipants < enrolled) {
+                return NextResponse.json({ error: `maxParticipants cannot be set below the current enrollment of ${enrolled}` }, { status: 400 });
+            }
+        }
+
         // Build data object for Prisma
         const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
         if (name !== undefined) updateData.name = name;
-        if (begin !== undefined) updateData.begin = begin ? new Date(begin) : null;
-        if (end !== undefined) updateData.end = end ? new Date(end) : null;
+        if (startAt !== undefined) updateData.startAt = startAt ? new Date(startAt) : null;
+        if (endAt !== undefined) updateData.endAt = endAt ? new Date(endAt) : null;
         if (phase !== undefined) updateData.phase = phase;
         if (enrollmentStatus !== undefined) updateData.enrollmentStatus = enrollmentStatus;
         if (memberOnly !== undefined) updateData.memberOnly = memberOnly;
         if (minAge !== undefined) updateData.minAge = minAge;
+        if (maxAge !== undefined) updateData.maxAge = maxAge;
         if (maxParticipants !== undefined) updateData.maxParticipants = maxParticipants;
         if (leadMentorNotificationSettings !== undefined) updateData.leadMentorNotificationSettings = leadMentorNotificationSettings === null ? null : (leadMentorNotificationSettings as unknown as never);
 

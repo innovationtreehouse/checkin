@@ -26,7 +26,9 @@ jest.mock('next-auth/next', () => ({
 }));
 
 jest.mock('@/lib/notifications', () => ({
-    sendNotification: jest.fn().mockResolvedValue(undefined),
+    // sendNotification resolves boolean delivery status; cron stamps reminderSentAt
+    // only on a truthy result, so the mock must mimic a successful send.
+    sendNotification: jest.fn().mockResolvedValue(true),
 }));
 
 const TAG = 'reschedule-clears-test';
@@ -95,8 +97,8 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
         const event = await prisma.event.create({
             data: {
                 name: `${TAG} ${label}`,
-                start,
-                end: new Date(start.getTime() + HOUR),
+                startAt: start,
+                endAt: new Date(start.getTime() + HOUR),
                 description: 'reschedule',
                 ...(recurringGroupId ? { recurringGroupId } : {}),
             },
@@ -118,7 +120,7 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
         expect(await reminderSentAt(eventId)).not.toBeNull();
 
         const newStart = new Date(Date.now() + 2 * HOUR + 8 * MIN);
-        const res = await patch(eventId, { action: 'editTime', start: newStart.toISOString() });
+        const res = await patch(eventId, { action: 'editTime', startAt: newStart.toISOString() });
         expect(res.status).toBe(200);
 
         expect(await reminderSentAt(eventId)).toBeNull();
@@ -136,7 +138,7 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
         expect(before).not.toBeNull();
 
         const newEnd = new Date(Date.now() + 3 * HOUR);
-        const res = await patch(eventId, { action: 'editTime', end: newEnd.toISOString() });
+        const res = await patch(eventId, { action: 'editTime', endAt: newEnd.toISOString() });
         expect(res.status).toBe(200);
 
         // start unchanged → reminder state preserved.
@@ -148,8 +150,8 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
         const event = await prisma.event.create({
             data: {
                 name: `${TAG} same-start`,
-                start,
-                end: new Date(start.getTime() + HOUR),
+                startAt: start,
+                endAt: new Date(start.getTime() + HOUR),
                 description: 'reschedule',
             },
         });
@@ -158,9 +160,34 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
         });
         const before = await reminderSentAt(event.id);
 
-        const res = await patch(event.id, { action: 'editTime', start: start.toISOString() });
+        const res = await patch(event.id, { action: 'editTime', startAt: start.toISOString() });
         expect(res.status).toBe(200);
 
+        expect(await reminderSentAt(event.id)).toEqual(before);
+    });
+
+    it('rejects editTime on a past event and leaves reminderSentAt untouched', async () => {
+        // Event already finished (started 3h ago, ended 2h ago).
+        const start = new Date(Date.now() - 3 * HOUR);
+        const event = await prisma.event.create({
+            data: {
+                name: `${TAG} past`,
+                startAt: start,
+                endAt: new Date(start.getTime() + HOUR),
+                description: 'reschedule',
+            },
+        });
+        await prisma.rSVP.create({
+            data: { eventId: event.id, participantId, status: 'ATTENDING', reminderSentAt: new Date() },
+        });
+        const before = await reminderSentAt(event.id);
+        expect(before).not.toBeNull();
+
+        const newStart = new Date(Date.now() + 2 * HOUR);
+        const res = await patch(event.id, { action: 'editTime', startAt: newStart.toISOString() });
+        expect(res.status).toBe(400);
+
+        // Reminder state preserved — a finished event's reminder must not be re-armed.
         expect(await reminderSentAt(event.id)).toEqual(before);
     });
 
@@ -175,7 +202,7 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
         const newStart = new Date(Date.now() + 2 * HOUR + 30 * MIN);
         const res = await patch(first, {
             action: 'editTime',
-            start: newStart.toISOString(),
+            startAt: newStart.toISOString(),
             applyToFuture: true,
         });
         expect(res.status).toBe(200);

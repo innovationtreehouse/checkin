@@ -3,9 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
-import { MembershipTabs } from '@/components/admin/MembershipTabs';
-import { Button, Center, Group, List, Loader, Stack, Table, Text } from '@mantine/core';
+import { Button, Center, Group, List, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { AdminEditHouseholdModal } from '@/components/admin/AdminEditHouseholdModal';
@@ -25,10 +23,11 @@ export default function AdminHouseholdsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
+  const [filter, setFilter] = useState("");
 
   const fetchHouseholds = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/households');
+      const res = await fetch('/api/membership-ops/households');
       if (res.ok) {
         const data = await res.json();
         setHouseholds(data.households);
@@ -48,7 +47,7 @@ export default function AdminHouseholdsPage() {
 
   const toggleMembership = async (householdId: number, currentActive: boolean) => {
     try {
-      const res = await fetch('/api/admin/households', {
+      const res = await fetch('/api/membership-ops/households', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ householdId, active: !currentActive })
@@ -73,7 +72,7 @@ export default function AdminHouseholdsPage() {
       return;
     }
     try {
-      const res = await fetch('/api/admin/households', {
+      const res = await fetch('/api/membership-ops/households', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ householdId, deny })
@@ -98,12 +97,19 @@ export default function AdminHouseholdsPage() {
     return null;
   }
 
+  const q = filter.trim().toLowerCase();
+  const filtered = q
+    ? households.filter((h) =>
+        (h.name || `Household #${h.id}`).toLowerCase().includes(q) ||
+        (h.participants?.some((p) =>
+          (p.name || '').toLowerCase().includes(q) ||
+          (p.email || '').toLowerCase().includes(q)
+        ) ?? false)
+      )
+    : households;
+
   return (
     <Stack>
-      <AdminPageHeader title="Manage Memberships" back={{ href: '/membership-ops', label: '← Membership Ops' }} />
-
-      <MembershipTabs active="households" />
-
       <Text c="dimmed">
         View all households and toggle their official facility Membership status. Memberships grant
         shop access and other organizational privileges. Denying membership blocks login for every
@@ -111,6 +117,13 @@ export default function AdminHouseholdsPage() {
       </Text>
 
       <AlertBanner message={error} tone="error" />
+
+      <TextInput
+        placeholder="Filter by household or participant name/email"
+        value={filter}
+        onChange={(e) => setFilter(e.currentTarget.value)}
+        maw={400}
+      />
 
       <Table.ScrollContainer minWidth={600}>
         <Table verticalSpacing="sm" highlightOnHover>
@@ -123,7 +136,7 @@ export default function AdminHouseholdsPage() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {households.map((household) => {
+            {filtered.map((household) => {
               const status = household.membership?.status;
               const hasActiveMembership = status === "ACTIVE";
               const isDenied = status === "DENIED";
@@ -157,14 +170,14 @@ export default function AdminHouseholdsPage() {
                   <Table.Td>
                     <Group gap="xs" wrap="nowrap">
                       <Button
-                        size="xs"
+                        size="xs" fz={15}
                         variant="light"
                         onClick={() => setEditHouseholdId(household.id)}
                       >
                         Edit Info
                       </Button>
                       <Button
-                        size="xs"
+                        size="xs" fz={15}
                         variant="light"
                         onClick={() => router.push(`/membership-ops/participants/new?householdId=${household.id}`)}
                       >
@@ -172,7 +185,7 @@ export default function AdminHouseholdsPage() {
                       </Button>
                       {isDenied ? (
                         <Button
-                          size="xs"
+                          size="xs" fz={15}
                           variant="light"
                           color="blue"
                           onClick={() => setDenied(household.id, false)}
@@ -182,7 +195,7 @@ export default function AdminHouseholdsPage() {
                       ) : (
                         <>
                           <Button
-                            size="xs"
+                            size="xs" fz={15}
                             variant="light"
                             color={hasActiveMembership ? 'red' : 'green'}
                             onClick={() => toggleMembership(household.id, hasActiveMembership)}
@@ -190,7 +203,7 @@ export default function AdminHouseholdsPage() {
                             {hasActiveMembership ? "Revoke Membership" : "Grant Membership"}
                           </Button>
                           <Button
-                            size="xs"
+                            size="xs" fz={15}
                             variant="outline"
                             color="red"
                             disabled={hasBoardMember}
@@ -207,7 +220,7 @@ export default function AdminHouseholdsPage() {
               );
             })}
 
-            {households.length === 0 && (
+            {filtered.length === 0 && (
               <Table.Tr>
                 <Table.Td colSpan={4} ta="center">
                   <Text c="dimmed" py="md">No households found.</Text>

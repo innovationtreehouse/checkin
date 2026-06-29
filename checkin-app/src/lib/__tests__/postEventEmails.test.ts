@@ -59,7 +59,7 @@ describe("processPostEventEmails", () => {
         expect(prisma.event.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: expect.objectContaining({
-                    end: { lte: expectedCutoff },
+                    endAt: { lte: expectedCutoff },
                     postEventEmailSent: false,
                     attendanceConfirmedAt: null,
                     programId: { not: null }
@@ -78,7 +78,7 @@ describe("processPostEventEmails", () => {
         expect(prisma.event.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: expect.objectContaining({
-                    end: { lte: mockNow }
+                    endAt: { lte: mockNow }
                 }),
                 take: 50,
                 orderBy: { id: 'asc' }
@@ -164,7 +164,7 @@ describe("processPostEventEmails", () => {
             eventName: "Test Event",
             attendingRsvps: 1,
             actualVisits: 2,
-            eventLink: "http://localhost:3000/admin/events/10"
+            eventLink: "http://localhost:3000/program-ops/sessions/10"
         });
 
         expect(sendEmail).toHaveBeenCalledWith(

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { canActFor } from "@/lib/household/activityMembers";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -25,7 +26,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             return NextResponse.json({ error: "Invalid RSVP status" }, { status: 400 });
         }
 
-        const currentUserId = session.user.id;
+        // Target defaults to self; a household lead may RSVP for a member of
+        // their household. Authorize the target before trusting it.
+        const targetId = typeof body.participantId === "number" ? body.participantId : session.user.id;
+        if (!(await canActFor(session, targetId))) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        const currentUserId = targetId;
 
         // Verify the event exists and the user is enrolled in the program (if applicable)
         const event = await prisma.event.findUnique({
@@ -35,6 +42,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         if (!event) {
             return NextResponse.json({ error: "Event not found" }, { status: 404 });
+        }
+
+        // Can't RSVP to an event that already finished. Use endAt (not startAt) so an
+        // in-progress event still accepts RSVPs.
+        if (event.endAt.getTime() < Date.now()) {
+            return NextResponse.json({ error: "Cannot RSVP to a past event" }, { status: 400 });
         }
 
         if (event.programId) {

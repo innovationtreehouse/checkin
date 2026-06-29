@@ -1,5 +1,5 @@
 import { POST as CreateProgram } from '@/app/api/programs/route';
-import { POST as AddEvent } from '@/app/api/programs/[id]/events/route';
+import { POST as AddEvent } from '@/app/api/events/route';
 import { POST as PublishProgram } from '@/app/api/programs/[id]/publish/route';
 import { PATCH as AddHouseholdMember } from '@/app/api/household/route';
 import { POST as EnrollParticipant } from '@/app/api/programs/[id]/participants/route';
@@ -44,6 +44,7 @@ jest.mock('@/lib/prisma', () => {
     },
     event: {
       create: jest.fn(),
+      createMany: jest.fn(),
       deleteMany: jest.fn(),
     },
     household: {
@@ -68,6 +69,10 @@ jest.mock('@/lib/prisma', () => {
     },
     auditLog: {
       create: jest.fn(),
+    },
+    appSettings: {
+      // Event creation reads the org timezone via getAppSettings().
+      upsert: jest.fn().mockResolvedValue({ id: 1, timezone: 'America/Chicago', locale: 'en-US' }),
     },
     // Enroll route now wraps the insert in $transaction + a FOR UPDATE
     // capacity check; run the callback against this same mock as the tx client.
@@ -116,17 +121,19 @@ describe('Full Program Signup Integration Flow', () => {
 
         // 2. SysAdmin adds an event (required for publishing)
         (prisma.program.findUnique as jest.Mock).mockResolvedValue({ id: programId, leadMentorId: sysAdminId });
-        (prisma.event.create as jest.Mock).mockResolvedValue({ id: 1, programId });
+        (prisma.event.createMany as jest.Mock).mockResolvedValue({ count: 1 });
 
-        const addEventReq = new Request(`http://localhost/api/programs/${programId}/events`, {
+        const addEventReq = new Request('http://localhost/api/events', {
             method: 'POST',
             body: JSON.stringify({
                 name: 'First Class',
-                start: new Date(Date.now() + 86400000).toISOString(),
-                end: new Date(Date.now() + 86400000 + 3600000).toISOString(),
+                programId: String(programId),
+                startDate: '2099-01-01',
+                startTime: '15:00',
+                endTime: '16:00',
             }),
         });
-        const addEventRes = await AddEvent(addEventReq, { params: Promise.resolve({ id: String(programId) }) });
+        const addEventRes = await AddEvent(addEventReq);
         expect(addEventRes.status).toBe(200);
 
         // 3. SysAdmin publishes the program
@@ -173,7 +180,7 @@ describe('Full Program Signup Integration Flow', () => {
             maxParticipants: null,
             _count: { participants: 0 }
         });
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dob: new Date('2015-01-01') });
+        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dateOfBirth: new Date('2015-01-01') });
         (prisma.householdLead.findUnique as jest.Mock).mockResolvedValue({ householdId, participantId: leadUserId });
         (prisma.programParticipant.create as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'PENDING' });
 
@@ -230,7 +237,7 @@ describe('Full Program Signup Integration Flow', () => {
             maxParticipants: null,
             _count: { participants: 0 }
         });
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dob: new Date('2015-01-01') });
+        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dateOfBirth: new Date('2015-01-01') });
         (prisma.householdLead.findUnique as jest.Mock).mockResolvedValue(null); // Not a lead
 
         const enrollReq = new Request(`http://localhost/api/programs/${programId}/participants`, {

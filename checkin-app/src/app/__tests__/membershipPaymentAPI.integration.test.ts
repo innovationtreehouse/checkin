@@ -9,7 +9,7 @@
 
 import crypto from 'crypto';
 import { POST as SHOPIFY_WEBHOOK } from '@/app/api/webhooks/shopify/route';
-import { POST as CERTIFY } from '@/app/api/admin/membership/certify-payment/route';
+import { POST as CERTIFY } from '@/app/api/membership-ops/applications/certify-payment/route';
 import { computeDuesCents, ensurePaymentLink, ensurePaymentLinkForUser, activate } from '@/lib/membership/payment';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
@@ -57,7 +57,10 @@ describe('Membership payment API', () => {
             leadId = lead.id;
         }
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer } });
-        const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT' } });
+        // bgClearedAt set: the background check has already cleared, so paying
+        // activates the membership (the BG-not-cleared path is covered by the
+        // non-blocking flow test).
+        const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT', bgClearedAt: new Date() } });
         return { householdId: hh.id, membershipId: m.id, processId: p.id };
     }
 
@@ -161,6 +164,35 @@ describe('Membership payment API', () => {
         const proc = await prisma.membershipProcess.findUnique({ where: { id: certProc } });
         expect(proc?.status).toBe('ACTIVE');
         expect(proc?.certifiedById).toBe(leadId);
+
+        // The audit row records WHO certified — the acting board member, not SYSTEM_ACTOR.
+        const audit = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: certProc }, orderBy: { id: 'desc' } });
+        expect(audit?.actorId).toBe(leadId);
+        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'ACTIVE' });
+    });
+
+    it('certify on a non-PENDING_PAYMENT process is rejected (409 wrong_phase, no state change)', async () => {
+        asBoard(leadId);
+        const bg = await makeProc('Bg', false);
+        await prisma.membershipProcess.update({ where: { id: bg.processId }, data: { status: 'PENDING_BG_REVIEW' } });
+
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: bg.processId }) }) as never);
+        expect(res.status).toBe(409);
+        expect((await res.json()).code).toBe('wrong_phase');
+
+        // No state change: status untouched and no activation audit row written.
+        const proc = await prisma.membershipProcess.findUnique({ where: { id: bg.processId } });
+        expect(proc?.status).toBe('PENDING_BG_REVIEW');
+        expect(proc?.paidAt).toBeNull();
+        const audit = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: bg.processId } });
+        expect(audit).toBeNull();
+    });
+
+    it('certify on a non-existent process returns 404', async () => {
+        asBoard(leadId);
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: 999999999 }) }) as never);
+        expect(res.status).toBe(404);
+        expect((await res.json()).code).toBe('not_found');
     });
 
     it('non-board cannot certify', async () => {
@@ -175,7 +207,8 @@ describe('Membership payment API', () => {
         const lead = await prisma.participant.create({ data: { email: `concurrent-${TAG}@example.com`, name: 'C Lead', householdId: hh.id } });
         await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer: false } });
-        const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT' } });
+        // bgClearedAt set so paying activates (and the one congrats email fires).
+        const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT', bgClearedAt: new Date() } });
 
         (sendEmail as jest.Mock).mockClear();
 

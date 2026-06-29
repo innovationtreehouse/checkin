@@ -3,10 +3,10 @@
  */
 /**
  * Integration Tests for Admin Households API
- * Tests GET and POST /api/admin/households for fetching and updating memberships
+ * Tests GET and POST /api/membership-ops/households for fetching and updating memberships
  */
 
-import { GET, POST } from '@/app/api/admin/households/route';
+import { GET, POST } from '@/app/api/membership-ops/households/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -75,13 +75,13 @@ describe('Admin Households API Integration Tests', () => {
         });
     });
 
-    describe('GET /api/admin/households', () => {
+    describe('GET /api/membership-ops/households', () => {
         it('should return 403 Forbidden without session or admin', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
                  user: { id: testUserId, sysadmin: false, boardMember: false }
              });
 
-             const req = new Request('http://localhost:4000/api/admin/households', { method: 'GET' });
+             const req = new Request('http://localhost:4000/api/membership-ops/households', { method: 'GET' });
 
              const res = await GET(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(403);
@@ -92,7 +92,7 @@ describe('Admin Households API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/households', { method: 'GET' });
+            const req = new Request('http://localhost:4000/api/membership-ops/households', { method: 'GET' });
 
             const res = await GET(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
@@ -113,7 +113,7 @@ describe('Admin Households API Integration Tests', () => {
             });
 
             // Search by user email in household 2
-            const req = new Request('http://localhost:4000/api/admin/households?q=user-households-api-test', { method: 'GET' });
+            const req = new Request('http://localhost:4000/api/membership-ops/households?q=user-households-api-test', { method: 'GET' });
 
             const res = await GET(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
@@ -127,13 +127,13 @@ describe('Admin Households API Integration Tests', () => {
         });
     });
 
-    describe('POST /api/admin/households', () => {
+    describe('POST /api/membership-ops/households', () => {
         it('should return 403 Forbidden without session or admin', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
                  user: { id: testUserId, sysadmin: false }
              });
 
-             const req = new Request('http://localhost:4000/api/admin/households', {
+             const req = new Request('http://localhost:4000/api/membership-ops/households', {
                  method: 'POST',
                  body: JSON.stringify({ householdId: testHousehold1Id, active: true })
              });
@@ -147,7 +147,7 @@ describe('Admin Households API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/households', {
+            const req = new Request('http://localhost:4000/api/membership-ops/households', {
                 method: 'POST',
                 body: JSON.stringify({ active: true })
             });
@@ -161,7 +161,7 @@ describe('Admin Households API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/households', {
+            const req = new Request('http://localhost:4000/api/membership-ops/households', {
                 method: 'POST',
                 body: JSON.stringify({ householdId: testHousehold1Id, active: true })
             });
@@ -184,7 +184,7 @@ describe('Admin Households API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/households', {
+            const req = new Request('http://localhost:4000/api/membership-ops/households', {
                 method: 'POST',
                 body: JSON.stringify({ householdId: testHousehold2Id, active: false })
             });

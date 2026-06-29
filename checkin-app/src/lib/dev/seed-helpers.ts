@@ -38,14 +38,14 @@ export async function seedBaseline(prisma: Db): Promise<void> {
     let household1 = await prisma.household.findFirst({ where: { name: "Family" } });
     if (!household1) {
         household1 = await prisma.household.create({
-            data: { name: "Family", address: "123 Maker Lane" },
+            data: { name: "Family", line1: "123 Maker Lane" },
         });
     }
 
     let household2 = await prisma.household.findFirst({ where: { name: "Family2" } });
     if (!household2) {
         household2 = await prisma.household.create({
-            data: { name: "Family2", address: "456 Workshop Drive" },
+            data: { name: "Family2", line1: "456 Workshop Drive" },
         });
     }
 
@@ -87,11 +87,11 @@ export async function seedBaseline(prisma: Db): Promise<void> {
 
     const childFamily = await prisma.participant.upsert({
         where: { email: "child.family@example.com" },
-        update: { name: "Child Family", dob: yearsAgo(10) },
+        update: { name: "Child Family", dateOfBirth: yearsAgo(10) },
         create: {
             email: "child.family@example.com",
             name: "Child Family",
-            dob: yearsAgo(10),
+            dateOfBirth: yearsAgo(10),
             householdId: household1.id,
         },
     });
@@ -212,8 +212,8 @@ export async function seedBaseline(prisma: Db): Promise<void> {
             data: {
                 name: "Woodworking 101",
                 leadMentorId: boardMember.id,
-                begin: new Date(),
-                end: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+                startAt: new Date(),
+                endAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
                 phase: "UPCOMING",
                 enrollmentStatus: "OPEN",
                 memberOnly: false,
@@ -234,7 +234,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
 export async function createFamily(prisma: Db): Promise<string> {
     const tag = uid();
     const household = await prisma.household.create({
-        data: { name: `Test Family ${tag}`, address: `${tag} Maker Way` },
+        data: { name: `Test Family ${tag}`, line1: `${tag} Maker Way` },
     });
     await prisma.membership.create({
         data: { householdId: household.id, status: "ACTIVE" },
@@ -244,7 +244,7 @@ export async function createFamily(prisma: Db): Promise<string> {
             name: `Lead ${tag}`,
             email: `lead.${tag}@example.com`,
             phone: "555-100-0000",
-            dob: yearsAgo(38),
+            dateOfBirth: yearsAgo(38),
             householdId: household.id,
         },
     });
@@ -253,12 +253,12 @@ export async function createFamily(prisma: Db): Promise<string> {
         data: {
             name: `Partner ${tag}`,
             email: `partner.${tag}@example.com`,
-            dob: yearsAgo(36),
+            dateOfBirth: yearsAgo(36),
             householdId: household.id,
         },
     });
     await prisma.participant.create({
-        data: { name: `Kid ${tag}`, dob: yearsAgo(9), householdId: household.id },
+        data: { name: `Kid ${tag}`, dateOfBirth: yearsAgo(9), householdId: household.id },
     });
     return `Created household "Test Family ${tag}" (lead + partner + 1 minor)`;
 }
@@ -266,13 +266,13 @@ export async function createFamily(prisma: Db): Promise<string> {
 /** + Program — a program with a materials fee and a couple of active participants. */
 export async function createProgram(prisma: Db): Promise<string> {
     const tag = uid();
-    const begin = new Date();
-    const end = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+    const startAt = new Date();
+    const endAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
     const program = await prisma.program.create({
         data: {
             name: `Test Program ${tag}`,
-            begin,
-            end,
+            startAt,
+            endAt,
             phase: "UPCOMING",
             enrollmentStatus: "OPEN",
             minAge: 8,
@@ -296,14 +296,14 @@ export async function createProgram(prisma: Db): Promise<string> {
 export async function createEvent(prisma: Db): Promise<string> {
     const tag = uid();
     const latestProgram = await prisma.program.findFirst({ orderBy: { id: "desc" } });
-    const start = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+    const startAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const endAt = new Date(startAt.getTime() + 2 * 60 * 60 * 1000);
     const event = await prisma.event.create({
         data: {
             name: `Test Event ${tag}`,
             programId: latestProgram?.id ?? null,
-            start,
-            end,
+            startAt,
+            endAt,
             description: "Auto-generated dev event",
         },
     });
@@ -323,15 +323,15 @@ export async function createCheckins(prisma: Db): Promise<string> {
     let count = 0;
     for (const [i, p] of people.entries()) {
         const arrived = new Date(Date.now() - (i + 1) * 45 * 60 * 1000); // staggered into the past
-        await prisma.rawBadgeEvent.create({
-            data: { participantId: p.id, time: arrived, location: "Front Door" },
+        await prisma.rawBadgeLog.create({
+            data: { participantId: p.id, timestamp: arrived, location: "Front Door" },
         });
         await prisma.visit.create({
             data: {
                 participantId: p.id,
-                arrived,
+                arrivedAt: arrived,
                 // Leave the most recent two still "here" (no departure) for active-visit screens.
-                departed: i < 2 ? null : new Date(arrived.getTime() + 90 * 60 * 1000),
+                departedAt: i < 2 ? null : new Date(arrived.getTime() + 90 * 60 * 1000),
             },
         });
         count++;

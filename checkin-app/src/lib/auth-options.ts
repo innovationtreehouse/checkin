@@ -244,6 +244,8 @@ export const authOptions: NextAuthOptions = {
                                 level: true
                             }
                         },
+                        // One row is enough to mark this participant a household lead.
+                        householdLeads: { take: 1, select: { participantId: true } },
                         household: { include: { membership: true } }
                     }
                 }));
@@ -270,7 +272,7 @@ export const authOptions: NextAuthOptions = {
                 // flags from the DB so role grants/revocations take effect without
                 // waiting for the token to expire. Previously these flags were only
                 // read at sign-in, which let a revoked sysadmin/keyholder keep their
-                // privileges (including the /api/admin/roles endpoint) until the JWT
+                // privileges (including the /api/roles endpoint) until the JWT
                 // aged out — up to 30 days.
                 const dbParticipant = await withAuroraResumeRetry(() => prisma.participant.findUnique({
                     where: { id: token.id as number },
@@ -281,6 +283,8 @@ export const authOptions: NextAuthOptions = {
                                 level: true
                             }
                         },
+                        // One row is enough to mark this participant a household lead.
+                        householdLeads: { take: 1, select: { participantId: true } },
                         household: { include: { membership: true } }
                     }
                 }));
@@ -308,6 +312,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.boardMember = token.boardMember;
                 session.user.backgroundCheckReviewer = token.backgroundCheckReviewer;
                 session.user.householdId = token.householdId;
+                session.user.householdLead = token.householdLead ?? false;
                 session.user.toolStatuses = token.toolStatuses || [];
                 session.user.impersonatedBy = token.impersonatedBy ?? null;
                 // Surface the org-gate claims so dev-only server actions (assertDevActor) can

@@ -21,6 +21,7 @@ describe('Program Publish API Integration Tests', () => {
     let validProgramId: number;
     let noLeadProgramId: number;
     let noEventsProgramId: number;
+    let finishedProgramId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
@@ -73,8 +74,8 @@ describe('Program Publish API Integration Tests', () => {
                 events: {
                     create: {
                         name: 'Publish API Test Event',
-                        start: new Date(Date.now() + 86400000),
-                        end: new Date(Date.now() + 90000000)
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
                     }
                 }
             }
@@ -88,8 +89,8 @@ describe('Program Publish API Integration Tests', () => {
                 events: {
                     create: {
                         name: 'No Lead Publish API Test Event',
-                        start: new Date(Date.now() + 86400000),
-                        end: new Date(Date.now() + 90000000)
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
                     }
                 }
             }
@@ -104,11 +105,30 @@ describe('Program Publish API Integration Tests', () => {
             }
         });
         noEventsProgramId = noEventsProgram.id;
+
+        // A fully-configured but already-FINISHED program: re-publishing it must
+        // not resurrect it back to UPCOMING/OPEN.
+        const finishedProgram = await prisma.program.create({
+            data: {
+                name: 'Finished Publish API Test',
+                phase: 'FINISHED',
+                enrollmentStatus: 'CLOSED',
+                leadMentorId: leadId,
+                events: {
+                    create: {
+                        name: 'Finished Publish API Test Event',
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
+                    }
+                }
+            }
+        });
+        finishedProgramId = finishedProgram.id;
     });
 
     afterAll(async () => {
         const existingUserIds = [adminId, leadId, commonId];
-        const validProgramIds = [validProgramId, noLeadProgramId, noEventsProgramId].filter(id => id !== undefined);
+        const validProgramIds = [validProgramId, noLeadProgramId, noEventsProgramId, finishedProgramId].filter(id => id !== undefined);
 
         await prisma.event.deleteMany({
             where: { programId: { in: validProgramIds } }
@@ -202,6 +222,24 @@ describe('Program Publish API Integration Tests', () => {
              expect(res.status).toBe(400);
              const data = await res.json();
              expect(data.error).toBe('Cannot publish a program without any scheduled events');
+        });
+
+        it('should reject re-publishing a FINISHED program and leave its phase unchanged', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${finishedProgramId}/publish`, {
+                 method: 'POST',
+                 body: JSON.stringify({ publish: true })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(finishedProgramId) as unknown as never);
+             expect(res.status).toBe(409);
+             const data = await res.json();
+             expect(data.error).toMatch(/already finished/i);
+
+             // Phase/enrollment must be untouched — the program stays terminal.
+             const after = await prisma.program.findUnique({ where: { id: finishedProgramId } });
+             expect(after?.phase).toBe('FINISHED');
+             expect(after?.enrollmentStatus).toBe('CLOSED');
         });
 
         it('should allow the lead mentor to publish a fully configured program', async () => {

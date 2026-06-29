@@ -10,6 +10,11 @@ import {
 } from "@mantine/core";
 import MembershipFlowStepper from "@/components/MembershipFlowStepper";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
+import { pickAddress, type StructuredAddress } from "@/lib/address";
+import { isValidEmail } from "@/lib/emergencyContacts/identity";
+import { useUnsavedGuard, useConfirmNav } from "@/components/UnsavedChangesProvider";
+
+const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
 interface PersonPrefill {
   id: number;
@@ -23,6 +28,7 @@ interface ExternalStatus {
   contractSigned: boolean;
   contractStarted: boolean;
   bgConsented: boolean;
+  bgCleared: boolean;
   deepLinkUrl: string | null;
 }
 
@@ -32,7 +38,7 @@ interface IntakeState {
   process: { id: number; kind: string; status: MembershipProcessStatus } | null;
   external: ExternalStatus | null;
   prefill: {
-    household: { name: string | null; address: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null } | null;
+    household: ({ name: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactEmail: string | null } & Partial<StructuredAddress>) | null;
     primaryParent: PersonPrefill | null;
     secondaryParent: PersonPrefill | null;
     children: PersonPrefill[];
@@ -46,6 +52,26 @@ interface ChildForm {
   dob: string;
   allergies: string;
 }
+
+interface FormValues {
+  address: StructuredAddress;
+  emName: string; emPhone: string; emEmail: string;
+  primaryName: string; primaryDob: string; primaryAllergies: string;
+  hasSecondary: boolean; secondaryId?: number;
+  secondaryName: string; secondaryEmail: string; secondaryDob: string; secondaryAllergies: string;
+  children: ChildForm[];
+}
+
+// Stable key for the unsaved-changes dirty compare. Array (not object) so order
+// is deterministic, and nested — children/address rule out the flat shallowEqual.
+export const serializeMembershipForm = (v: FormValues) =>
+  JSON.stringify([
+    v.address.line1, v.address.line2, v.address.city, v.address.state, v.address.postalCode,
+    v.emName, v.emPhone, v.emEmail,
+    v.primaryName, v.primaryDob, v.primaryAllergies,
+    v.hasSecondary, v.secondaryId, v.secondaryName, v.secondaryEmail, v.secondaryDob, v.secondaryAllergies,
+    v.children.map((c) => [c.id, c.name, c.email, c.dob, c.allergies]),
+  ]);
 
 function ExternalTask({ done, title, doneText, children }: { done: boolean; title: string; doneText: string; children: React.ReactNode }) {
   return (
@@ -79,9 +105,10 @@ export default function MembershipPage() {
   const [warnings, setWarnings] = useState<string[]>([]);
 
   // Intake form fields
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState<StructuredAddress>(blankAddress);
   const [emName, setEmName] = useState("");
   const [emPhone, setEmPhone] = useState("");
+  const [emEmail, setEmEmail] = useState("");
   const [primaryName, setPrimaryName] = useState("");
   const [primaryDob, setPrimaryDob] = useState("");
   const [primaryAllergies, setPrimaryAllergies] = useState("");
@@ -93,13 +120,18 @@ export default function MembershipPage() {
   const [secondaryAllergies, setSecondaryAllergies] = useState("");
   const [children, setChildren] = useState<ChildForm[]>([]);
   const [payment, setPayment] = useState<{ amountCents: number; checkoutUrl: string | null } | null>(null);
+  // Serialized form as last loaded/saved; isDirty compares it to current state.
+  const [savedForm, setSavedForm] = useState<string | null>(null);
 
   const hydrate = useCallback((s: IntakeState) => {
     setState(s);
     const h = s.prefill.household;
-    setAddress(h?.address ?? "");
+    const a = pickAddress(h);
+    const address = { line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" };
+    setAddress(address);
     setEmName(h?.emergencyContactName ?? "");
     setEmPhone(h?.emergencyContactPhone ?? "");
+    setEmEmail(h?.emergencyContactEmail ?? "");
     const p = s.prefill.primaryParent;
     setPrimaryName(p?.name ?? "");
     setPrimaryDob(p?.dob ?? "");
@@ -113,15 +145,32 @@ export default function MembershipPage() {
       setSecondaryDob(sec.dob ?? "");
       setSecondaryAllergies(sec.allergies ?? "");
     }
-    setChildren(
-      s.prefill.children.map((c) => ({
-        id: c.id,
-        name: c.name ?? "",
-        email: c.email ?? "",
-        dob: c.dob ?? "",
-        allergies: c.allergies ?? "",
-      }))
-    );
+    const nextChildren = s.prefill.children.map((c) => ({
+      id: c.id,
+      name: c.name ?? "",
+      email: c.email ?? "",
+      dob: c.dob ?? "",
+      allergies: c.allergies ?? "",
+    }));
+    setChildren(nextChildren);
+    // Snapshot the just-loaded values so isDirty starts false (state setters
+    // above haven't applied yet, so derive the snapshot straight from `s`).
+    setSavedForm(serializeMembershipForm({
+      address,
+      emName: h?.emergencyContactName ?? "",
+      emPhone: h?.emergencyContactPhone ?? "",
+      emEmail: h?.emergencyContactEmail ?? "",
+      primaryName: p?.name ?? "",
+      primaryDob: p?.dob ?? "",
+      primaryAllergies: p?.allergies ?? "",
+      hasSecondary: !!sec,
+      secondaryId: sec?.id,
+      secondaryName: sec?.name ?? "",
+      secondaryEmail: sec?.email ?? "",
+      secondaryDob: sec?.dob ?? "",
+      secondaryAllergies: sec?.allergies ?? "",
+      children: nextChildren,
+    }));
   }, []);
 
   const load = useCallback(async () => {
@@ -211,9 +260,10 @@ export default function MembershipPage() {
   // gets instant red-box feedback on every environment (no round-trip needed).
   const validateIntake = (): Record<string, string> => {
     const errs: Record<string, string> = {};
-    if (!address.trim()) errs.address = "Home address is required.";
+    if (!address.line1?.trim()) errs.address = "Home address is required.";
     if (!emName.trim()) errs.emName = "Emergency contact name is required.";
     if (!emPhone.trim()) errs.emPhone = "Emergency contact phone is required.";
+    if (emEmail.trim() && !isValidEmail(emEmail)) errs.emEmail = "That email address doesn't look right.";
     if (!primaryName.trim()) errs.primaryName = "Your name is required.";
     return errs;
   };
@@ -250,7 +300,7 @@ export default function MembershipPage() {
   };
 
   const buildPayload = () => ({
-    household: { address, emergencyContactName: emName, emergencyContactPhone: emPhone },
+    household: { ...address, emergencyContactName: emName, emergencyContactPhone: emPhone, emergencyContactEmail: emEmail },
     primaryParent: { name: primaryName, dob: primaryDob || null, allergies: primaryAllergies || null },
     secondaryParent: hasSecondary
       ? { id: secondaryId, name: secondaryName, email: secondaryEmail || undefined, dob: secondaryDob || null, allergies: secondaryAllergies || null }
@@ -312,7 +362,7 @@ export default function MembershipPage() {
         setFieldErrors({});
         hydrate(data.state);
         notifyNavRefresh();
-        flash("Submitted! Next: sign your contract and consent to a background check.");
+        flash("Submitted! Next: sign your contract and start your background check — then you can pay right away.");
         setWarnings(saveWarnings);
       } else {
         // The server may flag fields the client can't check locally (e.g. an
@@ -369,6 +419,18 @@ export default function MembershipPage() {
     setChildren((c) => c.map((child, idx) => (idx === i ? { ...child, [field]: value } : child)));
   const removeChild = (i: number) => setChildren((c) => c.filter((_, idx) => idx !== i));
 
+  const currentForm = serializeMembershipForm({
+    address, emName, emPhone, emEmail,
+    primaryName, primaryDob, primaryAllergies,
+    hasSecondary, secondaryId, secondaryName, secondaryEmail, secondaryDob, secondaryAllergies,
+    children,
+  });
+  // Dirty once the user edits past the loaded snapshot. Re-hydrate after a
+  // save/submit re-snapshots, so this flips back to false then.
+  const isDirty = savedForm !== null && currentForm !== savedForm;
+  useUnsavedGuard(isDirty);
+  const confirmNav = useConfirmNav();
+
   if (sessionStatus === "loading" || loading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
@@ -391,10 +453,10 @@ export default function MembershipPage() {
   const isRenewal = state?.process?.kind === "RENEWAL";
 
   return (
-    <Container size="lg" py="md">
+    <Container size="lg" pb="md">
       <Group justify="space-between" align="center" wrap="wrap" mb="lg">
         <Title order={1}>Treehouse Membership</Title>
-        <Button component={Link} href="/" variant="default">← Home</Button>
+        <Button component={Link} href="/" variant="default" onNavigate={(e) => { if (!confirmNav()) e.preventDefault(); }}>← Home</Button>
       </Group>
 
       {message && <Alert color={isError ? "red" : "green"} mb="lg">{message}</Alert>}
@@ -434,7 +496,7 @@ export default function MembershipPage() {
           </Text>
           <Text c="dimmed" mb="md">
             Did anything change — new members, address, phone, or email?{" "}
-            <Anchor component={Link} href="/household">Update your household details first</Anchor>.
+            <Anchor component={Link} href="/my-household">Update your household details first</Anchor>.
           </Text>
           <Button color="green" disabled={saving} loading={saving} onClick={renew}>Renew now</Button>
         </Card>
@@ -461,10 +523,19 @@ export default function MembershipPage() {
                 <Stack gap="lg">
                   <section>
                     <Title order={2} mb="sm">Your household</Title>
-                    <TextInput label="Home address" value={address} error={fieldErrors.address} onChange={(e) => { setAddress(e.currentTarget.value); clearErr("address"); }} placeholder="123 Main St, City, State ZIP" />
+                    <Stack gap="xs">
+                      <TextInput label="Street address" value={address.line1 ?? ""} error={fieldErrors.address} onChange={(e) => { setAddress({ ...address, line1: e.currentTarget.value }); clearErr("address"); }} placeholder="123 Main St" />
+                      <TextInput label="Apt / Suite (optional)" value={address.line2 ?? ""} onChange={(e) => setAddress({ ...address, line2: e.currentTarget.value })} placeholder="Apt 4B" />
+                      <SimpleGrid cols={{ base: 1, sm: 3 }}>
+                        <TextInput label="City" value={address.city ?? ""} onChange={(e) => setAddress({ ...address, city: e.currentTarget.value })} />
+                        <TextInput label="State" maxLength={2} value={address.state ?? ""} onChange={(e) => setAddress({ ...address, state: e.currentTarget.value })} placeholder="TX" />
+                        <TextInput label="ZIP" value={address.postalCode ?? ""} onChange={(e) => setAddress({ ...address, postalCode: e.currentTarget.value })} placeholder="78701" />
+                      </SimpleGrid>
+                    </Stack>
                     <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md">
                       <TextInput label="Emergency contact name" value={emName} error={fieldErrors.emName} onChange={(e) => { setEmName(e.currentTarget.value); clearErr("emName"); }} />
                       <TextInput label="Emergency contact phone" value={emPhone} error={fieldErrors.emPhone} onChange={(e) => { setEmPhone(e.currentTarget.value); clearErr("emPhone"); }} />
+                      <TextInput type="email" label="Emergency contact email (optional)" value={emEmail} error={fieldErrors.emEmail} onChange={(e) => { setEmEmail(e.currentTarget.value); clearErr("emEmail"); }} />
                     </SimpleGrid>
                   </section>
 
@@ -498,7 +569,7 @@ export default function MembershipPage() {
                   <section>
                     <Group justify="space-between" align="center" mb="sm">
                       <Title order={2}>Children</Title>
-                      <Button variant="light" size="xs" onClick={addChild}>+ Add child</Button>
+                      <Button variant="light" size="xs" fz={15} onClick={addChild}>+ Add child</Button>
                     </Group>
                     {children.length === 0 && <Text c="dimmed">No children added yet.</Text>}
                     <Stack>
@@ -529,10 +600,11 @@ export default function MembershipPage() {
               <Card withBorder radius="md" padding="lg">
                 <Stack gap="md">
                   <div>
-                    <Title order={2}>Two quick steps</Title>
+                    <Title order={2}>Sign &amp; start your background check</Title>
                     <Text c="dimmed">
-                      These can be done in any order. We&apos;ll move you forward automatically once
-                      both are complete.
+                      Once your agreement is signed and your background check is underway, we&apos;ll
+                      move you straight to payment — you won&apos;t have to wait for the check to come
+                      back.
                     </Text>
                   </div>
 
@@ -548,15 +620,27 @@ export default function MembershipPage() {
                     </Stack>
                   </ExternalTask>
 
-                  <ExternalTask done={!!state.external?.bgConsented} title="Consent to a background check" doneText="Background-check consent received.">
-                    {state.external?.deepLinkUrl ? (
-                      <Button component="a" href={state.external.deepLinkUrl} target="_blank" rel="noopener noreferrer">
-                        Consent on Averity →
-                      </Button>
-                    ) : (
-                      <Text c="dimmed">The background-check link isn&apos;t available yet. Please check back shortly.</Text>
-                    )}
-                  </ExternalTask>
+                  {state.external?.bgCleared ? (
+                    <ExternalTask done title="Background check" doneText="Your household&apos;s background check is still valid — no new check needed.">
+                      <Text c="dimmed" />
+                    </ExternalTask>
+                  ) : (
+                    <ExternalTask done={!!state.external?.bgConsented} title="Start your background check" doneText="Background check started — we&apos;ll finish it in the background.">
+                      <Stack gap="xs" align="flex-start">
+                        <Text c="dimmed">
+                          Consent to your background check on Averity. It runs in the background — you
+                          can keep going and pay while it completes.
+                        </Text>
+                        {state.external?.deepLinkUrl ? (
+                          <Button component="a" href={state.external.deepLinkUrl} target="_blank" rel="noopener noreferrer">
+                            Consent on Averity →
+                          </Button>
+                        ) : (
+                          <Text c="dimmed">The background-check link isn&apos;t available yet. Please check back shortly.</Text>
+                        )}
+                      </Stack>
+                    </ExternalTask>
+                  )}
 
                   <Button variant="default" disabled={saving} onClick={load} style={{ alignSelf: "flex-start" }}>
                     Refresh status
@@ -578,6 +662,12 @@ export default function MembershipPage() {
                     ) : (
                       <Text c="yellow" mt="md">The payment link isn&apos;t available yet. Please check back shortly.</Text>
                     )}
+                    {!state.external?.bgCleared && (
+                      <Alert color="blue" variant="light" mt="md">
+                        Your background check is being reviewed in the background — you can pay now.
+                        Your membership activates as soon as both the payment and the check are done.
+                      </Alert>
+                    )}
                     <Text size="sm" c="dimmed" mt="lg">
                       To discuss alternative arrangements, please email{" "}
                       <Anchor href="mailto:finance@innovationtreehouse.org">finance@innovationtreehouse.org</Anchor>.
@@ -586,6 +676,15 @@ export default function MembershipPage() {
                 ) : (
                   <Text c="dimmed">Preparing your invoice…</Text>
                 )}
+              </Card>
+            ) : inStatus === "PENDING_BG_CLEARANCE" ? (
+              <Card withBorder radius="md" padding="lg">
+                <Title order={2} mb="sm">Payment received 🎉</Title>
+                <Text c="dimmed">
+                  Thanks — your dues are paid. We&apos;re just finishing your background check. Your
+                  membership activates automatically the moment it clears, and we&apos;ll email you
+                  then. Nothing else to do.
+                </Text>
               </Card>
             ) : (
               <Card withBorder radius="md" padding="xl">

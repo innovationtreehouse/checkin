@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Table, Text, TextInput, Title, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { IconChevronDown, IconChevronUp, IconSelector } from "@tabler/icons-react";
 import { EntityPicker } from "@/components/admin/EntityPicker";
 import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
 
@@ -25,16 +26,46 @@ export default function AdminParticipantsIndex() {
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<ParticipantRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [sortBy, setSortBy] = useState<"id" | "name" | "email" | "household">("id");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const router = useRouter();
 
+  const toggleSort = (col: "id" | "name" | "email" | "household") => {
+    if (sortBy === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(col);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedResults = [...results].sort((a, b) => {
+    let av: string | number;
+    let bv: string | number;
+    if (sortBy === "id") {
+      av = a.id;
+      bv = b.id;
+    } else if (sortBy === "household") {
+      av = (a.household?.name || "").toLowerCase();
+      bv = (b.household?.name || "").toLowerCase();
+    } else {
+      av = (a[sortBy] || "").toLowerCase();
+      bv = (b[sortBy] || "").toLowerCase();
+    }
+    if (av < bv) return sortDir === "asc" ? -1 : 1;
+    if (av > bv) return sortDir === "asc" ? 1 : -1;
+    return 0;
+  });
+
   useEffect(() => {
-    fetchParticipants();
-  }, []);
+    const id = setTimeout(() => fetchParticipants(searchQuery), 250);
+    return () => clearTimeout(id);
+  }, [searchQuery]);
 
   const fetchParticipants = async (query = "") => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/participants/search?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/participants/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       if (data.participants) {
         setResults(data.participants);
@@ -86,7 +117,7 @@ export default function AdminParticipantsIndex() {
 
     setAssigning(true);
     try {
-      const res = await fetch(`/api/admin/participants/${selectedParticipant.id}/household`, {
+      const res = await fetch(`/api/membership-ops/participants/${selectedParticipant.id}/household`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -116,7 +147,7 @@ export default function AdminParticipantsIndex() {
     if (!editingParticipant) return;
     setSavingDetails(true);
     try {
-      const res = await fetch(`/api/admin/participants/${editingParticipant.id}`, {
+      const res = await fetch(`/api/membership-ops/participants/${editingParticipant.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm)
@@ -139,11 +170,6 @@ export default function AdminParticipantsIndex() {
     }
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    fetchParticipants(searchQuery);
-  };
-
   const canSubmitAssign = !selectedParticipant?.household || (selectedParticipant.household.participants.length > 1);
   const canChangeHousehold = selectedParticipant?.household && selectedParticipant.household.participants.length === 1 && householdId;
 
@@ -151,7 +177,6 @@ export default function AdminParticipantsIndex() {
     <Stack maw={1000} mx="auto">
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <div>
-          <Title order={1}>Participants</Title>
           <Text c="dimmed">Search and manage system participants and households.</Text>
         </div>
         <Group>
@@ -161,51 +186,72 @@ export default function AdminParticipantsIndex() {
       </Group>
 
       <Card withBorder radius="md" padding="lg">
-        <form onSubmit={handleSearch}>
-          <Group>
-            <TextInput
-              style={{ flex: 1 }}
-              placeholder="Search by name or email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.currentTarget.value)}
-            />
-            <Button type="submit" disabled={loading} loading={loading}>Search</Button>
-          </Group>
-        </form>
+        <TextInput
+          placeholder="Search by name or email..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.currentTarget.value)}
+        />
 
         <Box mt="lg">
           {results.length > 0 ? (
-            <Stack gap="sm">
-              {results.map((p) => (
-                <Card key={p.id} withBorder radius="md" padding="md">
-                  <Group justify="space-between" wrap="wrap">
-                    <div>
-                      <Text fw={600}>{p.name}</Text>
-                      <Text size="sm" c="dimmed">{p.email || 'No email'}{p.phone ? ` • ${p.phone}` : ''}</Text>
-                    </div>
-                    <Group gap="md" wrap="wrap" align="center">
-                      <Text size="sm" c="dimmed">{p.household?.name || 'No household'}</Text>
-                      {p.household ? (
-                        <Button size="xs" variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
-                          Edit Household
-                        </Button>
-                      ) : (
-                        <Button size="xs" variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
-                          Assign Household
-                        </Button>
-                      )}
-                      <Button size="xs" variant="default" onClick={() => {
-                        setEditingParticipant(p);
-                        setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "" });
-                        setEditModalOpen(true);
-                      }}>
-                        Edit Details
-                      </Button>
-                    </Group>
-                  </Group>
-                </Card>
-              ))}
-            </Stack>
+            <Table.ScrollContainer minWidth={700}>
+              <Table striped highlightOnHover withTableBorder verticalSpacing="xs">
+                <Table.Thead>
+                  <Table.Tr>
+                    {([
+                      { key: "id", label: "ID" },
+                      { key: "name", label: "Name" },
+                      { key: "email", label: "Email" },
+                      { key: "household", label: "Household" },
+                    ] as const).map((c) => {
+                      const active = sortBy === c.key;
+                      const Icon = !active ? IconSelector : sortDir === "asc" ? IconChevronUp : IconChevronDown;
+                      return (
+                        <Table.Th key={c.key}>
+                          <UnstyledButton onClick={() => toggleSort(c.key)} style={{ fontWeight: 600, fontSize: "inherit" }}>
+                            <Group gap={4} wrap="nowrap">
+                              {c.label}
+                              <Icon size={14} stroke={1.5} />
+                            </Group>
+                          </UnstyledButton>
+                        </Table.Th>
+                      );
+                    })}
+                    <Table.Th>Actions</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {sortedResults.map((p) => (
+                    <Table.Tr key={p.id}>
+                      <Table.Td c="dimmed">{p.id}</Table.Td>
+                      <Table.Td fw={600}>{p.name}</Table.Td>
+                      <Table.Td>{p.email || <Text span c="dimmed">No email</Text>}</Table.Td>
+                      <Table.Td>{p.household?.name || <Text span c="dimmed">No household</Text>}</Table.Td>
+                      <Table.Td>
+                        <Group gap="xs" wrap="nowrap">
+                          {p.household ? (
+                            <Button size="xs" fz={15} variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
+                              Household
+                            </Button>
+                          ) : (
+                            <Button size="xs" fz={15} variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
+                              Assign
+                            </Button>
+                          )}
+                          <Button size="xs" fz={15} variant="default" onClick={() => {
+                            setEditingParticipant(p);
+                            setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "" });
+                            setEditModalOpen(true);
+                          }}>
+                            Details
+                          </Button>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
           ) : searchQuery && !loading ? (
             <Text ta="center" c="dimmed">No participants found.</Text>
           ) : null}
@@ -246,7 +292,7 @@ export default function AdminParticipantsIndex() {
               selectedId={householdId || null}
               selectedLabel={householdSearch}
               search={async (q) => {
-                const res = await fetch(`/api/admin/households?q=${encodeURIComponent(q)}`);
+                const res = await fetch(`/api/membership-ops/households?q=${encodeURIComponent(q)}`);
                 if (!res.ok) return [];
                 const data = await res.json();
                 return data.households || [];
@@ -285,13 +331,13 @@ export default function AdminParticipantsIndex() {
                   <Group justify="space-between" wrap="wrap">
                     <Text size="sm">{editingParticipant.household.name}</Text>
                     <Group gap="xs">
-                      <Button size="xs" variant="light" onClick={() => {
+                      <Button size="xs" fz={15} variant="light" onClick={() => {
                         const hid = editingParticipant.household!.id;
                         setEditModalOpen(false);
                         setEditingParticipant(null);
                         setEditHouseholdId(hid);
                       }}>Edit Household Info</Button>
-                      <Button size="xs" variant="default" onClick={() => {
+                      <Button size="xs" fz={15} variant="default" onClick={() => {
                         setEditModalOpen(false);
                         setSelectedParticipant(editingParticipant);
                         setEditingParticipant(null);

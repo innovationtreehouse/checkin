@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
+import { requireCronSecret } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 
@@ -18,20 +18,8 @@ import { sendNotification } from "@/lib/notifications";
  * before either stamps and double-send.
  */
 export async function GET(req: Request) {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || !authHeader) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const expectedHeader = `Bearer ${cronSecret}`;
-    const providedBuffer = Buffer.from(authHeader);
-    const expectedBuffer = Buffer.from(expectedHeader);
-
-    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const denied = requireCronSecret(req);
+    if (denied) return denied;
 
     try {
         const now = new Date();
@@ -41,7 +29,7 @@ export async function GET(req: Request) {
 
         const upcomingEvents = await prisma.event.findMany({
             where: {
-                start: {
+                startAt: {
                     gte: twoHoursFromNow,
                     lte: windowEnd
                 }
@@ -63,9 +51,10 @@ export async function GET(req: Request) {
                 const promise = Promise.resolve(sendNotification(rsvp.participantId, 'EVENT_STARTING_SOON', {
                     eventName: event.name,
                     hours: 2
-                })).then(async () => {
-                    // Mark sent only after the notification resolves, so a send failure
-                    // leaves it eligible for the next run rather than silently dropped.
+                })).then(async (ok) => {
+                    // Mark sent only when the notification actually delivered, so a send
+                    // failure leaves it eligible for the next run rather than silently dropped.
+                    if (!ok) return;
                     await prisma.rSVP.update({
                         where: {
                             eventId_participantId: {

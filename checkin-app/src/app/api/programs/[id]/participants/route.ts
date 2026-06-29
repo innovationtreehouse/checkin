@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
+import { calculateAge } from "@/lib/time";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -41,7 +42,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const participantData = await prisma.participant.findUnique({
             where: { id: participantId },
-            select: { dob: true, householdId: true }
+            select: { dateOfBirth: true, householdId: true }
         });
 
         let isHouseholdLead = false;
@@ -63,13 +64,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const override = body.override === true;
 
-        if (!isSelfEnrollment && isSysAdminOrBoard && !override) {
+        // A board/sysadmin enrolling someone OUTSIDE their own household (the
+        // program-ops surface) is a real admin comp: it skips payment. A board
+        // member enrolling their own self/dependent through the public program
+        // page is just a parent — they pay like anyone else. Without this, a
+        // board parent got a confusing "bypasses all payment / Force Enroll"
+        // prompt and a free enrollment instead of a Shopify checkout.
+        const isExternalAdmin = isSysAdminOrBoard && !isSelfEnrollment && !isHouseholdLead;
+
+        if (isExternalAdmin && !override) {
              return NextResponse.json({ error: "This bypasses all payment. Are you sure?", requiresOverride: true }, { status: 400 });
         }
 
-        // When true, capacity/enrollment-status/age limits apply (a board
-        // override skips them). Capacity itself is re-checked under a row lock
-        // inside the transaction below — the _count read above is racy.
+        // ponytail: a confirmed board/sysadmin override INTENTIONALLY bypasses
+        // every soft limit — closed enrollment, age, AND capacity — so the board
+        // can deliberately overfill a program. This is intent, not a missing
+        // guard: see the requiresOverride:true responses the UI turns into a
+        // confirm button. Normal users always hit enforceLimits=true and cannot
+        // overbook (capacity is locked under FOR UPDATE in the tx below; tested in
+        // programsParticipantsConcurrency.integration.test.ts and the FULL-program
+        // override test in programsParticipantsAPI.integration.test.ts). Do not
+        // narrow this so it also gates normal users.
         const enforceLimits = !override || (!isSysAdminOrBoard);
 
         // Validation Checks
@@ -81,12 +96,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
             // Check Age
             if (currentProgram.minAge !== null || currentProgram.maxAge !== null) {
-                if (!participantData?.dob) {
+                if (!participantData?.dateOfBirth) {
                     return NextResponse.json({ error: "Participant Date of Birth is missing.", requiresOverride: true }, { status: 400 });
                 }
-                const ageDifMs = Date.now() - new Date(participantData.dob).getTime();
-                const ageDate = new Date(ageDifMs);
-                const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+                // Age as of program start; now for dateless programs.
+                const age = calculateAge(participantData.dateOfBirth, currentProgram.startAt ?? undefined);
                 if (currentProgram.minAge !== null && age < currentProgram.minAge) {
                     return NextResponse.json({ error: `Participant must be at least ${currentProgram.minAge} years old.`, requiresOverride: true }, { status: 400 });
                 }
@@ -98,8 +112,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const isFree = currentProgram.memberPriceCents === null && currentProgram.nonMemberPriceCents === null;
         
-        // Default status is PENDING, unless board is bypassing or the program is free
-        const initialStatus = ((isSysAdminOrBoard && override) || isFree) ? 'ACTIVE' : 'PENDING';
+        // PENDING (awaits payment) unless the program is free or an external
+        // admin is comping it. A board parent overriding a soft limit for their
+        // own household still pays — the override bypasses limits, not the fee.
+        const initialStatus = ((isExternalAdmin && override) || isFree) ? 'ACTIVE' : 'PENDING';
 
         const enrollment = await prisma.$transaction(async (tx) => {
             // Re-check capacity under a row lock right before insert, so
@@ -135,9 +151,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (error instanceof ProgramCapacityError) {
             return NextResponse.json({ error: "Program has reached maximum capacity.", requiresOverride: true }, { status: 400 });
         }
+        // P2002 = unique violation on the @@id([programId, participantId]) PK.
+        // Benign double-submit (UI double-click) re-enrolls the same participant;
+        // return 409 instead of a 500.
+        if (isPrismaError(error, 'P2002')) {
+            return NextResponse.json({ error: "Participant is already enrolled in this program." }, { status: 409 });
+        }
         console.error("Enrollment creation error:", error);
         return NextResponse.json({ error: "Failed to enroll participant" }, { status: 500 });
     }
+}
+
+// Prisma known-request errors carry a string `code`. Duck-typed so we don't
+// pull in the generated Prisma namespace just for one check.
+function isPrismaError(error: unknown, code: string): boolean {
+    return typeof error === 'object' && error !== null && 'code' in error
+        && (error as { code: unknown }).code === code;
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -200,6 +229,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
         return NextResponse.json({ success: true, enrollment });
     } catch (error) {
+        // P2025 = row to delete not found. Benign double-submit (participant
+        // already un-enrolled); idempotent 200 instead of a 500.
+        if (isPrismaError(error, 'P2025')) {
+            return NextResponse.json({ success: true, idempotent: true });
+        }
         console.error("Enrollment deletion error:", error);
         return NextResponse.json({ error: "Failed to remove participant" }, { status: 500 });
     }

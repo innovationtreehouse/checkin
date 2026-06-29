@@ -23,7 +23,9 @@ describe('Program Participants API Integration Tests', () => {
     let leadId: number;
     let commonId: number;
     let otherId: number;
-    
+    let boardId: number;   // board member who leads a household
+    let depId: number;     // dependent (25yo) in the board member's household
+
     let standardProgramId: number;
     let freeProgramId: number;
     let fullProgramId: number;
@@ -36,7 +38,11 @@ describe('Program Participants API Integration Tests', () => {
             select: { id: true }
         });
         const existingUserIds = existingUsers.map(u => u.id);
-        
+
+        await prisma.householdLead.deleteMany({
+            where: { participantId: { in: existingUserIds } }
+        });
+
         await prisma.programParticipant.deleteMany({
             where: { participantId: { in: existingUserIds } }
         });
@@ -70,7 +76,7 @@ describe('Program Participants API Integration Tests', () => {
             data: {
                 email: 'common-partic-api-test@example.com',
                 name: 'Common',
-                dob: new Date(Date.now() - (25 * 31556952000)),
+                dateOfBirth: new Date(Date.now() - (25 * 31556952000)),
                 household: { create: {} }
             }
         });
@@ -81,11 +87,31 @@ describe('Program Participants API Integration Tests', () => {
             data: {
                 email: 'other-partic-api-test@example.com',
                 name: 'Other Underage',
-                dob: new Date(Date.now() - (10 * 31556952000)),
+                dateOfBirth: new Date(Date.now() - (10 * 31556952000)),
                 household: { create: {} }
             }
         });
         otherId = otherUser.id;
+
+        // Board member who leads a household containing a 25yo dependent. The
+        // board flag lives on the session, not the DB row — see the mocks below.
+        const boardHousehold = await prisma.household.create({ data: {} });
+        const board = await prisma.participant.create({
+            data: { email: 'board-partic-api-test@example.com', name: 'Board Parent', householdId: boardHousehold.id }
+        });
+        boardId = board.id;
+        const dependent = await prisma.participant.create({
+            data: {
+                email: 'dep-partic-api-test@example.com',
+                name: 'Board Dependent',
+                dateOfBirth: new Date(Date.now() - (25 * 31556952000)),
+                householdId: boardHousehold.id
+            }
+        });
+        depId = dependent.id;
+        await prisma.householdLead.create({
+            data: { householdId: boardHousehold.id, participantId: boardId }
+        });
 
         // Create mock programs
         const standardProgram = await prisma.program.create({
@@ -119,10 +145,13 @@ describe('Program Participants API Integration Tests', () => {
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, leadId, commonId, otherId].filter(id => id !== undefined);
+        const existingUserIds = [adminId, leadId, commonId, otherId, boardId, depId].filter(id => id !== undefined);
         const validProgramIds = [standardProgramId, freeProgramId, fullProgramId, exactAgeProgramId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
+            await prisma.householdLead.deleteMany({
+                where: { participantId: { in: existingUserIds } }
+            });
             await prisma.programParticipant.deleteMany({
                 where: { participantId: { in: existingUserIds } }
             });
@@ -244,9 +273,103 @@ describe('Program Participants API Integration Tests', () => {
              });
              const res = await POST(req as unknown as import("next/server").NextRequest, createParams(exactAgeProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.success).toBe(true);
+        });
+
+        // INTENT LOCK: a board/sysadmin override DELIBERATELY overfills a program
+        // past maxParticipants. The override is a confirmed action (the route first
+        // returns requiresOverride:true) and is meant to bypass every soft limit —
+        // closed enrollment, age, AND capacity. This 200 is correct, not a bug.
+        // The non-override path still cannot overbook (see the 400 test above and
+        // programsParticipantsConcurrency.integration.test.ts). Do not "fix" the
+        // capacity bypass at route.ts enforceLimits to make this fail.
+        it('should allow an admin override to enroll into a FULL program (deliberate overfill)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${fullProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: adminId, override: true })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(fullProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.success).toBe(true);
+             expect(data.enrollment.status).toBe('ACTIVE'); // override → confirmed/paid bypass
+
+             // Program is now intentionally over its cap of 1.
+             const enrolled = await prisma.programParticipant.count({ where: { programId: fullProgramId } });
+             expect(enrolled).toBe(2);
+        });
+
+        // A board member is also a parent. Enrolling their own dependent through
+        // the public program page must behave like any household lead: PENDING
+        // (awaiting Shopify payment), NOT a comped/free enrollment and NOT a
+        // scary "bypasses all payment" override prompt.
+        it('should make a board parent PAY (PENDING) when enrolling their own dependent in a paid program', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${standardProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: depId }) // no override
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.success).toBe(true);
+             expect(data.enrollment.status).toBe('PENDING'); // pays like any parent
+        });
+
+        // The comp still belongs to genuine admin action: a board member
+        // enrolling someone OUTSIDE their household (the program-ops surface).
+        it('should require override + comp (ACTIVE) when a board member enrolls a non-household participant', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
+
+             const promptReq = new Request(`http://localhost:4000/api/programs/${standardProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: otherId }) // not in board's household, no override
+             });
+             const promptRes = await POST(promptReq as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
+             expect(promptRes.status).toBe(400);
+             expect((await promptRes.json()).requiresOverride).toBe(true);
+
+             const forceReq = new Request(`http://localhost:4000/api/programs/${standardProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: otherId, override: true })
+             });
+             const forceRes = await POST(forceReq as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
+             expect(forceRes.status).toBe(200);
+             expect((await forceRes.json()).enrollment.status).toBe('ACTIVE'); // admin comp
+        });
+
+        it('should return 409 (not 500) when enrolling the same participant twice', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const enroll = () => POST(
+                 new Request(`http://localhost:4000/api/programs/${freeProgramId}/participants`, {
+                     method: 'POST',
+                     body: JSON.stringify({ participantId: leadId }) // self-enroll into free program
+                 }) as unknown as import("next/server").NextRequest,
+                 createParams(freeProgramId) as unknown as never
+             );
+
+             const first = await enroll();
+             expect(first.status).toBe(200);
+
+             // Double-submit (UI double-click) — must be a clean 409, not a 500.
+             const second = await enroll();
+             expect(second.status).toBe(409);
+             const data = await second.json();
+             expect(data.error).toMatch(/already enrolled/i);
+
+             // No duplicate row, no corruption: exactly one enrollment exists.
+             const count = await prisma.programParticipant.count({
+                 where: { programId: freeProgramId, participantId: leadId }
+             });
+             expect(count).toBe(1);
         });
     });
 
@@ -300,7 +423,22 @@ describe('Program Participants API Integration Tests', () => {
              });
              const res = await DELETE(req as unknown as import("next/server").NextRequest, createParams(fullProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
+             const data = await res.json();
+             expect(data.success).toBe(true);
+        });
+
+        it('should be idempotent (200, not 500) when un-enrolling a participant twice', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: otherId } });
+
+             // otherId already self-removed from fullProgram in the test above.
+             // A second delete hits a missing row (Prisma P2025) — must stay 200.
+             const req = new Request(`http://localhost:4000/api/programs/${fullProgramId}/participants`, {
+                 method: 'DELETE',
+                 body: JSON.stringify({ participantId: otherId })
+             });
+             const res = await DELETE(req as unknown as import("next/server").NextRequest, createParams(fullProgramId) as unknown as never);
+             expect(res.status).toBe(200);
              const data = await res.json();
              expect(data.success).toBe(true);
         });

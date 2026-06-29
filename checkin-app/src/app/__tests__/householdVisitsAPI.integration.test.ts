@@ -94,15 +94,18 @@ describe('Household Visits API Integration Tests', () => {
         // Create visits for the test household
         await prisma.visit.createMany({
             data: [
-                { participantId: leadUser.id, arrived: new Date(now.getTime() - 1000) }, // Just now
-                { participantId: memberUser.id, arrived: new Date(now.getTime() - 86400000) }, // 1 day ago
-                { participantId: leadUser.id, arrived: new Date(now.getTime() - 864000000) }, // 10 days ago (outside 7 day window)
+                // Closed (departedAt set): leadUser appears twice, but a participant
+                // may have only one OPEN visit (Visit_one_open_per_participant). This
+                // window test filters by arrivedAt, so departure time is irrelevant.
+                { participantId: leadUser.id, arrivedAt: new Date(now.getTime() - 1000), departedAt: new Date(now.getTime() - 500) }, // Just now
+                { participantId: memberUser.id, arrivedAt: new Date(now.getTime() - 86400000), departedAt: new Date(now.getTime() - 86399000) }, // 1 day ago
+                { participantId: leadUser.id, arrivedAt: new Date(now.getTime() - 864000000), departedAt: new Date(now.getTime() - 863999000) }, // 10 days ago (outside 7 day window)
             ]
         });
 
         // Create visit for other household
         await prisma.visit.create({
-            data: { participantId: otherUser.id, arrived: new Date(now.getTime() - 2000) }
+            data: { participantId: otherUser.id, arrivedAt: new Date(now.getTime() - 2000) }
         });
     });
 

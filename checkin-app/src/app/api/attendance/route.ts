@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
                 "",
                 req.headers.get("x-kiosk-timestamp"),
                 req.headers.get("x-kiosk-signature"),
+                req.headers.get("x-kiosk-nonce"),
                 pubKeys
             );
             if (!result.ok) {
@@ -122,7 +123,7 @@ export async function DELETE(req: Request) {
             return NextResponse.json({ error: "Forbidden: You are not authorized to check out this user." }, { status: 403 });
         }
 
-        const finalVisits = await processVisitCheckout(visitId, new Date());
+        const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
         const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visit;
 
         return NextResponse.json({ success: true, visit: updatedVisit });
@@ -168,30 +169,51 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "Forbidden: You are not authorized to check in this user." }, { status: 403 });
             }
 
-            // Verify they aren't already checked in
-            const activeVisit = await prisma.visit.findFirst({
-                where: {
-                    participantId: participant.id,
-                    departed: null
-                }
-            });
-
-            if (activeVisit) {
-                return NextResponse.json({ error: "User is already checked in" }, { status: 400 });
-            }
-
             const arrivalTime = new Date();
             const eventId = await findAssociatedEventAt(participant.id, arrivalTime);
 
-            const newVisit = await prisma.visit.create({
-                data: {
-                    participantId: participant.id,
-                    arrived: arrivalTime,
-                    associatedEventId: eventId
+            // Read-then-create on this participant's open-visit state. Without
+            // serialization, two concurrent MANUAL_CHECKINs — or one racing a kiosk
+            // /api/scan or /api/attendance/manual — both pass the "already checked in?"
+            // guard and create two open visits (a later checkout closes only one; the
+            // other lingers open forever, inflating the two-deep supervision count).
+            // Same per-participant advisory xact lock used by /api/scan and
+            // /api/attendance/manual; the lock key is the participant id, so all three
+            // paths serialize against each other. Re-check under the lock, then create.
+            const result = await prisma.$transaction(async (tx) => {
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(${participant.id})`;
+
+                const activeVisit = await tx.visit.findFirst({
+                    where: {
+                        participantId: participant.id,
+                        departedAt: null
+                    }
+                });
+
+                if (activeVisit) {
+                    return { alreadyCheckedIn: true as const };
                 }
+
+                const visit = await tx.visit.create({
+                    data: {
+                        participantId: participant.id,
+                        arrivedAt: arrivalTime,
+                        arrivedVia: "WEB",
+                        associatedEventId: eventId
+                    }
+                });
+
+                return { alreadyCheckedIn: false as const, visit };
+            }, {
+                maxWait: 5000,
+                timeout: 15000,
             });
 
-            return NextResponse.json({ success: true, visit: newVisit });
+            if (result.alreadyCheckedIn) {
+                return NextResponse.json({ error: "User is already checked in" }, { status: 400 });
+            }
+
+            return NextResponse.json({ success: true, visit: result.visit });
         }
 
         if (type === 'TWO_DEEP_VIOLATION') {
@@ -201,7 +223,7 @@ export async function POST(req: Request) {
                 where: {
                     tableName: 'SYSTEM_NOTIFY',
                     action: 'CREATE',
-                    time: { gte: fiveMinutesAgo }
+                    timestamp: { gte: fiveMinutesAgo }
                 }
             });
 

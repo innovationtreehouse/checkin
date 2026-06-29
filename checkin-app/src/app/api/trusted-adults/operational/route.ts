@@ -43,7 +43,8 @@ export const GET = handler("GET /api/trusted-adults/operational", async ({ auth 
             id: true,
             householdId: true,
             counterpartyName: true,
-            counterpartyContact: true,
+            counterpartyPhone: true,
+            counterpartyEmail: true,
             household: { select: { id: true, name: true } },
             reviews: {
                 where: { status: "APPROVED" },

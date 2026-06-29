@@ -1,8 +1,10 @@
 import prisma from "@/lib/prisma";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus } from "@/lib/membership/external";
+import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
+import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/lib/address";
 
 /**
  * Membership intake service — the write/read model behind the "Join the
@@ -47,7 +49,7 @@ type ParentInput = { id?: number; name?: string; email?: string; dob?: string | 
 type ChildInput = { id?: number; name?: string; email?: string | null; dob?: string | null; allergies?: string | null };
 
 export interface IntakeSaveInput {
-    household?: { address?: string; emergencyContactName?: string; emergencyContactPhone?: string };
+    household?: Partial<StructuredAddress> & { emergencyContactName?: string; emergencyContactPhone?: string; emergencyContactEmail?: string };
     primaryParent?: ParentInput;
     secondaryParent?: ParentInput | null;
     children?: ChildInput[];
@@ -71,7 +73,6 @@ async function loadUserWithHousehold(userId: number) {
 }
 
 function assertLead(user: NonNullable<Awaited<ReturnType<typeof loadUserWithHousehold>>>) {
-    if (!user.householdId) throw new IntakeError("no_household", "You must create a household first.");
     const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
     if (!isLead && !user.sysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
 }
@@ -97,11 +98,11 @@ export async function getIntakeState(userId: number) {
     const primary = parents.find((p) => p.id === userId) ?? null;
     const secondary = parents.find((p) => p.id !== userId) ?? null;
 
-    const shape = (p: { id: number; name: string | null; email: string | null; dob: Date | null; allergies: string | null }) => ({
+    const shape = (p: { id: number; name: string | null; email: string | null; dateOfBirth: Date | null; allergies: string | null }) => ({
         id: p.id,
         name: p.name,
         email: p.email,
-        dob: p.dob ? p.dob.toISOString().slice(0, 10) : null,
+        dob: p.dateOfBirth ? p.dateOfBirth.toISOString().slice(0, 10) : null,
         allergies: p.allergies,
     });
 
@@ -116,11 +117,12 @@ export async function getIntakeState(userId: number) {
             household: household
                 ? {
                       name: household.name,
-                      address: household.address,
+                      ...pickAddress(household),
                       // The primary (lowest-priority) contact backs the single-field
                       // form. Shown even when flagged invalid so the lead can fix it.
                       emergencyContactName: household.emergencyContacts[0]?.name ?? null,
                       emergencyContactPhone: household.emergencyContacts[0]?.phone ?? null,
+                      emergencyContactEmail: household.emergencyContacts[0]?.email ?? null,
                   }
                 : null,
             primaryParent: primary ? shape(primary) : null,
@@ -136,22 +138,8 @@ export async function getIntakeState(userId: number) {
  * MembershipProcess at INTAKE. Idempotent: an in-flight process is returned as-is.
  */
 export async function startIntake(userId: number) {
-    let user = await loadUserWithHousehold(userId);
+    const user = await loadUserWithHousehold(userId);
     if (!user) throw new IntakeError("no_household", "User not found.");
-
-    // Ensure a household exists, with the caller as a lead + parent.
-    if (!user.householdId) {
-        const lastName = (user.name || "").trim().split(/\s+/).pop() || "";
-        await prisma.household.create({
-            data: {
-                name: lastName ? `${lastName} Household` : "Household",
-                leads: { create: { participantId: userId } },
-                participants: { connect: { id: userId } },
-            },
-        });
-        user = await loadUserWithHousehold(userId);
-        if (!user) throw new IntakeError("no_household", "User not found.");
-    }
 
     assertLead(user);
     const householdId = user.householdId!;
@@ -221,16 +209,22 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     };
 
     if (input.household) {
-        if (input.household.address !== undefined) {
-            await prisma.household.update({ where: { id: householdId }, data: { address: input.household.address } });
+        const addressData = normalizeAddressInput(input.household);
+        if (Object.keys(addressData).length > 0) {
+            await prisma.household.update({ where: { id: householdId }, data: addressData });
         }
         // Emergency contact lives in its own table now; the single-field intake
         // form maps onto the household's primary contact. Tolerant of partial
         // saves; rejects (direction A) a contact that is a household member.
-        if (input.household.emergencyContactName !== undefined || input.household.emergencyContactPhone !== undefined) {
+        if (
+            input.household.emergencyContactName !== undefined ||
+            input.household.emergencyContactPhone !== undefined ||
+            input.household.emergencyContactEmail !== undefined
+        ) {
             await upsertPrimaryContact(prisma, householdId, {
                 name: input.household.emergencyContactName,
                 phone: input.household.emergencyContactPhone,
+                email: input.household.emergencyContactEmail,
             });
         }
     }
@@ -242,7 +236,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             where: { id: userId },
             data: {
                 ...(input.primaryParent.name !== undefined && { name: input.primaryParent.name }),
-                ...(input.primaryParent.dob !== undefined && { dob: toDate(input.primaryParent.dob) }),
+                ...(input.primaryParent.dob !== undefined && { dateOfBirth: toDate(input.primaryParent.dob) }),
                 ...(input.primaryParent.allergies !== undefined && { allergies: input.primaryParent.allergies }),
             },
         });
@@ -256,7 +250,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 where: { id: sp.id },
                 data: {
                     ...(sp.name !== undefined && { name: sp.name }),
-                    ...(sp.dob !== undefined && { dob: toDate(sp.dob) }),
+                    ...(sp.dob !== undefined && { dateOfBirth: toDate(sp.dob) }),
                     ...(sp.allergies !== undefined && { allergies: sp.allergies }),
                 },
             });
@@ -268,7 +262,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     householdId,
                     name: sp.name ?? null,
                     ...(sp.email && { email: sp.email.toLowerCase() }),
-                    dob: toDate(sp.dob),
+                    dateOfBirth: toDate(sp.dob),
                     allergies: sp.allergies ?? null,
                 },
             });
@@ -284,7 +278,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 where: { id: child.id },
                 data: {
                     ...(child.name !== undefined && { name: child.name }),
-                    ...(child.dob !== undefined && { dob: toDate(child.dob) }),
+                    ...(child.dob !== undefined && { dateOfBirth: toDate(child.dob) }),
                     ...(child.allergies !== undefined && { allergies: child.allergies }),
                 },
             });
@@ -294,7 +288,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     householdId,
                     name: child.name,
                     ...(child.email && { email: child.email.toLowerCase() }),
-                    dob: toDate(child.dob),
+                    dateOfBirth: toDate(child.dob),
                     allergies: child.allergies ?? null,
                 },
             });
@@ -326,7 +320,7 @@ export async function submitIntake(userId: number) {
     // Each missing requirement carries the form field key to highlight + a label
     // for the summary message.
     const missing: { field: string; label: string }[] = [];
-    if (!household.address?.trim()) missing.push({ field: "address", label: "home address" });
+    if (!household.line1?.trim()) missing.push({ field: "address", label: "home address" });
     // A household must keep >= 1 valid (non-member, complete) emergency contact.
     const hasValidContact = household.emergencyContacts.some(
         (c) => c.conflictParticipantId === null && c.name.trim() && c.phone.trim(),
@@ -342,9 +336,20 @@ export async function submitIntake(userId: number) {
         );
     }
 
+    // If a household guardian already holds a still-valid background check (same
+    // rule as renewals), auto-clear the BG requirement now — the applicant won't
+    // need to consent to or wait on a new check, just sign + pay.
+    const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+    const boundary = settings?.membershipYearBoundary ? nextBoundary(settings.membershipYearBoundary, new Date()) : new Date();
+    const bgFresh = await householdBgIsFresh(household.id, boundary, settings?.bgRecheckMonths ?? 0);
+
     const advanced = await prisma.membershipProcess.update({
         where: { id: process.id },
-        data: { status: "PENDING_EXTERNAL_ACTION", stageEnteredAt: new Date() },
+        data: {
+            status: "PENDING_EXTERNAL_ACTION",
+            stageEnteredAt: new Date(),
+            ...(bgFresh ? { bgClearedAt: new Date() } : {}),
+        },
     });
 
     await prisma.auditLog.create({
@@ -354,7 +359,7 @@ export async function submitIntake(userId: number) {
             tableName: "MembershipProcess",
             affectedEntityId: process.id,
             oldData: JSON.stringify({ status: "INTAKE" }),
-            newData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION" }),
+            newData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION", ...(bgFresh ? { bgClearedAt: true } : {}) }),
         },
     });
 

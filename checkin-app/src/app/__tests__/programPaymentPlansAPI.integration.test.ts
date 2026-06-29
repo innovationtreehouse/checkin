@@ -3,15 +3,15 @@
  */
 /**
  * Integration tests for the previously-untested payment-plan routes:
- *   GET  /api/programs/payment-plans               (board-only queue)
- *   POST /api/programs/payment-plans               (board approves → ACTIVE)
+ *   GET  /api/finance-ops/payment-plans               (board-only queue)
+ *   POST /api/finance-ops/payment-plans               (board approves → ACTIVE)
  *   POST /api/programs/[id]/request-payment-plan   (request, with IDOR guard)
  *
  * Covers auth rejections (401/403), validation (400/404), the IDOR path
  * (an unrelated authenticated user requesting on someone else's enrollment),
  * and the successful state transitions.
  */
-import { GET as PlansGet, POST as PlansPost } from '@/app/api/programs/payment-plans/route';
+import { GET as PlansGet, POST as PlansPost } from '@/app/api/finance-ops/payment-plans/route';
 import { POST as RequestPost } from '@/app/api/programs/[id]/request-payment-plan/route';
 import prisma from '@/lib/prisma';
 
@@ -86,8 +86,8 @@ describe('Program payment-plan routes', () => {
     async function enroll(participantId: number, opts: { requested: boolean }) {
         await prisma.programParticipant.upsert({
             where: { programId_participantId: { programId, participantId } },
-            update: { status: 'PENDING', paymentPlanRequested: opts.requested, pendingSince: new Date() },
-            create: { programId, participantId, status: 'PENDING', paymentPlanRequested: opts.requested, pendingSince: new Date() },
+            update: { status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
+            create: { programId, participantId, status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
         });
     }
 
@@ -98,7 +98,7 @@ describe('Program payment-plan routes', () => {
         });
     }
 
-    describe('GET /api/programs/payment-plans', () => {
+    describe('GET /api/finance-ops/payment-plans', () => {
         it('401 without a session', async () => {
             mockSession.mockResolvedValue(null);
             const res = await PlansGet();
@@ -111,7 +111,7 @@ describe('Program payment-plan routes', () => {
             expect(res.status).toBe(403);
         });
 
-        it('returns only PENDING + paymentPlanRequested rows to a board member', async () => {
+        it('returns only PENDING + isPaymentPlanRequested rows to a board member', async () => {
             await enroll(selfId, { requested: true });   // should appear
             await enroll(noiseId, { requested: false });  // should NOT appear
             mockSession.mockResolvedValue({ user: { id: boardId, boardMember: true } });
@@ -125,7 +125,7 @@ describe('Program payment-plan routes', () => {
         });
     });
 
-    describe('POST /api/programs/payment-plans (approve)', () => {
+    describe('POST /api/finance-ops/payment-plans (approve)', () => {
         it('401 without a session', async () => {
             mockSession.mockResolvedValue(null);
             const res = await PlansPost(new Request('http://localhost', { method: 'POST', body: '{}' }));
@@ -152,7 +152,7 @@ describe('Program payment-plan routes', () => {
                 where: { programId_participantId: { programId, participantId: selfId } },
             });
             expect(row?.status).toBe('ACTIVE');
-            expect(row?.paymentPlanRequested).toBe(false);
+            expect(row?.isPaymentPlanRequested).toBe(false);
             expect(row?.pendingSince).toBeNull();
         });
     });
@@ -195,7 +195,7 @@ describe('Program payment-plan routes', () => {
             const row = await prisma.programParticipant.findUnique({
                 where: { programId_participantId: { programId, participantId: selfId } },
             });
-            expect(row?.paymentPlanRequested).toBe(false);
+            expect(row?.isPaymentPlanRequested).toBe(false);
         });
 
         it('200 when the participant requests their own payment plan', async () => {
@@ -207,7 +207,7 @@ describe('Program payment-plan routes', () => {
             const row = await prisma.programParticipant.findUnique({
                 where: { programId_participantId: { programId, participantId: selfId } },
             });
-            expect(row?.paymentPlanRequested).toBe(true);
+            expect(row?.isPaymentPlanRequested).toBe(true);
         });
     });
 });

@@ -4,19 +4,32 @@ import { config } from "./config";
 /**
  * Verify an Ed25519 signature from the kiosk client.
  *
- * The kiosk signs: `${timestamp}:${method}:${path}:${body}`
- * Headers: X-Kiosk-Timestamp, X-Kiosk-Signature (hex-encoded)
+ * The kiosk signs: `${timestamp}:${nonce}:${method}:${path}:${body}`
+ * Headers: X-Kiosk-Timestamp, X-Kiosk-Nonce, X-Kiosk-Signature (hex-encoded)
  *
  * Rejects if:
  *  - Missing headers
  *  - Timestamp older than MAX_AGE_SECONDS
  *  - Invalid signature against ALL configured public keys
+ *  - Nonce already seen within the freshness window (replay)
+ *
+ * The nonce is bound INTO the signed message (so it can't be swapped) AND
+ * checked against a recently-seen set (so a captured request can't be replayed
+ * verbatim within the 60s timestamp window). Both are required: binding alone
+ * stops tampering, not replay.
+ *
+ * NOTE: the signed-message format changed (nonce added) — client (client.py /
+ * badge.py) and server MUST ship together or old clients fail verification.
  *
  * Supports multiple comma-separated public keys in KIOSK_PUBLIC_KEY env var.
  * Each key should be a hex-encoded 32-byte Ed25519 public key.
  */
 
 const MAX_AGE_SECONDS = 60;
+
+// ponytail: in-memory nonce cache — single-instance only; move to Redis/KV if the app runs multi-instance/serverless.
+// nonce -> expiry (epoch ms). Pruned on insert; bounded by ~60s of kiosk traffic.
+const seenNonces = new Map<string, number>();
 
 /**
  * Parse KIOSK_PUBLIC_KEY env var into an array of Buffers.
@@ -43,9 +56,10 @@ export function verifyKioskSignature(
     body: string,
     timestampHeader: string | null,
     signatureHeader: string | null,
+    nonceHeader: string | null,
     publicKeys: Buffer | Buffer[]
 ): VerifyResult {
-    if (!timestampHeader || !signatureHeader) {
+    if (!timestampHeader || !signatureHeader || !nonceHeader) {
         return { ok: false, status: 401, error: "Missing kiosk signature headers" };
     }
 
@@ -62,8 +76,8 @@ export function verifyKioskSignature(
         return { ok: false, status: 401, error: "Timestamp too old or too far in the future" };
     }
 
-    // Reconstruct signed message
-    const message = Buffer.from(`${timestampHeader}:${method}:${path}:${body}`);
+    // Reconstruct signed message (nonce is part of the signed payload)
+    const message = Buffer.from(`${timestampHeader}:${nonceHeader}:${method}:${path}:${body}`);
 
     // Decode signature from hex
     let sigBytes: Buffer;
@@ -74,6 +88,7 @@ export function verifyKioskSignature(
     }
 
     // Try each public key — succeed if ANY matches
+    let verified = false;
     for (const publicKey of keys) {
         try {
             const ok = crypto.verify(
@@ -92,12 +107,27 @@ export function verifyKioskSignature(
                 },
                 sigBytes
             );
-            if (ok) return { ok: true };
+            if (ok) { verified = true; break; }
         } catch (e) {
             // Key failed — try next one
             console.error("Signature verification error with key:", e);
         }
     }
 
-    return { ok: false, status: 401, error: "Invalid signature" };
+    if (!verified) {
+        return { ok: false, status: 401, error: "Invalid signature" };
+    }
+
+    // Signature is valid — now enforce single-use of the nonce. Done AFTER the
+    // signature check so unsigned/forged requests can't poison the cache.
+    const nowMs = Date.now();
+    for (const [n, expiry] of seenNonces) {
+        if (expiry <= nowMs) seenNonces.delete(n);
+    }
+    if (seenNonces.has(nonceHeader)) {
+        return { ok: false, status: 401, error: "Replay detected" };
+    }
+    seenNonces.set(nonceHeader, nowMs + MAX_AGE_SECONDS * 1000);
+
+    return { ok: true };
 }

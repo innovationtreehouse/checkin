@@ -61,7 +61,7 @@ describe('Scan causal chain — last keyholder closes facility', () => {
 
     afterEach(async () => {
         await prisma.visit.deleteMany({ where: { participantId: { in: [keyholder.id, normal.id] } } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: { in: [keyholder.id, normal.id] } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: [keyholder.id, normal.id] } } });
     });
 
     afterAll(async () => {
@@ -75,9 +75,9 @@ describe('Scan causal chain — last keyholder closes facility', () => {
         expect((await inRes.json()).type).toBe('checkin');
 
         // Past the debounce window.
-        await prisma.rawBadgeEvent.updateMany({
+        await prisma.rawBadgeLog.updateMany({
             where: { participantId: keyholder.id },
-            data: { time: new Date(Date.now() - 5000) },
+            data: { timestamp: new Date(Date.now() - 5000) },
         });
 
         // Check out → last keyholder, nobody else present → facility closes.
@@ -90,16 +90,16 @@ describe('Scan causal chain — last keyholder closes facility', () => {
         await flush(); // let the fire-and-forget dynamic import resolve
         expect(processPostEventEmails).toHaveBeenCalledWith({ forceImmediate: true });
 
-        const open = await prisma.visit.count({ where: { participantId: keyholder.id, departed: null } });
+        const open = await prisma.visit.count({ where: { participantId: keyholder.id, departedAt: null } });
         expect(open).toBe(0);
     });
 
     it('force-closes (departing everyone) when a recent double-badge confirms, then sends post-event emails', async () => {
-        const kVisit = await prisma.visit.create({ data: { participantId: keyholder.id, arrived: new Date() } });
-        await prisma.visit.create({ data: { participantId: normal.id, arrived: new Date() } });
+        const kVisit = await prisma.visit.create({ data: { participantId: keyholder.id, arrivedAt: new Date() } });
+        await prisma.visit.create({ data: { participantId: normal.id, arrivedAt: new Date() } });
         // Two keyholder badge events 5s apart (<=12s) → confirmed force-close.
-        await prisma.rawBadgeEvent.create({ data: { participantId: keyholder.id, time: new Date(Date.now() - 5000) } });
-        await prisma.rawBadgeEvent.create({ data: { participantId: keyholder.id, time: new Date() } });
+        await prisma.rawBadgeLog.create({ data: { participantId: keyholder.id, timestamp: new Date(Date.now() - 5000) } });
+        await prisma.rawBadgeLog.create({ data: { participantId: keyholder.id, timestamp: new Date() } });
 
         const res = await processCheckout(keyholder, kVisit.id, 'kiosk');
         const json = await res.json();
@@ -108,16 +108,16 @@ describe('Scan causal chain — last keyholder closes facility', () => {
         await flush();
         expect(processPostEventEmails).toHaveBeenCalledWith({ forceImmediate: true });
 
-        // Everyone is departed, including the other attendee.
+        // Everyone is departedAt, including the other attendee.
         const openAnyone = await prisma.visit.count({
-            where: { participantId: { in: [keyholder.id, normal.id] }, departed: null },
+            where: { participantId: { in: [keyholder.id, normal.id] }, departedAt: null },
         });
         expect(openAnyone).toBe(0);
     });
 
     it('warns instead of closing when others are present and there is no recent double-badge', async () => {
-        const kVisit = await prisma.visit.create({ data: { participantId: keyholder.id, arrived: new Date() } });
-        await prisma.visit.create({ data: { participantId: normal.id, arrived: new Date() } });
+        const kVisit = await prisma.visit.create({ data: { participantId: keyholder.id, arrivedAt: new Date() } });
+        await prisma.visit.create({ data: { participantId: normal.id, arrivedAt: new Date() } });
 
         const res = await processCheckout(keyholder, kVisit.id, 'kiosk');
         expect(res.status).toBe(400);
@@ -126,7 +126,7 @@ describe('Scan causal chain — last keyholder closes facility', () => {
 
         // Nothing closed: both visits remain open and no emails fired.
         const open = await prisma.visit.count({
-            where: { participantId: { in: [keyholder.id, normal.id] }, departed: null },
+            where: { participantId: { in: [keyholder.id, normal.id] }, departedAt: null },
         });
         expect(open).toBe(2);
         expect(processPostEventEmails).not.toHaveBeenCalled();

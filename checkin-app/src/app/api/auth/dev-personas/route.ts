@@ -41,7 +41,7 @@ export async function GET() {
             boardMember: true,
             keyholder: true,
             backgroundCheckReviewer: true,
-            dob: true,
+            dateOfBirth: true,
             householdId: true,
             toolStatuses: {
                 select: {

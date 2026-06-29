@@ -1,0 +1,156 @@
+/**
+ * @jest-environment node
+ */
+/**
+ * Integration Tests for Program price persistence (dollars -> cents).
+ *
+ * Unlike price-cents.test.ts (which tests dollarsToCentsOrNull in isolation),
+ * these push a decimal dollar string through the REAL create/update routes and
+ * read back the persisted Program, guarding the $25.99 -> $25 truncation
+ * regression at the DB boundary.
+ *   CREATE conversion: src/app/api/programs/route.ts:109-110
+ *   PATCH  conversion: src/app/api/programs/[id]/route.ts:108-109
+ */
+
+import { POST } from '@/app/api/programs/route';
+import { PATCH } from '@/app/api/programs/[id]/route';
+import prisma from '@/lib/prisma';
+import { getServerSession } from 'next-auth/next';
+
+jest.mock('next-auth/next', () => ({
+    getServerSession: jest.fn(),
+}));
+jest.mock('@/lib/notifications', () => ({
+    sendNotification: jest.fn(),
+}));
+// Avoid hitting the real Shopify API; the route tolerates a null result.
+jest.mock('@/lib/shopify', () => ({
+    createShopifyProgramVariants: jest.fn().mockResolvedValue(null),
+}));
+
+const PROGRAM_NAME_TAG = 'Price RoundTrip Test Program';
+
+describe('Program price round-trip (dollars -> cents) Integration Tests', () => {
+    let adminId: number;
+    let leadId: number;
+
+    beforeAll(async () => {
+        const existingUsers = await prisma.participant.findMany({
+            where: { email: { contains: 'price-roundtrip-test' } },
+            select: { id: true },
+        });
+        const existingUserIds = existingUsers.map(u => u.id);
+
+        await prisma.program.deleteMany({ where: { name: { contains: PROGRAM_NAME_TAG } } });
+        await prisma.auditLog.deleteMany({ where: { actorId: { in: existingUserIds } } });
+        await prisma.participant.deleteMany({ where: { id: { in: existingUserIds } } });
+
+        const admin = await prisma.participant.create({
+            data: { email: 'admin-price-roundtrip-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } },
+        });
+        adminId = admin.id;
+
+        const lead = await prisma.participant.create({
+            data: { email: 'lead-price-roundtrip-test@example.com', name: 'Lead', household: { create: {} } },
+        });
+        leadId = lead.id;
+    });
+
+    afterAll(async () => {
+        const ids = [adminId, leadId];
+        await prisma.program.deleteMany({ where: { name: { contains: PROGRAM_NAME_TAG } } });
+        await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
+        await prisma.participant.deleteMany({ where: { id: { in: ids } } });
+    });
+
+    describe('CREATE: POST /api/programs', () => {
+        it('persists a decimal price as exact cents (no $25.99 -> $25 truncation)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+            const name = `${PROGRAM_NAME_TAG} decimal`;
+            const req = new Request('http://localhost:4000/api/programs', {
+                method: 'POST',
+                body: JSON.stringify({ name, leadMentorId: leadId, memberPrice: '25.99', nonMemberPrice: '100' }),
+            });
+            const res = await POST(req as unknown as import('next/server').NextRequest);
+            expect(res.status).toBe(200);
+
+            const persisted = await prisma.program.findFirstOrThrow({ where: { name } });
+            expect(persisted.memberPriceCents).toBe(2599);
+            expect(persisted.nonMemberPriceCents).toBe(10000);
+        });
+
+        it('persists a whole-dollar price as cents and keeps an empty price null', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+            const name = `${PROGRAM_NAME_TAG} wholedollar`;
+            const req = new Request('http://localhost:4000/api/programs', {
+                method: 'POST',
+                body: JSON.stringify({ name, leadMentorId: leadId, memberPrice: '30', nonMemberPrice: '' }),
+            });
+            const res = await POST(req as unknown as import('next/server').NextRequest);
+            expect(res.status).toBe(200);
+
+            const persisted = await prisma.program.findFirstOrThrow({ where: { name } });
+            expect(persisted.memberPriceCents).toBe(3000);
+            expect(persisted.nonMemberPriceCents).toBeNull();
+        });
+
+        it('keeps both prices null when omitted', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+            const name = `${PROGRAM_NAME_TAG} null`;
+            const req = new Request('http://localhost:4000/api/programs', {
+                method: 'POST',
+                body: JSON.stringify({ name, leadMentorId: leadId }),
+            });
+            const res = await POST(req as unknown as import('next/server').NextRequest);
+            expect(res.status).toBe(200);
+
+            const persisted = await prisma.program.findFirstOrThrow({ where: { name } });
+            expect(persisted.memberPriceCents).toBeNull();
+            expect(persisted.nonMemberPriceCents).toBeNull();
+        });
+    });
+
+    describe('PATCH: PATCH /api/programs/[id]', () => {
+        it('persists decimal prices as exact cents on update', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+            const name = `${PROGRAM_NAME_TAG} patch`;
+            const program = await prisma.program.create({
+                data: { name, leadMentorId: leadId, memberPriceCents: 100, nonMemberPriceCents: 200 },
+            });
+
+            const req = new Request(`http://localhost:4000/api/programs/${program.id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ memberPrice: '12.50', nonMemberPrice: '99.99' }),
+            });
+            const res = await PATCH(req as unknown as Request, { params: Promise.resolve({ id: String(program.id) }) });
+            expect(res.status).toBe(200);
+
+            const persisted = await prisma.program.findUniqueOrThrow({ where: { id: program.id } });
+            expect(persisted.memberPriceCents).toBe(1250);
+            expect(persisted.nonMemberPriceCents).toBe(9999);
+        });
+
+        it('clears a price back to null when set to empty string', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+            const name = `${PROGRAM_NAME_TAG} patch clear`;
+            const program = await prisma.program.create({
+                data: { name, leadMentorId: leadId, memberPriceCents: 5000 },
+            });
+
+            const req = new Request(`http://localhost:4000/api/programs/${program.id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ memberPrice: '' }),
+            });
+            const res = await PATCH(req as unknown as Request, { params: Promise.resolve({ id: String(program.id) }) });
+            expect(res.status).toBe(200);
+
+            const persisted = await prisma.program.findUniqueOrThrow({ where: { id: program.id } });
+            expect(persisted.memberPriceCents).toBeNull();
+        });
+    });
+});

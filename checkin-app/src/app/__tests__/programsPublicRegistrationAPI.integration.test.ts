@@ -19,11 +19,13 @@ describe('Public Program Registration API Integration Tests', () => {
     let freeProgramId: number;
     let fullProgramId: number;
     let exactAgeProgramId: number;
+    let maxAgeBoundaryProgramId: number;
+    let startBasisProgramId: number;
     let existingParticipantId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const testEmails = ['test-primary-parent@example.com', 'existing-user-test@example.com'];
+        const testEmails = ['test-primary-parent@example.com', 'existing-user-test@example.com', 'max-age-boundary-parent@example.com', 'start-basis-parent@example.com'];
         const existingUsers = await prisma.participant.findMany({
             where: { email: { in: testEmails } },
             select: { id: true }
@@ -91,10 +93,24 @@ describe('Public Program Registration API Integration Tests', () => {
             data: { name: 'Age Restricted Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', minAge: 18, maxAge: 21 }
         });
         exactAgeProgramId = exactAgeProgram.id;
+
+        // Free (price-less => ACTIVE) program with a tight upper age bound, used
+        // by the age-boundary regression tests below.
+        const maxAgeBoundaryProgram = await prisma.program.create({
+            data: { name: 'Max Age Boundary Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', maxAge: 17 }
+        });
+        maxAgeBoundaryProgramId = maxAgeBoundaryProgram.id;
+
+        // Free, minAge 18, starts 2026-09-01. Used to prove the age gate judges
+        // age as of the program START date, not registration time.
+        const startBasisProgram = await prisma.program.create({
+            data: { name: 'Start Basis Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', minAge: 18, startAt: new Date('2026-09-01T00:00:00.000Z') }
+        });
+        startBasisProgramId = startBasisProgram.id;
     });
 
     afterAll(async () => {
-        const testEmails = ['test-primary-parent@example.com', 'existing-user-test@example.com'];
+        const testEmails = ['test-primary-parent@example.com', 'existing-user-test@example.com', 'max-age-boundary-parent@example.com', 'start-basis-parent@example.com'];
         const existingUsers = await prisma.participant.findMany({
             where: { email: { in: testEmails } },
             select: { id: true, householdId: true }
@@ -102,7 +118,7 @@ describe('Public Program Registration API Integration Tests', () => {
         const existingUserIds = existingUsers.map(u => u.id);
         const householdIds = existingUsers.map(u => u.householdId).filter(id => id !== null) as number[];
 
-        const validProgramIds = [standardProgramId, freeProgramId, fullProgramId, exactAgeProgramId].filter(id => id !== undefined);
+        const validProgramIds = [standardProgramId, freeProgramId, fullProgramId, exactAgeProgramId, maxAgeBoundaryProgramId, startBasisProgramId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
             await prisma.programParticipant.deleteMany({
@@ -232,9 +248,156 @@ describe('Public Program Registration API Integration Tests', () => {
             expect(data.error).toMatch(/at least 18/i);
         });
 
+        // Regression: the old inline epoch-delta age math
+        // (`new Date(Date.now()-dob).getUTCFullYear()-1970`) ignores month/day and
+        // counts someone whose birthday hasn't happened yet this year as ONE YEAR
+        // TOO OLD. We freeze the clock so a participant who is calendar-age 17
+        // (turns 18 *tomorrow*) is read as 18 by the buggy code. The leap-day
+        // drift that triggers the off-by-one only surfaces in Jan/Feb, so the
+        // frozen instant is required for these to be deterministic year-round.
+        // Date faked only (timers left real) so Prisma's pg pool keeps working.
+        const FAKE_TIMER_OPTS: Parameters<typeof jest.useFakeTimers>[0] = {
+            doNotFake: [
+                'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval',
+                'setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask',
+                'requestAnimationFrame', 'cancelAnimationFrame', 'hrtime', 'performance',
+            ],
+            now: new Date('2026-01-01T12:00:00.000Z'),
+        };
+        const BOUNDARY_DOB = '2008-01-02T12:00:00.000Z'; // calendar-age 17 at the frozen now; buggy math -> 18
+
+        it('should NOT reject an at-maximum-age participant whose birthday is later this year', async () => {
+            jest.useFakeTimers(FAKE_TIMER_OPTS);
+            try {
+                const req = new Request(`http://localhost:4000/api/programs/${maxAgeBoundaryProgramId}/public-register`, {
+                    method: 'POST',
+                    // Own IP bucket so the shared per-IP rate limit (other tests use the
+                    // default "unknown" IP) can't pre-exhaust this request.
+                    headers: { 'x-forwarded-for': '203.0.113.10' },
+                    body: JSON.stringify({
+                        parents: [{ name: 'Boundary Parent', email: 'max-age-boundary-parent@example.com', phone: '555-123-7777' }],
+                        emergencyContact: { name: 'Aunt Sue', phone: '555-999-7788' },
+                        participants: [{ name: 'Birthday Kid', dob: BOUNDARY_DOB }] // 17 now (max is 17); buggy math says 18
+                    })
+                });
+                const res = await POST(req as unknown as import("next/server").NextRequest, createParams(maxAgeBoundaryProgramId) as unknown as never);
+                // Buggy code rejected this with "maximum age is 17"; correct code admits the 17-year-old.
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.success).toBe(true);
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        it('should reject an under-minimum-age participant the buggy math counted as old enough', async () => {
+            jest.useFakeTimers(FAKE_TIMER_OPTS);
+            try {
+                // exactAgeProgram has minAge 18; the participant is calendar-age 17.
+                const req = new Request(`http://localhost:4000/api/programs/${exactAgeProgramId}/public-register`, {
+                    method: 'POST',
+                    headers: { 'x-forwarded-for': '203.0.113.11' },
+                    body: JSON.stringify({
+                        parents: [{ name: 'Boundary Parent', email: 'min-age-boundary-parent@example.com', phone: '555-123-8888' }],
+                        emergencyContact: { name: 'Aunt Sue', phone: '555-999-8877' },
+                        participants: [{ name: 'Birthday Kid', dob: BOUNDARY_DOB }] // 17 now (min is 18); buggy math says 18
+                    })
+                });
+                const res = await POST(req as unknown as import("next/server").NextRequest, createParams(exactAgeProgramId) as unknown as never);
+                // Buggy code admitted this 17-year-old (counted as 18); correct code rejects.
+                expect(res.status).toBe(400);
+                const data = await res.json();
+                expect(data.error).toMatch(/at least 18/i);
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        it('should judge age as of the program START date, not registration time', async () => {
+            // startBasisProgram: minAge 18, begins 2026-09-01. Clock frozen at
+            // 2026-01-01, applicant born 2008-06-15 => age 17 NOW but 18 by the
+            // start date. Registration-time math would reject; start-date math admits.
+            jest.useFakeTimers(FAKE_TIMER_OPTS);
+            try {
+                const req = new Request(`http://localhost:4000/api/programs/${startBasisProgramId}/public-register`, {
+                    method: 'POST',
+                    headers: { 'x-forwarded-for': '203.0.113.12' },
+                    body: JSON.stringify({
+                        parents: [{ name: 'Boundary Parent', email: 'start-basis-parent@example.com', phone: '555-123-9999' }],
+                        emergencyContact: { name: 'Aunt Sue', phone: '555-999-9988' },
+                        participants: [{ name: 'Turns Eighteen', dob: '2008-06-15T12:00:00.000Z' }]
+                    })
+                });
+                const res = await POST(req as unknown as import("next/server").NextRequest, createParams(startBasisProgramId) as unknown as never);
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.success).toBe(true);
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        // GAP 3: the under-min case is covered above; these add the missing
+        // over-MAX rejection and an in-bounds success, so both ends of the
+        // public-register age gate (independent of the authenticated route) are
+        // exercised. exactAgeProgram is minAge 18 / maxAge 21, startAt null -> age
+        // judged as of now, frozen here for determinism.
+        it('should reject a participant over the maximum age', async () => {
+            jest.useFakeTimers(FAKE_TIMER_OPTS);
+            try {
+                const req = new Request(`http://localhost:4000/api/programs/${exactAgeProgramId}/public-register`, {
+                    method: 'POST',
+                    headers: { 'x-forwarded-for': '203.0.113.20' },
+                    body: JSON.stringify({
+                        parents: [{ name: 'Over Max Parent', email: 'over-max-parent@example.com', phone: '555-200-1111' }],
+                        emergencyContact: { name: 'Aunt Sue', phone: '555-200-2222' },
+                        participants: [{ name: 'Old Kid', dob: '2000-06-01T12:00:00.000Z' }] // 25 now, max is 21
+                    })
+                });
+                const res = await POST(req as unknown as import("next/server").NextRequest, createParams(exactAgeProgramId) as unknown as never);
+                expect(res.status).toBe(400);
+                const data = await res.json();
+                expect(data.error).toMatch(/maximum age is 21/i);
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        it('should register a participant whose age is within the min/max bounds', async () => {
+            jest.useFakeTimers(FAKE_TIMER_OPTS);
+            const inBoundsEmail = 'in-bounds-age-parent@example.com';
+            try {
+                const req = new Request(`http://localhost:4000/api/programs/${exactAgeProgramId}/public-register`, {
+                    method: 'POST',
+                    headers: { 'x-forwarded-for': '203.0.113.21' },
+                    body: JSON.stringify({
+                        parents: [{ name: 'In Bounds Parent', email: inBoundsEmail, phone: '555-210-1111' }],
+                        emergencyContact: { name: 'Aunt Sue', phone: '555-210-2222' },
+                        participants: [{ name: 'Right Age Kid', dob: '2006-06-01T12:00:00.000Z' }] // 19 now, in [18,21]
+                    })
+                });
+                const res = await POST(req as unknown as import("next/server").NextRequest, createParams(exactAgeProgramId) as unknown as never);
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.success).toBe(true);
+            } finally {
+                jest.useRealTimers();
+            }
+
+            // Inline cleanup: this parent email isn't in the afterAll sweep list.
+            const p = await prisma.participant.findUnique({ where: { email: inBoundsEmail } });
+            if (p) {
+                await prisma.programParticipant.deleteMany({ where: { participant: { householdId: p.householdId } } });
+                await prisma.householdLead.deleteMany({ where: { participant: { householdId: p.householdId } } });
+                await prisma.participant.deleteMany({ where: { householdId: p.householdId } });
+                await prisma.household.delete({ where: { id: p.householdId as number } });
+            }
+        });
+
         it('should successfully register a family with correct PENDING status and return Shopify URL', async () => {
             const req = new Request(`http://localhost:4000/api/programs/${standardProgramId}/public-register`, {
                 method: 'POST',
+                headers: { 'x-forwarded-for': '203.0.113.1' }, // own rate-limit bucket so earlier block tests don't 429 this
                 body: JSON.stringify({
                     parents: [{ name: 'Test Primary Parent', email: 'test-primary-parent@example.com', phone: '555-123-4444' }],
                     emergencyContact: { name: 'Aunt Sue', phone: '555-999-8888' },
@@ -278,6 +441,7 @@ describe('Public Program Registration API Integration Tests', () => {
             const uniqueEmail = `mom-free-${Date.now()}@test.com`;
             const req = new Request(`http://localhost:4000/api/programs/${freeProgramId}/public-register`, {
                 method: 'POST',
+                headers: { 'x-forwarded-for': '203.0.113.2' }, // own rate-limit bucket so earlier block tests don't 429 this
                 body: JSON.stringify({
                     parents: [{ name: 'Mom Free', email: uniqueEmail, phone: '555-111-3333' }],
                     emergencyContact: { name: 'Aunt Sue', phone: '555-999-9999' },

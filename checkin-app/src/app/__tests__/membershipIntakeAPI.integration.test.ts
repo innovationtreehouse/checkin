@@ -9,10 +9,14 @@
 import { GET, POST } from '@/app/api/membership/route';
 import { PATCH } from '@/app/api/membership/intake/route';
 import { POST as SUBMIT } from '@/app/api/membership/intake/submit/route';
+import { createRenewalProcess, beginRenewal } from '@/lib/membership/renewal';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { expectAuditRow, auditJson } from '@/test-helpers/expectAuditRow';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
+// beginRenewal -> notifyReviewers sends email when re-review is needed; mock it out.
+jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
 
 const TAG = 'membership-intake-test';
 
@@ -126,7 +130,7 @@ describe('Membership Intake API', () => {
         const patchReq = new Request('http://localhost:4000/api/membership/intake', {
             method: 'PATCH',
             body: JSON.stringify({
-                household: { address: '1 Treehouse Way', emergencyContactName: 'Aunt May', emergencyContactPhone: '555-0100' },
+                household: { line1: '1 Treehouse Way', emergencyContactName: 'Aunt May', emergencyContactPhone: '555-555-0100' },
                 primaryParent: { name: 'Lead Parent', dob: '1985-04-01', allergies: 'peanuts' },
                 children: [{ name: 'Kid One', dob: '2015-06-01' }],
             }),
@@ -135,7 +139,7 @@ describe('Membership Intake API', () => {
         expect(res.status).toBe(200);
 
         const state = await (await GET(req() as never)).json();
-        expect(state.prefill.household.address).toBe('1 Treehouse Way');
+        expect(state.prefill.household.line1).toBe('1 Treehouse Way');
         expect(state.prefill.primaryParent.allergies).toBe('peanuts');
         // Children are non-lead members; the household already has the non-lead
         // fixture, so assert Kid One is among them rather than an exact count.
@@ -162,7 +166,7 @@ describe('Membership Intake API', () => {
         asUser(nonLeadId);
         const patchReq = new Request('http://localhost:4000/api/membership/intake', {
             method: 'PATCH',
-            body: JSON.stringify({ household: { address: 'hacker lane' } }),
+            body: JSON.stringify({ household: { line1: 'hacker lane' } }),
         });
         const res = await PATCH(patchReq as never);
         expect(res.status).toBe(403);
@@ -174,5 +178,62 @@ describe('Membership Intake API', () => {
         const data = await res.json();
         expect(res.status).toBe(409);
         expect(data.code).toBe('already_member');
+    });
+
+    it('intake start writes a CREATE audit and submit an EDIT audit, both bound to the lead', async () => {
+        const lead = await prisma.participant.create({
+            data: { email: `audit-lead-${TAG}@example.com`, name: 'Audit Lead', household: { create: { name: 'Audit Intake HH' } } },
+        });
+        await prisma.householdLead.create({ data: { householdId: lead.householdId!, participantId: lead.id } });
+        asUser(lead.id);
+
+        const startRes = await POST(req() as never);
+        expect(startRes.status).toBe(201);
+        const processId = (await startRes.json()).state.process.id;
+
+        const createLog = await expectAuditRow(prisma, { action: 'CREATE', tableName: 'MembershipProcess', affectedEntityId: processId });
+        expect(createLog.actorId).toBe(lead.id);
+        expect(auditJson(createLog.newData).status).toBe('INTAKE');
+
+        // Fill the minimum required fields so submit advances INTAKE -> EXTERNAL.
+        const patch = new Request('http://localhost:4000/api/membership/intake', {
+            method: 'PATCH',
+            body: JSON.stringify({
+                household: { line1: '9 Audit Way', emergencyContactName: 'Aunt Audit', emergencyContactPhone: '555-555-9001' },
+                primaryParent: { name: 'Audit Lead' },
+            }),
+        });
+        expect((await PATCH(patch as never)).status).toBe(200);
+
+        const submitRes = await SUBMIT(req() as never);
+        expect(submitRes.status).toBe(200);
+        const editLog = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'MembershipProcess', affectedEntityId: processId });
+        expect(editLog.actorId).toBe(lead.id);
+        expect(auditJson(editLog.oldData).status).toBe('INTAKE');
+        expect(auditJson(editLog.newData).status).toBe('PENDING_EXTERNAL_ACTION');
+    });
+
+    it('createRenewalProcess writes a SYSTEM_ACTOR CREATE; beginRenewal a SYSTEM_ACTOR EDIT', async () => {
+        const owner = await prisma.participant.create({
+            data: {
+                email: `renew-lead-${TAG}@example.com`, name: 'Renew Lead',
+                household: { create: { name: 'Renew HH', membership: { create: { status: 'ACTIVE' } } } },
+            },
+        });
+        const householdId = owner.householdId!;
+        const membership = await prisma.membership.findUniqueOrThrow({ where: { householdId } });
+
+        const proc = await createRenewalProcess(membership.id, householdId, new Date(), { remind: false, boundary: new Date() });
+        expect(proc).not.toBeNull();
+
+        const createLog = await expectAuditRow(prisma, { action: 'CREATE', tableName: 'MembershipProcess', affectedEntityId: proc!.id });
+        expect(createLog.actorId).toBe(0); // SYSTEM_ACTOR — cron, not a person
+        expect(auditJson(createLog.newData).status).toBe('PENDING_RENEWAL');
+
+        const begun = await beginRenewal(proc!.id);
+        expect(begun.status).not.toBe('PENDING_RENEWAL');
+        const editLog = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'MembershipProcess', affectedEntityId: proc!.id });
+        expect(editLog.actorId).toBe(0); // SYSTEM_ACTOR
+        expect(auditJson(editLog.oldData).status).toBe('PENDING_RENEWAL');
     });
 });

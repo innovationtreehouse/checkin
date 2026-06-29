@@ -86,7 +86,7 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
 
     if (ctx.isKeyholder) {
         const visits = await prisma.visit.findMany({
-            where: { departed: null },
+            where: { departedAt: null },
             select: { participantId: true },
         });
         for (const v of visits) ctx.activeVisitorIds.add(v.participantId);
@@ -223,12 +223,12 @@ export function scopesHeld(
         case 'Visit': {
             const participantId = num(row.participantId);
             if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            if (ctx.isKeyholder && row.departed == null) {
+            if (ctx.isKeyholder && row.departedAt == null) {
                 scopes.add('all_current_visitors');
             }
             break;
         }
-        case 'RawBadgeEvent': {
+        case 'RawBadgeLog': {
             const participantId = num(row.participantId);
             if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
             break;
@@ -261,7 +261,7 @@ export function scopesHeld(
         }
         // MembershipProcess, BackgroundCheckAttestation, Corporation,
         // CorporationLead, CorporationMember, AuditLog, VerificationToken,
-        // ErrorLog, SystemMetric, Tool — no per-row scopes beyond 'everyones'
+        // ErrorLog, SystemMetricLog, Tool — no per-row scopes beyond 'everyones'
         // yet. Admin (sysadmin/boardMember) views grant 'everyones:*' so they
         // still get through. These SHOULD be row-scoped too (they carry
         // membershipId / processId / corporationId); until each has a case +
@@ -332,8 +332,17 @@ export async function resolveAccess(
             case 'public':
                 return { allowed: true };
             case 'authenticated':
-            case 'self':
                 return { allowed: auth.type === 'session' };
+            case 'self': {
+                if (auth.type !== 'session') return { allowed: false };
+                // Bind to the resource id param. No id param (e.g. GET /api/profile)
+                // → 'self' just means authenticated; the handler scopes to
+                // auth.user.id itself. Present-but-mismatched → fail closed.
+                const target = params.id ?? params.participantId;
+                if (target === undefined) return { allowed: true };
+                const targetId = parseInt(target, 10);
+                return { allowed: !isNaN(targetId) && targetId === auth.user.id };
+            }
             case 'kiosk':
                 return { allowed: auth.type === 'kiosk' };
             case 'program-lead-mentor': {

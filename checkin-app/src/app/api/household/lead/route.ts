@@ -22,33 +22,34 @@ export const POST = withAuth(
                 include: { householdLeads: true }
             });
 
-            if (!user?.householdId) {
-                return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
-            }
-
-            const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isLead && !user.sysadmin) {
-                return NextResponse.json({ error: "Only household leads or sysadmins can promote members" }, { status: 403 });
-            }
-
             const targetMember = await prisma.participant.findUnique({ where: { id: participantId } });
-            if (!targetMember || targetMember.householdId !== user.householdId) {
-                return NextResponse.json({ error: "Member not found in your household" }, { status: 404 });
+            if (!targetMember) {
+                return NextResponse.json({ error: "Participant not found" }, { status: 404 });
+            }
+            const targetHouseholdId = targetMember.householdId;
+
+            // Board members and sysadmins can set a lead on ANY household (e.g. fixing
+            // a leadless household imported without a primary contact). A regular
+            // household lead can only promote within their own household.
+            const isPrivileged = !!user?.sysadmin || !!user?.boardMember;
+            const isLeadOfTarget = !!user?.householdLeads.some(lead => lead.householdId === targetHouseholdId);
+            if (!isPrivileged && !isLeadOfTarget) {
+                return NextResponse.json({ error: "Only household leads, board members, or sysadmins can promote members" }, { status: 403 });
             }
 
-            const { created } = await addHouseholdLead(prisma, user.householdId, participantId);
+            const { created } = await addHouseholdLead(prisma, targetHouseholdId, participantId);
 
             if (!created) {
                 return NextResponse.json({ message: "Member is already a lead" }, { status: 200 });
             }
 
-            const newLead = { householdId: user.householdId, participantId };
+            const newLead = { householdId: targetHouseholdId, participantId };
             await prisma.auditLog.create({
                 data: {
                     actorId: userId,
                     action: "CREATE",
                     tableName: "HouseholdLead",
-                    affectedEntityId: user.householdId,
+                    affectedEntityId: targetHouseholdId,
                     secondaryAffectedEntity: participantId,
                     newData: JSON.stringify(newLead)
                 }

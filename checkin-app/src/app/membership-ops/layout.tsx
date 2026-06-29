@@ -7,20 +7,29 @@ import { MEMBERSHIP_OPS_NAV_LINKS } from "@/lib/membershipOpsNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import type { TodoCounts } from "@/app/api/nav/todo-counts/route";
+import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { PageContainer } from "@/components/ui/PageContainer";
+import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 
-/** Board-queue count for a Membership Ops nav link, or 0 when nothing is due / unknown. */
+/** Informational count for a Membership Ops nav link, or 0 when none / unknown. */
 function membershipTodoCountFor(href: string, counts: TodoCounts | null): number {
   if (!counts?.admin) return 0;
-  return href === "/membership-ops/applications" ? counts.admin.membership : 0;
+  if (href === "/membership-ops/applications") return counts.admin.applicationsTotal;
+  if (href === "/membership-ops/broken") return counts.admin.brokenHouseholds;
+  return 0;
 }
 
 export default function MembershipOpsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const confirmNav = useConfirmNav();
   const { data: session } = useSession();
   const sessionUser = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
   const { loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
   const todoCounts = useTodoCounts(!!(sessionUser?.sysadmin || sessionUser?.boardMember));
+
+  // Total member families, shown as a gray counter on the Manage Memberships tab.
+  const memberFamilies = todoCounts?.admin?.memberFamilies ?? null;
 
   if (loading) {
     return (
@@ -42,14 +51,15 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
       .find((l) => pathname === l.href || pathname.startsWith(l.href + "/"))?.href ?? null;
 
   return (
-    <Stack>
-      <Text fw={800} size="lg" c="blue">
-        Membership Ops
-      </Text>
-      <Tabs value={activeTab} onChange={(value) => value && router.push(value)}>
-        <Tabs.List>
+    <PageContainer>
+      <Stack>
+      <Tabs value={activeTab} onChange={(value) => { if (value && confirmNav()) router.push(value); }}>
+        <ScrollableTabsList>
           {MEMBERSHIP_OPS_NAV_LINKS.map((link) => {
             const todoCount = membershipTodoCountFor(link.href, todoCounts);
+            const isBroken = link.href === "/membership-ops/broken";
+            const showMemberFamilies =
+              link.href === "/membership-ops/households" && memberFamilies !== null;
             return (
               <Tabs.Tab
                 key={link.href}
@@ -58,12 +68,21 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
                 rightSection={
                   todoCount > 0 ? (
                     <Badge
-                      size="xs"
-                      color="treehouseGreen"
-                      variant="filled"
-                      aria-label={`${todoCount} item${todoCount === 1 ? "" : "s"} need attention`}
+                      size="md"
+                      color={isBroken ? "treehouseGreen" : "gray"}
+                      variant={isBroken ? "filled" : "light"}
+                      aria-label={isBroken ? `${todoCount} household${todoCount === 1 ? "" : "s"} without a lead` : `${todoCount} application${todoCount === 1 ? "" : "s"}`}
                     >
                       {todoCount}
+                    </Badge>
+                  ) : showMemberFamilies ? (
+                    <Badge
+                      size="md"
+                      color="gray"
+                      variant="light"
+                      aria-label={`${memberFamilies} member famil${memberFamilies === 1 ? "y" : "ies"}`}
+                    >
+                      {memberFamilies}
                     </Badge>
                   ) : undefined
                 }
@@ -72,9 +91,10 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
               </Tabs.Tab>
             );
           })}
-        </Tabs.List>
+        </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
-    </Stack>
+      </Stack>
+    </PageContainer>
   );
 }

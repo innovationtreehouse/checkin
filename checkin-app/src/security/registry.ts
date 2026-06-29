@@ -18,7 +18,7 @@ defineRoute({
     orderedView: [
         [
             'authenticated',
-            ['their_own:pii', 'their_own:personal', 'their_own:internal', 'public'],
+            ['their_own:pii', 'their_own:personal', 'their_own:internal', 'member', 'public'],
         ],
     ],
 });
@@ -28,15 +28,15 @@ defineRoute({
     authorize: 'public',
     envelope: null,
     orderedView: [
-        ['sysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
-        ['boardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['sysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['boardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['programLeadMentor',    ['their_program_participants:pii',
                                   'their_program_participants:personal',
-                                  'public']],
+                                  'member', 'public']],
         ['programCoreVolunteer', ['their_program_participants:pii',
                                   'their_program_participants:personal',
-                                  'public']],
-        ['authenticated',        ['their_own:pii', 'their_own:personal', 'public']],
+                                  'member', 'public']],
+        ['authenticated',        ['their_own:pii', 'their_own:personal', 'member', 'public']],
         ['anyone',               ['public']],
     ],
 });
@@ -46,9 +46,9 @@ defineRoute({
     authorize: { anyRole: ['sysadmin', 'boardMember', 'keyholder'] },
     envelope: 'boardMembers',
     orderedView: [
-        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
-        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
-        ['keyholder',   ['public']],
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['keyholder',   ['member', 'public']],
     ],
 });
 
@@ -56,12 +56,12 @@ defineRoute({
 // PII (parents + children names/emails), so only sysadmin/board may see it, and
 // the field grant is explicit per role.
 defineRoute({
-    endpoint: 'GET /api/admin/membership',
+    endpoint: 'GET /api/membership-ops/applications',
     authorize: { anyRole: ['sysadmin', 'boardMember'] },
     envelope: 'processes',
     orderedView: [
-        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
-        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
     ],
 });
 
@@ -73,7 +73,7 @@ defineRoute({
     authorize: { anyRole: ['backgroundCheckReviewer'] },
     envelope: 'queue',
     orderedView: [
-        ['backgroundCheckReviewer', ['everyones:pii', 'public']],
+        ['backgroundCheckReviewer', ['everyones:pii', 'member', 'public']],
     ],
 });
 
@@ -85,19 +85,19 @@ defineRoute({
     authorize: 'household-member',
     envelope: 'trustedAdults',
     orderedView: [
-        ['authenticated', ['their_households:pii', 'their_households:personal', 'public']],
+        ['authenticated', ['their_households:pii', 'their_households:personal', 'member', 'public']],
     ],
 });
 
 // Board's trusted-adult review queue. Full visibility incl. familyContext (pii)
 // and the board's internal decision notes (internal).
 defineRoute({
-    endpoint: 'GET /api/admin/trusted-adults',
+    endpoint: 'GET /api/safety/trusted-adults',
     authorize: { anyRole: ['sysadmin', 'boardMember'] },
     envelope: 'trustedAdults',
     orderedView: [
-        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
-        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
     ],
 });
 
@@ -111,13 +111,13 @@ defineRoute({
     authorize: 'authenticated',
     envelope: 'trustedAdults',
     orderedView: [
-        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
-        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'public']],
-        ['keyholder',   ['keyholders:personal', 'their_program_households:personal', 'their_households:personal', 'public']],
+        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['keyholder',   ['keyholders:personal', 'their_program_households:personal', 'their_households:personal', 'member', 'public']],
         // Catch-all: program leads (and household members) match here. Scopes are
         // per-row, so a caller only receives 'personal' on rows where they hold
         // their_program_households (a kid in their program) or their_households.
-        ['authenticated', ['their_program_households:personal', 'their_households:personal', 'public']],
+        ['authenticated', ['their_program_households:personal', 'their_households:personal', 'member', 'public']],
     ],
 });
 

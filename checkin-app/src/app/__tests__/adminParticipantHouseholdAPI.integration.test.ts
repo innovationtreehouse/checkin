@@ -1,9 +1,10 @@
 /**
  * @jest-environment node
  */
-import { POST } from '@/app/api/admin/participants/[id]/household/route';
+import { POST } from '@/app/api/membership-ops/participants/[id]/household/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { expectAuditRow, auditJson } from '@/test-helpers/expectAuditRow';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -68,13 +69,13 @@ describe('Admin Participant Household API Integration Tests', () => {
         });
     });
 
-    describe('POST /api/admin/participants/[id]/household', () => {
+    describe('POST /api/membership-ops/participants/[id]/household', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testUserId, sysadmin: false, boardMember: false }
             });
 
-            const req = new Request(`http://localhost:4000/api/admin/participants/${testParticipantId}/household`, {
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}/household`, {
                 method: 'POST',
                 body: JSON.stringify({ householdId: testHouseholdId })
             });
@@ -88,7 +89,10 @@ describe('Admin Participant Household API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true, boardMember: false }
             });
 
-            const req = new Request(`http://localhost:4000/api/admin/participants/${testParticipantId}/household`, {
+            const subjectBefore = await prisma.participant.findUnique({ where: { id: testParticipantId } });
+            const priorHouseholdId = subjectBefore!.householdId;
+
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}/household`, {
                 method: 'POST',
                 body: JSON.stringify({ householdId: testHouseholdId })
             });
@@ -102,6 +106,13 @@ describe('Admin Participant Household API Integration Tests', () => {
 
             const updatedParticipant = await prisma.participant.findUnique({ where: { id: testParticipantId } });
             expect(updatedParticipant?.householdId).toBe(testHouseholdId);
+
+            // The move MUST be audited with the acting admin and the prior→new
+            // household — the route's only record of who reassigned the person.
+            const log = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'Participant', affectedEntityId: testParticipantId });
+            expect(log.actorId).toBe(testAdminId);
+            expect(auditJson(log.oldData).householdId).toBe(priorHouseholdId);
+            expect(auditJson(log.newData).householdId).toBe(testHouseholdId);
         });
 
         it('should successfully create a new household for the participant', async () => {
@@ -109,7 +120,7 @@ describe('Admin Participant Household API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true, boardMember: false }
             });
 
-            const req = new Request(`http://localhost:4000/api/admin/participants/${testParticipantId}/household`, {
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}/household`, {
                 method: 'POST',
                 body: JSON.stringify({ createNew: true })
             });

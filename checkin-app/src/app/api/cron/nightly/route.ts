@@ -1,24 +1,12 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
+import { requireCronSecret } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
 
 export async function GET(req: Request) {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || !authHeader) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const expectedHeader = `Bearer ${cronSecret}`;
-    const providedBuffer = Buffer.from(authHeader);
-    const expectedBuffer = Buffer.from(expectedHeader);
-
-    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const denied = requireCronSecret(req);
+    if (denied) return denied;
 
     try {
         const now = new Date();
@@ -26,7 +14,7 @@ export async function GET(req: Request) {
         // 1. Find all users who are currently checked in (abandoned visits)
         const abandonedVisits = await prisma.visit.findMany({
             where: {
-                departed: null
+                departedAt: null
             },
             include: {
                 participant: true
@@ -37,11 +25,18 @@ export async function GET(req: Request) {
         let boardNotified = false;
 
         if (abandonedVisits.length > 0) {
-            // Force everybody out concurrently
-            await Promise.all(
-                abandonedVisits.map((visit) => processVisitCheckout(visit.id, now))
+            // Force everybody out concurrently. One bad checkout must not abort the rest.
+            const results = await Promise.allSettled(
+                abandonedVisits.map((visit) => processVisitCheckout(visit.id, now, undefined, "SYSTEM"))
             );
-            checkedOutCount += abandonedVisits.length;
+            results.forEach((result, i) => {
+                if (result.status === "fulfilled") {
+                    checkedOutCount += 1;
+                } else {
+                    const visit = abandonedVisits[i];
+                    console.error(`Failed to check out visit ${visit.id} (participant ${visit.participant.email}):`, result.reason);
+                }
+            });
 
             // If at least one was a keyholder, the facility was left "Open". We need to alert the board.
             const abandonedKeyholders = abandonedVisits.filter(v => v.participant.keyholder);

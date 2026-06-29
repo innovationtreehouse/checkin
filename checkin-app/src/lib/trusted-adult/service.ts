@@ -1,7 +1,21 @@
+import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { logger } from "@/lib/logger";
+import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
+import { validateContact } from "@/lib/trusted-adult/contact";
+
+type TxClient = Prisma.TransactionClient;
+
+/**
+ * Serialize all mutations of one TrustedAdult by taking a row lock on the parent.
+ * renew/withdraw/decide each read-check-write; without this lock two concurrent
+ * calls both pass the check and both write (TOCTOU). Mirrors lib/membership/review.ts.
+ */
+function lockTrustedAdult(tx: TxClient, taId: number) {
+    return tx.$queryRaw`SELECT id FROM "TrustedAdult" WHERE id = ${taId} FOR UPDATE`;
+}
 
 /**
  * Trusted Adult management.
@@ -56,7 +70,8 @@ export interface CreateInput {
     householdId: number;
     counterpartyParticipantId?: number | null;
     counterpartyName: string;
-    counterpartyContact: string;
+    counterpartyPhone?: string | null;
+    counterpartyEmail?: string | null;
     /** The family's board-facing explanation of what the adult may/may not do. */
     familyContext: string;
     origin?: "SELF_DISCLOSED" | "STAFF_ENTERED";
@@ -65,15 +80,16 @@ export interface CreateInput {
 
 /**
  * Create a Trusted Adult for a household plus its INITIAL review
- * (PENDING_BOARD_REVIEW). Name, contact, and the family's board-facing context
- * are all required.
+ * (PENDING_BOARD_REVIEW). Name, at least one contact (phone or email), and the
+ * family's board-facing context are all required.
  */
 export async function createTrustedAdult(input: CreateInput) {
     if (!input.counterpartyName?.trim()) {
         throw new TrustedAdultError("bad_input", "The trusted adult's name is required.");
     }
-    if (!input.counterpartyContact?.trim()) {
-        throw new TrustedAdultError("bad_input", "Contact info for the trusted adult is required.");
+    const contact = validateContact({ phone: input.counterpartyPhone, email: input.counterpartyEmail });
+    if ("error" in contact) {
+        throw new TrustedAdultError("bad_input", contact.error);
     }
     if (!input.familyContext?.trim()) {
         throw new TrustedAdultError("bad_input", "Tell the board what this adult may or may not do.");
@@ -82,23 +98,27 @@ export async function createTrustedAdult(input: CreateInput) {
     const household = await prisma.household.findUnique({ where: { id: input.householdId }, select: { id: true } });
     if (!household) throw new TrustedAdultError("not_found", "Household not found.");
 
-    const ta = await prisma.trustedAdult.create({
-        data: {
-            householdId: input.householdId,
-            counterpartyParticipantId: input.counterpartyParticipantId ?? null,
-            counterpartyName: input.counterpartyName.trim(),
-            counterpartyContact: input.counterpartyContact.trim(),
-            familyContext: input.familyContext.trim(),
-            origin: input.origin ?? "SELF_DISCLOSED",
-            disclosedById: input.disclosedById || SYSTEM_ACTOR,
-            reviews: {
-                create: { householdId: input.householdId, kind: "INITIAL", status: "PENDING_BOARD_REVIEW" },
+    const ta = await prisma.$transaction(async (tx) => {
+        const created = await tx.trustedAdult.create({
+            data: {
+                householdId: input.householdId,
+                counterpartyParticipantId: input.counterpartyParticipantId ?? null,
+                counterpartyName: input.counterpartyName.trim(),
+                counterpartyPhone: contact.phone,
+                counterpartyEmail: contact.email,
+                familyContext: input.familyContext.trim(),
+                origin: input.origin ?? "SELF_DISCLOSED",
+                disclosedById: input.disclosedById || SYSTEM_ACTOR,
+                reviews: {
+                    create: { householdId: input.householdId, kind: "INITIAL", status: "PENDING_BOARD_REVIEW" },
+                },
             },
-        },
-        include: { reviews: true },
+            include: { reviews: true },
+        });
+        await audit(tx, input.disclosedById, created.id, {}, { created: true, status: "PENDING_BOARD_REVIEW" }, "CREATE");
+        return created;
     });
 
-    await audit(input.disclosedById, ta.id, {}, { created: true, status: "PENDING_BOARD_REVIEW" }, "CREATE");
     await notifyBoard();
     return ta;
 }
@@ -109,41 +129,43 @@ export async function createTrustedAdult(input: CreateInput) {
  * by a lead of the household.
  */
 export async function renewTrustedAdult(id: number, actorId: number) {
-    const ta = await prisma.trustedAdult.findUnique({
-        where: { id },
-        include: { reviews: { orderBy: { id: "desc" }, take: 1 } },
-    });
+    const ta = await prisma.trustedAdult.findUnique({ where: { id }, select: { id: true, householdId: true } });
     if (!ta) throw new TrustedAdultError("not_found", "Trusted adult not found.");
     await assertHouseholdLead(ta.householdId, actorId);
 
-    const latest = ta.reviews[0];
-    if (latest && (latest.status === "PENDING_BOARD_REVIEW" || latest.status === "PENDING_SUBJECT_ACTION")) {
-        throw new TrustedAdultError("already_open", "A review for this trusted adult is already in progress.");
-    }
-
-    const review = await prisma.trustedAdultReview.create({
-        data: { trustedAdultId: ta.id, householdId: ta.householdId, kind: "RENEWAL", status: "PENDING_BOARD_REVIEW" },
+    // Lock the parent, re-read the latest review under the lock, then create. Without
+    // the lock two concurrent renews both see a terminal latest and both open a review.
+    const review = await prisma.$transaction(async (tx) => {
+        await lockTrustedAdult(tx, ta.id);
+        const latest = await tx.trustedAdultReview.findFirst({ where: { trustedAdultId: ta.id }, orderBy: { id: "desc" } });
+        if (latest && (latest.status === "PENDING_BOARD_REVIEW" || latest.status === "PENDING_SUBJECT_ACTION")) {
+            throw new TrustedAdultError("already_open", "A review for this trusted adult is already in progress.");
+        }
+        const created = await tx.trustedAdultReview.create({
+            data: { trustedAdultId: ta.id, householdId: ta.householdId, kind: "RENEWAL", status: "PENDING_BOARD_REVIEW" },
+        });
+        await audit(tx, actorId, ta.id, {}, { renewal: created.id, status: "PENDING_BOARD_REVIEW" }, "CREATE");
+        return created;
     });
-    await audit(actorId, ta.id, {}, { renewal: review.id, status: "PENDING_BOARD_REVIEW" }, "CREATE");
     await notifyBoard();
     return review;
 }
 
 /** A household lead withdraws a Trusted Adult — sets the latest review REVOKED. */
 export async function withdrawTrustedAdult(id: number, actorId: number) {
-    const ta = await prisma.trustedAdult.findUnique({
-        where: { id },
-        include: { reviews: { orderBy: { id: "desc" }, take: 1 } },
-    });
+    const ta = await prisma.trustedAdult.findUnique({ where: { id }, select: { id: true, householdId: true } });
     if (!ta) throw new TrustedAdultError("not_found", "Trusted adult not found.");
     await assertHouseholdLead(ta.householdId, actorId);
 
-    const latest = ta.reviews[0];
-    if (!latest || latest.status === "REVOKED") throw new TrustedAdultError("wrong_phase", "Nothing to withdraw.");
-
-    const updated = await prisma.trustedAdultReview.update({ where: { id: latest.id }, data: { status: "REVOKED" } });
-    await audit(actorId, ta.id, { status: latest.status }, { status: "REVOKED" });
-    return updated;
+    // Lock the parent so withdraw serializes against renew and decide on the same TA.
+    return prisma.$transaction(async (tx) => {
+        await lockTrustedAdult(tx, ta.id);
+        const latest = await tx.trustedAdultReview.findFirst({ where: { trustedAdultId: ta.id }, orderBy: { id: "desc" } });
+        if (!latest || latest.status === "REVOKED") throw new TrustedAdultError("wrong_phase", "Nothing to withdraw.");
+        const updated = await tx.trustedAdultReview.update({ where: { id: latest.id }, data: { status: "REVOKED" } });
+        await audit(tx, actorId, ta.id, { status: latest.status }, { status: "REVOKED" });
+        return updated;
+    });
 }
 
 export interface DecideInput {
@@ -162,56 +184,120 @@ export interface DecideInput {
  *   REQUEST_INFO  -> PENDING_SUBJECT_ACTION (notify household)
  */
 export async function decideReview(reviewId: number, boardMemberId: number, input: DecideInput) {
-    const review = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
-    if (!review) throw new TrustedAdultError("not_found", "Review not found.");
-    if (review.status !== "PENDING_BOARD_REVIEW") {
-        throw new TrustedAdultError("wrong_phase", "This review is not awaiting board review.");
-    }
+    // Pure input validation — independent of locked state, so do it before the tx.
     if (input.decision === "APPROVE" && !input.sharedNote?.trim()) {
         throw new TrustedAdultError(
             "bad_input",
             "A shared note (what keyholders & program leads should know, e.g. who can pick up whom) is required to approve.",
         );
     }
-
-    const now = new Date();
-    const data: Record<string, unknown> = {
-        decidedById: boardMemberId,
-        decision: input.decision,
-        decisionNote: input.note?.trim() || null,
-    };
-    let status: string;
-    switch (input.decision) {
-        case "APPROVE":
-            status = "APPROVED";
-            data.effectiveFrom = now;
-            data.reviewBy = daysFromNow(now, APPROVAL_VALID_DAYS);
-            data.sharedNote = input.sharedNote!.trim();
-            break;
-        case "DENY":
-            status = "DENIED";
-            break;
-        case "REQUEST_INFO":
-            status = "PENDING_SUBJECT_ACTION";
-            break;
-        default:
-            throw new TrustedAdultError("bad_input", "Unknown decision.");
+    if (!["APPROVE", "DENY", "REQUEST_INFO"].includes(input.decision)) {
+        throw new TrustedAdultError("bad_input", "Unknown decision.");
     }
-    data.status = status;
 
-    const updated = await prisma.trustedAdultReview.update({ where: { id: reviewId }, data });
-    await audit(boardMemberId, review.trustedAdultId, { status: review.status }, { status, decision: input.decision });
+    const head = await prisma.trustedAdultReview.findUnique({
+        where: { id: reviewId },
+        select: {
+            trustedAdultId: true,
+            trustedAdult: { select: { householdId: true, counterpartyParticipantId: true } },
+        },
+    });
+    if (!head) throw new TrustedAdultError("not_found", "Review not found.");
+
+    // Conflict of interest: a board member may not decide a trusted-adult review for
+    // their own household, nor one where they are the counterparty. The UI disables the
+    // buttons off the same rule; this is the real enforcement — a direct POST bypasses the UI.
+    const me = await prisma.participant.findUnique({ where: { id: boardMemberId }, select: { householdId: true } });
+    if (
+        isTrustedAdultConflict({
+            actorParticipantId: boardMemberId,
+            actorHouseholdId: me?.householdId,
+            taHouseholdId: head.trustedAdult.householdId,
+            taCounterpartyParticipantId: head.trustedAdult.counterpartyParticipantId,
+        })
+    ) {
+        throw new TrustedAdultError("forbidden", "You can't decide your own household's trusted-adult review — another board member must.");
+    }
+
+    // Lock the parent TA, then re-read the review under the lock and check its phase.
+    // Without this two board members both read PENDING_BOARD_REVIEW, both update, and
+    // both write an audit row — the loser leaving an orphan audit that contradicts state.
+    const result = await prisma.$transaction(async (tx) => {
+        await lockTrustedAdult(tx, head.trustedAdultId);
+        const review = await tx.trustedAdultReview.findUnique({ where: { id: reviewId } });
+        if (!review) throw new TrustedAdultError("not_found", "Review not found.");
+        if (review.status !== "PENDING_BOARD_REVIEW") {
+            throw new TrustedAdultError("wrong_phase", "This review is not awaiting board review.");
+        }
+
+        const now = new Date();
+        const data: Record<string, unknown> = {
+            decidedById: boardMemberId,
+            decision: input.decision,
+            decisionNote: input.note?.trim() || null,
+        };
+        let status: string;
+        switch (input.decision) {
+            case "APPROVE":
+                status = "APPROVED";
+                data.effectiveFrom = now;
+                data.reviewBy = daysFromNow(now, APPROVAL_VALID_DAYS);
+                data.sharedNote = input.sharedNote!.trim();
+                break;
+            case "DENY":
+                status = "DENIED";
+                break;
+            default:
+                status = "PENDING_SUBJECT_ACTION";
+                break;
+        }
+        data.status = status;
+
+        const updated = await tx.trustedAdultReview.update({ where: { id: reviewId }, data });
+        await audit(tx, boardMemberId, review.trustedAdultId, { status: review.status }, { status, decision: input.decision });
+        return { updated, householdId: review.householdId };
+    });
 
     if (input.decision === "REQUEST_INFO") {
-        await notifyHouseholdFamily(review.householdId, "The board needs more information about a trusted adult", input.note?.trim());
+        await notifyHouseholdFamily(result.householdId, "The board needs more information about a trusted adult", input.note?.trim());
     }
-    return updated;
+    return result.updated;
 }
 
-/** Board / sysadmin override: force a review to a terminal state regardless of phase. */
-export async function overrideReview(reviewId: number, actorId: number, action: "approve" | "deny" | "revoke", sharedNote?: string | null) {
-    const review = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
+/**
+ * Board / sysadmin override: force a review to a terminal state regardless of phase.
+ *
+ * Same conflict-of-interest rule as decideReview — a board member may not override
+ * their OWN household's review (else they could force-approve their own trusted adult,
+ * the very thing decideReview forbids). A sysadmin is the deliberate remedy and bypasses
+ * the check (opts.isSysadmin); the route sets it only when the actor holds that role.
+ */
+export async function overrideReview(
+    reviewId: number,
+    actorId: number,
+    action: "approve" | "deny" | "revoke",
+    sharedNote?: string | null,
+    opts?: { isSysadmin?: boolean },
+) {
+    const review = await prisma.trustedAdultReview.findUnique({
+        where: { id: reviewId },
+        include: { trustedAdult: { select: { householdId: true, counterpartyParticipantId: true } } },
+    });
     if (!review) throw new TrustedAdultError("not_found", "Review not found.");
+
+    if (!opts?.isSysadmin) {
+        const me = await prisma.participant.findUnique({ where: { id: actorId }, select: { householdId: true } });
+        if (
+            isTrustedAdultConflict({
+                actorParticipantId: actorId,
+                actorHouseholdId: me?.householdId,
+                taHouseholdId: review.trustedAdult.householdId,
+                taCounterpartyParticipantId: review.trustedAdult.counterpartyParticipantId,
+            })
+        ) {
+            throw new TrustedAdultError("forbidden", "You can't override your own household's trusted-adult review — a sysadmin must.");
+        }
+    }
 
     const now = new Date();
     const data: Record<string, unknown> = { decidedById: actorId };
@@ -231,8 +317,11 @@ export async function overrideReview(reviewId: number, actorId: number, action: 
         data.status = "REVOKED";
     }
 
-    const updated = await prisma.trustedAdultReview.update({ where: { id: reviewId }, data });
-    await audit(actorId, review.trustedAdultId, { status: review.status }, { status: data.status, override: action });
+    const updated = await prisma.$transaction(async (tx) => {
+        const u = await tx.trustedAdultReview.update({ where: { id: reviewId }, data });
+        await audit(tx, actorId, review.trustedAdultId, { status: review.status }, { status: data.status, override: action });
+        return u;
+    });
     return updated;
 }
 
@@ -266,8 +355,10 @@ export async function runExpirySweep(now: Date) {
     });
     let expired = 0;
     for (const r of lapsed) {
-        await prisma.trustedAdultReview.update({ where: { id: r.id }, data: { status: "EXPIRED" } });
-        await audit(SYSTEM_ACTOR, r.trustedAdultId, { status: r.status }, { status: "EXPIRED" });
+        await prisma.$transaction(async (tx) => {
+            await tx.trustedAdultReview.update({ where: { id: r.id }, data: { status: "EXPIRED" } });
+            await audit(tx, SYSTEM_ACTOR, r.trustedAdultId, { status: r.status }, { status: "EXPIRED" });
+        });
         expired++;
     }
 
@@ -328,13 +419,14 @@ async function notifyHouseholdFamily(householdId: number, subject: string, body?
 }
 
 function audit(
+    db: TxClient | typeof prisma,
     actorId: number,
     taId: number,
     oldData: object,
     newData: object,
     action: "CREATE" | "EDIT" = "EDIT",
 ) {
-    return prisma.auditLog.create({
+    return db.auditLog.create({
         data: {
             actorId: actorId || SYSTEM_ACTOR,
             action,
