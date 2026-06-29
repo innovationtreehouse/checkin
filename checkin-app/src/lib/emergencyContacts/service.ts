@@ -163,19 +163,22 @@ export async function deleteContact(db: Db, householdId: number, contactId: numb
 export async function upsertPrimaryContact(
     db: Db,
     householdId: number,
-    fields: { name?: string | null; phone?: string | null },
+    fields: { name?: string | null; phone?: string | null; email?: string | null },
 ): Promise<EmergencyContact | null> {
     const name = (fields.name ?? "").trim();
     const phone = (fields.phone ?? "").trim();
-    if (!name && !phone) return null;
+    const email = (fields.email ?? "").trim() || null;
+    if (!name && !phone && !email) return null;
 
     const complete = !!name && !!phone;
-    if (complete) await assertExternal(db, householdId, { name, phone });
+    if (complete) await assertExternal(db, householdId, { name, phone, email });
 
     const data = {
         name,
         phone,
+        email,
         phoneDigits: normalizePhone(phone),
+        emailNorm: normalizeEmail(email),
         ...(complete && { conflictParticipantId: null, conflictedAt: null }),
     };
 

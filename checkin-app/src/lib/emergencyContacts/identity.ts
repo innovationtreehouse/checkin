@@ -19,6 +19,15 @@ export function normalizeEmail(email: string | null | undefined): string | null 
     return e || null;
 }
 
+// ponytail: shallow shape check, not deliverability. Good enough for a contact
+// field a human reads; swap for a real validator only if bounce rate matters.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** True if the (trimmed) string looks like a well-formed email address. */
+export function isValidEmail(email: string | null | undefined): boolean {
+    return EMAIL_RE.test((email ?? "").trim());
+}
+
 /** Lowercase, trim, collapse internal whitespace; empty -> "". */
 export function normalizeName(name: string | null | undefined): string {
     return (name ?? "").trim().toLowerCase().replace(/\s+/g, " ");

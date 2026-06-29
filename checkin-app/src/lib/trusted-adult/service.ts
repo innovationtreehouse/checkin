@@ -4,6 +4,7 @@ import { sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { logger } from "@/lib/logger";
 import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
+import { validateContact } from "@/lib/trusted-adult/contact";
 
 type TxClient = Prisma.TransactionClient;
 
@@ -69,7 +70,8 @@ export interface CreateInput {
     householdId: number;
     counterpartyParticipantId?: number | null;
     counterpartyName: string;
-    counterpartyContact: string;
+    counterpartyPhone?: string | null;
+    counterpartyEmail?: string | null;
     /** The family's board-facing explanation of what the adult may/may not do. */
     familyContext: string;
     origin?: "SELF_DISCLOSED" | "STAFF_ENTERED";
@@ -78,15 +80,16 @@ export interface CreateInput {
 
 /**
  * Create a Trusted Adult for a household plus its INITIAL review
- * (PENDING_BOARD_REVIEW). Name, contact, and the family's board-facing context
- * are all required.
+ * (PENDING_BOARD_REVIEW). Name, at least one contact (phone or email), and the
+ * family's board-facing context are all required.
  */
 export async function createTrustedAdult(input: CreateInput) {
     if (!input.counterpartyName?.trim()) {
         throw new TrustedAdultError("bad_input", "The trusted adult's name is required.");
     }
-    if (!input.counterpartyContact?.trim()) {
-        throw new TrustedAdultError("bad_input", "Contact info for the trusted adult is required.");
+    const contact = validateContact({ phone: input.counterpartyPhone, email: input.counterpartyEmail });
+    if ("error" in contact) {
+        throw new TrustedAdultError("bad_input", contact.error);
     }
     if (!input.familyContext?.trim()) {
         throw new TrustedAdultError("bad_input", "Tell the board what this adult may or may not do.");
@@ -101,7 +104,8 @@ export async function createTrustedAdult(input: CreateInput) {
                 householdId: input.householdId,
                 counterpartyParticipantId: input.counterpartyParticipantId ?? null,
                 counterpartyName: input.counterpartyName.trim(),
-                counterpartyContact: input.counterpartyContact.trim(),
+                counterpartyPhone: contact.phone,
+                counterpartyEmail: contact.email,
                 familyContext: input.familyContext.trim(),
                 origin: input.origin ?? "SELF_DISCLOSED",
                 disclosedById: input.disclosedById || SYSTEM_ACTOR,

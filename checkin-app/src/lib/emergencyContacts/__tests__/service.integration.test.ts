@@ -104,6 +104,13 @@ describe("upsertPrimaryContact — partial tolerance + member rejection", () => 
         await expect(upsertPrimaryContact(prisma, hh, { name: "Jane Doe", phone: "555-1000" })).rejects.toBeInstanceOf(EmergencyContactError);
     });
 
+    it("persists the optional email + its normalized key", async () => {
+        const hh = await makeHousehold("upsert-email");
+        const c = await upsertPrimaryContact(prisma, hh, { name: "Aunt May", phone: "555-4000", email: "  Aunt.May@Example.COM " });
+        expect(c?.email).toBe("Aunt.May@Example.COM");
+        expect(c?.emailNorm).toBe("aunt.may@example.com");
+    });
+
     it("updates the same primary row on repeat", async () => {
         const hh = await makeHousehold("upsert-update");
         await upsertPrimaryContact(prisma, hh, { name: "Aunt May", phone: "555-2000" });
