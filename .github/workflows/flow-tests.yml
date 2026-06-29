@@ -22,8 +22,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Brings up Postgres + the dev server, installs/seeds, and blocks on their
-      # healthchecks (--wait). start_period in the compose file covers npm ci + seed.
+      # Registries (Docker Hub AND ECR Public) rate-limit anonymous pulls from
+      # shared-runner IPs — a burst limit, so spacing retries lets it refill.
+      # Mirrors the retry idiom the deploy workflow uses for the migrate step.
+      - name: Pull images (retry past registry rate limits)
+        run: |
+          for i in 1 2 3 4 5 6; do
+            docker compose -f deploy/docker-compose.flow.yml pull && exit 0
+            echo "::warning::image pull attempt $i hit a registry rate limit; retrying in 30s"
+            sleep 30
+          done
+          echo "::error::image pull still rate-limited after 6 attempts"; exit 1
+
+      # Images are now local, so --wait only blocks on the healthchecks (start_period
+      # in the compose file covers npm ci + seed; no further pull happens here).
       - name: Start dockerized dev server + DB
         run: docker compose -f deploy/docker-compose.flow.yml up -d --wait --wait-timeout 600
 
