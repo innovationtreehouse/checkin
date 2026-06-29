@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Alert, Button, Card, Container, Group, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Card, Center, Container, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
+import { useRequireRole } from "@/hooks/useRequireRole";
+import { AttendanceTabs } from "../AttendanceTabs";
 
 export default function ManualAttendance() {
-  const router = useRouter();
+  const { ready, loading: authLoading } = useRequireRole([]);
   const [arrived, setArrived] = useState("");
   const [departed, setDeparted] = useState("");
   const [error, setError] = useState("");
@@ -40,15 +41,14 @@ export default function ManualAttendance() {
     }
   };
 
+  if (authLoading) return <Center mih="60vh"><Loader /></Center>;
+  if (!ready) return null;
+
   return (
     <Container size="sm" pb="md">
+      <AttendanceTabs />
       <Card withBorder radius="md" padding="lg">
-        <Group justify="space-between" align="center" wrap="wrap" mb="md">
-          <Title order={1}>Manual Time Entry</Title>
-          <Button variant="default" onClick={() => router.push("/attendance")}>
-            ← Back to Attendance
-          </Button>
-        </Group>
+        <Title order={1} mb="md">Manual Time Entry</Title>
 
         <Text c="dimmed" mb="lg">
           Forgot to scan your badge? You can self-correct your time record here. If you are

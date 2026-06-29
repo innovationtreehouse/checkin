@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * Integration Test for Audit Logs
  * Ensures that various actions across the system correctly generate an AuditLog.
@@ -233,13 +232,15 @@ describe('AuditLog Integration Tests', () => {
         const res = await markAttendance(req, { params: Promise.resolve({ id: testEventId.toString() }) });
         expect(res.status).toBe(200);
 
-        // Verify Audit Log
+        // Verify Audit Log: one row per validated Visit, keyed by the Visit PK
+        // with the event as secondary (see attendance route, commit #467).
         const log = await prisma.auditLog.findFirst({
             where: {
                 actorId: testAdminId,
                 action: 'EDIT',
                 tableName: 'Visit',
-                affectedEntityId: testEventId
+                affectedEntityId: testVisitId,
+                secondaryAffectedEntity: testEventId
             },
             orderBy: { time: 'desc' }
         });
@@ -248,7 +249,8 @@ describe('AuditLog Integration Tests', () => {
         // Prisma Json fields can be returned as string depending on setup, the API explicitly stringified it
         const newDataString = log?.newData as string;
         const newData = JSON.parse(newDataString);
-        expect(newData.validatedParticipants).toContain(testParticipantId);
+        expect(newData.participantId).toBe(testParticipantId);
+        expect(newData.associatedEventId).toBe(testEventId);
     });
 
     it('should generate an AuditLog when an Admin edits participant PII', async () => {

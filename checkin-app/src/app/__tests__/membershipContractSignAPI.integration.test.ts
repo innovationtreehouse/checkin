@@ -30,6 +30,9 @@ jest.mock('@/lib/membership/contract/zohoClient', () => ({
 
 // Imported AFTER the mocks so the route picks up the mocked client.
 import { POST as SIGN } from '@/app/api/membership/contract/sign/route';
+// loadAgreementPdf is the jest.fn from the mock above; AgreementUnavailableError is
+// the real class (requireActual spread) so `instanceof` in external.ts matches.
+import { loadAgreementPdf, AgreementUnavailableError } from '@/lib/membership/contract/agreementDocument';
 
 const TAG = 'contract-sign-test';
 
@@ -170,6 +173,40 @@ describe('POST /api/membership/contract/sign', () => {
         const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
         expect(p?.zohoEnvelopeId).toBe('REQ-1'); // overwritten with the embeddable request
         expect(p?.zohoActionId).toBe('ACT-1');
+    });
+
+    it('lets a sysadmin who is NOT a household lead sign (sysadmin bypass)', async () => {
+        // Household whose lead is someone else; the signer is a sysadmin member, not a lead.
+        const hh = await prisma.household.create({ data: { name: `HH sysadmin ${TAG}` } });
+        const otherLead = await prisma.participant.create({ data: { email: `otherlead-${TAG}@example.com`, name: 'Other Lead', householdId: hh.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: otherLead.id } });
+        const sysadmin = await prisma.participant.create({ data: { email: `sysadmin-${TAG}@example.com`, name: 'Sys Admin', householdId: hh.id, sysadmin: true } });
+        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
+        await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
+
+        asUser(sysadmin.id); // session sysadmin flag is irrelevant; the service reads the DB row
+        const res = await SIGN(signReq());
+        expect(res.status).toBe(200);
+        expect(zoho.createRequest).toHaveBeenCalledTimes(1); // passed the not_lead gate
+    });
+
+    it('503s (agreement_unavailable) when the agreement PDF cannot be loaded', async () => {
+        // Fresh process with no stored Zoho ids → the route takes the create path,
+        // which loads the agreement PDF; make that throw AgreementUnavailableError.
+        const hh = await prisma.household.create({ data: { name: `HH noagreement ${TAG}` } });
+        const lead = await prisma.participant.create({ data: { email: `noagr-lead-${TAG}@example.com`, name: 'NoAgr Lead', householdId: hh.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
+        await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
+
+        (loadAgreementPdf as jest.Mock).mockRejectedValueOnce(new AgreementUnavailableError('not ready'));
+
+        asUser(lead.id);
+        const res = await SIGN(signReq());
+        expect(res.status).toBe(503);
+        expect((await res.json()).code).toBe('agreement_unavailable');
+        // Failed before reaching Zoho's create.
+        expect(zoho.createRequest).not.toHaveBeenCalled();
     });
 
     it('409s when the application is not in the EXTERNAL phase', async () => {
