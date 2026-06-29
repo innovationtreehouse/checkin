@@ -112,18 +112,34 @@ export async function beginRenewal(processId: number) {
 
 /**
  * Create one PENDING_RENEWAL process (+ audit, optional reminder), or no-op if one
- * is already in flight. The check-then-act in the callers is NOT atomic, so the
- * partial unique index `membership_one_inflight_renewal` is the real guard: a
- * concurrent sweep/admin-button/double-click that wins the insert leaves the loser
- * here catching P2002 and returning null — no duplicate audit row, no duplicate
- * household reminder. Returns null when the create lost the race. The index, not
- * this catch, is the guarantee; we stay lazy and skip the pre-insert advisory lock.
+ * is already in flight. The callers' check-then-act is NOT atomic, so this function
+ * serializes its own check+insert by locking the parent Membership row (SELECT ...
+ * FOR UPDATE): a concurrent sweep/admin-button/double-click blocks until the winner
+ * commits, then sees the winner's in-flight process and returns null — no duplicate
+ * audit row, no duplicate household reminder. This holds in every environment, not
+ * just one provisioned via `migrate deploy` (the partial unique index
+ * `membership_one_inflight_renewal` is migration-only — `prisma db push` and the
+ * integration test DBs don't have it). The index stays as defense-in-depth and the
+ * P2002 catch as a backstop. Returns null when this call lost the race.
  */
 export async function createRenewalProcess(membershipId: number, householdId: number, now: Date, opts: { remind: boolean; boundary: Date }) {
     let process;
     try {
-        process = await prisma.membershipProcess.create({
-            data: { membershipId, kind: "RENEWAL", status: "PENDING_RENEWAL", renewalReminderSentAt: opts.remind ? now : null },
+        process = await prisma.$transaction(async (tx) => {
+            // Lock the membership row so overlapping opens serialize here, not at the INSERT.
+            await tx.$queryRaw`SELECT id FROM "Membership" WHERE id = ${membershipId} FOR UPDATE`;
+            const existing = await tx.membershipProcess.findFirst({
+                where: { membershipId, kind: "RENEWAL", status: { in: ["PENDING_RENEWAL", "RENEWAL_PENDING_BG", "PENDING_PAYMENT"] } },
+                select: { id: true },
+            });
+            if (existing) return null; // someone else already opened the renewal
+            const created = await tx.membershipProcess.create({
+                data: { membershipId, kind: "RENEWAL", status: "PENDING_RENEWAL", renewalReminderSentAt: opts.remind ? now : null },
+            });
+            await tx.auditLog.create({
+                data: { actorId: SYSTEM_ACTOR, action: "CREATE", tableName: "MembershipProcess", affectedEntityId: created.id, newData: JSON.stringify({ kind: "RENEWAL", status: "PENDING_RENEWAL" }) },
+            });
+            return created;
         });
     } catch (e) {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
@@ -132,9 +148,10 @@ export async function createRenewalProcess(membershipId: number, householdId: nu
         }
         throw e;
     }
-    await prisma.auditLog.create({
-        data: { actorId: SYSTEM_ACTOR, action: "CREATE", tableName: "MembershipProcess", affectedEntityId: process.id, newData: JSON.stringify({ kind: "RENEWAL", status: "PENDING_RENEWAL" }) },
-    });
+    if (!process) {
+        logger.info("Renewal already in flight for membership %d — concurrent open, skipping", membershipId);
+        return null;
+    }
     if (opts.remind) await remindHousehold(householdId, opts.boundary);
     return process;
 }
