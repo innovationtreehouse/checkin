@@ -234,6 +234,38 @@ describe('Membership BG review API', () => {
         expect(res.status).toBe(403);
     });
 
+    it('attest on an already-decided (BLOCKED) process is rejected (409 wrong_phase), no new attestation or audit', async () => {
+        const proc = await makeApplicantProcess('AlreadyDecided');
+        as(rev1, { backgroundCheckReviewer: true });
+        await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never); // → BLOCKED (1 attestation, 1 audit)
+        const attBefore = await prisma.backgroundCheckAttestation.count({ where: { processId: proc.processId } });
+        const auditBefore = await prisma.auditLog.count({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId } });
+
+        // A fresh eligible reviewer (different household) tries to attest the now-decided app.
+        as(rev2, { backgroundCheckReviewer: true });
+        const res = await ATTEST(req({ processId: proc.processId, result: 'APPROVE' }) as never);
+        expect(res.status).toBe(409);
+        expect((await res.json()).code).toBe('wrong_phase');
+
+        // The phase guard precedes the attestation create, so nothing was written.
+        expect(await prisma.backgroundCheckAttestation.count({ where: { processId: proc.processId } })).toBe(attBefore);
+        expect(await prisma.auditLog.count({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId } })).toBe(auditBefore);
+    });
+
+    it('attest on a non-existent process returns 404 not_found', async () => {
+        as(rev1, { backgroundCheckReviewer: true });
+        const res = await ATTEST(req({ processId: 999999999, result: 'APPROVE' }) as never);
+        expect(res.status).toBe(404);
+        expect((await res.json()).code).toBe('not_found');
+    });
+
+    it('override on a non-existent process returns 404 not_found', async () => {
+        as(board, { boardMember: true });
+        const res = await OVERRIDE(req({ processId: 999999999, action: 'reset' }) as never);
+        expect(res.status).toBe(404);
+        expect((await res.json()).code).toBe('not_found');
+    });
+
     it('queue lists eligible apps for a reviewer and excludes their own-household applicants', async () => {
         as(rev2, { backgroundCheckReviewer: true });
         const res = await REVIEW_QUEUE(req({}) as never);
