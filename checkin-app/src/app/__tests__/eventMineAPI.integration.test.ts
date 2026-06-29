@@ -189,9 +189,9 @@ describe('My Events API Integration Tests', () => {
              
              const event = data[0];
              expect(event.name).toBe('Mine Test Event Upcoming 1');
-             expect(event.rsvps.length).toBe(1);
-             expect(event.rsvps[0].status).toBe('ATTENDING');
-             expect(event.rsvps[0].participantId).toBe(testUserId);
+             // One row per (event, household member); rsvp is that member's status.
+             expect(event.participant.id).toBe(testUserId);
+             expect(event.rsvp).toBe('ATTENDING');
         });
 
         it('should return upcoming events for volunteer programs', async () => {
