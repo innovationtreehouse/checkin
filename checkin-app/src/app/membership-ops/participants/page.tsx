@@ -58,8 +58,9 @@ export default function AdminParticipantsIndex() {
   });
 
   useEffect(() => {
-    fetchParticipants();
-  }, []);
+    const id = setTimeout(() => fetchParticipants(searchQuery), 250);
+    return () => clearTimeout(id);
+  }, [searchQuery]);
 
   const fetchParticipants = async (query = "") => {
     setLoading(true);
@@ -169,11 +170,6 @@ export default function AdminParticipantsIndex() {
     }
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    fetchParticipants(searchQuery);
-  };
-
   const canSubmitAssign = !selectedParticipant?.household || (selectedParticipant.household.participants.length > 1);
   const canChangeHousehold = selectedParticipant?.household && selectedParticipant.household.participants.length === 1 && householdId;
 
@@ -190,17 +186,11 @@ export default function AdminParticipantsIndex() {
       </Group>
 
       <Card withBorder radius="md" padding="lg">
-        <form onSubmit={handleSearch}>
-          <Group>
-            <TextInput
-              style={{ flex: 1 }}
-              placeholder="Search by name or email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.currentTarget.value)}
-            />
-            <Button type="submit" disabled={loading} loading={loading}>Search</Button>
-          </Group>
-        </form>
+        <TextInput
+          placeholder="Search by name or email..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.currentTarget.value)}
+        />
 
         <Box mt="lg">
           {results.length > 0 ? (
