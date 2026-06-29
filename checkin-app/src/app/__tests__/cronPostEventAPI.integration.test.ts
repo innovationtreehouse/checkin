@@ -43,8 +43,8 @@ describe("GET /api/cron/post-event", () => {
         const event = await prisma.event.create({
             data: {
                 name: "Past Event",
-                start: pastStart,
-                end: pastEnd,
+                startAt: pastStart,
+                endAt: pastEnd,
                 programId: program.id,
                 postEventEmailSent: false
             }
@@ -60,7 +60,7 @@ describe("GET /api/cron/post-event", () => {
         });
 
         await prisma.visit.create({
-            data: { associatedEventId: event.id, participantId: user.id, arrived: pastStart }
+            data: { associatedEventId: event.id, participantId: user.id, arrivedAt: pastStart }
         });
 
         process.env.CRON_SECRET = 'test-secret';
@@ -98,8 +98,8 @@ describe("GET /api/cron/post-event", () => {
         await prisma.event.create({
             data: {
                 name: "Future Event",
-                start: futureStart,
-                end: futureEnd,
+                startAt: futureStart,
+                endAt: futureEnd,
                 programId: program.id,
                 postEventEmailSent: false
             }
@@ -128,8 +128,8 @@ describe("GET /api/cron/post-event", () => {
         await prisma.event.create({
             data: {
                 name: "Past Event Sent",
-                start: pastStart,
-                end: pastEnd,
+                startAt: pastStart,
+                endAt: pastEnd,
                 programId: program.id,
                 postEventEmailSent: true
             }

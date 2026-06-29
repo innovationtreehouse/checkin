@@ -84,7 +84,7 @@ export const PATCH = withAuth(
                     data: {
                         name: memberName,
                         ...(memberEmail && { email: memberEmail.toLowerCase() }),
-                        dob: memberDob ? new Date(memberDob) : null,
+                        dateOfBirth: memberDob ? new Date(memberDob) : null,
                         householdId: user.householdId,
                     }
                 });

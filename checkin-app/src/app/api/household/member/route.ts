@@ -45,7 +45,7 @@ export const PATCH = withAuth(
                 data: {
                     name: name !== undefined ? name : undefined,
                     email: email !== undefined ? (email === "" ? null : email.toLowerCase()) : undefined,
-                    dob: dob !== undefined ? (dob === "" ? null : new Date(dob + "T12:00:00Z")) : undefined,
+                    dateOfBirth: dob !== undefined ? (dob === "" ? null : new Date(dob + "T12:00:00Z")) : undefined,
                     phone: phone !== undefined ? (phone === "" ? null : phone) : undefined,
                 }
             });

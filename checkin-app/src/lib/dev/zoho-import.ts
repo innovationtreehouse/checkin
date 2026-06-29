@@ -432,7 +432,7 @@ export async function applyImport(
             const data = {
                 name: m.name,
                 ...(m.email ? { email: m.email } : {}),
-                dob: m.dob,
+                dateOfBirth: m.dob,
                 lastBackgroundCheck: m.lastBackgroundCheck,
                 householdId,
             };

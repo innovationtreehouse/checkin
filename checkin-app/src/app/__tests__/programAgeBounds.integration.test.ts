@@ -63,17 +63,17 @@ describe('Program Age Bounds Integration Tests', () => {
         testAdminId = admin.id;
 
         const pValid = await prisma.participant.create({
-            data: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dob: dob16, household: { create: {} } }
+            data: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dateOfBirth: dob16, household: { create: {} } }
         });
         validUserId = pValid.id;
 
         const pUnder = await prisma.participant.create({
-            data: { email: 'underage-test@example.com', name: 'Underage Test', dob: dob12, household: { create: {} } }
+            data: { email: 'underage-test@example.com', name: 'Underage Test', dateOfBirth: dob12, household: { create: {} } }
         });
         underageUserId = pUnder.id;
 
         const pOver = await prisma.participant.create({
-            data: { email: 'overage-test@example.com', name: 'Overage Test', dob: dob20, household: { create: {} } }
+            data: { email: 'overage-test@example.com', name: 'Overage Test', dateOfBirth: dob20, household: { create: {} } }
         });
         overageUserId = pOver.id;
 
@@ -83,22 +83,22 @@ describe('Program Age Bounds Integration Tests', () => {
         noDobUserId = pNoDob.id;
 
         const pExactlyMin = await prisma.participant.create({
-            data: { email: 'exactly-min-age-test@example.com', name: 'Exactly Min Age Test', dob: dobExactly14, household: { create: {} } }
+            data: { email: 'exactly-min-age-test@example.com', name: 'Exactly Min Age Test', dateOfBirth: dobExactly14, household: { create: {} } }
         });
         exactlyMinUserId = pExactlyMin.id;
 
         const pExactlyMax = await prisma.participant.create({
-            data: { email: 'exactly-max-age-test@example.com', name: 'Exactly Max Age Test', dob: dobExactly18, household: { create: {} } }
+            data: { email: 'exactly-max-age-test@example.com', name: 'Exactly Max Age Test', dateOfBirth: dobExactly18, household: { create: {} } }
         });
         exactlyMaxUserId = pExactlyMax.id;
 
         const pTurns14Tomorrow = await prisma.participant.create({
-            data: { email: 'turns-14-tomorrow-age-test@example.com', name: 'Turns 14 Tomorrow Test', dob: dobTurns14Tomorrow, household: { create: {} } }
+            data: { email: 'turns-14-tomorrow-age-test@example.com', name: 'Turns 14 Tomorrow Test', dateOfBirth: dobTurns14Tomorrow, household: { create: {} } }
         });
         turns14TomorrowUserId = pTurns14Tomorrow.id;
 
         const pTurned19Yesterday = await prisma.participant.create({
-            data: { email: 'turned-19-yesterday-age-test@example.com', name: 'Turned 19 Yesterday Test', dob: dobTurned19Yesterday, household: { create: {} } }
+            data: { email: 'turned-19-yesterday-age-test@example.com', name: 'Turned 19 Yesterday Test', dateOfBirth: dobTurned19Yesterday, household: { create: {} } }
         });
         turned19YesterdayUserId = pTurned19Yesterday.id;
 
@@ -107,7 +107,7 @@ describe('Program Age Bounds Integration Tests', () => {
                 name: 'Age Bounds Integration Test Program',
                 minAge: 14,
                 maxAge: 18,
-                begin: new Date(),
+                startAt: new Date(),
                 phase: 'UPCOMING',
                 enrollmentStatus: 'OPEN'
             }

@@ -3,7 +3,7 @@
 import { use, useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Anchor, Button, Card, Center, Container, Divider, Group, Loader, Radio, Stack, Text, Title } from '@mantine/core';
+import { Alert, Anchor, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { formatDate, calculateAge } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
@@ -11,8 +11,8 @@ import { formatCents } from '@inventory/money';
 type ProgramDetail = {
   id: number;
   name: string;
-  begin: string | null;
-  end: string | null;
+  startAt: string | null;
+  endAt: string | null;
   leadMentorId: number | null;
   leadMentor?: { name: string | null; email: string } | null;
   participants: { participantId: number, status?: string }[];
@@ -40,8 +40,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const [requiresOverride, setRequiresOverride] = useState(false);
 
   const [showEnrollmentSelection, setShowEnrollmentSelection] = useState(false);
-  const [householdMembers, setHouseholdMembers] = useState<{ id: number; name: string | null; dob: string | null }[]>([]);
-  const [selectedParticipantId, setSelectedParticipantId] = useState<number | null>(null);
+  const [householdMembers, setHouseholdMembers] = useState<{ id: number; name: string | null; dateOfBirth: string | null }[]>([]);
+  const [selectedParticipantIds, setSelectedParticipantIds] = useState<number[]>([]);
   const [loadingHousehold, setLoadingHousehold] = useState(false);
 
   const fetchProgram = useCallback(async () => {
@@ -82,58 +82,66 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         if (data.household && data.household.participants) {
           setHouseholdMembers(data.household.participants);
           const me = data.household.participants.find((p: { id: number }) => p.id === currentUserId);
-          if (me) setSelectedParticipantId(me.id);
-          else setSelectedParticipantId(data.household.participants[0]?.id || currentUserId);
+          setSelectedParticipantIds([me ? me.id : (data.household.participants[0]?.id || currentUserId)]);
         } else {
-          setHouseholdMembers([{ id: currentUserId, name: "Myself", dob: null }]);
-          setSelectedParticipantId(currentUserId);
+          setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
+          setSelectedParticipantIds([currentUserId]);
         }
       } else {
-        setHouseholdMembers([{ id: currentUserId, name: "Myself", dob: null }]);
-        setSelectedParticipantId(currentUserId);
+        setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
+        setSelectedParticipantIds([currentUserId]);
       }
     } catch {
       const currentUserId = (session.user as SessionUser).id;
-      setHouseholdMembers([{ id: currentUserId, name: "Myself", dob: null }]);
-      setSelectedParticipantId(currentUserId);
+      setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
+      setSelectedParticipantIds([currentUserId]);
     } finally {
       setLoadingHousehold(false);
     }
   };
 
   const handleRequestPaymentPlan = async () => {
-    if (!session || !selectedParticipantId) return router.push('/');
+    if (!session || selectedParticipantIds.length === 0) return router.push('/');
 
     setEnrolling(true);
     setMessage("");
 
-    try {
-      let res = await fetch(`/api/programs/${id}/participants`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ participantId: selectedParticipantId })
-      });
+    const errors: string[] = [];
+    let anyRequested = false;
 
-      if (!res.ok) {
-        const data = await res.json();
-        setMessage(data.error || "Failed to start enrollment.");
-        setEnrolling(false);
-        return;
+    try {
+      for (const participantId of selectedParticipantIds) {
+        let res = await fetch(`/api/programs/${id}/participants`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ participantId })
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          errors.push(data.error || "Failed to start enrollment.");
+          continue;
+        }
+
+        res = await fetch(`/api/programs/${id}/request-payment-plan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ participantId })
+        });
+
+        if (res.ok) {
+          anyRequested = true;
+        } else {
+          errors.push("Enrolled as pending, but failed to alert the finance committee for one member. Please email them directly.");
+        }
       }
 
-      res = await fetch(`/api/programs/${id}/request-payment-plan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ participantId: selectedParticipantId })
-      });
-
-      if (res.ok) {
+      if (anyRequested) {
         setSuccessMessage("Requested! Please check your email for communication from the finance committee of the board.");
         fetchProgram();
         notifyNavRefresh();
-      } else {
-        setMessage("Enrolled as pending, but failed to alert the finance committee. Please email them directly.");
       }
+      if (errors.length > 0) setMessage(errors.join(" "));
     } catch {
       setMessage("Network error requesting payment plan.");
     } finally {
@@ -142,7 +150,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   };
 
   const handleEnroll = async (override = false) => {
-    if (!session || !selectedParticipantId) {
+    if (!session || selectedParticipantIds.length === 0) {
       router.push('/');
       return;
     }
@@ -152,14 +160,30 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     setEnrolling(true);
     setMessage("");
 
-    try {
-      const res = await fetch(`/api/programs/${id}/participants`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ participantId: selectedParticipantId, override })
-      });
+    const errors: string[] = [];
+    const enrolledIds: number[] = [];
+    let needsOverride = false;
 
-      if (res.ok) {
+    try {
+      for (const participantId of selectedParticipantIds) {
+        const res = await fetch(`/api/programs/${id}/participants`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ participantId, override })
+        });
+
+        // 409 = already enrolled = desired end state (covers override retries of
+        // members that succeeded on the first pass), so treat it as enrolled.
+        if (res.ok || res.status === 409) {
+          enrolledIds.push(participantId);
+          continue;
+        }
+        const data = await res.json();
+        if (data.requiresOverride) needsOverride = true;
+        errors.push(data.error || "Failed to enroll in program.");
+      }
+
+      if (enrolledIds.length > 0) {
         notifyNavRefresh();
         if (isPayingOnShopify && program) {
           setSuccessMessage("Redirecting to Shopify for secure payment...");
@@ -175,26 +199,31 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
           if (variantId) {
             const storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
-            const checkoutUrl = `https://${storeDomain}/cart/${variantId}:1?attributes[CheckMeIn_Account_ID]=${selectedParticipantId}&attributes[Program_ID]=${id}`;
+            // ponytail: Shopify cart attributes are cart-level, not per-line-item, so
+            // N participants can't each carry their own account id on separate lines.
+            // But membership is household-level → every selected member shares ONE
+            // variant tier, so we charge qty=N of that single variant and pass all
+            // account ids comma-joined. The orders/paid webhook splits
+            // CheckMeIn_Account_ID on ',' and activates each (webhooks/shopify/route.ts,
+            // covered by webhookShopify.integration.test.ts). Constraint: this only
+            // holds while one household = one membership tier = one variant.
+            const accountIds = enrolledIds.join(',');
+            const checkoutUrl = `https://${storeDomain}/cart/${variantId}:${enrolledIds.length}?attributes[CheckMeIn_Account_ID]=${accountIds}&attributes[Program_ID]=${id}`;
             window.location.href = checkoutUrl;
+            return;
           } else {
             setSuccessMessage("Enrolled! (Note: No pricing variant configured for this tier)");
             fetchProgram();
           }
         } else {
-          setSuccessMessage("Successfully enrolled!");
+          setSuccessMessage(enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!");
           setRequiresOverride(false);
           fetchProgram();
         }
-      } else {
-        const data = await res.json();
-        if (data.requiresOverride) {
-          setRequiresOverride(true);
-          setMessage(data.error);
-        } else {
-          setMessage(data.error || "Failed to enroll in program.");
-        }
       }
+
+      if (needsOverride) setRequiresOverride(true);
+      if (errors.length > 0) setMessage(errors.join(" "));
     } catch {
       setMessage("Network error during enrollment.");
     } finally {
@@ -221,7 +250,6 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const canManage = !!(session && (user?.sysadmin || user?.boardMember || user?.id === program.leadMentorId));
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.memberPriceCents || program.nonMemberPriceCents);
-  const alreadySelected = selectedParticipantId !== null && program.participants.some(p => p.participantId === selectedParticipantId);
 
   return (
     <Container size="md" pb="md">
@@ -244,8 +272,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             {program.leadMentor && (
               <Text><strong>Lead Mentor:</strong> {program.leadMentor.name || 'Unnamed'}</Text>
             )}
-            <Text><strong>Starts:</strong> {program.begin ? formatDate(program.begin) : 'TBD'}</Text>
-            <Text><strong>Ends:</strong> {program.end ? formatDate(program.end) : 'Ongoing'}</Text>
+            <Text><strong>Starts:</strong> {program.startAt ? formatDate(program.startAt) : 'TBD'}</Text>
+            <Text><strong>Ends:</strong> {program.endAt ? formatDate(program.endAt) : 'Ongoing'}</Text>
             <Text>
               <strong>Enrollment:</strong>{' '}
               {program.enrollmentStatus === 'OPEN' ? <Text component="span" c="green">Open</Text> :
@@ -290,9 +318,9 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
               {loadingHousehold ? (
                 <Center py="md"><Loader size="sm" /></Center>
               ) : (
-                <Radio.Group
-                  value={selectedParticipantId !== null ? String(selectedParticipantId) : null}
-                  onChange={(v) => setSelectedParticipantId(Number(v))}
+                <Checkbox.Group
+                  value={selectedParticipantIds.map(String)}
+                  onChange={(vals) => setSelectedParticipantIds(vals.map(Number))}
                   mb="lg"
                 >
                   <Stack>
@@ -301,10 +329,10 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
                       let ageError: string | null = null;
                       if (program.minAge !== null || program.maxAge !== null) {
-                        if (!member.dob) {
+                        if (!member.dateOfBirth) {
                           ageError = "DOB missing";
                         } else {
-                          const age = calculateAge(member.dob, program.begin ?? undefined);
+                          const age = calculateAge(member.dateOfBirth, program.startAt ?? undefined);
                           if (program.minAge !== null && age < program.minAge) ageError = "Too young";
                           if (program.maxAge !== null && age > program.maxAge) ageError = "Too old";
                         }
@@ -315,7 +343,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                       return (
                         <Card key={member.id} withBorder radius="md" padding="sm" opacity={disabled ? 0.5 : 1}>
                           <Group justify="space-between">
-                            <Radio
+                            <Checkbox
                               value={String(member.id)}
                               disabled={disabled}
                               label={member.name || 'Unnamed Participant'}
@@ -327,7 +355,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                       );
                     })}
                   </Stack>
-                </Radio.Group>
+                </Checkbox.Group>
               )}
 
               <Stack align="center">
@@ -335,7 +363,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   fullWidth
                   size="md"
                   onClick={() => handleEnroll(false)}
-                  disabled={enrolling || !selectedParticipantId || alreadySelected || loadingHousehold}
+                  disabled={enrolling || selectedParticipantIds.length === 0 || loadingHousehold}
                   loading={enrolling}
                 >
                   {hasPrice ? "Pay on Shopify" : "Complete Enrollment"}

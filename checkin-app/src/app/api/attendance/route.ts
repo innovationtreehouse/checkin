@@ -169,31 +169,51 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "Forbidden: You are not authorized to check in this user." }, { status: 403 });
             }
 
-            // Verify they aren't already checked in
-            const activeVisit = await prisma.visit.findFirst({
-                where: {
-                    participantId: participant.id,
-                    departed: null
-                }
-            });
-
-            if (activeVisit) {
-                return NextResponse.json({ error: "User is already checked in" }, { status: 400 });
-            }
-
             const arrivalTime = new Date();
             const eventId = await findAssociatedEventAt(participant.id, arrivalTime);
 
-            const newVisit = await prisma.visit.create({
-                data: {
-                    participantId: participant.id,
-                    arrived: arrivalTime,
-                    arrivedVia: "WEB",
-                    associatedEventId: eventId
+            // Read-then-create on this participant's open-visit state. Without
+            // serialization, two concurrent MANUAL_CHECKINs — or one racing a kiosk
+            // /api/scan or /api/attendance/manual — both pass the "already checked in?"
+            // guard and create two open visits (a later checkout closes only one; the
+            // other lingers open forever, inflating the two-deep supervision count).
+            // Same per-participant advisory xact lock used by /api/scan and
+            // /api/attendance/manual; the lock key is the participant id, so all three
+            // paths serialize against each other. Re-check under the lock, then create.
+            const result = await prisma.$transaction(async (tx) => {
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(${participant.id})`;
+
+                const activeVisit = await tx.visit.findFirst({
+                    where: {
+                        participantId: participant.id,
+                        departedAt: null
+                    }
+                });
+
+                if (activeVisit) {
+                    return { alreadyCheckedIn: true as const };
                 }
+
+                const visit = await tx.visit.create({
+                    data: {
+                        participantId: participant.id,
+                        arrivedAt: arrivalTime,
+                        arrivedVia: "WEB",
+                        associatedEventId: eventId
+                    }
+                });
+
+                return { alreadyCheckedIn: false as const, visit };
+            }, {
+                maxWait: 5000,
+                timeout: 15000,
             });
 
-            return NextResponse.json({ success: true, visit: newVisit });
+            if (result.alreadyCheckedIn) {
+                return NextResponse.json({ error: "User is already checked in" }, { status: 400 });
+            }
+
+            return NextResponse.json({ success: true, visit: result.visit });
         }
 
         if (type === 'TWO_DEEP_VIOLATION') {

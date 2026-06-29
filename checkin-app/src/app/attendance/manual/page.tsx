@@ -8,8 +8,8 @@ import { AttendanceTabs } from "../AttendanceTabs";
 
 export default function ManualAttendance() {
   const { ready, loading: authLoading } = useRequireRole([]);
-  const [arrived, setArrived] = useState("");
-  const [departed, setDeparted] = useState("");
+  const [arrivedAt, setArrived] = useState("");
+  const [departedAt, setDeparted] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
@@ -24,7 +24,7 @@ export default function ManualAttendance() {
       const res = await fetch("/api/attendance/manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ arrived, departed }),
+        body: JSON.stringify({ arrivedAt, departedAt }),
       });
 
       const data = await res.json();
@@ -64,17 +64,17 @@ export default function ManualAttendance() {
             <TextInput
               type="datetime-local"
               label="Arrival Time (Required)"
-              value={arrived}
+              value={arrivedAt}
               onChange={(e) => setArrived(e.currentTarget.value)}
               required
             />
             <TextInput
               type="datetime-local"
               label="Departure Time (Optional)"
-              value={departed}
+              value={departedAt}
               onChange={(e) => setDeparted(e.currentTarget.value)}
             />
-            <Button type="submit" disabled={loading || !arrived} loading={loading} mt="sm">
+            <Button type="submit" disabled={loading || !arrivedAt} loading={loading} mt="sm">
               Record Time Entry
             </Button>
           </Stack>

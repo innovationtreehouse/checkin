@@ -73,8 +73,8 @@ describe('Cron Nightly API Integration Tests', () => {
         const event = await prisma.event.create({
             data: {
                 name: 'Test Event - Nightly',
-                start: justEndedStart,
-                end: justEndedEnd,
+                startAt: justEndedStart,
+                endAt: justEndedEnd,
                 programId,
                 postEventEmailSent: false
             }
@@ -87,11 +87,11 @@ describe('Cron Nightly API Integration Tests', () => {
 
         // Setup Abandoned Visits
         await prisma.visit.create({
-            data: { participantId: keyholderId, arrived: justEndedStart } // Never departed
+            data: { participantId: keyholderId, arrivedAt: justEndedStart } // Never departedAt
         });
 
         await prisma.visit.create({
-            data: { participantId: normalUserId, arrived: justEndedStart, associatedEventId: eventId } // Never departed
+            data: { participantId: normalUserId, arrivedAt: justEndedStart, associatedEventId: eventId } // Never departedAt
         });
     });
 
@@ -151,7 +151,7 @@ describe('Cron Nightly API Integration Tests', () => {
 
             // Db checks
             const abandonedVisits = await prisma.visit.findMany({
-                where: { departed: null, participant: { email: { contains: '-nightly@' } } }
+                where: { departedAt: null, participant: { email: { contains: '-nightly@' } } }
             });
             expect(abandonedVisits.length).toBe(0); // Everyone checked out
 
@@ -174,11 +174,11 @@ describe('Cron Nightly API Integration Tests', () => {
         };
 
         // Close any visit still open from a prior test so the route's global
-        // `departed: null` sweep counts only the visits this test creates.
+        // `departedAt: null` sweep counts only the visits this test creates.
         async function closeAllOpenVisits() {
             await prisma.visit.updateMany({
-                where: { departed: null },
-                data: { departed: new Date() }
+                where: { departedAt: null },
+                data: { departedAt: new Date() }
             });
         }
 
@@ -189,22 +189,22 @@ describe('Cron Nightly API Integration Tests', () => {
             await closeAllOpenVisits();
             await prisma.auditLog.deleteMany();
 
-            const arrived = new Date(Date.now() - 2 * 60 * 60 * 1000);
+            const arrivedAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
 
             // An extra plain participant (no program enrollment -> simple close path)
-            // so we have two GOOD visits whose `departed` we can assert by id.
+            // so we have two GOOD visits whose `departedAt` we can assert by id.
             const extra = await prisma.participant.create({
                 data: { email: 'extra-nightly@example.com', name: 'Extra User', household: { create: {} } }
             });
 
             const badVisit = await prisma.visit.create({
-                data: { participantId: keyholderId, arrived } // keyholder -> triggers board notify
+                data: { participantId: keyholderId, arrivedAt } // keyholder -> triggers board notify
             });
             const goodVisitA = await prisma.visit.create({
-                data: { participantId: normalUserId, arrived }
+                data: { participantId: normalUserId, arrivedAt }
             });
             const goodVisitB = await prisma.visit.create({
-                data: { participantId: extra.id, arrived }
+                data: { participantId: extra.id, arrivedAt }
             });
 
             mockBadVisitIds.clear();
@@ -226,13 +226,13 @@ describe('Cron Nightly API Integration Tests', () => {
                 expect(data.facilityClose.boardNotified).toBe(true);
                 expect(await systemNotifyCount()).toBe(1);
 
-                // Good visits really departed; the failed one stays open.
+                // Good visits really departedAt; the failed one stays open.
                 const a = await prisma.visit.findUnique({ where: { id: goodVisitA.id } });
                 const b = await prisma.visit.findUnique({ where: { id: goodVisitB.id } });
                 const bad = await prisma.visit.findUnique({ where: { id: badVisit.id } });
-                expect(a?.departed).not.toBeNull();
-                expect(b?.departed).not.toBeNull();
-                expect(bad?.departed).toBeNull();
+                expect(a?.departedAt).not.toBeNull();
+                expect(b?.departedAt).not.toBeNull();
+                expect(bad?.departedAt).toBeNull();
             } finally {
                 mockBadVisitIds.clear();
             }
@@ -246,9 +246,9 @@ describe('Cron Nightly API Integration Tests', () => {
             // Let the post-event email fire again on run 1 so we can prove run 2 does not re-send.
             await prisma.event.update({ where: { id: eventId }, data: { postEventEmailSent: false } });
 
-            const arrived = new Date(Date.now() - 2 * 60 * 60 * 1000);
-            await prisma.visit.create({ data: { participantId: keyholderId, arrived } });
-            await prisma.visit.create({ data: { participantId: normalUserId, arrived, associatedEventId: eventId } });
+            const arrivedAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+            await prisma.visit.create({ data: { participantId: keyholderId, arrivedAt } });
+            await prisma.visit.create({ data: { participantId: normalUserId, arrivedAt, associatedEventId: eventId } });
 
             // --- Run 1: real work happens ---
             const res1 = await GET(cronReq());

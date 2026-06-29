@@ -12,7 +12,7 @@
  * Harness mirrors eventRescheduleClearsReminder.integration.test.ts.
  *
  * BUG 2 (manual "Absent" deleting a live/open check-in) is now FIXED: an Absent
- * edit against an OPEN visit (departed = null) is rejected with 400 so the row
+ * edit against an OPEN visit (departedAt = null) is rejected with 400 so the row
  * proving the participant is physically on-site survives. Only CLOSED visits are
  * removed on an Absent correction. See the manualEditAttendance block below.
  */
@@ -95,8 +95,8 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
         return prisma.event.create({
             data: {
                 name: `${TAG} ${label}`,
-                start,
-                end: new Date(start.getTime() + HOUR),
+                startAt: start,
+                endAt: new Date(start.getTime() + HOUR),
                 description: 'x',
                 ...(recurringGroupId ? { recurringGroupId } : {}),
             },
@@ -110,7 +110,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             const event = await makeEvent('single-cancel', 2 * HOUR);
             await prisma.rSVP.create({ data: { eventId: event.id, participantId, status: 'ATTENDING' } });
             const visit = await prisma.visit.create({
-                data: { participantId, arrived: new Date(), associatedEventId: event.id },
+                data: { participantId, arrivedAt: new Date(), associatedEventId: event.id },
             });
 
             const res = await patch(event.id, { action: 'cancel' });
@@ -158,7 +158,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             const event = await makeEvent('manual-present', -1 * HOUR);
             const openArrival = new Date(Date.now() - 90 * MIN);
             const openVisit = await prisma.visit.create({
-                data: { participantId, arrived: openArrival, departed: null, associatedEventId: event.id },
+                data: { participantId, arrivedAt: openArrival, departedAt: null, associatedEventId: event.id },
             });
 
             const newArrival = new Date(Date.now() - 80 * MIN);
@@ -166,24 +166,24 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
                 action: 'manualEditAttendance',
                 participantId,
                 status: 'Present',
-                arrived: newArrival.toISOString(),
+                arrivedAt: newArrival.toISOString(),
             });
             expect(res.status).toBe(200);
 
             const visits = await prisma.visit.findMany({ where: { participantId, associatedEventId: event.id } });
             expect(visits.length).toBe(1);               // not a second visit
             expect(visits[0].id).toBe(openVisit.id);     // same row, updated in place
-            expect(visits[0].arrived.getTime()).toBe(newArrival.getTime());
+            expect(visits[0].arrivedAt.getTime()).toBe(newArrival.getTime());
         });
     });
 
     describe('manualEditAttendance — Absent vs open/closed visits', () => {
-        // An OPEN visit (departed = null) is proof the participant physically
+        // An OPEN visit (departedAt = null) is proof the participant physically
         // scanned in and is still on-site. Marking them Absent must NOT erase it.
         it('rejects Absent on a live (open) check-in and keeps the visit', async () => {
             const event = await makeEvent('manual-absent-open', -1 * HOUR);
             await prisma.visit.create({
-                data: { participantId, arrived: new Date(Date.now() - 30 * MIN), departed: null, associatedEventId: event.id },
+                data: { participantId, arrivedAt: new Date(Date.now() - 30 * MIN), departedAt: null, associatedEventId: event.id },
             });
 
             const res = await patch(event.id, { action: 'manualEditAttendance', participantId, status: 'Absent' });
@@ -193,13 +193,13 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             expect(visits.length).toBe(1); // open visit survives
         });
 
-        it('deletes a closed (departed) visit when marking Absent', async () => {
+        it('deletes a closed (departedAt) visit when marking Absent', async () => {
             const event = await makeEvent('manual-absent-closed', -2 * HOUR);
             await prisma.visit.create({
                 data: {
                     participantId,
-                    arrived: new Date(Date.now() - 90 * MIN),
-                    departed: new Date(Date.now() - 60 * MIN),
+                    arrivedAt: new Date(Date.now() - 90 * MIN),
+                    departedAt: new Date(Date.now() - 60 * MIN),
                     associatedEventId: event.id,
                 },
             });
@@ -216,13 +216,13 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             await prisma.visit.create({
                 data: {
                     participantId,
-                    arrived: new Date(Date.now() - 110 * MIN),
-                    departed: new Date(Date.now() - 80 * MIN),
+                    arrivedAt: new Date(Date.now() - 110 * MIN),
+                    departedAt: new Date(Date.now() - 80 * MIN),
                     associatedEventId: event.id,
                 },
             });
             await prisma.visit.create({
-                data: { participantId, arrived: new Date(Date.now() - 30 * MIN), departed: null, associatedEventId: event.id },
+                data: { participantId, arrivedAt: new Date(Date.now() - 30 * MIN), departedAt: null, associatedEventId: event.id },
             });
 
             const res = await patch(event.id, { action: 'manualEditAttendance', participantId, status: 'Absent' });
@@ -247,7 +247,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             });
 
             const newStart = new Date(Date.now() - 90 * MIN);
-            const res = await patch(event.id, { action: 'editTime', start: newStart.toISOString() });
+            const res = await patch(event.id, { action: 'editTime', startAt: newStart.toISOString() });
             expect(res.status).toBe(400);
 
             // Guard fires before the clear → reminderSentAt preserved.

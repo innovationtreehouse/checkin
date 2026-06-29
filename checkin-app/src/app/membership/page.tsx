@@ -12,6 +12,7 @@ import MembershipFlowStepper from "@/components/MembershipFlowStepper";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
+import { useUnsavedGuard, useConfirmNav } from "@/components/UnsavedChangesProvider";
 
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
@@ -51,6 +52,26 @@ interface ChildForm {
   dob: string;
   allergies: string;
 }
+
+interface FormValues {
+  address: StructuredAddress;
+  emName: string; emPhone: string; emEmail: string;
+  primaryName: string; primaryDob: string; primaryAllergies: string;
+  hasSecondary: boolean; secondaryId?: number;
+  secondaryName: string; secondaryEmail: string; secondaryDob: string; secondaryAllergies: string;
+  children: ChildForm[];
+}
+
+// Stable key for the unsaved-changes dirty compare. Array (not object) so order
+// is deterministic, and nested — children/address rule out the flat shallowEqual.
+export const serializeMembershipForm = (v: FormValues) =>
+  JSON.stringify([
+    v.address.line1, v.address.line2, v.address.city, v.address.state, v.address.postalCode,
+    v.emName, v.emPhone, v.emEmail,
+    v.primaryName, v.primaryDob, v.primaryAllergies,
+    v.hasSecondary, v.secondaryId, v.secondaryName, v.secondaryEmail, v.secondaryDob, v.secondaryAllergies,
+    v.children.map((c) => [c.id, c.name, c.email, c.dob, c.allergies]),
+  ]);
 
 function ExternalTask({ done, title, doneText, children }: { done: boolean; title: string; doneText: string; children: React.ReactNode }) {
   return (
@@ -99,12 +120,15 @@ export default function MembershipPage() {
   const [secondaryAllergies, setSecondaryAllergies] = useState("");
   const [children, setChildren] = useState<ChildForm[]>([]);
   const [payment, setPayment] = useState<{ amountCents: number; checkoutUrl: string | null } | null>(null);
+  // Serialized form as last loaded/saved; isDirty compares it to current state.
+  const [savedForm, setSavedForm] = useState<string | null>(null);
 
   const hydrate = useCallback((s: IntakeState) => {
     setState(s);
     const h = s.prefill.household;
     const a = pickAddress(h);
-    setAddress({ line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" });
+    const address = { line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" };
+    setAddress(address);
     setEmName(h?.emergencyContactName ?? "");
     setEmPhone(h?.emergencyContactPhone ?? "");
     setEmEmail(h?.emergencyContactEmail ?? "");
@@ -121,15 +145,32 @@ export default function MembershipPage() {
       setSecondaryDob(sec.dob ?? "");
       setSecondaryAllergies(sec.allergies ?? "");
     }
-    setChildren(
-      s.prefill.children.map((c) => ({
-        id: c.id,
-        name: c.name ?? "",
-        email: c.email ?? "",
-        dob: c.dob ?? "",
-        allergies: c.allergies ?? "",
-      }))
-    );
+    const nextChildren = s.prefill.children.map((c) => ({
+      id: c.id,
+      name: c.name ?? "",
+      email: c.email ?? "",
+      dob: c.dob ?? "",
+      allergies: c.allergies ?? "",
+    }));
+    setChildren(nextChildren);
+    // Snapshot the just-loaded values so isDirty starts false (state setters
+    // above haven't applied yet, so derive the snapshot straight from `s`).
+    setSavedForm(serializeMembershipForm({
+      address,
+      emName: h?.emergencyContactName ?? "",
+      emPhone: h?.emergencyContactPhone ?? "",
+      emEmail: h?.emergencyContactEmail ?? "",
+      primaryName: p?.name ?? "",
+      primaryDob: p?.dob ?? "",
+      primaryAllergies: p?.allergies ?? "",
+      hasSecondary: !!sec,
+      secondaryId: sec?.id,
+      secondaryName: sec?.name ?? "",
+      secondaryEmail: sec?.email ?? "",
+      secondaryDob: sec?.dob ?? "",
+      secondaryAllergies: sec?.allergies ?? "",
+      children: nextChildren,
+    }));
   }, []);
 
   const load = useCallback(async () => {
@@ -378,6 +419,18 @@ export default function MembershipPage() {
     setChildren((c) => c.map((child, idx) => (idx === i ? { ...child, [field]: value } : child)));
   const removeChild = (i: number) => setChildren((c) => c.filter((_, idx) => idx !== i));
 
+  const currentForm = serializeMembershipForm({
+    address, emName, emPhone, emEmail,
+    primaryName, primaryDob, primaryAllergies,
+    hasSecondary, secondaryId, secondaryName, secondaryEmail, secondaryDob, secondaryAllergies,
+    children,
+  });
+  // Dirty once the user edits past the loaded snapshot. Re-hydrate after a
+  // save/submit re-snapshots, so this flips back to false then.
+  const isDirty = savedForm !== null && currentForm !== savedForm;
+  useUnsavedGuard(isDirty);
+  const confirmNav = useConfirmNav();
+
   if (sessionStatus === "loading" || loading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
@@ -403,7 +456,7 @@ export default function MembershipPage() {
     <Container size="lg" pb="md">
       <Group justify="space-between" align="center" wrap="wrap" mb="lg">
         <Title order={1}>Treehouse Membership</Title>
-        <Button component={Link} href="/" variant="default">← Home</Button>
+        <Button component={Link} href="/" variant="default" onNavigate={(e) => { if (!confirmNav()) e.preventDefault(); }}>← Home</Button>
       </Group>
 
       {message && <Alert color={isError ? "red" : "green"} mb="lg">{message}</Alert>}

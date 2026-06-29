@@ -17,7 +17,7 @@ type Participant = {
   name?: string | null;
   keyholder: boolean;
   sysadmin: boolean;
-  dob?: string | null;
+  dateOfBirth?: string | null;
   householdId?: number | null;
   phone?: string | null;
   household?: { emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[] } | null;
@@ -25,7 +25,7 @@ type Participant = {
 
 type Visit = {
   id: number;
-  arrived: string;
+  arrivedAt: string;
   participant: Participant;
   event?: { program?: { id: number; name: string } };
 };
@@ -79,14 +79,14 @@ function KioskDisplayInner() {
 
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
   const keyholderList = fullAttendance.filter(v => v.participant.keyholder);
-  const volunteerList = fullAttendance.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
-  const studentList = fullAttendance.filter(v => isStudent(v.participant.dob));
+  const volunteerList = fullAttendance.filter(v => !v.participant.keyholder && !isStudent(v.participant.dateOfBirth));
+  const studentList = fullAttendance.filter(v => isStudent(v.participant.dateOfBirth));
 
   const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
   const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
   const householdKeyholders = limitedHousehold.filter(v => v.participant.keyholder);
-  const householdVolunteers = limitedHousehold.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
-  const householdStudents = limitedHousehold.filter(v => isStudent(v.participant.dob));
+  const householdVolunteers = limitedHousehold.filter(v => !v.participant.keyholder && !isStudent(v.participant.dateOfBirth));
+  const householdStudents = limitedHousehold.filter(v => isStudent(v.participant.dateOfBirth));
 
   const isCheckedIn = isFull
     ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)
@@ -273,7 +273,7 @@ function KioskDisplayInner() {
               {isKioskMode ? (kioskDisplayNames.get(visit.participant.id) || visit.participant.name || visit.participant.email.split("@")[0]) : (visit.participant.name || visit.participant.email.split("@")[0])}
             </Text>
             <Group gap={6} align="center">
-              <Text c="dimmed" size="xs">{formatTime(visit.arrived)}</Text>
+              <Text c="dimmed" size="xs">{formatTime(visit.arrivedAt)}</Text>
               {visit.event?.program?.name && (
                 <Badge size="xs" variant="light" style={{ background: `hsl(${hue}, 60%, 20%)`, color: `hsl(${hue}, 80%, 80%)` }} title={visit.event.program.name}>
                   {visit.event.program.name}
@@ -459,7 +459,7 @@ function KioskDisplayInner() {
                   <Group justify="space-between">
                     <div>
                       <Text fw={500}>{v.participant.name || v.participant.email.split('@')[0]}</Text>
-                      <Text size="xs" c="dimmed">Arrived: {formatTime(v.arrived)}</Text>
+                      <Text size="xs" c="dimmed">Arrived: {formatTime(v.arrivedAt)}</Text>
                     </div>
                     <Button color="red" variant="light" onClick={() => handleForceCheckout(v.id)} disabled={checkingOut === v.id}>
                       {checkingOut === v.id ? "Signing Out..." : "Sign Out"}

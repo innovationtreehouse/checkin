@@ -54,7 +54,7 @@ function scanRequest(participantId: number) {
 }
 
 async function openVisitCount(participantId: number) {
-    return prisma.visit.count({ where: { participantId, departed: null } });
+    return prisma.visit.count({ where: { participantId, departedAt: null } });
 }
 
 describe('POST /api/scan concurrency (advisory lock)', () => {
@@ -84,7 +84,7 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
         keeperId = keeper.id;
         // Keep the keyholder checked in so non-keyholder check-ins are allowed
         // and non-keyholder check-outs skip the last-keyholder force-close path.
-        await prisma.visit.create({ data: { participantId: keeperId, arrived: new Date() } });
+        await prisma.visit.create({ data: { participantId: keeperId, arrivedAt: new Date() } });
 
         const checkinSubject = await prisma.participant.create({
             data: { email: `checkin-${EMAIL_TAG}@example.com`, name: 'Checkin Subject', household: { create: {} } },
@@ -137,7 +137,7 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
         // Fresh state: exactly one open visit, no recent badge event.
         await prisma.visit.deleteMany({ where: { participantId: checkoutSubjectId } });
         await prisma.rawBadgeLog.deleteMany({ where: { participantId: checkoutSubjectId } });
-        await prisma.visit.create({ data: { participantId: checkoutSubjectId, arrived: new Date() } });
+        await prisma.visit.create({ data: { participantId: checkoutSubjectId, arrivedAt: new Date() } });
         expect(await openVisitCount(checkoutSubjectId)).toBe(1);
 
         const [resA, resB] = await Promise.all([

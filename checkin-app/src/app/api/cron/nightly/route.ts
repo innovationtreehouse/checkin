@@ -14,7 +14,7 @@ export async function GET(req: Request) {
         // 1. Find all users who are currently checked in (abandoned visits)
         const abandonedVisits = await prisma.visit.findMany({
             where: {
-                departed: null
+                departedAt: null
             },
             include: {
                 participant: true

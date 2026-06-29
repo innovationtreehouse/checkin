@@ -11,8 +11,8 @@ type Program = {
   name: string;
   phase?: string;
   memberOnly?: boolean;
-  begin?: string | null;
-  end?: string | null;
+  startAt?: string | null;
+  endAt?: string | null;
   _count?: { participants?: number; events?: number };
 };
 
@@ -33,8 +33,8 @@ const fmtDate = (d?: string | null) =>
   d ? new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
 
 const dateRange = (p: Program) => {
-  const b = fmtDate(p.begin);
-  const e = fmtDate(p.end);
+  const b = fmtDate(p.startAt);
+  const e = fmtDate(p.endAt);
   if (!b && !e) return "—";
   if (b && e) return `${b} – ${e}`;
   return b ?? e;
@@ -77,7 +77,7 @@ export default function AdminProgramsIndex() {
     {
       header: "Dates",
       render: (p) => dateRange(p),
-      sortBy: (p) => p.begin ?? "",
+      sortBy: (p) => p.startAt ?? "",
     },
     {
       header: "Phase",

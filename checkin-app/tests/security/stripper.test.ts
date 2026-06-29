@@ -105,14 +105,14 @@ describe('scopesHeld', () => {
     });
 
     it('Visit.their_own when row.participantId === selfId', () => {
-        expect(scopesHeld('Visit', { participantId: 5, departed: null }, ctx({ selfId: 5 })).has('their_own')).toBe(true);
+        expect(scopesHeld('Visit', { participantId: 5, departedAt: null }, ctx({ selfId: 5 })).has('their_own')).toBe(true);
     });
 
-    it('Visit.all_current_visitors requires keyholder AND departed === null', () => {
+    it('Visit.all_current_visitors requires keyholder AND departedAt === null', () => {
         const keyCtx = ctx({ isKeyholder: true });
-        expect(scopesHeld('Visit', { participantId: 7, departed: null }, keyCtx).has('all_current_visitors')).toBe(true);
-        expect(scopesHeld('Visit', { participantId: 7, departed: new Date() }, keyCtx).has('all_current_visitors')).toBe(false);
-        expect(scopesHeld('Visit', { participantId: 7, departed: null }, ctx()).has('all_current_visitors')).toBe(false);
+        expect(scopesHeld('Visit', { participantId: 7, departedAt: null }, keyCtx).has('all_current_visitors')).toBe(true);
+        expect(scopesHeld('Visit', { participantId: 7, departedAt: new Date() }, keyCtx).has('all_current_visitors')).toBe(false);
+        expect(scopesHeld('Visit', { participantId: 7, departedAt: null }, ctx()).has('all_current_visitors')).toBe(false);
     });
 
     it('Household.their_households when row.id === caller.householdId', () => {

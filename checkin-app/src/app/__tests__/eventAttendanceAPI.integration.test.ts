@@ -82,8 +82,8 @@ describe('Event Attendance API Integration Tests', () => {
             data: {
                 name: 'Attendance Test Event',
                 programId: testProgramId,
-                start: pastStart,
-                end: pastEnd
+                startAt: pastStart,
+                endAt: pastEnd
             }
         });
         testEventId = event.id;
@@ -191,8 +191,8 @@ describe('Event Attendance API Integration Tests', () => {
                 where: { participantId: testParticipant1Id, associatedEventId: testEventId }
             });
             expect(visits.length).toBe(1);
-            expect(visits[0].arrived).not.toBeNull();
-            expect(visits[0].departed).not.toBeNull();
+            expect(visits[0].arrivedAt).not.toBeNull();
+            expect(visits[0].departedAt).not.toBeNull();
 
             // Audit: exactly one row keyed by the new Visit's PK, event in
             // secondaryAffectedEntity, crediting the acting lead mentor.
@@ -217,13 +217,13 @@ describe('Event Attendance API Integration Tests', () => {
 
             // Create a general visit that overlaps with the event
             const event = await prisma.event.findUnique({ where: { id: testEventId } });
-            const earlyArrival = new Date(event!.start.getTime() - 30 * 60 * 1000); // Arrived 30 mins before event
+            const earlyArrival = new Date(event!.startAt.getTime() - 30 * 60 * 1000); // Arrived 30 mins before event
             
             await prisma.visit.create({
                 data: {
                     participantId: testParticipant2Id,
-                    arrived: earlyArrival,
-                    departed: null, // Still active
+                    arrivedAt: earlyArrival,
+                    departedAt: null, // Still active
                 }
             });
 
@@ -244,7 +244,7 @@ describe('Event Attendance API Integration Tests', () => {
             });
             expect(visits.length).toBe(1); // Should only be the one we created
             expect(visits[0].associatedEventId).toBe(testEventId); // It was successfully linked
-            expect(visits[0].arrived.getTime()).toBe(earlyArrival.getTime()); // Validates it used the existing visit
+            expect(visits[0].arrivedAt.getTime()).toBe(earlyArrival.getTime()); // Validates it used the existing visit
 
             // Audit: exactly one row keyed by the linked Visit's PK, event in
             // secondaryAffectedEntity, crediting the acting admin.

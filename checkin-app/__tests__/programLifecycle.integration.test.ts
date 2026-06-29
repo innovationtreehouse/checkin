@@ -33,7 +33,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 googleId: "test-auth-board",
                 sysadmin: false,
                 boardMember: true,
-                dob: new Date('1990-01-01'),
+                dateOfBirth: new Date('1990-01-01'),
                 household: { create: {} }
             }
         });
@@ -45,7 +45,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 name: "Mentor Tester",
                 email: "mentor@test.com",
                 googleId: "test-auth-mentor",
-                dob: new Date('1985-01-01'),
+                dateOfBirth: new Date('1985-01-01'),
                 household: { create: {} }
             }
         });
@@ -57,7 +57,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 name: "Standard Tester",
                 email: "participant@test.com",
                 googleId: "test-auth-std",
-                dob: new Date('2000-01-01'),
+                dateOfBirth: new Date('2000-01-01'),
                 household: { create: {} }
             }
         });
@@ -118,7 +118,7 @@ describe('Program Lifecycle Integration Tests', () => {
         expect(dbRecord).toBeDefined();
         expect(dbRecord?.status).toBe('PENDING');
         expect(dbRecord?.pendingSince).toBeInstanceOf(Date);
-        expect(dbRecord?.paymentPlanRequested).toBe(false);
+        expect(dbRecord?.isPaymentPlanRequested).toBe(false);
     });
 
     it('Should block Lead Mentors from manually adding participants', async () => {
@@ -212,7 +212,7 @@ describe('Program Lifecycle Integration Tests', () => {
         expect(dbRecord?.pendingSince).toBeNull(); 
     });
 
-     it('Cron job should remove PENDING participants after 7 days, unless paymentPlanRequested is true', async () => {
+     it('Cron job should remove PENDING participants after 7 days, unless isPaymentPlanRequested is true', async () => {
         process.env.CRON_SECRET = 'cron_test_secret';
 
         // 1. Set user to 8 days old PENDING
@@ -221,8 +221,8 @@ describe('Program Lifecycle Integration Tests', () => {
 
         await prisma.programParticipant.upsert({
              where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } },
-             update: { status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: false },
-             create: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: false }
+             update: { status: 'PENDING', pendingSince: eightDaysAgo, isPaymentPlanRequested: false },
+             create: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, isPaymentPlanRequested: false }
         });
 
         let req = new Request(`http://localhost/api/cron/pending-participants`, {
@@ -241,9 +241,9 @@ describe('Program Lifecycle Integration Tests', () => {
         });
         expect(dbRecord).toBeNull();
 
-        // 2. Recreate, set to 8 days old PENDING, but paymentPlanRequested = true
+        // 2. Recreate, set to 8 days old PENDING, but isPaymentPlanRequested = true
         await prisma.programParticipant.create({
-            data: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: true}
+            data: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, isPaymentPlanRequested: true}
         });
 
          req = new Request(`http://localhost/api/cron/pending-participants`, {

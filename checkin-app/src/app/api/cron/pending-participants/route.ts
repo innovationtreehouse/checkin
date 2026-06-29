@@ -11,7 +11,7 @@ export async function GET(req: Request) {
         const pendingParticipants = await prisma.programParticipant.findMany({
             where: {
                 status: 'PENDING',
-                paymentPlanRequested: false,
+                isPaymentPlanRequested: false,
                 pendingSince: { not: null }
             },
             include: {

@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Badge, Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
@@ -30,14 +29,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
   const todoCounts = useTodoCounts(!!(sessionUser?.sysadmin || sessionUser?.boardMember));
 
   // Total member families, shown as a gray counter on the Manage Memberships tab.
-  const [memberFamilies, setMemberFamilies] = useState<number | null>(null);
-  useEffect(() => {
-    if (!ready) return;
-    fetch("/api/admin/households/member-count")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setMemberFamilies(d.count))
-      .catch(() => {});
-  }, [ready]);
+  const memberFamilies = todoCounts?.admin?.memberFamilies ?? null;
 
   if (loading) {
     return (

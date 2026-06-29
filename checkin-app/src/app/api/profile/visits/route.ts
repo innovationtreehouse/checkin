@@ -30,16 +30,16 @@ export const GET = withAuth(
             const visits = await prisma.visit.findMany({
                 where: {
                     participantId: userId,
-                    arrived: {
+                    arrivedAt: {
                         gte: startDate,
                         lte: endDate
                     }
                 },
-                orderBy: { arrived: 'desc' },
+                orderBy: { arrivedAt: 'desc' },
                 select: {
                     id: true,
-                    arrived: true,
-                    departed: true,
+                    arrivedAt: true,
+                    departedAt: true,
                     event: { select: { name: true } }
                 }
             });

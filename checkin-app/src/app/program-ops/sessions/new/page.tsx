@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, Center, Checkbox, Container, Group, Loader, Select, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
+import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
 
 const DAYS_MAP = [
   { label: 'Sun', value: 0 },
@@ -24,9 +25,10 @@ export function NewEventForm() {
 
   const [programs, setPrograms] = useState<{ id: number, name: string }[]>([]);
 
+  const defaultProgramId = searchParams.get('programId') || ""; // URL-prefilled, not a user edit
   const [name, setName] = useState("");
   const [description] = useState("");
-  const [programId, setProgramId] = useState(searchParams.get('programId') || "");
+  const [programId, setProgramId] = useState(defaultProgramId);
   const [startDate, setStartDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
@@ -38,7 +40,18 @@ export function NewEventForm() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [message, setMessage] = useState("");
+
+  // Dirty = any field (incl. recurrence) changed from blank creation defaults.
+  // daysOfWeek joined to a string so it fits shallowEqual's primitive compare.
+  const isDirty =
+    !submitted &&
+    !shallowEqual(
+      { name: "", programId: defaultProgramId, startDate: "", startTime: "", endTime: "", repeats: false, daysOfWeek: "", until: "" },
+      { name, programId, startDate, startTime, endTime, repeats, daysOfWeek: daysOfWeek.join(','), until },
+    );
+  useUnsavedGuard(isDirty);
 
   const fetchPrograms = useCallback(async () => {
     try {
@@ -107,6 +120,7 @@ export function NewEventForm() {
       });
 
       if (res.ok) {
+        setSubmitted(true); // clear unsaved-changes guard before redirect
         router.push(programId ? `/program-ops/programs/${programId}` : '/programs');
       } else {
         const err = await res.json();

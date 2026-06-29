@@ -5,28 +5,28 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
-import { formatDate, formatVisitRange, formatDateTime, calculateAge } from '@/lib/time';
+import { formatDate, calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isOrgAccount } from '@/lib/orgAccount';
 import { pickAddress, type StructuredAddress } from '@/lib/address';
 import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
+import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
 
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
-type Member = { id: number; name?: string; email?: string; dob?: string; phone?: string };
+type Member = { id: number; name?: string; email?: string; dateOfBirth?: string; phone?: string };
 type EmergencyContact = { id: number; name: string; phone: string; email?: string | null; relationship?: string | null; priority: number; invalid: boolean };
 type HouseholdData = {
   id?: number;
   name?: string;
   leads?: Array<{ participantId: number }>;
   participants?: Member[];
-  membership?: { status?: string; since?: string; isVolunteer?: boolean } | null;
+  membership?: { status?: string; memberSince?: string; isVolunteer?: boolean } | null;
 } & Partial<StructuredAddress> | null;
 
 const blankContactForm = { id: null as number | null, name: "", phone: "", email: "", relationship: "" };
-type Visit = { id: number; participant?: { name: string }; event?: { name: string }; arrived: string; departed?: string };
 
 export default function HouseholdPage() {
   const { data: session, status } = useSession();
@@ -42,10 +42,10 @@ export default function HouseholdPage() {
   const [editingMemberId, setEditingMemberId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ name: "", email: "", dob: "", phone: "", isLead: false });
 
-  const [visits, setVisits] = useState<Visit[]>([]);
-  const [filterDate, setFilterDate] = useState("");
-  const [settings, setSettings] = useState({ emailDependentCheckins: false });
   const [address, setAddress] = useState<StructuredAddress>(blankAddress);
+  // Snapshot of the address as last loaded/saved; isDirty compares it to current
+  // state to drive the unsaved-changes guard.
+  const [initialAddress, setInitialAddress] = useState<StructuredAddress>(blankAddress);
   const [savingSettings, setSavingSettings] = useState(false);
 
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
@@ -66,31 +66,21 @@ export default function HouseholdPage() {
 
   const fetchHousehold = useCallback(async () => {
     try {
-      const [res, visitRes, profileRes] = await Promise.all([
-        fetch('/api/household'),
-        fetch(`/api/household/visits?date=${filterDate}`),
-        fetch('/api/profile')
-      ]);
+      const res = await fetch('/api/household');
       if (res.ok) {
         const data = await res.json();
         setHousehold(data.household);
         const a = pickAddress(data.household);
-        setAddress({ line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" });
-      }
-      if (visitRes.ok) {
-        const data = await visitRes.json();
-        setVisits(data.visits || []);
-      }
-      if (profileRes.ok) {
-        const data = await profileRes.json();
-        setSettings({ emailDependentCheckins: data.profile.notificationSettings?.emailDependentCheckins || false });
+        const loaded = { line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" };
+        setAddress(loaded);
+        setInitialAddress(loaded);
       }
     } catch {
       setMessage("Network error loading household.");
     } finally {
       setLoading(false);
     }
-  }, [filterDate]);
+  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -104,22 +94,13 @@ export default function HouseholdPage() {
   const handleSaveSettings = async () => {
     setSavingSettings(true);
     try {
-      const profileRes = await fetch('/api/profile');
-      const profileData = await profileRes.json();
-      const currentSettings = profileData.profile?.notificationSettings || {};
-
-      const res = await fetch('/api/profile', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notificationSettings: { ...currentSettings, emailDependentCheckins: settings.emailDependentCheckins } })
-      });
       const householdRes = await fetch('/api/household/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(address)
       });
 
-      if (res.ok && householdRes.ok) {
+      if (householdRes.ok) {
         setMessage("Settings updated successfully!");
         fetchHousehold();
         notifyNavRefresh();
@@ -130,26 +111,6 @@ export default function HouseholdPage() {
       setMessage("Network error saving settings.");
     } finally {
       setSavingSettings(false);
-    }
-  };
-
-  // Receipts toggle persists immediately — no Update button. Optimistic flip,
-  // revert on failure so the checkbox never lies about what's in the DB.
-  const handleToggleReceipts = async (checked: boolean) => {
-    setSettings({ ...settings, emailDependentCheckins: checked });
-    try {
-      const profileRes = await fetch('/api/profile');
-      const profileData = await profileRes.json();
-      const currentSettings = profileData.profile?.notificationSettings || {};
-      const res = await fetch('/api/profile', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notificationSettings: { ...currentSettings, emailDependentCheckins: checked } })
-      });
-      if (!res.ok) throw new Error();
-    } catch {
-      setSettings({ ...settings, emailDependentCheckins: !checked });
-      setMessage("Failed to update receipt setting.");
     }
   };
 
@@ -297,6 +258,13 @@ export default function HouseholdPage() {
     }
   };
 
+  // ponytail: guard ONLY the deferred Address card (committed by the "Update
+  // Address" button). The member add/edit forms, emergency-contact form, and the
+  // receipts toggle all submit instantly with no pending state — intentionally
+  // excluded so they never raise a spurious unsaved-changes prompt.
+  const isDirty = !shallowEqual({ ...initialAddress }, { ...address });
+  useUnsavedGuard(isDirty);
+
   if (loading || status === "loading") {
     return <Center mih="60vh"><Loader /></Center>;
   }
@@ -314,9 +282,9 @@ export default function HouseholdPage() {
     const isLeadA = isLead(a.id) ? 1 : 0;
     const isLeadB = isLead(b.id) ? 1 : 0;
     if (isLeadA !== isLeadB) return isLeadB - isLeadA;
-    if (a.dob && b.dob) return new Date(a.dob).getTime() - new Date(b.dob).getTime();
-    if (a.dob) return -1;
-    if (b.dob) return 1;
+    if (a.dateOfBirth && b.dateOfBirth) return new Date(a.dateOfBirth).getTime() - new Date(b.dateOfBirth).getTime();
+    if (a.dateOfBirth) return -1;
+    if (b.dateOfBirth) return 1;
     return (a.name || "").localeCompare(b.name || "");
   });
 
@@ -331,7 +299,7 @@ export default function HouseholdPage() {
             household.membership?.status === 'ACTIVE' ? (
               <Alert color="green" mb="lg">
                 <Group gap="xs" wrap="wrap">
-                  <Text fw={600}>✓ Member{household.membership.since ? ` since ${formatDate(household.membership.since)}` : ''}</Text>
+                  <Text fw={600}>✓ Member{household.membership.memberSince ? ` since ${formatDate(household.membership.memberSince)}` : ''}</Text>
                   {household.membership.isVolunteer && <Badge color="green" variant="light">Volunteer-only family</Badge>}
                 </Group>
               </Alert>
@@ -359,7 +327,7 @@ export default function HouseholdPage() {
               <SimpleGrid cols={{ base: 1, sm: 2 }} mb="lg">
                 {sortedMembers.map((p) => {
                   const memberIsLead = isLead(p.id);
-                  const isAdult = p.dob && calculateAge(p.dob) >= 18;
+                  const isAdult = p.dateOfBirth && calculateAge(p.dateOfBirth) >= 18;
                   // A household lead needs a phone on file — flag the box so the
                   // lead can see exactly which member to fix (mirrors the nav todo).
                   const leadMissingPhone = memberIsLead && !p.phone;
@@ -395,7 +363,7 @@ export default function HouseholdPage() {
                             {viewerIsLead && (
                               <Button size="compact-xs" variant="subtle" color="gray" onClick={() => {
                                 setEditingMemberId(p.id);
-                                setEditForm({ name: p.name || "", email: p.email || "", dob: p.dob ? new Date(p.dob).toISOString().split('T')[0] : "", phone: p.phone || "", isLead: memberIsLead });
+                                setEditForm({ name: p.name || "", email: p.email || "", dob: p.dateOfBirth ? new Date(p.dateOfBirth).toISOString().split('T')[0] : "", phone: p.phone || "", isLead: memberIsLead });
                               }}>Edit</Button>
                             )}
                           </Group>
@@ -529,58 +497,6 @@ export default function HouseholdPage() {
           </Card>
         )}
 
-        {household && (
-          <Card withBorder radius="md" padding="lg">
-            <Group justify="space-between" align="center" wrap="wrap" mb="xs">
-              <Title order={3}>Household Check-ins</Title>
-              <TextInput
-                type="date"
-                label="Lookup Date"
-                size="xs"
-                value={filterDate || new Date().toISOString().split('T')[0]}
-                onChange={(e) => setFilterDate(e.currentTarget.value)}
-              />
-            </Group>
-
-            {viewerIsLead && (
-              <Checkbox
-                mb="md"
-                checked={settings.emailDependentCheckins}
-                onChange={(e) => handleToggleReceipts(e.currentTarget.checked)}
-                label="Email me realtime receipts when my dependents check in/out"
-              />
-            )}
-
-            <Text size="sm" c="dimmed" mb="lg">
-              {filterDate ? (
-                <>Showing activity from <strong>{formatDate(new Date(filterDate).getTime() - 7 * 24 * 60 * 60 * 1000)}</strong> to <strong>{formatDate(new Date(filterDate).getTime() + 7 * 24 * 60 * 60 * 1000)}</strong></>
-              ) : (
-                <>Showing activity for the <strong>past 7 days</strong></>
-              )}
-            </Text>
-
-            {visits.length === 0 ? (
-              <Text c="dimmed">No historical visits found for your household.</Text>
-            ) : (
-              <Stack gap="xs">
-                {visits.map((v) => (
-                  <Paper key={v.id} withBorder radius="md" p="md">
-                    <Group justify="space-between">
-                      <div>
-                        <Text fw={600} c="blue">{v.participant?.name || 'Unnamed Member'}</Text>
-                        <Text size="sm" component="span">{v.event?.name || 'General Facility Visit'} </Text>
-                        <Text size="sm" c="dimmed" component="span">• {formatDateTime(v.arrived, { dateStyle: 'short', timeStyle: 'short' })} • {formatVisitRange(v.arrived, v.departed)}</Text>
-                      </div>
-                      {!v.departed && (
-                        <Text size="sm" component="span" c="yellow">Active Visit</Text>
-                      )}
-                    </Group>
-                  </Paper>
-                ))}
-              </Stack>
-            )}
-          </Card>
-        )}
       </Stack>
     </PageContainer>
   );

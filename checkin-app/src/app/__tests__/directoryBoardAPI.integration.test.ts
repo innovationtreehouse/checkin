@@ -39,7 +39,7 @@ describe('GET /api/directory/board', () => {
                 name: `Board ${TAG}`,
                 email: `board-${TAG}@example.com`,
                 phone: '555-0001',
-                dob: new Date('1980-01-01'),
+                dateOfBirth: new Date('1980-01-01'),
                 googleId: `google-${TAG}`,
                 boardMember: true,
                 household: { create: {} },
@@ -82,7 +82,7 @@ describe('GET /api/directory/board', () => {
         expect(seeded.phone).toBe('555-0001');
         // ...but pii must never ship, for any row.
         for (const row of boardMembers) {
-            expect(row).not.toHaveProperty('dob');
+            expect(row).not.toHaveProperty('dateOfBirth');
             expect(row).not.toHaveProperty('googleId');
         }
     });
@@ -102,7 +102,7 @@ describe('GET /api/directory/board', () => {
         for (const row of boardMembers) {
             expect(row).not.toHaveProperty('email');
             expect(row).not.toHaveProperty('phone');
-            expect(row).not.toHaveProperty('dob');
+            expect(row).not.toHaveProperty('dateOfBirth');
             expect(row).not.toHaveProperty('googleId');
         }
     });

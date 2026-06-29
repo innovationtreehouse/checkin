@@ -25,6 +25,11 @@ type FormState = {
 
 const EMPTY: FormState = { name: "", line1: "", line2: "", city: "", state: "", postalCode: "", emergencyContactName: "", emergencyContactPhone: "" };
 
+/** Deep-compares flat string form state. Exported for unit test. */
+export function isFormDirty(a: FormState, b: FormState): boolean {
+  return JSON.stringify(a) !== JSON.stringify(b);
+}
+
 /**
  * Admin/board editor for a household's own info. Denser than the member-facing
  * `/my-household` editor and reachable from any admin surface that has a household id.
@@ -48,6 +53,7 @@ export function AdminEditHouseholdModal({
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
+  const [initial, setInitial] = useState<FormState>(EMPTY);
   const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
@@ -63,12 +69,14 @@ export function AdminEditHouseholdModal({
         if (cancelled) return;
         if (h) {
           const a = pickAddress(h);
-          setForm({
+          const loaded: FormState = {
             name: h.name || "",
             line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "",
             emergencyContactName: h.emergencyContactName || "",
             emergencyContactPhone: h.emergencyContactPhone || "",
-          });
+          };
+          setForm(loaded);
+          setInitial(loaded);
           setDisplayName(h.name || `Household #${h.id}`);
         }
       } catch {
@@ -83,6 +91,14 @@ export function AdminEditHouseholdModal({
   }, [opened, householdId]);
 
   const update = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
+
+  // Gate every dismiss path (X, backdrop, escape, Cancel) behind a discard
+  // prompt when the form has unsaved edits. handleSave calls onClose directly
+  // so a successful save never prompts.
+  const requestClose = () => {
+    if (isFormDirty(form, initial) && !window.confirm("Discard unsaved changes?")) return;
+    onClose();
+  };
 
   const handleSave = async () => {
     if (householdId == null) return;
@@ -114,7 +130,7 @@ export function AdminEditHouseholdModal({
     <>
       <Modal
         opened={opened}
-        onClose={onClose}
+        onClose={requestClose}
         size="lg"
         title={<Title order={4}>Edit Household Info{displayName ? ` — ${displayName}` : ""}</Title>}
       >
@@ -166,7 +182,7 @@ export function AdminEditHouseholdModal({
               />
             </SimpleGrid>
             <Group justify="flex-end" mt="md">
-              <Button variant="default" onClick={onClose}>
+              <Button variant="default" onClick={requestClose}>
                 Cancel
               </Button>
               <Button color="green" onClick={() => setConfirming(true)}>

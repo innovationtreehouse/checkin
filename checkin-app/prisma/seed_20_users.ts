@@ -43,11 +43,11 @@ async function main() {
             }
         })
 
-        // Mark them as arrived so they show up as "present" just in case limitToPresent is true
+        // Mark them as arrivedAt so they show up as "present" just in case limitToPresent is true
         await prisma.visit.create({
             data: {
                 participantId: participant.id,
-                arrived: new Date()
+                arrivedAt: new Date()
             }
         })
         

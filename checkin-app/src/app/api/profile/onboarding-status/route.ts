@@ -25,7 +25,7 @@ export const GET = withAuth(
             }
 
             // Minors are never required to provide a phone number (issue #169)
-            const needsPhone = !user.phone && !isMinor(user.dob);
+            const needsPhone = !user.phone && !isMinor(user.dateOfBirth);
             const isLead = user.householdId && user.householdLeads.some((lead: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => lead.householdId === user.householdId);
 
             // A lead needs a contact when no valid (non-member, complete) one exists.

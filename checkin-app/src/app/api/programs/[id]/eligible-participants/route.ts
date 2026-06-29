@@ -60,7 +60,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
         const members = await prisma.participant.findMany({
             where: andClauses.length > 0 ? { AND: andClauses } : undefined,
-            select: { id: true, name: true, email: true, dob: true },
+            select: { id: true, name: true, email: true, dateOfBirth: true },
             orderBy: { name: 'asc' },
             take: 50
         });

@@ -7,6 +7,7 @@ import { AlertBanner } from '@/components/admin/AlertBanner';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
+import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
 
 type ParticipantOption = {
   id: number;
@@ -19,8 +20,8 @@ export default function CreateProgramPage() {
   const router = useRouter();
 
   const [name, setName] = useState("");
-  const [begin, setBegin] = useState("");
-  const [end, setEnd] = useState("");
+  const [startAt, setStartAt] = useState("");
+  const [endAt, setEndAt] = useState("");
   const [minAge, setMinAge] = useState("");
   const [maxAge, setMaxAge] = useState("");
   const [isFree, setIsFree] = useState(true);
@@ -29,6 +30,7 @@ export default function CreateProgramPage() {
   const [maxParticipants, setMaxParticipants] = useState("");
   const [memberOnly, setMemberOnly] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
 
@@ -49,8 +51,8 @@ export default function CreateProgramPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          begin: begin || null,
-          end: end || null,
+          startAt: startAt || null,
+          endAt: endAt || null,
           memberOnly,
           minAge: minAge ? parseInt(minAge) : null,
           maxAge: maxAge ? parseInt(maxAge) : null,
@@ -63,6 +65,7 @@ export default function CreateProgramPage() {
 
       if (res.ok) {
         const data = await res.json();
+        setSubmitted(true); // clear unsaved-changes guard before redirect
         router.push(`/program-ops/programs/${data.program.id}`);
       } else {
         const data = await res.json();
@@ -76,6 +79,15 @@ export default function CreateProgramPage() {
       setSaving(false);
     }
   };
+
+  // Dirty = any field changed from the blank creation defaults.
+  const isDirty =
+    !submitted &&
+    !shallowEqual(
+      { name: "", startAt: "", endAt: "", minAge: "", maxAge: "", isFree: true, memberPrice: "", nonMemberPrice: "", maxParticipants: "", memberOnly: false, leadMentorId: "" },
+      { name, startAt, endAt, minAge, maxAge, isFree, memberPrice, nonMemberPrice, maxParticipants, memberOnly, leadMentorId },
+    );
+  useUnsavedGuard(isDirty);
 
   if (authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
@@ -107,6 +119,7 @@ export default function CreateProgramPage() {
             {/* Lead Mentor Selector */}
             <EntityPicker<ParticipantOption>
               label="Lead Mentor / Program Coordinator"
+              required
               description="The lead mentor will be able to manage this program's roster and events."
               placeholder="Search by name or email..."
               selectedId={leadMentorId || null}
@@ -129,8 +142,8 @@ export default function CreateProgramPage() {
             </SimpleGrid>
 
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
-              <TextInput type="date" label="Start Date" value={begin} onChange={(e) => setBegin(e.currentTarget.value)} />
-              <TextInput type="date" label="End Date" value={end} onChange={(e) => setEnd(e.currentTarget.value)} />
+              <TextInput type="date" label="Start Date" value={startAt} onChange={(e) => setStartAt(e.currentTarget.value)} />
+              <TextInput type="date" label="End Date" value={endAt} onChange={(e) => setEndAt(e.currentTarget.value)} />
             </SimpleGrid>
 
             <Card withBorder radius="md" padding="md">

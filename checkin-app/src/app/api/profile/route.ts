@@ -10,7 +10,7 @@ export const GET = handler('GET /api/profile', async ({ auth }) => {
         where: { id: auth.user.id },
         include: {
             visits: {
-                orderBy: { arrived: 'desc' },
+                orderBy: { arrivedAt: 'desc' },
                 take: 50,
                 include: { event: true },
             },
@@ -39,14 +39,14 @@ export const PATCH = withAuth(
                 data: {
                     name: name !== undefined ? name : undefined,
                     phone: phone !== undefined ? phone : undefined,
-                    dob: dob ? new Date(dob) : undefined,
+                    dateOfBirth: dob ? new Date(dob) : undefined,
                     notificationSettings: notificationSettings !== undefined ? notificationSettings : undefined,
                 },
                 select: {
                     name: true,
                     email: true,
                     phone: true,
-                    dob: true,
+                    dateOfBirth: true,
                     notificationSettings: true,
                 }
             });

@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
                 data: {
                     name,
                     ...(email && { email }),
-                    dob: dob ? new Date(dob).toISOString() : null,
+                    dateOfBirth: dob ? new Date(dob).toISOString() : null,
                     householdId: householdIdToAssign
                 }
             });
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
                 data: {
                     name,
                     ...(email && { email }),
-                    dob: dob ? new Date(dob).toISOString() : null,
+                    dateOfBirth: dob ? new Date(dob).toISOString() : null,
                     household: {
                         create: { name: lastName ? `${lastName} Household` : "Household" }
                     }

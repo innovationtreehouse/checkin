@@ -98,11 +98,11 @@ export async function getIntakeState(userId: number) {
     const primary = parents.find((p) => p.id === userId) ?? null;
     const secondary = parents.find((p) => p.id !== userId) ?? null;
 
-    const shape = (p: { id: number; name: string | null; email: string | null; dob: Date | null; allergies: string | null }) => ({
+    const shape = (p: { id: number; name: string | null; email: string | null; dateOfBirth: Date | null; allergies: string | null }) => ({
         id: p.id,
         name: p.name,
         email: p.email,
-        dob: p.dob ? p.dob.toISOString().slice(0, 10) : null,
+        dob: p.dateOfBirth ? p.dateOfBirth.toISOString().slice(0, 10) : null,
         allergies: p.allergies,
     });
 
@@ -236,7 +236,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             where: { id: userId },
             data: {
                 ...(input.primaryParent.name !== undefined && { name: input.primaryParent.name }),
-                ...(input.primaryParent.dob !== undefined && { dob: toDate(input.primaryParent.dob) }),
+                ...(input.primaryParent.dob !== undefined && { dateOfBirth: toDate(input.primaryParent.dob) }),
                 ...(input.primaryParent.allergies !== undefined && { allergies: input.primaryParent.allergies }),
             },
         });
@@ -250,7 +250,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 where: { id: sp.id },
                 data: {
                     ...(sp.name !== undefined && { name: sp.name }),
-                    ...(sp.dob !== undefined && { dob: toDate(sp.dob) }),
+                    ...(sp.dob !== undefined && { dateOfBirth: toDate(sp.dob) }),
                     ...(sp.allergies !== undefined && { allergies: sp.allergies }),
                 },
             });
@@ -262,7 +262,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     householdId,
                     name: sp.name ?? null,
                     ...(sp.email && { email: sp.email.toLowerCase() }),
-                    dob: toDate(sp.dob),
+                    dateOfBirth: toDate(sp.dob),
                     allergies: sp.allergies ?? null,
                 },
             });
@@ -278,7 +278,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 where: { id: child.id },
                 data: {
                     ...(child.name !== undefined && { name: child.name }),
-                    ...(child.dob !== undefined && { dob: toDate(child.dob) }),
+                    ...(child.dob !== undefined && { dateOfBirth: toDate(child.dob) }),
                     ...(child.allergies !== undefined && { allergies: child.allergies }),
                 },
             });
@@ -288,7 +288,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     householdId,
                     name: child.name,
                     ...(child.email && { email: child.email.toLowerCase() }),
-                    dob: toDate(child.dob),
+                    dateOfBirth: toDate(child.dob),
                     allergies: child.allergies ?? null,
                 },
             });

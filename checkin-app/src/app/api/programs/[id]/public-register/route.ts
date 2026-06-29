@@ -109,7 +109,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     }
                     // Judge age as of the program's start date; fall back to now
                     // for dateless ("TBD") programs.
-                    const age = calculateAge(p.dob, currentProgram.begin ?? undefined);
+                    const age = calculateAge(p.dob, currentProgram.startAt ?? undefined);
                     if (currentProgram.minAge !== null && age < currentProgram.minAge) {
                         return NextResponse.json({ error: `Participant ${p.name} must be at least ${currentProgram.minAge} years old.` }, { status: 400 });
                     }
@@ -168,7 +168,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     const newParticipant = await tx.participant.create({
                         data: {
                             name: p.name,
-                            dob: p.dob ? new Date(p.dob) : null,
+                            dateOfBirth: p.dob ? new Date(p.dob) : null,
                             householdId: household.id,
                         }
                     });

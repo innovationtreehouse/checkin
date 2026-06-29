@@ -21,13 +21,13 @@ export default function TodoCard() {
     if (items.length === 0) return null;
 
     return (
-        <Card withBorder radius="md" padding="md">
+        <Card withBorder radius="lg" padding="xl" bg="yellow.2" c="black" style={{ borderColor: "var(--mantine-color-yellow-5)", borderWidth: 2 }}>
             <Group justify="space-between" mb="sm">
                 <Group gap="xs">
-                    <ThemeIcon color="treehouseGreen" variant="light" radius="md">
+                    <ThemeIcon color="dark" variant="filled" radius="xl">
                         <IconChecklist size={18} />
                     </ThemeIcon>
-                    <Text fw={700}>Things to do</Text>
+                    <Text fw={700} c="black">Things to do</Text>
                 </Group>
                 <Badge color="treehouseGreen" variant="filled">
                     {items.length}
@@ -55,7 +55,7 @@ export default function TodoCard() {
                         }}
                     >
                         <Group justify="space-between" wrap="nowrap" gap="sm">
-                            <Text size="sm">{item.label}</Text>
+                            <Text size="sm" c="black">{item.label}</Text>
                             <IconChevronRight size={16} style={{ flexShrink: 0, opacity: 0.6 }} />
                         </Group>
                     </Anchor>

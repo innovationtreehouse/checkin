@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
@@ -20,8 +20,8 @@ type ParticipantDetail = {
 type EventData = {
   id: number;
   name: string;
-  start: string;
-  end: string;
+  startAt: string;
+  endAt: string;
   attendanceConfirmedAt: string | null;
   attendanceConfirmedBy?: { name: string | null } | null;
   recurringGroupId: string | null;
@@ -35,8 +35,8 @@ type EventData = {
   visits: {
     id: number;
     participantId: number;
-    arrived: string;
-    departed: string | null;
+    arrivedAt: string;
+    departedAt: string | null;
   }[];
 };
 
@@ -44,6 +44,11 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const { data: session, status } = useSession();
   const router = useRouter();
+  // Leads reach this screen from their My Programs inbox (?from=my-programs).
+  // When they do, "back" and post-confirm return there instead of the board's
+  // program-edit page. Board/program-ops flow (no param) is unchanged.
+  const searchParams = useSearchParams();
+  const fromMyPrograms = searchParams.get('from') === 'my-programs';
 
   const [eventData, setEventData] = useState<EventData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,8 +75,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         const data = await res.json();
         setEventData(data);
 
-        const startStr = toDatetimeLocal(data.start);
-        const endStr = toDatetimeLocal(data.end);
+        const startStr = toDatetimeLocal(data.startAt);
+        const endStr = toDatetimeLocal(data.endAt);
         setNewStart(startStr);
         setNewEnd(endStr);
       } else {
@@ -101,6 +106,12 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         body: JSON.stringify({ action: 'confirmAttendance' })
       });
       if (res.ok) {
+        // From the lead's inbox, the work is done → return to My Programs (the
+        // item drops off there). Board/program-ops flow stays on the page.
+        if (fromMyPrograms) {
+          router.push('/my-programs');
+          return;
+        }
         setMessage("Attendance confirmed successfully!");
         fetchEvent();
       } else {
@@ -123,7 +134,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
       const res = await fetch(`/api/events/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'editTime', start: startIso, end: endIso, applyToFuture })
+        body: JSON.stringify({ action: 'editTime', startAt: startIso, endAt: endIso, applyToFuture })
       });
       if (res.ok) {
         setMessage("Event time updated successfully!");
@@ -151,8 +162,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           action: 'manualEditAttendance',
           participantId: editingAttendance.participantId,
           status: manualStatus,
-          arrived: manualStatus === 'Present' ? fromDatetimeLocal(manualArrived) : null,
-          departed: manualStatus === 'Present' && manualDeparted ? fromDatetimeLocal(manualDeparted) : null
+          arrivedAt: manualStatus === 'Present' ? fromDatetimeLocal(manualArrived) : null,
+          departedAt: manualStatus === 'Present' && manualDeparted ? fromDatetimeLocal(manualDeparted) : null
         })
       });
       if (res.ok) {
@@ -217,7 +228,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   const canManageAttendance = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
   const canManageEventInfo = isSysAdminOrBoard || isLeadMentor;
 
-  const isPastEvent = new Date(eventData.end) < new Date();
+  const isPastEvent = new Date(eventData.endAt) < new Date();
 
   const renderRosterGrid = () => {
     if (!eventData.program) return null;
@@ -249,9 +260,9 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
               const visit = eventData.visits.find(v => v.participantId === member.participantId);
               let statusEl;
               if (visit) {
-                const arriveTime = new Date(visit.arrived).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const leaveTime = visit.departed ? new Date(visit.departed).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Still Here';
-                statusEl = <Text component="span" c="green">Arrived: {arriveTime} {visit.departed ? `| Left: ${leaveTime}` : ''}</Text>;
+                const arriveTime = new Date(visit.arrivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const leaveTime = visit.departedAt ? new Date(visit.departedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Still Here';
+                statusEl = <Text component="span" c="green">Arrived: {arriveTime} {visit.departedAt ? `| Left: ${leaveTime}` : ''}</Text>;
               } else {
                 statusEl = <Text component="span" c="red">Absent</Text>;
               }
@@ -273,12 +284,12 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
                           setEditingAttendance(member);
                           if (visit) {
                             setManualStatus("Present");
-                            setManualArrived(toDatetimeLocal(visit.arrived));
-                            setManualDeparted(visit.departed ? toDatetimeLocal(visit.departed) : "");
+                            setManualArrived(toDatetimeLocal(visit.arrivedAt));
+                            setManualDeparted(visit.departedAt ? toDatetimeLocal(visit.departedAt) : "");
                           } else {
                             setManualStatus("Absent");
-                            setManualArrived(toDatetimeLocal(eventData.start));
-                            setManualDeparted(toDatetimeLocal(eventData.end));
+                            setManualArrived(toDatetimeLocal(eventData.startAt));
+                            setManualDeparted(toDatetimeLocal(eventData.endAt));
                           }
                         }}>
                           Manual Edit
@@ -304,10 +315,21 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         <Group justify="space-between" align="flex-start" wrap="wrap" mb="lg">
           <div>
             <Title order={1}>{eventData.name}</Title>
-            <Text c="dimmed" fz="lg">{formatDateTime(eventData.start)} - {formatDateTime(eventData.end)}</Text>
+            <Text c="dimmed" fz="lg">{formatDateTime(eventData.startAt)} - {formatDateTime(eventData.endAt)}</Text>
           </div>
-          <Button variant="default" onClick={() => router.push(eventData.program?.id ? `/program-ops/programs/${eventData.program.id}` : '/program-ops/programs')}>
-            ← Back to Program
+          <Button
+            variant="default"
+            onClick={() =>
+              router.push(
+                fromMyPrograms
+                  ? '/my-programs'
+                  : eventData.program?.id
+                    ? `/program-ops/programs/${eventData.program.id}`
+                    : '/program-ops/programs',
+              )
+            }
+          >
+            {fromMyPrograms ? '← Back to My Programs' : '← Back to Program'}
           </Button>
         </Group>
 

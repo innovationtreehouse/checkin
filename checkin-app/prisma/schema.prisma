@@ -78,7 +78,7 @@ model Participant {
   sessions      Session[]
 
   /// @sensitivity:pii
-  dob                  DateTime?
+  dateOfBirth          DateTime?
   /// @sensitivity:internal
   lastWaiverSign       DateTime?
   /// @sensitivity:internal
@@ -294,7 +294,7 @@ model Membership {
   /// @sensitivity:public
   id          Int              @id @default(autoincrement())
   /// @sensitivity:public
-  since       DateTime         @default(now())
+  memberSince DateTime         @default(now())
   /// @sensitivity:public
   status      MembershipStatus @default(NONE)
   /// @sensitivity:public
@@ -368,7 +368,7 @@ model BackgroundCheckAttestation {
   /// @sensitivity:internal
   result          AttestationResult
   /// @sensitivity:internal
-  markedVolunteer Boolean           @default(false)
+  isMarkedVolunteer Boolean           @default(false)
   /// @sensitivity:public
   createdAt       DateTime          @default(now())
 
@@ -586,9 +586,9 @@ model Program {
   leadMentorId                   Int?
   leadMentor                     Participant?     @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
   /// @sensitivity:public
-  begin                          DateTime?
+  startAt                        DateTime?
   /// @sensitivity:public
-  end                            DateTime?
+  endAt                          DateTime?
   /// @sensitivity:public
   phase                          ProgramPhase     @default(PLANNING)
   /// @sensitivity:public
@@ -645,7 +645,7 @@ model ProgramParticipant {
   /// @sensitivity:public
   status               ProgramParticipantStatus @default(PENDING)
   /// @sensitivity:personal
-  paymentPlanRequested Boolean                  @default(false)
+  isPaymentPlanRequested Boolean                  @default(false)
   /// @sensitivity:internal
   pendingSince         DateTime?                @default(now())
 
@@ -679,7 +679,7 @@ model FeePayment {
   /// @sensitivity:public
   participantId     Int
   /// @sensitivity:personal
-  paidOn            DateTime? @default(now())
+  paidAt            DateTime? @default(now())
   /// @sensitivity:personal
   shopifyLink       String?
   /// @sensitivity:personal
@@ -701,9 +701,9 @@ model Event {
   /// @sensitivity:public
   name        String
   /// @sensitivity:public
-  start       DateTime
+  startAt     DateTime
   /// @sensitivity:public
-  end         DateTime
+  endAt       DateTime
   /// @sensitivity:public
   description String?
 
@@ -759,9 +759,9 @@ model Visit {
   /// @sensitivity:public
   participantId     Int
   /// @sensitivity:personal
-  arrived           DateTime
+  arrivedAt         DateTime
   /// @sensitivity:personal
-  departed          DateTime?
+  departedAt        DateTime?
   /// @sensitivity:public
   arrivedVia        VisitSource?
   /// @sensitivity:public
@@ -772,7 +772,11 @@ model Visit {
   participant Participant @relation(fields: [participantId], references: [id])
   event       Event?      @relation(fields: [associatedEventId], references: [id])
 
-  @@index([participantId, departed]) // Active visits lookup in /api/scan
+  @@index([participantId, departedAt]) // Active visits lookup in /api/scan
+  // Partial unique index "Visit_one_open_per_participant" — at most one open visit
+  // (departedAt IS NULL) per participant. Prisma's DSL can't express a partial
+  // unique index, so it lives in the 20260629180000_visit_one_open_per_participant
+  // raw-SQL migration. DB-level backstop against double check-in races.
 }
 
 model AuditLog {
