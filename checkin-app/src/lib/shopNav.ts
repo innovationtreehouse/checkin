@@ -22,8 +22,8 @@ export interface ShopNavLink {
 }
 
 export const SHOP_NAV_LINKS: ShopNavLink[] = [
-  { name: "Create Tool", href: "/shop/create", icon: "✨", visible: (r) => r.isAdmin },
   { name: "Manage Tools & Certifications", href: "/shop/manage", icon: "📋", visible: (r) => r.isCertifier },
+  { name: "Create Tool", href: "/shop/create", icon: "✨", visible: (r) => r.isAdmin },
   { name: "Live Certifications Center", href: "/shop/live", icon: "📊", visible: () => true },
 ];
 
@@ -34,7 +34,7 @@ export function shopRoles(user: Session["user"] | undefined): ShopRoles {
   return { isAdmin, isCertifier };
 }
 
-/** Landing tab for /shop, preserving the original role-based default. */
+/** Landing tab for /shop: Manage for certifiers (incl. admins), else Live. */
 export function defaultShopTab(roles: ShopRoles): string {
-  return roles.isAdmin ? "/shop/create" : roles.isCertifier ? "/shop/manage" : "/shop/live";
+  return roles.isCertifier ? "/shop/manage" : "/shop/live";
 }
