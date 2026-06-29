@@ -20,6 +20,25 @@ export class ZohoError extends Error {
     }
 }
 
+/**
+ * Hard per-request deadline for every Zoho call. Without it a hung TCP connection
+ * (established, no response) blocks the request worker until the platform timeout —
+ * during a Zoho outage that exhausts workers. ~20s suits these interactive flows.
+ */
+const ZOHO_FETCH_TIMEOUT_MS = 20_000;
+
+/** fetch with a hard timeout that surfaces as a clear ZohoError instead of hanging. */
+async function zohoFetch(input: string | URL, init: RequestInit, label: string): Promise<Response> {
+    try {
+        return await fetch(input, { ...init, signal: AbortSignal.timeout(ZOHO_FETCH_TIMEOUT_MS) });
+    } catch (err) {
+        if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+            throw new ZohoError(`${label} timed out after ${ZOHO_FETCH_TIMEOUT_MS}ms`);
+        }
+        throw err;
+    }
+}
+
 function requireSecrets(): { clientId: string; clientSecret: string; refreshToken: string } {
     const clientId = config.zohoClientId();
     const clientSecret = config.zohoClientSecret();
@@ -50,11 +69,11 @@ export async function getAccessToken(): Promise<string> {
         refresh_token: refreshToken,
     });
 
-    const resp = await fetch(`${config.zohoAccountsUrl()}/oauth/v2/token`, {
+    const resp = await zohoFetch(`${config.zohoAccountsUrl()}/oauth/v2/token`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body,
-    });
+    }, "Zoho token exchange");
     if (!resp.ok) throw new ZohoError(`Token exchange failed (${resp.status}): ${await resp.text()}`);
     const data = (await resp.json()) as { access_token?: string; expires_in?: number };
     if (!data.access_token) throw new ZohoError(`Token exchange returned no access_token: ${JSON.stringify(data)}`);
@@ -131,11 +150,11 @@ export async function createRequest(params: {
     form.append("file", new Blob([new Uint8Array(params.pdf)], { type: "application/pdf" }), params.filename);
     form.append("data", JSON.stringify(payload));
 
-    const resp = await fetch(`${config.zohoSignApi()}/requests`, {
+    const resp = await zohoFetch(`${config.zohoSignApi()}/requests`, {
         method: "POST",
         headers: authHeader(params.token),
         body: form,
-    });
+    }, "Zoho createRequest");
     if (!resp.ok) throw new ZohoError(`Failed to create request (${resp.status}): ${await resp.text()}`);
     const result = (await resp.json()) as {
         status?: string;
@@ -195,11 +214,11 @@ export async function submitRequest(params: {
     const form = new FormData();
     form.append("data", JSON.stringify(payload));
 
-    const resp = await fetch(`${config.zohoSignApi()}/requests/${params.requestId}/submit`, {
+    const resp = await zohoFetch(`${config.zohoSignApi()}/requests/${params.requestId}/submit`, {
         method: "POST",
         headers: authHeader(params.token),
         body: form,
-    });
+    }, "Zoho submitRequest");
     if (!resp.ok) throw new ZohoError(`Failed to submit request (${resp.status}): ${await resp.text()}`);
     const result = (await resp.json()) as { status?: string };
     if (result.status !== "success") throw new ZohoError(`Failed to submit request: ${JSON.stringify(result)}`);
@@ -221,7 +240,7 @@ export async function getEmbeddedSignUrl(params: {
     const url = new URL(`${config.zohoSignApi()}/requests/${params.requestId}/actions/${params.actionId}/embedtoken`);
     url.searchParams.set("host", params.host);
 
-    const resp = await fetch(url, { method: "POST", headers: authHeader(params.token) });
+    const resp = await zohoFetch(url, { method: "POST", headers: authHeader(params.token) }, "Zoho embedtoken");
     if (!resp.ok) throw new ZohoError(`Failed to get embed token (${resp.status}): ${await resp.text()}`);
     const result = (await resp.json()) as { status?: string; sign_url?: string; requests?: { sign_url?: string } };
     const signUrl = result.sign_url ?? result.requests?.sign_url;
@@ -236,10 +255,10 @@ export async function getEmbeddedSignUrl(params: {
  * a scale-to-zero dev instance).
  */
 export async function getRequestStatus(token: string, requestId: string): Promise<boolean> {
-    const resp = await fetch(`${config.zohoSignApi()}/requests/${requestId}`, {
+    const resp = await zohoFetch(`${config.zohoSignApi()}/requests/${requestId}`, {
         method: "GET",
         headers: authHeader(token),
-    });
+    }, "Zoho getRequestStatus");
     if (!resp.ok) throw new ZohoError(`Failed to get request status (${resp.status}): ${await resp.text()}`);
     const result = (await resp.json()) as { requests?: { request_status?: string } };
     return result.requests?.request_status?.toLowerCase() === "completed";

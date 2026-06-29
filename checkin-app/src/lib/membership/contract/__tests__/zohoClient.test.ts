@@ -120,4 +120,24 @@ describe("zohoClient", () => {
         mockFetchOnce({ requests: { request_status: "inprogress" } });
         await expect(getRequestStatus("t", "req-1")).resolves.toBe(false);
     });
+
+    it("rejects with a ZohoError timeout when the connection hangs (never resolves)", async () => {
+        // Drive the deadline manually: the per-request AbortSignal.timeout is replaced with a
+        // controller we fire ourselves, standing in for the timeout elapsing. The fetch only
+        // settles on abort — a hung TCP connection that would otherwise never resolve.
+        const deadline = new AbortController();
+        const timeoutSpy = jest.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+        (global.fetch as jest.Mock).mockImplementation(
+            (_url, init: RequestInit) =>
+                new Promise((_resolve, reject) => {
+                    const signal = init.signal as AbortSignal;
+                    signal.addEventListener("abort", () => reject(signal.reason));
+                }),
+        );
+
+        const p = getAccessToken();
+        deadline.abort(new DOMException("The operation timed out", "TimeoutError"));
+        await expect(p).rejects.toThrow(/Zoho token exchange timed out after 20000ms/);
+        timeoutSpy.mockRestore();
+    });
 });

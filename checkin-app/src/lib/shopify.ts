@@ -9,6 +9,26 @@ import { logIntegrationError } from "@/lib/logger";
 let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
 
+/**
+ * Hard per-request deadline for every Shopify call. Without it a hung TCP connection
+ * (established, no response) blocks the request worker until the platform timeout; during
+ * a Shopify outage that exhausts workers, and the serial variant-creation chain below
+ * stalls entirely on one hang. ~20s suits these interactive calls.
+ */
+const SHOPIFY_FETCH_TIMEOUT_MS = 20_000;
+
+/** fetch with a hard timeout that surfaces as a clear error instead of hanging. */
+async function shopifyFetch(input: string, init: RequestInit, label: string): Promise<Response> {
+  try {
+    return await fetch(input, { ...init, signal: AbortSignal.timeout(SHOPIFY_FETCH_TIMEOUT_MS) });
+  } catch (err) {
+    if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      throw new Error(`${label} timed out after ${SHOPIFY_FETCH_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  }
+}
+
 /** @internal - Exported only for test isolation */
 export function resetTokenCache() {
   cachedToken = null;
@@ -35,7 +55,7 @@ async function getAccessToken(): Promise<string | null> {
   }
 
   try {
-    const res = await fetch(`https://${storeDomain}/admin/oauth/access_token`, {
+    const res = await shopifyFetch(`https://${storeDomain}/admin/oauth/access_token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -45,7 +65,7 @@ async function getAccessToken(): Promise<string | null> {
         client_id: clientId,
         client_secret: clientSecret,
       }).toString(),
-    });
+    }, "Shopify token exchange");
 
     if (!res.ok) {
       const errorText = await res.text();
@@ -86,7 +106,7 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
     const productTitle = `Program Enrollment: ${name}`;
 
     // 1. Create Product
-    const productRes = await fetch(`https://${storeDomain}/admin/api/2026-01/products.json`, {
+    const productRes = await shopifyFetch(`https://${storeDomain}/admin/api/2026-01/products.json`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -100,7 +120,7 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
           options: [{ name: "Membership Type" }]
         }
       })
-    });
+    }, "Shopify create product");
 
     if (!productRes.ok) {
         const errorData = await productRes.text();
@@ -141,14 +161,14 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
 
     if (variants.length > 0) {
         for (const variant of variants) {
-            const variantRes = await fetch(`https://${storeDomain}/admin/api/2026-01/products/${productId}/variants.json`, {
+            const variantRes = await shopifyFetch(`https://${storeDomain}/admin/api/2026-01/products/${productId}/variants.json`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Shopify-Access-Token': accessToken,
                 },
                 body: JSON.stringify({ variant })
-            });
+            }, "Shopify create variant");
 
             if (variantRes.ok) {
                 const variantData = await variantRes.json();
@@ -162,14 +182,14 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
                 if (maxParticipants && variantData.variant.inventory_item_id) {
                     try {
                         // Get the store's primary location
-                        const locRes = await fetch(`https://${storeDomain}/admin/api/2026-01/locations.json`, {
+                        const locRes = await shopifyFetch(`https://${storeDomain}/admin/api/2026-01/locations.json`, {
                             headers: { 'X-Shopify-Access-Token': accessToken },
-                        });
+                        }, "Shopify get locations");
                         if (locRes.ok) {
                             const locData = await locRes.json();
                             const locationId = locData.locations?.[0]?.id;
                             if (locationId) {
-                                const invRes = await fetch(`https://${storeDomain}/admin/api/2026-01/inventory_levels/set.json`, {
+                                const invRes = await shopifyFetch(`https://${storeDomain}/admin/api/2026-01/inventory_levels/set.json`, {
                                     method: 'POST',
                                     headers: {
                                         'Content-Type': 'application/json',
@@ -180,7 +200,7 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
                                         inventory_item_id: variantData.variant.inventory_item_id,
                                         available: maxParticipants,
                                     })
-                                });
+                                }, "Shopify set inventory");
                                 if (invRes.ok) {
                                     console.log(`[SHOPIFY] Set inventory for variant ${variant.option1} to ${maxParticipants} at location ${locationId}`);
                                 } else {
