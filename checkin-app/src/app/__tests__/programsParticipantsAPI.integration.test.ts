@@ -23,7 +23,9 @@ describe('Program Participants API Integration Tests', () => {
     let leadId: number;
     let commonId: number;
     let otherId: number;
-    
+    let boardId: number;   // board member who leads a household
+    let depId: number;     // dependent (25yo) in the board member's household
+
     let standardProgramId: number;
     let freeProgramId: number;
     let fullProgramId: number;
@@ -36,7 +38,11 @@ describe('Program Participants API Integration Tests', () => {
             select: { id: true }
         });
         const existingUserIds = existingUsers.map(u => u.id);
-        
+
+        await prisma.householdLead.deleteMany({
+            where: { participantId: { in: existingUserIds } }
+        });
+
         await prisma.programParticipant.deleteMany({
             where: { participantId: { in: existingUserIds } }
         });
@@ -87,6 +93,26 @@ describe('Program Participants API Integration Tests', () => {
         });
         otherId = otherUser.id;
 
+        // Board member who leads a household containing a 25yo dependent. The
+        // board flag lives on the session, not the DB row — see the mocks below.
+        const boardHousehold = await prisma.household.create({ data: {} });
+        const board = await prisma.participant.create({
+            data: { email: 'board-partic-api-test@example.com', name: 'Board Parent', householdId: boardHousehold.id }
+        });
+        boardId = board.id;
+        const dependent = await prisma.participant.create({
+            data: {
+                email: 'dep-partic-api-test@example.com',
+                name: 'Board Dependent',
+                dob: new Date(Date.now() - (25 * 31556952000)),
+                householdId: boardHousehold.id
+            }
+        });
+        depId = dependent.id;
+        await prisma.householdLead.create({
+            data: { householdId: boardHousehold.id, participantId: boardId }
+        });
+
         // Create mock programs
         const standardProgram = await prisma.program.create({
             data: { name: 'Standard Partic API Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', leadMentorId: leadId, memberPriceCents: 1000, nonMemberPriceCents: 1500 }
@@ -119,10 +145,13 @@ describe('Program Participants API Integration Tests', () => {
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, leadId, commonId, otherId].filter(id => id !== undefined);
+        const existingUserIds = [adminId, leadId, commonId, otherId, boardId, depId].filter(id => id !== undefined);
         const validProgramIds = [standardProgramId, freeProgramId, fullProgramId, exactAgeProgramId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
+            await prisma.householdLead.deleteMany({
+                where: { participantId: { in: existingUserIds } }
+            });
             await prisma.programParticipant.deleteMany({
                 where: { participantId: { in: existingUserIds } }
             });
@@ -273,6 +302,47 @@ describe('Program Participants API Integration Tests', () => {
              // Program is now intentionally over its cap of 1.
              const enrolled = await prisma.programParticipant.count({ where: { programId: fullProgramId } });
              expect(enrolled).toBe(2);
+        });
+
+        // A board member is also a parent. Enrolling their own dependent through
+        // the public program page must behave like any household lead: PENDING
+        // (awaiting Shopify payment), NOT a comped/free enrollment and NOT a
+        // scary "bypasses all payment" override prompt.
+        it('should make a board parent PAY (PENDING) when enrolling their own dependent in a paid program', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${standardProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: depId }) // no override
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.success).toBe(true);
+             expect(data.enrollment.status).toBe('PENDING'); // pays like any parent
+        });
+
+        // The comp still belongs to genuine admin action: a board member
+        // enrolling someone OUTSIDE their household (the program-ops surface).
+        it('should require override + comp (ACTIVE) when a board member enrolls a non-household participant', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
+
+             const promptReq = new Request(`http://localhost:4000/api/programs/${standardProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: otherId }) // not in board's household, no override
+             });
+             const promptRes = await POST(promptReq as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
+             expect(promptRes.status).toBe(400);
+             expect((await promptRes.json()).requiresOverride).toBe(true);
+
+             const forceReq = new Request(`http://localhost:4000/api/programs/${standardProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: otherId, override: true })
+             });
+             const forceRes = await POST(forceReq as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
+             expect(forceRes.status).toBe(200);
+             expect((await forceRes.json()).enrollment.status).toBe('ACTIVE'); // admin comp
         });
 
         it('should return 409 (not 500) when enrolling the same participant twice', async () => {

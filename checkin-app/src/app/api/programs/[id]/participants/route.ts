@@ -64,7 +64,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const override = body.override === true;
 
-        if (!isSelfEnrollment && isSysAdminOrBoard && !override) {
+        // A board/sysadmin enrolling someone OUTSIDE their own household (the
+        // program-ops surface) is a real admin comp: it skips payment. A board
+        // member enrolling their own self/dependent through the public program
+        // page is just a parent — they pay like anyone else. Without this, a
+        // board parent got a confusing "bypasses all payment / Force Enroll"
+        // prompt and a free enrollment instead of a Shopify checkout.
+        const isExternalAdmin = isSysAdminOrBoard && !isSelfEnrollment && !isHouseholdLead;
+
+        if (isExternalAdmin && !override) {
              return NextResponse.json({ error: "This bypasses all payment. Are you sure?", requiresOverride: true }, { status: 400 });
         }
 
@@ -104,8 +112,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const isFree = currentProgram.memberPriceCents === null && currentProgram.nonMemberPriceCents === null;
         
-        // Default status is PENDING, unless board is bypassing or the program is free
-        const initialStatus = ((isSysAdminOrBoard && override) || isFree) ? 'ACTIVE' : 'PENDING';
+        // PENDING (awaits payment) unless the program is free or an external
+        // admin is comping it. A board parent overriding a soft limit for their
+        // own household still pays — the override bypasses limits, not the fee.
+        const initialStatus = ((isExternalAdmin && override) || isFree) ? 'ACTIVE' : 'PENDING';
 
         const enrollment = await prisma.$transaction(async (tx) => {
             // Re-check capacity under a row lock right before insert, so
