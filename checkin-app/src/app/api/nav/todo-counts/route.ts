@@ -48,7 +48,7 @@ export type TodoCounts = {
     activePrograms: number;
     // Admin keys stay numeric — each admin nav link already deep-links to a page
     // that lists its own queue, so the number is enough.
-    admin?: { membership: number; programsPending: number; trustedAdults: number; householdsMissingContact: number };
+    admin?: { membership: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number };
 };
 
 // What a member-actionable membership process means, in plain terms.
@@ -161,7 +161,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // ---- Admin surface (board's own queue) — only for board/sysadmin ----
     if (user.sysadmin || user.boardMember) {
-        const [membership, programsPending, trustedAdults, householdsMissingContact] = await Promise.all([
+        const [membership, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds] = await Promise.all([
             prisma.membershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -172,8 +172,13 @@ export const GET = withAuth({}, async (_req, auth) => {
                 where: { status: "PENDING_BOARD_REVIEW" },
             }),
             countHouseholdsMissingValidContact(),
+            // Households with an account created at registration that nobody has
+            // claimed via Google sign-in yet. Mirrors /api/admin/unclaimed-households.
+            prisma.household.count({
+                where: { participants: { some: { email: { not: null }, googleId: null } } },
+            }),
         ]);
-        result.admin = { membership, programsPending, trustedAdults, householdsMissingContact };
+        result.admin = { membership, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds };
     }
 
     return NextResponse.json(result);
