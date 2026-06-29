@@ -7,6 +7,7 @@ import { AlertBanner } from '@/components/admin/AlertBanner';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
+import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
 
 type ParticipantOption = {
   id: number;
@@ -29,6 +30,7 @@ export default function CreateProgramPage() {
   const [maxParticipants, setMaxParticipants] = useState("");
   const [memberOnly, setMemberOnly] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
 
@@ -63,6 +65,7 @@ export default function CreateProgramPage() {
 
       if (res.ok) {
         const data = await res.json();
+        setSubmitted(true); // clear unsaved-changes guard before redirect
         router.push(`/program-ops/programs/${data.program.id}`);
       } else {
         const data = await res.json();
@@ -76,6 +79,15 @@ export default function CreateProgramPage() {
       setSaving(false);
     }
   };
+
+  // Dirty = any field changed from the blank creation defaults.
+  const isDirty =
+    !submitted &&
+    !shallowEqual(
+      { name: "", begin: "", end: "", minAge: "", maxAge: "", isFree: true, memberPrice: "", nonMemberPrice: "", maxParticipants: "", memberOnly: false, leadMentorId: "" },
+      { name, begin, end, minAge, maxAge, isFree, memberPrice, nonMemberPrice, maxParticipants, memberOnly, leadMentorId },
+    );
+  useUnsavedGuard(isDirty);
 
   if (authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
