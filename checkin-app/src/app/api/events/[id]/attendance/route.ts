@@ -75,6 +75,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                         data: { associatedEventId: eventId }
                     });
                     actions.push(updated);
+                    // Audit keyed by the actual Visit row (secondary = event), so a
+                    // suspect visit is reverse-lookupable by its own PK.
+                    await tx.auditLog.create({
+                        data: {
+                            actorId: currentUserId,
+                            action: 'EDIT',
+                            tableName: 'Visit',
+                            affectedEntityId: updated.id,
+                            secondaryAffectedEntity: eventId,
+                            newData: JSON.stringify({ participantId: pId, associatedEventId: eventId, synthetic: false })
+                        }
+                    });
                 } else {
                     // Create a synthetic visit since they were marked attended but didn't badge in
                     const newVisit = await tx.visit.create({
@@ -86,19 +98,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                         }
                     });
                     actions.push(newVisit);
+                    await tx.auditLog.create({
+                        data: {
+                            actorId: currentUserId,
+                            action: 'CREATE',
+                            tableName: 'Visit',
+                            affectedEntityId: newVisit.id,
+                            secondaryAffectedEntity: eventId,
+                            newData: JSON.stringify({ participantId: pId, associatedEventId: eventId, synthetic: true })
+                        }
+                    });
                 }
             }
             return actions;
-        });
-
-        await prisma.auditLog.create({
-            data: {
-                actorId: currentUserId,
-                action: 'EDIT',
-                tableName: 'Visit',
-                affectedEntityId: eventId,
-                newData: JSON.stringify({ validatedParticipants: participantIds })
-            }
         });
 
         return NextResponse.json({ success: true, processed: results.length });
