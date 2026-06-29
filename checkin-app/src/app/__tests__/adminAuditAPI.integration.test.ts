@@ -104,6 +104,30 @@ describe('Admin Audit API Integration Tests', () => {
              // Verify it contains our generated log
              const ourLog = data.logs.find((log: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => log.actorId === adminId && log.action === 'CREATE');
              expect(ourLog).toBeDefined();
+
+             // Server-side paging metadata + resolved actor name.
+             expect(typeof data.total).toBe('number');
+             expect(data.page).toBe(1);
+             expect(data.pageSize).toBe(50);
+             expect(Array.isArray(data.tables)).toBe(true);
+             expect(ourLog.actorName).toBe('Admin');
+        });
+
+        it('should filter by action and entity and page server-side', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+
+             const url = 'http://localhost:4000/api/admin/audit?action=CREATE&table=Participant&page=1';
+             const req = new Request(url, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.logs.length).toBeLessThanOrEqual(50);
+             // Every returned row must satisfy both filters.
+             for (const log of data.logs) {
+                 expect(log.action).toBe('CREATE');
+                 expect(log.tableName).toBe('Participant');
+             }
         });
     });
 });
