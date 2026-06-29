@@ -114,12 +114,19 @@ export const classifications = {
         shopifyPriceSyncedAt: 'internal',
         updatedAt: 'internal',
     },
+    AppSettings: {
+        id: 'public',
+        timezone: 'public',
+        locale: 'public',
+        updatedAt: 'public',
+    },
     TrustedAdult: {
         id: 'public',
         householdId: 'public',
         counterpartyParticipantId: 'public',
         counterpartyName: 'personal',
-        counterpartyContact: 'personal',
+        counterpartyPhone: 'personal',
+        counterpartyEmail: 'personal',
         familyContext: 'pii',
         origin: 'internal',
         disclosedById: 'internal',
@@ -361,6 +368,8 @@ export const relations = {
     VolunteerDesignation: {
     },
     BoardSettings: {
+    },
+    AppSettings: {
     },
     TrustedAdult: {
         household: { model: 'Household', isList: false },

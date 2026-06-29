@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 
 interface Review {
     id: number;
@@ -13,7 +14,8 @@ interface TrustedAdult {
     id: number;
     householdId: number;
     counterpartyName: string | null;
-    counterpartyContact: string | null;
+    counterpartyPhone: string | null;
+    counterpartyEmail: string | null;
     household: { id: number; name: string | null } | null;
     reviews: Review[];
 }
@@ -63,9 +65,7 @@ export default function TrustedAdultPickupPage() {
                             <Text fw={600} size="sm">{ta.counterpartyName || "Trusted adult"}</Text>
                             <Text c="dimmed" size="sm">for {ta.household?.name || `Household ${ta.householdId}`}</Text>
                         </Group>
-                        {ta.counterpartyContact && (
-                            <Text size="xs" c="dimmed" mt={2}>Contact: {ta.counterpartyContact}</Text>
-                        )}
+                        <TrustedAdultContact phone={ta.counterpartyPhone} email={ta.counterpartyEmail} />
                         {latest?.sharedNote && <Text size="sm" mt={4}>{latest.sharedNote}</Text>}
                         {latest?.reviewBy && (
                             <Text size="xs" c="dimmed" mt={2}>Approved through {latest.reviewBy.slice(0, 10)}</Text>

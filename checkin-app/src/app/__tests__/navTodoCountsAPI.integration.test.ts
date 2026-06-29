@@ -69,7 +69,7 @@ describe('Nav todo-counts API', () => {
             data: {
                 householdId: householdAId,
                 counterpartyName: 'Counterparty One',
-                counterpartyContact: 'one@example.com',
+                counterpartyEmail: 'one@example.com',
                 familyContext: 'needs info',
                 disclosedById: leadId,
                 reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'PENDING_SUBJECT_ACTION' } },
@@ -79,7 +79,7 @@ describe('Nav todo-counts API', () => {
             data: {
                 householdId: householdAId,
                 counterpartyName: 'Counterparty Two',
-                counterpartyContact: 'two@example.com',
+                counterpartyEmail: 'two@example.com',
                 familyContext: 'expiring soon',
                 disclosedById: leadId,
                 reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'APPROVED', sharedNote: 'note', effectiveFrom: daysFromNow(-355), reviewBy: daysFromNow(10) } },
@@ -90,7 +90,7 @@ describe('Nav todo-counts API', () => {
             data: {
                 householdId: householdAId,
                 counterpartyName: 'Counterparty Three',
-                counterpartyContact: 'three@example.com',
+                counterpartyEmail: 'three@example.com',
                 familyContext: 'pending board review',
                 disclosedById: leadId,
                 reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'PENDING_BOARD_REVIEW' } },
