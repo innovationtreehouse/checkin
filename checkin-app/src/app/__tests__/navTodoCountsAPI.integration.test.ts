@@ -32,6 +32,10 @@ describe('Nav todo-counts API', () => {
     let membershipId: number;
     let program1Id: number;
     let program2Id: number;
+    let ledProgramId: number;
+    let pendingEventId: number;
+    let confirmedEventId: number;
+    let futureEventId: number;
     const trustedAdultIds: number[] = [];
 
     const daysFromNow = (n: number) => {
@@ -108,6 +112,24 @@ describe('Nav todo-counts API', () => {
         await prisma.programParticipant.create({ data: { programId: program1Id, participantId: leadId, status: 'PENDING' } });
         await prisma.programParticipant.create({ data: { programId: program2Id, participantId: secondMemberId, status: 'PENDING', isPaymentPlanRequested: true } });
 
+        // The lead also *runs* a program (leadMentorId). Three events: one ended
+        // and unconfirmed (the inbox item), one ended but already confirmed, one
+        // still in the future. Only the first should surface in the lead bucket.
+        const ledProgram = await prisma.program.create({ data: { name: `Led ${TAG}`, leadMentorId: leadId } });
+        ledProgramId = ledProgram.id;
+        const pendingEvent = await prisma.event.create({
+            data: { programId: ledProgramId, name: `Pending ${TAG}`, start: daysFromNow(-1), end: daysFromNow(-1) },
+        });
+        pendingEventId = pendingEvent.id;
+        const confirmedEvent = await prisma.event.create({
+            data: { programId: ledProgramId, name: `Confirmed ${TAG}`, start: daysFromNow(-2), end: daysFromNow(-2), attendanceConfirmedAt: new Date() },
+        });
+        confirmedEventId = confirmedEvent.id;
+        const futureEvent = await prisma.event.create({
+            data: { programId: ledProgramId, name: `Future ${TAG}`, start: daysFromNow(3), end: daysFromNow(3) },
+        });
+        futureEventId = futureEvent.id;
+
         // Household B: a board member with no household todos of their own.
         const board = await prisma.participant.create({
             data: { email: `board-${TAG}@example.com`, name: 'Board B', dateOfBirth: new Date('1980-01-01'), phone: '555-0000', boardMember: true, household: { create: {} } },
@@ -120,7 +142,8 @@ describe('Nav todo-counts API', () => {
         await prisma.trustedAdultReview.deleteMany({ where: { trustedAdultId: { in: trustedAdultIds } } });
         await prisma.trustedAdult.deleteMany({ where: { id: { in: trustedAdultIds } } });
         await prisma.programParticipant.deleteMany({ where: { programId: { in: [program1Id, program2Id] } } });
-        await prisma.program.deleteMany({ where: { id: { in: [program1Id, program2Id] } } });
+        await prisma.event.deleteMany({ where: { id: { in: [pendingEventId, confirmedEventId, futureEventId] } } });
+        await prisma.program.deleteMany({ where: { id: { in: [program1Id, program2Id, ledProgramId] } } });
         await prisma.membershipProcess.deleteMany({ where: { membershipId } });
         await prisma.membership.deleteMany({ where: { id: membershipId } });
         await prisma.householdLead.deleteMany({ where: { householdId: householdAId } });
@@ -151,6 +174,25 @@ describe('Nav todo-counts API', () => {
         expect(data.member.household).toEqual(
             expect.arrayContaining([expect.objectContaining({ label: 'Pay your membership dues', href: '/membership' })]),
         );
+    });
+
+    it('surfaces a lead bucket with only ended-and-unconfirmed attendance', async () => {
+        const res = await callAs({ id: leadId, householdId: householdAId });
+        const data = await res.json();
+        expect(data.lead).toBeDefined();
+        const led = data.lead.programs.find((p: { id: number }) => p.id === ledProgramId);
+        expect(led).toBeDefined();
+        // Only the ended-unconfirmed event — confirmed and future events excluded.
+        expect(led.pending).toHaveLength(1);
+        expect(led.pending[0]).toEqual(
+            expect.objectContaining({ href: `/program-ops/sessions/${pendingEventId}?from=my-programs` }),
+        );
+    });
+
+    it('omits the lead bucket for a caller who leads no program', async () => {
+        const res = await callAs({ id: secondMemberId, householdId: householdAId });
+        const data = await res.json();
+        expect(data.lead).toBeUndefined();
     });
 
     it('omits the admin block for a non-admin caller', async () => {
