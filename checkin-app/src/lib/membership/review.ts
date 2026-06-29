@@ -147,7 +147,7 @@ export async function eligibleReviewProcessIds(reviewerId: number): Promise<numb
 export async function attest(
     reviewerId: number,
     processId: number,
-    input: { result: "APPROVE" | "REJECT"; markedVolunteer?: boolean },
+    input: { result: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean },
 ) {
     const reviewer = await loadReviewer(reviewerId);
     if (!reviewer?.backgroundCheckReviewer) throw new ReviewError("not_reviewer", "You are not a background-check reviewer.");
@@ -172,7 +172,7 @@ export async function attest(
         if (process.attestations.some((a) => a.reviewer.householdId === reviewer.householdId)) throw new ReviewError("same_household_reviewer", "Another reviewer from your household has already reviewed this application.");
 
         await tx.backgroundCheckAttestation.create({
-            data: { processId, reviewerId, result: input.result, markedVolunteer: !!input.markedVolunteer },
+            data: { processId, reviewerId, result: input.result, isMarkedVolunteer: !!input.isMarkedVolunteer },
         });
 
         if (input.result === "REJECT") {
@@ -223,7 +223,7 @@ async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: nu
     // Stamp the guardians' (household leads') lastBackgroundCheck. Expiry is derived from this
     // plus BoardSettings.bgRecheckMonths at read time (see householdBgIsFresh) — not stored.
     await tx.participant.updateMany({ where: { householdId, householdLeads: { some: { householdId } } }, data: { lastBackgroundCheck: now } });
-    await applyVolunteerStatus(tx, process.membershipId, householdId, process.attestations.some((a) => a.markedVolunteer));
+    await applyVolunteerStatus(tx, process.membershipId, householdId, process.attestations.some((a) => a.isMarkedVolunteer));
 
     await tx.membershipProcess.update({
         where: { id: processId },

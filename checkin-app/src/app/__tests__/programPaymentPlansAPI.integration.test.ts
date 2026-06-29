@@ -86,8 +86,8 @@ describe('Program payment-plan routes', () => {
     async function enroll(participantId: number, opts: { requested: boolean }) {
         await prisma.programParticipant.upsert({
             where: { programId_participantId: { programId, participantId } },
-            update: { status: 'PENDING', paymentPlanRequested: opts.requested, pendingSince: new Date() },
-            create: { programId, participantId, status: 'PENDING', paymentPlanRequested: opts.requested, pendingSince: new Date() },
+            update: { status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
+            create: { programId, participantId, status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
         });
     }
 
@@ -111,7 +111,7 @@ describe('Program payment-plan routes', () => {
             expect(res.status).toBe(403);
         });
 
-        it('returns only PENDING + paymentPlanRequested rows to a board member', async () => {
+        it('returns only PENDING + isPaymentPlanRequested rows to a board member', async () => {
             await enroll(selfId, { requested: true });   // should appear
             await enroll(noiseId, { requested: false });  // should NOT appear
             mockSession.mockResolvedValue({ user: { id: boardId, boardMember: true } });
@@ -152,7 +152,7 @@ describe('Program payment-plan routes', () => {
                 where: { programId_participantId: { programId, participantId: selfId } },
             });
             expect(row?.status).toBe('ACTIVE');
-            expect(row?.paymentPlanRequested).toBe(false);
+            expect(row?.isPaymentPlanRequested).toBe(false);
             expect(row?.pendingSince).toBeNull();
         });
     });
@@ -195,7 +195,7 @@ describe('Program payment-plan routes', () => {
             const row = await prisma.programParticipant.findUnique({
                 where: { programId_participantId: { programId, participantId: selfId } },
             });
-            expect(row?.paymentPlanRequested).toBe(false);
+            expect(row?.isPaymentPlanRequested).toBe(false);
         });
 
         it('200 when the participant requests their own payment plan', async () => {
@@ -207,7 +207,7 @@ describe('Program payment-plan routes', () => {
             const row = await prisma.programParticipant.findUnique({
                 where: { programId_participantId: { programId, participantId: selfId } },
             });
-            expect(row?.paymentPlanRequested).toBe(true);
+            expect(row?.isPaymentPlanRequested).toBe(true);
         });
     });
 });

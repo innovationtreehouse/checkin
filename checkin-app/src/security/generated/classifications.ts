@@ -91,7 +91,7 @@ export const classifications = {
         processId: 'public',
         reviewerId: 'public',
         result: 'internal',
-        markedVolunteer: 'internal',
+        isMarkedVolunteer: 'internal',
         createdAt: 'public',
     },
     VolunteerDesignation: {
@@ -194,7 +194,7 @@ export const classifications = {
         programId: 'public',
         participantId: 'public',
         status: 'public',
-        paymentPlanRequested: 'personal',
+        isPaymentPlanRequested: 'personal',
         pendingSince: 'internal',
     },
     Fee: {

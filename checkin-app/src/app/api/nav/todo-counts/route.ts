@@ -192,7 +192,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 where: { status: { not: "ACTIVE" } },
             }),
             prisma.programParticipant.count({
-                where: { status: "PENDING", paymentPlanRequested: true },
+                where: { status: "PENDING", isPaymentPlanRequested: true },
             }),
             prisma.trustedAdultReview.count({
                 where: { status: "PENDING_BOARD_REVIEW" },

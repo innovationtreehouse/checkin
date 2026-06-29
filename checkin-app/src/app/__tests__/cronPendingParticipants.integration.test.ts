@@ -10,7 +10,7 @@
  * We seed enrollments with controlled pendingSince so each boundary is hit:
  *   day 1/3/6  -> warned, NOT deleted
  *   day 7      -> deleted
- * paymentPlanRequested:true rows are filtered out of the query entirely and
+ * isPaymentPlanRequested:true rows are filtered out of the query entirely and
  * therefore survive forever.
  */
 
@@ -54,7 +54,7 @@ describe('Cron Pending-Participants API Integration Tests', () => {
         await mkParticipant('day3');
         await mkParticipant('day6');
         await mkParticipant('day7');
-        await mkParticipant('plan'); // paymentPlanRequested -> never swept
+        await mkParticipant('plan'); // isPaymentPlanRequested -> never swept
 
         await prisma.programParticipant.createMany({
             data: [
@@ -62,7 +62,7 @@ describe('Cron Pending-Participants API Integration Tests', () => {
                 { programId, participantId: ids.day3, status: 'PENDING', pendingSince: daysAgo(now, 3) },
                 { programId, participantId: ids.day6, status: 'PENDING', pendingSince: daysAgo(now, 6) },
                 { programId, participantId: ids.day7, status: 'PENDING', pendingSince: daysAgo(now, 7) },
-                { programId, participantId: ids.plan, status: 'PENDING', pendingSince: daysAgo(now, 8), paymentPlanRequested: true },
+                { programId, participantId: ids.plan, status: 'PENDING', pendingSince: daysAgo(now, 8), isPaymentPlanRequested: true },
             ]
         });
     });

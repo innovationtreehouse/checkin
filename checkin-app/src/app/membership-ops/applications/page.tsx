@@ -13,7 +13,7 @@ interface Participant {
 interface Attestation {
   id: number;
   result: string;
-  markedVolunteer: boolean;
+  isMarkedVolunteer: boolean;
 }
 interface ProcessRow {
   id: number;

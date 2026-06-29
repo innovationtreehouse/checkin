@@ -60,7 +60,7 @@ export default function MembershipReviewPage() {
       const res = await fetch("/api/membership/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ processId, result, markedVolunteer: !!volunteer[processId] }),
+        body: JSON.stringify({ processId, result, isMarkedVolunteer: !!volunteer[processId] }),
       });
       const data = await res.json();
       if (res.ok) {
