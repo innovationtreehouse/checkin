@@ -60,6 +60,12 @@ export type TodoCounts = {
     // households with >=1 non-org-email (or null-email) participant. Staff households hold
     // only the org-email lead, so they fall out.
     admin?: { membership: number; applicationsTotal: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number };
+    // Lead surface: programs the caller runs (program.leadMentorId). Present only
+    // when they lead ≥1 program — drives the staff "My Programs" nav item's
+    // visibility and its green badge (sum of pending attendance to confirm).
+    // `pending` mirrors the post-event email's targets (ended events not yet
+    // confirmed), deep-linked to the existing confirm screen. No new capability.
+    lead?: { programs: { id: number; name: string; pending: TodoItem[] }[] };
 };
 
 // What a member-actionable membership process means, in plain terms.
@@ -184,6 +190,41 @@ export const GET = withAuth({}, async (_req, auth) => {
         buildingHousehold,
         activePrograms,
     };
+
+    // ---- Lead surface (programs the caller runs as lead mentor) ----
+    // Same targets as the post-event email (src/lib/postEventEmails.ts): events
+    // that have ended with attendance not yet confirmed, in a program the caller
+    // leads. Surfaced in-app additively; the email keeps firing. Each item deep-
+    // links to the existing confirm screen — no new capability, no new PII.
+    const ledPrograms = await prisma.program.findMany({
+        where: { leadMentorId: user.id },
+        select: { id: true, name: true },
+    });
+    if (ledPrograms.length > 0) {
+        const pendingEvents = await prisma.event.findMany({
+            where: {
+                programId: { in: ledPrograms.map((p) => p.id) },
+                end: { lte: new Date() },
+                attendanceConfirmedAt: null,
+            },
+            select: { id: true, name: true, programId: true },
+            orderBy: { end: "asc" },
+        });
+        const pendingByProgram = new Map<number, TodoItem[]>();
+        for (const e of pendingEvents) {
+            if (e.programId === null) continue;
+            const items = pendingByProgram.get(e.programId) ?? [];
+            items.push({
+                key: `attendance-${e.id}`,
+                label: `Confirm attendance for ${e.name}`,
+                href: `/program-ops/sessions/${e.id}?from=my-programs`,
+            });
+            pendingByProgram.set(e.programId, items);
+        }
+        result.lead = {
+            programs: ledPrograms.map((p) => ({ id: p.id, name: p.name, pending: pendingByProgram.get(p.id) ?? [] })),
+        };
+    }
 
     // ---- Admin surface (board's own queue) — only for board/sysadmin ----
     if (user.sysadmin || user.boardMember) {

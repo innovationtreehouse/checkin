@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
@@ -44,6 +44,11 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const { data: session, status } = useSession();
   const router = useRouter();
+  // Leads reach this screen from their My Programs inbox (?from=my-programs).
+  // When they do, "back" and post-confirm return there instead of the board's
+  // program-edit page. Board/program-ops flow (no param) is unchanged.
+  const searchParams = useSearchParams();
+  const fromMyPrograms = searchParams.get('from') === 'my-programs';
 
   const [eventData, setEventData] = useState<EventData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,6 +106,12 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         body: JSON.stringify({ action: 'confirmAttendance' })
       });
       if (res.ok) {
+        // From the lead's inbox, the work is done → return to My Programs (the
+        // item drops off there). Board/program-ops flow stays on the page.
+        if (fromMyPrograms) {
+          router.push('/my-programs');
+          return;
+        }
         setMessage("Attendance confirmed successfully!");
         fetchEvent();
       } else {
@@ -306,8 +317,19 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
             <Title order={1}>{eventData.name}</Title>
             <Text c="dimmed" fz="lg">{formatDateTime(eventData.start)} - {formatDateTime(eventData.end)}</Text>
           </div>
-          <Button variant="default" onClick={() => router.push(eventData.program?.id ? `/program-ops/programs/${eventData.program.id}` : '/program-ops/programs')}>
-            ← Back to Program
+          <Button
+            variant="default"
+            onClick={() =>
+              router.push(
+                fromMyPrograms
+                  ? '/my-programs'
+                  : eventData.program?.id
+                    ? `/program-ops/programs/${eventData.program.id}`
+                    : '/program-ops/programs',
+              )
+            }
+          >
+            {fromMyPrograms ? '← Back to My Programs' : '← Back to Program'}
           </Button>
         </Group>
 
