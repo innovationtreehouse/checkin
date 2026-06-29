@@ -26,7 +26,7 @@ type HouseholdData = {
 } & Partial<StructuredAddress> | null;
 
 const blankContactForm = { id: null as number | null, name: "", phone: "", email: "", relationship: "" };
-type Visit = { id: number; participant?: { name: string }; event?: { name: string }; arrived: string; departed?: string };
+type Visit = { id: number; participant?: { name: string }; event?: { name: string }; arrivedAt: string; departedAt?: string };
 
 export default function HouseholdPage() {
   const { data: session, status } = useSession();
@@ -569,9 +569,9 @@ export default function HouseholdPage() {
                       <div>
                         <Text fw={600} c="blue">{v.participant?.name || 'Unnamed Member'}</Text>
                         <Text size="sm" component="span">{v.event?.name || 'General Facility Visit'} </Text>
-                        <Text size="sm" c="dimmed" component="span">• {formatDateTime(v.arrived, { dateStyle: 'short', timeStyle: 'short' })} • {formatVisitRange(v.arrived, v.departed)}</Text>
+                        <Text size="sm" c="dimmed" component="span">• {formatDateTime(v.arrivedAt, { dateStyle: 'short', timeStyle: 'short' })} • {formatVisitRange(v.arrivedAt, v.departedAt)}</Text>
                       </div>
-                      {!v.departed && (
+                      {!v.departedAt && (
                         <Text size="sm" component="span" c="yellow">Active Visit</Text>
                       )}
                     </Group>

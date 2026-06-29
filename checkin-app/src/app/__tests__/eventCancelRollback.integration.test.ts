@@ -90,7 +90,7 @@ describe('PATCH /api/events/[id] cancel — transaction rollback on partial fail
             data: { eventId: event.id, participantId, status: 'ATTENDING' },
         });
         await prisma.visit.create({
-            data: { participantId, arrived: start, associatedEventId: event.id },
+            data: { participantId, arrivedAt: start, associatedEventId: event.id },
         });
         return event.id;
     }

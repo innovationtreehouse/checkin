@@ -198,21 +198,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                 return NextResponse.json({ error: "Forbidden: Not authorized to edit attendance" }, { status: 403 });
             }
 
-            const { participantId, status, arrived, departed } = body;
+            const { participantId, status, arrivedAt, departedAt } = body;
 
             if (!participantId || !status) {
                 return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
             }
 
             if (status === 'Absent') {
-                // An open visit (departed = null) means they physically scanned in
+                // An open visit (departedAt = null) means they physically scanned in
                 // and are currently on-site. Deleting it would destroy the live
                 // roster of who's in the building — reject instead.
                 const openVisit = await prisma.visit.findFirst({
                     where: {
                         participantId: Number(participantId),
                         associatedEventId: eventId,
-                        departed: null
+                        departedAt: null
                     }
                 });
                 if (openVisit) {
@@ -226,7 +226,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                     }
                 });
             } else if (status === 'Present') {
-                if (!arrived) {
+                if (!arrivedAt) {
                     return NextResponse.json({ error: "Arrival time is required for Present status" }, { status: 400 });
                 }
 
@@ -242,10 +242,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                     await prisma.visit.update({
                         where: { id: existingVisit.id },
                         data: {
-                            arrived: new Date(arrived),
-                            departed: departed ? new Date(departed) : null,
+                            arrivedAt: new Date(arrivedAt),
+                            departedAt: departedAt ? new Date(departedAt) : null,
                             arrivedVia: "WEB",
-                            departedVia: departed ? "WEB" : null
+                            departedVia: departedAt ? "WEB" : null
                         }
                     });
                 } else {
@@ -253,10 +253,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                         data: {
                             participantId: Number(participantId),
                             associatedEventId: eventId,
-                            arrived: new Date(arrived),
-                            departed: departed ? new Date(departed) : null,
+                            arrivedAt: new Date(arrivedAt),
+                            departedAt: departedAt ? new Date(departedAt) : null,
                             arrivedVia: "WEB",
-                            departedVia: departed ? "WEB" : null
+                            departedVia: departedAt ? "WEB" : null
                         }
                     });
                 }

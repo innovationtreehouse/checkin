@@ -20,7 +20,7 @@ export async function processCheckin(participant: Participant, authType: string,
     if (!participant.keyholder) {
         const activeKeyholders = await db.visit.count({
             where: {
-                departed: null,
+                departedAt: null,
                 participant: { keyholder: true }
             }
         });
@@ -36,7 +36,7 @@ export async function processCheckin(participant: Participant, authType: string,
     const newVisit = await db.visit.create({
         data: {
             participantId: participant.id,
-            arrived: arrivalTime,
+            arrivedAt: arrivalTime,
             arrivedVia: "SCANNER",
             associatedEventId: eventId
         },
@@ -74,7 +74,7 @@ export async function processCheckout(
     if (participant.keyholder) {
         const remainingKeyholders = await db.visit.count({
             where: {
-                departed: null,
+                departedAt: null,
                 participant: { keyholder: true },
                 id: { not: activeVisitId }
             }
@@ -83,7 +83,7 @@ export async function processCheckout(
         if (remainingKeyholders === 0) {
             const remainingUsers = await db.visit.findMany({
                 where: {
-                    departed: null,
+                    departedAt: null,
                     id: { not: activeVisitId }
                 },
                 include: { participant: true }
@@ -148,8 +148,8 @@ export async function processCheckout(
  *  a single atomic statement, so it needs no wrapping transaction. */
 async function closeAllOpenVisits(db: DbClient) {
     await db.visit.updateMany({
-        where: { departed: null },
-        data: { departed: new Date(), departedVia: "SYSTEM" },
+        where: { departedAt: null },
+        data: { departedAt: new Date(), departedVia: "SYSTEM" },
     });
 }
 

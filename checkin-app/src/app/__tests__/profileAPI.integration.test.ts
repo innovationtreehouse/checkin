@@ -60,8 +60,8 @@ describe('Profile API Integration Tests', () => {
         // Create visits for history testing
         await prisma.visit.createMany({
             data: [
-                { participantId: testUserId, arrived: new Date(Date.now() - 3600000) },
-                { participantId: testUserId, arrived: new Date(Date.now() - 7200000) }
+                { participantId: testUserId, arrivedAt: new Date(Date.now() - 3600000) },
+                { participantId: testUserId, arrivedAt: new Date(Date.now() - 7200000) }
             ]
         });
     });

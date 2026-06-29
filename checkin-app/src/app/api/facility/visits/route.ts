@@ -8,7 +8,7 @@ export const GET = withAuth(
         try {
             const visits = await prisma.visit.findMany({
                 take: 50,
-                orderBy: { arrived: "desc" },
+                orderBy: { arrivedAt: "desc" },
                 include: {
                     participant: {
                         select: { email: true, name: true, sysadmin: true, keyholder: true },
@@ -28,7 +28,7 @@ export const PATCH = withAuth(
     { roles: ['sysadmin', 'boardMember'] },
     async (req, auth) => {
         try {
-            const { visitId, arrived, departed } = await req.json();
+            const { visitId, arrivedAt, departedAt } = await req.json();
 
             if (!visitId) {
                 return NextResponse.json({ error: "visitId is required." }, { status: 400 });
@@ -37,8 +37,8 @@ export const PATCH = withAuth(
             const updatedVisit = await prisma.visit.update({
                 where: { id: visitId },
                 data: {
-                    ...(arrived ? { arrived: new Date(arrived), arrivedVia: "WEB" } : {}),
-                    ...(departed ? { departed: new Date(departed), departedVia: "WEB" } : {}),
+                    ...(arrivedAt ? { arrivedAt: new Date(arrivedAt), arrivedVia: "WEB" } : {}),
+                    ...(departedAt ? { departedAt: new Date(departedAt), departedVia: "WEB" } : {}),
                 },
             });
 

@@ -10,7 +10,7 @@ export const GET = handler('GET /api/profile', async ({ auth }) => {
         where: { id: auth.user.id },
         include: {
             visits: {
-                orderBy: { arrived: 'desc' },
+                orderBy: { arrivedAt: 'desc' },
                 take: 50,
                 include: { event: true },
             },

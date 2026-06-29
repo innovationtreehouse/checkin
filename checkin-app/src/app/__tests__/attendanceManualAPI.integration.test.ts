@@ -69,7 +69,7 @@ describe('Manual Attendance API Integration Tests', () => {
 
             const req = new Request('http://localhost:4000/api/attendance/manual', {
                 method: 'POST',
-                body: JSON.stringify({ arrived: new Date().toISOString() })
+                body: JSON.stringify({ arrivedAt: new Date().toISOString() })
             });
 
             const res = await POST(req as unknown as import("next/server").NextRequest);
@@ -85,7 +85,7 @@ describe('Manual Attendance API Integration Tests', () => {
 
             const req = new Request('http://localhost:4000/api/attendance/manual', {
                 method: 'POST',
-                body: JSON.stringify({ departed: new Date().toISOString() }) // No arrived time
+                body: JSON.stringify({ departedAt: new Date().toISOString() }) // No arrivedAt time
             });
 
             const res = await POST(req as unknown as import("next/server").NextRequest);
@@ -101,7 +101,7 @@ describe('Manual Attendance API Integration Tests', () => {
 
             const req = new Request('http://localhost:4000/api/attendance/manual', {
                 method: 'POST',
-                body: JSON.stringify({ arrived: 'not-a-date' })
+                body: JSON.stringify({ arrivedAt: 'not-a-date' })
             });
 
             const res = await POST(req as unknown as import("next/server").NextRequest);
@@ -115,12 +115,12 @@ describe('Manual Attendance API Integration Tests', () => {
                 user: { id: testUserId }
             });
 
-            const arrived = new Date();
-            const departed = new Date(arrived.getTime() - 3600000); // 1 hour BEFORE arrival
+            const arrivedAt = new Date();
+            const departedAt = new Date(arrivedAt.getTime() - 3600000); // 1 hour BEFORE arrival
 
             const req = new Request('http://localhost:4000/api/attendance/manual', {
                 method: 'POST',
-                body: JSON.stringify({ arrived: arrived.toISOString(), departed: departed.toISOString() })
+                body: JSON.stringify({ arrivedAt: arrivedAt.toISOString(), departedAt: departedAt.toISOString() })
             });
 
             const res = await POST(req as unknown as import("next/server").NextRequest);
@@ -129,13 +129,13 @@ describe('Manual Attendance API Integration Tests', () => {
             expect(data.error).toBe('Departure time must be after arrival time');
         });
 
-        it('should successfully record a manual visit with both arrived and departed defined', async () => {
+        it('should successfully record a manual visit with both arrivedAt and departedAt defined', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testUserId }
             });
 
-            const arrived = new Date(Date.now() - 7200000); // 2 hours ago
-            const departed = new Date(Date.now() - 3600000); // 1 hour ago
+            const arrivedAt = new Date(Date.now() - 7200000); // 2 hours ago
+            const departedAt = new Date(Date.now() - 3600000); // 1 hour ago
 
             const previousAuditLogs = await prisma.auditLog.count({
                 where: { actorId: testUserId, action: 'CREATE', tableName: 'Visit' }
@@ -143,7 +143,7 @@ describe('Manual Attendance API Integration Tests', () => {
 
             const req = new Request('http://localhost:4000/api/attendance/manual', {
                 method: 'POST',
-                body: JSON.stringify({ arrived: arrived.toISOString(), departed: departed.toISOString() })
+                body: JSON.stringify({ arrivedAt: arrivedAt.toISOString(), departedAt: departedAt.toISOString() })
             });
 
             const res = await POST(req as unknown as import("next/server").NextRequest);
@@ -153,8 +153,8 @@ describe('Manual Attendance API Integration Tests', () => {
             expect(data.message).toBe('Manual visit recorded successfully.');
             expect(data.visit).toBeDefined();
             expect(data.visit.participantId).toBe(testUserId);
-            expect(new Date(data.visit.arrived).toISOString()).toBe(arrived.toISOString());
-            expect(new Date(data.visit.departed).toISOString()).toBe(departed.toISOString());
+            expect(new Date(data.visit.arrivedAt).toISOString()).toBe(arrivedAt.toISOString());
+            expect(new Date(data.visit.departedAt).toISOString()).toBe(departedAt.toISOString());
 
             const currentAuditLogs = await prisma.auditLog.count({
                 where: { actorId: testUserId, action: 'CREATE', tableName: 'Visit' }
@@ -162,16 +162,16 @@ describe('Manual Attendance API Integration Tests', () => {
             expect(currentAuditLogs).toBe(previousAuditLogs + 1);
         });
 
-        it('should successfully record a manual visit with arrived only', async () => {
+        it('should successfully record a manual visit with arrivedAt only', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testUserId }
             });
 
-            const arrived = new Date(Date.now() - 1800000); // 30 minutes ago
+            const arrivedAt = new Date(Date.now() - 1800000); // 30 minutes ago
 
             const req = new Request('http://localhost:4000/api/attendance/manual', {
                 method: 'POST',
-                body: JSON.stringify({ arrived: arrived.toISOString() })
+                body: JSON.stringify({ arrivedAt: arrivedAt.toISOString() })
             });
 
             const res = await POST(req as unknown as import("next/server").NextRequest);
@@ -180,8 +180,8 @@ describe('Manual Attendance API Integration Tests', () => {
             
             expect(data.message).toBe('Manual visit recorded successfully.');
             expect(data.visit).toBeDefined();
-            expect(new Date(data.visit.arrived).toISOString()).toBe(arrived.toISOString());
-            expect(data.visit.departed).toBeNull();
+            expect(new Date(data.visit.arrivedAt).toISOString()).toBe(arrivedAt.toISOString());
+            expect(data.visit.departedAt).toBeNull();
         });
 
         it('dedups a SERIAL double-submit: second POST returns the same open visit, only one in DB', async () => {
@@ -190,12 +190,12 @@ describe('Manual Attendance API Integration Tests', () => {
             });
 
             // Isolate: drop any open visit left by earlier tests so the count is unambiguous.
-            await prisma.visit.deleteMany({ where: { participantId: testUserId, departed: null } });
+            await prisma.visit.deleteMany({ where: { participantId: testUserId, departedAt: null } });
 
-            const arrived = new Date(Date.now() - 600000).toISOString(); // 10 min ago, open (no departure)
+            const arrivedAt = new Date(Date.now() - 600000).toISOString(); // 10 min ago, open (no departure)
             const makeReq = () => new Request('http://localhost:4000/api/attendance/manual', {
                 method: 'POST',
-                body: JSON.stringify({ arrived })
+                body: JSON.stringify({ arrivedAt })
             }) as unknown as import("next/server").NextRequest;
 
             // Two submits, strictly one after the other (not the pool-2 concurrency harness):
@@ -212,7 +212,7 @@ describe('Manual Attendance API Integration Tests', () => {
             expect(second.id).toBe(first.id);
 
             const openVisits = await prisma.visit.findMany({
-                where: { participantId: testUserId, departed: null }
+                where: { participantId: testUserId, departedAt: null }
             });
             expect(openVisits.length).toBe(1);
             expect(openVisits[0].id).toBe(first.id);

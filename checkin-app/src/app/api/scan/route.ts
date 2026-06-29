@@ -128,9 +128,9 @@ export async function POST(req: NextRequest) {
             const activeVisit = await tx.visit.findFirst({
                 where: {
                     participantId: participant.id,
-                    departed: null,
+                    departedAt: null,
                 },
-                orderBy: { arrived: "desc" },
+                orderBy: { arrivedAt: "desc" },
             });
 
             if (activeVisit) {

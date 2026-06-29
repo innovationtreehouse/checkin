@@ -759,9 +759,9 @@ model Visit {
   /// @sensitivity:public
   participantId     Int
   /// @sensitivity:personal
-  arrived           DateTime
+  arrivedAt         DateTime
   /// @sensitivity:personal
-  departed          DateTime?
+  departedAt        DateTime?
   /// @sensitivity:public
   arrivedVia        VisitSource?
   /// @sensitivity:public
@@ -772,7 +772,7 @@ model Visit {
   participant Participant @relation(fields: [participantId], references: [id])
   event       Event?      @relation(fields: [associatedEventId], references: [id])
 
-  @@index([participantId, departed]) // Active visits lookup in /api/scan
+  @@index([participantId, departedAt]) // Active visits lookup in /api/scan
 }
 
 model AuditLog {

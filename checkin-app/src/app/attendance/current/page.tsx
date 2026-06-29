@@ -25,7 +25,7 @@ type Participant = {
 
 type Visit = {
   id: number;
-  arrived: string;
+  arrivedAt: string;
   participant: Participant;
   event?: { program?: { id: number; name: string } };
 };
@@ -273,7 +273,7 @@ function KioskDisplayInner() {
               {isKioskMode ? (kioskDisplayNames.get(visit.participant.id) || visit.participant.name || visit.participant.email.split("@")[0]) : (visit.participant.name || visit.participant.email.split("@")[0])}
             </Text>
             <Group gap={6} align="center">
-              <Text c="dimmed" size="xs">{formatTime(visit.arrived)}</Text>
+              <Text c="dimmed" size="xs">{formatTime(visit.arrivedAt)}</Text>
               {visit.event?.program?.name && (
                 <Badge size="xs" variant="light" style={{ background: `hsl(${hue}, 60%, 20%)`, color: `hsl(${hue}, 80%, 80%)` }} title={visit.event.program.name}>
                   {visit.event.program.name}
@@ -459,7 +459,7 @@ function KioskDisplayInner() {
                   <Group justify="space-between">
                     <div>
                       <Text fw={500}>{v.participant.name || v.participant.email.split('@')[0]}</Text>
-                      <Text size="xs" c="dimmed">Arrived: {formatTime(v.arrived)}</Text>
+                      <Text size="xs" c="dimmed">Arrived: {formatTime(v.arrivedAt)}</Text>
                     </div>
                     <Button color="red" variant="light" onClick={() => handleForceCheckout(v.id)} disabled={checkingOut === v.id}>
                       {checkingOut === v.id ? "Signing Out..." : "Sign Out"}

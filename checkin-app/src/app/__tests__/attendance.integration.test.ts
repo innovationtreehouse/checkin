@@ -73,7 +73,7 @@ describe('Attendance API Integration Tests', () => {
         testHouseholdMemberId = householdMember.id;
 
         const visit = await prisma.visit.create({
-            data: { participantId: testParticipantId, arrived: new Date() }
+            data: { participantId: testParticipantId, arrivedAt: new Date() }
         });
         activeVisitId = visit.id;
     });
@@ -131,7 +131,7 @@ describe('Attendance API Integration Tests', () => {
         it('should allow a household lead to check out a household member', async () => {
             // Setup a visit for the household member
             const memberVisit = await prisma.visit.create({
-                data: { participantId: testHouseholdMemberId, arrived: new Date() }
+                data: { participantId: testHouseholdMemberId, arrivedAt: new Date() }
             });
 
             (getServerSession as jest.Mock).mockResolvedValue({
@@ -153,7 +153,7 @@ describe('Attendance API Integration Tests', () => {
 
             const data = await res.json();
             expect(data.success).toBe(true);
-            expect(data.visit.departed).not.toBeNull();
+            expect(data.visit.departedAt).not.toBeNull();
         });
 
         it('should not allow a regular user to check out someone else', async () => {

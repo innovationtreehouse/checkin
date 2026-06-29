@@ -15,14 +15,14 @@ export async function POST(req: NextRequest) {
 
         const userId = session.user.id;
         const body = await req.json();
-        const { arrived, departed } = body;
+        const { arrivedAt, departedAt } = body;
 
-        if (!arrived) {
+        if (!arrivedAt) {
             return NextResponse.json({ error: "Arrival time is required" }, { status: 400 });
         }
 
-        const arrivalTime = new Date(arrived);
-        const departureTime = departed ? new Date(departed) : null;
+        const arrivalTime = new Date(arrivedAt);
+        const departureTime = departedAt ? new Date(departedAt) : null;
 
         if (isNaN(arrivalTime.getTime())) {
             return NextResponse.json({ error: "Invalid arrival time" }, { status: 400 });
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
             // provided) is just a historical record, so multiple are fine.
             if (!departureTime) {
                 const openVisit = await tx.visit.findFirst({
-                    where: { participantId: userId, departed: null }
+                    where: { participantId: userId, departedAt: null }
                 });
                 if (openVisit) return openVisit;
             }
@@ -58,8 +58,8 @@ export async function POST(req: NextRequest) {
             return await tx.visit.create({
                 data: {
                     participantId: userId,
-                    arrived: arrivalTime,
-                    departed: departureTime,
+                    arrivedAt: arrivalTime,
+                    departedAt: departureTime,
                     arrivedVia: "WEB",
                     departedVia: departureTime ? "WEB" : null,
                     associatedEventId: eventId
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
                 action: "CREATE",
                 tableName: "Visit",
                 affectedEntityId: visit.id,
-                newData: JSON.stringify({ arrived, departed, type: "manual_entry" })
+                newData: JSON.stringify({ arrivedAt, departedAt, type: "manual_entry" })
             }
         });
 

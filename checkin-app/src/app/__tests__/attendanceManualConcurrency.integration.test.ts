@@ -4,7 +4,7 @@
 /**
  * Concurrency regression test for POST /api/attendance/manual.
  *
- * Creating an open visit (arrived, no departure) is a read-modify-write on a
+ * Creating an open visit (arrivedAt, no departure) is a read-modify-write on a
  * participant's visit state, same as /api/scan. Before the per-participant
  * advisory lock (route.ts ~line 40), two near-simultaneous manual check-ins for
  * one participant could both pass the open-visit re-check and both create a
@@ -35,15 +35,15 @@ jest.mock('next-auth/next', () => ({
 
 const EMAIL_TAG = 'manual-attendance-concurrency-test';
 
-function manualRequest(arrived: string) {
+function manualRequest(arrivedAt: string) {
     return new Request('http://localhost:4000/api/attendance/manual', {
         method: 'POST',
-        body: JSON.stringify({ arrived }),
+        body: JSON.stringify({ arrivedAt }),
     }) as unknown as import('next/server').NextRequest;
 }
 
 async function openVisitCount(participantId: number) {
-    return prisma.visit.count({ where: { participantId, departed: null } });
+    return prisma.visit.count({ where: { participantId, departedAt: null } });
 }
 
 describe('POST /api/attendance/manual concurrency (advisory lock)', () => {
@@ -84,11 +84,11 @@ describe('POST /api/attendance/manual concurrency (advisory lock)', () => {
 
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: subjectId } });
 
-        const arrived = new Date(Date.now() - 1800000).toISOString(); // 30 min ago
+        const arrivedAt = new Date(Date.now() - 1800000).toISOString(); // 30 min ago
 
         const [resA, resB] = await Promise.all([
-            POST(manualRequest(arrived)) as Promise<Response>,
-            POST(manualRequest(arrived)) as Promise<Response>,
+            POST(manualRequest(arrivedAt)) as Promise<Response>,
+            POST(manualRequest(arrivedAt)) as Promise<Response>,
         ]);
 
         // Neither request errors (loser no-ops by returning the existing visit).

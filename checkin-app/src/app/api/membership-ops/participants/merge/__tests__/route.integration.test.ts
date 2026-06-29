@@ -85,7 +85,7 @@ describe("Merge Participants API", () => {
         await prisma.visit.create({
             data: {
                 participantId: pMergeId,
-                arrived: new Date()
+                arrivedAt: new Date()
             }
         });
 
@@ -117,7 +117,7 @@ describe("Merge Participants API", () => {
 
     it("should write an AuditLog row capturing the merge", async () => {
         await prisma.visit.create({
-            data: { participantId: pMergeId, arrived: new Date() }
+            data: { participantId: pMergeId, arrivedAt: new Date() }
         });
 
         const req = new Request("http://localhost/api/membership-ops/participants/merge", {

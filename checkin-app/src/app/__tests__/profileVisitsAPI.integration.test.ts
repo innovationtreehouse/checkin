@@ -53,9 +53,9 @@ describe('Profile Visits API Integration Tests', () => {
         // Create visits for the test user
         await prisma.visit.createMany({
             data: [
-                { participantId: testUserId, arrived: new Date(now.getTime() - 1000) }, // Just now
-                { participantId: testUserId, arrived: new Date(now.getTime() - 86400000) }, // 1 day ago
-                { participantId: testUserId, arrived: new Date(now.getTime() - 864000000) }, // 10 days ago (outside 7 day window)
+                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 1000) }, // Just now
+                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 86400000) }, // 1 day ago
+                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 864000000) }, // 10 days ago (outside 7 day window)
             ]
         });
     });

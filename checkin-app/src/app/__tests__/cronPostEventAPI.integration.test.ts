@@ -60,7 +60,7 @@ describe("GET /api/cron/post-event", () => {
         });
 
         await prisma.visit.create({
-            data: { associatedEventId: event.id, participantId: user.id, arrived: pastStart }
+            data: { associatedEventId: event.id, participantId: user.id, arrivedAt: pastStart }
         });
 
         process.env.CRON_SECRET = 'test-secret';

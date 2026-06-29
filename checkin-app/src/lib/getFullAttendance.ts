@@ -3,7 +3,7 @@ import { isMinor } from "@/lib/time";
 
 export async function getFullAttendance() {
     const activeVisits = await prisma.visit.findMany({
-        where: { departed: null },
+        where: { departedAt: null },
         include: {
             participant: {
                 select: {
@@ -35,7 +35,7 @@ export async function getFullAttendance() {
                 }
             }
         },
-        orderBy: { arrived: "desc" },
+        orderBy: { arrivedAt: "desc" },
     });
 
     // Pre-compute isMinor once per visit to avoid repeated calculations

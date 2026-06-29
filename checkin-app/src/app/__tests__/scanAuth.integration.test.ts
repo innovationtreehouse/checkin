@@ -146,7 +146,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             expect(json.type).toBe('checkin');
             expect(json.signedRequest).toBe(true);
 
-            const visit = await prisma.visit.findFirst({ where: { participantId: kioskId, departed: null } });
+            const visit = await prisma.visit.findFirst({ where: { participantId: kioskId, departedAt: null } });
             expect(visit).not.toBeNull();
             const events = await prisma.rawBadgeLog.count({ where: { participantId: kioskId } });
             expect(events).toBe(1);
@@ -280,7 +280,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
 
         /** Open the facility so a non-keyholder check-in can reach 200. */
         async function openFacility() {
-            await prisma.visit.create({ data: { participantId: pKeyholder, arrived: new Date() } });
+            await prisma.visit.create({ data: { participantId: pKeyholder, arrivedAt: new Date() } });
         }
 
         it('non-admin scanning self in prod → 403 (self-check-in gate, must use kiosk)', async () => {
@@ -307,7 +307,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             expect(res.status).toBe(200);
             const json = await res.json();
             expect(json.type).toBe('checkin');
-            const visit = await prisma.visit.findFirst({ where: { participantId: pSameHH, departed: null } });
+            const visit = await prisma.visit.findFirst({ where: { participantId: pSameHH, departedAt: null } });
             expect(visit).not.toBeNull();
         });
 

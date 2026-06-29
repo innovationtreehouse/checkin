@@ -92,8 +92,8 @@ export const GET = withAuth(
             const since = new Date(Date.now() - lookbackMs);
 
             const whereClause: Record<string, unknown> = {
-                arrived: { gte: since },
-                departed: { not: null },
+                arrivedAt: { gte: since },
+                departedAt: { not: null },
             };
 
             if (programId) {
@@ -106,7 +106,7 @@ export const GET = withAuth(
                     participant: { select: { id: true, dob: true } },
                     event: { select: { programId: true } },
                 },
-                orderBy: { arrived: "asc" },
+                orderBy: { arrivedAt: "asc" },
             });
 
             const bucketMap = new Map<string, {
@@ -121,7 +121,7 @@ export const GET = withAuth(
             }>();
 
             for (const visit of visits) {
-                const periodStart = getPeriodStart(visit.arrived, period);
+                const periodStart = getPeriodStart(visit.arrivedAt, period);
                 const key = periodStart.toISOString();
 
                 if (!bucketMap.has(key)) {
@@ -138,8 +138,8 @@ export const GET = withAuth(
                 }
 
                 const bucket = bucketMap.get(key)!;
-                const hours = getHoursBetween(visit.arrived, visit.departed);
-                const student = isStudentAtDate(visit.participant.dob, visit.arrived);
+                const hours = getHoursBetween(visit.arrivedAt, visit.departedAt);
+                const student = isStudentAtDate(visit.participant.dob, visit.arrivedAt);
 
                 if (student) {
                     bucket.studentIds.add(visit.participant.id);
@@ -172,8 +172,8 @@ export const GET = withAuth(
             const totals: TrendBucket = {
                 label: "Total",
                 periodStart: "",
-                uniqueVolunteers: new Set(visits.filter(v => !isStudentAtDate(v.participant.dob, v.arrived)).map(v => v.participant.id)).size,
-                uniqueStudents: new Set(visits.filter(v => isStudentAtDate(v.participant.dob, v.arrived)).map(v => v.participant.id)).size,
+                uniqueVolunteers: new Set(visits.filter(v => !isStudentAtDate(v.participant.dob, v.arrivedAt)).map(v => v.participant.id)).size,
+                uniqueStudents: new Set(visits.filter(v => isStudentAtDate(v.participant.dob, v.arrivedAt)).map(v => v.participant.id)).size,
                 totalVolunteerHours: Math.round(buckets.reduce((s, b) => s + b.totalVolunteerHours, 0) * 10) / 10,
                 totalStudentHours: Math.round(buckets.reduce((s, b) => s + b.totalStudentHours, 0) * 10) / 10,
                 structuredHours: Math.round(buckets.reduce((s, b) => s + b.structuredHours, 0) * 10) / 10,
