@@ -16,7 +16,8 @@ interface Body {
     householdId?: number;
     counterpartyParticipantId?: number | null;
     counterpartyName?: string;
-    counterpartyContact?: string;
+    counterpartyPhone?: string;
+    counterpartyEmail?: string;
     familyContext?: string;
 }
 
@@ -34,8 +35,8 @@ export const POST = withAuth({ allowKiosk: true }, async (req, auth) => {
     } catch {
         return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
-    if (!body.counterpartyName || !body.counterpartyContact || !body.familyContext) {
-        return NextResponse.json({ error: "counterpartyName, counterpartyContact, and familyContext are required" }, { status: 400 });
+    if (!body.counterpartyName || !body.familyContext) {
+        return NextResponse.json({ error: "counterpartyName and familyContext are required" }, { status: 400 });
     }
 
     let householdId: number | undefined;
@@ -67,7 +68,8 @@ export const POST = withAuth({ allowKiosk: true }, async (req, auth) => {
             householdId: householdId!,
             counterpartyParticipantId: body.counterpartyParticipantId ?? null,
             counterpartyName: body.counterpartyName,
-            counterpartyContact: body.counterpartyContact,
+            counterpartyPhone: body.counterpartyPhone,
+            counterpartyEmail: body.counterpartyEmail,
             familyContext: body.familyContext,
             origin,
             disclosedById,

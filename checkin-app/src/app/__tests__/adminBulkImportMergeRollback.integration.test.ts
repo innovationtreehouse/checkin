@@ -67,7 +67,7 @@ describe('Bulk import merge rollback', () => {
             data: {
                 householdId: sourceHouseholdId,
                 counterpartyName: 'Grandma Mergeroll',
-                counterpartyContact: '555-0100',
+                counterpartyPhone: '555-0100',
                 familyContext: 'Can pick up the kids.',
                 disclosedById: testAdminId,
             }

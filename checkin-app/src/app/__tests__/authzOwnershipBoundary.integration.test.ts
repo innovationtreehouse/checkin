@@ -131,7 +131,7 @@ describe('Ownership-boundary authorization', () => {
         // Trusted adults owned by HH_A.
         const taW = await prisma.trustedAdult.create({
             data: {
-                householdId: hhA, counterpartyName: 'Aunt May', counterpartyContact: '555-0001',
+                householdId: hhA, counterpartyName: 'Aunt May', counterpartyPhone: '555-0001',
                 familyContext: 'ctx', disclosedById: leadA,
                 reviews: { create: { householdId: hhA, kind: 'INITIAL', status: 'PENDING_BOARD_REVIEW' } },
             },
@@ -139,7 +139,7 @@ describe('Ownership-boundary authorization', () => {
         taWithdrawId = taW.id;
         const taR = await prisma.trustedAdult.create({
             data: {
-                householdId: hhA, counterpartyName: 'Uncle Ben', counterpartyContact: '555-0002',
+                householdId: hhA, counterpartyName: 'Uncle Ben', counterpartyPhone: '555-0002',
                 familyContext: 'ctx', disclosedById: leadA,
                 reviews: { create: { householdId: hhA, kind: 'INITIAL', status: 'APPROVED' } },
             },

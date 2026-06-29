@@ -19,7 +19,8 @@ export const GET = handler("GET /api/trusted-adults/mine", async ({ auth }) => {
             householdId: true,
             counterpartyParticipantId: true,
             counterpartyName: true,
-            counterpartyContact: true,
+            counterpartyPhone: true,
+            counterpartyEmail: true,
             familyContext: true,
             createdAt: true,
             reviews: {

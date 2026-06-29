@@ -73,7 +73,7 @@ describe('Trusted Adults service', () => {
         return createTrustedAdult({
             householdId,
             counterpartyName: 'Jane External',
-            counterpartyContact: 'jane@example.com',
+            counterpartyEmail: 'jane@example.com',
             familyContext: 'Our nanny; may collect the kids on weekdays.',
             disclosedById: leadId,
         });
@@ -95,13 +95,16 @@ describe('Trusted Adults service', () => {
 
     it('rejects a disclosure missing name, contact, or family context', async () => {
         await expect(
-            createTrustedAdult({ householdId, counterpartyName: '', counterpartyContact: 'x', familyContext: 'x', disclosedById: leadId }),
+            createTrustedAdult({ householdId, counterpartyName: '', counterpartyEmail: 'x@y.com', familyContext: 'x', disclosedById: leadId }),
+        ).rejects.toMatchObject({ code: 'bad_input' });
+        await expect( // neither phone nor email
+            createTrustedAdult({ householdId, counterpartyName: 'x', familyContext: 'x', disclosedById: leadId }),
+        ).rejects.toMatchObject({ code: 'bad_input' });
+        await expect( // malformed email
+            createTrustedAdult({ householdId, counterpartyName: 'x', counterpartyEmail: 'nope', familyContext: 'x', disclosedById: leadId }),
         ).rejects.toMatchObject({ code: 'bad_input' });
         await expect(
-            createTrustedAdult({ householdId, counterpartyName: 'x', counterpartyContact: '', familyContext: 'x', disclosedById: leadId }),
-        ).rejects.toMatchObject({ code: 'bad_input' });
-        await expect(
-            createTrustedAdult({ householdId, counterpartyName: 'x', counterpartyContact: 'x', familyContext: '', disclosedById: leadId }),
+            createTrustedAdult({ householdId, counterpartyName: 'x', counterpartyEmail: 'x@y.com', familyContext: '', disclosedById: leadId }),
         ).rejects.toMatchObject({ code: 'bad_input' });
     });
 
@@ -134,7 +137,7 @@ describe('Trusted Adults service', () => {
             householdId,
             counterpartyParticipantId: boardId,
             counterpartyName: 'Boardie',
-            counterpartyContact: 'boardie@example.com',
+            counterpartyEmail: 'boardie@example.com',
             familyContext: 'A board member who is also our trusted adult.',
             disclosedById: leadId,
         });
@@ -320,7 +323,7 @@ describe('runExpirySweep edge cases', () => {
             data: {
                 householdId,
                 counterpartyName: `Sweep ${SWEEP_TAG}`,
-                counterpartyContact: 'sweep@example.com',
+                counterpartyEmail: 'sweep@example.com',
                 familyContext: 'ctx',
                 disclosedById: leadId,
             },
