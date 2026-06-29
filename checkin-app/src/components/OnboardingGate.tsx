@@ -109,7 +109,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
         closeOnEscape={false}
         centered
         size="lg"
-        title={<Title order={3}>Action Required</Title>}
+        title="Action Required"
       >
         <Text c="dimmed" mb="lg">
           To ensure the safety of our facility and compliance with our policies, we need a bit
