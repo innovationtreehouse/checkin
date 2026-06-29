@@ -9,10 +9,10 @@ import { useTodoCounts } from "@/hooks/useTodoCounts";
 import type { TodoCounts } from "@/app/api/nav/todo-counts/route";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 
-/** Board-queue count for a Membership Ops nav link, or 0 when nothing is due / unknown. */
+/** Informational count for a Membership Ops nav link, or 0 when none / unknown. */
 function membershipTodoCountFor(href: string, counts: TodoCounts | null): number {
   if (!counts?.admin) return 0;
-  return href === "/membership-ops/applications" ? counts.admin.membership : 0;
+  return href === "/membership-ops/applications" ? counts.admin.applicationsTotal : 0;
 }
 
 export default function MembershipOpsLayout({ children }: { children: React.ReactNode }) {
@@ -57,9 +57,9 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
                   todoCount > 0 ? (
                     <Badge
                       size="md"
-                      color="treehouseGreen"
-                      variant="filled"
-                      aria-label={`${todoCount} item${todoCount === 1 ? "" : "s"} need attention`}
+                      color="gray"
+                      variant="light"
+                      aria-label={`${todoCount} application${todoCount === 1 ? "" : "s"}`}
                     >
                       {todoCount}
                     </Badge>
