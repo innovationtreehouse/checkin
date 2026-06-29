@@ -160,13 +160,10 @@ function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge | null {
     case '/safety':
       // Trusted-adult disclosures awaiting board review.
       return green(counts.admin ? counts.admin.trustedAdults : 0, 'Trusted-adult disclosures to review');
-    case '/system-status': {
-      // Top-level roll-up of the board's queue; per-queue badges live in the admin sub-nav.
-      const total = counts.admin
-        ? counts.admin.membership + counts.admin.programsPending + counts.admin.trustedAdults
-        : 0;
-      return green(total, `${total} board queue items`);
-    }
+    // System Status has no badge: every count it could show (membership,
+    // payment-plan, trusted-adult) belongs to another nav item that already
+    // badges it. A roll-up here just duplicates those numbers under an
+    // unrelated label.
     default:
       return null;
   }
