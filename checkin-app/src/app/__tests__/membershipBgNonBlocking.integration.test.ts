@@ -235,4 +235,12 @@ describe('background check is non-blocking', () => {
         const activations = audits.filter((a) => String(a.newData).includes('"status":"ACTIVE"')).length;
         expect(activations).toBe(1);
     });
+
+    it('a stray payment for a process not awaiting payment is ignored (no state corruption)', async () => {
+        const { processId } = await makeApplicant('PENDING_EXTERNAL_ACTION'); // no checkout link exists for this phase
+        await activate(processId, { via: 'payment', shopifyOrderId: 'stray' });
+        const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        expect(proc?.status).toBe('PENDING_EXTERNAL_ACTION');
+        expect(proc?.paidAt).toBeNull();
+    });
 });

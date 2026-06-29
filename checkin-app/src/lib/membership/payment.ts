@@ -149,6 +149,16 @@ export async function activate(
             return { kind: "paid_while_blocked" as const };
         }
 
+        // Only a process actually awaiting payment advances. A checkout link is
+        // minted only at PENDING_PAYMENT, so a payment for any other status
+        // (INTAKE/EXTERNAL/renewal-review) is anomalous — a forged/replayed
+        // webhook (TODO #278) or a process that moved unexpectedly. Don't advance
+        // it; surface it instead of corrupting state.
+        if (process.status !== "PENDING_PAYMENT") {
+            logger.warn(`[membership] activate() ignored payment for process ${processId} in status ${process.status} — no payment was due`);
+            return { kind: "noop" as const };
+        }
+
         const activating = !!process.bgClearedAt;
         await tx.membershipProcess.update({
             where: { id: processId },
