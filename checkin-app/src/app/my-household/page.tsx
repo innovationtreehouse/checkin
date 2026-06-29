@@ -227,6 +227,7 @@ export default function HouseholdPage() {
       if (res.ok) {
         setEditingMemberId(null);
         fetchHousehold();
+        notifyNavRefresh();
         // A member edit can both collide with an emergency contact (warning,
         // which also opens the add-contact flow) and be declined the lead
         // promotion (leadRejection). Surface the contact warning first since
@@ -320,8 +321,11 @@ export default function HouseholdPage() {
                 {sortedMembers.map((p) => {
                   const memberIsLead = isLead(p.id);
                   const isAdult = p.dob && calculateAge(p.dob) >= 18;
+                  // A household lead needs a phone on file — flag the box so the
+                  // lead can see exactly which member to fix (mirrors the nav todo).
+                  const leadMissingPhone = memberIsLead && !p.phone;
                   return (
-                    <Card key={p.id} withBorder radius="md" padding="md">
+                    <Card key={p.id} withBorder radius="md" padding="md" bg={leadMissingPhone ? 'var(--mantine-color-red-light)' : undefined}>
                       {editingMemberId === p.id ? (
                         <form onSubmit={(e) => handleEditMember(e, p.id)}>
                           <Stack gap="xs">
@@ -343,6 +347,7 @@ export default function HouseholdPage() {
                           <Text fw={600} style={{ wordBreak: 'break-word' }}>{p.name || "Unnamed"}</Text>
                           {p.email && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>{p.email}</Text>}
                           {p.phone && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>{p.phone}</Text>}
+                          {leadMissingPhone && <Badge color="red" variant="filled" mt="xs">TODO: Add phone number</Badge>}
                           <Group gap="xs" mt="sm">
                             {memberIsLead && <Badge color="grape" variant="light">Household Lead</Badge>}
                             {!memberIsLead && isAdult && viewerIsLead && (
