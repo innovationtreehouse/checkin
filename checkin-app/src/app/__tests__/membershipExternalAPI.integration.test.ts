@@ -32,10 +32,14 @@ function boardReq(body: unknown) {
         body: JSON.stringify(body),
     }) as unknown as Parameters<typeof BOARD_EXTERNAL>[0];
 }
-function zohoReq(body: unknown, token: string | null) {
+function zohoReq(body: unknown, token: string | null, ip?: string) {
     return new Request('http://localhost:4000/api/webhooks/zoho', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', ...(token ? { 'x-zoho-webhook-token': token } : {}) },
+        headers: {
+            'content-type': 'application/json',
+            ...(token ? { 'x-zoho-webhook-token': token } : {}),
+            ...(ip ? { 'x-forwarded-for': ip } : {}),
+        },
         body: JSON.stringify(body),
     });
 }
@@ -123,6 +127,24 @@ describe('Membership EXTERNAL phase API', () => {
     it('rejects a Zoho webhook with a bad token', async () => {
         const res = await ZOHO_WEBHOOK(zohoReq({ requests: { request_id: 'zoho-B', request_status: 'completed' } }, 'wrong'));
         expect(res.status).toBe(401);
+    });
+
+    it('rate-limits a flood (429 + Retry-After) AHEAD of the token check — bad token still 429, not 401', async () => {
+        // route.ts: rateLimit(..., { limit: 60, windowMs: 60_000 }) runs BEFORE the
+        // token verify. Flood from a dedicated IP (own bucket) with a BAD token:
+        // the first 60 burn the window returning 401, the 61st trips the limiter.
+        const ip = '198.51.100.42';
+        const payload = { requests: { request_id: 'zoho-B', request_status: 'completed' } };
+
+        for (let i = 0; i < 60; i++) {
+            const res = await ZOHO_WEBHOOK(zohoReq(payload, 'wrong', ip));
+            expect(res.status).toBe(401); // limiter not yet tripped → reaches token verify, fails it
+        }
+
+        const limited = await ZOHO_WEBHOOK(zohoReq(payload, 'wrong', ip));
+        // 429 (limiter), NOT 401 (token) — proves the limiter precedes token verify.
+        expect(limited.status).toBe(429);
+        expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
     });
 
     it('a valid completed Zoho webhook records the contract as signed', async () => {
