@@ -49,16 +49,16 @@ describe("flow: membership background check is non-blocking (PR #428)", () => {
 
         // Board records the contract + background-check consent (manual fallbacks,
         // no Zoho/Averity needed). Pre-#428 this advanced to PENDING_BG_REVIEW.
-        const c1 = await api(board, "/api/admin/membership/external", { method: "POST", body: JSON.stringify({ processId, action: "mark-contract" }) });
+        const c1 = await api(board, "/api/membership-ops/applications/external", { method: "POST", body: JSON.stringify({ processId, action: "mark-contract" }) });
         expect(c1.status).toBe(200);
-        const c2 = await api(board, "/api/admin/membership/external", { method: "POST", body: JSON.stringify({ processId, action: "mark-bg-consent" }) });
+        const c2 = await api(board, "/api/membership-ops/applications/external", { method: "POST", body: JSON.stringify({ processId, action: "mark-bg-consent" }) });
         expect(c2.status).toBe(200);
 
         const afterExternal = await api<State>(applicant, "/api/membership");
         expect(afterExternal.json.process?.status).toBe("PENDING_PAYMENT"); // ← #428: payment unblocked
 
         // Pay before the check clears (board certify stands in for the Shopify webhook).
-        const certify = await api(board, "/api/admin/membership/certify-payment", { method: "POST", body: JSON.stringify({ processId }) });
+        const certify = await api(board, "/api/membership-ops/applications/certify-payment", { method: "POST", body: JSON.stringify({ processId }) });
         expect(certify.status).toBe(200);
 
         const afterPay = await api<State>(applicant, "/api/membership");
