@@ -13,9 +13,12 @@ import {
 import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
 
 /**
- * EXTERNAL-phase service — the two parallel actions an applicant completes after
- * intake: signing the Zoho contract and consenting to a background check on
- * Averity. When BOTH are recorded, the application advances to PENDING_BG_REVIEW.
+ * EXTERNAL-phase service — the actions an applicant completes after intake:
+ * signing the Zoho contract and consenting to a background check on Averity.
+ * Once the contract is signed AND the check is handled (consent recorded, or a
+ * still-valid prior check detected), the application advances to PENDING_PAYMENT.
+ * The background check is NOT a gate on payment — it reviews in parallel and only
+ * the final ACTIVE transition waits on it.
  *
  * The contract is recorded automatically (Zoho webhook) or manually by the
  * board; BG consent is always human-marked by the board (no Averity API). The
@@ -45,6 +48,8 @@ export interface ExternalStatus {
     /** True once a Zoho signing request exists — lets the UI say "Resume signing". */
     contractStarted: boolean;
     bgConsented: boolean;
+    /** True when a still-valid prior check was detected — no new check is needed. */
+    bgCleared: boolean;
     deepLinkUrl: string | null;
 }
 
@@ -52,34 +57,47 @@ export interface ExternalStatus {
 export async function getExternalStatus(process: {
     contractSignedAt: Date | null;
     bgConsentAt: Date | null;
+    bgClearedAt: Date | null;
     zohoEnvelopeId: string | null;
 }): Promise<ExternalStatus> {
     return {
         contractSigned: !!process.contractSignedAt,
         contractStarted: !!process.zohoEnvelopeId,
         bgConsented: !!process.bgConsentAt,
+        bgCleared: !!process.bgClearedAt,
         deepLinkUrl: await backgroundCheckProvider.getConsentDeepLink(),
     };
 }
 
 /**
- * If both external actions are done and we're still in EXTERNAL, advance to
- * PENDING_BG_REVIEW. The conditional updateMany (status guard) is the atomic gate:
- * two concurrent callers (Zoho webhook + board "mark bg consent") both reach here,
- * but only the one whose updateMany flips PENDING_EXTERNAL_ACTION sees count === 1
- * — so the audit row and reviewer ping fire exactly once, and a later status
- * (BLOCKED/PENDING_PAYMENT) is never regressed. Mirrors review.ts `attest`.
+ * Once the contract is signed AND the background check is handled — either a
+ * still-valid prior check (bgClearedAt) or fresh consent recorded (bgConsentAt)
+ * — advance from EXTERNAL straight to PENDING_PAYMENT. The check no longer gates
+ * payment: when it still needs a human review (no prior valid check), it runs in
+ * PARALLEL while the applicant pays, and only the final ACTIVE flip waits on it.
+ *
+ * The conditional updateMany (status guard) is the atomic gate: two concurrent
+ * callers (Zoho webhook + board "mark bg consent") both reach here, but only the
+ * one whose updateMany flips PENDING_EXTERNAL_ACTION sees count === 1 — so the
+ * audit row and reviewer ping fire exactly once, and a later status is never
+ * regressed. Mirrors review.ts `attest`.
  */
 export async function advanceExternalIfComplete(processId: number) {
     const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
     if (!process) return process;
     if (process.status !== "PENDING_EXTERNAL_ACTION") return process;
-    if (!process.contractSignedAt || !process.bgConsentAt) return process;
+    if (!process.contractSignedAt) return process;
+    if (!process.bgClearedAt && !process.bgConsentAt) return process;
 
     const advanced = await prisma.$transaction(async (tx) => {
         const { count } = await tx.membershipProcess.updateMany({
-            where: { id: processId, status: "PENDING_EXTERNAL_ACTION", contractSignedAt: { not: null }, bgConsentAt: { not: null } },
-            data: { status: "PENDING_BG_REVIEW", stageEnteredAt: new Date() },
+            where: {
+                id: processId,
+                status: "PENDING_EXTERNAL_ACTION",
+                contractSignedAt: { not: null },
+                OR: [{ bgClearedAt: { not: null } }, { bgConsentAt: { not: null } }],
+            },
+            data: { status: "PENDING_PAYMENT", stageEnteredAt: new Date() },
         });
         if (count !== 1) return null; // lost the race or no longer eligible — no audit, no notify
         await tx.auditLog.create({
@@ -89,15 +107,16 @@ export async function advanceExternalIfComplete(processId: number) {
                 tableName: "MembershipProcess",
                 affectedEntityId: processId,
                 oldData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION" }),
-                newData: JSON.stringify({ status: "PENDING_BG_REVIEW" }),
+                newData: JSON.stringify({ status: "PENDING_PAYMENT" }),
             },
         });
         return tx.membershipProcess.findUnique({ where: { id: processId } });
     });
     if (!advanced) return prisma.membershipProcess.findUnique({ where: { id: processId } });
 
-    // Ping background-check reviewers that an application is ready (log-only until email is configured).
-    await notifyReviewers();
+    // No valid prior check ⇒ a human review is still needed. Ping the reviewers;
+    // the review now proceeds in parallel with payment (log-only until email is configured).
+    if (!advanced.bgClearedAt) await notifyReviewers();
     return advanced;
 }
 

@@ -32,7 +32,7 @@ async function makeExternalProcess(data: Record<string, unknown> = {}): Promise<
 
 async function advanceAudits(processId: number): Promise<number> {
     const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true } });
-    return audits.filter((a) => String(a.newData).includes('"status":"PENDING_BG_REVIEW"')).length;
+    return audits.filter((a) => String(a.newData).includes('"status":"PENDING_PAYMENT"')).length;
 }
 
 async function wipe() {
@@ -63,7 +63,7 @@ describe('EXTERNAL advance concurrency', () => {
         ]);
 
         const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
-        expect(proc?.status).toBe('PENDING_BG_REVIEW');
+        expect(proc?.status).toBe('PENDING_PAYMENT');
 
         // Exactly one advance audit row + exactly one reviewer ping.
         expect(await advanceAudits(processId)).toBe(1);

@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus } from "@/lib/membership/external";
+import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
 
@@ -327,9 +328,20 @@ export async function submitIntake(userId: number) {
         );
     }
 
+    // If a household guardian already holds a still-valid background check (same
+    // rule as renewals), auto-clear the BG requirement now — the applicant won't
+    // need to consent to or wait on a new check, just sign + pay.
+    const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+    const boundary = settings?.membershipYearBoundary ? nextBoundary(settings.membershipYearBoundary, new Date()) : new Date();
+    const bgFresh = await householdBgIsFresh(household.id, boundary, settings?.bgRecheckMonths ?? 0);
+
     const advanced = await prisma.membershipProcess.update({
         where: { id: process.id },
-        data: { status: "PENDING_EXTERNAL_ACTION", stageEnteredAt: new Date() },
+        data: {
+            status: "PENDING_EXTERNAL_ACTION",
+            stageEnteredAt: new Date(),
+            ...(bgFresh ? { bgClearedAt: new Date() } : {}),
+        },
     });
 
     await prisma.auditLog.create({
@@ -339,7 +351,7 @@ export async function submitIntake(userId: number) {
             tableName: "MembershipProcess",
             affectedEntityId: process.id,
             oldData: JSON.stringify({ status: "INTAKE" }),
-            newData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION" }),
+            newData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION", ...(bgFresh ? { bgClearedAt: true } : {}) }),
         },
     });
 

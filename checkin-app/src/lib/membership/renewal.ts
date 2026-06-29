@@ -93,13 +93,17 @@ export async function beginRenewal(processId: number) {
     // Conditional on status PENDING_RENEWAL: a double-submit has both callers reach
     // here, but only the winner's updateMany flips it (count === 1) — so the audit
     // row and reviewer ping fire exactly once. Mirrors external.ts markContractSigned.
+    // Fresh check ⇒ no re-review, so clear the BG requirement here (there's no
+    // consent step / reviewer queue for a fresh renewal). Without this the renewal
+    // pays and parks at PENDING_BG_CLEARANCE forever. Re-review renewals
+    // (RENEWAL_PENDING_BG) get bgClearedAt from clearBackgroundCheck instead.
     const { count } = await prisma.membershipProcess.updateMany({
         where: { id: processId, status: "PENDING_RENEWAL" },
-        data: { status: nextStatus, stageEnteredAt: new Date() },
+        data: { status: nextStatus, stageEnteredAt: new Date(), ...(bgFresh ? { bgClearedAt: new Date() } : {}) },
     });
     if (count === 1) {
         await prisma.auditLog.create({
-            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, oldData: JSON.stringify({ status: "PENDING_RENEWAL" }), newData: JSON.stringify({ status: nextStatus }) },
+            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, oldData: JSON.stringify({ status: "PENDING_RENEWAL" }), newData: JSON.stringify({ status: nextStatus, ...(bgFresh ? { bgClearedAt: true } : {}) }) },
         });
         if (nextStatus === "RENEWAL_PENDING_BG") await notifyReviewers();
     }

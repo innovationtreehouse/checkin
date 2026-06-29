@@ -24,6 +24,8 @@ export const GET = handler("GET /api/admin/membership", async () => {
             zohoEnvelopeId: true,
             contractSignedAt: true,
             bgConsentAt: true,
+            bgClearedAt: true,
+            paidAt: true,
             attestations: { select: { id: true, result: true, markedVolunteer: true } },
             membership: {
                 select: {

@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { logger } from "@/lib/logger";
+import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
 
 /**
  * Payment phase (PENDING_PAYMENT -> ACTIVE).
@@ -94,40 +95,78 @@ export async function ensurePaymentLinkForUser(userId: number) {
 }
 
 /**
- * The single activation path. Flips the membership ACTIVE, marks the process
- * ACTIVE + paid, records how (Shopify order id or certifying board member), and
- * sends one congratulations email. Idempotent: a no-op if already ACTIVE.
+ * The single payment path. Records the payment (paidAt + how), then gates on the
+ * background check: if it has already cleared (bgClearedAt set), flip the
+ * membership ACTIVE and send one congrats email; otherwise hold the process at
+ * PENDING_BG_CLEARANCE — paid, but membership stays INACTIVE until two reviewers
+ * approve (review.ts › clearBackgroundCheck then flips ACTIVE).
+ *
+ * FOR UPDATE serializes against the review path's attest() transaction, which
+ * takes the same row lock — so the payment/clearance race can't lose an update.
+ * Idempotent: a no-op only once the payment is already recorded (Shopify retries
+ * an orders/paid webhook routinely) or the membership is already active.
+ *
+ * BLOCKED is NOT a silent no-op: if the check was rejected before the payment
+ * webhook landed, the money is already at Shopify. We record the payment (keeping
+ * the application BLOCKED — never activate without a valid check) and alert the
+ * board to refund, rather than dropping the payment on the floor.
  */
 export async function activate(
     processId: number,
     opts: { via: "payment" | "certified"; actorId?: number; shopifyOrderId?: string },
 ) {
-    const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
-    if (!process) throw new PaymentError("not_found", "Application not found.");
-    const membership = await prisma.membership.findUnique({ where: { id: process.membershipId }, select: { householdId: true } });
-    if (!membership) throw new PaymentError("not_found", "Membership not found.");
+    const result = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "MembershipProcess" WHERE id = ${processId} FOR UPDATE`;
+        const process = await tx.membershipProcess.findUnique({ where: { id: processId } });
+        if (!process) throw new PaymentError("not_found", "Application not found.");
+        // Already recorded this payment (webhook retry) or already active → nothing to do.
+        if (process.paidAt || process.status === "ACTIVE") {
+            return { kind: "noop" as const };
+        }
+        const membership = await tx.membership.findUnique({ where: { id: process.membershipId }, select: { householdId: true } });
+        if (!membership) throw new PaymentError("not_found", "Membership not found.");
 
-    const now = new Date();
-    // The flip + membership update + audit row are one transaction, and the flip
-    // is CONDITIONAL on status != ACTIVE. Under Read Committed, two concurrent
-    // updateMany re-check the WHERE against the just-committed row, so exactly one
-    // sees count === 1 and the rest see 0 — no row lock needed. Shopify retries
-    // an orders/paid webhook routinely; this makes activate() truly idempotent
-    // (no duplicate audit rows, no duplicate congrats emails).
-    const flipped = await prisma.$transaction(async (tx) => {
-        const { count } = await tx.membershipProcess.updateMany({
-            where: { id: processId, status: { not: "ACTIVE" } },
-            data: {
-                status: "ACTIVE",
-                stageEnteredAt: now,
-                paidAt: now,
-                ...(opts.shopifyOrderId ? { shopifyOrderId: opts.shopifyOrderId } : {}),
-                ...(opts.via === "certified" && opts.actorId ? { certifiedById: opts.actorId } : {}),
-            },
+        const now = new Date();
+        const payMeta = {
+            ...(opts.shopifyOrderId ? { shopifyOrderId: opts.shopifyOrderId } : {}),
+            ...(opts.via === "certified" && opts.actorId ? { certifiedById: opts.actorId } : {}),
+        };
+
+        // Reject landed before the payment: record the payment but stay BLOCKED
+        // (don't resurrect / don't bump stageEnteredAt) and flag for refund.
+        if (process.status === "BLOCKED") {
+            await tx.membershipProcess.update({ where: { id: processId }, data: { paidAt: now, ...payMeta } });
+            await tx.auditLog.create({
+                data: {
+                    actorId: opts.actorId ?? SYSTEM_ACTOR,
+                    action: "EDIT",
+                    tableName: "MembershipProcess",
+                    affectedEntityId: processId,
+                    oldData: JSON.stringify({ status: "BLOCKED" }),
+                    newData: JSON.stringify({ status: "BLOCKED", via: opts.via, paid: true, refundNeeded: true }),
+                },
+            });
+            return { kind: "paid_while_blocked" as const };
+        }
+
+        // Only a process actually awaiting payment advances. A checkout link is
+        // minted only at PENDING_PAYMENT, so a payment for any other status
+        // (INTAKE/EXTERNAL/renewal-review) is anomalous — a forged/replayed
+        // webhook (TODO #278) or a process that moved unexpectedly. Don't advance
+        // it; surface it instead of corrupting state.
+        if (process.status !== "PENDING_PAYMENT") {
+            logger.warn(`[membership] activate() ignored payment for process ${processId} in status ${process.status} — no payment was due`);
+            return { kind: "noop" as const };
+        }
+
+        const activating = !!process.bgClearedAt;
+        await tx.membershipProcess.update({
+            where: { id: processId },
+            data: { paidAt: now, stageEnteredAt: now, ...payMeta, status: activating ? "ACTIVE" : "PENDING_BG_CLEARANCE" },
         });
-        if (count === 0) return false; // already ACTIVE — a retry; skip audit + email
-
-        await tx.membership.update({ where: { id: process.membershipId }, data: { status: "ACTIVE" } });
+        if (activating) {
+            await tx.membership.update({ where: { id: process.membershipId }, data: { status: "ACTIVE" } });
+        }
         await tx.auditLog.create({
             data: {
                 actorId: opts.actorId ?? SYSTEM_ACTOR,
@@ -135,15 +174,16 @@ export async function activate(
                 tableName: "MembershipProcess",
                 affectedEntityId: processId,
                 oldData: JSON.stringify({ status: process.status }),
-                newData: JSON.stringify({ status: "ACTIVE", via: opts.via }),
+                newData: JSON.stringify(activating ? { status: "ACTIVE", via: opts.via } : { status: "PENDING_BG_CLEARANCE", via: opts.via, paid: true }),
             },
         });
-        return true;
+        return activating ? { kind: "active" as const, householdId: membership.householdId } : { kind: "held" as const };
     });
 
-    // Email outside the transaction: a slow/failed send must not roll back the
-    // activation, and we only send when this call is the one that flipped it.
-    if (flipped) await sendCongrats(membership.householdId);
+    // Side effects outside the transaction: a slow/failed send must not roll back
+    // the write, and only the call that actually recorded the change emits one.
+    if (result.kind === "active") await sendCongrats(result.householdId);
+    if (result.kind === "paid_while_blocked") await notifyBoardPaidReject(processId);
     return prisma.membershipProcess.findUnique({ where: { id: processId } });
 }
 
@@ -165,7 +205,8 @@ export async function activateByProcessId(processId: number, shopifyOrderId: str
     return activate(processId, { via: "payment", shopifyOrderId });
 }
 
-async function sendCongrats(householdId: number) {
+/** Send the one "welcome — your membership is active" email to a household's leads. */
+export async function sendCongrats(householdId: number) {
     try {
         const leads = await prisma.householdLead.findMany({
             where: { householdId },
