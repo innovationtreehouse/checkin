@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { Document, Page, Text, View, StyleSheet, Image, Font } from '@react-pdf/renderer';
+import { computeDisplayNames, membershipYearLabel } from './badgeNames';
 
 // Font registration for a modern sans-serif look
 Font.register({
@@ -13,7 +14,9 @@ Font.register({
     src: 'https://cdnjs.cloudflare.com/ajax/libs/ink/3.1.10/fonts/Roboto/roboto-bold-webfont.ttf'
 });
 
-const TREEHOUSE_LOGO_URL = 'https://www.innovationtreehouse.org/wp-content/uploads/2026/01/cropped-Screenshot-2026-01-14-at-1.05.05-PM.png';
+// Full brand logo (mark + "innovation treehouse" wordmark). Static asset → reachable without auth
+// gating (middleware exempts paths with a file extension). PNG because @react-pdf can't decode webp.
+const TREEHOUSE_LOGO_URL = '/brand/treehouse-logo-full.png';
 
 // Create styles for Avery 5390 (8.5x11 paper, 8 badges per page)
 // 2 columns x 3.5" wide = 7"
@@ -49,12 +52,17 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         position: 'relative'
     },
-    organizationText: {
-        fontFamily: 'Roboto-Bold',
-        fontSize: 14,
-        textAlign: 'center',
+    headerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         marginBottom: 8,
-        color: '#222222',
+    },
+    yearText: {
+        fontFamily: 'Roboto',
+        fontSize: 9,
+        color: '#555555',
+        marginLeft: 6,
     },
     nameContainer: {
         flex: 1,
@@ -85,10 +93,8 @@ const styles = StyleSheet.create({
         color: '#fff',
     },
     logo: {
-        width: '80%',
-        maxWidth: 150,
-        alignSelf: 'center',
-        marginBottom: 10,
+        width: 150,
+        height: 71, // source 1198x568 ≈ 2.11:1
     },
     qrCode: {
         width: 100,
@@ -112,6 +118,9 @@ interface ParticipantBadge {
 }
 
 export default function BadgeDocument({ badges }: { badges: ParticipantBadge[] }) {
+    const displayNames = useMemo(() => computeDisplayNames(badges), [badges]);
+    const yearLabel = useMemo(() => membershipYearLabel(new Date()), []);
+
     // We chunk the badges into arrays of 8, because Avery 5390 takes 8 per page
     const chunkedBadges: ParticipantBadge[][] = useMemo(() => {
         const chunks = [];
@@ -155,16 +164,14 @@ export default function BadgeDocument({ badges }: { badges: ParticipantBadge[] }
                         <Page size="LETTER" style={styles.page}>
                             {chunk.map((badge, idx) => (
                                 <View style={styles.badge} key={`front-${idx}`}>
-                                    {badge.isMember && (
-                                        // eslint-disable-next-line jsx-a11y/alt-text
+                                    <View style={styles.headerRow}>
+                                        {/* eslint-disable-next-line jsx-a11y/alt-text */}
                                         <Image src={TREEHOUSE_LOGO_URL} style={styles.logo} />
-                                    )}
-                                    {!badge.isMember && (
-                                        <Text style={styles.organizationText}>Innovation Treehouse</Text>
-                                    )}
+                                        <Text style={styles.yearText}>{yearLabel}</Text>
+                                    </View>
 
                                     <View style={styles.nameContainer}>
-                                        <Text style={styles.nameText}>{badge.name || `User #${badge.id}`}</Text>
+                                        <Text style={styles.nameText}>{displayNames.get(badge.id) || `User #${badge.id}`}</Text>
                                     </View>
 
                                     <View style={styles.roleContainer}>
@@ -176,11 +183,6 @@ export default function BadgeDocument({ badges }: { badges: ParticipantBadge[] }
                                         {badge.keyholder && (
                                             <View style={{ ...styles.rolePill, backgroundColor: '#f59e0b' }}>
                                                 <Text style={styles.roleText}>KEYHOLDER</Text>
-                                            </View>
-                                        )}
-                                        {(!badge.boardMember && !badge.keyholder && badge.isMember) && (
-                                            <View style={{ ...styles.rolePill, backgroundColor: '#10b981' }}>
-                                                <Text style={styles.roleText}>MEMBER</Text>
                                             </View>
                                         )}
                                     </View>
