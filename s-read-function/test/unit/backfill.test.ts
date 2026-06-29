@@ -87,7 +87,7 @@ it("downloads + ingests a COMPLETED op, advances the watermark, clears state, re
   vi.mocked(getBulkState).mockResolvedValue({ bulkOperationId: "gid://op/1", bulkStatus: "RUNNING" });
   vi.mocked(getCurrentBulkOperation).mockResolvedValue({ id: "gid://op/1", status: "COMPLETED", url: "https://storage.googleapis.com/shopify-bulk/result.jsonl" });
   vi.mocked(downloadBulkJsonl).mockResolvedValue('{"id":"gid://shopify/Order/1"}\n');
-  vi.mocked(ingestBulkOrders).mockResolvedValue({ exportId: 7n, recordCount: 1, ingested: 1, maxOccurredAt });
+  vi.mocked(ingestBulkOrders).mockResolvedValue({ exportId: 7n, recordCount: 1, ingested: 1, badLineCount: 0, maxOccurredAt });
 
   const res = await run();
 
@@ -103,7 +103,7 @@ it("downloads + ingests a COMPLETED op, advances the watermark, clears state, re
     bulkOperationId: null,
     bulkStatus: "COMPLETED",
   });
-  expect(res.ordersBulk).toEqual({ action: "INGESTED", status: "COMPLETED", ingested: 1 });
+  expect(res.ordersBulk).toEqual({ action: "INGESTED", status: "COMPLETED", ingested: 1, badLines: 0 });
 });
 
 it("clears state without ingesting when COMPLETED carries no url", async () => {
@@ -115,7 +115,7 @@ it("clears state without ingesting when COMPLETED carries no url", async () => {
   expect(downloadBulkJsonl).not.toHaveBeenCalled();
   expect(ingestBulkOrders).not.toHaveBeenCalled();
   expect(advanceWatermark).not.toHaveBeenCalled();
-  expect(res.ordersBulk).toEqual({ action: "INGESTED", status: "COMPLETED", ingested: 0 });
+  expect(res.ordersBulk).toEqual({ action: "INGESTED", status: "COMPLETED", ingested: 0, badLines: 0 });
 });
 
 it.each(["FAILED", "CANCELED", "EXPIRED"])("clears state and returns FAILED for a %s op", async (status) => {
