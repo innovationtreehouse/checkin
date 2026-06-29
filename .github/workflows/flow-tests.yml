@@ -10,10 +10,17 @@ on:
 
 permissions:
   contents: read
+  id-token: write      # mint the GitHub OIDC token to assume the AWS role (no stored creds)
 
 concurrency:
   group: flow-tests-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-2
+  # Same OIDC deploy role the deploy workflows use — needs ecr-public:GetAuthorizationToken
+  # + sts:GetServiceBearerToken, and its trust policy must allow this repo's workflows.
+  DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-dev
 
 jobs:
   flow:
@@ -22,20 +29,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # ECR Public rate-limits anonymous pulls per shared-runner IP, and compose
-      # pulls both images' layers in parallel — enough to trip the burst limit.
-      # Pull the two known images one at a time, spaced out, to stay under it.
-      - name: Pull images one at a time
-        run: |
-          for img in \
-            public.ecr.aws/docker/library/postgres:15 \
-            public.ecr.aws/docker/library/node:24-bookworm-slim; do
-            docker pull "$img"
-            sleep 15
-          done
+      # Authenticate the image pulls. Anonymous ECR Public is rate-limited per
+      # shared-runner IP; authenticated is per-account. OIDC means GitHub + AWS
+      # issue short-lived tokens each run — nothing to rotate manually.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      # Images are now local, so --wait only blocks on the healthchecks (start_period
-      # in the compose file covers npm ci + seed; no further pull happens here).
+      - name: Log in to Amazon ECR Public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      # Pull is now authenticated; --wait then only blocks on the healthchecks
+      # (start_period in the compose file covers npm ci + seed).
       - name: Start dockerized dev server + DB
         run: docker compose -f deploy/docker-compose.flow.yml up -d --wait --wait-timeout 600
 
