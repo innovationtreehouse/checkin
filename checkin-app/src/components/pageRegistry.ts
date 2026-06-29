@@ -44,6 +44,7 @@ export const PAGES: PageEntry[] = [
   // over-lists to all signed-in members; the page self-guards and redirects a
   // non-lead. Distinct from the attendee "My Programs" tab above.
   { href: '/my-programs', label: 'My Programs (Staff)', section: 'Personal', keywords: 'lead mentor program staff attendance', visible: SIGNED_IN },
+  { href: '/my-programs/conflicts', label: 'Attendance Conflicts', section: 'Personal', keywords: 'lead mentor duplicate overlapping visit attendance', visible: SIGNED_IN },
   { href: '/membership', label: 'Membership Application', section: 'Personal', keywords: 'join intake', visible: SIGNED_IN },
   { href: '/trusted-adults', label: 'Trusted Adults', section: 'Personal', visible: SIGNED_IN },
 

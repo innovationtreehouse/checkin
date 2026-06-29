@@ -1,82 +1,52 @@
 "use client";
 
-import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Badge, Button, Card, Center, Group, Loader, Stack, Tabs, Text, Title } from '@mantine/core';
+import { Badge, Button, Card, Group, Stack, Tabs, Text, Title } from '@mantine/core';
 import { IconCalendarCheck } from '@tabler/icons-react';
-import { PageContainer } from '@/components/ui/PageContainer';
 import { useTodoCounts } from '@/hooks/useTodoCounts';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
-import { leadsAnyProgram } from '@/components/navBadges';
 
 type LedProgram = NonNullable<TodoCounts['lead']>['programs'][number];
 
 /**
- * Staff "My Programs" home — for program lead mentors. Lists the programs the
- * caller runs and surfaces the same pending attendance the post-event email
- * targets, deep-linking to the existing confirm screen. Pure navigation +
- * surfacing: every link lands on a route already gated to the lead.
+ * Attendance-inbox subtab of staff "My Programs". Lists the programs the caller
+ * runs and surfaces the same pending attendance the post-event email targets,
+ * deep-linking to the existing confirm screen. Pure navigation + surfacing.
  *
- * Lead status and the pending list both ride in on the todo-counts payload the
- * nav already fetches — no new endpoint, no new session field.
+ * Section chrome (title, subtabs) and the lead-gate / loading state live in
+ * layout.tsx; this renders only the inbox content.
  */
 export default function MyProgramsHome() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
+  const { status } = useSession();
   const counts = useTodoCounts(status === 'authenticated');
 
-  useEffect(() => {
-    if (status === 'unauthenticated') router.push('/');
-    // Authenticated but leads no program → not their home. Wait for counts to
-    // load (null) before redirecting so we don't bounce a real lead mid-fetch.
-    else if (status === 'authenticated' && counts !== null && !leadsAnyProgram(counts)) {
-      router.push('/');
-    }
-  }, [status, counts, router]);
+  const programs = counts?.lead?.programs ?? [];
+  if (programs.length === 0) return null; // layout shows loader / redirects non-leads
 
-  if (status === 'loading' || counts === null || !session) {
-    return (
-      <Center mih="60vh">
-        <Loader />
-      </Center>
-    );
-  }
-
-  const programs = counts.lead?.programs ?? [];
-  if (programs.length === 0) return null; // redirect in flight
+  if (programs.length === 1) return <ProgramSection program={programs[0]} />;
 
   return (
-    <PageContainer>
-      <Title order={1} mb="xs">My Programs</Title>
-      <Text c="dimmed" mb="lg">Programs you lead, and attendance waiting on you.</Text>
-
-      {programs.length === 1 ? (
-        <ProgramSection program={programs[0]} />
-      ) : (
-        <Tabs defaultValue="all">
-          <Tabs.List mb="md">
-            <Tabs.Tab value="all">All Programs</Tabs.Tab>
-            {programs.map((p) => (
-              <Tabs.Tab key={p.id} value={String(p.id)} rightSection={p.pending.length > 0 ? <Badge size="sm" circle color="treehouseGreen">{p.pending.length}</Badge> : undefined}>
-                {p.name}
-              </Tabs.Tab>
-            ))}
-          </Tabs.List>
-          <Tabs.Panel value="all">
-            <Stack>
-              {programs.map((p) => <ProgramSection key={p.id} program={p} />)}
-            </Stack>
-          </Tabs.Panel>
-          {programs.map((p) => (
-            <Tabs.Panel key={p.id} value={String(p.id)}>
-              <ProgramSection program={p} />
-            </Tabs.Panel>
-          ))}
-        </Tabs>
-      )}
-    </PageContainer>
+    <Tabs defaultValue="all">
+      <Tabs.List mb="md">
+        <Tabs.Tab value="all">All Programs</Tabs.Tab>
+        {programs.map((p) => (
+          <Tabs.Tab key={p.id} value={String(p.id)} rightSection={p.pending.length > 0 ? <Badge size="sm" circle color="treehouseGreen">{p.pending.length}</Badge> : undefined}>
+            {p.name}
+          </Tabs.Tab>
+        ))}
+      </Tabs.List>
+      <Tabs.Panel value="all">
+        <Stack>
+          {programs.map((p) => <ProgramSection key={p.id} program={p} />)}
+        </Stack>
+      </Tabs.Panel>
+      {programs.map((p) => (
+        <Tabs.Panel key={p.id} value={String(p.id)}>
+          <ProgramSection program={p} />
+        </Tabs.Panel>
+      ))}
+    </Tabs>
   );
 }
 
