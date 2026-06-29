@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Anchor, Badge, Button, Group, Stack, Text } from "@mantine/core";
+import { Anchor, Badge, Button, Checkbox, Group, Stack, Text } from "@mantine/core";
 import { DataTable, type DataTableColumn } from "@/components/admin/DataTable";
 
 type Program = {
@@ -11,12 +11,40 @@ type Program = {
   name: string;
   phase?: string;
   memberOnly?: boolean;
+  begin?: string | null;
+  end?: string | null;
   _count?: { participants?: number; events?: number };
+};
+
+const PHASE_LABELS: Record<string, string> = {
+  PLANNING: "Planning",
+  UPCOMING: "Upcoming",
+  RUNNING: "Running",
+  FINISHED: "Finished",
+};
+const PHASE_COLORS: Record<string, string> = {
+  PLANNING: "yellow",
+  UPCOMING: "blue",
+  RUNNING: "green",
+  FINISHED: "gray",
+};
+
+const fmtDate = (d?: string | null) =>
+  d ? new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
+
+const dateRange = (p: Program) => {
+  const b = fmtDate(p.begin);
+  const e = fmtDate(p.end);
+  if (!b && !e) return "—";
+  if (b && e) return `${b} – ${e}`;
+  return b ?? e;
 };
 
 export default function AdminProgramsIndex() {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [publicOnly, setPublicOnly] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -34,11 +62,31 @@ export default function AdminProgramsIndex() {
       });
   }, []);
 
+  const visiblePrograms = programs.filter(
+    (p) =>
+      (!activeOnly || p.phase !== "FINISHED") &&
+      (!publicOnly || (p.phase !== "PLANNING" && !p.memberOnly)),
+  );
+
   const columns: DataTableColumn<Program>[] = [
     {
       header: "Program",
       render: (p) => <Text fw={600}>{p.name}</Text>,
       sortBy: (p) => p.name,
+    },
+    {
+      header: "Dates",
+      render: (p) => dateRange(p),
+      sortBy: (p) => p.begin ?? "",
+    },
+    {
+      header: "Phase",
+      render: (p) => (
+        <Badge color={PHASE_COLORS[p.phase ?? ""] ?? "gray"} variant="light">
+          {PHASE_LABELS[p.phase ?? ""] ?? p.phase ?? "—"}
+        </Badge>
+      ),
+      sortBy: (p) => p.phase ?? "",
     },
     {
       header: "Participants",
@@ -53,18 +101,13 @@ export default function AdminProgramsIndex() {
       sortBy: (p) => p._count?.events ?? 0,
     },
     {
-      header: "Status",
+      header: "Visibility",
       render: (p) => (
-        <Group gap="xs" wrap="nowrap">
-          {p.phase === 'PLANNING' && (
-            <Badge color="yellow" variant="light">Planning / Not Published</Badge>
-          )}
-          <Badge color={p.memberOnly ? 'grape' : 'blue'} variant="light">
-            {p.memberOnly ? 'Member Only' : 'Public'}
-          </Badge>
-        </Group>
+        <Badge color={p.memberOnly ? 'grape' : 'blue'} variant="light">
+          {p.memberOnly ? 'Member Only' : 'Public'}
+        </Badge>
       ),
-      sortBy: (p) => p.phase === 'PLANNING' ? 'Planning' : (p.memberOnly ? 'Member Only' : 'Public'),
+      sortBy: (p) => (p.memberOnly ? 'Member Only' : 'Public'),
     },
     {
       header: "",
@@ -86,9 +129,22 @@ export default function AdminProgramsIndex() {
         </Button>
       </Group>
 
+      <Group gap="lg">
+        <Checkbox
+          label="Only show active"
+          checked={activeOnly}
+          onChange={(e) => setActiveOnly(e.currentTarget.checked)}
+        />
+        <Checkbox
+          label="Only show publicly visible"
+          checked={publicOnly}
+          onChange={(e) => setPublicOnly(e.currentTarget.checked)}
+        />
+      </Group>
+
       <DataTable
         columns={columns}
-        rows={programs}
+        rows={visiblePrograms}
         getRowKey={(p) => p.id}
         loading={loading}
         emptyMessage="No programs found. Create your first one!"
