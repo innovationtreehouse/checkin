@@ -19,7 +19,9 @@ services:
       retries: 30
 
   app:
-    image: node:24-bookworm-slim
+    # AWS ECR Public mirror of the official image (same registry as db) — Docker
+    # Hub's anonymous pull rate limit fails CI on shared runners.
+    image: public.ecr.aws/docker/library/node:24-bookworm-slim
     working_dir: /repo
     depends_on:
       db:
