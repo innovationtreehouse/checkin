@@ -73,8 +73,8 @@ describe('Cron Nightly API Integration Tests', () => {
         const event = await prisma.event.create({
             data: {
                 name: 'Test Event - Nightly',
-                start: justEndedStart,
-                end: justEndedEnd,
+                startAt: justEndedStart,
+                endAt: justEndedEnd,
                 programId,
                 postEventEmailSent: false
             }

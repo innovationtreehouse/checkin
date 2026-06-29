@@ -586,9 +586,9 @@ model Program {
   leadMentorId                   Int?
   leadMentor                     Participant?     @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
   /// @sensitivity:public
-  begin                          DateTime?
+  startAt                        DateTime?
   /// @sensitivity:public
-  end                            DateTime?
+  endAt                          DateTime?
   /// @sensitivity:public
   phase                          ProgramPhase     @default(PLANNING)
   /// @sensitivity:public
@@ -701,9 +701,9 @@ model Event {
   /// @sensitivity:public
   name        String
   /// @sensitivity:public
-  start       DateTime
+  startAt     DateTime
   /// @sensitivity:public
-  end         DateTime
+  endAt       DateTime
   /// @sensitivity:public
   description String?
 
