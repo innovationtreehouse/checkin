@@ -17,6 +17,7 @@ type Visible = (user: RegistryUser | undefined, signedIn: boolean) => boolean;
 const PUBLIC: Visible = () => true;
 const SIGNED_IN: Visible = (_u, signedIn) => signedIn;
 const BOARD: Visible = (u) => !!u?.sysadmin || !!u?.boardMember;
+const SYSADMIN: Visible = (u) => !!u?.sysadmin;
 const SAFETY: Visible = (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder;
 const SHOP: Visible = (u) =>
   !!u?.sysadmin ||
@@ -42,12 +43,15 @@ export const PAGES: PageEntry[] = [
   { href: '/trusted-adults', label: 'Trusted Adults', section: 'Personal', visible: SIGNED_IN },
 
   // Attendance — any signed-in member
-  { href: '/attendance', label: 'Attendance', section: 'Attendance', visible: SIGNED_IN },
+  { href: '/attendance/current', label: 'Attendance', section: 'Attendance', visible: SIGNED_IN },
   { href: '/attendance/manual', label: 'Manual Check-In', section: 'Attendance', visible: SIGNED_IN },
   { href: '/attendance/certifications', label: 'Certifications', section: 'Attendance', visible: SIGNED_IN },
 
   // Programs — public
   { href: '/programs', label: 'Programs', section: 'Programs', visible: PUBLIC },
+
+  // Communication — signed-in member
+  { href: '/communication', label: 'Communication', section: 'Personal', keywords: 'notifications email preferences settings', visible: SIGNED_IN },
 
   // Safety — board or keyholder
   { href: '/safety', label: 'Safety', section: 'Safety', visible: SAFETY },
@@ -107,6 +111,7 @@ export const PAGES: PageEntry[] = [
   // Settings — board
   { href: '/settings/membership', label: 'Membership Settings', section: 'Settings', visible: BOARD },
   { href: '/settings/roles', label: 'Role Assignment', section: 'Settings', visible: BOARD },
+  { href: '/settings/localization', label: 'Localization', section: 'Settings', visible: SYSADMIN },
 ];
 
 // Routes that exist as page.tsx but are intentionally absent from the directory.
@@ -117,4 +122,5 @@ export const REGISTRY_EXCLUDED: string[] = [
   '/access-denied',          // error surface, not a destination
   '/signin',                 // auth surface
   '/settings',               // redirects to /settings/membership
+  '/attendance',             // redirects to /attendance/current
 ];

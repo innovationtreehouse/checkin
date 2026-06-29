@@ -35,7 +35,11 @@ export const classifications = {
     Household: {
         id: 'public',
         name: 'public',
-        address: 'personal',
+        line1: 'personal',
+        line2: 'personal',
+        city: 'personal',
+        state: 'personal',
+        postalCode: 'personal',
     },
     EmergencyContact: {
         id: 'public',
@@ -110,12 +114,19 @@ export const classifications = {
         shopifyPriceSyncedAt: 'internal',
         updatedAt: 'internal',
     },
+    AppSettings: {
+        id: 'public',
+        timezone: 'public',
+        locale: 'public',
+        updatedAt: 'public',
+    },
     TrustedAdult: {
         id: 'public',
         householdId: 'public',
         counterpartyParticipantId: 'public',
         counterpartyName: 'personal',
-        counterpartyContact: 'personal',
+        counterpartyPhone: 'personal',
+        counterpartyEmail: 'personal',
         familyContext: 'pii',
         origin: 'internal',
         disclosedById: 'internal',
@@ -141,7 +152,11 @@ export const classifications = {
     Corporation: {
         id: 'public',
         primaryEmail: 'pii',
-        address: 'personal',
+        line1: 'personal',
+        line2: 'personal',
+        city: 'personal',
+        state: 'personal',
+        postalCode: 'personal',
     },
     CorporationLead: {
         corporationId: 'public',
@@ -355,6 +370,8 @@ export const relations = {
     VolunteerDesignation: {
     },
     BoardSettings: {
+    },
+    AppSettings: {
     },
     TrustedAdult: {
         household: { model: 'Household', isList: false },

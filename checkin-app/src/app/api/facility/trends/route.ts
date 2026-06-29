@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { getAppSettings } from "@/lib/appSettings";
 
 type PeriodType = "week" | "month" | "quarter" | "year";
 
@@ -37,13 +38,13 @@ function getPeriodStart(date: Date, period: PeriodType): Date {
     return d;
 }
 
-function formatPeriodLabel(date: Date, period: PeriodType): string {
+function formatPeriodLabel(date: Date, period: PeriodType, locale: string): string {
     if (period === "week") {
         const end = new Date(date);
         end.setDate(end.getDate() + 6);
-        return `${date.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+        return `${date.toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${end.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}`;
     } else if (period === "month") {
-        return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+        return date.toLocaleDateString(locale, { month: "long", year: "numeric" });
     } else if (period === "quarter") {
         const q = Math.floor(date.getMonth() / 3) + 1;
         return `Q${q} ${date.getFullYear()}`;
@@ -85,6 +86,8 @@ export const GET = withAuth(
                 return NextResponse.json({ error: "Invalid period. Use week, month, quarter, or year." }, { status: 400 });
             }
 
+            const { locale } = await getAppSettings();
+
             const lookbackMs = getLookbackMonths(period) * 30 * 24 * 60 * 60 * 1000;
             const since = new Date(Date.now() - lookbackMs);
 
@@ -123,7 +126,7 @@ export const GET = withAuth(
 
                 if (!bucketMap.has(key)) {
                     bucketMap.set(key, {
-                        label: formatPeriodLabel(periodStart, period),
+                        label: formatPeriodLabel(periodStart, period, locale),
                         periodStart,
                         volunteerIds: new Set(),
                         studentIds: new Set(),

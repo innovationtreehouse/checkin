@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { upsertPrimaryContact, getPrimaryValidContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
+import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/lib/address";
 
 /**
  * Admin edit of a household's own info (name, address, emergency contact).
@@ -36,9 +37,9 @@ export async function PATCH(
         }
 
         const body = await request.json();
-        const data: { name?: string | null; address?: string | null } = {};
+        const data: { name?: string | null } & Partial<StructuredAddress> = {};
         if (body.name !== undefined) data.name = body.name;
-        if (body.address !== undefined) data.address = body.address;
+        Object.assign(data, normalizeAddressInput(body));
 
         const editsContact = body.emergencyContactName !== undefined || body.emergencyContactPhone !== undefined;
         if (Object.keys(data).length === 0 && !editsContact) {
@@ -66,7 +67,7 @@ export async function PATCH(
                 affectedEntityId: id,
                 oldData: JSON.stringify({
                     name: existing.name,
-                    address: existing.address,
+                    ...pickAddress(existing),
                     emergencyContactName: priorContact?.name ?? null,
                     emergencyContactPhone: priorContact?.phone ?? null,
                 }),

@@ -16,6 +16,7 @@ import {
     Tooltip,
 } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
+import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
 
@@ -43,7 +44,8 @@ interface HouseholdRef {
 interface TrustedAdult {
     id: number;
     counterpartyName: string | null;
-    counterpartyContact: string | null;
+    counterpartyPhone: string | null;
+    counterpartyEmail: string | null;
     familyContext: string;
     origin: string;
     createdAt: string;
@@ -182,9 +184,7 @@ export default function AdminTrustedAdultsPage() {
                             <Badge color={STATUS_COLORS[status] ?? "gray"}>{label(status)}</Badge>
                             {latest && <Badge variant="outline">{label(latest.kind)}</Badge>}
                         </Group>
-                        {ta.counterpartyContact && (
-                            <Text size="xs" c="dimmed" mt={2}>Contact: {ta.counterpartyContact}</Text>
-                        )}
+                        <TrustedAdultContact phone={ta.counterpartyPhone} email={ta.counterpartyEmail} />
                         <Text size="sm" mt={6}><b>Family context (board only):</b> {ta.familyContext}</Text>
                         {latest?.sharedNote && (
                             <Text size="sm" c="teal" mt={2}>Shared note (keyholders/program leads): {latest.sharedNote}</Text>

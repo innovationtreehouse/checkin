@@ -15,7 +15,7 @@ async function main() {
     for (let i = 1; i <= 20; i++) {
         // Create household
         const household = await prisma.household.create({
-            data: { name: `Test Family ${i}`, address: `123 Test St ${i}` }
+            data: { name: `Test Family ${i}`, line1: `123 Test St ${i}` }
         })
 
         // Create participant

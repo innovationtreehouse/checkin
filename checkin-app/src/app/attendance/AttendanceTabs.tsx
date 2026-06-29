@@ -7,7 +7,7 @@ import { Tabs } from "@mantine/core";
 // each page rather than a layout.tsx so the Current page can suppress it in
 // kiosk mode and the certifications subroute isn't wrapped.
 const TABS = [
-  { href: "/attendance", label: "Current" },
+  { href: "/attendance/current", label: "Current" },
   { href: "/attendance/manual", label: "Add Past Visit" },
 ];
 

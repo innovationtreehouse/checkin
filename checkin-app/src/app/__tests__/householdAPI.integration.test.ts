@@ -54,7 +54,7 @@ describe('Household API Integration Tests', () => {
 
         // Setup mock database records
         const household = await prisma.household.create({
-            data: { name: 'Lead User Household', address: '123 Main' }
+            data: { name: 'Lead User Household', line1: '123 Main' }
         });
         householdId = household.id;
 

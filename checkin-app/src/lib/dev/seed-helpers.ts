@@ -38,14 +38,14 @@ export async function seedBaseline(prisma: Db): Promise<void> {
     let household1 = await prisma.household.findFirst({ where: { name: "Family" } });
     if (!household1) {
         household1 = await prisma.household.create({
-            data: { name: "Family", address: "123 Maker Lane" },
+            data: { name: "Family", line1: "123 Maker Lane" },
         });
     }
 
     let household2 = await prisma.household.findFirst({ where: { name: "Family2" } });
     if (!household2) {
         household2 = await prisma.household.create({
-            data: { name: "Family2", address: "456 Workshop Drive" },
+            data: { name: "Family2", line1: "456 Workshop Drive" },
         });
     }
 
@@ -234,7 +234,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
 export async function createFamily(prisma: Db): Promise<string> {
     const tag = uid();
     const household = await prisma.household.create({
-        data: { name: `Test Family ${tag}`, address: `${tag} Maker Way` },
+        data: { name: `Test Family ${tag}`, line1: `${tag} Maker Way` },
     });
     await prisma.membership.create({
         data: { householdId: household.id, status: "ACTIVE" },
