@@ -10,7 +10,7 @@
  * the real backoff durations are asserted without any real waiting.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createShopifyClient, MAX_ATTEMPTS } from "../../src/shopify/client.js";
+import { createShopifyClient, MAX_ATTEMPTS, REQUEST_TIMEOUT_MS } from "../../src/shopify/client.js";
 import type { ShopifyConfig } from "@inventory/s-ingest-core";
 
 // Silence the retry warn/info logs and avoid pulling the generated Prisma client in.
@@ -40,8 +40,11 @@ let sleeps: number[];
 
 beforeEach(() => {
   sleeps = [];
-  // Record the delay and resolve immediately so retries don't actually wait.
+  // Record the delay and resolve immediately so retries don't actually wait. Leave the
+  // per-attempt abort timer (REQUEST_TIMEOUT_MS) pending — firing it would abort every
+  // request. The dedicated timeout test below re-stubs to fire it.
   vi.stubGlobal("setTimeout", ((cb: () => void, ms: number) => {
+    if (ms === REQUEST_TIMEOUT_MS) return 0 as unknown as ReturnType<typeof setTimeout>;
     sleeps.push(ms);
     cb();
     return 0 as unknown as ReturnType<typeof setTimeout>;
@@ -182,5 +185,29 @@ describe("createShopifyClient.request — exhaustion and hard failures", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(createShopifyClient(cfg).request("q")).rejects.toThrow("no data");
+  });
+
+  it("aborts a hung connection per attempt and throws a timeout error after MAX_ATTEMPTS", async () => {
+    // The stubbed setTimeout fires the abort callback synchronously, so the per-attempt
+    // deadline trips immediately. A fetch that only settles on abort stands in for a hung
+    // TCP connection — it must retry, not run to the Lambda timeout.
+    // Fire every timer synchronously here, including the per-attempt abort timer.
+    vi.stubGlobal("setTimeout", ((cb: () => void) => {
+      cb();
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
+    const fetchMock = vi.fn((_url: string, init: RequestInit) => {
+      const signal = init.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        if (signal.aborted) return reject(signal.reason);
+        signal.addEventListener("abort", () => reject(signal.reason));
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createShopifyClient(cfg).request("q")).rejects.toThrow(
+      `Shopify request timed out after ${REQUEST_TIMEOUT_MS}ms (${MAX_ATTEMPTS} attempts)`,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_ATTEMPTS);
   });
 });

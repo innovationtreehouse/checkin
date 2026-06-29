@@ -17,6 +17,12 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export const MAX_ATTEMPTS = 8;
 export const BASE_DELAY_MS = 500;
 export const MAX_DELAY_MS = 30_000;
+/**
+ * Hard per-request deadline (mirrors bulk.ts's BULK_DOWNLOAD_TIMEOUT_MS). A hung TCP
+ * connection (established, no response) must trip the abort and retry, not run the whole
+ * invocation into the Lambda timeout (which leaves a dangling RUNNING sync_run).
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
 /** Shopify's minimal fallback wait when no cost info is available. */
 export const MIN_THROTTLE_WAIT_MS = 1_000;
 /** Small cushion added to the computed throttle wait to avoid retrying a hair early. */
@@ -96,6 +102,10 @@ export function createShopifyClient(cfg: ShopifyConfig): ShopifyClient {
     while (true) {
       attempt++;
       let res: Response;
+      // Per-attempt deadline INSIDE the loop so a hang aborts and retries (not a single
+      // failure that runs to the Lambda timeout). Timer cleared in finally so it can't leak.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       try {
         res = await fetch(cfg.endpoint, {
           method: "POST",
@@ -104,13 +114,20 @@ export function createShopifyClient(cfg: ShopifyConfig): ShopifyClient {
             "X-Shopify-Access-Token": cfg.adminToken,
           },
           body: JSON.stringify({ query, variables }),
+          signal: controller.signal,
         });
       } catch (err) {
-        if (attempt >= MAX_ATTEMPTS) throw err;
+        const timedOut = controller.signal.aborted;
+        if (attempt >= MAX_ATTEMPTS) {
+          if (timedOut) throw new Error(`Shopify request timed out after ${REQUEST_TIMEOUT_MS}ms (${attempt} attempts)`);
+          throw err;
+        }
         const waitMs = jitteredBackoffMs(attempt);
-        logger.warn("shopify retry (network error)", { attempt, waitMs });
+        logger.warn("shopify retry (network error)", { attempt, waitMs, timedOut });
         await sleep(waitMs);
         continue;
+      } finally {
+        clearTimeout(timer);
       }
 
       // Transport-level throttle / server errors → jittered backoff (honor Retry-After).

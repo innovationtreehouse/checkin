@@ -163,4 +163,33 @@ describe('createShopifyProgramVariants', () => {
         expect(result).toBeNull();
         expect(fetchMock).toHaveBeenCalledTimes(1); // only token request
     });
+
+    it('times out a hung product request and emails admins (does not hang)', async () => {
+        mockTokenResponse(fetchMock); // token succeeds (its own AbortSignal.timeout is untouched)...
+        // ...then the product create hangs: a fetch that only settles on abort stands in for a
+        // hung TCP connection. We drive the deadline by replacing AbortSignal.timeout for that
+        // one call with a controller we fire ourselves; without the timeout it never resolves.
+        const deadline = new AbortController();
+        const timeoutSpy = jest.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
+        fetchMock.mockImplementationOnce((_url: string, init: RequestInit) =>
+            new Promise((_resolve, reject) => {
+                const signal = init.signal as AbortSignal;
+                if (signal.aborted) return reject(signal.reason);
+                signal.addEventListener('abort', () => reject(signal.reason));
+            }),
+        );
+        (prisma.participant.findMany as jest.Mock).mockResolvedValueOnce([{ email: 'admin@test.com' }]);
+
+        const p = createShopifyProgramVariants('Test Hang', 10, 20);
+        deadline.abort(new DOMException('The operation timed out', 'TimeoutError'));
+        const result = await p;
+
+        expect(result).toBeNull();
+        expect(sendEmail).toHaveBeenCalledWith(
+            'admin@test.com',
+            'Shopify Integration Error',
+            expect.stringContaining('timed out after 20000ms'),
+        );
+        timeoutSpy.mockRestore();
+    });
 });
