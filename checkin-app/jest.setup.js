@@ -9,6 +9,19 @@ if (process.env.INTEGRATION_DB && process.env.TEST_BASE_URL && process.env.TEST_
   const u = new URL(process.env.TEST_BASE_URL);
   u.pathname = `/checkin_test_${process.env.TEST_RUN_ID}_${process.env.JEST_WORKER_ID || '1'}`;
   process.env.DATABASE_URL = u.toString();
+
+  // Each integration file builds its own prisma pool (fresh module registry per
+  // file). Close it when the file finishes, or pools accumulate across the
+  // worker's files and exhaust the shared Postgres server's max_connections.
+  // disposeExternalPool (set in prisma.ts under test) makes $disconnect actually
+  // end the pg pool.
+  afterAll(async () => {
+    try {
+      await require('@/lib/prisma').default.$disconnect();
+    } catch {
+      // No prisma loaded in this file, or already disconnected — nothing to free.
+    }
+  });
 }
 
 // Tests run as a non-production environment. Previously this was implicit via
