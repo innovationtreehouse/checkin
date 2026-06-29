@@ -313,10 +313,18 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
           // `default-hover` token, which left white labels invisible (white-on-white, #284).
           // Scope that token to a translucent white so hovering just lightens the purple and the
           // white label stays readable — and it works in dark mode too, unlike a fixed color.
+          //
+          // overflowY:auto: when the nav list outgrows the viewport it scrolls instead of
+          // clipping. The <nav> element persists across route changes (only AppShell.Main's
+          // children swap), so the browser keeps its scrollTop — "back to X" leaves the
+          // sidebar scroll where it was rather than jumping to the top.
           style={
-            onColoredSidebar
-              ? ({ '--mantine-color-default-hover': 'rgba(255, 255, 255, 0.12)' } as React.CSSProperties)
-              : undefined
+            {
+              overflowY: 'auto',
+              ...(onColoredSidebar
+                ? { '--mantine-color-default-hover': 'rgba(255, 255, 255, 0.12)' }
+                : {}),
+            } as React.CSSProperties
           }
         >
           {visibleItems.map((item) => {
