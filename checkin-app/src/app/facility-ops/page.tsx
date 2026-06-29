@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function FacilityOpsIndex() {
-  redirect("/facility/visits");
+  redirect("/facility-ops/visits");
 }

@@ -56,7 +56,7 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
         <Card withBorder radius="md" padding="xl">
           <Title order={2} mb="sm">Access Denied</Title>
           <Alert color="red" mb="md">You do not have access to this section.</Alert>
-          <Button onClick={() => router.push("/shop")}>Back to Shop Operations</Button>
+          <Button onClick={() => router.push("/shop-ops")}>Back to Shop Operations</Button>
         </Card>
       </Container>
     );
