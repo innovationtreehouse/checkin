@@ -10,6 +10,9 @@ import {
 } from "@mantine/core";
 import MembershipFlowStepper from "@/components/MembershipFlowStepper";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
+import { pickAddress, type StructuredAddress } from "@/lib/address";
+
+const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
 interface PersonPrefill {
   id: number;
@@ -33,7 +36,7 @@ interface IntakeState {
   process: { id: number; kind: string; status: MembershipProcessStatus } | null;
   external: ExternalStatus | null;
   prefill: {
-    household: { name: string | null; address: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null } | null;
+    household: ({ name: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null } & Partial<StructuredAddress>) | null;
     primaryParent: PersonPrefill | null;
     secondaryParent: PersonPrefill | null;
     children: PersonPrefill[];
@@ -80,7 +83,7 @@ export default function MembershipPage() {
   const [warnings, setWarnings] = useState<string[]>([]);
 
   // Intake form fields
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState<StructuredAddress>(blankAddress);
   const [emName, setEmName] = useState("");
   const [emPhone, setEmPhone] = useState("");
   const [primaryName, setPrimaryName] = useState("");
@@ -98,7 +101,8 @@ export default function MembershipPage() {
   const hydrate = useCallback((s: IntakeState) => {
     setState(s);
     const h = s.prefill.household;
-    setAddress(h?.address ?? "");
+    const a = pickAddress(h);
+    setAddress({ line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" });
     setEmName(h?.emergencyContactName ?? "");
     setEmPhone(h?.emergencyContactPhone ?? "");
     const p = s.prefill.primaryParent;
@@ -212,7 +216,7 @@ export default function MembershipPage() {
   // gets instant red-box feedback on every environment (no round-trip needed).
   const validateIntake = (): Record<string, string> => {
     const errs: Record<string, string> = {};
-    if (!address.trim()) errs.address = "Home address is required.";
+    if (!address.line1?.trim()) errs.address = "Home address is required.";
     if (!emName.trim()) errs.emName = "Emergency contact name is required.";
     if (!emPhone.trim()) errs.emPhone = "Emergency contact phone is required.";
     if (!primaryName.trim()) errs.primaryName = "Your name is required.";
@@ -251,7 +255,7 @@ export default function MembershipPage() {
   };
 
   const buildPayload = () => ({
-    household: { address, emergencyContactName: emName, emergencyContactPhone: emPhone },
+    household: { ...address, emergencyContactName: emName, emergencyContactPhone: emPhone },
     primaryParent: { name: primaryName, dob: primaryDob || null, allergies: primaryAllergies || null },
     secondaryParent: hasSecondary
       ? { id: secondaryId, name: secondaryName, email: secondaryEmail || undefined, dob: secondaryDob || null, allergies: secondaryAllergies || null }
@@ -462,7 +466,15 @@ export default function MembershipPage() {
                 <Stack gap="lg">
                   <section>
                     <Title order={2} mb="sm">Your household</Title>
-                    <TextInput label="Home address" value={address} error={fieldErrors.address} onChange={(e) => { setAddress(e.currentTarget.value); clearErr("address"); }} placeholder="123 Main St, City, State ZIP" />
+                    <Stack gap="xs">
+                      <TextInput label="Street address" value={address.line1 ?? ""} error={fieldErrors.address} onChange={(e) => { setAddress({ ...address, line1: e.currentTarget.value }); clearErr("address"); }} placeholder="123 Main St" />
+                      <TextInput label="Apt / Suite (optional)" value={address.line2 ?? ""} onChange={(e) => setAddress({ ...address, line2: e.currentTarget.value })} placeholder="Apt 4B" />
+                      <SimpleGrid cols={{ base: 1, sm: 3 }}>
+                        <TextInput label="City" value={address.city ?? ""} onChange={(e) => setAddress({ ...address, city: e.currentTarget.value })} />
+                        <TextInput label="State" maxLength={2} value={address.state ?? ""} onChange={(e) => setAddress({ ...address, state: e.currentTarget.value })} placeholder="TX" />
+                        <TextInput label="ZIP" value={address.postalCode ?? ""} onChange={(e) => setAddress({ ...address, postalCode: e.currentTarget.value })} placeholder="78701" />
+                      </SimpleGrid>
+                    </Stack>
                     <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md">
                       <TextInput label="Emergency contact name" value={emName} error={fieldErrors.emName} onChange={(e) => { setEmName(e.currentTarget.value); clearErr("emName"); }} />
                       <TextInput label="Emergency contact phone" value={emPhone} error={fieldErrors.emPhone} onChange={(e) => { setEmPhone(e.currentTarget.value); clearErr("emPhone"); }} />

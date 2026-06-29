@@ -161,7 +161,7 @@ describe('Ownership-boundary authorization', () => {
 
     // ---- household/settings (PATCH) — lead-only --------------------------------
     describe('PATCH /api/household/settings', () => {
-        const body = { address: '1 New St' };
+        const body = { line1: '1 New St' };
         it('401 unauthenticated', async () => {
             anon();
             expect((await SETTINGS_PATCH(jsonReq(body))).status).toBe(401);

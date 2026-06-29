@@ -9,6 +9,9 @@ import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isOrgAccount } from '@/lib/orgAccount';
+import { pickAddress, type StructuredAddress } from '@/lib/address';
+
+const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
 type Member = { id: number; name?: string; email?: string; dob?: string; phone?: string };
 type EmergencyContact = { id: number; name: string; phone: string; email?: string | null; relationship?: string | null; priority: number; invalid: boolean };
@@ -18,8 +21,7 @@ type HouseholdData = {
   leads?: Array<{ participantId: number }>;
   participants?: Member[];
   membership?: { status?: string; since?: string; isVolunteer?: boolean } | null;
-  address?: string;
-} | null;
+} & Partial<StructuredAddress> | null;
 
 const blankContactForm = { id: null as number | null, name: "", phone: "", email: "", relationship: "" };
 type Visit = { id: number; participant?: { name: string }; event?: { name: string }; arrived: string; departed?: string };
@@ -41,7 +43,7 @@ export default function HouseholdPage() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [filterDate, setFilterDate] = useState("");
   const [settings, setSettings] = useState({ emailDependentCheckins: false });
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState<StructuredAddress>(blankAddress);
   const [savingSettings, setSavingSettings] = useState(false);
 
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
@@ -70,7 +72,8 @@ export default function HouseholdPage() {
       if (res.ok) {
         const data = await res.json();
         setHousehold(data.household);
-        setAddress(data.household?.address || "");
+        const a = pickAddress(data.household);
+        setAddress({ line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" });
       }
       if (visitRes.ok) {
         const data = await visitRes.json();
@@ -111,7 +114,7 @@ export default function HouseholdPage() {
       const householdRes = await fetch('/api/household/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address })
+        body: JSON.stringify(address)
       });
 
       if (res.ok && householdRes.ok) {
@@ -411,7 +414,15 @@ export default function HouseholdPage() {
               <Card withBorder radius="md" padding="md">
                 <Title order={5} c="blue">Primary Address</Title>
                 <Text size="sm" c="dimmed" mb="sm">The main address associated with this household.</Text>
-                <TextInput label="Address" value={address} onChange={(e) => setAddress(e.currentTarget.value)} placeholder="123 Main St, City, ST 12345" />
+                <Stack gap="xs">
+                  <TextInput label="Street Address" value={address.line1 ?? ""} onChange={(e) => setAddress({ ...address, line1: e.currentTarget.value })} placeholder="123 Main St" />
+                  <TextInput label="Apt / Suite (optional)" value={address.line2 ?? ""} onChange={(e) => setAddress({ ...address, line2: e.currentTarget.value })} placeholder="Apt 4B" />
+                  <SimpleGrid cols={{ base: 1, sm: 3 }}>
+                    <TextInput label="City" value={address.city ?? ""} onChange={(e) => setAddress({ ...address, city: e.currentTarget.value })} />
+                    <TextInput label="State" maxLength={2} value={address.state ?? ""} onChange={(e) => setAddress({ ...address, state: e.currentTarget.value })} placeholder="TX" />
+                    <TextInput label="ZIP" value={address.postalCode ?? ""} onChange={(e) => setAddress({ ...address, postalCode: e.currentTarget.value })} placeholder="78701" />
+                  </SimpleGrid>
+                </Stack>
                 <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="md">
                   Update Household Settings
                 </Button>

@@ -35,7 +35,11 @@ export const classifications = {
     Household: {
         id: 'public',
         name: 'public',
-        address: 'personal',
+        line1: 'personal',
+        line2: 'personal',
+        city: 'personal',
+        state: 'personal',
+        postalCode: 'personal',
     },
     EmergencyContact: {
         id: 'public',
@@ -141,7 +145,11 @@ export const classifications = {
     Corporation: {
         id: 'public',
         primaryEmail: 'pii',
-        address: 'personal',
+        line1: 'personal',
+        line2: 'personal',
+        city: 'personal',
+        state: 'personal',
+        postalCode: 'personal',
     },
     CorporationLead: {
         corporationId: 'public',

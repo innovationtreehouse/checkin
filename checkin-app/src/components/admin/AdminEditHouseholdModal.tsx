@@ -3,23 +3,27 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Group, Loader, Modal, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { pickAddress, type StructuredAddress } from "@/lib/address";
 
 export type AdminHousehold = {
   id: number;
   name: string | null;
-  address: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
-};
+} & Partial<StructuredAddress>;
 
 type FormState = {
   name: string;
-  address: string;
+  line1: string;
+  line2: string;
+  city: string;
+  state: string;
+  postalCode: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
 };
 
-const EMPTY: FormState = { name: "", address: "", emergencyContactName: "", emergencyContactPhone: "" };
+const EMPTY: FormState = { name: "", line1: "", line2: "", city: "", state: "", postalCode: "", emergencyContactName: "", emergencyContactPhone: "" };
 
 /**
  * Admin/board editor for a household's own info. Denser than the member-facing
@@ -58,9 +62,10 @@ export function AdminEditHouseholdModal({
         const h: AdminHousehold | null = data.household;
         if (cancelled) return;
         if (h) {
+          const a = pickAddress(h);
           setForm({
             name: h.name || "",
-            address: h.address || "",
+            line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "",
             emergencyContactName: h.emergencyContactName || "",
             emergencyContactPhone: h.emergencyContactPhone || "",
           });
@@ -129,11 +134,22 @@ export function AdminEditHouseholdModal({
               placeholder="The Smith Family"
             />
             <TextInput
-              label="Primary Address"
-              value={form.address}
-              onChange={(e) => update({ address: e.currentTarget.value })}
-              placeholder="123 Main St, City, ST 12345"
+              label="Street Address"
+              value={form.line1}
+              onChange={(e) => update({ line1: e.currentTarget.value })}
+              placeholder="123 Main St"
             />
+            <TextInput
+              label="Apt / Suite (optional)"
+              value={form.line2}
+              onChange={(e) => update({ line2: e.currentTarget.value })}
+              placeholder="Apt 4B"
+            />
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+              <TextInput label="City" value={form.city} onChange={(e) => update({ city: e.currentTarget.value })} />
+              <TextInput label="State" maxLength={2} value={form.state} onChange={(e) => update({ state: e.currentTarget.value })} placeholder="TX" />
+              <TextInput label="ZIP" value={form.postalCode} onChange={(e) => update({ postalCode: e.currentTarget.value })} placeholder="78701" />
+            </SimpleGrid>
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <TextInput
                 label="Emergency Contact Name"

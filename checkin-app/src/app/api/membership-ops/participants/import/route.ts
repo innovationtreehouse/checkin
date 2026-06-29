@@ -93,11 +93,13 @@ export async function POST(req: NextRequest) {
 
         // Helper: addresses live on the household, not the participant.
         // A CSV address overwrites the row's household address when provided.
+        // ponytail: legacy CSV has one free-text address column → goes to line1
+        // verbatim. Bulk import is being redone; structured columns land then.
         const applyAddressToHousehold = async (householdId: number, address: string, db: Prisma.TransactionClient = prisma) => {
             if (!address) return;
             await db.household.update({
                 where: { id: householdId },
-                data: { address }
+                data: { line1: address }
             });
         };
 
