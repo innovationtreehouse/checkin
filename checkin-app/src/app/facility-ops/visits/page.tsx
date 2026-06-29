@@ -1,18 +1,38 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Center, Group, Loader, Stack, Table, Text, TextInput, UnstyledButton } from '@mantine/core';
-import { IconChevronDown, IconChevronUp, IconSelector } from '@tabler/icons-react';
+import { Button, Center, Group, Loader, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
+import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconRobot, IconScan, IconSelector } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+
+type VisitSource = 'SCANNER' | 'WEB' | 'SYSTEM';
 
 type Visit = {
   id: number;
   arrived: string | null;
   departed?: string | null;
+  arrivedVia?: VisitSource | null;
+  departedVia?: VisitSource | null;
   participant?: { name?: string | null; email?: string | null } | null;
   event?: { name?: string | null } | null;
+};
+
+const SOURCE_META: Record<VisitSource, { Icon: typeof IconScan; label: string }> = {
+  SCANNER: { Icon: IconScan, label: 'Scanner (kiosk badge)' },
+  WEB: { Icon: IconDeviceLaptop, label: 'Web (dashboard)' },
+  SYSTEM: { Icon: IconRobot, label: 'Automated (facility close / nightly)' },
+};
+
+const SourceIcon = ({ via }: { via?: VisitSource | null }) => {
+  if (!via) return null;
+  const { Icon, label } = SOURCE_META[via];
+  return (
+    <Tooltip label={label} withArrow>
+      <Icon size={14} stroke={1.5} style={{ verticalAlign: 'middle', color: 'var(--mantine-color-dimmed)' }} />
+    </Tooltip>
+  );
 };
 
 type SortKey = 'id' | 'participant' | 'event' | 'arrived' | 'departed';
@@ -176,9 +196,19 @@ export default function AdminVisitsPage() {
                   </>
                 ) : (
                   <>
-                    <Table.Td>{formatDateTime(v.arrived)}</Table.Td>
                     <Table.Td>
-                      {v.departed ? formatDateTime(v.departed) : <Text component="span" c="yellow">Active</Text>}
+                      <Group gap={6} wrap="nowrap">
+                        <span>{formatDateTime(v.arrived)}</span>
+                        <SourceIcon via={v.arrivedVia} />
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>
+                      {v.departed ? (
+                        <Group gap={6} wrap="nowrap">
+                          <span>{formatDateTime(v.departed)}</span>
+                          <SourceIcon via={v.departedVia} />
+                        </Group>
+                      ) : <Text component="span" c="yellow">Active</Text>}
                     </Table.Td>
                     <Table.Td>
                       <Button size="xs" fz={15} variant="light" onClick={() => handleEditClick(v)}>Edit</Button>

@@ -37,8 +37,8 @@ export const PATCH = withAuth(
             const updatedVisit = await prisma.visit.update({
                 where: { id: visitId },
                 data: {
-                    ...(arrived ? { arrived: new Date(arrived) } : {}),
-                    ...(departed ? { departed: new Date(departed) } : {}),
+                    ...(arrived ? { arrived: new Date(arrived), arrivedVia: "WEB" } : {}),
+                    ...(departed ? { departed: new Date(departed), departedVia: "WEB" } : {}),
                 },
             });
 

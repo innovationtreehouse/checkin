@@ -60,6 +60,8 @@ export async function POST(req: NextRequest) {
                     participantId: userId,
                     arrived: arrivalTime,
                     departed: departureTime,
+                    arrivedVia: "WEB",
+                    departedVia: departureTime ? "WEB" : null,
                     associatedEventId: eventId
                 }
             });
@@ -71,7 +73,7 @@ export async function POST(req: NextRequest) {
         // If a departure time was provided, we process the checkout logic directly 
         // to handle any back-to-back event transitions.
         if (departureTime) {
-             await processVisitCheckout(visit.id, departureTime);
+             await processVisitCheckout(visit.id, departureTime, undefined, "WEB");
         }
 
         await prisma.auditLog.create({

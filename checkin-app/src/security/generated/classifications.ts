@@ -226,6 +226,8 @@ export const classifications = {
         participantId: 'public',
         arrived: 'personal',
         departed: 'personal',
+        arrivedVia: 'public',
+        departedVia: 'public',
         associatedEventId: 'public',
     },
     AuditLog: {
