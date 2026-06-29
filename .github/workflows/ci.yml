@@ -163,11 +163,17 @@ jobs:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
         run: npm run test:ci
 
-      - name: Run security policy contract tests
+      # Runs every *.integration.test.ts (scanAuth, scanCheckin, policy.contract,
+      # …) against the test Postgres. Previously CI only ran the one hardcoded
+      # policy.contract file, so the safety-critical scanAuth auth/authz suite
+      # produced zero signal (issue #393). test:integration overrides the
+      # default ignore list that excludes integration tests and clones one DB
+      # per worker via integrationGlobalSetup.
+      - name: Run integration tests
         if: needs.changes.outputs.app == 'true'
         env:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
-        run: npm -w checkin-app exec -- jest tests/security/policy.contract.integration.test.ts --runInBand --forceExit --testPathIgnorePatterns=/node_modules/
+        run: npm run test:integration
 
   # Build the exact production image the dev deploy uses (Dockerfile -> `npm run build`),
   # but never push or deploy it. The deploy flow's build was previously only exercised on
