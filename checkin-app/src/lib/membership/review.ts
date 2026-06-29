@@ -93,7 +93,7 @@ export async function notifyReviewers(): Promise<void> {
                     ? sendEmail(
                           r.email,
                           "Membership: a background-check review is needed",
-                          `<p>An application is ready for your background-check review. Please sign in to review it: <a href="${base}/membership/review">${base}/membership/review</a></p>`,
+                          `<p>An application is ready for your background-check review. Please sign in to review it: <a href="${base}/membership-ops/review">${base}/membership-ops/review</a></p>`,
                       ).catch((e) => logger.error("Reviewer ping failed:", e))
                     : Promise.resolve(),
             ),
