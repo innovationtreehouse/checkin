@@ -10,11 +10,11 @@ export const GET = withAuth(
             // 90-day TTL purge on read (admin opening the tab). ponytail: no cron needed.
             const ninetyDaysAgo = new Date();
             ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-            prisma.integrationError
+            prisma.integrationErrorLog
                 .deleteMany({ where: { createdAt: { lt: ninetyDaysAgo } } })
                 .catch((err: unknown) => console.error("Failed to purge old integration errors:", err));
 
-            const errors = await prisma.integrationError.findMany({
+            const errors = await prisma.integrationErrorLog.findMany({
                 orderBy: [{ resolvedAt: "asc" }, { createdAt: "desc" }],
                 take: 200,
             });

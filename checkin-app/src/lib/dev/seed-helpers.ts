@@ -323,7 +323,7 @@ export async function createCheckins(prisma: Db): Promise<string> {
     let count = 0;
     for (const [i, p] of people.entries()) {
         const arrived = new Date(Date.now() - (i + 1) * 45 * 60 * 1000); // staggered into the past
-        await prisma.rawBadgeEvent.create({
+        await prisma.rawBadgeLog.create({
             data: { participantId: p.id, time: arrived, location: "Front Door" },
         });
         await prisma.visit.create({

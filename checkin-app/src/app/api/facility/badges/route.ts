@@ -6,7 +6,7 @@ export const GET = withAuth(
     { roles: ['sysadmin', 'boardMember'] },
     async () => {
         try {
-            const badges = await prisma.rawBadgeEvent.findMany({
+            const badges = await prisma.rawBadgeLog.findMany({
                 take: 200,
                 orderBy: { time: "desc" },
                 include: {

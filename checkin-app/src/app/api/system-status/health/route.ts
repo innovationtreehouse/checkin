@@ -9,7 +9,7 @@ export const GET = withAuth(
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-            const metrics = await prisma.systemMetric.findMany({
+            const metrics = await prisma.systemMetricLog.findMany({
                 where: {
                     metric: "scan_response_time",
                     timestamp: {
@@ -65,7 +65,7 @@ export const GET = withAuth(
                 };
             });
 
-            prisma.systemMetric
+            prisma.systemMetricLog
                 .deleteMany({
                     where: {
                         timestamp: {

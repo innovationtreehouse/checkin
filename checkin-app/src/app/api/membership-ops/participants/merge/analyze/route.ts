@@ -28,7 +28,7 @@ export const GET = withAuth(
                         },
                         _count: {
                             select: {
-                                rawBadgeEvents: true,
+                                rawBadgeLogs: true,
                                 visits: true,
                                 programParticipants: true,
                                 programVolunteers: true

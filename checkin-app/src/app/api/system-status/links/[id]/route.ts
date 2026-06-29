@@ -16,7 +16,7 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
             const body = await req.json().catch(() => ({}));
             const resolved = body?.resolved !== false; // default: mark resolved
 
-            const updated = await prisma.integrationError.update({
+            const updated = await prisma.integrationErrorLog.update({
                 where: { id: errorId },
                 data: { resolvedAt: resolved ? new Date() : null },
             });

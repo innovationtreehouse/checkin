@@ -11,7 +11,7 @@ interface ParticipantMergeView {
   name?: string;
   phone?: string;
   googleId?: string;
-  _count: { visits: number, rawBadgeEvents: number, programParticipants: number, programVolunteers: number };
+  _count: { visits: number, rawBadgeLogs: number, programParticipants: number, programVolunteers: number };
   household?: { id: number, name: string, leads: { participant: { name: string, email: string } }[], _count?: { participants: number }, participants: Record<string, unknown>[] } | null;
   [key: string]: unknown;
 }
@@ -73,7 +73,7 @@ export default function MergeParticipants() {
             const score = (p: ParticipantMergeView) => {
               let s = 0;
               s += p._count.visits * 2;
-              s += p._count.rawBadgeEvents;
+              s += p._count.rawBadgeLogs;
               s += p._count.programParticipants * 5;
               s += p._count.programVolunteers * 5;
               if (p.email) s += 10;
@@ -172,7 +172,7 @@ export default function MergeParticipants() {
 
       <Stack gap={2}>
         <Text size="sm" c="dimmed">Visits: {p._count.visits}</Text>
-        <Text size="sm" c="dimmed">Raw Badge Events: {p._count.rawBadgeEvents}</Text>
+        <Text size="sm" c="dimmed">Raw Badge Events: {p._count.rawBadgeLogs}</Text>
         <Text size="sm" c="dimmed">Program Participation: {p._count.programParticipants}</Text>
         <Text size="sm" c="dimmed">Program Volunteering: {p._count.programVolunteers}</Text>
 

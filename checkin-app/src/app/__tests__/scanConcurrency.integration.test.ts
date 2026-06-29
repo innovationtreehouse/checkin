@@ -74,7 +74,7 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
         const leakedIds = leaked.map(p => p.id);
         const leakedHouseholdIds = leaked.map(p => p.householdId);
         await prisma.visit.deleteMany({ where: { participantId: { in: leakedIds } } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: { in: leakedIds } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: leakedIds } } });
         await prisma.participant.deleteMany({ where: { id: { in: leakedIds } } });
         await prisma.household.deleteMany({ where: { id: { in: leakedHouseholdIds } } });
 
@@ -104,7 +104,7 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
             select: { householdId: true },
         })).map(p => p.householdId);
         await prisma.visit.deleteMany({ where: { participantId: { in: ids } } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: { in: ids } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: ids } } });
         await prisma.participant.deleteMany({ where: { id: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: households } } });
     });
@@ -113,7 +113,7 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
         // Fresh state: no open visit, no recent badge event (so neither scan is
         // pre-debounced before the race even begins).
         await prisma.visit.deleteMany({ where: { participantId: checkinSubjectId } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: checkinSubjectId } });
+        await prisma.rawBadgeLog.deleteMany({ where: { participantId: checkinSubjectId } });
         expect(await openVisitCount(checkinSubjectId)).toBe(0);
 
         const [resA, resB] = await Promise.all([
@@ -136,7 +136,7 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
     it('two concurrent check-out scans → exactly one successful checkout, no 500, zero open visits', async () => {
         // Fresh state: exactly one open visit, no recent badge event.
         await prisma.visit.deleteMany({ where: { participantId: checkoutSubjectId } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: checkoutSubjectId } });
+        await prisma.rawBadgeLog.deleteMany({ where: { participantId: checkoutSubjectId } });
         await prisma.visit.create({ data: { participantId: checkoutSubjectId, arrived: new Date() } });
         expect(await openVisitCount(checkoutSubjectId)).toBe(1);
 

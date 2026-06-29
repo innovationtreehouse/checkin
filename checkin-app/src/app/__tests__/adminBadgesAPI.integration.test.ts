@@ -22,7 +22,7 @@ describe('Admin Badges API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        await prisma.rawBadgeEvent.deleteMany({
+        await prisma.rawBadgeLog.deleteMany({
             where: {
                 participant: { email: { contains: 'badges-api-test' } }
             }
@@ -42,7 +42,7 @@ describe('Admin Badges API Integration Tests', () => {
         });
         testUserId = user.id;
 
-        const badgeEvent = await prisma.rawBadgeEvent.create({
+        const badgeEvent = await prisma.rawBadgeLog.create({
             data: {
                 participantId: testUserId,
                 location: 'Front Door'
@@ -53,7 +53,7 @@ describe('Admin Badges API Integration Tests', () => {
 
     afterAll(async () => {
         // Clean up
-        await prisma.rawBadgeEvent.deleteMany({
+        await prisma.rawBadgeLog.deleteMany({
             where: { id: testBadgeEventId }
         });
         await prisma.participant.deleteMany({

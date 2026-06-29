@@ -91,7 +91,7 @@ export async function processCheckout(
             if (remainingUsers.length > 0) {
                 let confirmForceClose = false;
 
-                const recentEvents = await db.rawBadgeEvent.findMany({
+                const recentEvents = await db.rawBadgeLog.findMany({
                     where: { participantId: participant.id },
                     orderBy: { time: "desc" },
                     take: 2
