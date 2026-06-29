@@ -12,6 +12,7 @@ import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isOrgAccount } from '@/lib/orgAccount';
 import { pickAddress, type StructuredAddress } from '@/lib/address';
 import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
+import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
 
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
@@ -46,6 +47,9 @@ export default function HouseholdPage() {
   const [filterDate, setFilterDate] = useState("");
   const [settings, setSettings] = useState({ emailDependentCheckins: false });
   const [address, setAddress] = useState<StructuredAddress>(blankAddress);
+  // Snapshot of the address as last loaded/saved; isDirty compares it to current
+  // state to drive the unsaved-changes guard.
+  const [initialAddress, setInitialAddress] = useState<StructuredAddress>(blankAddress);
   const [savingSettings, setSavingSettings] = useState(false);
 
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
@@ -75,7 +79,9 @@ export default function HouseholdPage() {
         const data = await res.json();
         setHousehold(data.household);
         const a = pickAddress(data.household);
-        setAddress({ line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" });
+        const loaded = { line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" };
+        setAddress(loaded);
+        setInitialAddress(loaded);
       }
       if (visitRes.ok) {
         const data = await visitRes.json();
@@ -296,6 +302,13 @@ export default function HouseholdPage() {
       setMessage("Network error promoting member.");
     }
   };
+
+  // ponytail: guard ONLY the deferred Address card (committed by the "Update
+  // Address" button). The member add/edit forms, emergency-contact form, and the
+  // receipts toggle all submit instantly with no pending state — intentionally
+  // excluded so they never raise a spurious unsaved-changes prompt.
+  const isDirty = !shallowEqual({ ...initialAddress }, { ...address });
+  useUnsavedGuard(isDirty);
 
   if (loading || status === "loading") {
     return <Center mih="60vh"><Loader /></Center>;
