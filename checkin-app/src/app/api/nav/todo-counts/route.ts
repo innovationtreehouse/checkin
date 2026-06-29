@@ -48,7 +48,10 @@ export type TodoCounts = {
     activePrograms: number;
     // Admin keys stay numeric — each admin nav link already deep-links to a page
     // that lists its own queue, so the number is enough.
-    admin?: { membership: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number };
+    // `membership` = board-actionable (BLOCKED, green). `applicationsTotal` =
+    // every in-flight (non-ACTIVE) application, the gray count shown on the
+    // Applications tab — mirrors what /api/admin/membership lists.
+    admin?: { membership: number; applicationsTotal: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number };
 };
 
 // What a member-actionable membership process means, in plain terms.
@@ -172,9 +175,13 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // ---- Admin surface (board's own queue) — only for board/sysadmin ----
     if (user.sysadmin || user.boardMember) {
-        const [membership, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds] = await Promise.all([
+        const [membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds] = await Promise.all([
             prisma.membershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
+            }),
+            // Every in-flight application the Applications page lists (status != ACTIVE).
+            prisma.membershipProcess.count({
+                where: { status: { not: "ACTIVE" } },
             }),
             prisma.programParticipant.count({
                 where: { status: "PENDING", paymentPlanRequested: true },
@@ -189,7 +196,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 where: { participants: { some: { email: { not: null }, googleId: null } } },
             }),
         ]);
-        result.admin = { membership, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds };
+        result.admin = { membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds };
     }
 
     return NextResponse.json(result);
