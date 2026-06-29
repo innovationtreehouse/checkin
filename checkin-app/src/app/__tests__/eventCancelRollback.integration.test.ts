@@ -89,8 +89,12 @@ describe('PATCH /api/events/[id] cancel — transaction rollback on partial fail
         await prisma.rSVP.create({
             data: { eventId: event.id, participantId, status: 'ATTENDING' },
         });
+        // Closed (departedAt set): makeEvent is called for several events that reuse
+        // this one participant, but a participant may have only one OPEN visit
+        // (Visit_one_open_per_participant). This test counts visits by
+        // associatedEventId, not open-state, so the departure time is irrelevant.
         await prisma.visit.create({
-            data: { participantId, arrivedAt: start, associatedEventId: event.id },
+            data: { participantId, arrivedAt: start, departedAt: new Date(start.getTime() + HOUR), associatedEventId: event.id },
         });
         return event.id;
     }
