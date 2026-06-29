@@ -86,7 +86,7 @@ export default function CreateProgramPage() {
   return (
     <Container size="md" pb="md">
       <Card withBorder radius="md" padding="lg">
-        <AdminPageHeader title="Create Program" back={{ href: '/programs', label: '← Back to Programs' }} mb="md" />
+        <AdminPageHeader title="Create Program" mb="md" />
 
         <Text c="dimmed" mb="lg">
           Create a new program. You can configure the roster and schedule events later.
