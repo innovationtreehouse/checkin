@@ -34,6 +34,14 @@ enum AuditAction {
   BECOME_ADMIN
 }
 
+/// How a visit arrival/departure was recorded.
+/// SCANNER = physical kiosk badge, WEB = admin/dashboard UI, SYSTEM = automated (facility-close sweep, nightly cron).
+enum VisitSource {
+  SCANNER
+  WEB
+  SYSTEM
+}
+
 enum ProgramPhase {
   PLANNING
   UPCOMING
@@ -106,7 +114,7 @@ model Participant {
   programsLed         Program[]                    @relation("ProgramLeadMentor")
   feePayments         FeePayment[]
   rsvps               RSVP[]
-  rawBadgeEvents      RawBadgeEvent[]
+  rawBadgeLogs        RawBadgeLog[]
   visits              Visit[]
   eventsConfirmedBy   Event[]                      @relation("EventAttendanceConfirmer")
 
@@ -145,7 +153,15 @@ model Household {
   /// @sensitivity:public
   name    String?
   /// @sensitivity:personal
-  address String?
+  line1      String?
+  /// @sensitivity:personal
+  line2      String?
+  /// @sensitivity:personal
+  city       String?
+  /// @sensitivity:personal
+  state      String?
+  /// @sensitivity:personal
+  postalCode String?
 
   participants      Participant[]
   leads             HouseholdLead[]
@@ -404,6 +420,23 @@ model BoardSettings {
   updatedAt                  DateTime  @updatedAt
 }
 
+/// App-wide localization config (singleton, id=1). Distinct from BoardSettings,
+/// which holds membership/money policy — this holds deployment-region settings
+/// (timezone, locale) that govern how the whole app reads dates and times.
+model AppSettings {
+  /// @sensitivity:public
+  id        Int      @id @default(1)
+  /// IANA timezone, e.g. "America/Chicago". Used server-side to convert event
+  /// wall-clock times to UTC and to format dates in the org's local zone.
+  /// @sensitivity:public
+  timezone  String   @default("America/Chicago")
+  /// BCP-47 locale, e.g. "en-US". Used for server-side date/number formatting.
+  /// @sensitivity:public
+  locale    String   @default("en-US")
+  /// @sensitivity:public
+  updatedAt DateTime @updatedAt
+}
+
 /// Trusted Adult Management (Trusted Adults). A board-reviewed disclosure that
 /// one individual (the subject, always a Participant) holds an external
 /// relationship — familial, romantic, guardianship, financial, legal-restriction,
@@ -425,8 +458,13 @@ model TrustedAdult {
   counterparty              Participant?       @relation("TrustedAdultCounterparty", fields: [counterpartyParticipantId], references: [id])
   /// @sensitivity:personal
   counterpartyName          String
+  /// The trusted adult's phone and/or email. At least one is required (enforced
+  /// in the app, not the DB, since "at least one of two nullable columns" has no
+  /// clean SQL constraint). Both may be present.
   /// @sensitivity:personal
-  counterpartyContact       String
+  counterpartyPhone         String?
+  /// @sensitivity:personal
+  counterpartyEmail         String?
   /// The family's explanation for the BOARD — what this adult may or may not do,
   /// restrictions, safeguarding context. Board + the household's own leads only
   /// (pii tier is the board/family band here; program leads & keyholders never
@@ -501,7 +539,15 @@ model Corporation {
   /// @sensitivity:pii
   primaryEmail String?
   /// @sensitivity:personal
-  address      String?
+  line1      String?
+  /// @sensitivity:personal
+  line2      String?
+  /// @sensitivity:personal
+  city       String?
+  /// @sensitivity:personal
+  state      String?
+  /// @sensitivity:personal
+  postalCode String?
 
   leads   CorporationLead[]
   members CorporationMember[]
@@ -692,19 +738,19 @@ model RSVP {
   @@id([eventId, participantId])
 }
 
-model RawBadgeEvent {
+model RawBadgeLog {
   /// @sensitivity:internal
   id            Int      @id @default(autoincrement())
   /// @sensitivity:internal
   participantId Int
   /// @sensitivity:personal
-  time          DateTime @default(now())
+  timestamp     DateTime @default(now())
   /// @sensitivity:personal
   location      String?
 
   participant Participant @relation(fields: [participantId], references: [id])
 
-  @@index([participantId, time]) // Double-badge detection in /api/scan
+  @@index([participantId, timestamp]) // Double-badge detection in /api/scan
 }
 
 model Visit {
@@ -716,6 +762,10 @@ model Visit {
   arrived           DateTime
   /// @sensitivity:personal
   departed          DateTime?
+  /// @sensitivity:public
+  arrivedVia        VisitSource?
+  /// @sensitivity:public
+  departedVia       VisitSource?
   /// @sensitivity:public
   associatedEventId Int?
 
@@ -729,7 +779,7 @@ model AuditLog {
   /// @sensitivity:internal
   id                      Int         @id @default(autoincrement())
   /// @sensitivity:internal
-  time                    DateTime    @default(now())
+  timestamp               DateTime    @default(now())
   /// @sensitivity:internal
   actorId                 Int
   /// @sensitivity:internal
@@ -804,7 +854,7 @@ model ErrorLog {
   /// @sensitivity:internal
   id        Int      @id @default(autoincrement())
   /// @sensitivity:internal
-  createdAt DateTime @default(now())
+  timestamp DateTime @default(now())
   /// @sensitivity:internal
   route     String?
   /// @sensitivity:internal
@@ -815,7 +865,7 @@ model ErrorLog {
   context   Json?
 }
 
-model SystemMetric {
+model SystemMetricLog {
   /// @sensitivity:internal
   id        Int      @id @default(autoincrement())
   /// @sensitivity:internal
@@ -829,7 +879,7 @@ model SystemMetric {
 /// Persisted external-integration / link failures (Shopify, etc.) surfaced on the
 /// System Status > Link Status tab. Previously these were only emailed to admins and
 /// never stored, so there was no view. Rolling log: rows auto-purge after 90 days.
-model IntegrationError {
+model IntegrationErrorLog {
   /// @sensitivity:internal
   id         Int       @id @default(autoincrement())
   /// @sensitivity:internal
@@ -839,11 +889,11 @@ model IntegrationError {
   /// @sensitivity:internal
   context    Json?
   /// @sensitivity:internal
-  createdAt  DateTime  @default(now())
+  timestamp  DateTime  @default(now())
   /// @sensitivity:internal
   resolvedAt DateTime?
 
-  @@index([resolvedAt, createdAt])
+  @@index([resolvedAt, timestamp])
 }
 
 /// Dev-instance activity ledger (DEV_DASHBOARD_DESIGN.md §6). Lives only in checkin_dev; records

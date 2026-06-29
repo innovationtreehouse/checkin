@@ -53,7 +53,7 @@ describe('Trusted Adults service', () => {
         const outHh = await prisma.household.create({ data: { name: `Outsider HH ${TAG}` } });
         outsiderId = (await prisma.participant.create({ data: { name: 'Outsider', householdId: outHh.id } })).id;
         const boardHh = await prisma.household.create({ data: { name: `Board HH ${TAG}` } });
-        boardId = (await prisma.participant.create({ data: { name: 'Boardie', boardMember: true, householdId: boardHh.id } })).id;
+        boardId = (await prisma.participant.create({ data: { name: 'Boardie', email: `board-${TAG}@ex.com`, boardMember: true, householdId: boardHh.id } })).id;
     });
 
     afterAll(async () => {
@@ -73,7 +73,7 @@ describe('Trusted Adults service', () => {
         return createTrustedAdult({
             householdId,
             counterpartyName: 'Jane External',
-            counterpartyContact: 'jane@example.com',
+            counterpartyEmail: 'jane@example.com',
             familyContext: 'Our nanny; may collect the kids on weekdays.',
             disclosedById: leadId,
         });
@@ -95,13 +95,16 @@ describe('Trusted Adults service', () => {
 
     it('rejects a disclosure missing name, contact, or family context', async () => {
         await expect(
-            createTrustedAdult({ householdId, counterpartyName: '', counterpartyContact: 'x', familyContext: 'x', disclosedById: leadId }),
+            createTrustedAdult({ householdId, counterpartyName: '', counterpartyEmail: 'x@y.com', familyContext: 'x', disclosedById: leadId }),
+        ).rejects.toMatchObject({ code: 'bad_input' });
+        await expect( // neither phone nor email
+            createTrustedAdult({ householdId, counterpartyName: 'x', familyContext: 'x', disclosedById: leadId }),
+        ).rejects.toMatchObject({ code: 'bad_input' });
+        await expect( // malformed email
+            createTrustedAdult({ householdId, counterpartyName: 'x', counterpartyEmail: 'nope', familyContext: 'x', disclosedById: leadId }),
         ).rejects.toMatchObject({ code: 'bad_input' });
         await expect(
-            createTrustedAdult({ householdId, counterpartyName: 'x', counterpartyContact: '', familyContext: 'x', disclosedById: leadId }),
-        ).rejects.toMatchObject({ code: 'bad_input' });
-        await expect(
-            createTrustedAdult({ householdId, counterpartyName: 'x', counterpartyContact: 'x', familyContext: '', disclosedById: leadId }),
+            createTrustedAdult({ householdId, counterpartyName: 'x', counterpartyEmail: 'x@y.com', familyContext: '', disclosedById: leadId }),
         ).rejects.toMatchObject({ code: 'bad_input' });
     });
 
@@ -120,6 +123,26 @@ describe('Trusted Adults service', () => {
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(boardId); // the deciding board member
         expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', decision: 'APPROVE' });
+    });
+
+    it('refuses a decider with a conflict of interest: own household, or being the counterparty', async () => {
+        // Same household as the disclosure (the lead) — can't decide their own household's review.
+        const ta = await discloseOne();
+        await expect(decideReview(ta.reviews[0].id, leadId, { decision: 'APPROVE', sharedNote: SHARED }))
+            .rejects.toMatchObject({ code: 'forbidden' });
+
+        // Board member is the counterparty (the trusted adult themselves) — also blocked,
+        // even though they live in a different household.
+        const selfTa = await createTrustedAdult({
+            householdId,
+            counterpartyParticipantId: boardId,
+            counterpartyName: 'Boardie',
+            counterpartyEmail: 'boardie@example.com',
+            familyContext: 'A board member who is also our trusted adult.',
+            disclosedById: leadId,
+        });
+        await expect(decideReview(selfTa.reviews[0].id, boardId, { decision: 'DENY' }))
+            .rejects.toMatchObject({ code: 'forbidden' });
     });
 
     it('REQUEST_INFO moves to PENDING_SUBJECT_ACTION and emails the family', async () => {
@@ -300,7 +323,7 @@ describe('runExpirySweep edge cases', () => {
             data: {
                 householdId,
                 counterpartyName: `Sweep ${SWEEP_TAG}`,
-                counterpartyContact: 'sweep@example.com',
+                counterpartyEmail: 'sweep@example.com',
                 familyContext: 'ctx',
                 disclosedById: leadId,
             },

@@ -17,7 +17,7 @@ import {
 
 type AuditLog = {
   id: number;
-  time: string;
+  timestamp: string;
   actorId: number;
   actorName: string | null;
   action: "CREATE" | "EDIT" | "DELETE" | "BECOME_ADMIN";
@@ -61,7 +61,7 @@ export function AuditLogPanel() {
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
 
-    fetch(`/api/admin/audit?${qs}`)
+    fetch(`/api/system-status/audit-log?${qs}`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -130,7 +130,7 @@ export function AuditLogPanel() {
             <Table striped highlightOnHover withTableBorder verticalSpacing={4} fz="xs">
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th w={150}>Time</Table.Th>
+                  <Table.Th w={110}>Time</Table.Th>
                   <Table.Th w={90}>Action</Table.Th>
                   <Table.Th>Entity</Table.Th>
                   <Table.Th>Actor</Table.Th>
@@ -141,7 +141,8 @@ export function AuditLogPanel() {
                 {data.logs.map((l) => (
                   <Table.Tr key={l.id}>
                     <Table.Td style={{ whiteSpace: "nowrap" }}>
-                      {new Date(l.time).toLocaleString()}
+                      <div>{new Date(l.timestamp).toLocaleDateString()}</div>
+                      <div>{new Date(l.timestamp).toLocaleTimeString()}</div>
                     </Table.Td>
                     <Table.Td>
                       <Badge size="sm" color={ACTION_COLOR[l.action]}>

@@ -45,10 +45,17 @@ export type TodoCounts = {
     // Informational gray badges (not action items): live building occupancy and
     // how many programs are currently running.
     building: number;
+    // Of the people currently in the building, how many belong to the caller's
+    // household — lets the Attendance badge show "mine" (green) vs "others" (gray).
+    buildingHousehold: number;
     activePrograms: number;
     // Admin keys stay numeric — each admin nav link already deep-links to a page
     // that lists its own queue, so the number is enough.
-    admin?: { membership: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number };
+    // `membership` = board-actionable (BLOCKED, green). `applicationsTotal` =
+    // every in-flight (non-ACTIVE) application, the gray count shown on the
+    // Applications tab — mirrors what /api/admin/membership lists.
+    // `brokenHouseholds` = households with no lead at all (green).
+    admin?: { membership: number; applicationsTotal: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number };
 };
 
 // What a member-actionable membership process means, in plain terms.
@@ -87,7 +94,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 select: { participantId: true },
             })) !== null;
 
-        const [hh, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
+        const [hh, leadsMissingPhone, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
             isLead
                 ? prisma.household.findUnique({
                       where: { id: householdId },
@@ -102,6 +109,14 @@ export const GET = withAuth({}, async (_req, auth) => {
                       },
                   })
                 : Promise.resolve(null),
+            // A household lead with no phone on file is an actionable gap — the
+            // page highlights the member box; this drives the nav badge count.
+            isLead
+                ? prisma.householdLead.findMany({
+                      where: { householdId, OR: [{ participant: { phone: null } }, { participant: { phone: "" } }] },
+                      select: { participant: { select: { id: true, name: true } } },
+                  })
+                : Promise.resolve([]),
             prisma.membershipProcess.findMany({
                 where: { membership: { householdId }, status: { in: MEMBER_ACTIONABLE_MEMBERSHIP } },
                 select: { id: true, status: true },
@@ -124,6 +139,9 @@ export const GET = withAuth({}, async (_req, auth) => {
 
         if (!!hh && hh.emergencyContacts.length === 0) {
             householdTodos.push({ key: "emergency-contact", label: "Add a household emergency contact", href: "/my-household#emergency-contact" });
+        }
+        for (const l of leadsMissingPhone) {
+            householdTodos.push({ key: `lead-phone-${l.participant.id}`, label: `Add a phone number for ${l.participant.name ?? "the household lead"}`, href: "/my-household" });
         }
         for (const p of membershipProcs) {
             householdTodos.push({
@@ -148,22 +166,30 @@ export const GET = withAuth({}, async (_req, auth) => {
     }
 
     // Global informational counts (not scoped to the caller).
-    const [building, activePrograms] = await Promise.all([
+    const [building, buildingHousehold, activePrograms] = await Promise.all([
         prisma.visit.count({ where: { departed: null } }),
+        user.householdId
+            ? prisma.visit.count({ where: { departed: null, participant: { householdId: user.householdId } } })
+            : Promise.resolve(0),
         prisma.program.count({ where: { phase: "RUNNING" } }),
     ]);
 
     const result: TodoCounts = {
         member: { household: householdTodos, programs: programTodos },
         building,
+        buildingHousehold,
         activePrograms,
     };
 
     // ---- Admin surface (board's own queue) — only for board/sysadmin ----
     if (user.sysadmin || user.boardMember) {
-        const [membership, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds] = await Promise.all([
+        const [membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds] = await Promise.all([
             prisma.membershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
+            }),
+            // Every in-flight application the Applications page lists (status != ACTIVE).
+            prisma.membershipProcess.count({
+                where: { status: { not: "ACTIVE" } },
             }),
             prisma.programParticipant.count({
                 where: { status: "PENDING", paymentPlanRequested: true },
@@ -173,12 +199,17 @@ export const GET = withAuth({}, async (_req, auth) => {
             }),
             countHouseholdsMissingValidContact(),
             // Households with an account created at registration that nobody has
-            // claimed via Google sign-in yet. Mirrors /api/admin/unclaimed-households.
+            // claimed via Google sign-in yet. Mirrors /api/membership-audit/unclaimed-households.
             prisma.household.count({
                 where: { participants: { some: { email: { not: null }, googleId: null } } },
             }),
+            // "Broken" households: no household lead at all. Mirrors
+            // /api/admin/broken-households. Includes empty households.
+            prisma.household.count({
+                where: { leads: { none: {} } },
+            }),
         ]);
-        result.admin = { membership, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds };
+        result.admin = { membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds };
     }
 
     return NextResponse.json(result);

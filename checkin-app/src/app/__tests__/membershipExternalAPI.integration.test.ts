@@ -7,8 +7,8 @@
  */
 
 import { POST as ZOHO_WEBHOOK } from '@/app/api/webhooks/zoho/route';
-import { POST as BOARD_EXTERNAL } from '@/app/api/admin/membership/external/route';
-import { GET as ADMIN_LIST } from '@/app/api/admin/membership/route';
+import { POST as BOARD_EXTERNAL } from '@/app/api/membership-ops/applications/external/route';
+import { GET as ADMIN_LIST } from '@/app/api/membership-ops/applications/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -27,7 +27,7 @@ function asUser(id: number) {
 }
 
 function boardReq(body: unknown) {
-    return new Request('http://localhost:4000/api/admin/membership/external', {
+    return new Request('http://localhost:4000/api/membership-ops/applications/external', {
         method: 'POST',
         body: JSON.stringify(body),
     }) as unknown as Parameters<typeof BOARD_EXTERNAL>[0];

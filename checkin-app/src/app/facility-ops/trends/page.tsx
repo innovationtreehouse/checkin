@@ -51,7 +51,7 @@ export default function ParticipationTrendsPage() {
     const params = new URLSearchParams({ period });
     if (programId) params.set("programId", programId);
 
-    fetch(`/api/admin/trends?${params}`)
+    fetch(`/api/facility/trends?${params}`)
       .then((res) => res.json())
       .then((data) => {
         setBuckets(data.buckets || []);
@@ -88,7 +88,7 @@ export default function ParticipationTrendsPage() {
 
   return (
     <Stack>
-      <Text c="dimmed">Facility usage metrics across time periods and programs.</Text>
+      <Text c="dimmed">Facility usage metrics across time periods and programs. Only counts completed visits.</Text>
 
       <Group justify="space-between" wrap="wrap">
         <SegmentedControl

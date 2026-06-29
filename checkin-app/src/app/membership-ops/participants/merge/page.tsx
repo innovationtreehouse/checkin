@@ -11,7 +11,7 @@ interface ParticipantMergeView {
   name?: string;
   phone?: string;
   googleId?: string;
-  _count: { visits: number, rawBadgeEvents: number, programParticipants: number, programVolunteers: number };
+  _count: { visits: number, rawBadgeLogs: number, programParticipants: number, programVolunteers: number };
   household?: { id: number, name: string, leads: { participant: { name: string, email: string } }[], _count?: { participants: number }, participants: Record<string, unknown>[] } | null;
   [key: string]: unknown;
 }
@@ -41,7 +41,7 @@ export default function MergeParticipants() {
 
   useEffect(() => {
     if (searchA.length > 2 && !pA) {
-      fetch(`/api/admin/participants/search?q=${encodeURIComponent(searchA)}`)
+      fetch(`/api/participants/search?q=${encodeURIComponent(searchA)}`)
         .then(r => r.json())
         .then(d => setResultsA(d.participants || []));
     } else {
@@ -51,7 +51,7 @@ export default function MergeParticipants() {
 
   useEffect(() => {
     if (searchB.length > 2 && !pB) {
-      fetch(`/api/admin/participants/search?q=${encodeURIComponent(searchB)}`)
+      fetch(`/api/participants/search?q=${encodeURIComponent(searchB)}`)
         .then(r => r.json())
         .then(d => setResultsB(d.participants || []));
     } else {
@@ -62,7 +62,7 @@ export default function MergeParticipants() {
   useEffect(() => {
     if (pA && pB) {
       setLoading(true);
-      fetch(`/api/admin/participants/merge/analyze?a=${pA.id}&b=${pB.id}`)
+      fetch(`/api/membership-ops/participants/merge/analyze?a=${pA.id}&b=${pB.id}`)
         .then(r => r.json())
         .then(d => {
           if (d.participants) {
@@ -73,7 +73,7 @@ export default function MergeParticipants() {
             const score = (p: ParticipantMergeView) => {
               let s = 0;
               s += p._count.visits * 2;
-              s += p._count.rawBadgeEvents;
+              s += p._count.rawBadgeLogs;
               s += p._count.programParticipants * 5;
               s += p._count.programVolunteers * 5;
               if (p.email) s += 10;
@@ -101,7 +101,7 @@ export default function MergeParticipants() {
     setMerging(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/participants/merge", {
+      const res = await fetch("/api/membership-ops/participants/merge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -172,7 +172,7 @@ export default function MergeParticipants() {
 
       <Stack gap={2}>
         <Text size="sm" c="dimmed">Visits: {p._count.visits}</Text>
-        <Text size="sm" c="dimmed">Raw Badge Events: {p._count.rawBadgeEvents}</Text>
+        <Text size="sm" c="dimmed">Raw Badge Events: {p._count.rawBadgeLogs}</Text>
         <Text size="sm" c="dimmed">Program Participation: {p._count.programParticipants}</Text>
         <Text size="sm" c="dimmed">Program Volunteering: {p._count.programVolunteers}</Text>
 

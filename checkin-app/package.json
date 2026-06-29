@@ -9,8 +9,8 @@
     "lint": "eslint --max-warnings 0",
     "test": "jest --runInBand --forceExit",
     "test:ci": "jest --ci --runInBand --forceExit",
-    "test:integration": "jest --ci --runInBand --forceExit --testPathIgnorePatterns=/node_modules/ --testRegex \"\\.integration\\.test\\.[jt]sx?$\"",
     "test:flow": "jest --config jest.flow.config.js --ci --runInBand --forceExit",
+    "test:integration": "INTEGRATION_DB=1 jest --ci --forceExit --testPathIgnorePatterns=/node_modules/ --testRegex \"\\.integration\\.test\\.[jt]sx?$\"",
     "check-route-coverage": "ts-node --project scripts/tsconfig.json scripts/check-route-coverage.ts",
     "import:zoho": "tsx scripts/import-zoho.ts"
   },

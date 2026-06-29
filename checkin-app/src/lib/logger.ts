@@ -34,7 +34,7 @@ export async function logBackendError(error: unknown, route?: string, context?: 
 
         await prisma.errorLog.deleteMany({
             where: {
-                createdAt: {
+                timestamp: {
                     lt: thirtyDaysAgo
                 }
             }
@@ -58,7 +58,7 @@ export async function logIntegrationError(source: string, error: unknown, contex
     try {
         const message = error instanceof Error ? error.message : String(error);
 
-        await prisma.integrationError.create({
+        await prisma.integrationErrorLog.create({
             data: {
                 source,
                 message,
@@ -69,8 +69,8 @@ export async function logIntegrationError(source: string, error: unknown, contex
         // 90-day TTL purge. ponytail: cheap to run on each (rare) write; no cron needed.
         const ninetyDaysAgo = new Date();
         ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-        await prisma.integrationError.deleteMany({
-            where: { createdAt: { lt: ninetyDaysAgo } },
+        await prisma.integrationErrorLog.deleteMany({
+            where: { timestamp: { lt: ninetyDaysAgo } },
         });
     } catch (loggingError) {
         console.error("Failed to log integration error to database:", loggingError);

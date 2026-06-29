@@ -4,14 +4,14 @@
 /**
  * Authorization-boundary tests for sensitive (PII / impersonation) routes that
  * previously had no integration coverage. Focus: who is rejected.
- *   - GET /api/admin/emergency-contacts   (sysadmin | boardMember | keyholder)
- *   - GET /api/admin/participants/search  (sysadmin | boardMember — keyholder MUST be denied)
+ *   - GET /api/safety/emergency-contacts   (sysadmin | boardMember | keyholder)
+ *   - GET /api/participants/search  (sysadmin | boardMember — keyholder MUST be denied)
  *   - GET /api/auth/dev-personas          (impersonation surface; 404 outside dev)
  */
-import { GET as EmergencyGet } from '@/app/api/admin/emergency-contacts/route';
-import { GET as SearchGet } from '@/app/api/admin/participants/search/route';
+import { GET as EmergencyGet } from '@/app/api/safety/emergency-contacts/route';
+import { GET as SearchGet } from '@/app/api/participants/search/route';
 import { GET as DevPersonasGet } from '@/app/api/auth/dev-personas/route';
-import { GET as CertsGet } from '@/app/api/kiosk/certifications/route';
+import { GET as CertsGet } from '@/app/api/kioskdisplay/certifications/route';
 import prisma from '@/lib/prisma';
 
 jest.mock('next-auth/next', () => ({
@@ -65,7 +65,7 @@ describe('Sensitive route authorization', () => {
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 
-    describe('GET /api/admin/emergency-contacts', () => {
+    describe('GET /api/safety/emergency-contacts', () => {
         it('401 when unauthenticated', async () => {
             mockSession.mockResolvedValue(null);
             expect((await EmergencyGet(req())).status).toBe(401);
@@ -85,8 +85,8 @@ describe('Sensitive route authorization', () => {
         });
     });
 
-    describe('GET /api/admin/participants/search', () => {
-        const url = `http://localhost/api/admin/participants/search?q=ZZTarget`;
+    describe('GET /api/participants/search', () => {
+        const url = `http://localhost/api/participants/search?q=ZZTarget`;
 
         it('401 when unauthenticated', async () => {
             mockSession.mockResolvedValue(null);
@@ -114,8 +114,8 @@ describe('Sensitive route authorization', () => {
         });
     });
 
-    describe('GET /api/kiosk/certifications', () => {
-        const url = `http://localhost/api/kiosk/certifications?limit_to_present=false`;
+    describe('GET /api/kioskdisplay/certifications', () => {
+        const url = `http://localhost/api/kioskdisplay/certifications?limit_to_present=false`;
 
         it('401 when unauthenticated (no session, no kiosk key on cloud dev)', async () => {
             mockSession.mockResolvedValue(null);

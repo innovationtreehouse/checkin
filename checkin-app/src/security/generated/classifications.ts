@@ -35,7 +35,11 @@ export const classifications = {
     Household: {
         id: 'public',
         name: 'public',
-        address: 'personal',
+        line1: 'personal',
+        line2: 'personal',
+        city: 'personal',
+        state: 'personal',
+        postalCode: 'personal',
     },
     EmergencyContact: {
         id: 'public',
@@ -110,12 +114,19 @@ export const classifications = {
         shopifyPriceSyncedAt: 'internal',
         updatedAt: 'internal',
     },
+    AppSettings: {
+        id: 'public',
+        timezone: 'public',
+        locale: 'public',
+        updatedAt: 'public',
+    },
     TrustedAdult: {
         id: 'public',
         householdId: 'public',
         counterpartyParticipantId: 'public',
         counterpartyName: 'personal',
-        counterpartyContact: 'personal',
+        counterpartyPhone: 'personal',
+        counterpartyEmail: 'personal',
         familyContext: 'pii',
         origin: 'internal',
         disclosedById: 'internal',
@@ -141,7 +152,11 @@ export const classifications = {
     Corporation: {
         id: 'public',
         primaryEmail: 'pii',
-        address: 'personal',
+        line1: 'personal',
+        line2: 'personal',
+        city: 'personal',
+        state: 'personal',
+        postalCode: 'personal',
     },
     CorporationLead: {
         corporationId: 'public',
@@ -215,10 +230,10 @@ export const classifications = {
         status: 'public',
         reminderSentAt: 'internal',
     },
-    RawBadgeEvent: {
+    RawBadgeLog: {
         id: 'internal',
         participantId: 'internal',
-        time: 'personal',
+        timestamp: 'personal',
         location: 'personal',
     },
     Visit: {
@@ -226,11 +241,13 @@ export const classifications = {
         participantId: 'public',
         arrived: 'personal',
         departed: 'personal',
+        arrivedVia: 'public',
+        departedVia: 'public',
         associatedEventId: 'public',
     },
     AuditLog: {
         id: 'internal',
-        time: 'internal',
+        timestamp: 'internal',
         actorId: 'internal',
         action: 'internal',
         tableName: 'internal',
@@ -266,24 +283,24 @@ export const classifications = {
     },
     ErrorLog: {
         id: 'internal',
-        createdAt: 'internal',
+        timestamp: 'internal',
         route: 'internal',
         message: 'internal',
         stack: 'internal',
         context: 'internal',
     },
-    SystemMetric: {
+    SystemMetricLog: {
         id: 'internal',
         timestamp: 'internal',
         metric: 'internal',
         value: 'internal',
     },
-    IntegrationError: {
+    IntegrationErrorLog: {
         id: 'internal',
         source: 'internal',
         message: 'internal',
         context: 'internal',
-        createdAt: 'internal',
+        timestamp: 'internal',
         resolvedAt: 'internal',
     },
     DevLedger: {
@@ -310,7 +327,7 @@ export const relations = {
         programsLed: { model: 'Program', isList: true },
         feePayments: { model: 'FeePayment', isList: true },
         rsvps: { model: 'RSVP', isList: true },
-        rawBadgeEvents: { model: 'RawBadgeEvent', isList: true },
+        rawBadgeLogs: { model: 'RawBadgeLog', isList: true },
         visits: { model: 'Visit', isList: true },
         eventsConfirmedBy: { model: 'Event', isList: true },
         trustedAdultsAsCounterparty: { model: 'TrustedAdult', isList: true },
@@ -353,6 +370,8 @@ export const relations = {
     VolunteerDesignation: {
     },
     BoardSettings: {
+    },
+    AppSettings: {
     },
     TrustedAdult: {
         household: { model: 'Household', isList: false },
@@ -409,7 +428,7 @@ export const relations = {
         event: { model: 'Event', isList: false },
         participant: { model: 'Participant', isList: false },
     },
-    RawBadgeEvent: {
+    RawBadgeLog: {
         participant: { model: 'Participant', isList: false },
     },
     Visit: {
@@ -428,9 +447,9 @@ export const relations = {
     },
     ErrorLog: {
     },
-    SystemMetric: {
+    SystemMetricLog: {
     },
-    IntegrationError: {
+    IntegrationErrorLog: {
     },
     DevLedger: {
     },

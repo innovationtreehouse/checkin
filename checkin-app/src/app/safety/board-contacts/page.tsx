@@ -20,7 +20,7 @@ export default function BoardContactInfoPage() {
 
   const fetchMembers = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/board-contacts');
+      const res = await fetch('/api/safety/board-contacts');
       if (res.ok) {
         const data = await res.json();
         setMembers(data.members || []);

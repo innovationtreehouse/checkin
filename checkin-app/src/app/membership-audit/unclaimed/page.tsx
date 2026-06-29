@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Badge, Box, Card, Group, Stack, Text } from "@mantine/core";
+import { Box, Card, Stack, Text } from "@mantine/core";
 
 type UnclaimedHousehold = {
   id: number;
   name: string;
-  hasClaimedMember: boolean;
   members: { id: number; name: string | null; email: string | null }[];
 };
 
@@ -17,7 +16,7 @@ export default function UnclaimedHouseholdsIndex() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/admin/unclaimed-households');
+        const res = await fetch('/api/membership-audit/unclaimed-households');
         const data = await res.json();
         if (data.households) setHouseholds(data.households);
       } catch (err) {
@@ -31,7 +30,7 @@ export default function UnclaimedHouseholdsIndex() {
   return (
     <Stack maw={1000} mx="auto">
       <div>
-        <Text c="dimmed">Households with at least one member who has an email but has never signed in with Google.</Text>
+        <Text c="dimmed">Households where no household lead has ever signed in with Google.</Text>
       </div>
 
       <Box>
@@ -39,10 +38,7 @@ export default function UnclaimedHouseholdsIndex() {
           <Stack gap="sm">
             {households.map((h) => (
               <Card key={h.id} withBorder radius="md" padding="md">
-                <Group justify="space-between" wrap="wrap" mb="xs">
-                  <Text fw={600}>{h.name}</Text>
-                  {h.hasClaimedMember && <Badge color="green" variant="light">Has a claimed member</Badge>}
-                </Group>
+                <Text fw={600} mb="xs">{h.name}</Text>
                 <Stack gap={4}>
                   {h.members.map((m) => (
                     <Text key={m.id} size="sm" c="dimmed">{m.name || 'Unnamed'} • {m.email}</Text>

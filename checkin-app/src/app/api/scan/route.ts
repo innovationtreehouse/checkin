@@ -99,10 +99,10 @@ export async function POST(req: NextRequest) {
             // 4. Double scan debounce check (3 seconds) — now under the lock, so
             // it sees the committed badge event of any racing scan ahead of it.
             const threeSecondsAgo = new Date(Date.now() - 3000);
-            const recentScan = await tx.rawBadgeEvent.findFirst({
+            const recentScan = await tx.rawBadgeLog.findFirst({
                 where: {
                     participantId: participant.id,
-                    time: {
+                    timestamp: {
                         gte: threeSecondsAgo
                     }
                 }
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
             }
 
             // 5. Record raw badge event
-            await tx.rawBadgeEvent.create({
+            await tx.rawBadgeLog.create({
                 data: {
                     participantId: participant.id,
                     location: "Main Entrance",
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
         return apiError("Internal Server Error while processing scan.", 500);
     } finally {
         const durationMs = Date.now() - startTime;
-        prisma.systemMetric.create({
+        prisma.systemMetricLog.create({
             data: {
                 metric: "scan_response_time",
                 value: durationMs,

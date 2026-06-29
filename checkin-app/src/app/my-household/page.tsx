@@ -3,11 +3,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
-import { formatDate, formatTime, formatDateTime, calculateAge } from '@/lib/time';
+import { Alert, Badge, Button, Card, Center, Checkbox, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { formatDate, formatVisitRange, formatDateTime, calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
+import { isOrgAccount } from '@/lib/orgAccount';
+import { pickAddress, type StructuredAddress } from '@/lib/address';
+import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
+
+const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
 type Member = { id: number; name?: string; email?: string; dob?: string; phone?: string };
 type EmergencyContact = { id: number; name: string; phone: string; email?: string | null; relationship?: string | null; priority: number; invalid: boolean };
@@ -17,8 +23,7 @@ type HouseholdData = {
   leads?: Array<{ participantId: number }>;
   participants?: Member[];
   membership?: { status?: string; since?: string; isVolunteer?: boolean } | null;
-  address?: string;
-} | null;
+} & Partial<StructuredAddress> | null;
 
 const blankContactForm = { id: null as number | null, name: "", phone: "", email: "", relationship: "" };
 type Visit = { id: number; participant?: { name: string }; event?: { name: string }; arrived: string; departed?: string };
@@ -40,7 +45,7 @@ export default function HouseholdPage() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [filterDate, setFilterDate] = useState("");
   const [settings, setSettings] = useState({ emailDependentCheckins: false });
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState<StructuredAddress>(blankAddress);
   const [savingSettings, setSavingSettings] = useState(false);
 
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
@@ -69,7 +74,8 @@ export default function HouseholdPage() {
       if (res.ok) {
         const data = await res.json();
         setHousehold(data.household);
-        setAddress(data.household?.address || "");
+        const a = pickAddress(data.household);
+        setAddress({ line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" });
       }
       if (visitRes.ok) {
         const data = await visitRes.json();
@@ -110,7 +116,7 @@ export default function HouseholdPage() {
       const householdRes = await fetch('/api/household/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address })
+        body: JSON.stringify(address)
       });
 
       if (res.ok && householdRes.ok) {
@@ -127,8 +133,32 @@ export default function HouseholdPage() {
     }
   };
 
+  // Receipts toggle persists immediately — no Update button. Optimistic flip,
+  // revert on failure so the checkbox never lies about what's in the DB.
+  const handleToggleReceipts = async (checked: boolean) => {
+    setSettings({ ...settings, emailDependentCheckins: checked });
+    try {
+      const profileRes = await fetch('/api/profile');
+      const profileData = await profileRes.json();
+      const currentSettings = profileData.profile?.notificationSettings || {};
+      const res = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notificationSettings: { ...currentSettings, emailDependentCheckins: checked } })
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setSettings({ ...settings, emailDependentCheckins: !checked });
+      setMessage("Failed to update receipt setting.");
+    }
+  };
+
   const handleSaveContact = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isValidPhone(contactForm.phone)) {
+      setContactError(PHONE_ERROR);
+      return;
+    }
     setSavingContact(true);
     setContactError("");
     try {
@@ -145,6 +175,7 @@ export default function HouseholdPage() {
         setContactForm(blankContactForm);
         setShowContactForm(false);
         fetchContacts();
+        notifyNavRefresh();
       } else {
         setContactError(data.error || "Failed to save emergency contact.");
       }
@@ -163,6 +194,7 @@ export default function HouseholdPage() {
       if (res.ok) {
         setMessage("Emergency contact removed.");
         fetchContacts();
+        notifyNavRefresh();
       } else {
         setContactError(data.error || "Failed to remove emergency contact.");
       }
@@ -217,6 +249,10 @@ export default function HouseholdPage() {
   const handleEditMember = async (e: React.FormEvent, participantId: number) => {
     e.preventDefault();
     setMessage("");
+    if (editForm.phone && !isValidPhone(editForm.phone)) {
+      setMessage(PHONE_ERROR);
+      return;
+    }
     try {
       const res = await fetch('/api/household/member', {
         method: 'PATCH',
@@ -227,6 +263,7 @@ export default function HouseholdPage() {
       if (res.ok) {
         setEditingMemberId(null);
         fetchHousehold();
+        notifyNavRefresh();
         // A member edit can both collide with an emergency contact (warning,
         // which also opens the add-contact flow) and be declined the lead
         // promotion (leadRejection). Surface the contact warning first since
@@ -267,6 +304,9 @@ export default function HouseholdPage() {
   if (!session) return null;
 
   const userId = (session.user as { id: number })?.id;
+  // Staff (@innovationtreehouse.org) accounts aren't real member families; the add-member
+  // control is hidden for them (server also enforces this — see /api/household PATCH).
+  const isStaffAccount = isOrgAccount(session.user as { hd?: string | null; email?: string | null });
   const isLead = (pid: number) => household?.leads?.some((l) => l.participantId === pid) ?? false;
   const viewerIsLead = isLead(userId);
 
@@ -281,7 +321,7 @@ export default function HouseholdPage() {
   });
 
   return (
-    <Container size="md" pb="md">
+    <PageContainer>
       <Stack>
         <TodoCard />
         <Card withBorder radius="md" padding="lg">
@@ -320,15 +360,18 @@ export default function HouseholdPage() {
                 {sortedMembers.map((p) => {
                   const memberIsLead = isLead(p.id);
                   const isAdult = p.dob && calculateAge(p.dob) >= 18;
+                  // A household lead needs a phone on file — flag the box so the
+                  // lead can see exactly which member to fix (mirrors the nav todo).
+                  const leadMissingPhone = memberIsLead && !p.phone;
                   return (
-                    <Card key={p.id} withBorder radius="md" padding="md">
+                    <Card key={p.id} withBorder radius="md" padding="md" bg={leadMissingPhone ? 'var(--mantine-color-red-light)' : undefined}>
                       {editingMemberId === p.id ? (
                         <form onSubmit={(e) => handleEditMember(e, p.id)}>
                           <Stack gap="xs">
                             <TextInput size="xs" label="Name" required value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.currentTarget.value })} />
                             <TextInput size="xs" type="email" label="Email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.currentTarget.value })} />
                             <TextInput size="xs" type="date" label="Date of Birth" value={editForm.dob} onChange={(e) => setEditForm({ ...editForm, dob: e.currentTarget.value })} />
-                            <TextInput size="xs" type="tel" label="Phone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.currentTarget.value })} />
+                            <TextInput size="xs" type="tel" label="Phone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.currentTarget.value })} error={editForm.phone && !isValidPhone(editForm.phone) ? PHONE_ERROR : undefined} />
                             {p.id !== userId && editForm.dob && calculateAge(editForm.dob) >= 18 && (
                               <Checkbox label="Household Lead" checked={editForm.isLead} onChange={(e) => setEditForm({ ...editForm, isLead: e.currentTarget.checked })} />
                             )}
@@ -343,6 +386,7 @@ export default function HouseholdPage() {
                           <Text fw={600} style={{ wordBreak: 'break-word' }}>{p.name || "Unnamed"}</Text>
                           {p.email && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>{p.email}</Text>}
                           {p.phone && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>{p.phone}</Text>}
+                          {leadMissingPhone && <Badge color="red" variant="filled" mt="xs">TODO: Add phone number</Badge>}
                           <Group gap="xs" mt="sm">
                             {memberIsLead && <Badge color="grape" variant="light">Household Lead</Badge>}
                             {!memberIsLead && isAdult && viewerIsLead && (
@@ -362,7 +406,7 @@ export default function HouseholdPage() {
                 })}
               </SimpleGrid>
 
-              {!addingMember ? (
+              {isStaffAccount ? null : !addingMember ? (
                 <Button variant="light" onClick={() => setAddingMember(true)}>+ Add Household Member</Button>
               ) : (
                 <Card withBorder radius="md" padding="lg">
@@ -391,23 +435,27 @@ export default function HouseholdPage() {
 
         {household && viewerIsLead && (
           <Card withBorder radius="md" padding="lg">
-            <Title order={3} mb="md">Household Settings</Title>
-            <Stack>
-              <Checkbox
-                checked={settings.emailDependentCheckins}
-                onChange={(e) => setSettings({ ...settings, emailDependentCheckins: e.currentTarget.checked })}
-                label="Email me realtime receipts when my dependents check in/out"
-              />
+            <Title order={3} c="blue" mb="md">Household Address</Title>
+            <Text size="sm" c="dimmed" mb="sm">The main address associated with this household.</Text>
+            <Stack gap="xs">
+              <TextInput label="Street Address" value={address.line1 ?? ""} onChange={(e) => setAddress({ ...address, line1: e.currentTarget.value })} placeholder="123 Main St" />
+              <TextInput label="Apt / Suite (optional)" value={address.line2 ?? ""} onChange={(e) => setAddress({ ...address, line2: e.currentTarget.value })} placeholder="Apt 4B" />
+              <SimpleGrid cols={{ base: 1, sm: 3 }}>
+                <TextInput label="City" value={address.city ?? ""} onChange={(e) => setAddress({ ...address, city: e.currentTarget.value })} />
+                <TextInput label="State" maxLength={2} value={address.state ?? ""} onChange={(e) => setAddress({ ...address, state: e.currentTarget.value })} placeholder="TX" />
+                <TextInput label="ZIP" value={address.postalCode ?? ""} onChange={(e) => setAddress({ ...address, postalCode: e.currentTarget.value })} placeholder="78701" />
+              </SimpleGrid>
+            </Stack>
+            <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="md">
+              Update Address
+            </Button>
+          </Card>
+        )}
 
-              <Card withBorder radius="md" padding="md">
-                <Title order={5} c="blue">Primary Address</Title>
-                <Text size="sm" c="dimmed" mb="sm">The main address associated with this household.</Text>
-                <TextInput label="Address" value={address} onChange={(e) => setAddress(e.currentTarget.value)} placeholder="123 Main St, City, ST 12345" />
-              </Card>
-
-              <Card withBorder radius="md" padding="md" id="emergency-contact" style={{ scrollMarginTop: 80 }}>
+        {household && viewerIsLead && (
+          <Card withBorder radius="md" padding="lg" id="emergency-contact" style={{ scrollMarginTop: 80 }}>
                 <Group justify="space-between" align="center" mb="xs">
-                  <Title order={5} c="yellow">Emergency Contacts</Title>
+                  <Title order={3} c="yellow">Emergency Contacts</Title>
                   {!showContactForm && <Button size="compact-xs" variant="light" onClick={startAddContact}>+ Add Contact</Button>}
                 </Group>
                 <Text size="sm" c="dimmed" mb="sm">
@@ -460,7 +508,7 @@ export default function HouseholdPage() {
                     <Stack gap="xs" mt="sm">
                       <SimpleGrid cols={{ base: 1, sm: 2 }}>
                         <TextInput label="Contact Name" required value={contactForm.name} onChange={(e) => setContactForm({ ...contactForm, name: e.currentTarget.value })} placeholder="Full Name" />
-                        <TextInput type="tel" label="Phone" required value={contactForm.phone} onChange={(e) => setContactForm({ ...contactForm, phone: e.currentTarget.value })} placeholder="(555) 555-5555" />
+                        <TextInput type="tel" label="Phone" required value={contactForm.phone} onChange={(e) => setContactForm({ ...contactForm, phone: e.currentTarget.value })} placeholder="(555) 555-5555" error={contactForm.phone && !isValidPhone(contactForm.phone) ? PHONE_ERROR : undefined} />
                         <TextInput type="email" label="Email (optional)" value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.currentTarget.value })} />
                         <TextInput label="Relationship (optional)" value={contactForm.relationship} onChange={(e) => setContactForm({ ...contactForm, relationship: e.currentTarget.value })} placeholder="Aunt, Neighbor…" />
                       </SimpleGrid>
@@ -471,16 +519,13 @@ export default function HouseholdPage() {
                     </Stack>
                   </form>
                 )}
-              </Card>
+          </Card>
+        )}
 
-              <Card withBorder radius="md" padding="md">
-                <Title order={5} c="grape" mb="sm">Trusted Adults</Title>
-                <TrustedAdultPanel />
-              </Card>
-            </Stack>
-            <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="lg">
-              Update Household Settings
-            </Button>
+        {household && viewerIsLead && (
+          <Card withBorder radius="md" padding="lg">
+            <Title order={3} c="grape" mb="sm">Trusted Adults</Title>
+            <TrustedAdultPanel />
           </Card>
         )}
 
@@ -496,6 +541,15 @@ export default function HouseholdPage() {
                 onChange={(e) => setFilterDate(e.currentTarget.value)}
               />
             </Group>
+
+            {viewerIsLead && (
+              <Checkbox
+                mb="md"
+                checked={settings.emailDependentCheckins}
+                onChange={(e) => handleToggleReceipts(e.currentTarget.checked)}
+                label="Email me realtime receipts when my dependents check in/out"
+              />
+            )}
 
             <Text size="sm" c="dimmed" mb="lg">
               {filterDate ? (
@@ -515,15 +569,11 @@ export default function HouseholdPage() {
                       <div>
                         <Text fw={600} c="blue">{v.participant?.name || 'Unnamed Member'}</Text>
                         <Text size="sm" component="span">{v.event?.name || 'General Facility Visit'} </Text>
-                        <Text size="sm" c="dimmed" component="span">• {formatDateTime(v.arrived)}</Text>
+                        <Text size="sm" c="dimmed" component="span">• {formatDateTime(v.arrived, { dateStyle: 'short', timeStyle: 'short' })} • {formatVisitRange(v.arrived, v.departed)}</Text>
                       </div>
-                      <Text size="sm">
-                        {v.departed ? (
-                          <Text component="span" c="green">Departed {formatTime(v.departed)}</Text>
-                        ) : (
-                          <Text component="span" c="yellow">Active Visit</Text>
-                        )}
-                      </Text>
+                      {!v.departed && (
+                        <Text size="sm" component="span" c="yellow">Active Visit</Text>
+                      )}
                     </Group>
                   </Paper>
                 ))}
@@ -532,6 +582,6 @@ export default function HouseholdPage() {
           </Card>
         )}
       </Stack>
-    </Container>
+    </PageContainer>
   );
 }

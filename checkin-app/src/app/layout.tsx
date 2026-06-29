@@ -12,6 +12,7 @@ import DevDashboard from '@/components/DevDashboard';
 import OnboardingGate from '@/components/OnboardingGate';
 import RenewalBanner from '@/components/RenewalBanner';
 import AppFrame from '@/components/AppFrame';
+import { UnsavedChangesProvider } from '@/components/UnsavedChangesProvider';
 import { brand } from '@/brand';
 import { config } from '@/lib/config';
 
@@ -42,10 +43,12 @@ export default function RootLayout({
               <AuthProvider>
                 <OnboardingGate>
                   <DevImpersonationBar />
-                  <AppFrame>
-                    <RenewalBanner />
-                    {children}
-                  </AppFrame>
+                  <UnsavedChangesProvider>
+                    <AppFrame>
+                      <RenewalBanner />
+                      {children}
+                    </AppFrame>
+                  </UnsavedChangesProvider>
                   <DevDashboard />
                 </OnboardingGate>
               </AuthProvider>

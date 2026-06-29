@@ -94,7 +94,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                             participantId: pId,
                             associatedEventId: eventId,
                             arrived: event.start,
-                            departed: event.end
+                            departed: event.end,
+                            arrivedVia: "WEB",
+                            departedVia: "WEB"
                         }
                     });
                     actions.push(newVisit);

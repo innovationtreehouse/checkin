@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useEffect } from "react";
 import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { PageContainer } from "@/components/ui/PageContainer";
 import { PROGRAM_NAV_LINKS } from "@/lib/programNav";
 
 // Program/session editing is reachable by lead mentors (program.leadMentorId, not a role flag),
@@ -52,7 +53,7 @@ export default function ProgramOpsLayout({ children }: { children: React.ReactNo
       .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
 
   return (
-    <>
+    <PageContainer>
       <Tabs
         value={active}
         onChange={(value) => {
@@ -69,6 +70,6 @@ export default function ProgramOpsLayout({ children }: { children: React.ReactNo
         </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
-    </>
+    </PageContainer>
   );
 }

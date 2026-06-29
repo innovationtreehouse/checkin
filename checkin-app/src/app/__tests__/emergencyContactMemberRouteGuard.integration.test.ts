@@ -81,7 +81,7 @@ describe("PATCH /api/household/settings — Direction A: reject a member as prim
             data: {
                 email: `member-A-${TAG}@example.com`,
                 name: "Bobby Member",
-                phone: "555-7777",
+                phone: "555-555-7777",
                 householdId,
             },
         });
@@ -91,7 +91,7 @@ describe("PATCH /api/household/settings — Direction A: reject a member as prim
     it("rejects a contact matching a member by name+phone with 400 and writes no contact", async () => {
         asUser(leadId);
         const res = await PATCH_SETTINGS(
-            settingsReq({ emergencyContactName: "Bobby Member", emergencyContactPhone: "555-7777" }),
+            settingsReq({ emergencyContactName: "Bobby Member", emergencyContactPhone: "555-555-7777" }),
         );
         expect(res.status).toBe(400);
         expect((await res.json()).error).toMatch(/part of this household|can't be its emergency contact/i);
@@ -107,7 +107,7 @@ describe("PATCH /api/household/settings — Direction A: reject a member as prim
         // the route surfaces the rejection regardless of which key matched.
         asUser(leadId);
         const res = await PATCH_SETTINGS(
-            settingsReq({ emergencyContactName: "Totally Different", emergencyContactPhone: "(555) 777-7" }),
+            settingsReq({ emergencyContactName: "Totally Different", emergencyContactPhone: "(555) 555-7777" }),
         );
         expect(res.status).toBe(400);
         expect((await res.json()).error).toMatch(/part of this household|can't be its emergency contact/i);
@@ -119,7 +119,7 @@ describe("PATCH /api/household/settings — Direction A: reject a member as prim
     it("positive control: a genuinely external contact is accepted (200) and written", async () => {
         asUser(leadId);
         const res = await PATCH_SETTINGS(
-            settingsReq({ emergencyContactName: "Aunt External", emergencyContactPhone: "555-3030" }),
+            settingsReq({ emergencyContactName: "Aunt External", emergencyContactPhone: "555-303-0303" }),
         );
         expect(res.status).toBe(200);
         const contact = await prisma.emergencyContact.findFirst({ where: { householdId } });

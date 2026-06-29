@@ -4,6 +4,7 @@ import { getExternalStatus } from "@/lib/membership/external";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
+import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/lib/address";
 
 /**
  * Membership intake service — the write/read model behind the "Join the
@@ -48,7 +49,7 @@ type ParentInput = { id?: number; name?: string; email?: string; dob?: string | 
 type ChildInput = { id?: number; name?: string; email?: string | null; dob?: string | null; allergies?: string | null };
 
 export interface IntakeSaveInput {
-    household?: { address?: string; emergencyContactName?: string; emergencyContactPhone?: string };
+    household?: Partial<StructuredAddress> & { emergencyContactName?: string; emergencyContactPhone?: string; emergencyContactEmail?: string };
     primaryParent?: ParentInput;
     secondaryParent?: ParentInput | null;
     children?: ChildInput[];
@@ -116,11 +117,12 @@ export async function getIntakeState(userId: number) {
             household: household
                 ? {
                       name: household.name,
-                      address: household.address,
+                      ...pickAddress(household),
                       // The primary (lowest-priority) contact backs the single-field
                       // form. Shown even when flagged invalid so the lead can fix it.
                       emergencyContactName: household.emergencyContacts[0]?.name ?? null,
                       emergencyContactPhone: household.emergencyContacts[0]?.phone ?? null,
+                      emergencyContactEmail: household.emergencyContacts[0]?.email ?? null,
                   }
                 : null,
             primaryParent: primary ? shape(primary) : null,
@@ -207,16 +209,22 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     };
 
     if (input.household) {
-        if (input.household.address !== undefined) {
-            await prisma.household.update({ where: { id: householdId }, data: { address: input.household.address } });
+        const addressData = normalizeAddressInput(input.household);
+        if (Object.keys(addressData).length > 0) {
+            await prisma.household.update({ where: { id: householdId }, data: addressData });
         }
         // Emergency contact lives in its own table now; the single-field intake
         // form maps onto the household's primary contact. Tolerant of partial
         // saves; rejects (direction A) a contact that is a household member.
-        if (input.household.emergencyContactName !== undefined || input.household.emergencyContactPhone !== undefined) {
+        if (
+            input.household.emergencyContactName !== undefined ||
+            input.household.emergencyContactPhone !== undefined ||
+            input.household.emergencyContactEmail !== undefined
+        ) {
             await upsertPrimaryContact(prisma, householdId, {
                 name: input.household.emergencyContactName,
                 phone: input.household.emergencyContactPhone,
+                email: input.household.emergencyContactEmail,
             });
         }
     }
@@ -312,7 +320,7 @@ export async function submitIntake(userId: number) {
     // Each missing requirement carries the form field key to highlight + a label
     // for the summary message.
     const missing: { field: string; label: string }[] = [];
-    if (!household.address?.trim()) missing.push({ field: "address", label: "home address" });
+    if (!household.line1?.trim()) missing.push({ field: "address", label: "home address" });
     // A household must keep >= 1 valid (non-member, complete) emergency contact.
     const hasValidContact = household.emergencyContacts.some(
         (c) => c.conflictParticipantId === null && c.name.trim() && c.phone.trim(),

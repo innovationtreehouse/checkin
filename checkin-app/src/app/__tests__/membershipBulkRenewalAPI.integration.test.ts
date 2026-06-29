@@ -5,7 +5,7 @@
  * Integration tests for the go-live "open renewals for all active members" action.
  */
 
-import { POST as BULK } from '@/app/api/admin/membership/bulk-open-renewals/route';
+import { POST as BULK } from '@/app/api/settings/membership/bulk-open-renewals/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { sendEmail } from '@/lib/email';

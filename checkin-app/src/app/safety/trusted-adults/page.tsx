@@ -13,9 +13,12 @@ import {
     Text,
     Textarea,
     Title,
+    Tooltip,
 } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
+import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
 
 interface Review {
     id: number;
@@ -41,7 +44,8 @@ interface HouseholdRef {
 interface TrustedAdult {
     id: number;
     counterpartyName: string | null;
-    counterpartyContact: string | null;
+    counterpartyPhone: string | null;
+    counterpartyEmail: string | null;
     familyContext: string;
     origin: string;
     createdAt: string;
@@ -61,7 +65,7 @@ const STATUS_COLORS: Record<string, string> = {
 const label = (s: string) => s.replace(/_/g, " ");
 
 export default function AdminTrustedAdultsPage() {
-    const { ready, loading: authLoading } = useRequireRole(["sysadmin", "boardMember"]);
+    const { ready, loading: authLoading, user } = useRequireRole(["sysadmin", "boardMember"]);
     const [items, setItems] = useState<TrustedAdult[]>([]);
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState<number | null>(null);
@@ -72,7 +76,7 @@ export default function AdminTrustedAdultsPage() {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch("/api/admin/trusted-adults");
+            const res = await fetch("/api/safety/trusted-adults");
             if (res.ok) {
                 const data = await res.json();
                 setItems(data.trustedAdults || []);
@@ -90,7 +94,7 @@ export default function AdminTrustedAdultsPage() {
         setBusyId(reviewId);
         setMessage("");
         try {
-            const res = await fetch("/api/admin/trusted-adults/decision", {
+            const res = await fetch("/api/safety/trusted-adults/decision", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ reviewId, decision, ...extra }),
@@ -112,7 +116,7 @@ export default function AdminTrustedAdultsPage() {
     const override = async (reviewId: number, action: string, extra?: Record<string, unknown>) => {
         setBusyId(reviewId);
         try {
-            const res = await fetch("/api/admin/trusted-adults/override", {
+            const res = await fetch("/api/safety/trusted-adults/override", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ reviewId, action, ...extra }),
@@ -163,6 +167,14 @@ export default function AdminTrustedAdultsPage() {
                 const status = latest?.status ?? "PENDING_BOARD_REVIEW";
                 const pending = status === "PENDING_BOARD_REVIEW";
                 const sharedVal = latest ? shared[latest.id] ?? "" : "";
+                // Conflict of interest: can't review your own household's trusted adult, nor
+                // one where you are the counterparty. Backend enforces the same rule.
+                const isSelf = isTrustedAdultConflict({
+                    actorParticipantId: user?.id,
+                    actorHouseholdId: user?.householdId,
+                    taHouseholdId: ta.household?.id,
+                    taCounterpartyParticipantId: ta.counterparty?.id,
+                });
                 return (
                     <Card key={ta.id} withBorder radius="md" padding="md">
                         <Group gap="xs">
@@ -172,9 +184,7 @@ export default function AdminTrustedAdultsPage() {
                             <Badge color={STATUS_COLORS[status] ?? "gray"}>{label(status)}</Badge>
                             {latest && <Badge variant="outline">{label(latest.kind)}</Badge>}
                         </Group>
-                        {ta.counterpartyContact && (
-                            <Text size="xs" c="dimmed" mt={2}>Contact: {ta.counterpartyContact}</Text>
-                        )}
+                        <TrustedAdultContact phone={ta.counterpartyPhone} email={ta.counterpartyEmail} />
                         <Text size="sm" mt={6}><b>Family context (board only):</b> {ta.familyContext}</Text>
                         {latest?.sharedNote && (
                             <Text size="sm" c="teal" mt={2}>Shared note (keyholders/program leads): {latest.sharedNote}</Text>
@@ -201,31 +211,38 @@ export default function AdminTrustedAdultsPage() {
                                     value={sharedVal}
                                     onChange={(e) => setShared((s) => ({ ...s, [latest.id]: e.currentTarget.value }))}
                                 />
-                                <Group gap="xs">
-                                    <Button
-                                        size="xs" fz={15}
-                                        color="green"
-                                        loading={busyId === latest.id}
-                                        disabled={!sharedVal.trim()}
-                                        onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
-                                    >
-                                        Approve
-                                    </Button>
-                                    <Button size="xs" fz={15} color="red" loading={busyId === latest.id} onClick={() => decide(latest.id, "DENY")}>
-                                        Deny
-                                    </Button>
-                                    <Button
-                                        size="xs" fz={15}
-                                        variant="light"
-                                        loading={busyId === latest.id}
-                                        onClick={() => {
-                                            const note = window.prompt("What information do you need from the family?") ?? "";
-                                            decide(latest.id, "REQUEST_INFO", { note });
-                                        }}
-                                    >
-                                        Request info
-                                    </Button>
-                                </Group>
+                                <Tooltip
+                                    label="You can't review your own household's trusted adult — another board member must decide."
+                                    multiline w={260}
+                                    disabled={!isSelf}
+                                >
+                                    <Group gap="xs">
+                                        <Button
+                                            size="xs" fz={15}
+                                            color="green"
+                                            loading={busyId === latest.id}
+                                            disabled={isSelf || !sharedVal.trim()}
+                                            onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
+                                        >
+                                            Approve
+                                        </Button>
+                                        <Button size="xs" fz={15} color="red" loading={busyId === latest.id} disabled={isSelf} onClick={() => decide(latest.id, "DENY")}>
+                                            Deny
+                                        </Button>
+                                        <Button
+                                            size="xs" fz={15}
+                                            variant="light"
+                                            loading={busyId === latest.id}
+                                            disabled={isSelf}
+                                            onClick={() => {
+                                                const note = window.prompt("What information do you need from the family?") ?? "";
+                                                decide(latest.id, "REQUEST_INFO", { note });
+                                            }}
+                                        >
+                                            Request info
+                                        </Button>
+                                    </Group>
+                                </Tooltip>
                             </Stack>
                         )}
 

@@ -65,7 +65,7 @@ function KioskCertificationsInner() {
         headers["x-kiosk-nonce"] = nonceParam;
       }
 
-      const res = await fetch(`/api/kiosk/certifications?limit_to_present=${limitToPresent}`, { headers });
+      const res = await fetch(`/api/kioskdisplay/certifications?limit_to_present=${limitToPresent}`, { headers });
       const data = await res.json();
       if (res.ok && data.participants && data.tools) {
         setParticipants(data.participants);

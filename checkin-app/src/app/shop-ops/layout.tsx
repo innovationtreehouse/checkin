@@ -5,12 +5,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Alert, Button, Card, Center, Container, Loader, Tabs, Title } from "@mantine/core";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { PageContainer } from "@/components/ui/PageContainer";
+import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 import { SHOP_NAV_LINKS, shopRoles } from "@/lib/shopNav";
 
 export default function ShopLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const pathname = usePathname();
   const router = useRouter();
+  const confirmNav = useConfirmNav();
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/");
@@ -63,11 +66,11 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <Container size="lg" pb="md">
+    <PageContainer>
       <Tabs
         value={active}
         onChange={(value) => {
-          if (value && value !== active) router.push(value);
+          if (value && value !== active && confirmNav()) router.push(value);
         }}
         mb="md"
       >
@@ -81,6 +84,6 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
       </Tabs>
 
       {children}
-    </Container>
+    </PageContainer>
   );
 }

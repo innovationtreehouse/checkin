@@ -112,7 +112,7 @@ export default function CreateProgramPage() {
               selectedId={leadMentorId || null}
               selectedLabel={mentorSearch}
               search={async (q) => {
-                const res = await fetch(`/api/admin/participants/search?q=${encodeURIComponent(q)}&filter=adults`);
+                const res = await fetch(`/api/participants/search?q=${encodeURIComponent(q)}&filter=adults`);
                 if (!res.ok) return [];
                 const data = await res.json();
                 return data.participants || [];

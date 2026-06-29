@@ -8,12 +8,12 @@ import { POST as createProgram } from '@/app/api/programs/route';
 import { PATCH as updateProgramSettings } from '@/app/api/programs/[id]/settings/route';
 import { POST as enrollParticipant } from '@/app/api/programs/[id]/participants/route';
 import { POST as markAttendance } from '@/app/api/events/[id]/attendance/route';
-import { PUT as editParticipant } from '@/app/api/admin/participants/[id]/route';
-import { POST as reassignHousehold } from '@/app/api/admin/participants/[id]/household/route';
-import { PATCH as updateRoles } from '@/app/api/admin/roles/route';
-import { POST as mergeParticipants } from '@/app/api/admin/participants/merge/route';
-import { PATCH as updateHousehold } from '@/app/api/admin/households/[id]/route';
-import { PATCH as updateVisit } from '@/app/api/admin/visits/route';
+import { PUT as editParticipant } from '@/app/api/membership-ops/participants/[id]/route';
+import { POST as reassignHousehold } from '@/app/api/membership-ops/participants/[id]/household/route';
+import { PATCH as updateRoles } from '@/app/api/roles/route';
+import { POST as mergeParticipants } from '@/app/api/membership-ops/participants/merge/route';
+import { PATCH as updateHousehold } from '@/app/api/membership-ops/households/[id]/route';
+import { PATCH as updateVisit } from '@/app/api/facility/visits/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 // Mock NextAuth
@@ -154,7 +154,7 @@ describe('AuditLog Integration Tests', () => {
                 tableName: 'Program',
                 affectedEntityId: testProgramId
             },
-            orderBy: { time: 'desc' }
+            orderBy: { timestamp: 'desc' }
         });
 
         expect(log).toBeDefined();
@@ -178,7 +178,7 @@ describe('AuditLog Integration Tests', () => {
                 tableName: 'Program',
                 affectedEntityId: testProgramId
             },
-            orderBy: { time: 'desc' }
+            orderBy: { timestamp: 'desc' }
         });
 
         expect(log).toBeDefined();
@@ -206,7 +206,7 @@ describe('AuditLog Integration Tests', () => {
                 affectedEntityId: testParticipantId,
                 secondaryAffectedEntity: testProgramId
             },
-            orderBy: { time: 'desc' }
+            orderBy: { timestamp: 'desc' }
         });
 
         expect(log).toBeDefined();
@@ -242,7 +242,7 @@ describe('AuditLog Integration Tests', () => {
                 affectedEntityId: testVisitId,
                 secondaryAffectedEntity: testEventId
             },
-            orderBy: { time: 'desc' }
+            orderBy: { timestamp: 'desc' }
         });
 
         expect(log).toBeDefined();
@@ -256,7 +256,7 @@ describe('AuditLog Integration Tests', () => {
     it('should generate an AuditLog when an Admin edits participant PII', async () => {
         await prisma.auditLog.deleteMany({ where: { tableName: 'Participant' } });
 
-        const req = new Request(`http://localhost:4000/api/admin/participants/${testParticipantId}`, {
+        const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}`, {
             method: 'PUT',
             body: JSON.stringify({ name: 'Edited Audit Name', email: 'edited-audit-test@example.com' })
         });
@@ -279,7 +279,7 @@ describe('AuditLog Integration Tests', () => {
 
         const newHousehold = await prisma.household.create({ data: { name: 'Audit Target Household' } });
 
-        const req = new Request(`http://localhost:4000/api/admin/participants/${testParticipantId}/household`, {
+        const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}/household`, {
             method: 'POST',
             body: JSON.stringify({ householdId: newHousehold.id })
         });
@@ -305,7 +305,7 @@ describe('AuditLog Integration Tests', () => {
     it('role grant (PATCH /admin/roles) writes one AuditLog with the privilege change', async () => {
         const target = await makeParticipant('role-target');
 
-        const req = new Request('http://localhost:4000/api/admin/roles', {
+        const req = new Request('http://localhost:4000/api/roles', {
             method: 'PATCH',
             body: JSON.stringify({ targetUserId: target.id, keyholder: true }),
         });
@@ -325,7 +325,7 @@ describe('AuditLog Integration Tests', () => {
         const keep = await makeParticipant('merge-keep');
         const merge = await makeParticipant('merge-from');
 
-        const req = new Request('http://localhost:4000/api/admin/participants/merge', {
+        const req = new Request('http://localhost:4000/api/membership-ops/participants/merge', {
             method: 'POST',
             body: JSON.stringify({ keepId: keep.id, mergeId: merge.id }),
         });
@@ -353,7 +353,7 @@ describe('AuditLog Integration Tests', () => {
         const household = await prisma.household.create({ data: { name: `${TAG} household orig` }, select: { id: true } });
         createdHouseholdIds.push(household.id);
 
-        const req = new Request(`http://localhost:4000/api/admin/households/${household.id}`, {
+        const req = new Request(`http://localhost:4000/api/membership-ops/households/${household.id}`, {
             method: 'PATCH',
             body: JSON.stringify({ name: 'Audit Edited Household' }),
         });
@@ -380,7 +380,7 @@ describe('AuditLog Integration Tests', () => {
         createdVisitIds.push(visit.id);
 
         const newArrived = new Date('2020-01-01T10:00:00.000Z');
-        const req = new Request('http://localhost:4000/api/admin/visits', {
+        const req = new Request('http://localhost:4000/api/facility/visits', {
             method: 'PATCH',
             body: JSON.stringify({ visitId: visit.id, arrived: newArrived.toISOString() }),
         });

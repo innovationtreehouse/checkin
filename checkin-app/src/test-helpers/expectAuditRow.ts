@@ -21,9 +21,9 @@ export async function expectAuditRow(
             affectedEntityId: q.affectedEntityId,
             ...(q.secondaryAffectedEntity !== undefined && { secondaryAffectedEntity: q.secondaryAffectedEntity }),
         },
-        // time can tie at ms resolution within a fast test; id breaks the tie so
-        // we always return the genuinely newest row.
-        orderBy: [{ time: "desc" }, { id: "desc" }],
+        // timestamp can tie at ms resolution within a fast test; id breaks the tie
+        // so we always return the genuinely newest row.
+        orderBy: [{ timestamp: "desc" }, { id: "desc" }],
     });
     if (!row) {
         const sec = q.secondaryAffectedEntity !== undefined ? ` secondary=${q.secondaryAffectedEntity}` : "";

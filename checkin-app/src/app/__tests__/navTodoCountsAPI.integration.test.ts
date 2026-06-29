@@ -43,7 +43,7 @@ describe('Nav todo-counts API', () => {
         // Household A: a lead with a full slate of *member-actionable* todos, plus
         // one reviewer-owned membership state that must NOT count for the member.
         const lead = await prisma.participant.create({
-            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dob: new Date('1985-01-01'), household: { create: {} } },
+            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dob: new Date('1985-01-01'), phone: '555-0001', household: { create: {} } },
         });
         leadId = lead.id;
         householdAId = lead.householdId;
@@ -69,7 +69,7 @@ describe('Nav todo-counts API', () => {
             data: {
                 householdId: householdAId,
                 counterpartyName: 'Counterparty One',
-                counterpartyContact: 'one@example.com',
+                counterpartyEmail: 'one@example.com',
                 familyContext: 'needs info',
                 disclosedById: leadId,
                 reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'PENDING_SUBJECT_ACTION' } },
@@ -79,7 +79,7 @@ describe('Nav todo-counts API', () => {
             data: {
                 householdId: householdAId,
                 counterpartyName: 'Counterparty Two',
-                counterpartyContact: 'two@example.com',
+                counterpartyEmail: 'two@example.com',
                 familyContext: 'expiring soon',
                 disclosedById: leadId,
                 reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'APPROVED', sharedNote: 'note', effectiveFrom: daysFromNow(-355), reviewBy: daysFromNow(10) } },
@@ -90,7 +90,7 @@ describe('Nav todo-counts API', () => {
             data: {
                 householdId: householdAId,
                 counterpartyName: 'Counterparty Three',
-                counterpartyContact: 'three@example.com',
+                counterpartyEmail: 'three@example.com',
                 familyContext: 'pending board review',
                 disclosedById: leadId,
                 reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'PENDING_BOARD_REVIEW' } },

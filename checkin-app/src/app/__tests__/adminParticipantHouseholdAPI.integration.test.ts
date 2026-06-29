@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { POST } from '@/app/api/admin/participants/[id]/household/route';
+import { POST } from '@/app/api/membership-ops/participants/[id]/household/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { expectAuditRow, auditJson } from '@/test-helpers/expectAuditRow';
@@ -69,13 +69,13 @@ describe('Admin Participant Household API Integration Tests', () => {
         });
     });
 
-    describe('POST /api/admin/participants/[id]/household', () => {
+    describe('POST /api/membership-ops/participants/[id]/household', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testUserId, sysadmin: false, boardMember: false }
             });
 
-            const req = new Request(`http://localhost:4000/api/admin/participants/${testParticipantId}/household`, {
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}/household`, {
                 method: 'POST',
                 body: JSON.stringify({ householdId: testHouseholdId })
             });
@@ -92,7 +92,7 @@ describe('Admin Participant Household API Integration Tests', () => {
             const subjectBefore = await prisma.participant.findUnique({ where: { id: testParticipantId } });
             const priorHouseholdId = subjectBefore!.householdId;
 
-            const req = new Request(`http://localhost:4000/api/admin/participants/${testParticipantId}/household`, {
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}/household`, {
                 method: 'POST',
                 body: JSON.stringify({ householdId: testHouseholdId })
             });
@@ -120,7 +120,7 @@ describe('Admin Participant Household API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true, boardMember: false }
             });
 
-            const req = new Request(`http://localhost:4000/api/admin/participants/${testParticipantId}/household`, {
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}/household`, {
                 method: 'POST',
                 body: JSON.stringify({ createNew: true })
             });

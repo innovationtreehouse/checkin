@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
+import { isValidEmail } from '@/lib/emergencyContacts/identity';
+import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
 import {
   Alert,
   Box,
@@ -27,6 +29,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
   const [phone, setPhone] = useState('');
   const [emergencyContactName, setEmergencyContactName] = useState('');
   const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
+  const [emergencyContactEmail, setEmergencyContactEmail] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -62,6 +65,20 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (needsPhone && !isValidPhone(phone)) {
+      setError(PHONE_ERROR);
+      return;
+    }
+    if (needsEmergencyContact && !isValidPhone(emergencyContactPhone)) {
+      setError(`Emergency contact: ${PHONE_ERROR}`);
+      return;
+    }
+    if (needsEmergencyContact && emergencyContactEmail.trim() && !isValidEmail(emergencyContactEmail)) {
+      setError("That emergency contact email doesn't look right.");
+      return;
+    }
+
     setSaving(true);
     setError('');
 
@@ -73,6 +90,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
       if (needsEmergencyContact && emergencyContactName.trim() && emergencyContactPhone.trim()) {
         payload.emergencyContactName = emergencyContactName.trim();
         payload.emergencyContactPhone = emergencyContactPhone.trim();
+        if (emergencyContactEmail.trim()) payload.emergencyContactEmail = emergencyContactEmail.trim();
       }
 
       const res = await fetch('/api/profile/onboarding', {
@@ -109,7 +127,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
         closeOnEscape={false}
         centered
         size="lg"
-        title={<Title order={3}>Action Required</Title>}
+        title="Action Required"
       >
         <Text c="dimmed" mb="lg">
           To ensure the safety of our facility and compliance with our policies, we need a bit
@@ -126,6 +144,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                 placeholder="(555) 123-4567"
                 value={phone}
                 onChange={(e) => setPhone(e.currentTarget.value)}
+                error={phone && !isValidPhone(phone) ? PHONE_ERROR : undefined}
                 required
               />
             )}
@@ -153,7 +172,15 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                     placeholder="(555) 987-6543"
                     value={emergencyContactPhone}
                     onChange={(e) => setEmergencyContactPhone(e.currentTarget.value)}
+                    error={emergencyContactPhone && !isValidPhone(emergencyContactPhone) ? PHONE_ERROR : undefined}
                     required
+                  />
+                  <TextInput
+                    type="email"
+                    label="Contact Email (optional)"
+                    placeholder="jane@example.com"
+                    value={emergencyContactEmail}
+                    onChange={(e) => setEmergencyContactEmail(e.currentTarget.value)}
                   />
                 </Stack>
               </Paper>

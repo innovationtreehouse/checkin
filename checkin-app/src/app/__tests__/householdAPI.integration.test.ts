@@ -54,7 +54,7 @@ describe('Household API Integration Tests', () => {
 
         // Setup mock database records
         const household = await prisma.household.create({
-            data: { name: 'Lead User Household', address: '123 Main' }
+            data: { name: 'Lead User Household', line1: '123 Main' }
         });
         householdId = household.id;
 
@@ -86,7 +86,7 @@ describe('Household API Integration Tests', () => {
     afterAll(async () => {
         // Find trailing records created during test
         const newDobs = await prisma.participant.findMany({
-            where: { email: 'new-child-household-api-test@example.com' },
+            where: { email: { contains: 'child-household-api-test' } },
             select: { id: true, householdId: true }
         });
         const currentIds = [testUserId, testMemberId, testOtherHouseUserId, ...(newDobs.map(u => u.id))];
@@ -202,11 +202,43 @@ describe('Household API Integration Tests', () => {
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
-            
+
             const data = await res.json();
             expect(data.member).toBeDefined();
             expect(data.member.name).toBe('New Child');
             expect(data.member.householdId).toBe(householdId);
+        });
+
+        it('should reject a staff (@innovationtreehouse.org) account adding a member (403)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testUserId, hd: 'innovationtreehouse.org' }
+            });
+
+            const req = new Request('http://localhost:4000/api/household', {
+                method: 'PATCH',
+                body: JSON.stringify({ memberName: 'Staff Cannot Add' })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(403);
+            const data = await res.json();
+            expect(data.error).toMatch(/Staff accounts cannot add household members/);
+        });
+
+        it('should allow a non-staff account to add a member', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testUserId, email: 'lead-household-api-test@example.com' }
+            });
+
+            const req = new Request('http://localhost:4000/api/household', {
+                method: 'PATCH',
+                body: JSON.stringify({ memberName: 'Non Staff Child', memberEmail: 'nonstaff-child-household-api-test@example.com' })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.member.name).toBe('Non Staff Child');
         });
     });
 });

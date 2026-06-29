@@ -37,6 +37,7 @@ export async function processCheckin(participant: Participant, authType: string,
         data: {
             participantId: participant.id,
             arrived: arrivalTime,
+            arrivedVia: "SCANNER",
             associatedEventId: eventId
         },
     });
@@ -91,14 +92,14 @@ export async function processCheckout(
             if (remainingUsers.length > 0) {
                 let confirmForceClose = false;
 
-                const recentEvents = await db.rawBadgeEvent.findMany({
+                const recentEvents = await db.rawBadgeLog.findMany({
                     where: { participantId: participant.id },
-                    orderBy: { time: "desc" },
+                    orderBy: { timestamp: "desc" },
                     take: 2
                 });
 
                 if (recentEvents.length === 2) {
-                    const timeDiff = recentEvents[0].time.getTime() - recentEvents[1].time.getTime();
+                    const timeDiff = recentEvents[0].timestamp.getTime() - recentEvents[1].timestamp.getTime();
                     if (timeDiff <= 12000) {
                         confirmForceClose = true;
                     }
@@ -130,7 +131,7 @@ export async function processCheckout(
         }
     }
 
-    const finalVisits = await processVisitCheckout(activeVisitId, new Date(), db);
+    const finalVisits = await processVisitCheckout(activeVisitId, new Date(), db, "SCANNER");
     const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : null;
 
     return apiJson({
@@ -148,7 +149,7 @@ export async function processCheckout(
 async function closeAllOpenVisits(db: DbClient) {
     await db.visit.updateMany({
         where: { departed: null },
-        data: { departed: new Date() },
+        data: { departed: new Date(), departedVia: "SYSTEM" },
     });
 }
 

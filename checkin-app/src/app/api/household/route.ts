@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
+import { isOrgAccount } from "@/lib/orgAccount";
 
 export const GET = withAuth(
     {},
@@ -31,6 +32,16 @@ export const PATCH = withAuth(
         try {
             if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
             const userId = auth.user.id;
+
+            // Internal staff (@innovationtreehouse.org) accounts are not real member families,
+            // so they may not build out a household with extra members via self-service. The
+            // admin participant-add flow (sysadmin/boardMember) is separate and stays open.
+            if (isOrgAccount(auth.user)) {
+                return NextResponse.json(
+                    { error: "Staff accounts cannot add household members. Use the membership-ops participant tools instead." },
+                    { status: 403 }
+                );
+            }
 
             const body = await req.json();
             const { memberName, memberEmail, memberDob } = body;

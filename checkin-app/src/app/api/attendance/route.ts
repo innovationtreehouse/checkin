@@ -123,7 +123,7 @@ export async function DELETE(req: Request) {
             return NextResponse.json({ error: "Forbidden: You are not authorized to check out this user." }, { status: 403 });
         }
 
-        const finalVisits = await processVisitCheckout(visitId, new Date());
+        const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
         const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visit;
 
         return NextResponse.json({ success: true, visit: updatedVisit });
@@ -188,6 +188,7 @@ export async function POST(req: Request) {
                 data: {
                     participantId: participant.id,
                     arrived: arrivalTime,
+                    arrivedVia: "WEB",
                     associatedEventId: eventId
                 }
             });
@@ -202,7 +203,7 @@ export async function POST(req: Request) {
                 where: {
                     tableName: 'SYSTEM_NOTIFY',
                     action: 'CREATE',
-                    time: { gte: fiveMinutesAgo }
+                    timestamp: { gte: fiveMinutesAgo }
                 }
             });
 

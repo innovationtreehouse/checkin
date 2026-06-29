@@ -9,14 +9,14 @@ import { formatDateTime } from '@/lib/time';
 
 type BadgeEvent = {
   id: number;
-  time: string;
+  timestamp: string;
   participant?: { name?: string; email?: string };
   location?: string;
 };
 
 const COLUMNS: DataTableColumn<BadgeEvent>[] = [
   { header: 'ID', render: (b) => b.id, sortBy: (b) => b.id },
-  { header: 'Time', render: (b) => formatDateTime(b.time), sortBy: (b) => b.time },
+  { header: 'Time', render: (b) => formatDateTime(b.timestamp), sortBy: (b) => b.timestamp },
   { header: 'Participant', render: (b) => b.participant?.name || 'Unknown', sortBy: (b) => b.participant?.name },
   { header: 'Email', render: (b) => b.participant?.email, sortBy: (b) => b.participant?.email },
   { header: 'Location', render: (b) => b.location || 'Front Door', sortBy: (b) => b.location },
@@ -31,7 +31,7 @@ export default function AdminBadgesPage() {
 
   const fetchBadges = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/badges');
+      const res = await fetch('/api/facility/badges');
       if (res.ok) {
         const data = await res.json();
         setBadges(data.badges);

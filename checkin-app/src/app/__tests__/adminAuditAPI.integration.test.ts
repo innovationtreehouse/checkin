@@ -3,10 +3,10 @@
  */
 /**
  * Integration Tests for Admin Audit API
- * Tests GET /api/admin/audit for viewing telemetry
+ * Tests GET /api/system-status/audit-log for viewing telemetry
  */
 
-import { GET } from '@/app/api/admin/audit/route';
+import { GET } from '@/app/api/system-status/audit-log/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -73,11 +73,11 @@ describe('Admin Audit API Integration Tests', () => {
         }
     });
 
-    describe('GET /api/admin/audit', () => {
+    describe('GET /api/system-status/audit-log', () => {
         it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
 
-             const req = new Request('http://localhost:4000/api/admin/audit', { method: 'GET' });
+             const req = new Request('http://localhost:4000/api/system-status/audit-log', { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(401);
         });
@@ -85,7 +85,7 @@ describe('Admin Audit API Integration Tests', () => {
         it('should return 403 Forbidden for a common user', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, sysadmin: false } });
 
-             const req = new Request('http://localhost:4000/api/admin/audit', { method: 'GET' });
+             const req = new Request('http://localhost:4000/api/system-status/audit-log', { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(403);
         });
@@ -93,7 +93,7 @@ describe('Admin Audit API Integration Tests', () => {
         it('should return 200 OK and logs for a sysadmin', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
 
-             const req = new Request('http://localhost:4000/api/admin/audit', { method: 'GET' });
+             const req = new Request('http://localhost:4000/api/system-status/audit-log', { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(200);
              
@@ -116,7 +116,7 @@ describe('Admin Audit API Integration Tests', () => {
         it('should filter by action and entity and page server-side', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
 
-             const url = 'http://localhost:4000/api/admin/audit?action=CREATE&table=Participant&page=1';
+             const url = 'http://localhost:4000/api/system-status/audit-log?action=CREATE&table=Participant&page=1';
              const req = new Request(url, { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(200);

@@ -92,7 +92,7 @@ describe('Trusted Adults — mutation + audit are atomic', () => {
         return createTrustedAdult({
             householdId,
             counterpartyName: 'Jane External',
-            counterpartyContact: 'jane@example.com',
+            counterpartyEmail: 'jane@example.com',
             familyContext: 'Our nanny; may collect the kids on weekdays.',
             disclosedById: leadId,
         });

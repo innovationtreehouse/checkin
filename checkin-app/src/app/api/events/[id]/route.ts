@@ -243,7 +243,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                         where: { id: existingVisit.id },
                         data: {
                             arrived: new Date(arrived),
-                            departed: departed ? new Date(departed) : null
+                            departed: departed ? new Date(departed) : null,
+                            arrivedVia: "WEB",
+                            departedVia: departed ? "WEB" : null
                         }
                     });
                 } else {
@@ -252,7 +254,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                             participantId: Number(participantId),
                             associatedEventId: eventId,
                             arrived: new Date(arrived),
-                            departed: departed ? new Date(departed) : null
+                            departed: departed ? new Date(departed) : null,
+                            arrivedVia: "WEB",
+                            departedVia: departed ? "WEB" : null
                         }
                     });
                 }

@@ -407,7 +407,7 @@ export async function applyImport(
 
         if (householdId === null) {
             const created = await tx.household.create({
-                data: { name: h.name, address: h.address },
+                data: { name: h.name, line1: h.address },
             });
             householdId = created.id;
             res.householdsCreated++;
@@ -417,7 +417,7 @@ export async function applyImport(
                 source: { system: "Zoho", familyId: h.source.familyZohoId, primaryEmail: h.source.rawPrimaryEmail },
             });
         } else {
-            await tx.household.update({ where: { id: householdId }, data: { name: h.name, address: h.address } });
+            await tx.household.update({ where: { id: householdId }, data: { name: h.name, line1: h.address } });
             res.householdsUpdated++;
             await audit(tx, actorId, "EDIT", "Household", householdId, {
                 name: h.name,

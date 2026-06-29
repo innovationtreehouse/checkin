@@ -228,7 +228,7 @@ export function scopesHeld(
             }
             break;
         }
-        case 'RawBadgeEvent': {
+        case 'RawBadgeLog': {
             const participantId = num(row.participantId);
             if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
             break;
@@ -261,7 +261,7 @@ export function scopesHeld(
         }
         // MembershipProcess, BackgroundCheckAttestation, Corporation,
         // CorporationLead, CorporationMember, AuditLog, VerificationToken,
-        // ErrorLog, SystemMetric, Tool — no per-row scopes beyond 'everyones'
+        // ErrorLog, SystemMetricLog, Tool — no per-row scopes beyond 'everyones'
         // yet. Admin (sysadmin/boardMember) views grant 'everyones:*' so they
         // still get through. These SHOULD be row-scoped too (they carry
         // membershipId / processId / corporationId); until each has a case +

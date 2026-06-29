@@ -5,12 +5,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Box, Center, Loader, Tabs } from "@mantine/core";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { PageContainer } from "@/components/ui/PageContainer";
+import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 import { MY_ACTIVITIES_NAV_LINKS } from "@/lib/myActivitiesNav";
 
 export default function MyActivitiesLayout({ children }: { children: React.ReactNode }) {
   const { status } = useSession();
   const pathname = usePathname();
   const router = useRouter();
+  const confirmNav = useConfirmNav();
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/");
@@ -33,11 +36,11 @@ export default function MyActivitiesLayout({ children }: { children: React.React
     ).sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
 
   return (
-    <>
+    <PageContainer>
       <Tabs
         value={active}
         onChange={(value) => {
-          if (value && value !== active) router.push(value);
+          if (value && value !== active && confirmNav()) router.push(value);
         }}
         mb="md"
       >
@@ -50,6 +53,6 @@ export default function MyActivitiesLayout({ children }: { children: React.React
         </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
-    </>
+    </PageContainer>
   );
 }

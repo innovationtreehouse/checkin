@@ -9,7 +9,7 @@
  * rows around it still commit.
  */
 
-import { POST } from '@/app/api/admin/participants/import/route';
+import { POST } from '@/app/api/membership-ops/participants/import/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import * as xlsx from 'xlsx';
@@ -57,7 +57,7 @@ describe('Bulk import: malformed row among valid rows', () => {
 
     const post = async (data: (string | number)[][]) => {
         const fd = csvForm(data);
-        const req = new Request('http://localhost:4000/api/admin/participants/import', {
+        const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
             method: 'POST', body: fd
         }) as unknown as Parameters<typeof POST>[0];
         (req as unknown as { formData: () => Promise<FormData> }).formData = jest.fn().mockResolvedValue(fd);

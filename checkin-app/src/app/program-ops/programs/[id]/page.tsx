@@ -165,7 +165,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         const searchMentors = async () => {
           setMentorSearching(true);
           try {
-            const res = await fetch(`/api/admin/participants/search?q=${encodeURIComponent(mentorSearch)}&filter=adults`);
+            const res = await fetch(`/api/participants/search?q=${encodeURIComponent(mentorSearch)}&filter=adults`);
             if (res.ok) {
               const data = await res.json();
               setMentorResults(data.participants || []);

@@ -24,7 +24,9 @@ import {
   IconClipboardList,
   IconCoin,
   IconHome,
+  IconList,
   IconLogout,
+  IconMail,
   IconMoon,
   IconSettings,
   IconShieldCheck,
@@ -42,6 +44,7 @@ import { brand } from '@/brand';
 import { useIsDevInstance } from '@/components/EnvProvider';
 import { BuildInfoFooter } from '@/components/BuildInfoFooter';
 import { useTodoCounts } from '@/hooks/useTodoCounts';
+import { useConfirmNav } from '@/components/UnsavedChangesProvider';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 
 type SessionUser = {
@@ -69,6 +72,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/my-activities', label: 'My Activities', icon: <IconActivity size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/attendance', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/programs', label: 'Programs', icon: <IconCalendarEvent size={18} />, visible: () => true },
+  { href: '/communication', label: 'Communication', icon: <IconMail size={18} />, visible: (_u, signedIn) => signedIn },
   {
     href: '/shop-ops',
     label: 'Shop Ops',
@@ -120,6 +124,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: <IconAdjustments size={18} />,
     visible: (u) => !!u?.sysadmin || !!u?.boardMember,
   },
+  { href: '/index', label: 'Index', icon: <IconList size={18} />, visible: (_u, signedIn) => signedIn },
 ];
 
 function isActive(pathname: string, href: string): boolean {
@@ -129,25 +134,33 @@ function isActive(pathname: string, href: string): boolean {
 type NavBadge = { count: number; color: string; label: string };
 
 /**
- * The badge for a nav item, or null when nothing to show. Green = action the
- * viewer must take; gray = live informational count (occupancy, running programs).
+ * Badges for a nav item (0, 1, or 2). Green = action the viewer must take, or
+ * the viewer's own household; gray = live informational count (others'
+ * occupancy, running programs). Attendance shows two: my household vs everyone
+ * else currently in the building.
  */
-function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge | null {
-  if (!counts) return null;
-  const green = (n: number, label: string): NavBadge | null =>
-    n > 0 ? { count: n, color: 'treehouseGreen', label } : null;
-  const gray = (n: number, label: string): NavBadge | null =>
-    n > 0 ? { count: n, color: 'gray', label } : null;
+function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[] {
+  if (!counts) return [];
+  const green = (n: number, label: string): NavBadge[] =>
+    n > 0 ? [{ count: n, color: 'treehouseGreen', label }] : [];
+  const gray = (n: number, label: string): NavBadge[] =>
+    n > 0 ? [{ count: n, color: 'gray', label }] : [];
   switch (href) {
     case '/my-household':
       return green(counts.member.household.length, `${counts.member.household.length} items need attention`);
-    case '/attendance':
-      return gray(counts.building, `${counts.building} people currently in the building`);
+    case '/attendance': {
+      const mine = counts.buildingHousehold;
+      return [
+        ...green(mine, `${mine} from your household currently in the building`),
+        ...gray(counts.building, `${counts.building} people currently in the building`),
+      ];
+    }
     case '/programs':
       return gray(counts.activePrograms, `${counts.activePrograms} active programs`);
     case '/membership-ops':
-      // Pending membership applications awaiting board review.
-      return green(counts.admin ? counts.admin.membership : 0, 'Pending membership reviews');
+      // Pending membership applications awaiting board review, plus households
+      // with no lead that the board needs to fix.
+      return green(counts.admin ? counts.admin.membership + counts.admin.brokenHouseholds : 0, 'Pending membership reviews and leadless households');
     case '/membership-audit': {
       // Gray: gaps the household must close, not the board — missing emergency
       // contacts plus accounts created at registration but never claimed.
@@ -160,15 +173,12 @@ function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge | null {
     case '/safety':
       // Trusted-adult disclosures awaiting board review.
       return green(counts.admin ? counts.admin.trustedAdults : 0, 'Trusted-adult disclosures to review');
-    case '/system-status': {
-      // Top-level roll-up of the board's queue; per-queue badges live in the admin sub-nav.
-      const total = counts.admin
-        ? counts.admin.membership + counts.admin.programsPending + counts.admin.trustedAdults
-        : 0;
-      return green(total, `${total} board queue items`);
-    }
+    // System Status has no badge: every count it could show (membership,
+    // payment-plan, trusted-adult) belongs to another nav item that already
+    // badges it. A roll-up here just duplicates those numbers under an
+    // unrelated label.
     default:
-      return null;
+      return [];
   }
 }
 
@@ -196,6 +206,12 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const isDevInstance = useIsDevInstance();
+  const confirmNav = useConfirmNav();
+  // Shared chokepoint for every in-app link in the frame: if the current page has
+  // unsaved edits and the user declines the confirm, cancel the navigation.
+  const guardNav = (e: { preventDefault: () => void }) => {
+    if (!confirmNav()) e.preventDefault();
+  };
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure(false);
   // Fetch before any early return so the hook order stays stable (rules of hooks).
   const todoCounts = useTodoCounts(!!session);
@@ -218,7 +234,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   const onColoredSidebar = !!brand.nav.sidebar;
 
   const brandEl = (
-    <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+    <Link href="/" onNavigate={guardNav} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
       {brand.logo ? (
         <Image src={brand.logo.src} alt={brand.logo.alt} width={brand.logo.width} height={brand.logo.height} priority />
       ) : (
@@ -239,6 +255,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
       <Button
         component={Link}
         href="/profile"
+        onNavigate={guardNav}
         variant="subtle"
         leftSection={<IconUser size={16} />}
       >
@@ -307,24 +324,30 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
             // On the colored sidebar all text is white; the 'light' variant gives a soft
             // translucent overlay on the active item rather than a harsh solid fill.
             const sidebarText = onColoredSidebar ? 'var(--mantine-color-white)' : undefined;
-            const badge = navBadgeFor(item.href, todoCounts);
+            const badges = navBadgeFor(item.href, todoCounts);
             return (
               <NavLink
                 key={item.href}
                 component={Link}
                 href={item.href}
+                onNavigate={guardNav}
                 label={item.label}
                 leftSection={item.icon}
                 rightSection={
-                  badge ? (
-                    <Badge
-                      size="md"
-                      color={badge.color}
-                      variant="filled"
-                      aria-label={badge.label}
-                    >
-                      {badge.count}
-                    </Badge>
+                  badges.length > 0 ? (
+                    <Group gap={4} wrap="nowrap">
+                      {badges.map((badge) => (
+                        <Badge
+                          key={badge.color}
+                          size="md"
+                          color={badge.color}
+                          variant="filled"
+                          aria-label={badge.label}
+                        >
+                          {badge.count}
+                        </Badge>
+                      ))}
+                    </Group>
                   ) : undefined
                 }
                 active={active}

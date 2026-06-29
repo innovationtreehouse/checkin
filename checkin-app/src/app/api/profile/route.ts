@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { handler, notFound, unauthorized } from "@/security/handler";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
     if (auth.type !== 'session') throw unauthorized();
@@ -28,6 +29,10 @@ export const PATCH = withAuth(
 
             const body = await req.json();
             const { name, phone, dob, notificationSettings } = body;
+
+            if (phone !== undefined && phone !== "" && !isValidPhone(phone)) {
+                return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
+            }
 
             const updatedProfile = await prisma.participant.update({
                 where: { id: userId },

@@ -1,3 +1,7 @@
+// ponytail: default/fallback timezone. The editable org timezone lives in AppSettings
+// (lib/appSettings.ts) and is honored server-side (event creation, trends). Client-side
+// display helpers below still use this constant — wire them to AppSettings via a layout
+// provider if/when a second-region deploy needs client display in a non-Central zone.
 export const APP_TIMEZONE = 'America/Chicago';
 
 /**
@@ -22,6 +26,23 @@ export function formatTime(date: Date | string | number | null | undefined, opti
 export function formatDateTime(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
     if (!date) return '';
     return new Date(date).toLocaleString(undefined, { timeZone: APP_TIMEZONE, ...options });
+}
+
+/**
+ * Visit time range for display: "1:35 PM-2:19 PM (44 minutes)" once departed,
+ * or "1:35 PM-" while still active (no end time, no length — too dynamic).
+ * Times are shown without seconds.
+ */
+export function formatVisitRange(
+    arrived: Date | string | number | null | undefined,
+    departed?: Date | string | number | null | undefined,
+): string {
+    if (!arrived) return '';
+    const hm: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
+    const start = formatTime(arrived, hm);
+    if (!departed) return `${start}-`;
+    const mins = Math.round((new Date(departed).getTime() - new Date(arrived).getTime()) / 60000);
+    return `${start}-${formatTime(departed, hm)} (${mins} minute${mins === 1 ? '' : 's'})`;
 }
 
 /**

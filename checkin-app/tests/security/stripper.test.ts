@@ -228,27 +228,27 @@ describe('stripValue — nested relations', () => {
             id: 5,
             name: 'Me',
             email: 'me@x.com',
-            household: { id: 2, name: 'Home', address: 'private street' },
+            household: { id: 2, name: 'Home', line1: 'private street' },
         };
         const out = stripValue('Participant', row, tokens, callerCtx) as Record<string, unknown>;
         expect(out.email).toBe('me@x.com');
         const household = out.household as Record<string, unknown>;
         expect(household.id).toBe(2);
         expect(household.name).toBe('Home');
-        expect(household.address).toBeUndefined(); // personal — no token grants it
+        expect(household.line1).toBeUndefined(); // personal — no token grants it
     });
 
-    it('grants household.address when their_households:personal is in the view', () => {
+    it('grants household.line1 when their_households:personal is in the view', () => {
         const callerCtx = ctx({ selfId: 5, householdId: 2 });
         const tokens = ['their_own:pii', 'their_households:personal', 'public'] as const;
         const row = {
             id: 5,
             email: 'me@x.com',
-            household: { id: 2, name: 'Home', address: 'private street' },
+            household: { id: 2, name: 'Home', line1: 'private street' },
         };
         const out = stripValue('Participant', row, tokens, callerCtx) as Record<string, unknown>;
         const household = out.household as Record<string, unknown>;
-        expect(household.address).toBe('private street');
+        expect(household.line1).toBe('private street');
     });
 });
 
@@ -338,24 +338,24 @@ describe('stripValue — _count gating', () => {
     });
 
     it('strips a _count the low-privilege view has no grant on', () => {
-        // RawBadgeEvent has no public field — its fields are personal/internal.
-        // A view with only `public` cannot see any RawBadgeEvent field, so the
-        // count of a Participant's rawBadgeEvents must not leak.
-        const row = { id: 5, name: 'Me', _count: { rawBadgeEvents: 9 } };
+        // RawBadgeLog has no public field — its fields are personal/internal.
+        // A view with only `public` cannot see any RawBadgeLog field, so the
+        // count of a Participant's rawBadgeLogs must not leak.
+        const row = { id: 5, name: 'Me', _count: { rawBadgeLogs: 9 } };
         const out = stripValue('Participant', row, ['public'], ctx({ selfId: 5 })) as Record<string, unknown>;
         expect(out._count).toBeUndefined();
     });
 
     it('passes that same _count to an authorized view', () => {
-        // `their_own:personal` on the caller's own row grants RawBadgeEvent's
+        // `their_own:personal` on the caller's own row grants RawBadgeLog's
         // personal-tier fields (time/location), so the count is now visible.
-        const row = { id: 5, name: 'Me', _count: { rawBadgeEvents: 9 } };
+        const row = { id: 5, name: 'Me', _count: { rawBadgeLogs: 9 } };
         const out = stripValue('Participant', row, ['their_own:personal', 'public'], ctx({ selfId: 5 })) as Record<string, unknown>;
-        expect(out._count).toEqual({ rawBadgeEvents: 9 });
+        expect(out._count).toEqual({ rawBadgeLogs: 9 });
     });
 
     it('strips only the ungranted keys from a mixed _count', () => {
-        const row = { id: 5, name: 'Me', _count: { visits: 3, rawBadgeEvents: 9 } };
+        const row = { id: 5, name: 'Me', _count: { visits: 3, rawBadgeLogs: 9 } };
         const out = stripValue('Participant', row, ['public'], ctx({ selfId: 5 })) as Record<string, unknown>;
         expect(out._count).toEqual({ visits: 3 });
     });
@@ -399,12 +399,12 @@ describe('stripBag', () => {
         const out = stripBag(
             {
                 Participant: { id: 5, name: 'Me', email: 'me@x.com' },
-                Household: { id: 2, name: 'Home', address: 'street' },
+                Household: { id: 2, name: 'Home', line1: 'street' },
             },
             ['their_own:pii', 'their_households:personal', 'public'],
             ctx({ selfId: 5, householdId: 2 }),
         );
         expect((out.Participant as Record<string, unknown>).email).toBe('me@x.com');
-        expect((out.Household as Record<string, unknown>).address).toBe('street');
+        expect((out.Household as Record<string, unknown>).line1).toBe('street');
     });
 });

@@ -58,13 +58,14 @@ export default function AdminParticipantsIndex() {
   });
 
   useEffect(() => {
-    fetchParticipants();
-  }, []);
+    const id = setTimeout(() => fetchParticipants(searchQuery), 250);
+    return () => clearTimeout(id);
+  }, [searchQuery]);
 
   const fetchParticipants = async (query = "") => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/participants/search?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/participants/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       if (data.participants) {
         setResults(data.participants);
@@ -116,7 +117,7 @@ export default function AdminParticipantsIndex() {
 
     setAssigning(true);
     try {
-      const res = await fetch(`/api/admin/participants/${selectedParticipant.id}/household`, {
+      const res = await fetch(`/api/membership-ops/participants/${selectedParticipant.id}/household`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -146,7 +147,7 @@ export default function AdminParticipantsIndex() {
     if (!editingParticipant) return;
     setSavingDetails(true);
     try {
-      const res = await fetch(`/api/admin/participants/${editingParticipant.id}`, {
+      const res = await fetch(`/api/membership-ops/participants/${editingParticipant.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm)
@@ -169,11 +170,6 @@ export default function AdminParticipantsIndex() {
     }
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    fetchParticipants(searchQuery);
-  };
-
   const canSubmitAssign = !selectedParticipant?.household || (selectedParticipant.household.participants.length > 1);
   const canChangeHousehold = selectedParticipant?.household && selectedParticipant.household.participants.length === 1 && householdId;
 
@@ -190,17 +186,11 @@ export default function AdminParticipantsIndex() {
       </Group>
 
       <Card withBorder radius="md" padding="lg">
-        <form onSubmit={handleSearch}>
-          <Group>
-            <TextInput
-              style={{ flex: 1 }}
-              placeholder="Search by name or email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.currentTarget.value)}
-            />
-            <Button type="submit" disabled={loading} loading={loading}>Search</Button>
-          </Group>
-        </form>
+        <TextInput
+          placeholder="Search by name or email..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.currentTarget.value)}
+        />
 
         <Box mt="lg">
           {results.length > 0 ? (
@@ -302,7 +292,7 @@ export default function AdminParticipantsIndex() {
               selectedId={householdId || null}
               selectedLabel={householdSearch}
               search={async (q) => {
-                const res = await fetch(`/api/admin/households?q=${encodeURIComponent(q)}`);
+                const res = await fetch(`/api/membership-ops/households?q=${encodeURIComponent(q)}`);
                 if (!res.ok) return [];
                 const data = await res.json();
                 return data.households || [];

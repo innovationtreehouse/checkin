@@ -12,7 +12,7 @@
  * the merge does not clear it, so the final source-household delete throws.
  */
 
-import { POST } from '@/app/api/admin/participants/import/route';
+import { POST } from '@/app/api/membership-ops/participants/import/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import * as xlsx from 'xlsx';
@@ -67,7 +67,7 @@ describe('Bulk import merge rollback', () => {
             data: {
                 householdId: sourceHouseholdId,
                 counterpartyName: 'Grandma Mergeroll',
-                counterpartyContact: '555-0100',
+                counterpartyPhone: '555-0100',
                 familyContext: 'Can pick up the kids.',
                 disclosedById: testAdminId,
             }
@@ -96,7 +96,7 @@ describe('Bulk import merge rollback', () => {
             ['Source Member', 'Mergeroll Test', SOURCE_EMAIL, TARGET_EMAIL],
         ]);
 
-        const req = new Request('http://localhost:4000/api/admin/participants/import', {
+        const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
             method: 'POST',
             body: formData
         }) as unknown as Parameters<typeof POST>[0];
