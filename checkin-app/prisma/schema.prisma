@@ -404,6 +404,23 @@ model BoardSettings {
   updatedAt                  DateTime  @updatedAt
 }
 
+/// App-wide localization config (singleton, id=1). Distinct from BoardSettings,
+/// which holds membership/money policy — this holds deployment-region settings
+/// (timezone, locale) that govern how the whole app reads dates and times.
+model AppSettings {
+  /// @sensitivity:public
+  id        Int      @id @default(1)
+  /// IANA timezone, e.g. "America/Chicago". Used server-side to convert event
+  /// wall-clock times to UTC and to format dates in the org's local zone.
+  /// @sensitivity:public
+  timezone  String   @default("America/Chicago")
+  /// BCP-47 locale, e.g. "en-US". Used for server-side date/number formatting.
+  /// @sensitivity:public
+  locale    String   @default("en-US")
+  /// @sensitivity:public
+  updatedAt DateTime @updatedAt
+}
+
 /// Trusted Adult Management (Trusted Adults). A board-reviewed disclosure that
 /// one individual (the subject, always a Participant) holds an external
 /// relationship — familial, romantic, guardianship, financial, legal-restriction,

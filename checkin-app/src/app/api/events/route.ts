@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { addDays, parseISO, isBefore, isEqual, getDay, setHours, setMinutes } from 'date-fns';
 import { fromZonedTime } from 'date-fns-tz';
+import { getAppSettings } from "@/lib/appSettings";
 
 // List standalone (one-time) events — those with no associated program.
 export async function GET() {
@@ -54,11 +55,13 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Forbidden: Not authorized to create events" }, { status: 403 });
         }
 
+        // Wall-clock times are entered in the org's local timezone; convert to UTC against it.
+        const { timezone } = await getAppSettings();
+
         // Parse baseline dates
-        // Parse baseline dates considering CST for local saving behavior
         const baseDateString = startDate.includes("T") ? startDate.split("T")[0] : startDate; // YYYY-MM-DD
-        
-        // Use fromZonedTime so that "15:00" mapping matches CST precisely rather than rolling to UTC
+
+        // Use fromZonedTime so that "15:00" maps to the org timezone precisely rather than rolling to UTC
         let currentIterDate = parseISO(baseDateString);
 
         const [startHr, startMin] = startTime.split(':').map(Number);
@@ -68,12 +71,12 @@ export async function POST(req: Request) {
 
         if (!recurrence || !recurrence.daysOfWeek || recurrence.daysOfWeek.length === 0 || !recurrence.until) {
             // Single event
-            // Create naive local date then cast it as America/Chicago so node uses that offset before converting to UTC.
+            // Create naive local date then cast it as the org timezone so node uses that offset before converting to UTC.
             const startLocal = setMinutes(setHours(currentIterDate, startHr), startMin);
             const endLocal = setMinutes(setHours(currentIterDate, endHr), endMin);
-            
-            const startD = fromZonedTime(startLocal, 'America/Chicago');
-            const endD = fromZonedTime(endLocal, 'America/Chicago');
+
+            const startD = fromZonedTime(startLocal, timezone);
+            const endD = fromZonedTime(endLocal, timezone);
 
             eventsToCreate.push({
                 name,
@@ -95,9 +98,9 @@ export async function POST(req: Request) {
                 if (recurrence.daysOfWeek.includes(dayOfWeek)) {
                     const startLocal = setMinutes(setHours(currentIterDate, startHr), startMin);
                     const endLocal = setMinutes(setHours(currentIterDate, endHr), endMin);
-                    
-                    const startD = fromZonedTime(startLocal, 'America/Chicago');
-                    const endD = fromZonedTime(endLocal, 'America/Chicago');
+
+                    const startD = fromZonedTime(startLocal, timezone);
+                    const endD = fromZonedTime(endLocal, timezone);
 
                     eventsToCreate.push({
                         name,

@@ -17,6 +17,7 @@ type Visible = (user: RegistryUser | undefined, signedIn: boolean) => boolean;
 const PUBLIC: Visible = () => true;
 const SIGNED_IN: Visible = (_u, signedIn) => signedIn;
 const BOARD: Visible = (u) => !!u?.sysadmin || !!u?.boardMember;
+const SYSADMIN: Visible = (u) => !!u?.sysadmin;
 const SAFETY: Visible = (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder;
 const SHOP: Visible = (u) =>
   !!u?.sysadmin ||
@@ -107,6 +108,7 @@ export const PAGES: PageEntry[] = [
   // Settings — board
   { href: '/settings/membership', label: 'Membership Settings', section: 'Settings', visible: BOARD },
   { href: '/settings/roles', label: 'Role Assignment', section: 'Settings', visible: BOARD },
+  { href: '/settings/localization', label: 'Localization', section: 'Settings', visible: SYSADMIN },
 ];
 
 // Routes that exist as page.tsx but are intentionally absent from the directory.
