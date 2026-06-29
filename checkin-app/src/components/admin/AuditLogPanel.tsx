@@ -55,7 +55,6 @@ export function AuditLogPanel() {
   const [to, setTo] = useState("");
 
   useEffect(() => {
-    setFailed(false);
     const qs = new URLSearchParams({ page: String(page) });
     if (action) qs.set("action", action);
     if (table) qs.set("table", table);
@@ -67,7 +66,10 @@ export function AuditLogPanel() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then(setData)
+      .then((d) => {
+        setData(d);
+        setFailed(false);
+      })
       .catch(() => setFailed(true));
   }, [page, action, table, from, to]);
 
