@@ -82,8 +82,8 @@ describe('Event Attendance API Integration Tests', () => {
             data: {
                 name: 'Attendance Test Event',
                 programId: testProgramId,
-                start: pastStart,
-                end: pastEnd
+                startAt: pastStart,
+                endAt: pastEnd
             }
         });
         testEventId = event.id;
@@ -217,7 +217,7 @@ describe('Event Attendance API Integration Tests', () => {
 
             // Create a general visit that overlaps with the event
             const event = await prisma.event.findUnique({ where: { id: testEventId } });
-            const earlyArrival = new Date(event!.start.getTime() - 30 * 60 * 1000); // Arrived 30 mins before event
+            const earlyArrival = new Date(event!.startAt.getTime() - 30 * 60 * 1000); // Arrived 30 mins before event
             
             await prisma.visit.create({
                 data: {

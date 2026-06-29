@@ -80,8 +80,8 @@ describe('PATCH /api/events/[id] cancel — transaction rollback on partial fail
         const event = await prisma.event.create({
             data: {
                 name: `${TAG} ${label}`,
-                start,
-                end: new Date(start.getTime() + HOUR),
+                startAt: start,
+                endAt: new Date(start.getTime() + HOUR),
                 description: 'cancel',
                 ...(recurringGroupId ? { recurringGroupId } : {}),
             },

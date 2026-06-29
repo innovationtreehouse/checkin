@@ -20,8 +20,8 @@ export default function CreateProgramPage() {
   const router = useRouter();
 
   const [name, setName] = useState("");
-  const [begin, setBegin] = useState("");
-  const [end, setEnd] = useState("");
+  const [startAt, setStartAt] = useState("");
+  const [endAt, setEndAt] = useState("");
   const [minAge, setMinAge] = useState("");
   const [maxAge, setMaxAge] = useState("");
   const [isFree, setIsFree] = useState(true);
@@ -51,8 +51,8 @@ export default function CreateProgramPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          begin: begin || null,
-          end: end || null,
+          startAt: startAt || null,
+          endAt: endAt || null,
           memberOnly,
           minAge: minAge ? parseInt(minAge) : null,
           maxAge: maxAge ? parseInt(maxAge) : null,
@@ -84,8 +84,8 @@ export default function CreateProgramPage() {
   const isDirty =
     !submitted &&
     !shallowEqual(
-      { name: "", begin: "", end: "", minAge: "", maxAge: "", isFree: true, memberPrice: "", nonMemberPrice: "", maxParticipants: "", memberOnly: false, leadMentorId: "" },
-      { name, begin, end, minAge, maxAge, isFree, memberPrice, nonMemberPrice, maxParticipants, memberOnly, leadMentorId },
+      { name: "", startAt: "", endAt: "", minAge: "", maxAge: "", isFree: true, memberPrice: "", nonMemberPrice: "", maxParticipants: "", memberOnly: false, leadMentorId: "" },
+      { name, startAt, endAt, minAge, maxAge, isFree, memberPrice, nonMemberPrice, maxParticipants, memberOnly, leadMentorId },
     );
   useUnsavedGuard(isDirty);
 
@@ -142,8 +142,8 @@ export default function CreateProgramPage() {
             </SimpleGrid>
 
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
-              <TextInput type="date" label="Start Date" value={begin} onChange={(e) => setBegin(e.currentTarget.value)} />
-              <TextInput type="date" label="End Date" value={end} onChange={(e) => setEnd(e.currentTarget.value)} />
+              <TextInput type="date" label="Start Date" value={startAt} onChange={(e) => setStartAt(e.currentTarget.value)} />
+              <TextInput type="date" label="End Date" value={endAt} onChange={(e) => setEndAt(e.currentTarget.value)} />
             </SimpleGrid>
 
             <Card withBorder radius="md" padding="md">

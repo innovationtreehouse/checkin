@@ -29,7 +29,7 @@ export async function GET(req: Request) {
 
         const upcomingEvents = await prisma.event.findMany({
             where: {
-                start: {
+                startAt: {
                     gte: twoHoursFromNow,
                     lte: windowEnd
                 }

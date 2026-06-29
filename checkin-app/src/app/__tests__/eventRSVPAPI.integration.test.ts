@@ -74,8 +74,8 @@ describe('Event RSVP API Integration Tests', () => {
             data: {
                 name: 'RSVP Test Event',
                 programId: testProgramId,
-                start: start,
-                end: new Date(start.getTime() + 2 * 60 * 60 * 1000)
+                startAt: start,
+                endAt: new Date(start.getTime() + 2 * 60 * 60 * 1000)
             }
         });
         testEventId = event.id;

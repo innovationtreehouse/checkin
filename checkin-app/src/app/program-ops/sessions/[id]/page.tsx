@@ -20,8 +20,8 @@ type ParticipantDetail = {
 type EventData = {
   id: number;
   name: string;
-  start: string;
-  end: string;
+  startAt: string;
+  endAt: string;
   attendanceConfirmedAt: string | null;
   attendanceConfirmedBy?: { name: string | null } | null;
   recurringGroupId: string | null;
@@ -75,8 +75,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         const data = await res.json();
         setEventData(data);
 
-        const startStr = toDatetimeLocal(data.start);
-        const endStr = toDatetimeLocal(data.end);
+        const startStr = toDatetimeLocal(data.startAt);
+        const endStr = toDatetimeLocal(data.endAt);
         setNewStart(startStr);
         setNewEnd(endStr);
       } else {
@@ -134,7 +134,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
       const res = await fetch(`/api/events/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'editTime', start: startIso, end: endIso, applyToFuture })
+        body: JSON.stringify({ action: 'editTime', startAt: startIso, endAt: endIso, applyToFuture })
       });
       if (res.ok) {
         setMessage("Event time updated successfully!");
@@ -228,7 +228,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   const canManageAttendance = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
   const canManageEventInfo = isSysAdminOrBoard || isLeadMentor;
 
-  const isPastEvent = new Date(eventData.end) < new Date();
+  const isPastEvent = new Date(eventData.endAt) < new Date();
 
   const renderRosterGrid = () => {
     if (!eventData.program) return null;
@@ -288,8 +288,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
                             setManualDeparted(visit.departedAt ? toDatetimeLocal(visit.departedAt) : "");
                           } else {
                             setManualStatus("Absent");
-                            setManualArrived(toDatetimeLocal(eventData.start));
-                            setManualDeparted(toDatetimeLocal(eventData.end));
+                            setManualArrived(toDatetimeLocal(eventData.startAt));
+                            setManualDeparted(toDatetimeLocal(eventData.endAt));
                           }
                         }}>
                           Manual Edit
@@ -315,7 +315,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         <Group justify="space-between" align="flex-start" wrap="wrap" mb="lg">
           <div>
             <Title order={1}>{eventData.name}</Title>
-            <Text c="dimmed" fz="lg">{formatDateTime(eventData.start)} - {formatDateTime(eventData.end)}</Text>
+            <Text c="dimmed" fz="lg">{formatDateTime(eventData.startAt)} - {formatDateTime(eventData.endAt)}</Text>
           </div>
           <Button
             variant="default"
