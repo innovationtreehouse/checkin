@@ -43,7 +43,7 @@ describe('Nav todo-counts API', () => {
         // Household A: a lead with a full slate of *member-actionable* todos, plus
         // one reviewer-owned membership state that must NOT count for the member.
         const lead = await prisma.participant.create({
-            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dob: new Date('1985-01-01'), household: { create: {} } },
+            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dob: new Date('1985-01-01'), phone: '555-0001', household: { create: {} } },
         });
         leadId = lead.id;
         householdAId = lead.householdId;
