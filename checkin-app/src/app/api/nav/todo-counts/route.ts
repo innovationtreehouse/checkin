@@ -51,7 +51,8 @@ export type TodoCounts = {
     // `membership` = board-actionable (BLOCKED, green). `applicationsTotal` =
     // every in-flight (non-ACTIVE) application, the gray count shown on the
     // Applications tab — mirrors what /api/admin/membership lists.
-    admin?: { membership: number; applicationsTotal: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number };
+    // `brokenHouseholds` = households with no lead at all (green).
+    admin?: { membership: number; applicationsTotal: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number };
 };
 
 // What a member-actionable membership process means, in plain terms.
@@ -175,7 +176,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // ---- Admin surface (board's own queue) — only for board/sysadmin ----
     if (user.sysadmin || user.boardMember) {
-        const [membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds] = await Promise.all([
+        const [membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds] = await Promise.all([
             prisma.membershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -195,8 +196,13 @@ export const GET = withAuth({}, async (_req, auth) => {
             prisma.household.count({
                 where: { participants: { some: { email: { not: null }, googleId: null } } },
             }),
+            // "Broken" households: no household lead at all. Mirrors
+            // /api/admin/broken-households. Includes empty households.
+            prisma.household.count({
+                where: { leads: { none: {} } },
+            }),
         ]);
-        result.admin = { membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds };
+        result.admin = { membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds };
     }
 
     return NextResponse.json(result);

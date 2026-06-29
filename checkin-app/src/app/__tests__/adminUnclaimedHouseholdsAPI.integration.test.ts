@@ -3,8 +3,10 @@
  */
 /**
  * Integration Tests for Admin Unclaimed Households API
- * Tests GET /api/membership-audit/unclaimed-households for identifying households with an
- * email-but-no-googleId member (registered but never claimed via Google).
+ * Tests GET /api/membership-audit/unclaimed-households for identifying households
+ * where no household lead has signed in with Google yet (registered but never
+ * claimed). A household drops off the list as soon as ANY lead claims, even if
+ * non-lead members (e.g. students) never sign in.
  */
 
 import { GET } from '@/app/api/membership-audit/unclaimed-households/route';
@@ -22,14 +24,21 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
     let testUnclaimedHouseholdId: number;
     let testClaimedHouseholdId: number;
 
-    beforeAll(async () => {
+    const cleanup = async () => {
         await prisma.membership.deleteMany({});
+        await prisma.householdLead.deleteMany({
+            where: { household: { name: { contains: 'Unclaimed API Test' } } }
+        });
         await prisma.participant.deleteMany({
             where: { email: { contains: 'unclaimed-api-test' } }
         });
         await prisma.household.deleteMany({
             where: { name: { contains: 'Unclaimed API Test' } }
         });
+    };
+
+    beforeAll(async () => {
+        await cleanup();
 
         const admin = await prisma.participant.create({
             data: { email: 'admin-unclaimed-api-test@example.com', name: 'Admin Unclaimed Test', sysadmin: true, household: { create: {} } }
@@ -41,30 +50,33 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
         });
         testUserId = user.id;
 
-        // 1. Household with a member that has an email but NO googleId -> unclaimed
+        // 1. Lead has an email but NO googleId -> unclaimed
         const unclaimed = await prisma.household.create({ data: { name: 'Unclaimed API Test HH Unclaimed' } });
         testUnclaimedHouseholdId = unclaimed.id;
-        await prisma.participant.create({
-            data: { email: 'member1-unclaimed-api-test@example.com', name: 'Unclaimed Member', householdId: testUnclaimedHouseholdId, googleId: null }
+        const unclaimedLead = await prisma.participant.create({
+            data: { email: 'member1-unclaimed-api-test@example.com', name: 'Unclaimed Lead', householdId: testUnclaimedHouseholdId, googleId: null }
+        });
+        await prisma.householdLead.create({
+            data: { householdId: testUnclaimedHouseholdId, participantId: unclaimedLead.id }
         });
 
-        // 2. Household where every member with an email HAS a googleId -> not unclaimed
+        // 2. Lead HAS a googleId -> claimed, even though a student member never signs in.
+        // This is the case that must NOT appear: a claimed lead covers the household.
         const claimed = await prisma.household.create({ data: { name: 'Unclaimed API Test HH Claimed' } });
         testClaimedHouseholdId = claimed.id;
+        const claimedLead = await prisma.participant.create({
+            data: { email: 'member2-unclaimed-api-test@example.com', name: 'Claimed Lead', householdId: testClaimedHouseholdId, googleId: 'unclaimed-test-google-id' }
+        });
+        await prisma.householdLead.create({
+            data: { householdId: testClaimedHouseholdId, participantId: claimedLead.id }
+        });
+        // Student in the claimed household with an email but no googleId (never signs in).
         await prisma.participant.create({
-            data: { email: 'member2-unclaimed-api-test@example.com', name: 'Claimed Member', householdId: testClaimedHouseholdId, googleId: 'unclaimed-test-google-id' }
+            data: { email: 'student-unclaimed-api-test@example.com', name: 'Student', householdId: testClaimedHouseholdId, googleId: null }
         });
     });
 
-    afterAll(async () => {
-        await prisma.membership.deleteMany({});
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'unclaimed-api-test' } }
-        });
-        await prisma.household.deleteMany({
-            where: { id: { in: [testUnclaimedHouseholdId, testClaimedHouseholdId] } }
-        });
-    });
+    afterAll(cleanup);
 
     describe('GET /api/membership-audit/unclaimed-households', () => {
         it('should return 403 Forbidden without admin', async () => {
@@ -77,7 +89,7 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
             expect(res.status).toBe(403);
         });
 
-        it('should list households with an unclaimed member but not fully-claimed ones', async () => {
+        it('lists households whose lead never signed in, and drops ones with a claimed lead even if a student never signs in', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testAdminId, sysadmin: true }
             });
