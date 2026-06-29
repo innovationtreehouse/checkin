@@ -176,7 +176,7 @@ export default function BulkImportParticipants() {
                   key={key}
                   variant={statusFilter === key ? 'filled' : 'default'}
                   color={meta.color}
-                  size="xs"
+                  size="xs" fz={15}
                   onClick={() => setStatusFilter(key)}
                   rightSection={<Badge color={meta.color} variant="light" size="sm">{count}</Badge>}
                 >

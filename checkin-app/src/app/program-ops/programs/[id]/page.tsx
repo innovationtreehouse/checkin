@@ -409,14 +409,14 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                     program.leadMentor && !isEditingMentor ? (
                       <Group>
                         <Text c="green">{program.leadMentor.name || 'Unnamed'} ({program.leadMentor.email})</Text>
-                        <Button size="xs" variant="default" type="button" onClick={() => { setIsEditingMentor(true); setMentorSearch(""); setLeadMentorIdInput(""); }}>Change</Button>
+                        <Button size="xs" fz={15} variant="default" type="button" onClick={() => { setIsEditingMentor(true); setMentorSearch(""); setLeadMentorIdInput(""); }}>Change</Button>
                       </Group>
                     ) : (
                       <Box pos="relative">
                         <Group gap="sm" align="center" wrap="nowrap">
                           <TextInput style={{ flex: 1 }} value={mentorSearch} onChange={e => { setMentorSearch(e.currentTarget.value); setLeadMentorIdInput(""); }} placeholder="Search Adult Members..." />
                           {program.leadMentor && (
-                            <Button size="xs" variant="subtle" color="red" type="button" onClick={() => { setIsEditingMentor(false); setLeadMentorIdInput(String(program.leadMentorId)); setMentorSearch(`${program.leadMentor?.name || 'Unnamed'} (${program.leadMentor?.email})`); }}>Cancel</Button>
+                            <Button size="xs" fz={15} variant="subtle" color="red" type="button" onClick={() => { setIsEditingMentor(false); setLeadMentorIdInput(String(program.leadMentorId)); setMentorSearch(`${program.leadMentor?.name || 'Unnamed'} (${program.leadMentor?.email})`); }}>Cancel</Button>
                           )}
                         </Group>
                         {mentorSearching && <Text size="xs" c="dimmed" mt={4}>Loading...</Text>}

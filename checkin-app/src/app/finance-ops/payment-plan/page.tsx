@@ -114,7 +114,7 @@ export default function PendingParticipantsPage() {
       header: 'Actions',
       align: 'right',
       render: (req) => (
-        <Button size="xs" color="green" variant="light" onClick={() => handleApprove(req.programId, req.participantId)}>
+        <Button size="xs" fz={15} color="green" variant="light" onClick={() => handleApprove(req.programId, req.participantId)}>
           Approve &amp; Mark Active
         </Button>
       ),

@@ -113,7 +113,7 @@ export default function TrustedAdultPanel() {
                     Name an adult outside your household who the board should know about (e.g. who may pick up your
                     kids). The board reviews each one; an approval is valid for one year.
                 </Text>
-                <Button size="xs" leftSection={<IconPlus size={14} />} onClick={open} style={{ flexShrink: 0 }}>
+                <Button size="xs" fz={15} leftSection={<IconPlus size={14} />} onClick={open} style={{ flexShrink: 0 }}>
                     Add a trusted adult
                 </Button>
             </Group>
@@ -163,12 +163,12 @@ export default function TrustedAdultPanel() {
                             </div>
                             <Group gap="xs" style={{ flexShrink: 0 }}>
                                 {latest && isRenewable(status) && (
-                                    <Button size="xs" variant="light" onClick={() => act(ta.id, "renew")}>
+                                    <Button size="xs" fz={15} variant="light" onClick={() => act(ta.id, "renew")}>
                                         Resubmit
                                     </Button>
                                 )}
                                 {latest && status !== "REVOKED" && (
-                                    <Button size="xs" variant="subtle" color="red" onClick={() => act(ta.id, "withdraw")}>
+                                    <Button size="xs" fz={15} variant="subtle" color="red" onClick={() => act(ta.id, "withdraw")}>
                                         Withdraw
                                     </Button>
                                 )}

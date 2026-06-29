@@ -203,7 +203,7 @@ export default function AdminTrustedAdultsPage() {
                                 />
                                 <Group gap="xs">
                                     <Button
-                                        size="xs"
+                                        size="xs" fz={15}
                                         color="green"
                                         loading={busyId === latest.id}
                                         disabled={!sharedVal.trim()}
@@ -211,11 +211,11 @@ export default function AdminTrustedAdultsPage() {
                                     >
                                         Approve
                                     </Button>
-                                    <Button size="xs" color="red" loading={busyId === latest.id} onClick={() => decide(latest.id, "DENY")}>
+                                    <Button size="xs" fz={15} color="red" loading={busyId === latest.id} onClick={() => decide(latest.id, "DENY")}>
                                         Deny
                                     </Button>
                                     <Button
-                                        size="xs"
+                                        size="xs" fz={15}
                                         variant="light"
                                         loading={busyId === latest.id}
                                         onClick={() => {
@@ -233,7 +233,7 @@ export default function AdminTrustedAdultsPage() {
                             <Group gap="xs" mt="md">
                                 <Text size="xs" c="dimmed">Override:</Text>
                                 <Button
-                                    size="xs"
+                                    size="xs" fz={15}
                                     variant="subtle"
                                     color="green"
                                     loading={busyId === latest.id}
@@ -244,10 +244,10 @@ export default function AdminTrustedAdultsPage() {
                                 >
                                     Force approve
                                 </Button>
-                                <Button size="xs" variant="subtle" color="red" loading={busyId === latest.id} onClick={() => override(latest.id, "deny")}>
+                                <Button size="xs" fz={15} variant="subtle" color="red" loading={busyId === latest.id} onClick={() => override(latest.id, "deny")}>
                                     Force deny
                                 </Button>
-                                <Button size="xs" variant="subtle" color="gray" loading={busyId === latest.id} onClick={() => override(latest.id, "revoke")}>
+                                <Button size="xs" fz={15} variant="subtle" color="gray" loading={busyId === latest.id} onClick={() => override(latest.id, "revoke")}>
                                     Revoke
                                 </Button>
                             </Group>

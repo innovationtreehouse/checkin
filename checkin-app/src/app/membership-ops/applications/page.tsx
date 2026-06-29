@@ -213,7 +213,7 @@ export default function AdminMembershipPage() {
                     {r.contractSignedAt ? (
                       <Text c="green" fw={600}>✓ Signed</Text>
                     ) : (
-                      <Button size="xs" disabled={busyId === r.id} onClick={() => act(r.id, "mark-contract")}>
+                      <Button size="xs" fz={15} disabled={busyId === r.id} onClick={() => act(r.id, "mark-contract")}>
                         Confirm contract signed
                       </Button>
                     )}
@@ -223,7 +223,7 @@ export default function AdminMembershipPage() {
                     {r.bgConsentAt ? (
                       <Text c="green" fw={600}>✓ Received</Text>
                     ) : (
-                      <Button size="xs" variant="default" disabled={busyId === r.id} onClick={() => act(r.id, "mark-bg-consent")}>
+                      <Button size="xs" fz={15} variant="default" disabled={busyId === r.id} onClick={() => act(r.id, "mark-bg-consent")}>
                         Confirm BG consent
                       </Button>
                     )}
@@ -240,7 +240,7 @@ export default function AdminMembershipPage() {
               {r.status === "PENDING_PAYMENT" && (
                 <Group mt="md" gap="md" wrap="wrap" align="center">
                   <Text size="sm" c="dimmed">Awaiting payment.</Text>
-                  <Button size="xs" color="green" disabled={busyId === r.id} onClick={() => certify(r.id)}>
+                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => certify(r.id)}>
                     Certify payment plan → activate
                   </Button>
                 </Group>
@@ -249,10 +249,10 @@ export default function AdminMembershipPage() {
               {r.status === "BLOCKED" && (
                 <Alert color="red" variant="light" mt="md" title="🚨 Blocked at background review — needs board attention.">
                   <Group gap="sm" wrap="wrap">
-                    <Button size="xs" variant="default" disabled={busyId === r.id} onClick={() => override(r.id, "reset")}>
+                    <Button size="xs" fz={15} variant="default" disabled={busyId === r.id} onClick={() => override(r.id, "reset")}>
                       Reset for re-review
                     </Button>
-                    <Button size="xs" color="green" disabled={busyId === r.id} onClick={() => override(r.id, "approve")}>
+                    <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => override(r.id, "approve")}>
                       Override → payment
                     </Button>
                   </Group>

@@ -60,8 +60,8 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
                 rightSection={
                   count > 0 ? (
                     <Badge
-                      size="xs"
-                      color="gray"
+                      size="md"
+                      color="treehouseGreen"
                       variant="filled"
                       aria-label={label}
                     >

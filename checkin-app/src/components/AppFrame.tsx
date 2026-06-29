@@ -318,7 +318,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                 rightSection={
                   badge ? (
                     <Badge
-                      size="xs"
+                      size="md"
                       color={badge.color}
                       variant="filled"
                       aria-label={badge.label}

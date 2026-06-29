@@ -71,7 +71,7 @@ export default function MissingEmergencyContactsPage() {
                   <Text fw={600} fz="lg">{h.name || `Household #${h.id}`}</Text>
                   <Badge color="red" variant="light">No emergency contact</Badge>
                 </Group>
-                <Button size="xs" variant="light" onClick={() => setEditHouseholdId(h.id)}>
+                <Button size="xs" fz={15} variant="light" onClick={() => setEditHouseholdId(h.id)}>
                   Edit household
                 </Button>
               </Group>

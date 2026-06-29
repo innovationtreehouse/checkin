@@ -240,15 +240,15 @@ export default function AdminParticipantsIndex() {
                       <Table.Td>
                         <Group gap="xs" wrap="nowrap">
                           {p.household ? (
-                            <Button size="xs" variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
+                            <Button size="xs" fz={15} variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
                               Household
                             </Button>
                           ) : (
-                            <Button size="xs" variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
+                            <Button size="xs" fz={15} variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
                               Assign
                             </Button>
                           )}
-                          <Button size="xs" variant="default" onClick={() => {
+                          <Button size="xs" fz={15} variant="default" onClick={() => {
                             setEditingParticipant(p);
                             setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "" });
                             setEditModalOpen(true);
@@ -341,13 +341,13 @@ export default function AdminParticipantsIndex() {
                   <Group justify="space-between" wrap="wrap">
                     <Text size="sm">{editingParticipant.household.name}</Text>
                     <Group gap="xs">
-                      <Button size="xs" variant="light" onClick={() => {
+                      <Button size="xs" fz={15} variant="light" onClick={() => {
                         const hid = editingParticipant.household!.id;
                         setEditModalOpen(false);
                         setEditingParticipant(null);
                         setEditHouseholdId(hid);
                       }}>Edit Household Info</Button>
-                      <Button size="xs" variant="default" onClick={() => {
+                      <Button size="xs" fz={15} variant="default" onClick={() => {
                         setEditModalOpen(false);
                         setSelectedParticipant(editingParticipant);
                         setEditingParticipant(null);

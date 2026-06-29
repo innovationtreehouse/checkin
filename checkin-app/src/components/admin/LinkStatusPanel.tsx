@@ -101,7 +101,7 @@ export function LinkStatusPanel() {
               )}
             </Stack>
             <Button
-              size="xs"
+              size="xs" fz={15}
               variant={e.resolvedAt ? "subtle" : "light"}
               loading={busyId === e.id}
               onClick={() => toggleResolved(e)}

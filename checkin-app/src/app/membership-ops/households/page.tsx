@@ -170,14 +170,14 @@ export default function AdminHouseholdsPage() {
                   <Table.Td>
                     <Group gap="xs" wrap="nowrap">
                       <Button
-                        size="xs"
+                        size="xs" fz={15}
                         variant="light"
                         onClick={() => setEditHouseholdId(household.id)}
                       >
                         Edit Info
                       </Button>
                       <Button
-                        size="xs"
+                        size="xs" fz={15}
                         variant="light"
                         onClick={() => router.push(`/membership-ops/participants/new?householdId=${household.id}`)}
                       >
@@ -185,7 +185,7 @@ export default function AdminHouseholdsPage() {
                       </Button>
                       {isDenied ? (
                         <Button
-                          size="xs"
+                          size="xs" fz={15}
                           variant="light"
                           color="blue"
                           onClick={() => setDenied(household.id, false)}
@@ -195,7 +195,7 @@ export default function AdminHouseholdsPage() {
                       ) : (
                         <>
                           <Button
-                            size="xs"
+                            size="xs" fz={15}
                             variant="light"
                             color={hasActiveMembership ? 'red' : 'green'}
                             onClick={() => toggleMembership(household.id, hasActiveMembership)}
@@ -203,7 +203,7 @@ export default function AdminHouseholdsPage() {
                             {hasActiveMembership ? "Revoke Membership" : "Grant Membership"}
                           </Button>
                           <Button
-                            size="xs"
+                            size="xs" fz={15}
                             variant="outline"
                             color="red"
                             disabled={hasBoardMember}
