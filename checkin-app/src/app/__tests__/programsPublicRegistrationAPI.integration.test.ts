@@ -337,6 +337,63 @@ describe('Public Program Registration API Integration Tests', () => {
             }
         });
 
+        // GAP 3: the under-min case is covered above; these add the missing
+        // over-MAX rejection and an in-bounds success, so both ends of the
+        // public-register age gate (independent of the authenticated route) are
+        // exercised. exactAgeProgram is minAge 18 / maxAge 21, begin null -> age
+        // judged as of now, frozen here for determinism.
+        it('should reject a participant over the maximum age', async () => {
+            jest.useFakeTimers(FAKE_TIMER_OPTS);
+            try {
+                const req = new Request(`http://localhost:4000/api/programs/${exactAgeProgramId}/public-register`, {
+                    method: 'POST',
+                    headers: { 'x-forwarded-for': '203.0.113.20' },
+                    body: JSON.stringify({
+                        parents: [{ name: 'Over Max Parent', email: 'over-max-parent@example.com', phone: '555-200-1111' }],
+                        emergencyContact: { name: 'Aunt Sue', phone: '555-200-2222' },
+                        participants: [{ name: 'Old Kid', dob: '2000-06-01T12:00:00.000Z' }] // 25 now, max is 21
+                    })
+                });
+                const res = await POST(req as unknown as import("next/server").NextRequest, createParams(exactAgeProgramId) as unknown as never);
+                expect(res.status).toBe(400);
+                const data = await res.json();
+                expect(data.error).toMatch(/maximum age is 21/i);
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        it('should register a participant whose age is within the min/max bounds', async () => {
+            jest.useFakeTimers(FAKE_TIMER_OPTS);
+            const inBoundsEmail = 'in-bounds-age-parent@example.com';
+            try {
+                const req = new Request(`http://localhost:4000/api/programs/${exactAgeProgramId}/public-register`, {
+                    method: 'POST',
+                    headers: { 'x-forwarded-for': '203.0.113.21' },
+                    body: JSON.stringify({
+                        parents: [{ name: 'In Bounds Parent', email: inBoundsEmail, phone: '555-210-1111' }],
+                        emergencyContact: { name: 'Aunt Sue', phone: '555-210-2222' },
+                        participants: [{ name: 'Right Age Kid', dob: '2006-06-01T12:00:00.000Z' }] // 19 now, in [18,21]
+                    })
+                });
+                const res = await POST(req as unknown as import("next/server").NextRequest, createParams(exactAgeProgramId) as unknown as never);
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.success).toBe(true);
+            } finally {
+                jest.useRealTimers();
+            }
+
+            // Inline cleanup: this parent email isn't in the afterAll sweep list.
+            const p = await prisma.participant.findUnique({ where: { email: inBoundsEmail } });
+            if (p) {
+                await prisma.programParticipant.deleteMany({ where: { participant: { householdId: p.householdId } } });
+                await prisma.householdLead.deleteMany({ where: { participant: { householdId: p.householdId } } });
+                await prisma.participant.deleteMany({ where: { householdId: p.householdId } });
+                await prisma.household.delete({ where: { id: p.householdId as number } });
+            }
+        });
+
         it('should successfully register a family with correct PENDING status and return Shopify URL', async () => {
             const req = new Request(`http://localhost:4000/api/programs/${standardProgramId}/public-register`, {
                 method: 'POST',
