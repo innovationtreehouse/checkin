@@ -1,3 +1,7 @@
+// ponytail: default/fallback timezone. The editable org timezone lives in AppSettings
+// (lib/appSettings.ts) and is honored server-side (event creation, trends). Client-side
+// display helpers below still use this constant — wire them to AppSettings via a layout
+// provider if/when a second-region deploy needs client display in a non-Central zone.
 export const APP_TIMEZONE = 'America/Chicago';
 
 /**
