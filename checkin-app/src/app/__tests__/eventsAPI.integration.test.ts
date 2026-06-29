@@ -75,6 +75,9 @@ describe('Events API Integration Tests', () => {
             select: { householdId: true }
         })).map(p => p.householdId);
 
+        await prisma.auditLog.deleteMany({
+            where: { actorId: { in: [testAdminId, testUserId, testLeadMentorId] } }
+        });
         await prisma.participant.deleteMany({
             where: { id: { in: [testAdminId, testUserId, testLeadMentorId] } }
         });
@@ -156,6 +159,15 @@ describe('Events API Integration Tests', () => {
             expect(events[0].programId).toBe(testProgramId);
             expect(formatInTimeZone(events[0].start, 'America/Chicago', 'HH:mm:ss')).toBe('13:00:00');
             expect(formatInTimeZone(events[0].end, 'America/Chicago', 'HH:mm:ss')).toBe('15:00:00');
+
+            // Exactly one AuditLog row for this create, by the creating admin.
+            // Route logs a summary keyed to the program (affectedEntityId = programId), not per-event.
+            const logs = await prisma.auditLog.findMany({ where: { actorId: testAdminId, tableName: 'Event' } });
+            expect(logs.length).toBe(1);
+            expect(logs[0].action).toBe('CREATE');
+            expect(logs[0].affectedEntityId).toBe(testProgramId);
+            // newData is a JSON-stringified summary: { count, sample }.
+            expect(JSON.parse(logs[0].newData as string)).toMatchObject({ count: 1 });
         });
 
         it('should successfully create recurring events as a lead mentor', async () => {
