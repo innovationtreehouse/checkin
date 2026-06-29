@@ -67,6 +67,21 @@ function taReq(id: number, action: 'withdraw' | 'renew') {
     (r as unknown as { nextUrl: URL }).nextUrl = new URL(r.url);
     return r as never;
 }
+// Post-403 no-mutation probes for the trusted-adult IDOR cases. A 403 alone does
+// not prove the row was untouched — a guard that ran AFTER a write would still
+// 403. Re-read the latest review's status, the review count (renew must not open
+// a new one), and the TrustedAdult audit-row count (a write would log one).
+function latestReviewStatus(taId: number) {
+    return prisma.trustedAdultReview
+        .findFirst({ where: { trustedAdultId: taId }, orderBy: { id: 'desc' }, select: { status: true } })
+        .then((r) => r?.status);
+}
+function reviewCount(taId: number) {
+    return prisma.trustedAdultReview.count({ where: { trustedAdultId: taId } });
+}
+function taAuditCount(taId: number) {
+    return prisma.auditLog.count({ where: { tableName: 'TrustedAdult', affectedEntityId: taId } });
+}
 
 describe('Ownership-boundary authorization', () => {
     let leadA = 0, memberA = 0, hhA = 0;
@@ -234,13 +249,19 @@ describe('Ownership-boundary authorization', () => {
             anon();
             expect((await TA_WITHDRAW(taReq(taWithdrawId, 'withdraw'))).status).toBe(401);
         });
-        it('403 for a lead of a DIFFERENT household attacking by id (IDOR boundary)', async () => {
+        it('403 for a lead of a DIFFERENT household attacking by id (IDOR boundary) — and the review is untouched', async () => {
             as(leadB, { householdId: hhB });
+            const auditBefore = await taAuditCount(taWithdrawId);
             expect((await TA_WITHDRAW(taReq(taWithdrawId, 'withdraw'))).status).toBe(403);
+            expect(await latestReviewStatus(taWithdrawId)).toBe('PENDING_BOARD_REVIEW');
+            expect(await taAuditCount(taWithdrawId)).toBe(auditBefore);
         });
-        it('403 for a non-lead member of the owning household', async () => {
+        it('403 for a non-lead member of the owning household — and the review is untouched', async () => {
             as(memberA, { householdId: hhA });
+            const auditBefore = await taAuditCount(taWithdrawId);
             expect((await TA_WITHDRAW(taReq(taWithdrawId, 'withdraw'))).status).toBe(403);
+            expect(await latestReviewStatus(taWithdrawId)).toBe('PENDING_BOARD_REVIEW');
+            expect(await taAuditCount(taWithdrawId)).toBe(auditBefore);
         });
         it('200 for a lead of the owning household', async () => {
             as(leadA, { householdId: hhA });
@@ -254,13 +275,21 @@ describe('Ownership-boundary authorization', () => {
             anon();
             expect((await TA_RENEW(taReq(taRenewId, 'renew'))).status).toBe(401);
         });
-        it('403 for a lead of a DIFFERENT household attacking by id (IDOR boundary)', async () => {
+        it('403 for a lead of a DIFFERENT household attacking by id (IDOR boundary) — and no review is opened', async () => {
             as(leadB, { householdId: hhB });
+            const [reviewsBefore, auditBefore] = [await reviewCount(taRenewId), await taAuditCount(taRenewId)];
             expect((await TA_RENEW(taReq(taRenewId, 'renew'))).status).toBe(403);
+            expect(await latestReviewStatus(taRenewId)).toBe('APPROVED');
+            expect(await reviewCount(taRenewId)).toBe(reviewsBefore);
+            expect(await taAuditCount(taRenewId)).toBe(auditBefore);
         });
-        it('403 for a non-lead member of the owning household', async () => {
+        it('403 for a non-lead member of the owning household — and no review is opened', async () => {
             as(memberA, { householdId: hhA });
+            const [reviewsBefore, auditBefore] = [await reviewCount(taRenewId), await taAuditCount(taRenewId)];
             expect((await TA_RENEW(taReq(taRenewId, 'renew'))).status).toBe(403);
+            expect(await latestReviewStatus(taRenewId)).toBe('APPROVED');
+            expect(await reviewCount(taRenewId)).toBe(reviewsBefore);
+            expect(await taAuditCount(taRenewId)).toBe(auditBefore);
         });
         it('200 for a lead of the owning household', async () => {
             as(leadA, { householdId: hhA });
