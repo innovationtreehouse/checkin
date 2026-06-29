@@ -101,7 +101,7 @@ describe('Admin Roles API Integration Tests', () => {
              expect(data.error).toContain('Forbidden');
         });
 
-        it('should return all adult participants for a sysadmin', async () => {
+        it('should return all participants (youth flagged, dob hidden) for a sysadmin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testSysAdminId, sysadmin: true }
             });
@@ -117,7 +117,14 @@ describe('Admin Roles API Integration Tests', () => {
 
             const ids = data.participants.map((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.id);
             expect(ids).toContain(testTargetUserId);
-            expect(ids).not.toContain(testStudentId); // Students are filtered out
+            // Youth are returned (client filters via "Hide Youth"), flagged isYouth; dob is not leaked.
+            expect(ids).toContain(testStudentId);
+            const adult = data.participants.find((p: { id?: number }) => p.id === testTargetUserId);
+            const student = data.participants.find((p: { id?: number }) => p.id === testStudentId);
+            expect(adult.isYouth).toBe(false);
+            expect(student.isYouth).toBe(true);
+            expect(adult).not.toHaveProperty('dob');
+            expect(student).not.toHaveProperty('dob');
         });
     });
 
