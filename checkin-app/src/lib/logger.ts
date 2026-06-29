@@ -58,7 +58,7 @@ export async function logIntegrationError(source: string, error: unknown, contex
     try {
         const message = error instanceof Error ? error.message : String(error);
 
-        await prisma.integrationError.create({
+        await prisma.integrationErrorLog.create({
             data: {
                 source,
                 message,
@@ -69,7 +69,7 @@ export async function logIntegrationError(source: string, error: unknown, contex
         // 90-day TTL purge. ponytail: cheap to run on each (rare) write; no cron needed.
         const ninetyDaysAgo = new Date();
         ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-        await prisma.integrationError.deleteMany({
+        await prisma.integrationErrorLog.deleteMany({
             where: { createdAt: { lt: ninetyDaysAgo } },
         });
     } catch (loggingError) {

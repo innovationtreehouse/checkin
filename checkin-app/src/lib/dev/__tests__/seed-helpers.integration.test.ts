@@ -86,7 +86,7 @@ describe("dev seed-helpers (integration)", () => {
         const summary = await createCheckins(prisma);
         expect(summary).toMatch(/check-ins/);
         expect(await prisma.visit.count()).toBeGreaterThan(visitsBefore);
-        expect(await prisma.rawBadgeEvent.count()).toBeGreaterThan(0);
+        expect(await prisma.rawBadgeLog.count()).toBeGreaterThan(0);
     });
 
     it("reset (truncate + reseed) clears macro data, restores baseline, and preserves the ledger", async () => {

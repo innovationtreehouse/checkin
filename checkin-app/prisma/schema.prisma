@@ -114,7 +114,7 @@ model Participant {
   programsLed         Program[]                    @relation("ProgramLeadMentor")
   feePayments         FeePayment[]
   rsvps               RSVP[]
-  rawBadgeEvents      RawBadgeEvent[]
+  rawBadgeLogs        RawBadgeLog[]
   visits              Visit[]
   eventsConfirmedBy   Event[]                      @relation("EventAttendanceConfirmer")
 
@@ -738,7 +738,7 @@ model RSVP {
   @@id([eventId, participantId])
 }
 
-model RawBadgeEvent {
+model RawBadgeLog {
   /// @sensitivity:internal
   id            Int      @id @default(autoincrement())
   /// @sensitivity:internal
@@ -865,7 +865,7 @@ model ErrorLog {
   context   Json?
 }
 
-model SystemMetric {
+model SystemMetricLog {
   /// @sensitivity:internal
   id        Int      @id @default(autoincrement())
   /// @sensitivity:internal
@@ -879,7 +879,7 @@ model SystemMetric {
 /// Persisted external-integration / link failures (Shopify, etc.) surfaced on the
 /// System Status > Link Status tab. Previously these were only emailed to admins and
 /// never stored, so there was no view. Rolling log: rows auto-purge after 90 days.
-model IntegrationError {
+model IntegrationErrorLog {
   /// @sensitivity:internal
   id         Int       @id @default(autoincrement())
   /// @sensitivity:internal

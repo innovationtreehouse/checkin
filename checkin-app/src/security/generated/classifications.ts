@@ -230,7 +230,7 @@ export const classifications = {
         status: 'public',
         reminderSentAt: 'internal',
     },
-    RawBadgeEvent: {
+    RawBadgeLog: {
         id: 'internal',
         participantId: 'internal',
         time: 'personal',
@@ -289,13 +289,13 @@ export const classifications = {
         stack: 'internal',
         context: 'internal',
     },
-    SystemMetric: {
+    SystemMetricLog: {
         id: 'internal',
         timestamp: 'internal',
         metric: 'internal',
         value: 'internal',
     },
-    IntegrationError: {
+    IntegrationErrorLog: {
         id: 'internal',
         source: 'internal',
         message: 'internal',
@@ -327,7 +327,7 @@ export const relations = {
         programsLed: { model: 'Program', isList: true },
         feePayments: { model: 'FeePayment', isList: true },
         rsvps: { model: 'RSVP', isList: true },
-        rawBadgeEvents: { model: 'RawBadgeEvent', isList: true },
+        rawBadgeLogs: { model: 'RawBadgeLog', isList: true },
         visits: { model: 'Visit', isList: true },
         eventsConfirmedBy: { model: 'Event', isList: true },
         trustedAdultsAsCounterparty: { model: 'TrustedAdult', isList: true },
@@ -428,7 +428,7 @@ export const relations = {
         event: { model: 'Event', isList: false },
         participant: { model: 'Participant', isList: false },
     },
-    RawBadgeEvent: {
+    RawBadgeLog: {
         participant: { model: 'Participant', isList: false },
     },
     Visit: {
@@ -447,9 +447,9 @@ export const relations = {
     },
     ErrorLog: {
     },
-    SystemMetric: {
+    SystemMetricLog: {
     },
-    IntegrationError: {
+    IntegrationErrorLog: {
     },
     DevLedger: {
     },

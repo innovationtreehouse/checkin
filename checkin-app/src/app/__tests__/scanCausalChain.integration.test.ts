@@ -61,7 +61,7 @@ describe('Scan causal chain — last keyholder closes facility', () => {
 
     afterEach(async () => {
         await prisma.visit.deleteMany({ where: { participantId: { in: [keyholder.id, normal.id] } } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: { in: [keyholder.id, normal.id] } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: [keyholder.id, normal.id] } } });
     });
 
     afterAll(async () => {
@@ -75,7 +75,7 @@ describe('Scan causal chain — last keyholder closes facility', () => {
         expect((await inRes.json()).type).toBe('checkin');
 
         // Past the debounce window.
-        await prisma.rawBadgeEvent.updateMany({
+        await prisma.rawBadgeLog.updateMany({
             where: { participantId: keyholder.id },
             data: { time: new Date(Date.now() - 5000) },
         });
@@ -98,8 +98,8 @@ describe('Scan causal chain — last keyholder closes facility', () => {
         const kVisit = await prisma.visit.create({ data: { participantId: keyholder.id, arrived: new Date() } });
         await prisma.visit.create({ data: { participantId: normal.id, arrived: new Date() } });
         // Two keyholder badge events 5s apart (<=12s) → confirmed force-close.
-        await prisma.rawBadgeEvent.create({ data: { participantId: keyholder.id, time: new Date(Date.now() - 5000) } });
-        await prisma.rawBadgeEvent.create({ data: { participantId: keyholder.id, time: new Date() } });
+        await prisma.rawBadgeLog.create({ data: { participantId: keyholder.id, time: new Date(Date.now() - 5000) } });
+        await prisma.rawBadgeLog.create({ data: { participantId: keyholder.id, time: new Date() } });
 
         const res = await processCheckout(keyholder, kVisit.id, 'kiosk');
         const json = await res.json();
