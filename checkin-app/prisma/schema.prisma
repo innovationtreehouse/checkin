@@ -145,7 +145,15 @@ model Household {
   /// @sensitivity:public
   name    String?
   /// @sensitivity:personal
-  address String?
+  line1      String?
+  /// @sensitivity:personal
+  line2      String?
+  /// @sensitivity:personal
+  city       String?
+  /// @sensitivity:personal
+  state      String?
+  /// @sensitivity:personal
+  postalCode String?
 
   participants      Participant[]
   leads             HouseholdLead[]
@@ -501,7 +509,15 @@ model Corporation {
   /// @sensitivity:pii
   primaryEmail String?
   /// @sensitivity:personal
-  address      String?
+  line1      String?
+  /// @sensitivity:personal
+  line2      String?
+  /// @sensitivity:personal
+  city       String?
+  /// @sensitivity:personal
+  state      String?
+  /// @sensitivity:personal
+  postalCode String?
 
   leads   CorporationLead[]
   members CorporationMember[]

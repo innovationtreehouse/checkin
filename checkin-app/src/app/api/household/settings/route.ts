@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { upsertPrimaryContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
+import { normalizeAddressInput, pickAddress } from "@/lib/address";
 
 export const PATCH = withAuth(
     {},
@@ -11,7 +12,8 @@ export const PATCH = withAuth(
             const userId = auth.user.id;
 
             const body = await req.json();
-            const { emergencyContactName, emergencyContactPhone, address } = body;
+            const { emergencyContactName, emergencyContactPhone } = body;
+            const addressData = normalizeAddressInput(body);
 
             const user = await prisma.participant.findUnique({
                 where: { id: userId },
@@ -29,7 +31,7 @@ export const PATCH = withAuth(
 
             const updatedHousehold = await prisma.household.update({
                 where: { id: user.householdId },
-                data: { address: address !== undefined ? address : undefined },
+                data: addressData,
             });
 
             // Emergency contact is a separate entity; the settings form edits the
@@ -47,7 +49,7 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Household",
                     affectedEntityId: user.householdId,
-                    newData: JSON.stringify({ emergencyContactName, emergencyContactPhone, address })
+                    newData: JSON.stringify({ emergencyContactName, emergencyContactPhone, ...pickAddress(updatedHousehold) })
                 }
             });
 
