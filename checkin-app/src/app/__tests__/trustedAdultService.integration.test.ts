@@ -122,6 +122,26 @@ describe('Trusted Adults service', () => {
         expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', decision: 'APPROVE' });
     });
 
+    it('refuses a decider with a conflict of interest: own household, or being the counterparty', async () => {
+        // Same household as the disclosure (the lead) — can't decide their own household's review.
+        const ta = await discloseOne();
+        await expect(decideReview(ta.reviews[0].id, leadId, { decision: 'APPROVE', sharedNote: SHARED }))
+            .rejects.toMatchObject({ code: 'forbidden' });
+
+        // Board member is the counterparty (the trusted adult themselves) — also blocked,
+        // even though they live in a different household.
+        const selfTa = await createTrustedAdult({
+            householdId,
+            counterpartyParticipantId: boardId,
+            counterpartyName: 'Boardie',
+            counterpartyContact: 'boardie@example.com',
+            familyContext: 'A board member who is also our trusted adult.',
+            disclosedById: leadId,
+        });
+        await expect(decideReview(selfTa.reviews[0].id, boardId, { decision: 'DENY' }))
+            .rejects.toMatchObject({ code: 'forbidden' });
+    });
+
     it('REQUEST_INFO moves to PENDING_SUBJECT_ACTION and emails the family', async () => {
         const ta = await discloseOne();
         const out = await decideReview(ta.reviews[0].id, boardId, { decision: 'REQUEST_INFO', note: 'Please clarify dates.' });

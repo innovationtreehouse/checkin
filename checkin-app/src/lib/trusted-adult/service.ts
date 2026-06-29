@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { logger } from "@/lib/logger";
+import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
 
 type TxClient = Prisma.TransactionClient;
 
@@ -190,8 +191,29 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
         throw new TrustedAdultError("bad_input", "Unknown decision.");
     }
 
-    const head = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId }, select: { trustedAdultId: true } });
+    const head = await prisma.trustedAdultReview.findUnique({
+        where: { id: reviewId },
+        select: {
+            trustedAdultId: true,
+            trustedAdult: { select: { householdId: true, counterpartyParticipantId: true } },
+        },
+    });
     if (!head) throw new TrustedAdultError("not_found", "Review not found.");
+
+    // Conflict of interest: a board member may not decide a trusted-adult review for
+    // their own household, nor one where they are the counterparty. The UI disables the
+    // buttons off the same rule; this is the real enforcement — a direct POST bypasses the UI.
+    const me = await prisma.participant.findUnique({ where: { id: boardMemberId }, select: { householdId: true } });
+    if (
+        isTrustedAdultConflict({
+            actorParticipantId: boardMemberId,
+            actorHouseholdId: me?.householdId,
+            taHouseholdId: head.trustedAdult.householdId,
+            taCounterpartyParticipantId: head.trustedAdult.counterpartyParticipantId,
+        })
+    ) {
+        throw new TrustedAdultError("forbidden", "You can't decide your own household's trusted-adult review — another board member must.");
+    }
 
     // Lock the parent TA, then re-read the review under the lock and check its phase.
     // Without this two board members both read PENDING_BOARD_REVIEW, both update, and
