@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Badge, Button, Card, Center, Container, Group, Loader, SimpleGrid, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Center, Container, Loader, SimpleGrid, Text, Title } from '@mantine/core';
 import { formatDate } from '@/lib/time';
 
 type UserProgram = {
@@ -61,12 +61,7 @@ export default function MyProgramsDashboard() {
 
   return (
     <Container size="lg" pb="md">
-      <Group justify="space-between" align="center" mb="md" wrap="wrap">
-        <Title order={1}>My Programs</Title>
-        <Button variant="default" onClick={() => router.push('/programs')}>
-          Browse More Programs
-        </Button>
-      </Group>
+      <Title order={1} mb="md">My Programs</Title>
 
       <Text c="dimmed" mb="lg">
         Manage the programs you are currently enrolled in.
