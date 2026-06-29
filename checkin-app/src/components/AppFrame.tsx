@@ -151,8 +151,9 @@ function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge | null {
     case '/programs':
       return gray(counts.activePrograms, `${counts.activePrograms} active programs`);
     case '/membership-ops':
-      // Pending membership applications awaiting board review.
-      return green(counts.admin ? counts.admin.membership : 0, 'Pending membership reviews');
+      // Pending membership applications awaiting board review, plus households
+      // with no lead that the board needs to fix.
+      return green(counts.admin ? counts.admin.membership + counts.admin.brokenHouseholds : 0, 'Pending membership reviews and leadless households');
     case '/membership-audit': {
       // Gray: gaps the household must close, not the board — missing emergency
       // contacts plus accounts created at registration but never claimed.

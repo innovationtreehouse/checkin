@@ -8,23 +8,26 @@ export const GET = withAuth(
     { roles: ['sysadmin', 'boardMember'] },
     async () => {
         try {
-            // Households with at least one participant that has an email but no
-            // Google sign-in yet (account created at registration, never claimed).
+            // A household is "claimed" once any of its household leads has signed in
+            // with Google. We can't expect every member (e.g. students) to ever log
+            // in, so claiming hinges on leads only. Unclaimed = no lead has signed in
+            // yet, but at least one lead has an email we can chase.
             const households = await prisma.household.findMany({
                 where: {
-                    participants: { some: { email: { not: null }, googleId: null } }
+                    leads: { some: { participant: { email: { not: null } } } },
+                    NOT: { leads: { some: { participant: { googleId: { not: null } } } } }
                 },
-                include: { participants: true }
+                include: { leads: { include: { participant: true } } }
             });
 
             const result = households.map(h => ({
                 id: h.id,
                 name: h.name
-                    || h.participants.find(p => p.name)?.name
+                    || h.leads.find(l => l.participant.name)?.participant.name
                     || `Household #${h.id}`,
-                hasClaimedMember: h.participants.some(p => p.googleId !== null),
-                members: h.participants
-                    .filter(p => p.email !== null && p.googleId === null)
+                members: h.leads
+                    .map(l => l.participant)
+                    .filter(p => p.email !== null)
                     .map(p => ({ id: p.id, name: p.name, email: p.email }))
             }));
 
