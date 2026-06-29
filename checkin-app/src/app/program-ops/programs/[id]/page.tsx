@@ -91,6 +91,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState<'general' | 'roster' | 'events'>('general');
 
@@ -211,7 +212,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         })
       });
       if (res.ok) {
-        setMessage("Settings updated successfully.");
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 3000);
         fetchProgram();
       } else {
         const data = await res.json();
@@ -471,9 +473,12 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                     ]} />
                 </SimpleGrid>
 
-                <Button type="submit" color="green" disabled={saving || !leadMentorIdInput} loading={saving} style={{ alignSelf: 'flex-start' }}>
-                  Save Settings
-                </Button>
+                <Group gap="sm">
+                  <Button type="submit" color="green" disabled={saving || !leadMentorIdInput} loading={saving}>
+                    Save Settings
+                  </Button>
+                  {justSaved && <Text c="green" fw={500}>✓ Saved</Text>}
+                </Group>
               </Stack>
             </form>
           </Tabs.Panel>

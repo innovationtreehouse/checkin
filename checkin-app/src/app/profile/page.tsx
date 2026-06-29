@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Anchor, Button, Card, Center, Container, Group, Loader, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Anchor, Button, Card, Center, Group, Loader, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
+import { PageContainer } from '@/components/ui/PageContainer';
 import { formatDate, formatTime, formatDateTime } from '@/lib/time';
 
 type ProfileVisit = {
@@ -107,8 +108,8 @@ export default function ProfilePage() {
   if (!session) return null; // Fallback while router redirects
 
   return (
-    <Container size="sm" pb="md">
-      <Stack>
+    <PageContainer>
+      <Stack maw={620}>
         <Card withBorder radius="md" padding="lg">
           <Title order={1}>My Profile</Title>
           <Text c="dimmed" mb="lg">Manage your personal information and contact details.</Text>
@@ -178,6 +179,6 @@ export default function ProfilePage() {
           )}
         </Card>
       </Stack>
-    </Container>
+    </PageContainer>
   );
 }
