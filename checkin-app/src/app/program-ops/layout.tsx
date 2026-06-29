@@ -1,17 +1,36 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useEffect } from "react";
 import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { PROGRAM_NAV_LINKS } from "@/lib/programNav";
-import { useRequireRole } from "@/hooks/useRequireRole";
+
+// Program/session editing is reachable by lead mentors (program.leadMentorId, not a role flag),
+// so those pages bypass the sysadmin/boardMember layout gate and self-authorize.
+const isProgramFlowPath = (pathname: string | null) =>
+  !!(pathname?.match(/^\/program-ops\/programs\/\d+/) ||
+    pathname?.match(/^\/program-ops\/sessions\/(\d+|new)/));
 
 export default function ProgramOpsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
+  const { data: session, status } = useSession();
+  const isProgramFlow = isProgramFlowPath(pathname);
 
-  if (loading) {
+  const user = session?.user;
+  const isGlobalAdmin = !!(user?.sysadmin || user?.boardMember);
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/");
+    } else if (status === "authenticated" && !isGlobalAdmin && !isProgramFlow) {
+      router.push("/");
+    }
+  }, [status, isGlobalAdmin, isProgramFlow, router]);
+
+  if (status === "loading") {
     return (
       <Center mih="60vh">
         <Stack align="center">
@@ -22,7 +41,10 @@ export default function ProgramOpsLayout({ children }: { children: React.ReactNo
     );
   }
 
-  if (!ready) return null;
+  if (!session || (!isGlobalAdmin && !isProgramFlow)) return null;
+
+  // Lead-mentor editing pages render chrome-less (no section tabs), as they did under /admin.
+  if (isProgramFlow) return <>{children}</>;
 
   // Active tab = the longest nav href that prefixes the current route (null on the hub).
   const active =

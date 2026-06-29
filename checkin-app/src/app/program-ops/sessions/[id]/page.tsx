@@ -181,7 +181,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         body: JSON.stringify({ action: 'cancel', applyToFuture })
       });
       if (res.ok) {
-        router.push(eventData?.program?.id ? `/admin/programs/${eventData.program.id}` : '/program-ops/programs');
+        router.push(eventData?.program?.id ? `/program-ops/programs/${eventData.program.id}` : '/program-ops/programs');
       } else {
         const data = await res.json();
         setMessage(data.error || "Failed to cancel event.");
@@ -306,7 +306,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
             <Title order={1}>{eventData.name}</Title>
             <Text c="dimmed" fz="lg">{formatDateTime(eventData.start)} - {formatDateTime(eventData.end)}</Text>
           </div>
-          <Button variant="default" onClick={() => router.push(eventData.program?.id ? `/admin/programs/${eventData.program.id}` : '/program-ops/programs')}>
+          <Button variant="default" onClick={() => router.push(eventData.program?.id ? `/program-ops/programs/${eventData.program.id}` : '/program-ops/programs')}>
             ← Back to Program
           </Button>
         </Group>

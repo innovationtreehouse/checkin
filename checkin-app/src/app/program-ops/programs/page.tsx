@@ -58,7 +58,7 @@ export default function AdminProgramsIndex() {
               withBorder
               radius="md"
               padding="md"
-              onClick={() => router.push(`/admin/programs/${program.id}`)}
+              onClick={() => router.push(`/program-ops/programs/${program.id}`)}
               style={{ cursor: 'pointer' }}
             >
               <Group justify="space-between" wrap="nowrap">

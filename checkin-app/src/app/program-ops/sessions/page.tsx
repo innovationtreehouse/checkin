@@ -22,7 +22,7 @@ export default function AdminEventsIndex() {
     {
       title: "Create New Event",
       description: "Schedule a one-off event or manual session.",
-      link: "/admin/events/new",
+      link: "/program-ops/sessions/new",
       icon: "➕",
     },
   ];
