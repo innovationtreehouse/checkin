@@ -15,6 +15,7 @@
 import { GET } from '@/app/api/nav/todo-counts/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { ORG_DOMAIN } from '@/lib/config';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -195,5 +196,28 @@ describe('Nav todo-counts API', () => {
         expect(await boardMembershipCount()).toBe(before + 1);
 
         await prisma.membershipProcess.deleteMany({ where: { id: { in: [...reviewerProcs.map((p) => p.id), blocked.id] } } });
+    });
+
+    it('counts member families but excludes org-email-only (staff) households', async () => {
+        const memberFamilies = async () => {
+            const res = await callAs({ id: boardId, householdId: householdBId, boardMember: true });
+            return (await res.json()).admin.memberFamilies as number;
+        };
+        const before = await memberFamilies();
+
+        // Staff household: only an org-email participant → must NOT count.
+        const staff = await prisma.participant.create({
+            data: { email: `staff-${TAG}@${ORG_DOMAIN}`, name: 'Staff', household: { create: {} } },
+        });
+        expect(await memberFamilies()).toBe(before);
+
+        // Member family: a non-org email → +1.
+        const member = await prisma.participant.create({
+            data: { email: `family-${TAG}@example.com`, name: 'Family', household: { create: {} } },
+        });
+        expect(await memberFamilies()).toBe(before + 1);
+
+        await prisma.participant.deleteMany({ where: { id: { in: [staff.id, member.id] } } });
+        await prisma.household.deleteMany({ where: { id: { in: [staff.householdId, member.householdId] } } });
     });
 });

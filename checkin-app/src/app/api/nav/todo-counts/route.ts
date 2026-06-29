@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import type { MembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
 import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/service";
+import { ORG_DOMAIN } from "@/lib/config";
 
 /**
  * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
@@ -55,7 +56,10 @@ export type TodoCounts = {
     // every in-flight (non-ACTIVE) application, the gray count shown on the
     // Applications tab — mirrors what /api/admin/membership lists.
     // `brokenHouseholds` = households with no lead at all (green).
-    admin?: { membership: number; applicationsTotal: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number };
+    // `memberFamilies` = total member families (gray), shown on the Manage Memberships tab:
+    // households with >=1 non-org-email (or null-email) participant. Staff households hold
+    // only the org-email lead, so they fall out.
+    admin?: { membership: number; applicationsTotal: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number };
 };
 
 // What a member-actionable membership process means, in plain terms.
@@ -183,7 +187,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // ---- Admin surface (board's own queue) — only for board/sysadmin ----
     if (user.sysadmin || user.boardMember) {
-        const [membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds] = await Promise.all([
+        const [membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies] = await Promise.all([
             prisma.membershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -208,8 +212,18 @@ export const GET = withAuth({}, async (_req, auth) => {
             prisma.household.count({
                 where: { leads: { none: {} } },
             }),
+            // Member families: households with >=1 non-org-email participant. A null email is
+            // not an org address, but Prisma's `NOT endsWith` skips null rows — list it
+            // explicitly so null-email members (e.g. children) count.
+            prisma.household.count({
+                where: {
+                    participants: {
+                        some: { OR: [{ email: null }, { NOT: { email: { endsWith: `@${ORG_DOMAIN}` } } }] },
+                    },
+                },
+            }),
         ]);
-        result.admin = { membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds };
+        result.admin = { membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies };
     }
 
     return NextResponse.json(result);

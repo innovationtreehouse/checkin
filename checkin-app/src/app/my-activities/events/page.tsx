@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Center, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
-import { formatDateTime } from '@/lib/time';
+import { formatDateTime, formatTime } from '@/lib/time';
 
 type RsvpStatus = "ATTENDING" | "NOT_ATTENDING" | "MAYBE";
 
@@ -103,6 +103,7 @@ export default function ParticipantEventsDashboard() {
           {events.map((ev) => {
             const userRSVP = ev.rsvp;
             const startStr = formatDateTime(ev.start, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const endStr = formatTime(ev.end, { hour: '2-digit', minute: '2-digit' });
 
             return (
               <Card key={`${ev.id}-${ev.participant.id}`} withBorder radius="md" padding="lg">
@@ -115,7 +116,7 @@ export default function ParticipantEventsDashboard() {
                       <Text size="xs" c="cyan" fw={600} tt="uppercase">{ev.program.name}</Text>
                     )}
                     <Title order={4}>{ev.name}</Title>
-                    <Text size="sm" c="dimmed">📅 {startStr}</Text>
+                    <Text size="sm" c="dimmed">📅 {startStr} – {endStr}</Text>
                   </div>
 
                   {ev.description && (

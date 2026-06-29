@@ -107,6 +107,7 @@ export default function CreateProgramPage() {
             {/* Lead Mentor Selector */}
             <EntityPicker<ParticipantOption>
               label="Lead Mentor / Program Coordinator"
+              required
               description="The lead mentor will be able to manage this program's roster and events."
               placeholder="Search by name or email..."
               selectedId={leadMentorId || null}

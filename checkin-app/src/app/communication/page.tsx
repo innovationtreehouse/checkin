@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Card, Center, Checkbox, Container, Loader, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Card, Center, Checkbox, Loader, Stack, Text, Title } from '@mantine/core';
+import { PageContainer } from '@/components/ui/PageContainer';
 
 export default function CommunicationPage() {
   const { data: session, status } = useSession();
@@ -74,8 +75,8 @@ export default function CommunicationPage() {
   if (!session) return null; // Fallback while router redirects
 
   return (
-    <Container size="sm" pb="md">
-      <Card withBorder radius="md" padding="lg">
+    <PageContainer>
+      <Card withBorder radius="md" padding="lg" maw={620}>
         <Title order={1}>Communication</Title>
         <Text c="dimmed" mb="lg">Manage your email and notification preferences.</Text>
 
@@ -107,6 +108,6 @@ export default function CommunicationPage() {
 
         {message && <Alert color={message.includes('success') ? 'green' : 'red'} mt="md">{message}</Alert>}
       </Card>
-    </Container>
+    </PageContainer>
   );
 }
