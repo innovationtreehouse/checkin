@@ -180,7 +180,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
       {brand.logo ? (
         <Image src={brand.logo.src} alt={brand.logo.alt} width={brand.logo.width} height={brand.logo.height} priority />
       ) : (
-        <Title order={3} c={`${brand.nav.accent}.7`}>
+        <Title order={3} tt="lowercase" c={`${brand.nav.accent}.7`}>
           {brand.appName}
         </Title>
       )}

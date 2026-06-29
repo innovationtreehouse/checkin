@@ -150,7 +150,7 @@ export default function Home() {
     <Container size="sm" py="xl">
       <Card withBorder shadow="sm" radius="md" padding="xl">
         <Stack align="center" gap="xs" mb="lg">
-          <Title order={1}>{isDevInstance ? 'CMI-dev' : 'CheckMeIn'}</Title>
+          <Title order={1} tt="lowercase">{isDevInstance ? 'CMI-dev' : 'CheckMeIn'}</Title>
           <Text c="dimmed" size="lg">
             The next-generation facility check-in system.
           </Text>
