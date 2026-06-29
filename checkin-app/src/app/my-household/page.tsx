@@ -403,6 +403,9 @@ export default function HouseholdPage() {
                 <Title order={5} c="blue">Primary Address</Title>
                 <Text size="sm" c="dimmed" mb="sm">The main address associated with this household.</Text>
                 <TextInput label="Address" value={address} onChange={(e) => setAddress(e.currentTarget.value)} placeholder="123 Main St, City, ST 12345" />
+                <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="md">
+                  Update Household Settings
+                </Button>
               </Card>
 
               <Card withBorder radius="md" padding="md" id="emergency-contact" style={{ scrollMarginTop: 80 }}>
@@ -478,9 +481,6 @@ export default function HouseholdPage() {
                 <TrustedAdultPanel />
               </Card>
             </Stack>
-            <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="lg">
-              Update Household Settings
-            </Button>
           </Card>
         )}
 
