@@ -129,6 +129,7 @@ export default function PrintBadgesPage() {
     {
       header: (
         <Checkbox
+          radius={2}
           checked={participants.length > 0 && selectedIds.size === participants.length}
           onChange={toggleAll}
           aria-label="Select all"
@@ -136,6 +137,7 @@ export default function PrintBadgesPage() {
       ),
       render: (p) => (
         <Checkbox
+          radius={2}
           checked={selectedIds.has(p.id)}
           onChange={() => toggleSelection(p.id)}
           aria-label={`Select ${p.name ?? p.id}`}
