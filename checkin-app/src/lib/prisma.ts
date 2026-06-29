@@ -12,7 +12,12 @@ const poolMax = process.env.NODE_ENV === 'test'
     ? Number(process.env.TEST_DB_POOL_MAX ?? 1)
     : 10
 const pool = new Pool({ connectionString, max: poolMax })
-const adapter = new PrismaPg(pool)
+// In tests every file gets a fresh module registry, so each builds its own pool.
+// Those pools must close on $disconnect or they leak connections until the worker
+// process dies (parallel runs exhaust max_connections; --runInBand crashes). The
+// pg adapter only ends an *external* pool when told to, so opt in under test. Prod
+// keeps its single long-lived pool untouched.
+const adapter = new PrismaPg(pool, process.env.NODE_ENV === 'test' ? { disposeExternalPool: true } : undefined)
 
 const prismaClientSingleton = () => {
     return new PrismaClient({ adapter })
