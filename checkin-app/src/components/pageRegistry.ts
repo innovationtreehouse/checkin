@@ -42,7 +42,7 @@ export const PAGES: PageEntry[] = [
   { href: '/trusted-adults', label: 'Trusted Adults', section: 'Personal', visible: SIGNED_IN },
 
   // Attendance — any signed-in member
-  { href: '/attendance', label: 'Attendance', section: 'Attendance', visible: SIGNED_IN },
+  { href: '/attendance/current', label: 'Attendance', section: 'Attendance', visible: SIGNED_IN },
   { href: '/attendance/manual', label: 'Manual Check-In', section: 'Attendance', visible: SIGNED_IN },
   { href: '/attendance/certifications', label: 'Certifications', section: 'Attendance', visible: SIGNED_IN },
 
@@ -117,4 +117,5 @@ export const REGISTRY_EXCLUDED: string[] = [
   '/access-denied',          // error surface, not a destination
   '/signin',                 // auth surface
   '/settings',               // redirects to /settings/membership
+  '/attendance',             // redirects to /attendance/current
 ];
