@@ -49,6 +49,9 @@ export const PAGES: PageEntry[] = [
   // Programs — public
   { href: '/programs', label: 'Programs', section: 'Programs', visible: PUBLIC },
 
+  // Communication — signed-in member
+  { href: '/communication', label: 'Communication', section: 'Personal', keywords: 'notifications email preferences settings', visible: SIGNED_IN },
+
   // Safety — board or keyholder
   { href: '/safety', label: 'Safety', section: 'Safety', visible: SAFETY },
   { href: '/safety/board-contacts', label: 'Board Contacts', section: 'Safety', visible: SAFETY },
