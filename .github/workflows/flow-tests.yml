@@ -1,0 +1,39 @@
+name: Flow tests
+
+# Exercises real user journeys end-to-end over HTTP against a dockerized
+# DEVELOPMENT server (deploy/docker-compose.flow.yml). See AGENTS.md → Flow tests.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flow-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flow:
+    name: User-journey flow tests (docker dev server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Brings up Postgres + the dev server, installs/seeds, and blocks on their
+      # healthchecks (--wait). start_period in the compose file covers npm ci + seed.
+      - name: Start dockerized dev server + DB
+        run: docker compose -f deploy/docker-compose.flow.yml up -d --wait --wait-timeout 600
+
+      - name: Run flow tests (inside the app container)
+        run: docker compose -f deploy/docker-compose.flow.yml exec -T app sh -lc "cd checkin-app && npm run test:flow"
+
+      - name: App logs on failure
+        if: failure()
+        run: docker compose -f deploy/docker-compose.flow.yml logs --no-color --tail 300 app
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f deploy/docker-compose.flow.yml down -v
