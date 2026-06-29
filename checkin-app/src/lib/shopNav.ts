@@ -22,9 +22,9 @@ export interface ShopNavLink {
 }
 
 export const SHOP_NAV_LINKS: ShopNavLink[] = [
-  { name: "Manage Tools & Certifications", href: "/shop/manage", icon: "📋", visible: (r) => r.isCertifier },
-  { name: "Create Tool", href: "/shop/create", icon: "✨", visible: (r) => r.isAdmin },
-  { name: "Live Certifications Center", href: "/shop/live", icon: "📊", visible: () => true },
+  { name: "Manage Tools & Certifications", href: "/shop-ops/manage", icon: "📋", visible: (r) => r.isCertifier },
+  { name: "Create Tool", href: "/shop-ops/create", icon: "✨", visible: (r) => r.isAdmin },
+  { name: "Live Certifications Center", href: "/shop-ops/live", icon: "📊", visible: () => true },
 ];
 
 export function shopRoles(user: Session["user"] | undefined): ShopRoles {
@@ -36,5 +36,5 @@ export function shopRoles(user: Session["user"] | undefined): ShopRoles {
 
 /** Landing tab for /shop: Manage for certifiers (incl. admins), else Live. */
 export function defaultShopTab(roles: ShopRoles): string {
-  return roles.isCertifier ? "/shop/manage" : "/shop/live";
+  return roles.isCertifier ? "/shop-ops/manage" : "/shop-ops/live";
 }

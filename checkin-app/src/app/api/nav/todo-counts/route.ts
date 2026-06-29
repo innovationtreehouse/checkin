@@ -123,7 +123,7 @@ export const GET = withAuth({}, async (_req, auth) => {
         ]);
 
         if (!!hh && hh.emergencyContacts.length === 0) {
-            householdTodos.push({ key: "emergency-contact", label: "Add a household emergency contact", href: "/household#emergency-contact" });
+            householdTodos.push({ key: "emergency-contact", label: "Add a household emergency contact", href: "/my-household#emergency-contact" });
         }
         for (const p of membershipProcs) {
             householdTodos.push({

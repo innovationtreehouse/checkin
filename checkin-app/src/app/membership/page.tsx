@@ -435,7 +435,7 @@ export default function MembershipPage() {
           </Text>
           <Text c="dimmed" mb="md">
             Did anything change — new members, address, phone, or email?{" "}
-            <Anchor component={Link} href="/household">Update your household details first</Anchor>.
+            <Anchor component={Link} href="/my-household">Update your household details first</Anchor>.
           </Text>
           <Button color="green" disabled={saving} loading={saving} onClick={renew}>Renew now</Button>
         </Card>
