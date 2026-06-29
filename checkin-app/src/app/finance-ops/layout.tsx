@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { PageContainer } from "@/components/ui/PageContainer";
 import { FINANCE_NAV_LINKS } from "@/lib/financeNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
@@ -28,7 +29,7 @@ export default function FinanceOpsLayout({ children }: { children: React.ReactNo
   const active = FINANCE_NAV_LINKS.find((link) => pathname === link.href)?.href ?? null;
 
   return (
-    <>
+    <PageContainer>
       <Tabs
         value={active}
         onChange={(value) => {
@@ -45,6 +46,6 @@ export default function FinanceOpsLayout({ children }: { children: React.ReactNo
         </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
-    </>
+    </PageContainer>
   );
 }

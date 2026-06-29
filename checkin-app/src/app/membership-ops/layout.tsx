@@ -9,6 +9,7 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import type { TodoCounts } from "@/app/api/nav/todo-counts/route";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { PageContainer } from "@/components/ui/PageContainer";
 import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 
 /** Informational count for a Membership Ops nav link, or 0 when none / unknown. */
@@ -56,7 +57,8 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
       .find((l) => pathname === l.href || pathname.startsWith(l.href + "/"))?.href ?? null;
 
   return (
-    <Stack>
+    <PageContainer>
+      <Stack>
       <Tabs value={activeTab} onChange={(value) => { if (value && confirmNav()) router.push(value); }}>
         <ScrollableTabsList>
           {MEMBERSHIP_OPS_NAV_LINKS.map((link) => {
@@ -97,6 +99,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
         </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
-    </Stack>
+      </Stack>
+    </PageContainer>
   );
 }

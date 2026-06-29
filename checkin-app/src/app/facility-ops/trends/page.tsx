@@ -88,7 +88,7 @@ export default function ParticipationTrendsPage() {
 
   return (
     <Stack>
-      <Text c="dimmed">Facility usage metrics across time periods and programs.</Text>
+      <Text c="dimmed">Facility usage metrics across time periods and programs. Only counts completed visits.</Text>
 
       <Group justify="space-between" wrap="wrap">
         <SegmentedControl

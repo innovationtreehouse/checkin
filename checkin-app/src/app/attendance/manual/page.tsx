@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Button, Card, Center, Container, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Card, Center, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
+import { PageContainer } from "@/components/ui/PageContainer";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { AttendanceTabs } from "../AttendanceTabs";
 
@@ -45,7 +46,7 @@ export default function ManualAttendance() {
   if (!ready) return null;
 
   return (
-    <Container size="sm" pb="md">
+    <PageContainer>
       <AttendanceTabs />
       <Card withBorder radius="md" padding="lg">
         <Title order={1} mb="md">Manual Time Entry</Title>
@@ -79,6 +80,6 @@ export default function ManualAttendance() {
           </Stack>
         </form>
       </Card>
-    </Container>
+    </PageContainer>
   );
 }

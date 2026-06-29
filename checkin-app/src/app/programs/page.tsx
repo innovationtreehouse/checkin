@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Center, Checkbox, Divider, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { formatDate } from '@/lib/time';
+import { PageContainer } from '@/components/ui/PageContainer';
 
 type ProgramSummary = {
   id: number;
@@ -58,7 +59,8 @@ export default function PublicProgramsDirectory() {
   }
 
   return (
-    <Stack>
+    <PageContainer>
+      <Stack>
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <div>
           <Title order={1}>Programs Directory</Title>
@@ -140,6 +142,8 @@ export default function PublicProgramsDirectory() {
           })}
         </SimpleGrid>
       )}
-    </Stack>
+      </Stack>
+    </PageContainer>
   );
 }
+

@@ -41,6 +41,18 @@ export default function TodoCard() {
                         href={item.href}
                         underline="never"
                         c="inherit"
+                        onClick={(e) => {
+                            // Same-page hash link: if the URL is already at that hash,
+                            // Next/the browser fires no navigation, so the second click
+                            // wouldn't scroll. Scroll the target ourselves when it's
+                            // already in the DOM (cross-page links fall through to Link).
+                            const hash = item.href.split("#")[1];
+                            const el = hash && document.getElementById(hash);
+                            if (el) {
+                                e.preventDefault();
+                                el.scrollIntoView({ behavior: "smooth" });
+                            }
+                        }}
                     >
                         <Group justify="space-between" wrap="nowrap" gap="sm">
                             <Text size="sm">{item.label}</Text>

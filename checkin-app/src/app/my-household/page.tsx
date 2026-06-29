@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Center, Checkbox, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { PageContainer } from '@/components/ui/PageContainer';
 import { formatDate, formatVisitRange, formatDateTime, calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import TodoCard from '@/components/TodoCard';
@@ -131,6 +132,26 @@ export default function HouseholdPage() {
     }
   };
 
+  // Receipts toggle persists immediately — no Update button. Optimistic flip,
+  // revert on failure so the checkbox never lies about what's in the DB.
+  const handleToggleReceipts = async (checked: boolean) => {
+    setSettings({ ...settings, emailDependentCheckins: checked });
+    try {
+      const profileRes = await fetch('/api/profile');
+      const profileData = await profileRes.json();
+      const currentSettings = profileData.profile?.notificationSettings || {};
+      const res = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notificationSettings: { ...currentSettings, emailDependentCheckins: checked } })
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setSettings({ ...settings, emailDependentCheckins: !checked });
+      setMessage("Failed to update receipt setting.");
+    }
+  };
+
   const handleSaveContact = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingContact(true);
@@ -149,6 +170,7 @@ export default function HouseholdPage() {
         setContactForm(blankContactForm);
         setShowContactForm(false);
         fetchContacts();
+        notifyNavRefresh();
       } else {
         setContactError(data.error || "Failed to save emergency contact.");
       }
@@ -167,6 +189,7 @@ export default function HouseholdPage() {
       if (res.ok) {
         setMessage("Emergency contact removed.");
         fetchContacts();
+        notifyNavRefresh();
       } else {
         setContactError(data.error || "Failed to remove emergency contact.");
       }
@@ -289,7 +312,7 @@ export default function HouseholdPage() {
   });
 
   return (
-    <Container size="md" pb="md">
+    <PageContainer>
       <Stack>
         <TodoCard />
         <Card withBorder radius="md" padding="lg">
@@ -403,34 +426,27 @@ export default function HouseholdPage() {
 
         {household && viewerIsLead && (
           <Card withBorder radius="md" padding="lg">
-            <Title order={3} mb="md">Household Settings</Title>
-            <Stack>
-              <Checkbox
-                checked={settings.emailDependentCheckins}
-                onChange={(e) => setSettings({ ...settings, emailDependentCheckins: e.currentTarget.checked })}
-                label="Email me realtime receipts when my dependents check in/out"
-              />
+            <Title order={3} c="blue" mb="md">Household Address</Title>
+            <Text size="sm" c="dimmed" mb="sm">The main address associated with this household.</Text>
+            <Stack gap="xs">
+              <TextInput label="Street Address" value={address.line1 ?? ""} onChange={(e) => setAddress({ ...address, line1: e.currentTarget.value })} placeholder="123 Main St" />
+              <TextInput label="Apt / Suite (optional)" value={address.line2 ?? ""} onChange={(e) => setAddress({ ...address, line2: e.currentTarget.value })} placeholder="Apt 4B" />
+              <SimpleGrid cols={{ base: 1, sm: 3 }}>
+                <TextInput label="City" value={address.city ?? ""} onChange={(e) => setAddress({ ...address, city: e.currentTarget.value })} />
+                <TextInput label="State" maxLength={2} value={address.state ?? ""} onChange={(e) => setAddress({ ...address, state: e.currentTarget.value })} placeholder="TX" />
+                <TextInput label="ZIP" value={address.postalCode ?? ""} onChange={(e) => setAddress({ ...address, postalCode: e.currentTarget.value })} placeholder="78701" />
+              </SimpleGrid>
+            </Stack>
+            <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="md">
+              Update Address
+            </Button>
+          </Card>
+        )}
 
-              <Card withBorder radius="md" padding="md">
-                <Title order={5} c="blue">Primary Address</Title>
-                <Text size="sm" c="dimmed" mb="sm">The main address associated with this household.</Text>
-                <Stack gap="xs">
-                  <TextInput label="Street Address" value={address.line1 ?? ""} onChange={(e) => setAddress({ ...address, line1: e.currentTarget.value })} placeholder="123 Main St" />
-                  <TextInput label="Apt / Suite (optional)" value={address.line2 ?? ""} onChange={(e) => setAddress({ ...address, line2: e.currentTarget.value })} placeholder="Apt 4B" />
-                  <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                    <TextInput label="City" value={address.city ?? ""} onChange={(e) => setAddress({ ...address, city: e.currentTarget.value })} />
-                    <TextInput label="State" maxLength={2} value={address.state ?? ""} onChange={(e) => setAddress({ ...address, state: e.currentTarget.value })} placeholder="TX" />
-                    <TextInput label="ZIP" value={address.postalCode ?? ""} onChange={(e) => setAddress({ ...address, postalCode: e.currentTarget.value })} placeholder="78701" />
-                  </SimpleGrid>
-                </Stack>
-                <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="md">
-                  Update Household Settings
-                </Button>
-              </Card>
-
-              <Card withBorder radius="md" padding="md" id="emergency-contact" style={{ scrollMarginTop: 80 }}>
+        {household && viewerIsLead && (
+          <Card withBorder radius="md" padding="lg" id="emergency-contact" style={{ scrollMarginTop: 80 }}>
                 <Group justify="space-between" align="center" mb="xs">
-                  <Title order={5} c="yellow">Emergency Contacts</Title>
+                  <Title order={3} c="yellow">Emergency Contacts</Title>
                   {!showContactForm && <Button size="compact-xs" variant="light" onClick={startAddContact}>+ Add Contact</Button>}
                 </Group>
                 <Text size="sm" c="dimmed" mb="sm">
@@ -494,13 +510,13 @@ export default function HouseholdPage() {
                     </Stack>
                   </form>
                 )}
-              </Card>
+          </Card>
+        )}
 
-              <Card withBorder radius="md" padding="md">
-                <Title order={5} c="grape" mb="sm">Trusted Adults</Title>
-                <TrustedAdultPanel />
-              </Card>
-            </Stack>
+        {household && viewerIsLead && (
+          <Card withBorder radius="md" padding="lg">
+            <Title order={3} c="grape" mb="sm">Trusted Adults</Title>
+            <TrustedAdultPanel />
           </Card>
         )}
 
@@ -516,6 +532,15 @@ export default function HouseholdPage() {
                 onChange={(e) => setFilterDate(e.currentTarget.value)}
               />
             </Group>
+
+            {viewerIsLead && (
+              <Checkbox
+                mb="md"
+                checked={settings.emailDependentCheckins}
+                onChange={(e) => handleToggleReceipts(e.currentTarget.checked)}
+                label="Email me realtime receipts when my dependents check in/out"
+              />
+            )}
 
             <Text size="sm" c="dimmed" mb="lg">
               {filterDate ? (
@@ -548,6 +573,6 @@ export default function HouseholdPage() {
           </Card>
         )}
       </Stack>
-    </Container>
+    </PageContainer>
   );
 }

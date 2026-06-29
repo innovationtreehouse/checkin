@@ -6,6 +6,7 @@ import { Badge, Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { PageContainer } from "@/components/ui/PageContainer";
 
 const NAV_LINKS = [
   { name: "Emergency Contacts", href: "/membership-audit/emergency-contacts", icon: "🚑" },
@@ -42,7 +43,8 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
   const unclaimed = todoCounts?.admin?.unclaimedHouseholds ?? 0;
 
   return (
-    <Stack>
+    <PageContainer>
+      <Stack>
       <Tabs value={activeTab} onChange={(value) => value && router.push(value)}>
         <ScrollableTabsList>
           {NAV_LINKS.map((link) => {
@@ -77,6 +79,7 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
         </ScrollableTabsList>
       </Tabs>
       <Box style={{ minWidth: 0 }}>{children}</Box>
-    </Stack>
+      </Stack>
+    </PageContainer>
   );
 }
