@@ -25,6 +25,23 @@ export function formatDateTime(date: Date | string | number | null | undefined, 
 }
 
 /**
+ * Visit time range for display: "1:35 PM-2:19 PM (44 minutes)" once departed,
+ * or "1:35 PM-" while still active (no end time, no length — too dynamic).
+ * Times are shown without seconds.
+ */
+export function formatVisitRange(
+    arrived: Date | string | number | null | undefined,
+    departed?: Date | string | number | null | undefined,
+): string {
+    if (!arrived) return '';
+    const hm: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
+    const start = formatTime(arrived, hm);
+    if (!departed) return `${start}-`;
+    const mins = Math.round((new Date(departed).getTime() - new Date(arrived).getTime()) / 60000);
+    return `${start}-${formatTime(departed, hm)} (${mins} minute${mins === 1 ? '' : 's'})`;
+}
+
+/**
  * Format a date as a value for an <input type="datetime-local"> (yyyy-MM-ddTHH:mm).
  *
  * NOTE: datetime-local is inherently local, so this uses the BROWSER's timezone — matching the

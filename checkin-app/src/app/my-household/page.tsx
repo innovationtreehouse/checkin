@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
-import { formatDate, formatTime, formatDateTime, calculateAge } from '@/lib/time';
+import { formatDate, formatVisitRange, formatDateTime, calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
@@ -524,15 +524,11 @@ export default function HouseholdPage() {
                       <div>
                         <Text fw={600} c="blue">{v.participant?.name || 'Unnamed Member'}</Text>
                         <Text size="sm" component="span">{v.event?.name || 'General Facility Visit'} </Text>
-                        <Text size="sm" c="dimmed" component="span">• {formatDateTime(v.arrived)}</Text>
+                        <Text size="sm" c="dimmed" component="span">• {formatDateTime(v.arrived, { dateStyle: 'short', timeStyle: 'short' })} • {formatVisitRange(v.arrived, v.departed)}</Text>
                       </div>
-                      <Text size="sm">
-                        {v.departed ? (
-                          <Text component="span" c="green">Departed {formatTime(v.departed)}</Text>
-                        ) : (
-                          <Text component="span" c="yellow">Active Visit</Text>
-                        )}
-                      </Text>
+                      {!v.departed && (
+                        <Text size="sm" component="span" c="yellow">Active Visit</Text>
+                      )}
                     </Group>
                   </Paper>
                 ))}
