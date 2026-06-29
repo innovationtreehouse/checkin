@@ -11,10 +11,10 @@ const session = (id: number): AuthResult => ({
     user: {
         id,
         email: 'u@x.test',
-        sysadmin: false,
-        boardMember: false,
-        keyholder: false,
-        backgroundCheckReviewer: false,
+        isSysadmin: false,
+        isBoardMember: false,
+        isKeyholder: false,
+        isBackgroundCheckReviewer: false,
     },
 });
 
@@ -74,7 +74,7 @@ describe("resolveAccess 'program-lead-mentor'", () => {
 
     test('admin who does not lead it → allowed (admin bypass)', async () => {
         const admin = session(1);
-        if (admin.type === 'session') admin.user.sysadmin = true;
+        if (admin.type === 'session') admin.user.isSysadmin = true;
         expect((await resolveAccess('program-lead-mentor', rctx(admin, { id: '5' }))).allowed).toBe(true);
     });
 

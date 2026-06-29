@@ -54,7 +54,7 @@ describe('Trusted Adults service', () => {
         // A board member who is also a lead of the disclosing household: overriding this
         // household's own review is a conflict of interest (force-approve Grandma for their kids).
         const boardLead = await prisma.participant.create({
-            data: { name: 'BoardLead', email: `boardlead-${TAG}@ex.com`, boardMember: true, householdId: hh.id },
+            data: { name: 'BoardLead', email: `boardlead-${TAG}@ex.com`, isBoardMember: true, householdId: hh.id },
         });
         boardLeadId = boardLead.id;
         await prisma.householdLead.create({ data: { householdId: hh.id, participantId: boardLead.id } });
@@ -62,7 +62,7 @@ describe('Trusted Adults service', () => {
         const outHh = await prisma.household.create({ data: { name: `Outsider HH ${TAG}` } });
         outsiderId = (await prisma.participant.create({ data: { name: 'Outsider', householdId: outHh.id } })).id;
         const boardHh = await prisma.household.create({ data: { name: `Board HH ${TAG}` } });
-        boardId = (await prisma.participant.create({ data: { name: 'Boardie', email: `board-${TAG}@ex.com`, boardMember: true, householdId: boardHh.id } })).id;
+        boardId = (await prisma.participant.create({ data: { name: 'Boardie', email: `board-${TAG}@ex.com`, isBoardMember: true, householdId: boardHh.id } })).id;
     });
 
     afterAll(async () => {

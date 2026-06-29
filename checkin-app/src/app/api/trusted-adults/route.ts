@@ -24,7 +24,7 @@ interface Body {
 /**
  * POST /api/trusted-adults — disclose a trusted adult for a household.
  *
- * A signed-in member discloses for their OWN household by default. Board/sysadmin
+ * A signed-in member discloses for their OWN household by default. Board/isSysadmin
  * may enter on another household's behalf by passing householdId (STAFF_ENTERED).
  * The kiosk must identify the household via householdId.
  */
@@ -45,7 +45,7 @@ export const POST = withAuth({ allowKiosk: true }, async (req, auth) => {
 
     if (auth.type === "session") {
         disclosedById = auth.user.id;
-        const isStaff = auth.user.boardMember || auth.user.sysadmin;
+        const isStaff = auth.user.isBoardMember || auth.user.isSysadmin;
         if (body.householdId && body.householdId !== auth.user.householdId) {
             if (!isStaff) {
                 return NextResponse.json({ error: "You may only add trusted adults for your own household." }, { status: 403 });

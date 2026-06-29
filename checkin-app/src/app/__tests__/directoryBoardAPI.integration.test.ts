@@ -41,23 +41,23 @@ describe('GET /api/directory/board', () => {
                 phone: '555-0001',
                 dateOfBirth: new Date('1980-01-01'),
                 googleId: `google-${TAG}`,
-                boardMember: true,
+                isBoardMember: true,
                 household: { create: {} },
             },
         });
         boardId = board.id;
         householdIds.push(board.householdId);
 
-        const keyholder = await prisma.participant.create({
+        const isKeyholder = await prisma.participant.create({
             data: {
                 name: `Keyholder ${TAG}`,
-                email: `keyholder-${TAG}@example.com`,
-                keyholder: true,
+                email: `isKeyholder-${TAG}@example.com`,
+                isKeyholder: true,
                 household: { create: {} },
             },
         });
-        keyholderId = keyholder.id;
-        householdIds.push(keyholder.householdId);
+        keyholderId = isKeyholder.id;
+        householdIds.push(isKeyholder.householdId);
     });
 
     beforeEach(() => jest.clearAllMocks());
@@ -68,7 +68,7 @@ describe('GET /api/directory/board', () => {
     });
 
     it('a board member gets rows that never contain dob or googleId', async () => {
-        mockSession.mockResolvedValue({ user: { id: boardId, boardMember: true } });
+        mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
         const res = await GET(req());
         expect(res.status).toBe(200);
@@ -87,8 +87,8 @@ describe('GET /api/directory/board', () => {
         }
     });
 
-    it('a keyholder gets only public/member fields — no email/phone/dob/googleId', async () => {
-        mockSession.mockResolvedValue({ user: { id: keyholderId, keyholder: true } });
+    it('a isKeyholder gets only public/member fields — no email/phone/dob/googleId', async () => {
+        mockSession.mockResolvedValue({ user: { id: keyholderId, isKeyholder: true } });
 
         const res = await GET(req());
         expect(res.status).toBe(200);

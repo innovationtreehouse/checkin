@@ -44,7 +44,7 @@ const TAG = 'authz-ownership-test';
 
 function as(id: number, extra: Record<string, unknown> = {}) {
     (getServerSession as jest.Mock).mockResolvedValue({
-        user: { id, sysadmin: false, boardMember: false, keyholder: false, backgroundCheckReviewer: false, ...extra },
+        user: { id, isSysadmin: false, isBoardMember: false, isKeyholder: false, isBackgroundCheckReviewer: false, ...extra },
     });
 }
 function anon() {

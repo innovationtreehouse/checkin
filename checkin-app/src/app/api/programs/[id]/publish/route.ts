@@ -34,7 +34,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         }
 
         const currentUserId = session.user.id;
-        const isSysAdminOrBoard = session.user?.sysadmin || session.user?.boardMember;
+        const isSysAdminOrBoard = session.user?.isSysadmin || session.user?.isBoardMember;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
 
         if (!isSysAdminOrBoard && !isLeadMentor) {

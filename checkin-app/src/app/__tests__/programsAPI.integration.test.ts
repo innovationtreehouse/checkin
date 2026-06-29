@@ -45,7 +45,7 @@ describe('Programs API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-programs-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-programs-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
@@ -120,7 +120,7 @@ describe('Programs API Integration Tests', () => {
         });
 
         it('should return all programs including drafts and member-only for admins', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest);
@@ -150,7 +150,7 @@ describe('Programs API Integration Tests', () => {
         });
 
         it('should missing required program name', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request('http://localhost:4000/api/programs', {
                  method: 'POST',
@@ -161,7 +161,7 @@ describe('Programs API Integration Tests', () => {
         });
 
         it('should allow admins to create a program', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request('http://localhost:4000/api/programs', {
                  method: 'POST',

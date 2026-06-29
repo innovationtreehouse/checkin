@@ -12,7 +12,7 @@ export default function SystemStatusLayout({ children }: { children: React.React
   const pathname = usePathname();
   const router = useRouter();
   const confirmNav = useConfirmNav();
-  const { user, loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
+  const { user, loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
 
   if (loading) {
     return (
@@ -24,7 +24,7 @@ export default function SystemStatusLayout({ children }: { children: React.React
 
   if (!ready) return null;
 
-  const links = SYSTEM_STATUS_NAV_LINKS.filter((link) => !link.sysadminOnly || user?.sysadmin);
+  const links = SYSTEM_STATUS_NAV_LINKS.filter((link) => !link.sysadminOnly || user?.isSysadmin);
   // Active tab = the nav link whose href matches the current route (null on the hub).
   const active = links.find((link) => pathname === link.href)?.href ?? null;
 

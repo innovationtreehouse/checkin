@@ -46,7 +46,7 @@ describe('Program payment-plan routes', () => {
         programId = program.id;
 
         const board = await prisma.participant.create({
-            data: { name: 'PP Board', email: `board-${TAG}@example.com`, boardMember: true, household: { create: {} } },
+            data: { name: 'PP Board', email: `board-${TAG}@example.com`, isBoardMember: true, household: { create: {} } },
         });
         boardId = board.id;
         householdIds.push(board.householdId);
@@ -114,7 +114,7 @@ describe('Program payment-plan routes', () => {
         it('returns only PENDING + isPaymentPlanRequested rows to a board member', async () => {
             await enroll(selfId, { requested: true });   // should appear
             await enroll(noiseId, { requested: false });  // should NOT appear
-            mockSession.mockResolvedValue({ user: { id: boardId, boardMember: true } });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
             const res = await PlansGet();
             expect(res.status).toBe(200);
@@ -140,7 +140,7 @@ describe('Program payment-plan routes', () => {
 
         it('board approval flips the enrollment to ACTIVE and clears the request flags', async () => {
             await enroll(selfId, { requested: true });
-            mockSession.mockResolvedValue({ user: { id: boardId, boardMember: true } });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
             const res = await PlansPost(new Request('http://localhost', {
                 method: 'POST',
@@ -180,7 +180,7 @@ describe('Program payment-plan routes', () => {
 
         it('404 when the participant is not enrolled in the program', async () => {
             await prisma.programParticipant.deleteMany({ where: { programId, participantId: otherId } });
-            mockSession.mockResolvedValue({ user: { id: boardId, boardMember: true } });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
             const res = await RequestPost(requestReq({ participantId: otherId }), params(programId));
             expect(res.status).toBe(404);
         });

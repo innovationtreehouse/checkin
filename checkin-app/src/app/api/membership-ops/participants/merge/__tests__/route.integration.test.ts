@@ -27,14 +27,14 @@ describe("Merge Participants API", () => {
                 name: "Board Actor",
                 email: "actor@checkme.in",
                 householdId: hh.id,
-                boardMember: true,
+                isBoardMember: true,
             }
         });
         actorId = actor.id;
 
         // Setup mock session as the board member
         mockGetServerSession.mockResolvedValue({
-            user: { id: actorId, email: "actor@checkme.in", boardMember: true }
+            user: { id: actorId, email: "actor@checkme.in", isBoardMember: true }
         });
 
         // Create two participants

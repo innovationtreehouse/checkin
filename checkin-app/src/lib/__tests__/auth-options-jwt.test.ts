@@ -61,10 +61,10 @@ function dbParticipant(overrides: Record<string, unknown> = {}) {
     return {
         id: 7,
         email: 'p@example.com',
-        sysadmin: true,
-        keyholder: true,
-        boardMember: true,
-        backgroundCheckReviewer: true,
+        isSysadmin: true,
+        isKeyholder: true,
+        isBoardMember: true,
+        isBackgroundCheckReviewer: true,
         householdId: 99,
         toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
         household: { membership: { status: 'ACTIVE' } },
@@ -82,16 +82,16 @@ describe('jwt() callback — revocation enforcement on refresh', () => {
 
         const result = await callRefresh({
             id: 7,
-            sysadmin: true,
-            keyholder: true,
-            boardMember: true,
-            backgroundCheckReviewer: true,
+            isSysadmin: true,
+            isKeyholder: true,
+            isBoardMember: true,
+            isBackgroundCheckReviewer: true,
         });
 
         // Fails closed: no identity, no roles carried forward.
         expect(result).toEqual({});
         expect((result as { id?: unknown }).id).toBeUndefined();
-        expect((result as { sysadmin?: unknown }).sysadmin).toBeUndefined();
+        expect((result as { isSysadmin?: unknown }).isSysadmin).toBeUndefined();
     });
 
     it('DENIED membership ⇒ denied=true and every role flag forced false', async () => {
@@ -101,40 +101,40 @@ describe('jwt() callback — revocation enforcement on refresh', () => {
 
         const result = (await callRefresh({
             id: 7,
-            sysadmin: true,
-            keyholder: true,
-            boardMember: true,
-            backgroundCheckReviewer: true,
+            isSysadmin: true,
+            isKeyholder: true,
+            isBoardMember: true,
+            isBackgroundCheckReviewer: true,
         })) as Record<string, unknown>;
 
         expect(result.denied).toBe(true);
-        expect(result.sysadmin).toBe(false);
-        expect(result.keyholder).toBe(false);
-        expect(result.boardMember).toBe(false);
-        expect(result.backgroundCheckReviewer).toBe(false);
+        expect(result.isSysadmin).toBe(false);
+        expect(result.isKeyholder).toBe(false);
+        expect(result.isBoardMember).toBe(false);
+        expect(result.isBackgroundCheckReviewer).toBe(false);
         expect(result.toolStatuses).toEqual([]);
         // Identity preserved so the /access-denied gate can still resolve the session.
         expect(result.id).toBe(7);
     });
 
-    it('active sysadmin ⇒ role flags re-stamped true', async () => {
+    it('active isSysadmin ⇒ role flags re-stamped true', async () => {
         mockFindUnique.mockResolvedValue(dbParticipant());
 
         const result = (await callRefresh({
             id: 7,
             // Token came in with roles already stripped — refresh must restore them from the DB.
-            sysadmin: false,
-            keyholder: false,
+            isSysadmin: false,
+            isKeyholder: false,
         })) as Record<string, unknown>;
 
         expect(mockFindUnique).toHaveBeenCalledWith(
             expect.objectContaining({ where: { id: 7 } }),
         );
         expect(result.denied).toBe(false);
-        expect(result.sysadmin).toBe(true);
-        expect(result.keyholder).toBe(true);
-        expect(result.boardMember).toBe(true);
-        expect(result.backgroundCheckReviewer).toBe(true);
+        expect(result.isSysadmin).toBe(true);
+        expect(result.isKeyholder).toBe(true);
+        expect(result.isBoardMember).toBe(true);
+        expect(result.isBackgroundCheckReviewer).toBe(true);
         expect(result.toolStatuses).toEqual([{ toolId: 1, level: 'CERTIFIED' }]);
     });
 
@@ -148,7 +148,7 @@ describe('jwt() callback — revocation enforcement on refresh', () => {
 
 describe('jwt() callback — initial sign-in branch (user present)', () => {
     it('stamps claims from the participant resolved by user.email', async () => {
-        mockFindUnique.mockResolvedValue(dbParticipant({ sysadmin: true }));
+        mockFindUnique.mockResolvedValue(dbParticipant({ isSysadmin: true }));
 
         const result = (await jwt({
             token: {},
@@ -162,7 +162,7 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
             expect.objectContaining({ where: { email: 'p@example.com' } }),
         );
         expect(result.id).toBe(7);
-        expect(result.sysadmin).toBe(true);
+        expect(result.isSysadmin).toBe(true);
         expect(result.denied).toBe(false);
         // Google hosted-domain claims captured for the dev gate.
         expect(result.emailVerified).toBe(true);

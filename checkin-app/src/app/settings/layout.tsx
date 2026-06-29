@@ -5,9 +5,9 @@ import { useSession } from "next-auth/react";
 import { useEffect } from "react";
 import { Center, Loader, Stack, Text } from "@mantine/core";
 
-type SettingsUser = { sysadmin?: boolean; boardMember?: boolean };
+type SettingsUser = { isSysadmin?: boolean; isBoardMember?: boolean };
 
-// Settings is sysadmin/board only. Gate here since these pages were moved out of
+// Settings is isSysadmin/board only. Gate here since these pages were moved out of
 // /admin: the membership settings page self-gates nothing and relied on the admin layout.
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -18,7 +18,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       router.push("/");
     } else if (status === "authenticated") {
       const user = session?.user as SettingsUser;
-      if (!user?.sysadmin && !user?.boardMember) router.push("/");
+      if (!user?.isSysadmin && !user?.isBoardMember) router.push("/");
     }
   }, [status, session, router]);
 
@@ -34,7 +34,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   }
 
   const user = session?.user as SettingsUser;
-  if (!session || (!user?.sysadmin && !user?.boardMember)) {
+  if (!session || (!user?.isSysadmin && !user?.isBoardMember)) {
     return null;
   }
 

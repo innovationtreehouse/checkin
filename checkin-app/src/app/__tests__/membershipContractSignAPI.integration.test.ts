@@ -37,7 +37,7 @@ import { loadAgreementPdf, AgreementUnavailableError } from '@/lib/membership/co
 const TAG = 'contract-sign-test';
 
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false } });
 }
 function signReq() {
     return new Request('http://localhost:4000/api/membership/contract/sign', { method: 'POST' }) as unknown as Parameters<typeof SIGN>[0];
@@ -175,16 +175,16 @@ describe('POST /api/membership/contract/sign', () => {
         expect(p?.zohoActionId).toBe('ACT-1');
     });
 
-    it('lets a sysadmin who is NOT a household lead sign (sysadmin bypass)', async () => {
-        // Household whose lead is someone else; the signer is a sysadmin member, not a lead.
-        const hh = await prisma.household.create({ data: { name: `HH sysadmin ${TAG}` } });
+    it('lets a isSysadmin who is NOT a household lead sign (isSysadmin bypass)', async () => {
+        // Household whose lead is someone else; the signer is a isSysadmin member, not a lead.
+        const hh = await prisma.household.create({ data: { name: `HH isSysadmin ${TAG}` } });
         const otherLead = await prisma.participant.create({ data: { email: `otherlead-${TAG}@example.com`, name: 'Other Lead', householdId: hh.id } });
         await prisma.householdLead.create({ data: { householdId: hh.id, participantId: otherLead.id } });
-        const sysadmin = await prisma.participant.create({ data: { email: `sysadmin-${TAG}@example.com`, name: 'Sys Admin', householdId: hh.id, sysadmin: true } });
+        const isSysadmin = await prisma.participant.create({ data: { email: `isSysadmin-${TAG}@example.com`, name: 'Sys Admin', householdId: hh.id, isSysadmin: true } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
         await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
 
-        asUser(sysadmin.id); // session sysadmin flag is irrelevant; the service reads the DB row
+        asUser(isSysadmin.id); // session isSysadmin flag is irrelevant; the service reads the DB row
         const res = await SIGN(signReq());
         expect(res.status).toBe(200);
         expect(zoho.createRequest).toHaveBeenCalledTimes(1); // passed the not_lead gate

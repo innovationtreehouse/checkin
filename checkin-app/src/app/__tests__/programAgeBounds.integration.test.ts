@@ -58,7 +58,7 @@ describe('Program Age Bounds Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-age-test@example.com', name: 'Admin Age Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-age-test@example.com', name: 'Admin Age Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -141,7 +141,7 @@ describe('Program Age Bounds Integration Tests', () => {
     it('should allow self-enrollment for a participant within the valid age range', async () => {
         // Mock session to standard valid user
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: validUserId, sysadmin: false, boardMember: false }
+            user: { id: validUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {
@@ -159,7 +159,7 @@ describe('Program Age Bounds Integration Tests', () => {
     it('should block self-enrollment for an underage participant', async () => {
         // Mock session to underage user
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: underageUserId, sysadmin: false, boardMember: false }
+            user: { id: underageUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {
@@ -178,7 +178,7 @@ describe('Program Age Bounds Integration Tests', () => {
     it('should block self-enrollment for an overage participant', async () => {
         // Mock session to overage user
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: overageUserId, sysadmin: false, boardMember: false }
+            user: { id: overageUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {
@@ -197,7 +197,7 @@ describe('Program Age Bounds Integration Tests', () => {
     it('should block self-enrollment for a participant missing Date of Birth', async () => {
         // Mock session to no-dob user
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: noDobUserId, sysadmin: false, boardMember: false }
+            user: { id: noDobUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {
@@ -215,7 +215,7 @@ describe('Program Age Bounds Integration Tests', () => {
 
     it('should allow self-enrollment for a participant who is EXACTLY minAge today (birthday today)', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: exactlyMinUserId, sysadmin: false, boardMember: false }
+            user: { id: exactlyMinUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {
@@ -232,7 +232,7 @@ describe('Program Age Bounds Integration Tests', () => {
 
     it('should allow self-enrollment for a participant who is EXACTLY maxAge', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: exactlyMaxUserId, sysadmin: false, boardMember: false }
+            user: { id: exactlyMaxUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {
@@ -249,7 +249,7 @@ describe('Program Age Bounds Integration Tests', () => {
 
     it('should block a participant who only turns minAge tomorrow (still under today)', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: turns14TomorrowUserId, sysadmin: false, boardMember: false }
+            user: { id: turns14TomorrowUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {
@@ -267,7 +267,7 @@ describe('Program Age Bounds Integration Tests', () => {
 
     it('should block a participant who turned maxAge+1 yesterday (now over)', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: turned19YesterdayUserId, sysadmin: false, boardMember: false }
+            user: { id: turned19YesterdayUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {
@@ -284,9 +284,9 @@ describe('Program Age Bounds Integration Tests', () => {
     });
 
     it('should allow an Administrator to override Age bounds and enroll an underage participant', async () => {
-        // Mock session to sysadmin user
+        // Mock session to isSysadmin user
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: testAdminId, sysadmin: true, boardMember: false }
+            user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {

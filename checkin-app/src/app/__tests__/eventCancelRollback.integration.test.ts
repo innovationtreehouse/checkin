@@ -57,7 +57,7 @@ describe('PATCH /api/events/[id] cancel — transaction rollback on partial fail
 
     beforeEach(() => {
         jest.restoreAllMocks();
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
     });
 
     afterEach(async () => {

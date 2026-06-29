@@ -95,7 +95,7 @@ describe('scopesHeld', () => {
         expect(s.has('their_program_participants')).toBe(true);
     });
 
-    it('Participant.all_current_visitors requires keyholder AND row in active set', () => {
+    it('Participant.all_current_visitors requires isKeyholder AND row in active set', () => {
         const ctxWithKey = ctx({ isKeyholder: true, activeVisitorIds: new Set([9]) });
         expect(scopesHeld('Participant', { id: 9 }, ctxWithKey).has('all_current_visitors')).toBe(true);
         expect(scopesHeld('Participant', { id: 99 }, ctxWithKey).has('all_current_visitors')).toBe(false);
@@ -108,7 +108,7 @@ describe('scopesHeld', () => {
         expect(scopesHeld('Visit', { participantId: 5, departedAt: null }, ctx({ selfId: 5 })).has('their_own')).toBe(true);
     });
 
-    it('Visit.all_current_visitors requires keyholder AND departedAt === null', () => {
+    it('Visit.all_current_visitors requires isKeyholder AND departedAt === null', () => {
         const keyCtx = ctx({ isKeyholder: true });
         expect(scopesHeld('Visit', { participantId: 7, departedAt: null }, keyCtx).has('all_current_visitors')).toBe(true);
         expect(scopesHeld('Visit', { participantId: 7, departedAt: new Date() }, keyCtx).has('all_current_visitors')).toBe(false);

@@ -49,7 +49,7 @@ describe('Program Volunteers API Integration Tests', () => {
 
         // Create Roles
         const admin = await prisma.participant.create({
-            data: { email: 'admin-volun-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-volun-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
@@ -226,7 +226,7 @@ describe('Program Volunteers API Integration Tests', () => {
         });
 
         it('should require isCore and participantId', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/volunteers`, {
                  method: 'PATCH',
@@ -240,7 +240,7 @@ describe('Program Volunteers API Integration Tests', () => {
         });
 
         it('should allow admins to toggle the isCore flag of a volunteer', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/volunteers`, {
                  method: 'PATCH',

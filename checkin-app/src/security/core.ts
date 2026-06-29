@@ -48,7 +48,7 @@ export type Scope =
     // Caller leads/core-vols a program that a child of this row's household is
     // enrolled in (used for Trusted Adult pickup notes).
     | 'their_program_households'
-    // Caller is a keyholder (global — front-desk staff). Unconditional per-row.
+    // Caller is a isKeyholder (global — front-desk staff). Unconditional per-row.
     | 'keyholders'
     | 'all_current_visitors';
 
@@ -63,10 +63,10 @@ export type Role =
     | 'unauthenticated'
     | 'authenticated'
     | 'kiosk'
-    | 'sysadmin'
-    | 'boardMember'
-    | 'keyholder'
-    | 'backgroundCheckReviewer'
+    | 'isSysadmin'
+    | 'isBoardMember'
+    | 'isKeyholder'
+    | 'isBackgroundCheckReviewer'
     | 'householdLead'
     | 'programLeadMentor'
     | 'programCoreVolunteer';
@@ -86,10 +86,10 @@ const VALID_ROLES = new Set<Role>([
     'unauthenticated',
     'authenticated',
     'kiosk',
-    'sysadmin',
-    'boardMember',
-    'keyholder',
-    'backgroundCheckReviewer',
+    'isSysadmin',
+    'isBoardMember',
+    'isKeyholder',
+    'isBackgroundCheckReviewer',
     'householdLead',
     'programLeadMentor',
     'programCoreVolunteer',

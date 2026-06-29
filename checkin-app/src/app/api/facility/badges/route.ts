@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
 export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async () => {
         try {
             const badges = await prisma.rawBadgeLog.findMany({

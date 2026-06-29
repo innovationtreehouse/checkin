@@ -74,7 +74,7 @@ async function loadUserWithHousehold(userId: number) {
 
 function assertLead(user: NonNullable<Awaited<ReturnType<typeof loadUserWithHousehold>>>) {
     const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.sysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
+    if (!isLead && !user.isSysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
 }
 
 /** Read the caller's current membership/application state, prefilled for the form. */

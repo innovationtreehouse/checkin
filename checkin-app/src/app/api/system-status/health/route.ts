@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
 export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember', 'keyholder'] },
+    { roles: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
     async () => {
         try {
             const thirtyDaysAgo = new Date();

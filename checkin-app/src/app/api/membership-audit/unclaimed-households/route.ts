@@ -5,7 +5,7 @@ import { withAuth } from "@/lib/auth";
 export const dynamic = 'force-dynamic';
 
 export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async () => {
         try {
             // A household is "claimed" once any of its household leads has signed in

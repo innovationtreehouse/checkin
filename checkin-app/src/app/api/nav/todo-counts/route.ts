@@ -27,7 +27,7 @@ const MEMBER_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["INTAKE", "PEND
 // membership-queue action is overriding/resetting a BLOCKED application
 // (governance escape hatch — see overrideBlocked in src/lib/membership/review.ts).
 // PENDING_BG_REVIEW / RENEWAL_PENDING_BG are background-check-reviewer (RBAC,
-// role backgroundCheckReviewer) work, surfaced by the reviewer notifications
+// role isBackgroundCheckReviewer) work, surfaced by the reviewer notifications
 // badge (src/lib/membership/notifications.ts) — NOT the board. The board can
 // still SEE those in the applications list, but they don't count here.
 const BOARD_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["BLOCKED"];
@@ -226,8 +226,8 @@ export const GET = withAuth({}, async (_req, auth) => {
         };
     }
 
-    // ---- Admin surface (board's own queue) — only for board/sysadmin ----
-    if (user.sysadmin || user.boardMember) {
+    // ---- Admin surface (board's own queue) — only for board/isSysadmin ----
+    if (user.isSysadmin || user.isBoardMember) {
         const [membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies] = await Promise.all([
             prisma.membershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },

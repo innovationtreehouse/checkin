@@ -14,10 +14,10 @@ import { getServerSession } from 'next-auth/next';
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 
 function asAdmin(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: true } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: true } });
 }
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false } });
 }
 function jsonReq(body?: unknown) {
     return new Request('http://localhost:4000/api/admin/settings/localization', {
@@ -35,7 +35,7 @@ describe('Localization settings API', () => {
         prevSettings = existing ? { timezone: existing.timezone, locale: existing.locale } : null;
 
         adminId = (await prisma.participant.create({
-            data: { email: 'admin-loc-test@example.com', name: 'Loc Admin', sysadmin: true, household: { create: {} } },
+            data: { email: 'admin-loc-test@example.com', name: 'Loc Admin', isSysadmin: true, household: { create: {} } },
         })).id;
         plainId = (await prisma.participant.create({
             data: { email: 'plain-loc-test@example.com', name: 'Loc Plain', household: { create: {} } },

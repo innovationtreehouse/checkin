@@ -34,7 +34,7 @@ describe('Admin Participants API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-participants-test@example.com', name: 'Admin Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-participants-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -85,7 +85,7 @@ describe('Admin Participants API Integration Tests', () => {
     describe('POST /api/membership-ops/participants', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false }
              });
 
              const req = new Request('http://localhost:4000/api/membership-ops/participants', {
@@ -99,7 +99,7 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should return 400 Bad Request if no email, parentEmail, or householdId is provided', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/membership-ops/participants', {
@@ -116,7 +116,7 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should return 400 Bad Request if email format is invalid', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/membership-ops/participants', {
@@ -133,7 +133,7 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should return 409 Conflict if participant with email already exists', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/membership-ops/participants', {
@@ -150,7 +150,7 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should create a lone participant and auto-generate a household for them', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/membership-ops/participants', {
@@ -187,7 +187,7 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should grant an ACTIVE membership when alreadyMember is true', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/membership-ops/participants', {
@@ -214,7 +214,7 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should create a child participant and auto-generate a parent and household if parentEmail does not exist', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/membership-ops/participants', {
@@ -246,7 +246,7 @@ describe('Admin Participants API Integration Tests', () => {
     describe('PUT /api/membership-ops/participants/[id]', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false }
              });
 
              const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testUserId}`, {
@@ -260,7 +260,7 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should successfully update a participant name, email, and phone', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             // Create a disposable user just for this edit test

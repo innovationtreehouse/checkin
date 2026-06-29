@@ -27,7 +27,7 @@ jest.mock("next-auth/next", () => ({ getServerSession: jest.fn() }));
 const TAG = "ec-member-route-guard";
 
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false } });
 }
 function settingsReq(body: unknown) {
     return new Request("http://localhost:4000/api/household/settings", {

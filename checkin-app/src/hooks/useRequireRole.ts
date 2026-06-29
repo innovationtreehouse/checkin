@@ -31,7 +31,7 @@ export interface RequireRoleResult {
  * lack every allowed role are sent to `options.redirectTo` (default `/`).
  *
  * Usage:
- *   const { user, loading, ready } = useRequireRole(['sysadmin', 'boardMember']);
+ *   const { user, loading, ready } = useRequireRole(['isSysadmin', 'isBoardMember']);
  *   if (loading) return <Center mih="60vh"><Loader /></Center>;
  *   if (!ready) return null; // a redirect is in flight
  */

@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * Completing the contract + background-check consent advances the application to
  * PENDING_PAYMENT; the background check then reviews in parallel with payment.
  */
-export const POST = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, auth) => {
+export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const actorId = auth.user.id;
 

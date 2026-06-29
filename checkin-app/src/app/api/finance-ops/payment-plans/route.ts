@@ -10,10 +10,10 @@ export async function GET() {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = session.user as { sysadmin?: boolean, boardMember?: boolean };
+    const user = session.user as { isSysadmin?: boolean, isBoardMember?: boolean };
     
-    // Explicitly require Board Member (or sysadmin with self-attestation handled on front-end)
-    if (!user.boardMember && !user.sysadmin) {
+    // Explicitly require Board Member (or isSysadmin with self-attestation handled on front-end)
+    if (!user.isBoardMember && !user.isSysadmin) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -46,9 +46,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = session.user as { sysadmin?: boolean, boardMember?: boolean };
+    const user = session.user as { isSysadmin?: boolean, isBoardMember?: boolean };
     
-    if (!user.boardMember && !user.sysadmin) {
+    if (!user.isBoardMember && !user.isSysadmin) {
         return NextResponse.json({ error: "Forbidden: Only Board Members can approve payment plans." }, { status: 403 });
     }
 

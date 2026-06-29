@@ -41,7 +41,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
 
     const isSessionUser = auth.type === 'session';
     const sessionUser = isSessionUser ? auth.user : undefined;
-    const isSysAdminOrBoard = !!(sessionUser?.sysadmin || sessionUser?.boardMember);
+    const isSysAdminOrBoard = !!(sessionUser?.isSysadmin || sessionUser?.isBoardMember);
     const isLeadMentor = !!sessionUser && sessionUser.id === program.leadMentorId;
     const isCoreVolunteer = !!sessionUser && program.volunteers.some(v => v.participantId === sessionUser.id && v.isCore);
     const isPrivileged = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
@@ -74,9 +74,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
+        const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
         const isLeadMentor = currentProgram.leadMentorId === user.id;
-        const isSysAdminOrBoard = user.sysadmin || user.boardMember;
+        const isSysAdminOrBoard = user.isSysadmin || user.isBoardMember;
 
         if (!isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Only Admin, Board Members, or Lead Mentors can edit" }, { status: 403 });

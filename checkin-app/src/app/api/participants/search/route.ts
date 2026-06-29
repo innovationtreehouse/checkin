@@ -6,7 +6,7 @@ import { participantRecordIsActiveMember } from "@/lib/membership";
 export const dynamic = 'force-dynamic';
 
 export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async (req) => {
         try {
             const url = new URL(req.url);
@@ -40,8 +40,8 @@ export const GET = withAuth(
                 email: p.email,
                 phone: p.phone,
                 isMember: participantRecordIsActiveMember(p),
-                boardMember: p.boardMember,
-                keyholder: p.keyholder,
+                isBoardMember: p.isBoardMember,
+                isKeyholder: p.isKeyholder,
                 household: p.household,
             }));
 

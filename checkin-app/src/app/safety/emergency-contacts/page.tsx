@@ -38,7 +38,7 @@ type EmergencyContactInfo = {
 };
 
 export default function EmergencyContactsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember', 'keyholder']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember', 'isKeyholder']);
 
   const [households, setHouseholds] = useState<Household[]>([]);
   const [loading, setLoading] = useState(true);

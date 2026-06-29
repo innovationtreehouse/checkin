@@ -38,7 +38,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const isAuthorized = session.user?.sysadmin || session.user?.boardMember;
+    const isAuthorized = session.user?.isSysadmin || session.user?.isBoardMember;
 
     if (!isAuthorized) {
         return NextResponse.json({ error: "Forbidden: Only admins and board members can create tools" }, { status: 403 });

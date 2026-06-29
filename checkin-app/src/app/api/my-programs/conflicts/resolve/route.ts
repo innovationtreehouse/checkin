@@ -10,7 +10,7 @@ import { intervalsOverlap } from "@/lib/attendanceConflicts";
  *
  * Authorization is re-checked server-side (never trust the client): the caller
  * must lead the program that owns the event for the visit being deleted, or be a
- * global admin (sysadmin/boardMember/keyholder) — mirroring the attendance route.
+ * global admin (isSysadmin/isBoardMember/isKeyholder) — mirroring the attendance route.
  * And the visit must actually be part of an overlap, so we can't be tricked into
  * deleting a participant's legitimate sole visit.
  *
@@ -40,7 +40,7 @@ export const POST = withAuth({}, async (req, auth) => {
     return NextResponse.json({ error: "Visit not found" }, { status: 404 });
   }
 
-  const isGlobalAdmin = !!(user.sysadmin || user.boardMember || user.keyholder);
+  const isGlobalAdmin = !!(user.isSysadmin || user.isBoardMember || user.isKeyholder);
   const leadsOwningProgram = visit.event?.program?.leadMentorId === user.id;
   if (!isGlobalAdmin && !leadsOwningProgram) {
     return NextResponse.json({ error: "Forbidden: not authorized to resolve this visit" }, { status: 403 });

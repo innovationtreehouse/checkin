@@ -263,8 +263,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     e.preventDefault();
     if (!newPartId) return;
 
-    const u = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
-    if (u?.sysadmin || u?.boardMember) {
+    const u = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
+    if (u?.isSysadmin || u?.isBoardMember) {
       if (!confirm("Warning: Adding a participant manually bypasses all payment requirements. Are you sure you wish to proceed?")) return;
     }
 
@@ -306,8 +306,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     </Container>
   );
 
-  const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
-  const isAuthorized = program.leadMentorId === user?.id || user?.sysadmin || user?.boardMember;
+  const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
+  const isAuthorized = program.leadMentorId === user?.id || user?.isSysadmin || user?.isBoardMember;
   const activeParticipants = program.participants.filter(p => p.status === 'ACTIVE');
   const pendingParticipants = program.participants.filter(p => p.status === 'PENDING');
 
@@ -323,7 +323,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   }
 
   const sortedVolunteers = program.volunteers ? [...program.volunteers].sort((a, b) => (b.isCore ? 1 : 0) - (a.isCore ? 1 : 0)) : [];
-  const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
+  const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
   const phaseBadge = PHASE_BADGE[program.phase];
   // Pricing is fixed at creation; derive rather than track as state.
   const isFree = program.memberPriceCents === null && program.nonMemberPriceCents === null;

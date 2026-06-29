@@ -58,7 +58,7 @@ async function openVisitCount(participantId: number) {
 }
 
 describe('POST /api/scan concurrency (advisory lock)', () => {
-    let keeperId: number;       // keyholder kept checked in so the facility stays open
+    let keeperId: number;       // isKeyholder kept checked in so the facility stays open
     let checkinSubjectId: number;
     let checkoutSubjectId: number;
 
@@ -79,11 +79,11 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
         await prisma.household.deleteMany({ where: { id: { in: leakedHouseholdIds } } });
 
         const keeper = await prisma.participant.create({
-            data: { email: `keeper-${EMAIL_TAG}@example.com`, name: 'Keeper', keyholder: true, household: { create: {} } },
+            data: { email: `keeper-${EMAIL_TAG}@example.com`, name: 'Keeper', isKeyholder: true, household: { create: {} } },
         });
         keeperId = keeper.id;
-        // Keep the keyholder checked in so non-keyholder check-ins are allowed
-        // and non-keyholder check-outs skip the last-keyholder force-close path.
+        // Keep the isKeyholder checked in so non-isKeyholder check-ins are allowed
+        // and non-isKeyholder check-outs skip the last-isKeyholder force-close path.
         await prisma.visit.create({ data: { participantId: keeperId, arrivedAt: new Date() } });
 
         const checkinSubject = await prisma.participant.create({

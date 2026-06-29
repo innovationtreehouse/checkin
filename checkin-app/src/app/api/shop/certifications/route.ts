@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 
         // ?all=true returns every assignment — admin/board only
         if (allParam === 'true') {
-            const isAuthorized = session.user?.sysadmin || session.user?.boardMember;
+            const isAuthorized = session.user?.isSysadmin || session.user?.isBoardMember;
             if (!isAuthorized) {
                 return NextResponse.json({ error: "Forbidden" }, { status: 403 });
             }
@@ -90,7 +90,7 @@ export async function POST(req: Request) {
         }
 
         const currentUserId = session.user.id;
-        const isSysAdminOrBoard = session.user?.sysadmin || session.user?.boardMember;
+        const isSysAdminOrBoard = session.user?.isSysadmin || session.user?.isBoardMember;
 
         let hasCertifierPermission = isSysAdminOrBoard;
 

@@ -44,7 +44,7 @@ describe('Bulk import merge rollback', () => {
         await cleanup();
 
         const admin = await prisma.participant.create({
-            data: { email: 'admin-mergeroll-test@example.com', name: 'Admin Mergeroll Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-mergeroll-test@example.com', name: 'Admin Mergeroll Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -88,7 +88,7 @@ describe('Bulk import merge rollback', () => {
 
     it('rolls back the whole merge when the source-household delete fails', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: testAdminId, sysadmin: true, boardMember: false }
+            user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
         });
 
         const formData = csvForm([

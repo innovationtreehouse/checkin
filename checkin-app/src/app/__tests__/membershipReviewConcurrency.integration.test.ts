@@ -22,7 +22,7 @@ async function makeReviewer(label: string): Promise<number> {
         data: {
             email: `${label}-${TAG}@example.com`,
             name: label,
-            backgroundCheckReviewer: true,
+            isBackgroundCheckReviewer: true,
             household: { create: { name: `${label} HH ${TAG}` } },
         },
     });

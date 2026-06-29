@@ -41,7 +41,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-import-test@example.com', name: 'Admin Import Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-import-test@example.com', name: 'Admin Import Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -103,7 +103,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
     describe('POST /api/membership-ops/participants/import', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false }
              });
 
              const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
@@ -116,7 +116,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
 
         it('should return 400 Bad Request if no file is provided', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const formData = new FormData();
@@ -135,7 +135,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
 
         it('should return 400 Bad Request if required columns are missing', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             // Missing Last Name column
@@ -159,7 +159,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
 
         it('should successfully import a batch of new participants and link their households', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const formData = createMockCsvFormData([
@@ -200,7 +200,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
 
         it('should automatically create households for participants with no household links, and correctly assign lead status based on age', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const formData = createMockCsvFormData([

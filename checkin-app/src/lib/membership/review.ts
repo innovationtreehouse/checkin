@@ -12,7 +12,7 @@ type TxClient = Prisma.TransactionClient;
  *
  * After intake the application advances to PENDING_PAYMENT regardless of the
  * check; the review happens while the applicant pays. Two DISTINCT eligible
- * reviewers (role backgroundCheckReviewer) must each attest independently. A
+ * reviewers (role isBackgroundCheckReviewer) must each attest independently. A
  * reviewer may not share a household with the applicant or the other reviewer,
  * and may not attest twice.
  *   - 2 APPROVE  -> clear the check (stamp parents' lastBackgroundCheck + sticky
@@ -83,7 +83,7 @@ export function normalizeEmail(email: string): string {
 export async function notifyReviewers(): Promise<void> {
     try {
         const reviewers = await prisma.participant.findMany({
-            where: { backgroundCheckReviewer: true, email: { not: null } },
+            where: { isBackgroundCheckReviewer: true, email: { not: null } },
             select: { email: true },
         });
         const base = process.env.NEXTAUTH_URL ?? "";
@@ -104,7 +104,7 @@ export async function notifyReviewers(): Promise<void> {
 }
 
 async function loadReviewer(reviewerId: number) {
-    return prisma.participant.findUnique({ where: { id: reviewerId }, select: { id: true, householdId: true, backgroundCheckReviewer: true } });
+    return prisma.participant.findUnique({ where: { id: reviewerId }, select: { id: true, householdId: true, isBackgroundCheckReviewer: true } });
 }
 
 /**
@@ -117,7 +117,7 @@ async function loadReviewer(reviewerId: number) {
  */
 export async function eligibleReviewProcessIds(reviewerId: number): Promise<number[]> {
     const reviewer = await loadReviewer(reviewerId);
-    if (!reviewer?.backgroundCheckReviewer) return [];
+    if (!reviewer?.isBackgroundCheckReviewer) return [];
 
     const processes = await prisma.membershipProcess.findMany({
         where: AWAITING_BG_WHERE,
@@ -150,7 +150,7 @@ export async function attest(
     input: { result: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean },
 ) {
     const reviewer = await loadReviewer(reviewerId);
-    if (!reviewer?.backgroundCheckReviewer) throw new ReviewError("not_reviewer", "You are not a background-check reviewer.");
+    if (!reviewer?.isBackgroundCheckReviewer) throw new ReviewError("not_reviewer", "You are not a background-check reviewer.");
 
     // Re-check eligibility, create the attestation, recompute approvals, and converge
     // all inside one transaction. FOR UPDATE on the MembershipProcess row serializes

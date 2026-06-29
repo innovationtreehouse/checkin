@@ -28,7 +28,7 @@ type PaymentPlanRequest = {
 };
 
 export default function PendingParticipantsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
 
   const [requests, setRequests] = useState<PaymentPlanRequest[]>([]);
   const [loading, setLoading] = useState(true);

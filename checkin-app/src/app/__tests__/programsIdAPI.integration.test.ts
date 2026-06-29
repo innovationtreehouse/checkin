@@ -49,7 +49,7 @@ describe('Individual Program API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-prog-id-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-prog-id-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
@@ -181,7 +181,7 @@ describe('Individual Program API Integration Tests', () => {
         });
 
         it('should allow admins to view member-only programs without active membership', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}`, { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
@@ -230,7 +230,7 @@ describe('Individual Program API Integration Tests', () => {
         });
 
         it('should allow admins to update a program', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, {
                  method: 'PATCH',

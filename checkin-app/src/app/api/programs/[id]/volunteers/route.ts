@@ -31,7 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const currentUserId = session.user.id;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
-        const isSysAdminOrBoard = session.user?.sysadmin || session.user?.boardMember;
+        const isSysAdminOrBoard = session.user?.isSysadmin || session.user?.isBoardMember;
 
         if (!isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Not authorized to assign volunteers" }, { status: 403 });
@@ -111,7 +111,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
         const currentUserId = session.user.id;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
-        const isSysAdminOrBoard = session.user?.sysadmin || session.user?.boardMember;
+        const isSysAdminOrBoard = session.user?.isSysadmin || session.user?.isBoardMember;
 
         if (!isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Not authorized to remove volunteers" }, { status: 403 });
@@ -172,7 +172,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         const currentUserId = session.user.id;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
-        const isSysAdminOrBoard = session.user?.sysadmin || session.user?.boardMember;
+        const isSysAdminOrBoard = session.user?.isSysadmin || session.user?.isBoardMember;
 
         if (!isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Not authorized to modify volunteers" }, { status: 403 });

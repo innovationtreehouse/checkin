@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 const DEFAULTS = { id: 1, normalDuesCents: 0, volunteerDuesCents: 0 };
 
 /** GET /api/settings/membership — board settings singleton (created on first read). */
-export const GET = withAuth({ roles: ["sysadmin", "boardMember"] }, async () => {
+export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
     const settings = await prisma.boardSettings.upsert({ where: { id: 1 }, create: DEFAULTS, update: {} });
     return NextResponse.json({ settings });
 });
@@ -20,7 +20,7 @@ export const GET = withAuth({ roles: ["sysadmin", "boardMember"] }, async () => 
  * previous value survives rather than silently collapsing to zero. (The Averity consent
  * link is an env var, not a board setting.)
  */
-export const PUT = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, auth) => {
+export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     let body: {
         normalDuesCents?: number;

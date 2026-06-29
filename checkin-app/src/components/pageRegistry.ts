@@ -6,9 +6,9 @@
 // worst shows a link that 403s. See docs/designs/INDEX_PAGE_SCOPING.md.
 
 export type RegistryUser = {
-  sysadmin?: boolean;
-  boardMember?: boolean;
-  keyholder?: boolean;
+  isSysadmin?: boolean;
+  isBoardMember?: boolean;
+  isKeyholder?: boolean;
   toolStatuses?: Array<{ level: string }>;
 };
 
@@ -16,12 +16,12 @@ type Visible = (user: RegistryUser | undefined, signedIn: boolean) => boolean;
 
 const PUBLIC: Visible = () => true;
 const SIGNED_IN: Visible = (_u, signedIn) => signedIn;
-const BOARD: Visible = (u) => !!u?.sysadmin || !!u?.boardMember;
-const SYSADMIN: Visible = (u) => !!u?.sysadmin;
-const SAFETY: Visible = (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder;
+const BOARD: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember;
+const SYSADMIN: Visible = (u) => !!u?.isSysadmin;
+const SAFETY: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember || !!u?.isKeyholder;
 const SHOP: Visible = (u) =>
-  !!u?.sysadmin ||
-  !!u?.boardMember ||
+  !!u?.isSysadmin ||
+  !!u?.isBoardMember ||
   !!u?.toolStatuses?.some((ts) => ts.level === 'MAY_CERTIFY_OTHERS');
 
 export type PageEntry = {
@@ -60,7 +60,7 @@ export const PAGES: PageEntry[] = [
   // Communication — signed-in member
   { href: '/communication', label: 'Communication', section: 'Personal', keywords: 'notifications email preferences settings', visible: SIGNED_IN },
 
-  // Safety — board or keyholder
+  // Safety — board or isKeyholder
   { href: '/safety', label: 'Safety', section: 'Safety', visible: SAFETY },
   { href: '/safety/board-contacts', label: 'Board Contacts', section: 'Safety', visible: SAFETY },
   { href: '/safety/emergency-contacts', label: 'Emergency Contacts', section: 'Safety', visible: SAFETY },

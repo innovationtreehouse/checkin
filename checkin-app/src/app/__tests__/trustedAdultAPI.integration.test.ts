@@ -24,9 +24,9 @@ jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }
 const TAG = 'trustedadult-api-test';
 const SHARED = 'Grandma may pick up the kids.';
 
-function as(id: number, householdId: number, roles: { boardMember?: boolean; sysadmin?: boolean; keyholder?: boolean } = {}) {
+function as(id: number, householdId: number, roles: { isBoardMember?: boolean; isSysadmin?: boolean; isKeyholder?: boolean } = {}) {
     (getServerSession as jest.Mock).mockResolvedValue({
-        user: { id, householdId, sysadmin: false, boardMember: false, keyholder: false, backgroundCheckReviewer: false, ...roles },
+        user: { id, householdId, isSysadmin: false, isBoardMember: false, isKeyholder: false, isBackgroundCheckReviewer: false, ...roles },
     });
 }
 function post(url: string, body: unknown) {
@@ -69,9 +69,9 @@ describe('Trusted Adults API', () => {
         childId = (await prisma.participant.create({ data: { name: 'Child', householdId: familyHh } })).id;
 
         boardHh = (await prisma.household.create({ data: { name: `Board HH ${TAG}` } })).id;
-        boardId = (await prisma.participant.create({ data: { name: 'Board', boardMember: true, householdId: boardHh } })).id;
+        boardId = (await prisma.participant.create({ data: { name: 'Board', isBoardMember: true, householdId: boardHh } })).id;
         keyholderHh = (await prisma.household.create({ data: { name: `Key HH ${TAG}` } })).id;
-        keyholderId = (await prisma.participant.create({ data: { name: 'Key', keyholder: true, householdId: keyholderHh } })).id;
+        keyholderId = (await prisma.participant.create({ data: { name: 'Key', isKeyholder: true, householdId: keyholderHh } })).id;
         programLeadHh = (await prisma.household.create({ data: { name: `PL HH ${TAG}` } })).id;
         programLeadId = (await prisma.participant.create({ data: { name: 'PL', householdId: programLeadHh } })).id;
         outsiderHh = (await prisma.household.create({ data: { name: `Out HH ${TAG}` } })).id;
@@ -124,7 +124,7 @@ describe('Trusted Adults API', () => {
         as(leadId, familyHh); // not board
         expect((await DECISION(post('/api/safety/trusted-adults/decision', { reviewId, decision: 'APPROVE', sharedNote: SHARED }))).status).toBe(403);
 
-        as(boardId, boardHh, { boardMember: true });
+        as(boardId, boardHh, { isBoardMember: true });
         expect((await DECISION(post('/api/safety/trusted-adults/decision', { reviewId, decision: 'APPROVE' }))).status).toBe(400);
         const ok = await DECISION(post('/api/safety/trusted-adults/decision', { reviewId, decision: 'APPROVE', sharedNote: SHARED }));
         expect(ok.status).toBe(200);
@@ -141,8 +141,8 @@ describe('Trusted Adults API', () => {
         expect(ta.reviews[0].decisionNote).toBeUndefined();
     });
 
-    it('operational view: keyholder sees the shared note but NOT familyContext', async () => {
-        as(keyholderId, keyholderHh, { keyholder: true });
+    it('operational view: isKeyholder sees the shared note but NOT familyContext', async () => {
+        as(keyholderId, keyholderHh, { isKeyholder: true });
         const body = await (await OPERATIONAL(get('/api/trusted-adults/operational'))).json();
         const row = body.trustedAdults.find((t: { householdId: number }) => t.householdId === familyHh);
         expect(row).toBeTruthy();
@@ -180,7 +180,7 @@ describe('Trusted Adults API', () => {
         const reviewId = ta.reviews[0].id;
 
         // Decision route, end-to-end as a board member.
-        as(boardId, boardHh, { boardMember: true });
+        as(boardId, boardHh, { isBoardMember: true });
         const res = await DECISION(post('/api/safety/trusted-adults/decision', { reviewId, decision: 'APPROVE', sharedNote: SHARED }));
         expect(res.status).toBe(200);
 
@@ -190,7 +190,7 @@ describe('Trusted Adults API', () => {
         expect(auditJson(decisionLog.newData).decision).toBe('APPROVE');
 
         // Override negative: force-approve with no shared note -> 400 (STATUS_FOR[bad_input]).
-        as(boardId, boardHh, { boardMember: true });
+        as(boardId, boardHh, { isBoardMember: true });
         expect((await OVERRIDE(post('/api/safety/trusted-adults/override', { reviewId, action: 'approve' }))).status).toBe(400);
 
         // Override route binds the same board actor on the review + a fresh audit row.

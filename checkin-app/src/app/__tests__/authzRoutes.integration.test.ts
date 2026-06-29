@@ -4,8 +4,8 @@
 /**
  * Authorization-boundary tests for sensitive (PII / impersonation) routes that
  * previously had no integration coverage. Focus: who is rejected.
- *   - GET /api/safety/emergency-contacts   (sysadmin | boardMember | keyholder)
- *   - GET /api/participants/search  (sysadmin | boardMember — keyholder MUST be denied)
+ *   - GET /api/safety/emergency-contacts   (isSysadmin | isBoardMember | isKeyholder)
+ *   - GET /api/participants/search  (isSysadmin | isBoardMember — isKeyholder MUST be denied)
  *   - GET /api/auth/dev-personas          (impersonation surface; 404 outside dev)
  */
 import { GET as EmergencyGet } from '@/app/api/safety/emergency-contacts/route';
@@ -48,7 +48,7 @@ describe('Sensitive route authorization', () => {
         householdIds.push(target.householdId);
 
         const persona = await prisma.participant.create({
-            data: { name: 'Persona One', email: `persona-${TAG}@example.com`, sysadmin: true, household: { create: {} } },
+            data: { name: 'Persona One', email: `persona-${TAG}@example.com`, isSysadmin: true, household: { create: {} } },
         });
         personaId = persona.id;
         householdIds.push(persona.householdId);
@@ -76,8 +76,8 @@ describe('Sensitive route authorization', () => {
             expect((await EmergencyGet(req())).status).toBe(403);
         });
 
-        it('200 for a keyholder (emergency access is allowed)', async () => {
-            mockSession.mockResolvedValue({ user: { id: plainId, keyholder: true } });
+        it('200 for a isKeyholder (emergency access is allowed)', async () => {
+            mockSession.mockResolvedValue({ user: { id: plainId, isKeyholder: true } });
             const res = await EmergencyGet(req());
             expect(res.status).toBe(200);
             const json = await res.json();
@@ -98,13 +98,13 @@ describe('Sensitive route authorization', () => {
             expect((await SearchGet(req(url))).status).toBe(403);
         });
 
-        it('403 for a keyholder — keyholders may not search the PII directory', async () => {
-            mockSession.mockResolvedValue({ user: { id: plainId, keyholder: true } });
+        it('403 for a isKeyholder — keyholders may not search the PII directory', async () => {
+            mockSession.mockResolvedValue({ user: { id: plainId, isKeyholder: true } });
             expect((await SearchGet(req(url))).status).toBe(403);
         });
 
         it('200 for a board member, returning the matched participant with PII', async () => {
-            mockSession.mockResolvedValue({ user: { id: plainId, boardMember: true } });
+            mockSession.mockResolvedValue({ user: { id: plainId, isBoardMember: true } });
             const res = await SearchGet(req(url));
             expect(res.status).toBe(200);
             const json = await res.json();
@@ -127,8 +127,8 @@ describe('Sensitive route authorization', () => {
             expect((await CertsGet(req(url))).status).toBe(403);
         });
 
-        it('200 for a keyholder, returning the roster', async () => {
-            mockSession.mockResolvedValue({ user: { id: plainId, keyholder: true } });
+        it('200 for a isKeyholder, returning the roster', async () => {
+            mockSession.mockResolvedValue({ user: { id: plainId, isKeyholder: true } });
             const res = await CertsGet(req(url));
             expect(res.status).toBe(200);
             const json = await res.json();
@@ -139,7 +139,7 @@ describe('Sensitive route authorization', () => {
     describe('GET /api/auth/dev-personas', () => {
         it('404 in production (impersonation surface must be off)', async () => {
             process.env.CHECKIN_ENV = 'prod';
-            mockSession.mockResolvedValue({ user: { id: personaId, sysadmin: true } });
+            mockSession.mockResolvedValue({ user: { id: personaId, isSysadmin: true } });
             expect((await DevPersonasGet()).status).toBe(404);
         });
 

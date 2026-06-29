@@ -12,7 +12,7 @@ type BoardMember = {
 };
 
 export default function BoardContactInfoPage() {
-  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember', 'keyholder']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember', 'isKeyholder']);
 
   const [members, setMembers] = useState<BoardMember[]>([]);
   const [loading, setLoading] = useState(true);

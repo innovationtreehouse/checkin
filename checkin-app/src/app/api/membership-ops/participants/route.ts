@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    if (!auth.user.sysadmin && !auth.user.boardMember) {
+    if (!auth.user.isSysadmin && !auth.user.isBoardMember) {
         return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 });
     }
 

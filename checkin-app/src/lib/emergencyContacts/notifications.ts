@@ -10,13 +10,13 @@ export interface EmergencyContactNotifications {
 
 /**
  * One domain's contribution to GET /api/notifications. Visible to the same roles
- * that can read the emergency-contacts directory (sysadmin / board / keyholder).
+ * that can read the emergency-contacts directory (isSysadmin / board / isKeyholder).
  */
 export async function getEmergencyContactNotifications(user: {
-    sysadmin?: boolean;
-    boardMember?: boolean;
-    keyholder?: boolean;
+    isSysadmin?: boolean;
+    isBoardMember?: boolean;
+    isKeyholder?: boolean;
 }): Promise<EmergencyContactNotifications> {
-    const canSee = !!(user.sysadmin || user.boardMember || user.keyholder);
+    const canSee = !!(user.isSysadmin || user.isBoardMember || user.isKeyholder);
     return { householdsMissingValidContact: canSee ? await countHouseholdsMissingValidContact() : 0 };
 }

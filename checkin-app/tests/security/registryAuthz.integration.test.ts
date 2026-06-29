@@ -93,10 +93,10 @@ describe('Registry route admission gates', () => {
             id: plain.id,
             email: plain.email ?? '',
             householdId: plain.householdId,
-            sysadmin: false,
-            boardMember: false,
-            keyholder: false,
-            backgroundCheckReviewer: false,
+            isSysadmin: false,
+            isBoardMember: false,
+            isKeyholder: false,
+            isBackgroundCheckReviewer: false,
         };
 
         // For the public route's 2xx sanity (programs/[id]). memberOnly defaults

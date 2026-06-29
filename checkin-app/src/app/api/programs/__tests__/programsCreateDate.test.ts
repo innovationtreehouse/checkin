@@ -47,7 +47,7 @@ jest.mock('@/lib/prisma', () => ({
 
 describe('POST /api/programs — startAt/endAt date preservation (issue #154)', () => {
     const adminSession = {
-        user: { id: 1, sysadmin: true },
+        user: { id: 1, isSysadmin: true },
     };
 
     beforeEach(() => {

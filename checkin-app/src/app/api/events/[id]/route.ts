@@ -42,9 +42,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         // program. Restrict it to event staff, matching the PATCH handler below.
         // Without this gate any authenticated user could harvest roster PII by
         // enumerating sequential event IDs.
-        const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
+        const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
         const userId = user.id;
-        const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
+        const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
         const isLeadMentor = event.program?.leadMentorId === userId;
         const isCoreVolunteer = event.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
         if (!isSysAdminOrBoard && !isLeadMentor && !isCoreVolunteer) {
@@ -74,9 +74,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         if (!event) return NextResponse.json({ error: "Event not found" }, { status: 404 });
 
-        const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
+        const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
         const userId = user.id;
-        const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
+        const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
         const isLeadMentor = event.program?.leadMentorId === userId;
         const isCoreVolunteer = event.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
 
@@ -99,7 +99,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         // Action: Edit / Cancel Time
         if (body.action === 'editTime' || body.action === 'cancel') {
-            // Core volunteers can't edit or cancel events. Only lead mentors, sysadmin, board.
+            // Core volunteers can't edit or cancel events. Only lead mentors, isSysadmin, board.
             if (!isSysAdminOrBoard && !isLeadMentor) {
                 return NextResponse.json({ error: "Forbidden: Only Lead Mentors or Admins can edit/cancel events" }, { status: 403 });
             }
