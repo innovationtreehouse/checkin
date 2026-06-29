@@ -32,8 +32,8 @@ export async function GET(req: Request) {
         if (activeOnly) {
             andClauses.push({
                 OR: [
-                    { end: null },
-                    { end: { gte: new Date() } }
+                    { endAt: null },
+                    { endAt: { gte: new Date() } }
                 ]
             });
         }
@@ -66,7 +66,7 @@ export async function GET(req: Request) {
 
         const programs = await prisma.program.findMany({
             where: andClauses.length > 0 ? { AND: andClauses } : undefined,
-            orderBy: { begin: 'asc' },
+            orderBy: { startAt: 'asc' },
             include: {
                 _count: {
                     select: {
@@ -98,7 +98,7 @@ export async function POST(req: Request) {
 
     try {
         const body = await req.json();
-        const { name, leadMentorId, begin, end, memberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
+        const { name, leadMentorId, startAt, endAt, memberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
 
         if (!name) {
             return NextResponse.json({ error: "Program name is required" }, { status: 400 });
@@ -123,8 +123,8 @@ export async function POST(req: Request) {
             data: {
                 name,
                 leadMentorId: parseInt(leadMentorId, 10),
-                begin: begin ? new Date(begin) : null,
-                end: end ? new Date(end) : null,
+                startAt: startAt ? new Date(startAt) : null,
+                endAt: endAt ? new Date(endAt) : null,
                 memberOnly: memberOnly || false,
                 minAge: minAge || null,
                 maxAge: maxAge || null,

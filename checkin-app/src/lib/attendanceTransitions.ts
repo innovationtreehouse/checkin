@@ -60,21 +60,21 @@ export async function findAssociatedEventAt(participantId: number, targetTime: D
             programId: { in: relevantProgramIds },
             // Event must either overlap with targetTime, or start within 4 hours of targetTime
             OR: [
-                // Ongoing: start <= targetTime <= end
+                // Ongoing: startAt <= targetTime <= endAt
                 {
-                    start: { lte: targetTime },
-                    end: { gte: targetTime }
+                    startAt: { lte: targetTime },
+                    endAt: { gte: targetTime }
                 },
-                // Upcoming: targetTime < start <= targetTime + 4h
+                // Upcoming: targetTime < startAt <= targetTime + 4h
                 {
-                    start: {
+                    startAt: {
                         gt: targetTime,
                         lte: timePlus4Hours
                     }
                 }
             ]
         },
-        orderBy: { start: 'asc' }
+        orderBy: { startAt: 'asc' }
     });
 
     return matchingEvent ? matchingEvent.id : null;
@@ -114,10 +114,10 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         where: {
             programId: { in: relevantProgramIds },
             // An event overlaps if it starts before checkout time AND ends after arrival time
-            start: { lt: checkoutTime },
-            end: { gt: arrivedAt }
+            startAt: { lt: checkoutTime },
+            endAt: { gt: arrivedAt }
         },
-        orderBy: { start: 'asc' }
+        orderBy: { startAt: 'asc' }
     });
 
     if (eventsDuringStay.length === 0) {
@@ -145,8 +145,8 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
 
             // If there's a gap between current time and the event start time,
             // create an unassociated visit for the gap time
-            if (currentIterStart < event.start) {
-                const gapEnd = event.start < checkoutTime ? event.start : checkoutTime;
+            if (currentIterStart < event.startAt) {
+                const gapEnd = event.startAt < checkoutTime ? event.startAt : checkoutTime;
                 if (currentIterStart < gapEnd) {
                     createdVisits.push(await tx.visit.create({
                         data: {
@@ -169,12 +169,12 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
 
             // Create visit associated with the event
             // The boundaries are constrained by arrival, checkout, and event boundaries
-            const eventVisitStart = currentIterStart > event.start ? currentIterStart : event.start;
-            
+            const eventVisitStart = currentIterStart > event.startAt ? currentIterStart : event.startAt;
+
             // Check out when the next event starts, or when they physically leave
             let eventVisitEnd = checkoutTime;
-            if (nextEvent && nextEvent.start < checkoutTime) {
-                eventVisitEnd = nextEvent.start;
+            if (nextEvent && nextEvent.startAt < checkoutTime) {
+                eventVisitEnd = nextEvent.startAt;
             }
 
             if (eventVisitStart < eventVisitEnd) {
