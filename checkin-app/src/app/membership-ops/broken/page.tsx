@@ -5,7 +5,7 @@ import { Badge, Box, Button, Card, Group, Loader, Stack, Text } from "@mantine/c
 import { notifications } from "@mantine/notifications";
 import { formatDate, isMinor } from "@/lib/time";
 
-type Member = { id: number; name: string | null; dob: string | null };
+type Member = { id: number; name: string | null; dateOfBirth: string | null };
 type BrokenHousehold = { id: number; name: string; members: Member[] };
 
 export default function BrokenHouseholdsPage() {
@@ -73,12 +73,12 @@ export default function BrokenHouseholdsPage() {
                       <Group key={m.id} justify="space-between" wrap="nowrap">
                         <Text size="sm">
                           {m.name || "Unnamed"}
-                          {m.dob ? ` • ${formatDate(m.dob)}` : " • no birthdate"}
-                          {isMinor(m.dob) && (
+                          {m.dateOfBirth ? ` • ${formatDate(m.dateOfBirth)}` : " • no birthdate"}
+                          {isMinor(m.dateOfBirth) && (
                             <Badge ml="xs" size="xs" color="gray" variant="light">minor</Badge>
                           )}
                         </Text>
-                        {!isMinor(m.dob) && (
+                        {!isMinor(m.dateOfBirth) && (
                           <Button
                             size="compact-xs"
                             variant="light"

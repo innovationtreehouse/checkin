@@ -103,7 +103,7 @@ export const GET = withAuth(
             const visits = await prisma.visit.findMany({
                 where: whereClause,
                 include: {
-                    participant: { select: { id: true, dob: true } },
+                    participant: { select: { id: true, dateOfBirth: true } },
                     event: { select: { programId: true } },
                 },
                 orderBy: { arrivedAt: "asc" },
@@ -139,7 +139,7 @@ export const GET = withAuth(
 
                 const bucket = bucketMap.get(key)!;
                 const hours = getHoursBetween(visit.arrivedAt, visit.departedAt);
-                const student = isStudentAtDate(visit.participant.dob, visit.arrivedAt);
+                const student = isStudentAtDate(visit.participant.dateOfBirth, visit.arrivedAt);
 
                 if (student) {
                     bucket.studentIds.add(visit.participant.id);
@@ -172,8 +172,8 @@ export const GET = withAuth(
             const totals: TrendBucket = {
                 label: "Total",
                 periodStart: "",
-                uniqueVolunteers: new Set(visits.filter(v => !isStudentAtDate(v.participant.dob, v.arrivedAt)).map(v => v.participant.id)).size,
-                uniqueStudents: new Set(visits.filter(v => isStudentAtDate(v.participant.dob, v.arrivedAt)).map(v => v.participant.id)).size,
+                uniqueVolunteers: new Set(visits.filter(v => !isStudentAtDate(v.participant.dateOfBirth, v.arrivedAt)).map(v => v.participant.id)).size,
+                uniqueStudents: new Set(visits.filter(v => isStudentAtDate(v.participant.dateOfBirth, v.arrivedAt)).map(v => v.participant.id)).size,
                 totalVolunteerHours: Math.round(buckets.reduce((s, b) => s + b.totalVolunteerHours, 0) * 10) / 10,
                 totalStudentHours: Math.round(buckets.reduce((s, b) => s + b.totalStudentHours, 0) * 10) / 10,
                 structuredHours: Math.round(buckets.reduce((s, b) => s + b.structuredHours, 0) * 10) / 10,

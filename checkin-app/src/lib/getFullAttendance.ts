@@ -13,7 +13,7 @@ export async function getFullAttendance() {
                     name: true,
                     keyholder: true,
                     sysadmin: true,
-                    dob: true,
+                    dateOfBirth: true,
                     householdId: true,
                     phone: true,
                     household: {
@@ -41,7 +41,7 @@ export async function getFullAttendance() {
     // Pre-compute isMinor once per visit to avoid repeated calculations
     const minorMap = new Map<number, boolean>();
     for (const v of activeVisits) {
-        minorMap.set(v.id, isMinor(v.participant.dob));
+        minorMap.set(v.id, isMinor(v.participant.dateOfBirth));
     }
 
     const keyholderVisits = activeVisits.filter(v => v.participant.keyholder);

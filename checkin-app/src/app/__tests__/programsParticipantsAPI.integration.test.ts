@@ -76,7 +76,7 @@ describe('Program Participants API Integration Tests', () => {
             data: {
                 email: 'common-partic-api-test@example.com',
                 name: 'Common',
-                dob: new Date(Date.now() - (25 * 31556952000)),
+                dateOfBirth: new Date(Date.now() - (25 * 31556952000)),
                 household: { create: {} }
             }
         });
@@ -87,7 +87,7 @@ describe('Program Participants API Integration Tests', () => {
             data: {
                 email: 'other-partic-api-test@example.com',
                 name: 'Other Underage',
-                dob: new Date(Date.now() - (10 * 31556952000)),
+                dateOfBirth: new Date(Date.now() - (10 * 31556952000)),
                 household: { create: {} }
             }
         });
@@ -104,7 +104,7 @@ describe('Program Participants API Integration Tests', () => {
             data: {
                 email: 'dep-partic-api-test@example.com',
                 name: 'Board Dependent',
-                dob: new Date(Date.now() - (25 * 31556952000)),
+                dateOfBirth: new Date(Date.now() - (25 * 31556952000)),
                 householdId: boardHousehold.id
             }
         });

@@ -168,7 +168,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     const newParticipant = await tx.participant.create({
                         data: {
                             name: p.name,
-                            dob: p.dob ? new Date(p.dob) : null,
+                            dateOfBirth: p.dob ? new Date(p.dob) : null,
                             householdId: household.id,
                         }
                     });

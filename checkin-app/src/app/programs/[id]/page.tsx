@@ -40,7 +40,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const [requiresOverride, setRequiresOverride] = useState(false);
 
   const [showEnrollmentSelection, setShowEnrollmentSelection] = useState(false);
-  const [householdMembers, setHouseholdMembers] = useState<{ id: number; name: string | null; dob: string | null }[]>([]);
+  const [householdMembers, setHouseholdMembers] = useState<{ id: number; name: string | null; dateOfBirth: string | null }[]>([]);
   const [selectedParticipantId, setSelectedParticipantId] = useState<number | null>(null);
   const [loadingHousehold, setLoadingHousehold] = useState(false);
 
@@ -85,16 +85,16 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           if (me) setSelectedParticipantId(me.id);
           else setSelectedParticipantId(data.household.participants[0]?.id || currentUserId);
         } else {
-          setHouseholdMembers([{ id: currentUserId, name: "Myself", dob: null }]);
+          setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
           setSelectedParticipantId(currentUserId);
         }
       } else {
-        setHouseholdMembers([{ id: currentUserId, name: "Myself", dob: null }]);
+        setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
         setSelectedParticipantId(currentUserId);
       }
     } catch {
       const currentUserId = (session.user as SessionUser).id;
-      setHouseholdMembers([{ id: currentUserId, name: "Myself", dob: null }]);
+      setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
       setSelectedParticipantId(currentUserId);
     } finally {
       setLoadingHousehold(false);
@@ -301,10 +301,10 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
                       let ageError: string | null = null;
                       if (program.minAge !== null || program.maxAge !== null) {
-                        if (!member.dob) {
+                        if (!member.dateOfBirth) {
                           ageError = "DOB missing";
                         } else {
-                          const age = calculateAge(member.dob, program.begin ?? undefined);
+                          const age = calculateAge(member.dateOfBirth, program.begin ?? undefined);
                           if (program.minAge !== null && age < program.minAge) ageError = "Too young";
                           if (program.maxAge !== null && age > program.maxAge) ageError = "Too old";
                         }

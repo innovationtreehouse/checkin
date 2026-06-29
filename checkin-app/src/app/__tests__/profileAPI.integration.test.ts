@@ -50,7 +50,7 @@ describe('Profile API Integration Tests', () => {
             data: {
                 email: 'user-profile-api-test@example.com',
                 name: 'Profile Tester',
-                dob: new Date('1990-01-01'),
+                dateOfBirth: new Date('1990-01-01'),
                 household: { create: {} }
             }
         });

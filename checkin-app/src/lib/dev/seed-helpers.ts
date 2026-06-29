@@ -87,11 +87,11 @@ export async function seedBaseline(prisma: Db): Promise<void> {
 
     const childFamily = await prisma.participant.upsert({
         where: { email: "child.family@example.com" },
-        update: { name: "Child Family", dob: yearsAgo(10) },
+        update: { name: "Child Family", dateOfBirth: yearsAgo(10) },
         create: {
             email: "child.family@example.com",
             name: "Child Family",
-            dob: yearsAgo(10),
+            dateOfBirth: yearsAgo(10),
             householdId: household1.id,
         },
     });
@@ -244,7 +244,7 @@ export async function createFamily(prisma: Db): Promise<string> {
             name: `Lead ${tag}`,
             email: `lead.${tag}@example.com`,
             phone: "555-100-0000",
-            dob: yearsAgo(38),
+            dateOfBirth: yearsAgo(38),
             householdId: household.id,
         },
     });
@@ -253,12 +253,12 @@ export async function createFamily(prisma: Db): Promise<string> {
         data: {
             name: `Partner ${tag}`,
             email: `partner.${tag}@example.com`,
-            dob: yearsAgo(36),
+            dateOfBirth: yearsAgo(36),
             householdId: household.id,
         },
     });
     await prisma.participant.create({
-        data: { name: `Kid ${tag}`, dob: yearsAgo(9), householdId: household.id },
+        data: { name: `Kid ${tag}`, dateOfBirth: yearsAgo(9), householdId: household.id },
     });
     return `Created household "Test Family ${tag}" (lead + partner + 1 minor)`;
 }

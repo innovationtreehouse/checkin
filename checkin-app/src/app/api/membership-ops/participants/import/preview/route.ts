@@ -254,7 +254,7 @@ export async function POST(req: NextRequest) {
             } else if (!sameHouseholdAs) {
                 // No email, no parent email, no household ref — match by name
                 const matchQuery: Record<string, unknown> = { name: fullName };
-                if (parsedDob) matchQuery.dob = parsedDob;
+                if (parsedDob) matchQuery.dateOfBirth = parsedDob;
 
                 const existing = await prisma.participant.findFirst({
                     where: matchQuery,

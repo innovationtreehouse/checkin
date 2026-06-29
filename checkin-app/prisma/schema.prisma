@@ -78,7 +78,7 @@ model Participant {
   sessions      Session[]
 
   /// @sensitivity:pii
-  dob                  DateTime?
+  dateOfBirth          DateTime?
   /// @sensitivity:internal
   lastWaiverSign       DateTime?
   /// @sensitivity:internal
@@ -294,7 +294,7 @@ model Membership {
   /// @sensitivity:public
   id          Int              @id @default(autoincrement())
   /// @sensitivity:public
-  since       DateTime         @default(now())
+  memberSince DateTime         @default(now())
   /// @sensitivity:public
   status      MembershipStatus @default(NONE)
   /// @sensitivity:public
@@ -679,7 +679,7 @@ model FeePayment {
   /// @sensitivity:public
   participantId     Int
   /// @sensitivity:personal
-  paidOn            DateTime? @default(now())
+  paidAt            DateTime? @default(now())
   /// @sensitivity:personal
   shopifyLink       String?
   /// @sensitivity:personal

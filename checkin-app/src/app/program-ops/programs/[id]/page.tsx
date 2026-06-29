@@ -44,7 +44,7 @@ type ProgramDetail = {
   shopifyProductId: string | null;
 };
 
-type ParticipantOption = { id: number; name: string | null; email: string; dob?: string | null };
+type ParticipantOption = { id: number; name: string | null; email: string; dateOfBirth?: string | null };
 
 const PHASE_BADGE: Record<string, { label: string; color: string }> = {
   PLANNING: { label: 'Planning', color: 'gray' },
@@ -523,8 +523,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         partResults,
                         (p) => { setNewPartId(p.id.toString()); setPartSearch(`${p.name || 'Unnamed'} (${p.email})`); setPartResults([]); },
                         (p) => {
-                          if (!p.dob) return null;
-                          const age = calculateAge(p.dob, program.begin ?? undefined);
+                          if (!p.dateOfBirth) return null;
+                          const age = calculateAge(p.dateOfBirth, program.begin ?? undefined);
                           let warning: string | null = null;
                           if (program.minAge !== null && age < program.minAge) warning = `⚠️ Too Young (${age})`;
                           if (program.maxAge !== null && age > program.maxAge) warning = `⚠️ Too Old (${age})`;
