@@ -53,7 +53,7 @@ export function AdminEditHouseholdModal({
     setConfirming(false);
     (async () => {
       try {
-        const res = await fetch(`/api/admin/households?id=${householdId}`);
+        const res = await fetch(`/api/membership-ops/households?id=${householdId}`);
         const data = await res.json();
         const h: AdminHousehold | null = data.household;
         if (cancelled) return;
@@ -83,7 +83,7 @@ export function AdminEditHouseholdModal({
     if (householdId == null) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/admin/households/${householdId}`, {
+      const res = await fetch(`/api/membership-ops/households/${householdId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),

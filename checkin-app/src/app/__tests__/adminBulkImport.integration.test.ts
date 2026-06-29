@@ -6,7 +6,7 @@
  * Tests CSV file uploads, parsing, household generation, and merging
  */
 
-import { POST } from '@/app/api/admin/participants/import/route';
+import { POST } from '@/app/api/membership-ops/participants/import/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import * as xlsx from 'xlsx';
@@ -100,13 +100,13 @@ describe('Admin Bulk Import API Integration Tests', () => {
         return formData;
     };
 
-    describe('POST /api/admin/participants/import', () => {
+    describe('POST /api/membership-ops/participants/import', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
                  user: { id: testUserId, sysadmin: false, boardMember: false }
              });
 
-             const req = new Request('http://localhost:4000/api/admin/participants/import', {
+             const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
                  method: 'POST',
              });
 
@@ -120,7 +120,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
             });
 
             const formData = new FormData();
-            const req = new Request('http://localhost:4000/api/admin/participants/import', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
                 method: 'POST',
                 body: formData
             }) as unknown as Parameters<typeof POST>[0];
@@ -144,7 +144,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
                 ['John', 'john@example.com']
             ]);
 
-            const req = new Request('http://localhost:4000/api/admin/participants/import', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
                 method: 'POST',
                 body: formData
             }) as unknown as Parameters<typeof POST>[0];
@@ -169,7 +169,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
                 ['Charlie', 'Batch Import Test', 'charlie-batch-import-test@example.com', '', 'Alice Batch Import Test'], // Adult in Alice's household using name reference
             ]);
 
-            const req = new Request('http://localhost:4000/api/admin/participants/import', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
                 method: 'POST',
                 body: formData
             }) as unknown as Parameters<typeof POST>[0];
@@ -210,7 +210,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
                 ['Default', 'Import Test', ''], 
             ]);
 
-            const req = new Request('http://localhost:4000/api/admin/participants/import', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
                 method: 'POST',
                 body: formData
             }) as unknown as Parameters<typeof POST>[0];

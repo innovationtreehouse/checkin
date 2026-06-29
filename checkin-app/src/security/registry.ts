@@ -56,7 +56,7 @@ defineRoute({
 // PII (parents + children names/emails), so only sysadmin/board may see it, and
 // the field grant is explicit per role.
 defineRoute({
-    endpoint: 'GET /api/admin/membership',
+    endpoint: 'GET /api/membership-ops/applications',
     authorize: { anyRole: ['sysadmin', 'boardMember'] },
     envelope: 'processes',
     orderedView: [
@@ -92,7 +92,7 @@ defineRoute({
 // Board's trusted-adult review queue. Full visibility incl. familyContext (pii)
 // and the board's internal decision notes (internal).
 defineRoute({
-    endpoint: 'GET /api/admin/trusted-adults',
+    endpoint: 'GET /api/safety/trusted-adults',
     authorize: { anyRole: ['sysadmin', 'boardMember'] },
     envelope: 'trustedAdults',
     orderedView: [

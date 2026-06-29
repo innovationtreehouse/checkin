@@ -64,7 +64,7 @@ export default function AdminParticipantsIndex() {
   const fetchParticipants = async (query = "") => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/participants/search?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/participants/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       if (data.participants) {
         setResults(data.participants);
@@ -116,7 +116,7 @@ export default function AdminParticipantsIndex() {
 
     setAssigning(true);
     try {
-      const res = await fetch(`/api/admin/participants/${selectedParticipant.id}/household`, {
+      const res = await fetch(`/api/membership-ops/participants/${selectedParticipant.id}/household`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -146,7 +146,7 @@ export default function AdminParticipantsIndex() {
     if (!editingParticipant) return;
     setSavingDetails(true);
     try {
-      const res = await fetch(`/api/admin/participants/${editingParticipant.id}`, {
+      const res = await fetch(`/api/membership-ops/participants/${editingParticipant.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm)
@@ -302,7 +302,7 @@ export default function AdminParticipantsIndex() {
               selectedId={householdId || null}
               selectedLabel={householdSearch}
               search={async (q) => {
-                const res = await fetch(`/api/admin/households?q=${encodeURIComponent(q)}`);
+                const res = await fetch(`/api/membership-ops/households?q=${encodeURIComponent(q)}`);
                 if (!res.ok) return [];
                 const data = await res.json();
                 return data.households || [];

@@ -41,7 +41,7 @@ export default function MergeParticipants() {
 
   useEffect(() => {
     if (searchA.length > 2 && !pA) {
-      fetch(`/api/admin/participants/search?q=${encodeURIComponent(searchA)}`)
+      fetch(`/api/participants/search?q=${encodeURIComponent(searchA)}`)
         .then(r => r.json())
         .then(d => setResultsA(d.participants || []));
     } else {
@@ -51,7 +51,7 @@ export default function MergeParticipants() {
 
   useEffect(() => {
     if (searchB.length > 2 && !pB) {
-      fetch(`/api/admin/participants/search?q=${encodeURIComponent(searchB)}`)
+      fetch(`/api/participants/search?q=${encodeURIComponent(searchB)}`)
         .then(r => r.json())
         .then(d => setResultsB(d.participants || []));
     } else {
@@ -62,7 +62,7 @@ export default function MergeParticipants() {
   useEffect(() => {
     if (pA && pB) {
       setLoading(true);
-      fetch(`/api/admin/participants/merge/analyze?a=${pA.id}&b=${pB.id}`)
+      fetch(`/api/membership-ops/participants/merge/analyze?a=${pA.id}&b=${pB.id}`)
         .then(r => r.json())
         .then(d => {
           if (d.participants) {
@@ -101,7 +101,7 @@ export default function MergeParticipants() {
     setMerging(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/participants/merge", {
+      const res = await fetch("/api/membership-ops/participants/merge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

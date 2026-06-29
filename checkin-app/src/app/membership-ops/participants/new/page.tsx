@@ -49,7 +49,7 @@ function NewParticipantForm() {
     if (queryHouseholdId && !householdId) {
       const fetchHousehold = async () => {
         try {
-          const res = await fetch(`/api/admin/households?id=${queryHouseholdId}`);
+          const res = await fetch(`/api/membership-ops/households?id=${queryHouseholdId}`);
           if (res.ok) {
             const data = await res.json();
             if (data.household) {
@@ -80,7 +80,7 @@ function NewParticipantForm() {
     setIsError(false);
 
     try {
-      const res = await fetch('/api/admin/participants', {
+      const res = await fetch('/api/membership-ops/participants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -181,7 +181,7 @@ function NewParticipantForm() {
                 selectedId={householdId || null}
                 selectedLabel={householdSearch}
                 search={async (q) => {
-                  const res = await fetch(`/api/admin/households?q=${encodeURIComponent(q)}`);
+                  const res = await fetch(`/api/membership-ops/households?q=${encodeURIComponent(q)}`);
                   if (!res.ok) return [];
                   const data = await res.json();
                   return data.households || [];

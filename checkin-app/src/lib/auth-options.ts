@@ -272,7 +272,7 @@ export const authOptions: NextAuthOptions = {
                 // flags from the DB so role grants/revocations take effect without
                 // waiting for the token to expire. Previously these flags were only
                 // read at sign-in, which let a revoked sysadmin/keyholder keep their
-                // privileges (including the /api/admin/roles endpoint) until the JWT
+                // privileges (including the /api/roles endpoint) until the JWT
                 // aged out — up to 30 days.
                 const dbParticipant = await withAuroraResumeRetry(() => prisma.participant.findUnique({
                     where: { id: token.id as number },

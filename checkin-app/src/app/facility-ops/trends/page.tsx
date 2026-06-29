@@ -51,7 +51,7 @@ export default function ParticipationTrendsPage() {
     const params = new URLSearchParams({ period });
     if (programId) params.set("programId", programId);
 
-    fetch(`/api/admin/trends?${params}`)
+    fetch(`/api/facility/trends?${params}`)
       .then((res) => res.json())
       .then((data) => {
         setBuckets(data.buckets || []);

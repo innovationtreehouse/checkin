@@ -3,11 +3,11 @@
  */
 /**
  * Integration tests for audit logging on the board grant/revoke membership
- * actions in POST /api/admin/households — granting (ACTIVE) and revoking
+ * actions in POST /api/membership-ops/households — granting (ACTIVE) and revoking
  * (REVOKED) must each write an AuditLog row recording who acted and what changed.
  */
 
-import { POST } from '@/app/api/admin/households/route';
+import { POST } from '@/app/api/membership-ops/households/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -18,14 +18,14 @@ jest.mock('next-auth/next', () => ({
 const TAG = 'membership-audit-test';
 
 function post(body: unknown) {
-    return POST(new Request('http://localhost:4000/api/admin/households', {
+    return POST(new Request('http://localhost:4000/api/membership-ops/households', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     }) as unknown as import('next/server').NextRequest);
 }
 
-describe('POST /api/admin/households — grant/revoke audit logging', () => {
+describe('POST /api/membership-ops/households — grant/revoke audit logging', () => {
     let boardId: number;
     let inactiveHouseholdId: number;
     let activeHouseholdId: number;

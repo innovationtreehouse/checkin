@@ -3,10 +3,10 @@
  */
 /**
  * Integration Tests for Admin Badges API
- * Tests GET /api/admin/badges for fetching raw badge scan events
+ * Tests GET /api/facility/badges for fetching raw badge scan events
  */
 
-import { GET } from '@/app/api/admin/badges/route';
+import { GET } from '@/app/api/facility/badges/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -61,11 +61,11 @@ describe('Admin Badges API Integration Tests', () => {
         });
     });
 
-    describe('GET /api/admin/badges', () => {
+    describe('GET /api/facility/badges', () => {
         it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
 
-             const req = new Request('http://localhost:4000/api/admin/badges', {
+             const req = new Request('http://localhost:4000/api/facility/badges', {
                  method: 'GET'
              });
 
@@ -78,7 +78,7 @@ describe('Admin Badges API Integration Tests', () => {
                  user: { id: testUserId, sysadmin: false, boardMember: false }
              });
 
-             const req = new Request('http://localhost:4000/api/admin/badges', {
+             const req = new Request('http://localhost:4000/api/facility/badges', {
                  method: 'GET'
              });
 
@@ -91,7 +91,7 @@ describe('Admin Badges API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true, boardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/badges', {
+            const req = new Request('http://localhost:4000/api/facility/badges', {
                 method: 'GET'
             });
 

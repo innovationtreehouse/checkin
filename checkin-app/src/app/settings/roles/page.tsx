@@ -38,7 +38,7 @@ export default function RoleAssignmentPage() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/roles');
+      const res = await fetch('/api/roles');
       if (res.ok) {
         const data = await res.json();
         setUsers(data.participants);
@@ -64,7 +64,7 @@ export default function RoleAssignmentPage() {
     setUsers(users.map(u => u.id === userId ? { ...u, [field]: value } : u));
 
     try {
-      const res = await fetch('/api/admin/roles', {
+      const res = await fetch('/api/roles', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

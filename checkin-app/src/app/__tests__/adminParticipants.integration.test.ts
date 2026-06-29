@@ -6,8 +6,8 @@
  * Tests POST (create participant with parent/household logic)
  */
 
-import { POST } from '@/app/api/admin/participants/route';
-import { PUT } from '@/app/api/admin/participants/[id]/route';
+import { POST } from '@/app/api/membership-ops/participants/route';
+import { PUT } from '@/app/api/membership-ops/participants/[id]/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { expectAuditRow, auditJson } from '@/test-helpers/expectAuditRow';
@@ -82,13 +82,13 @@ describe('Admin Participants API Integration Tests', () => {
         });
     });
 
-    describe('POST /api/admin/participants', () => {
+    describe('POST /api/membership-ops/participants', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
                  user: { id: testUserId, sysadmin: false, boardMember: false }
              });
 
-             const req = new Request('http://localhost:4000/api/admin/participants', {
+             const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                  method: 'POST',
                  body: JSON.stringify({ name: 'Test', email: 'test@example.com' })
              });
@@ -102,7 +102,7 @@ describe('Admin Participants API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true, boardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({ name: 'Test No Email' })
             });
@@ -119,7 +119,7 @@ describe('Admin Participants API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true, boardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({ name: 'Test Invalid Email', email: 'invalid-email' })
             });
@@ -136,7 +136,7 @@ describe('Admin Participants API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true, boardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({ name: 'Duplicate Email Test', email: 'admin-participants-test@example.com' })
             });
@@ -153,7 +153,7 @@ describe('Admin Participants API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true, boardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({ name: 'Lone Adult', email: 'new-lone-participants-test@example.com' })
             });
@@ -190,7 +190,7 @@ describe('Admin Participants API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true, boardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({
                     name: 'Paid Adult',
@@ -217,7 +217,7 @@ describe('Admin Participants API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true, boardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({ 
                     name: 'Child User', 
@@ -243,13 +243,13 @@ describe('Admin Participants API Integration Tests', () => {
         });
     });
 
-    describe('PUT /api/admin/participants/[id]', () => {
+    describe('PUT /api/membership-ops/participants/[id]', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
                  user: { id: testUserId, sysadmin: false, boardMember: false }
              });
 
-             const req = new Request(`http://localhost:4000/api/admin/participants/${testUserId}`, {
+             const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testUserId}`, {
                  method: 'PUT',
                  body: JSON.stringify({ name: 'Hacked Name' })
              });
@@ -268,7 +268,7 @@ describe('Admin Participants API Integration Tests', () => {
                 data: { email: 'edit-test-user@example.com', name: 'Original Name', household: { create: {} } }
             });
 
-            const req = new Request(`http://localhost:4000/api/admin/participants/${editUser.id}`, {
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${editUser.id}`, {
                 method: 'PUT',
                 body: JSON.stringify({ name: 'Updated Name', email: 'updated-email@example.com', phone: '5551234567' })
             });

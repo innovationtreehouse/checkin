@@ -5,8 +5,8 @@
  * Integration tests for board membership settings + volunteer designations.
  */
 
-import { GET as SETTINGS_GET, PUT as SETTINGS_PUT } from '@/app/api/admin/membership/settings/route';
-import { GET as DESIG_GET, POST as DESIG_POST, DELETE as DESIG_DELETE } from '@/app/api/admin/membership/volunteer-designations/route';
+import { GET as SETTINGS_GET, PUT as SETTINGS_PUT } from '@/app/api/settings/membership/route';
+import { GET as DESIG_GET, POST as DESIG_POST, DELETE as DESIG_DELETE } from '@/app/api/settings/membership/volunteer-designations/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 

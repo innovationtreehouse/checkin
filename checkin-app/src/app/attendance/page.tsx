@@ -165,7 +165,7 @@ function KioskDisplayInner() {
         return;
       }
       try {
-        const res = await fetch(`/api/admin/roles`);
+        const res = await fetch(`/api/roles`);
         if (res.ok) {
           const data = await res.json();
           const filtered = data.participants.filter(
