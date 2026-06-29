@@ -50,7 +50,7 @@ export default function CreateToolPage() {
           <TextInput
             label="Equipment Name"
             required
-            placeholder="e.g. SawStop Table Saw"
+            placeholder="e.g. Table Saw"
             value={newToolName}
             onChange={(e) => setNewToolName(e.currentTarget.value)}
           />
