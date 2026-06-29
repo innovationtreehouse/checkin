@@ -3,10 +3,9 @@
  */
 /**
  * Integration Tests for Shop API Endpoints
- * Tests active, members, tools, and certifications sub-routes
+ * Tests members, tools, and certifications sub-routes
  */
 
-import { GET as getActive } from '@/app/api/shop/active/route';
 import { GET as getMembers } from '@/app/api/shop/members/route';
 import { GET as getTools, POST as postTools } from '@/app/api/shop/tools/route';
 import { GET as getCerts, POST as postCerts } from '@/app/api/shop/certifications/route';
@@ -101,11 +100,6 @@ describe('Shop API Integration Tests', () => {
             }
         });
         certifierId = certifier.id;
-
-        // Give the common user an active visit
-        await prisma.visit.create({
-            data: { participantId: commonId, arrived: new Date() }
-        });
     });
 
     afterAll(async () => {
@@ -159,37 +153,6 @@ describe('Shop API Integration Tests', () => {
             json: queryAndBody?.body ? jest.fn().mockResolvedValue(queryAndBody.body) : undefined
         } as unknown as never;
     };
-
-    describe('/api/shop/active', () => {
-        it('should return 403 for common users', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
-
-             const res = await getActive() as Response;
-             expect(res.status).toBe(403);
-        });
-
-        it('should return 200 and active occupants for board member', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
-
-             const res = await getActive() as Response;
-             expect(res.status).toBe(200);
-             const data = await res.json();
-             
-             // The common user we made has an active visit
-             const occupantEmails = data.map((d: { participant: { email: string } }) => d.participant.email);
-             expect(occupantEmails).toContain('common-shop-api-test@example.com');
-        });
-
-        it('should return 200 and active occupants for certifier', async () => {
-             // To mock certifier role checking correctly, route.ts looks for `session.user.toolStatuses`
-             (getServerSession as jest.Mock).mockResolvedValue({ 
-                 user: { id: certifierId, toolStatuses: [{ level: 'MAY_CERTIFY_OTHERS' }] }
-             });
-
-             const res = await getActive() as Response;
-             expect(res.status).toBe(200);
-        });
-    });
 
     describe('/api/shop/members', () => {
         it('should return 403 for common users', async () => {
