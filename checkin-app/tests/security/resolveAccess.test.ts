@@ -18,7 +18,11 @@ const session = (id: number): AuthResult => ({
     },
 });
 
-const rctx = (auth: AuthResult, params: Record<string, string> = {}): ResolverContext => ({
+const rctx = (
+    auth: AuthResult,
+    params: Record<string, string> = {},
+    callerOverrides: Partial<ResolverContext['callerContext']> = {},
+): ResolverContext => ({
     auth,
     params,
     callerContext: {
@@ -31,6 +35,7 @@ const rctx = (auth: AuthResult, params: Record<string, string> = {}): ResolverCo
         participantIdsInScopePrograms: new Set(),
         householdIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
+        ...callerOverrides,
     },
 });
 
@@ -53,5 +58,71 @@ describe("resolveAccess 'self'", () => {
 
     test('no session → denied', async () => {
         expect((await resolveAccess('self', rctx({ type: 'unauthenticated' }, { id: '42' }))).allowed).toBe(false);
+    });
+});
+
+// The branches below are real authorize values (access-resolvers.ts switch) but no
+// route in the current registry uses them, so registryAuthz marks them 'unhandled'
+// and never drives them through resolveAccess. Cover each one allowed + denied here.
+
+describe("resolveAccess 'program-lead-mentor'", () => {
+    test('caller leads the program in the id param → allowed', async () => {
+        expect(
+            (await resolveAccess('program-lead-mentor', rctx(session(1), { id: '5' }, { programsLed: new Set([5]) }))).allowed,
+        ).toBe(true);
+    });
+
+    test('admin who does not lead it → allowed (admin bypass)', async () => {
+        const admin = session(1);
+        if (admin.type === 'session') admin.user.sysadmin = true;
+        expect((await resolveAccess('program-lead-mentor', rctx(admin, { id: '5' }))).allowed).toBe(true);
+    });
+
+    test('caller does not lead the program and is not admin → denied', async () => {
+        expect((await resolveAccess('program-lead-mentor', rctx(session(1), { id: '5' }))).allowed).toBe(false);
+    });
+
+    test('non-numeric id → denied', async () => {
+        expect(
+            (await resolveAccess('program-lead-mentor', rctx(session(1), { id: 'abc' }, { programsLed: new Set([5]) }))).allowed,
+        ).toBe(false);
+    });
+});
+
+describe("resolveAccess 'program-core-volunteer'", () => {
+    test('caller is a core volunteer of the program in the id param → allowed', async () => {
+        expect(
+            (await resolveAccess('program-core-volunteer', rctx(session(1), { id: '5' }, { programsCoreVolIn: new Set([5]) }))).allowed,
+        ).toBe(true);
+    });
+
+    test('caller is not a core volunteer and not admin → denied', async () => {
+        expect((await resolveAccess('program-core-volunteer', rctx(session(1), { id: '5' }))).allowed).toBe(false);
+    });
+});
+
+describe("resolveAccess 'household-lead'", () => {
+    test('caller is a household lead → allowed', async () => {
+        const lead = session(1);
+        if (lead.type === 'session') lead.user.householdLead = true;
+        expect((await resolveAccess('household-lead', rctx(lead))).allowed).toBe(true);
+    });
+
+    test('authenticated caller who is not a lead (and not admin) → denied', async () => {
+        expect((await resolveAccess('household-lead', rctx(session(1)))).allowed).toBe(false);
+    });
+
+    test('no session → denied', async () => {
+        expect((await resolveAccess('household-lead', rctx({ type: 'unauthenticated' }))).allowed).toBe(false);
+    });
+});
+
+describe("resolveAccess 'kiosk'", () => {
+    test('kiosk caller → allowed', async () => {
+        expect((await resolveAccess('kiosk', rctx({ type: 'kiosk' }))).allowed).toBe(true);
+    });
+
+    test('a normal session (not kiosk) → denied', async () => {
+        expect((await resolveAccess('kiosk', rctx(session(1)))).allowed).toBe(false);
     });
 });

@@ -329,5 +329,58 @@ describe('Shop API Integration Tests', () => {
              expect(auditRows[0].oldData).not.toBeNull();
              expect(JSON.parse(auditRows[0].oldData as string).level).toBe('BASIC');
         });
+
+        it('re-cert by a certifier writes an EDIT audit row with the prior level in oldData and the acting certifier as actor', async () => {
+            // Self-contained: a fresh tool the certifier may certify on, a fresh target.
+            const tool = await prisma.tool.create({ data: { name: 'Shop Test Tool Recert' } });
+            const reCertifier = await prisma.participant.create({
+                data: {
+                    email: 'recert-certifier-shop-api-test@example.com',
+                    name: 'Recert Certifier',
+                    household: { create: {} },
+                    toolStatuses: { create: { toolId: tool.id, level: 'MAY_CERTIFY_OTHERS' } },
+                },
+            });
+            const target = await prisma.participant.create({
+                data: { email: 'recert-target-shop-api-test@example.com', name: 'Recert Target', household: { create: {} } },
+            });
+
+            try {
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: reCertifier.id } });
+
+                // First grant: BASIC → CREATE (no prior status).
+                const createRes = await postCerts(
+                    createReq('POST', { body: { participantId: target.id, toolId: tool.id, level: 'BASIC' } }),
+                ) as Response;
+                expect(createRes.status).toBe(200);
+
+                // Re-cert: BASIC → CERTIFIED → EDIT with the prior status snapshotted.
+                const editRes = await postCerts(
+                    createReq('POST', { body: { participantId: target.id, toolId: tool.id, level: 'CERTIFIED' } }),
+                ) as Response;
+                expect(editRes.status).toBe(200);
+                expect((await editRes.json()).certification.level).toBe('CERTIFIED');
+
+                const rows = await prisma.auditLog.findMany({
+                    where: { tableName: 'ToolStatus', affectedEntityId: target.id, secondaryAffectedEntity: tool.id },
+                    orderBy: { id: 'asc' },
+                });
+                expect(rows.length).toBe(2);
+                expect(rows[0].action).toBe('CREATE');
+
+                const editRow = rows[1];
+                expect(editRow.action).toBe('EDIT');
+                expect(editRow.actorId).toBe(reCertifier.id); // the acting certifier, not an admin
+                expect(editRow.oldData).not.toBeNull();
+                expect(JSON.parse(editRow.oldData as string).level).toBe('BASIC'); // prior level snapshot
+            } finally {
+                await prisma.auditLog.deleteMany({ where: { affectedEntityId: target.id, tableName: 'ToolStatus' } });
+                await prisma.toolStatus.deleteMany({ where: { toolId: tool.id } });
+                await prisma.tool.deleteMany({ where: { id: tool.id } });
+                const hhIds = [reCertifier.householdId, target.householdId].filter((id): id is number => id !== null);
+                await prisma.participant.deleteMany({ where: { id: { in: [reCertifier.id, target.id] } } });
+                await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
+            }
+        });
     });
 });
