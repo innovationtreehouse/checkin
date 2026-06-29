@@ -56,7 +56,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
                 rightSection={
                   todoCount > 0 ? (
                     <Badge
-                      size="xs"
+                      size="md"
                       color="treehouseGreen"
                       variant="filled"
                       aria-label={`${todoCount} item${todoCount === 1 ? "" : "s"} need attention`}

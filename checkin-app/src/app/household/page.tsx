@@ -299,7 +299,7 @@ export default function HouseholdPage() {
               <Alert color="blue" mb="lg">
                 <Group justify="space-between" align="center" wrap="wrap">
                   <Text c="dimmed">Your household isn&apos;t a member yet.</Text>
-                  <Button size="xs" onClick={() => router.push('/membership')}>Join the Treehouse!</Button>
+                  <Button size="xs" fz={15} onClick={() => router.push('/membership')}>Join the Treehouse!</Button>
                 </Group>
               </Alert>
             )
@@ -333,8 +333,8 @@ export default function HouseholdPage() {
                               <Checkbox label="Household Lead" checked={editForm.isLead} onChange={(e) => setEditForm({ ...editForm, isLead: e.currentTarget.checked })} />
                             )}
                             <Group gap="xs">
-                              <Button type="submit" size="xs" color="green">Save</Button>
-                              <Button type="button" size="xs" variant="default" onClick={() => setEditingMemberId(null)}>Cancel</Button>
+                              <Button type="submit" size="xs" fz={15} color="green">Save</Button>
+                              <Button type="button" size="xs" fz={15} variant="default" onClick={() => setEditingMemberId(null)}>Cancel</Button>
                             </Group>
                           </Stack>
                         </form>
@@ -465,8 +465,8 @@ export default function HouseholdPage() {
                         <TextInput label="Relationship (optional)" value={contactForm.relationship} onChange={(e) => setContactForm({ ...contactForm, relationship: e.currentTarget.value })} placeholder="Aunt, Neighbor…" />
                       </SimpleGrid>
                       <Group gap="xs">
-                        <Button type="submit" size="xs" color="green" loading={savingContact}>{contactForm.id !== null ? "Save Contact" : "Add Contact"}</Button>
-                        <Button type="button" size="xs" variant="default" onClick={() => { setShowContactForm(false); setContactForm(blankContactForm); setContactError(""); }}>Cancel</Button>
+                        <Button type="submit" size="xs" fz={15} color="green" loading={savingContact}>{contactForm.id !== null ? "Save Contact" : "Add Contact"}</Button>
+                        <Button type="button" size="xs" fz={15} variant="default" onClick={() => { setShowContactForm(false); setContactForm(blankContactForm); setContactError(""); }}>Cancel</Button>
                       </Group>
                     </Stack>
                   </form>

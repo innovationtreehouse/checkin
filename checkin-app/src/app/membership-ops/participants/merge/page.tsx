@@ -131,7 +131,7 @@ export default function MergeParticipants() {
               <Text fw={600}>{selected.name || "Unnamed"}</Text>
               <Text size="sm" c="dimmed">{selected.email || "No email"} | ID: {selected.id}</Text>
             </div>
-            <Button size="xs" variant="default" onClick={() => setSelected(null)}>Change</Button>
+            <Button size="xs" fz={15} variant="default" onClick={() => setSelected(null)}>Change</Button>
           </Group>
         </Card>
       ) : (

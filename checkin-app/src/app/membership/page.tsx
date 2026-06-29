@@ -498,7 +498,7 @@ export default function MembershipPage() {
                   <section>
                     <Group justify="space-between" align="center" mb="sm">
                       <Title order={2}>Children</Title>
-                      <Button variant="light" size="xs" onClick={addChild}>+ Add child</Button>
+                      <Button variant="light" size="xs" fz={15} onClick={addChild}>+ Add child</Button>
                     </Group>
                     {children.length === 0 && <Text c="dimmed">No children added yet.</Text>}
                     <Stack>

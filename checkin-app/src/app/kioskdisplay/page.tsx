@@ -342,7 +342,7 @@ function KioskDisplayInner() {
           <Title order={1}>Current Attendance</Title>
           <Group align="center" gap="md" wrap="wrap">
             {!isKioskMode && canAdminCheckout && (
-              <Button color="red" variant="light" radius="xl" size="xs" onClick={() => setShowSignOutModal(true)}>
+              <Button color="red" variant="light" radius="xl" size="xs" fz={15} onClick={() => setShowSignOutModal(true)}>
                 Sign out a user
               </Button>
             )}

@@ -169,8 +169,8 @@ export default function AdminVisitsPage() {
                     </Table.Td>
                     <Table.Td>
                       <Group gap="xs" wrap="nowrap">
-                        <Button size="xs" color="green" onClick={() => handleSaveEdit(v.id)}>Save</Button>
-                        <Button size="xs" variant="default" onClick={() => setEditingVisitId(null)}>Cancel</Button>
+                        <Button size="xs" fz={15} color="green" onClick={() => handleSaveEdit(v.id)}>Save</Button>
+                        <Button size="xs" fz={15} variant="default" onClick={() => setEditingVisitId(null)}>Cancel</Button>
                       </Group>
                     </Table.Td>
                   </>
@@ -181,7 +181,7 @@ export default function AdminVisitsPage() {
                       {v.departed ? formatDateTime(v.departed) : <Text component="span" c="yellow">Active</Text>}
                     </Table.Td>
                     <Table.Td>
-                      <Button size="xs" variant="light" onClick={() => handleEditClick(v)}>Edit</Button>
+                      <Button size="xs" fz={15} variant="light" onClick={() => handleEditClick(v)}>Edit</Button>
                     </Table.Td>
                   </>
                 )}
