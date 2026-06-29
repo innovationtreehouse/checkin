@@ -14,11 +14,6 @@ interface Settings {
   volunteerDiscountCode: string | null;
   bgRecheckMonths: number;
 }
-interface Designation {
-  id: number;
-  email: string;
-  createdAt: string;
-}
 
 const dollars = (cents: number) => (cents / 100).toFixed(2);
 
@@ -44,12 +39,9 @@ export default function MembershipSettingsPage() {
 
   // Snapshot of the dues-form values as last loaded/saved; isDirty compares it to
   // current state to drive the unsaved-changes guard.
-  // ponytail: guards the main Save-button form only. The volunteer-designation
-  // and go-live cards below are separate save flows — wire them if they grow edits.
+  // ponytail: guards the main Save-button form only. The go-live card below is a
+  // separate save flow — wire it if it grows edits.
   const [initial, setInitial] = useState<Record<string, string> | null>(null);
-
-  const [designations, setDesignations] = useState<Designation[]>([]);
-  const [newEmail, setNewEmail] = useState("");
 
   const [bulkReminders, setBulkReminders] = useState(false);
 
@@ -63,10 +55,7 @@ export default function MembershipSettingsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [sRes, dRes] = await Promise.all([
-        fetch("/api/settings/membership"),
-        fetch("/api/settings/membership/volunteer-designations"),
-      ]);
+      const sRes = await fetch("/api/settings/membership");
       if (sRes.ok) {
         const { settings } = (await sRes.json()) as { settings: Settings };
         const snap = {
@@ -85,7 +74,6 @@ export default function MembershipSettingsPage() {
         setDiscountCode(snap.discountCode);
         setInitial(snap);
       }
-      if (dRes.ok) setDesignations((await dRes.json()).designations || []);
     } finally {
       setLoading(false);
     }
@@ -113,34 +101,6 @@ export default function MembershipSettingsPage() {
       else flash((await res.json()).error || "Save failed.", true);
     } catch { flash("Network error.", true); }
     finally { setSaving(false); }
-  };
-
-  const addDesignation = async () => {
-    if (!newEmail.trim()) return;
-    setSaving(true);
-    flash("");
-    try {
-      const res = await fetch("/api/settings/membership/volunteer-designations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: newEmail }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setNewEmail("");
-        flash(data.warning || "Designation added.", !!data.warning);
-        await load();
-      } else flash(data.error || "Could not add.", true);
-    } catch { flash("Network error.", true); }
-    finally { setSaving(false); }
-  };
-
-  const removeDesignation = async (id: number) => {
-    setSaving(true);
-    try {
-      await fetch(`/api/settings/membership/volunteer-designations?id=${id}`, { method: "DELETE" });
-      await load();
-    } finally { setSaving(false); }
   };
 
   const bulkOpenRenewals = async () => {
@@ -267,37 +227,6 @@ export default function MembershipSettingsPage() {
             <Button mt="lg" disabled={saving} loading={saving} onClick={saveSettings} style={{ alignSelf: "flex-start" }}>
               Save settings
             </Button>
-          </Card>
-
-          <Card withBorder radius="md" padding="lg">
-            <Title order={3} mb="xs">Volunteer-only designated emails</Title>
-            <Text c="dimmed" mb="md">
-              If one of these emails applies for membership, that whole household is treated as a
-              volunteer only family (lower dues).
-            </Text>
-            <Group gap="sm" wrap="wrap" mb="md" align="flex-end">
-              <TextInput
-                w={320}
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.currentTarget.value)}
-                placeholder="volunteer@example.com"
-              />
-              <Button disabled={saving} onClick={addDesignation}>Add</Button>
-            </Group>
-            {designations.length === 0 ? (
-              <Text c="dimmed">No volunteer designations yet.</Text>
-            ) : (
-              <Stack gap={0}>
-                {designations.map((d) => (
-                  <Group key={d.id} justify="space-between" py="xs" style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}>
-                    <span>{d.email}</span>
-                    <Button variant="subtle" color="red" size="compact-sm" disabled={saving} onClick={() => removeDesignation(d.id)}>
-                      Remove
-                    </Button>
-                  </Group>
-                ))}
-              </Stack>
-            )}
           </Card>
 
           <Card withBorder radius="md" padding="lg" style={{ borderColor: "var(--mantine-color-yellow-5)" }}>
