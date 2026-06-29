@@ -79,19 +79,13 @@ export function ErrorLogPanel() {
                   <Table.Tr>
                     <Table.Td colSpan={3}>
                       <Stack gap="xs">
-                        {e.stack && (
-                          <div>
-                            <Text size="xs" fw={700} tt="uppercase" c="dimmed">Stack</Text>
-                            <Code block fz="xs">{e.stack}</Code>
-                          </div>
-                        )}
                         {e.context != null && (
                           <div>
                             <Text size="xs" fw={700} tt="uppercase" c="dimmed">Context</Text>
                             <Code block fz="xs">{JSON.stringify(e.context, null, 2)}</Code>
                           </div>
                         )}
-                        {!e.stack && e.context == null && (
+                        {e.context == null && (
                           <Text c="dimmed" size="sm">No additional detail.</Text>
                         )}
                       </Stack>

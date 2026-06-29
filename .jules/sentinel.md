@@ -22,3 +22,7 @@
 **Vulnerability:** When fixing the dev auth exposure in `DevLoginPicker.tsx`, placing the early environment return (`if (process.env.NODE_ENV === 'production') return null;`) before hook declarations (`useState`, `useEffect`) violated the React Rules of Hooks. While it doesn't crash at runtime since the environment variable is static, it breaks the CI/CD pipeline via `eslint-plugin-react-hooks`.
 **Learning:** Security fixes in React components must respect the fundamental Rules of Hooks. Early returns for security/environment checks must be placed after all hook declarations.
 **Prevention:** When adding conditional early returns to React components (e.g., environment checks), ensure they are placed after all hook declarations.
+## 2024-05-24 - Stack Trace Exposure in Admin Logs
+**Vulnerability:** The application was extracting `error.stack` and saving it to the `ErrorLog` table via `logBackendError`. This table is then exposed to sysadmins and board members via the `ErrorLogPanel` component.
+**Learning:** Persisting raw stack traces and exposing them via admin APIs/UIs leaks sensitive internal server information (like directory structures, file paths, and dependency versions). This violates the principle of least privilege and defense-in-depth, even if the endpoint is authenticated.
+**Prevention:** Avoid persisting stack traces in database tables accessible by application dashboards. Only log stack traces to secure, centralized logging infrastructure (e.g., stdout/stderr captured by Datadog/CloudWatch) and keep database-persisted error logs generic.

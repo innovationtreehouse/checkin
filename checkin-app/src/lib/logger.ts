@@ -16,14 +16,13 @@ export const logger = {
 export async function logBackendError(error: unknown, route?: string, context?: unknown) {
     try {
         const message = error instanceof Error ? error.message : String(error);
-        const stack = error instanceof Error ? error.stack : undefined;
 
         // 1. Insert the new error log
         await prisma.errorLog.create({
             data: {
                 message,
                 route,
-                stack,
+                stack: undefined,
                 context: context ? JSON.parse(JSON.stringify(context)) : undefined, // Ensure it's JSON serializable
             }
         });
