@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Center, Checkbox, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
+import { Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { SettingsTabs } from '@/components/admin/SettingsTabs';
 import { AlertBanner } from '@/components/admin/AlertBanner';
@@ -14,6 +14,7 @@ type UserRole = {
   boardMember: boolean;
   keyholder: boolean;
   backgroundCheckReviewer: boolean;
+  isYouth: boolean;
 };
 
 const ROLE_COLUMNS: { field: keyof UserRole; label: string }[] = [
@@ -31,6 +32,7 @@ export default function RoleAssignmentPage() {
   const [message, setMessage] = useState("");
   const [savingId, setSavingId] = useState<number | null>(null);
   const [userSearchText, setUserSearchText] = useState("");
+  const [hideYouth, setHideYouth] = useState(true);
 
   const currentUserIsSysadmin = !!user?.sysadmin;
 
@@ -92,8 +94,9 @@ export default function RoleAssignmentPage() {
   if (!ready) return null;
 
   const filteredUsers = users.filter(u =>
-    (u.name || "").toLowerCase().includes((userSearchText || "").toLowerCase()) ||
-    (u.email || "").toLowerCase().includes((userSearchText || "").toLowerCase())
+    (!hideYouth || !u.isYouth) &&
+    ((u.name || "").toLowerCase().includes((userSearchText || "").toLowerCase()) ||
+     (u.email || "").toLowerCase().includes((userSearchText || "").toLowerCase()))
   );
 
   return (
@@ -107,12 +110,20 @@ export default function RoleAssignmentPage() {
 
       <AlertBanner message={message} tone="error" />
 
-      <TextInput
-        placeholder="Search users by name or email..."
-        value={userSearchText}
-        onChange={(e) => setUserSearchText(e.currentTarget.value)}
-        maw={400}
-      />
+      <Group justify="space-between">
+        <TextInput
+          placeholder="Search users by name or email..."
+          value={userSearchText}
+          onChange={(e) => setUserSearchText(e.currentTarget.value)}
+          maw={400}
+          style={{ flex: 1 }}
+        />
+        <Checkbox
+          label="Hide Youth"
+          checked={hideYouth}
+          onChange={(e) => setHideYouth(e.currentTarget.checked)}
+        />
+      </Group>
 
       <Table.ScrollContainer minWidth={700}>
         <Table verticalSpacing="sm" highlightOnHover>

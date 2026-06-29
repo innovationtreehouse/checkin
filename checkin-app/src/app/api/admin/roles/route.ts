@@ -9,17 +9,12 @@ export const GET = withAuth(
             const eighteenYearsAgo = new Date();
             eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 
-            const participants = await prisma.participant.findMany({
-                where: {
-                    OR: [
-                        { dob: { lte: eighteenYearsAgo } },
-                        { dob: null }
-                    ]
-                },
+            const rows = await prisma.participant.findMany({
                 select: {
                     id: true,
                     email: true,
                     name: true,
+                    dob: true,
                     sysadmin: true,
                     boardMember: true,
                     keyholder: true,
@@ -27,6 +22,11 @@ export const GET = withAuth(
                 },
                 orderBy: { name: "asc" },
             });
+            // Don't leak dob (PII); expose only a youth flag for filtering.
+            const participants = rows.map(({ dob, ...p }: (typeof rows)[number]) => ({
+                ...p,
+                isYouth: dob != null && dob > eighteenYearsAgo,
+            }));
             return NextResponse.json({ participants });
         } catch (error) {
             console.error("Error fetching roles:", error);
