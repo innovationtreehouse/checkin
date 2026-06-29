@@ -86,8 +86,16 @@ export async function POST(req: Request) {
         if (membershipProcessIdStr) {
             const processId = parseInt(membershipProcessIdStr, 10);
             if (!isNaN(processId)) {
-                await activateByProcessId(processId, order.id ? String(order.id) : "");
-                logger.info(`[SHOPIFY WEBHOOK] Activated membership for process ${processId}`);
+                const proc = await activateByProcessId(processId, order.id ? String(order.id) : "");
+                if (proc?.status === "ACTIVE") {
+                    logger.info(`[SHOPIFY WEBHOOK] Activated membership for process ${processId}`);
+                } else if (proc?.status === "BLOCKED") {
+                    logger.warn(`[SHOPIFY WEBHOOK] Payment recorded for BLOCKED process ${processId} — membership NOT activated; board notified for refund`);
+                } else if (proc?.status === "PENDING_BG_CLEARANCE") {
+                    logger.info(`[SHOPIFY WEBHOOK] Payment recorded for process ${processId}; awaiting background-check clearance`);
+                } else {
+                    logger.info(`[SHOPIFY WEBHOOK] Payment webhook for process ${processId} — no state change (already processed)`);
+                }
             }
             return NextResponse.json({ success: true });
         }

@@ -17,7 +17,7 @@ const DAYS_MAP = [
   { label: 'Sat', value: 6 },
 ];
 
-function NewEventForm() {
+export function NewEventForm() {
   const { status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();

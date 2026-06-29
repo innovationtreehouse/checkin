@@ -5,6 +5,25 @@ import prisma from "@/lib/prisma";
 import { addDays, parseISO, isBefore, isEqual, getDay, setHours, setMinutes } from 'date-fns';
 import { fromZonedTime } from 'date-fns-tz';
 
+// List standalone (one-time) events — those with no associated program.
+export async function GET() {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const user = session.user as unknown as { sysadmin?: boolean; boardMember?: boolean };
+    if (!user?.sysadmin && !user?.boardMember) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const events = await prisma.event.findMany({
+        where: { programId: null },
+        orderBy: { start: "desc" },
+        select: { id: true, name: true, start: true, end: true, description: true },
+    });
+    return NextResponse.json(events);
+}
+
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
 
