@@ -74,6 +74,7 @@ export const classifications = {
         zohoActionId: 'internal',
         contractSignedAt: 'internal',
         bgConsentAt: 'internal',
+        bgClearedAt: 'internal',
         shopifyDraftOrderId: 'internal',
         shopifyInvoiceUrl: 'personal',
         shopifyOrderId: 'internal',

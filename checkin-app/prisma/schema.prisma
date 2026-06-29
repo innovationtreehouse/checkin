@@ -233,6 +233,11 @@ enum MembershipProcessStatus {
   PENDING_EXTERNAL_ACTION
   PENDING_BG_REVIEW
   PENDING_PAYMENT
+  // Paid, but the background check has not yet cleared. The membership stays
+  // INACTIVE here — it activates automatically once two reviewers approve (or a
+  // prior valid check is detected). The BG review runs in parallel with payment,
+  // so an applicant is never forced to wait on the long-tail check before paying.
+  PENDING_BG_CLEARANCE
   ACTIVE
   BLOCKED
   PENDING_RENEWAL
@@ -310,6 +315,12 @@ model MembershipProcess {
   contractSignedAt      DateTime?
   /// @sensitivity:internal
   bgConsentAt           DateTime?
+  /// When the background-check requirement was satisfied for this cycle — either
+  /// two reviewers approved, or a still-valid prior check was detected at intake.
+  /// The single source of truth for "BG cleared", independent of the payment
+  /// track; the membership only goes ACTIVE once this is set AND dues are paid.
+  /// @sensitivity:internal
+  bgClearedAt           DateTime?
   /// @sensitivity:internal
   shopifyDraftOrderId   String?
   /// @sensitivity:personal

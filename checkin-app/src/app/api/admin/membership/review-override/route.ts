@@ -7,8 +7,9 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/admin/membership/review-override — board action on a BLOCKED application.
  * Body: { processId, action: 'reset' | 'approve' }
- *   reset   — clear attestations, send back to PENDING_BG_REVIEW (re-ping reviewers)
- *   approve — board override straight to PENDING_PAYMENT
+ *   reset   — clear attestations, send back for re-review (re-ping reviewers)
+ *   approve — board override: clear the check, activating if already paid else
+ *             leaving it at PENDING_PAYMENT
  */
 export const POST = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
