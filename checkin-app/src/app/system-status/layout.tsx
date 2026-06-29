@@ -3,12 +3,14 @@
 import { usePathname, useRouter } from "next/navigation";
 import { Box, Center, Loader, Tabs } from "@mantine/core";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 import { SYSTEM_STATUS_NAV_LINKS } from "@/lib/systemStatusNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
 export default function SystemStatusLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const confirmNav = useConfirmNav();
   const { user, loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
 
   if (loading) {
@@ -30,7 +32,7 @@ export default function SystemStatusLayout({ children }: { children: React.React
       <Tabs
         value={active}
         onChange={(value) => {
-          if (value && value !== active) router.push(value);
+          if (value && value !== active && confirmNav()) router.push(value);
         }}
         mb="md"
       >

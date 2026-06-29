@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Tabs } from "@mantine/core";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 
 export type SettingsTab = "membership" | "roles";
 
@@ -18,12 +19,16 @@ const TABS: { value: SettingsTab; label: string; href: string }[] = [
  */
 export function SettingsTabs({ active }: { active: SettingsTab }) {
   const router = useRouter();
+  const confirmNav = useConfirmNav();
   return (
     <Tabs
       value={active}
       onChange={(value) => {
         const tab = TABS.find((t) => t.value === value);
-        if (tab && value !== active) router.push(tab.href);
+        if (tab && value !== active) {
+          if (!confirmNav()) return;
+          router.push(tab.href);
+        }
       }}
       mb="md"
     >
