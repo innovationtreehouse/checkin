@@ -50,6 +50,7 @@ export const PAGES: PageEntry[] = [
   // Attendance — any signed-in member
   { href: '/attendance/current', label: 'Attendance', section: 'Attendance', visible: SIGNED_IN },
   { href: '/attendance/manual', label: 'Manual Check-In', section: 'Attendance', visible: SIGNED_IN },
+  { href: '/attendance/household', label: 'Household Check-ins', section: 'Attendance', keywords: 'visits history dependents', visible: SIGNED_IN },
   { href: '/attendance/certifications', label: 'Certifications', section: 'Attendance', visible: SIGNED_IN },
 
   // Programs — public
