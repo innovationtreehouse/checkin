@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import type { Prisma, EmergencyContact } from "@/generated/prisma/client";
-import { identityKeys, sameIdentity, normalizeEmail, normalizePhone } from "./identity";
+import { identityKeys, sameIdentity, identityMatchReason, normalizeEmail, normalizePhone } from "./identity";
 
 /**
  * Emergency-contact write/read model. Enforces the not-a-household-member rule
@@ -89,9 +89,14 @@ export async function assertExternal(db: Db, householdId: number, input: Contact
     const members = await loadMembers(db, householdId);
     const match = matchingMember(input, members);
     if (match) {
+        const reason = identityMatchReason(identityKeys(input), identityKeys(match));
+        const memberName = match.name?.trim() || "a household member";
+        const why = reason === "phone" ? `the phone number matches ${memberName}`
+            : reason === "email" ? `the email matches ${memberName}`
+            : `the name matches ${memberName}`;
         throw new EmergencyContactError(
             "is_member",
-            `${input.name?.trim() || "That person"} is part of this household and can't be its emergency contact. Choose someone outside the household.`,
+            `${input.name?.trim() || "That person"} is part of this household and can't be its emergency contact — ${why}. Choose someone outside the household.`,
         );
     }
 }

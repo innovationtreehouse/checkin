@@ -44,8 +44,13 @@ export function identityKeys(person: { name?: string | null; phone?: string | nu
  * product decision (phone + email + name).
  */
 export function sameIdentity(a: IdentityKeys, b: IdentityKeys): boolean {
-    if (a.phoneDigits && b.phoneDigits && a.phoneDigits === b.phoneDigits) return true;
-    if (a.emailNorm && b.emailNorm && a.emailNorm === b.emailNorm) return true;
-    if (a.nameNorm && b.nameNorm && a.nameNorm === b.nameNorm) return true;
-    return false;
+    return identityMatchReason(a, b) !== null;
+}
+
+/** Which key matched (phone wins, then email, then name), or null. */
+export function identityMatchReason(a: IdentityKeys, b: IdentityKeys): "phone" | "email" | "name" | null {
+    if (a.phoneDigits && b.phoneDigits && a.phoneDigits === b.phoneDigits) return "phone";
+    if (a.emailNorm && b.emailNorm && a.emailNorm === b.emailNorm) return "email";
+    if (a.nameNorm && b.nameNorm && a.nameNorm === b.nameNorm) return "name";
+    return null;
 }
