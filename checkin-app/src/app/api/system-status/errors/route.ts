@@ -7,7 +7,7 @@ export const GET = withAuth(
     async () => {
         try {
             const errors = await prisma.errorLog.findMany({
-                orderBy: { createdAt: "desc" },
+                orderBy: { timestamp: "desc" },
                 take: 100,
             });
             return NextResponse.json({ errors });

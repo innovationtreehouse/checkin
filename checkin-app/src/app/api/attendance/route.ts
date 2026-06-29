@@ -203,7 +203,7 @@ export async function POST(req: Request) {
                 where: {
                     tableName: 'SYSTEM_NOTIFY',
                     action: 'CREATE',
-                    time: { gte: fiveMinutesAgo }
+                    timestamp: { gte: fiveMinutesAgo }
                 }
             });
 

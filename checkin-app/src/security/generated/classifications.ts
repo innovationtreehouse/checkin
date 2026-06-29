@@ -233,7 +233,7 @@ export const classifications = {
     RawBadgeLog: {
         id: 'internal',
         participantId: 'internal',
-        time: 'personal',
+        timestamp: 'personal',
         location: 'personal',
     },
     Visit: {
@@ -247,7 +247,7 @@ export const classifications = {
     },
     AuditLog: {
         id: 'internal',
-        time: 'internal',
+        timestamp: 'internal',
         actorId: 'internal',
         action: 'internal',
         tableName: 'internal',
@@ -283,7 +283,7 @@ export const classifications = {
     },
     ErrorLog: {
         id: 'internal',
-        createdAt: 'internal',
+        timestamp: 'internal',
         route: 'internal',
         message: 'internal',
         stack: 'internal',
@@ -300,7 +300,7 @@ export const classifications = {
         source: 'internal',
         message: 'internal',
         context: 'internal',
-        createdAt: 'internal',
+        timestamp: 'internal',
         resolvedAt: 'internal',
     },
     DevLedger: {

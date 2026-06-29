@@ -154,7 +154,7 @@ describe('AuditLog Integration Tests', () => {
                 tableName: 'Program',
                 affectedEntityId: testProgramId
             },
-            orderBy: { time: 'desc' }
+            orderBy: { timestamp: 'desc' }
         });
 
         expect(log).toBeDefined();
@@ -178,7 +178,7 @@ describe('AuditLog Integration Tests', () => {
                 tableName: 'Program',
                 affectedEntityId: testProgramId
             },
-            orderBy: { time: 'desc' }
+            orderBy: { timestamp: 'desc' }
         });
 
         expect(log).toBeDefined();
@@ -206,7 +206,7 @@ describe('AuditLog Integration Tests', () => {
                 affectedEntityId: testParticipantId,
                 secondaryAffectedEntity: testProgramId
             },
-            orderBy: { time: 'desc' }
+            orderBy: { timestamp: 'desc' }
         });
 
         expect(log).toBeDefined();
@@ -242,7 +242,7 @@ describe('AuditLog Integration Tests', () => {
                 affectedEntityId: testVisitId,
                 secondaryAffectedEntity: testEventId
             },
-            orderBy: { time: 'desc' }
+            orderBy: { timestamp: 'desc' }
         });
 
         expect(log).toBeDefined();

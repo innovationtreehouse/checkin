@@ -34,7 +34,7 @@ export async function logBackendError(error: unknown, route?: string, context?: 
 
         await prisma.errorLog.deleteMany({
             where: {
-                createdAt: {
+                timestamp: {
                     lt: thirtyDaysAgo
                 }
             }
@@ -70,7 +70,7 @@ export async function logIntegrationError(source: string, error: unknown, contex
         const ninetyDaysAgo = new Date();
         ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
         await prisma.integrationErrorLog.deleteMany({
-            where: { createdAt: { lt: ninetyDaysAgo } },
+            where: { timestamp: { lt: ninetyDaysAgo } },
         });
     } catch (loggingError) {
         console.error("Failed to log integration error to database:", loggingError);

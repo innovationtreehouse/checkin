@@ -33,16 +33,16 @@ export const GET = withAuth(
             const from = sp.get("from");
             const to = sp.get("to");
             if (from || to) {
-                where.time = {};
-                if (from) where.time.gte = new Date(`${from}T00:00:00.000`);
-                if (to) where.time.lte = new Date(`${to}T23:59:59.999`);
+                where.timestamp = {};
+                if (from) where.timestamp.gte = new Date(`${from}T00:00:00.000`);
+                if (to) where.timestamp.lte = new Date(`${to}T23:59:59.999`);
             }
 
             const [total, rows, tableRows] = await Promise.all([
                 prisma.auditLog.count({ where }),
                 prisma.auditLog.findMany({
                     where,
-                    orderBy: { time: 'desc' },
+                    orderBy: { timestamp: 'desc' },
                     skip: (page - 1) * PAGE_SIZE,
                     take: PAGE_SIZE,
                 }),

@@ -744,13 +744,13 @@ model RawBadgeLog {
   /// @sensitivity:internal
   participantId Int
   /// @sensitivity:personal
-  time          DateTime @default(now())
+  timestamp     DateTime @default(now())
   /// @sensitivity:personal
   location      String?
 
   participant Participant @relation(fields: [participantId], references: [id])
 
-  @@index([participantId, time]) // Double-badge detection in /api/scan
+  @@index([participantId, timestamp]) // Double-badge detection in /api/scan
 }
 
 model Visit {
@@ -779,7 +779,7 @@ model AuditLog {
   /// @sensitivity:internal
   id                      Int         @id @default(autoincrement())
   /// @sensitivity:internal
-  time                    DateTime    @default(now())
+  timestamp               DateTime    @default(now())
   /// @sensitivity:internal
   actorId                 Int
   /// @sensitivity:internal
@@ -854,7 +854,7 @@ model ErrorLog {
   /// @sensitivity:internal
   id        Int      @id @default(autoincrement())
   /// @sensitivity:internal
-  createdAt DateTime @default(now())
+  timestamp DateTime @default(now())
   /// @sensitivity:internal
   route     String?
   /// @sensitivity:internal
@@ -889,11 +889,11 @@ model IntegrationErrorLog {
   /// @sensitivity:internal
   context    Json?
   /// @sensitivity:internal
-  createdAt  DateTime  @default(now())
+  timestamp  DateTime  @default(now())
   /// @sensitivity:internal
   resolvedAt DateTime?
 
-  @@index([resolvedAt, createdAt])
+  @@index([resolvedAt, timestamp])
 }
 
 /// Dev-instance activity ledger (DEV_DASHBOARD_DESIGN.md §6). Lives only in checkin_dev; records
