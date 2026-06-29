@@ -8,6 +8,7 @@ import { formatDate, formatTime, formatDateTime, calculateAge } from '@/lib/time
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
+import { isOrgAccount } from '@/lib/orgAccount';
 
 type Member = { id: number; name?: string; email?: string; dob?: string; phone?: string };
 type EmergencyContact = { id: number; name: string; phone: string; email?: string | null; relationship?: string | null; priority: number; invalid: boolean };
@@ -267,6 +268,9 @@ export default function HouseholdPage() {
   if (!session) return null;
 
   const userId = (session.user as { id: number })?.id;
+  // Staff (@innovationtreehouse.org) accounts aren't real member families; the add-member
+  // control is hidden for them (server also enforces this — see /api/household PATCH).
+  const isStaffAccount = isOrgAccount(session.user as { hd?: string | null; email?: string | null });
   const isLead = (pid: number) => household?.leads?.some((l) => l.participantId === pid) ?? false;
   const viewerIsLead = isLead(userId);
 
@@ -362,7 +366,7 @@ export default function HouseholdPage() {
                 })}
               </SimpleGrid>
 
-              {!addingMember ? (
+              {isStaffAccount ? null : !addingMember ? (
                 <Button variant="light" onClick={() => setAddingMember(true)}>+ Add Household Member</Button>
               ) : (
                 <Card withBorder radius="md" padding="lg">
