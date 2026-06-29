@@ -131,7 +131,7 @@ describe('Ownership-boundary authorization', () => {
         // Trusted adults owned by HH_A.
         const taW = await prisma.trustedAdult.create({
             data: {
-                householdId: hhA, counterpartyName: 'Aunt May', counterpartyPhone: '555-0001',
+                householdId: hhA, counterpartyName: 'Aunt May', counterpartyPhone: '555-555-0001',
                 familyContext: 'ctx', disclosedById: leadA,
                 reviews: { create: { householdId: hhA, kind: 'INITIAL', status: 'PENDING_BOARD_REVIEW' } },
             },
@@ -139,7 +139,7 @@ describe('Ownership-boundary authorization', () => {
         taWithdrawId = taW.id;
         const taR = await prisma.trustedAdult.create({
             data: {
-                householdId: hhA, counterpartyName: 'Uncle Ben', counterpartyPhone: '555-0002',
+                householdId: hhA, counterpartyName: 'Uncle Ben', counterpartyPhone: '555-555-0002',
                 familyContext: 'ctx', disclosedById: leadA,
                 reviews: { create: { householdId: hhA, kind: 'INITIAL', status: 'APPROVED' } },
             },
@@ -148,8 +148,8 @@ describe('Ownership-boundary authorization', () => {
 
         // Two emergency contacts in HH_A (DELETE needs a second valid contact to exist).
         as(leadA, { householdId: hhA });
-        contact1 = (await (await EC_POST(jsonReq({ name: 'Contact One', phone: '555-1111' }, 'POST'))).json()).contact.id;
-        contact2 = (await (await EC_POST(jsonReq({ name: 'Contact Two', phone: '555-2222' }, 'POST'))).json()).contact.id;
+        contact1 = (await (await EC_POST(jsonReq({ name: 'Contact One', phone: '555-555-1111' }, 'POST'))).json()).contact.id;
+        contact2 = (await (await EC_POST(jsonReq({ name: 'Contact Two', phone: '555-555-2222' }, 'POST'))).json()).contact.id;
     });
 
     afterAll(async () => {
@@ -188,7 +188,7 @@ describe('Ownership-boundary authorization', () => {
         });
         it('403 for a non-lead member (POST)', async () => {
             as(memberA, { householdId: hhA });
-            expect((await EC_POST(jsonReq({ name: 'X', phone: '555-9' }, 'POST'))).status).toBe(403);
+            expect((await EC_POST(jsonReq({ name: 'X', phone: '555-555-0009' }, 'POST'))).status).toBe(403);
         });
         it('200 for the lead (GET)', async () => {
             as(leadA, { householdId: hhA });
@@ -214,13 +214,13 @@ describe('Ownership-boundary authorization', () => {
             as(leadB, { householdId: hhB });
             // leadB is a lead (passes the lead gate for THEIR household) but the contact
             // belongs to HH_A — the service must not find/update it for HH_B.
-            const res = await EC_PATCH(jsonReq({ name: 'Hijack', phone: '555-6666' }), ecCtx(contact1));
+            const res = await EC_PATCH(jsonReq({ name: 'Hijack', phone: '555-555-6666' }), ecCtx(contact1));
             expect(res.status).not.toBe(200);
             expect(res.status).toBe(404);
         });
         it('200 for the owning lead (PATCH)', async () => {
             as(leadA, { householdId: hhA });
-            expect((await EC_PATCH(jsonReq({ name: 'Contact One Edited', phone: '555-1111' }), ecCtx(contact1))).status).toBe(200);
+            expect((await EC_PATCH(jsonReq({ name: 'Contact One Edited', phone: '555-555-1111' }), ecCtx(contact1))).status).toBe(200);
         });
         it('200 for the owning lead (DELETE, second valid contact present)', async () => {
             as(leadA, { householdId: hhA });
