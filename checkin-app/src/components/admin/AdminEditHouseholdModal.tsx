@@ -23,7 +23,7 @@ const EMPTY: FormState = { name: "", address: "", emergencyContactName: "", emer
 
 /**
  * Admin/board editor for a household's own info. Denser than the member-facing
- * `/household` editor and reachable from any admin surface that has a household id.
+ * `/my-household` editor and reachable from any admin surface that has a household id.
  *
  * Saving is intentionally two-step: the form gates behind an "are you using admin
  * powers" confirmation dialog — not a data-confirmation, but an acknowledgement
