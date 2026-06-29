@@ -450,8 +450,13 @@ model TrustedAdult {
   counterparty              Participant?       @relation("TrustedAdultCounterparty", fields: [counterpartyParticipantId], references: [id])
   /// @sensitivity:personal
   counterpartyName          String
+  /// The trusted adult's phone and/or email. At least one is required (enforced
+  /// in the app, not the DB, since "at least one of two nullable columns" has no
+  /// clean SQL constraint). Both may be present.
   /// @sensitivity:personal
-  counterpartyContact       String
+  counterpartyPhone         String?
+  /// @sensitivity:personal
+  counterpartyEmail         String?
   /// The family's explanation for the BOARD — what this adult may or may not do,
   /// restrictions, safeguarding context. Board + the household's own leads only
   /// (pii tier is the board/family band here; program leads & keyholders never

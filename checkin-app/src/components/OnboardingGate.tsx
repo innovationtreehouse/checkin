@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
+import { isValidEmail } from '@/lib/emergencyContacts/identity';
 import {
   Alert,
   Box,
@@ -27,6 +28,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
   const [phone, setPhone] = useState('');
   const [emergencyContactName, setEmergencyContactName] = useState('');
   const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
+  const [emergencyContactEmail, setEmergencyContactEmail] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -62,6 +64,11 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (needsEmergencyContact && emergencyContactEmail.trim() && !isValidEmail(emergencyContactEmail)) {
+      setError("That emergency contact email doesn't look right.");
+      return;
+    }
+
     setSaving(true);
     setError('');
 
@@ -73,6 +80,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
       if (needsEmergencyContact && emergencyContactName.trim() && emergencyContactPhone.trim()) {
         payload.emergencyContactName = emergencyContactName.trim();
         payload.emergencyContactPhone = emergencyContactPhone.trim();
+        if (emergencyContactEmail.trim()) payload.emergencyContactEmail = emergencyContactEmail.trim();
       }
 
       const res = await fetch('/api/profile/onboarding', {
@@ -154,6 +162,13 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                     value={emergencyContactPhone}
                     onChange={(e) => setEmergencyContactPhone(e.currentTarget.value)}
                     required
+                  />
+                  <TextInput
+                    type="email"
+                    label="Contact Email (optional)"
+                    placeholder="jane@example.com"
+                    value={emergencyContactEmail}
+                    onChange={(e) => setEmergencyContactEmail(e.currentTarget.value)}
                   />
                 </Stack>
               </Paper>

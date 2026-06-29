@@ -49,7 +49,7 @@ type ParentInput = { id?: number; name?: string; email?: string; dob?: string | 
 type ChildInput = { id?: number; name?: string; email?: string | null; dob?: string | null; allergies?: string | null };
 
 export interface IntakeSaveInput {
-    household?: Partial<StructuredAddress> & { emergencyContactName?: string; emergencyContactPhone?: string };
+    household?: Partial<StructuredAddress> & { emergencyContactName?: string; emergencyContactPhone?: string; emergencyContactEmail?: string };
     primaryParent?: ParentInput;
     secondaryParent?: ParentInput | null;
     children?: ChildInput[];
@@ -122,6 +122,7 @@ export async function getIntakeState(userId: number) {
                       // form. Shown even when flagged invalid so the lead can fix it.
                       emergencyContactName: household.emergencyContacts[0]?.name ?? null,
                       emergencyContactPhone: household.emergencyContacts[0]?.phone ?? null,
+                      emergencyContactEmail: household.emergencyContacts[0]?.email ?? null,
                   }
                 : null,
             primaryParent: primary ? shape(primary) : null,
@@ -215,10 +216,15 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
         // Emergency contact lives in its own table now; the single-field intake
         // form maps onto the household's primary contact. Tolerant of partial
         // saves; rejects (direction A) a contact that is a household member.
-        if (input.household.emergencyContactName !== undefined || input.household.emergencyContactPhone !== undefined) {
+        if (
+            input.household.emergencyContactName !== undefined ||
+            input.household.emergencyContactPhone !== undefined ||
+            input.household.emergencyContactEmail !== undefined
+        ) {
             await upsertPrimaryContact(prisma, householdId, {
                 name: input.household.emergencyContactName,
                 phone: input.household.emergencyContactPhone,
+                email: input.household.emergencyContactEmail,
             });
         }
     }
