@@ -72,7 +72,7 @@ export default function AdminTrustedAdultsPage() {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch("/api/admin/trusted-adults");
+            const res = await fetch("/api/safety/trusted-adults");
             if (res.ok) {
                 const data = await res.json();
                 setItems(data.trustedAdults || []);
@@ -90,7 +90,7 @@ export default function AdminTrustedAdultsPage() {
         setBusyId(reviewId);
         setMessage("");
         try {
-            const res = await fetch("/api/admin/trusted-adults/decision", {
+            const res = await fetch("/api/safety/trusted-adults/decision", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ reviewId, decision, ...extra }),
@@ -112,7 +112,7 @@ export default function AdminTrustedAdultsPage() {
     const override = async (reviewId: number, action: string, extra?: Record<string, unknown>) => {
         setBusyId(reviewId);
         try {
-            const res = await fetch("/api/admin/trusted-adults/override", {
+            const res = await fetch("/api/safety/trusted-adults/override", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ reviewId, action, ...extra }),

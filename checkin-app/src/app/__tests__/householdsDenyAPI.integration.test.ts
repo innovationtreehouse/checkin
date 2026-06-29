@@ -3,11 +3,11 @@
  */
 /**
  * Integration tests for the board "Deny Membership" action on
- * POST /api/admin/households — deny/restore, the board-member guard,
+ * POST /api/membership-ops/households — deny/restore, the board-member guard,
  * audit logging, and the API-level login lockout.
  */
 
-import { POST } from '@/app/api/admin/households/route';
+import { POST } from '@/app/api/membership-ops/households/route';
 import { authenticateRequest } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
@@ -19,14 +19,14 @@ jest.mock('next-auth/next', () => ({
 const TAG = 'deny-api-test';
 
 function post(body: unknown) {
-    return POST(new Request('http://localhost:4000/api/admin/households', {
+    return POST(new Request('http://localhost:4000/api/membership-ops/households', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     }) as unknown as import('next/server').NextRequest);
 }
 
-describe('POST /api/admin/households — Deny Membership', () => {
+describe('POST /api/membership-ops/households — Deny Membership', () => {
     let boardId: number;
     let plainHouseholdId: number;
     let plainMemberId: number;

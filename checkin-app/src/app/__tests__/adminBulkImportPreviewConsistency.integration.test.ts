@@ -18,8 +18,8 @@
  * that they agree; if the two parsers ever diverge again it goes red.
  */
 
-import { POST as COMMIT } from '@/app/api/admin/participants/import/route';
-import { POST as PREVIEW } from '@/app/api/admin/participants/import/preview/route';
+import { POST as COMMIT } from '@/app/api/membership-ops/participants/import/route';
+import { POST as PREVIEW } from '@/app/api/membership-ops/participants/import/preview/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import * as xlsx from 'xlsx';

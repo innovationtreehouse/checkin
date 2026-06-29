@@ -19,7 +19,7 @@ export default function MissingEmergencyContactsPage() {
 
   const fetchHouseholds = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/households-missing-contact");
+      const res = await fetch("/api/membership-audit/households-missing-contact");
       if (res.ok) {
         const data = await res.json();
         setHouseholds(data.households ?? []);

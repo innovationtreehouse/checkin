@@ -61,7 +61,7 @@ export function AuditLogPanel() {
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
 
-    fetch(`/api/admin/audit?${qs}`)
+    fetch(`/api/system-status/audit-log?${qs}`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();

@@ -173,7 +173,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             }),
             countHouseholdsMissingValidContact(),
             // Households with an account created at registration that nobody has
-            // claimed via Google sign-in yet. Mirrors /api/admin/unclaimed-households.
+            // claimed via Google sign-in yet. Mirrors /api/membership-audit/unclaimed-households.
             prisma.household.count({
                 where: { participants: { some: { email: { not: null }, googleId: null } } },
             }),

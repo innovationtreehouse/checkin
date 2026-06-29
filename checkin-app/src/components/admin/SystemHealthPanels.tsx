@@ -99,7 +99,7 @@ export function SystemVersionBox() {
   useEffect(() => {
     async function checkVersion() {
       try {
-        const localRes = await fetch('/api/kiosk/version');
+        const localRes = await fetch('/api/system-status/kiosk-version');
         const localData = await localRes.json();
         const currentSha = localData.version;
         setCurrentVersion(currentSha);
@@ -198,7 +198,7 @@ export function BadgeScanChart() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/admin/system-health')
+    fetch('/api/system-status/health')
       .then(res => res.json())
       .then(data => {
         if (data && data.days) {

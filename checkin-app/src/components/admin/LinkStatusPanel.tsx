@@ -29,7 +29,7 @@ export function LinkStatusPanel() {
 
   async function load() {
     try {
-      const res = await fetch("/api/admin/integration-errors");
+      const res = await fetch("/api/system-status/links");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setErrors(data.errors);
@@ -45,7 +45,7 @@ export function LinkStatusPanel() {
   async function toggleResolved(e: IntegrationError) {
     setBusyId(e.id);
     try {
-      await fetch(`/api/admin/integration-errors/${e.id}`, {
+      await fetch(`/api/system-status/links/${e.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ resolved: !e.resolvedAt }),

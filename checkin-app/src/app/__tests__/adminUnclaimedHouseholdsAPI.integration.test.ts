@@ -3,11 +3,11 @@
  */
 /**
  * Integration Tests for Admin Unclaimed Households API
- * Tests GET /api/admin/unclaimed-households for identifying households with an
+ * Tests GET /api/membership-audit/unclaimed-households for identifying households with an
  * email-but-no-googleId member (registered but never claimed via Google).
  */
 
-import { GET } from '@/app/api/admin/unclaimed-households/route';
+import { GET } from '@/app/api/membership-audit/unclaimed-households/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -66,13 +66,13 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
         });
     });
 
-    describe('GET /api/admin/unclaimed-households', () => {
+    describe('GET /api/membership-audit/unclaimed-households', () => {
         it('should return 403 Forbidden without admin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testUserId, sysadmin: false, boardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/unclaimed-households', { method: 'GET' });
+            const req = new Request('http://localhost:4000/api/membership-audit/unclaimed-households', { method: 'GET' });
             const res = await GET(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(403);
         });
@@ -82,7 +82,7 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
                 user: { id: testAdminId, sysadmin: true }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/unclaimed-households', { method: 'GET' });
+            const req = new Request('http://localhost:4000/api/membership-audit/unclaimed-households', { method: 'GET' });
             const res = await GET(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
 

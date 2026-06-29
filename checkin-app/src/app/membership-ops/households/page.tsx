@@ -27,7 +27,7 @@ export default function AdminHouseholdsPage() {
 
   const fetchHouseholds = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/households');
+      const res = await fetch('/api/membership-ops/households');
       if (res.ok) {
         const data = await res.json();
         setHouseholds(data.households);
@@ -47,7 +47,7 @@ export default function AdminHouseholdsPage() {
 
   const toggleMembership = async (householdId: number, currentActive: boolean) => {
     try {
-      const res = await fetch('/api/admin/households', {
+      const res = await fetch('/api/membership-ops/households', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ householdId, active: !currentActive })
@@ -72,7 +72,7 @@ export default function AdminHouseholdsPage() {
       return;
     }
     try {
-      const res = await fetch('/api/admin/households', {
+      const res = await fetch('/api/membership-ops/households', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ householdId, deny })

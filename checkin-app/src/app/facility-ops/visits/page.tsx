@@ -68,7 +68,7 @@ export default function AdminVisitsPage() {
 
   const fetchVisits = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/visits');
+      const res = await fetch('/api/facility/visits');
       if (res.ok) {
         const data = await res.json();
         setVisits(data.visits);
@@ -99,7 +99,7 @@ export default function AdminVisitsPage() {
 
   const handleSaveEdit = async (id: number) => {
     try {
-      const res = await fetch(`/api/admin/visits`, {
+      const res = await fetch(`/api/facility/visits`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

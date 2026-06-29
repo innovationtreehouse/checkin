@@ -57,8 +57,8 @@ export default function MembershipSettingsPage() {
     setLoading(true);
     try {
       const [sRes, dRes] = await Promise.all([
-        fetch("/api/admin/membership/settings"),
-        fetch("/api/admin/membership/volunteer-designations"),
+        fetch("/api/settings/membership"),
+        fetch("/api/settings/membership/volunteer-designations"),
       ]);
       if (sRes.ok) {
         const { settings } = (await sRes.json()) as { settings: Settings };
@@ -81,7 +81,7 @@ export default function MembershipSettingsPage() {
     setSaving(true);
     flash("");
     try {
-      const res = await fetch("/api/admin/membership/settings", {
+      const res = await fetch("/api/settings/membership", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -104,7 +104,7 @@ export default function MembershipSettingsPage() {
     setSaving(true);
     flash("");
     try {
-      const res = await fetch("/api/admin/membership/volunteer-designations", {
+      const res = await fetch("/api/settings/membership/volunteer-designations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: newEmail }),
@@ -122,7 +122,7 @@ export default function MembershipSettingsPage() {
   const removeDesignation = async (id: number) => {
     setSaving(true);
     try {
-      await fetch(`/api/admin/membership/volunteer-designations?id=${id}`, { method: "DELETE" });
+      await fetch(`/api/settings/membership/volunteer-designations?id=${id}`, { method: "DELETE" });
       await load();
     } finally { setSaving(false); }
   };
@@ -132,7 +132,7 @@ export default function MembershipSettingsPage() {
     setSaving(true);
     flash("");
     try {
-      const res = await fetch("/api/admin/membership/bulk-open-renewals", {
+      const res = await fetch("/api/settings/membership/bulk-open-renewals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sendReminders: bulkReminders }),

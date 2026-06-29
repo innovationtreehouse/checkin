@@ -18,14 +18,14 @@
  * TEST-ONLY. A route here returning 2xx for the unauthenticated/plain caller is
  * a live authz hole.
  */
-import { PATCH as ADMIN_HH_PATCH } from '@/app/api/admin/households/[id]/route';
-import { POST as MERGE_POST } from '@/app/api/admin/participants/merge/route';
-import { GET as MERGE_ANALYZE_GET } from '@/app/api/admin/participants/merge/analyze/route';
-import { POST as IMPORT_PREVIEW_POST } from '@/app/api/admin/participants/import/preview/route';
-import { GET as SYSTEM_HEALTH_GET } from '@/app/api/admin/system-health/route';
-import { GET as TRENDS_GET } from '@/app/api/admin/trends/route';
-import { GET as ADMIN_TA_GET } from '@/app/api/admin/trusted-adults/route';
-import { POST as TA_OVERRIDE_POST } from '@/app/api/admin/trusted-adults/override/route';
+import { PATCH as ADMIN_HH_PATCH } from '@/app/api/membership-ops/households/[id]/route';
+import { POST as MERGE_POST } from '@/app/api/membership-ops/participants/merge/route';
+import { GET as MERGE_ANALYZE_GET } from '@/app/api/membership-ops/participants/merge/analyze/route';
+import { POST as IMPORT_PREVIEW_POST } from '@/app/api/membership-ops/participants/import/preview/route';
+import { GET as SYSTEM_HEALTH_GET } from '@/app/api/system-status/health/route';
+import { GET as TRENDS_GET } from '@/app/api/facility/trends/route';
+import { GET as ADMIN_TA_GET } from '@/app/api/safety/trusted-adults/route';
+import { POST as TA_OVERRIDE_POST } from '@/app/api/safety/trusted-adults/override/route';
 import { PATCH as SHOP_TOOL_PATCH } from '@/app/api/shop/tools/[id]/route';
 import { GET as EVENT_GET, PATCH as EVENT_PATCH } from '@/app/api/events/[id]/route';
 import { GET as NOTIFICATIONS_GET } from '@/app/api/notifications/route';
@@ -104,14 +104,14 @@ describe('Protected-route role rejection', () => {
 
     // ---- ROLE-GATED: 401 unauthenticated + 403 plain user ---------------------
     const roleGated: Case[] = [
-        { name: 'PATCH /api/admin/households/[id]', invoke: () => ADMIN_HH_PATCH(nreq('http://localhost/api/admin/households/1', 'PATCH', {}), idCtx(1)) },
-        { name: 'POST /api/admin/participants/merge', invoke: () => MERGE_POST(nreq('http://localhost/api/admin/participants/merge', 'POST', {})) },
-        { name: 'GET /api/admin/participants/merge/analyze', invoke: () => MERGE_ANALYZE_GET(nreq('http://localhost/api/admin/participants/merge/analyze')) },
-        { name: 'POST /api/admin/participants/import/preview', invoke: () => IMPORT_PREVIEW_POST(nreq('http://localhost/api/admin/participants/import/preview', 'POST')) },
-        { name: 'GET /api/admin/system-health', invoke: () => SYSTEM_HEALTH_GET(nreq('http://localhost/api/admin/system-health')) },
-        { name: 'GET /api/admin/trends', invoke: () => TRENDS_GET(nreq('http://localhost/api/admin/trends')) },
-        { name: 'GET /api/admin/trusted-adults', invoke: () => ADMIN_TA_GET(nreq('http://localhost/api/admin/trusted-adults')) },
-        { name: 'POST /api/admin/trusted-adults/override', invoke: () => TA_OVERRIDE_POST(nreq('http://localhost/api/admin/trusted-adults/override', 'POST', {})) },
+        { name: 'PATCH /api/membership-ops/households/[id]', invoke: () => ADMIN_HH_PATCH(nreq('http://localhost/api/membership-ops/households/1', 'PATCH', {}), idCtx(1)) },
+        { name: 'POST /api/membership-ops/participants/merge', invoke: () => MERGE_POST(nreq('http://localhost/api/membership-ops/participants/merge', 'POST', {})) },
+        { name: 'GET /api/membership-ops/participants/merge/analyze', invoke: () => MERGE_ANALYZE_GET(nreq('http://localhost/api/membership-ops/participants/merge/analyze')) },
+        { name: 'POST /api/membership-ops/participants/import/preview', invoke: () => IMPORT_PREVIEW_POST(nreq('http://localhost/api/membership-ops/participants/import/preview', 'POST')) },
+        { name: 'GET /api/system-status/health', invoke: () => SYSTEM_HEALTH_GET(nreq('http://localhost/api/system-status/health')) },
+        { name: 'GET /api/facility/trends', invoke: () => TRENDS_GET(nreq('http://localhost/api/facility/trends')) },
+        { name: 'GET /api/safety/trusted-adults', invoke: () => ADMIN_TA_GET(nreq('http://localhost/api/safety/trusted-adults')) },
+        { name: 'POST /api/safety/trusted-adults/override', invoke: () => TA_OVERRIDE_POST(nreq('http://localhost/api/safety/trusted-adults/override', 'POST', {})) },
         { name: 'PATCH /api/shop/tools/[id]', invoke: () => SHOP_TOOL_PATCH(nreq('http://localhost/api/shop/tools/1', 'PATCH', {}), idCtx(1)) },
     ];
 

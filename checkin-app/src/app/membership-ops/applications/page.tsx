@@ -65,7 +65,7 @@ export default function AdminMembershipPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/membership");
+      const res = await fetch("/api/membership-ops/applications");
       if (res.ok) {
         const data = await res.json();
         setRows(data.processes || []);
@@ -81,7 +81,7 @@ export default function AdminMembershipPage() {
     setBusyId(processId);
     setMessage("");
     try {
-      const res = await fetch("/api/admin/membership/external", {
+      const res = await fetch("/api/membership-ops/applications/external", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ processId, action, ...extra }),
@@ -108,7 +108,7 @@ export default function AdminMembershipPage() {
     setBusyId(processId);
     setMessage("");
     try {
-      const res = await fetch("/api/admin/membership/review-override", {
+      const res = await fetch("/api/membership-ops/applications/review-override", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ processId, action }),
@@ -135,7 +135,7 @@ export default function AdminMembershipPage() {
     setBusyId(processId);
     setMessage("");
     try {
-      const res = await fetch("/api/admin/membership/certify-payment", {
+      const res = await fetch("/api/membership-ops/applications/certify-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ processId }),

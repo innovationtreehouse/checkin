@@ -31,7 +31,7 @@ export default function AdminBadgesPage() {
 
   const fetchBadges = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/badges');
+      const res = await fetch('/api/facility/badges');
       if (res.ok) {
         const data = await res.json();
         setBadges(data.badges);

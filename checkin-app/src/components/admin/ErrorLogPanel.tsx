@@ -18,7 +18,7 @@ export function ErrorLogPanel() {
   const [expanded, setExpanded] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/error-log")
+    fetch("/api/system-status/errors")
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();

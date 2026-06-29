@@ -12,8 +12,8 @@
 import { POST as CREATE } from '@/app/api/trusted-adults/route';
 import { GET as MINE } from '@/app/api/trusted-adults/mine/route';
 import { GET as OPERATIONAL } from '@/app/api/trusted-adults/operational/route';
-import { POST as DECISION } from '@/app/api/admin/trusted-adults/decision/route';
-import { POST as OVERRIDE } from '@/app/api/admin/trusted-adults/override/route';
+import { POST as DECISION } from '@/app/api/safety/trusted-adults/decision/route';
+import { POST as OVERRIDE } from '@/app/api/safety/trusted-adults/override/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { expectAuditRow, auditJson } from '@/test-helpers/expectAuditRow';
@@ -108,11 +108,11 @@ describe('Trusted Adults API', () => {
         const reviewId = ta!.reviews[0].id;
 
         as(leadId, familyHh); // not board
-        expect((await DECISION(post('/api/admin/trusted-adults/decision', { reviewId, decision: 'APPROVE', sharedNote: SHARED }))).status).toBe(403);
+        expect((await DECISION(post('/api/safety/trusted-adults/decision', { reviewId, decision: 'APPROVE', sharedNote: SHARED }))).status).toBe(403);
 
         as(boardId, boardHh, { boardMember: true });
-        expect((await DECISION(post('/api/admin/trusted-adults/decision', { reviewId, decision: 'APPROVE' }))).status).toBe(400);
-        const ok = await DECISION(post('/api/admin/trusted-adults/decision', { reviewId, decision: 'APPROVE', sharedNote: SHARED }));
+        expect((await DECISION(post('/api/safety/trusted-adults/decision', { reviewId, decision: 'APPROVE' }))).status).toBe(400);
+        const ok = await DECISION(post('/api/safety/trusted-adults/decision', { reviewId, decision: 'APPROVE', sharedNote: SHARED }));
         expect(ok.status).toBe(200);
         expect((await ok.json()).status).toBe('APPROVED');
     });
@@ -167,7 +167,7 @@ describe('Trusted Adults API', () => {
 
         // Decision route, end-to-end as a board member.
         as(boardId, boardHh, { boardMember: true });
-        const res = await DECISION(post('/api/admin/trusted-adults/decision', { reviewId, decision: 'APPROVE', sharedNote: SHARED }));
+        const res = await DECISION(post('/api/safety/trusted-adults/decision', { reviewId, decision: 'APPROVE', sharedNote: SHARED }));
         expect(res.status).toBe(200);
 
         expect((await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } }))?.decidedById).toBe(boardId);
@@ -177,10 +177,10 @@ describe('Trusted Adults API', () => {
 
         // Override negative: force-approve with no shared note -> 400 (STATUS_FOR[bad_input]).
         as(boardId, boardHh, { boardMember: true });
-        expect((await OVERRIDE(post('/api/admin/trusted-adults/override', { reviewId, action: 'approve' }))).status).toBe(400);
+        expect((await OVERRIDE(post('/api/safety/trusted-adults/override', { reviewId, action: 'approve' }))).status).toBe(400);
 
         // Override route binds the same board actor on the review + a fresh audit row.
-        const ok = await OVERRIDE(post('/api/admin/trusted-adults/override', { reviewId, action: 'approve', sharedNote: SHARED }));
+        const ok = await OVERRIDE(post('/api/safety/trusted-adults/override', { reviewId, action: 'approve', sharedNote: SHARED }));
         expect(ok.status).toBe(200);
         expect((await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } }))?.decidedById).toBe(boardId);
         const overrideLog = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'TrustedAdult', affectedEntityId: ta.id });

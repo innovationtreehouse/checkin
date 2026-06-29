@@ -66,7 +66,7 @@ export default function BulkImportParticipants() {
     formData.append("file", file);
 
     try {
-      const res = await fetch("/api/admin/participants/import/preview", { method: "POST", body: formData });
+      const res = await fetch("/api/membership-ops/participants/import/preview", { method: "POST", body: formData });
       const data = await res.json();
       if (res.ok) setPreview(data);
       else setPreviewError(data.error || "Failed to parse file.");
@@ -87,7 +87,7 @@ export default function BulkImportParticipants() {
     formData.append("file", file);
 
     try {
-      const res = await fetch("/api/admin/participants/import", { method: "POST", body: formData });
+      const res = await fetch("/api/membership-ops/participants/import", { method: "POST", body: formData });
       const data = await res.json();
       if (res.ok) {
         setImportResult({ success: true, message: data.message, errors: data.errors });

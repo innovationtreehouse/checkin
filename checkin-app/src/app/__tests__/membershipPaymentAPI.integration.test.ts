@@ -9,7 +9,7 @@
 
 import crypto from 'crypto';
 import { POST as SHOPIFY_WEBHOOK } from '@/app/api/webhooks/shopify/route';
-import { POST as CERTIFY } from '@/app/api/admin/membership/certify-payment/route';
+import { POST as CERTIFY } from '@/app/api/membership-ops/applications/certify-payment/route';
 import { computeDuesCents, ensurePaymentLink, ensurePaymentLinkForUser, activate } from '@/lib/membership/payment';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';

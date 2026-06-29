@@ -7,7 +7,7 @@
  */
 
 import { GET as REVIEW_QUEUE, POST as ATTEST } from '@/app/api/membership/reviews/route';
-import { POST as OVERRIDE } from '@/app/api/admin/membership/review-override/route';
+import { POST as OVERRIDE } from '@/app/api/membership-ops/applications/review-override/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 

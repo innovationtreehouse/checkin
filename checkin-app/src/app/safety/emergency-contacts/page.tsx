@@ -47,7 +47,7 @@ export default function EmergencyContactsPage() {
 
   const fetchContacts = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/emergency-contacts');
+      const res = await fetch('/api/safety/emergency-contacts');
       if (res.ok) {
         const data = await res.json();
 

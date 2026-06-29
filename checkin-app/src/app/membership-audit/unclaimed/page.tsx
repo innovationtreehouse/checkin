@@ -17,7 +17,7 @@ export default function UnclaimedHouseholdsIndex() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/admin/unclaimed-households');
+        const res = await fetch('/api/membership-audit/unclaimed-households');
         const data = await res.json();
         if (data.households) setHouseholds(data.households);
       } catch (err) {

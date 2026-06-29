@@ -36,7 +36,7 @@ export default function PendingParticipantsPage() {
 
   const fetchRequests = useCallback(async () => {
     try {
-      const res = await fetch('/api/programs/payment-plans');
+      const res = await fetch('/api/finance-ops/payment-plans');
       if (res.ok) {
         const data = await res.json();
         setRequests(data);
@@ -58,7 +58,7 @@ export default function PendingParticipantsPage() {
     if (!confirm("Approve this payment plan? This sets the participant's status to ACTIVE and stops automated unpaid warning emails.")) return;
 
     try {
-      const res = await fetch('/api/programs/payment-plans', {
+      const res = await fetch('/api/finance-ops/payment-plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ programId, participantId })
