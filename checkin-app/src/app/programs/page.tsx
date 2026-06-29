@@ -130,7 +130,7 @@ export default function PublicProgramsDirectory() {
                     View Details
                   </Button>
                   {canManage && (
-                    <Button component={Link} href={`/admin/programs/${program.id}`} variant="light" color="green">
+                    <Button component={Link} href={`/program-ops/programs/${program.id}`} variant="light" color="green">
                       Manage
                     </Button>
                   )}

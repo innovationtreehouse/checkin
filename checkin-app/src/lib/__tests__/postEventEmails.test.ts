@@ -164,7 +164,7 @@ describe("processPostEventEmails", () => {
             eventName: "Test Event",
             attendingRsvps: 1,
             actualVisits: 2,
-            eventLink: "http://localhost:3000/admin/events/10"
+            eventLink: "http://localhost:3000/program-ops/sessions/10"
         });
 
         expect(sendEmail).toHaveBeenCalledWith(

@@ -230,7 +230,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           <Title order={1}>{program.name}</Title>
           <Group>
             {canManage && (
-              <Button color="green" variant="light" onClick={() => router.push(`/admin/programs/${program.id}`)}>
+              <Button color="green" variant="light" onClick={() => router.push(`/program-ops/programs/${program.id}`)}>
                 Manage Program
               </Button>
             )}

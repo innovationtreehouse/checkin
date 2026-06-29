@@ -63,7 +63,7 @@ export default function CreateProgramPage() {
 
       if (res.ok) {
         const data = await res.json();
-        router.push(`/admin/programs/${data.program.id}`);
+        router.push(`/program-ops/programs/${data.program.id}`);
       } else {
         const data = await res.json();
         setMessage(data.error || "Failed to create program.");

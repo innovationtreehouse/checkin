@@ -107,7 +107,7 @@ function NewEventForm() {
       });
 
       if (res.ok) {
-        router.push(programId ? `/admin/programs/${programId}` : '/programs');
+        router.push(programId ? `/program-ops/programs/${programId}` : '/programs');
       } else {
         const err = await res.json();
         setMessage(err.error || "Failed to create event");
@@ -123,7 +123,7 @@ function NewEventForm() {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  const cancelHref = programId ? `/admin/programs/${programId}` : '/programs';
+  const cancelHref = programId ? `/program-ops/programs/${programId}` : '/programs';
 
   return (
     <Card withBorder radius="md" padding="lg">

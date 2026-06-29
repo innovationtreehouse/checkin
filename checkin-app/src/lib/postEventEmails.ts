@@ -113,7 +113,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
             const actualVisits = event.visits.length;
 
             const baseUrl = config.baseUrl();
-            const eventLink = `${baseUrl}/admin/events/${event.id}`;
+            const eventLink = `${baseUrl}/program-ops/sessions/${event.id}`;
 
             const emailHtml = postEventTemplate({
                 eventName: event.name,

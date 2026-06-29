@@ -597,7 +597,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
           <Tabs.Panel value="events">
             <Group justify="space-between" align="center" mb="md">
               <Title order={4}>Events ({program.events.length})</Title>
-              <Button variant="light" onClick={() => router.push(`/admin/events/new?programId=${program.id}`)}>+ Schedule Session(s)</Button>
+              <Button variant="light" onClick={() => router.push(`/program-ops/sessions/new?programId=${program.id}`)}>+ Schedule Session(s)</Button>
             </Group>
             <Table.ScrollContainer minWidth={500}>
               <Table verticalSpacing="sm" highlightOnHover>
@@ -618,9 +618,9 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         <Table.Td c="dimmed">{formatDateTime(ev.start)}</Table.Td>
                         <Table.Td ta="right">
                           {needsConfirmation ? (
-                            <Button component={Link} href={`/admin/events/${ev.id}`} size="compact-xs" color="yellow" variant="light">Confirm Attendance</Button>
+                            <Button component={Link} href={`/program-ops/sessions/${ev.id}`} size="compact-xs" color="yellow" variant="light">Confirm Attendance</Button>
                           ) : (
-                            <Anchor component={Link} href={`/admin/events/${ev.id}`}>{isPastEvent ? 'Attendance →' : 'Edit Event →'}</Anchor>
+                            <Anchor component={Link} href={`/program-ops/sessions/${ev.id}`}>{isPastEvent ? 'Attendance →' : 'Edit Event →'}</Anchor>
                           )}
                         </Table.Td>
                       </Table.Tr>
