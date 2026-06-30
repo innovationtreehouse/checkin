@@ -130,6 +130,32 @@ describe('Events API Integration Tests', () => {
             expect(data.error).toBe('Missing required fields');
         });
 
+        it('should return 400 if end time is not after start time', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
+            });
+
+            const req = new Request('http://localhost:4000/api/events', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: 'Test Event Bad Times',
+                    programId: testProgramId,
+                    startDate: '2026-10-01',
+                    startTime: '15:00',
+                    endTime: '15:00' // end == start
+                })
+            });
+
+            const res = await POST(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('Event end time must be after start time');
+
+            // Nothing created.
+            const events = await prisma.event.findMany({ where: { name: 'Test Event Bad Times' } });
+            expect(events.length).toBe(0);
+        });
+
         it('should successfully create a single event as admin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
