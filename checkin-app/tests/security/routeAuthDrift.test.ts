@@ -128,32 +128,19 @@ function findUnwrappedPrismaHandlers(code: string): string[] {
  * "who's enrolled / RSVP'd / present". */
 const EDGE_MODELS = new Set(['ProgramParticipant', 'ProgramVolunteer', 'RSVP', 'Visit']);
 
-/** Relation keys that resolve EXCLUSIVELY to an edge model, derived from the
- * generated relations map (NOT hard-coded) so a relation rename can't slip past
- * the guard. A key shared with a non-edge model (e.g. `participants`, which is
- * Household→Participant as well as Program→ProgramParticipant) is intentionally
- * excluded — it's ambiguous, and every genuine edge use of it is independently
- * caught by a sibling unambiguous key or a direct edge read. */
-const EDGE_RELATION_KEYS: string[] = (() => {
-    const byKey = new Map<string, Set<string>>();
-    for (const parent of Object.values(relations as Record<string, Record<string, { model: string }>>)) {
-        for (const [key, { model }] of Object.entries(parent)) {
-            if (!byKey.has(key)) byKey.set(key, new Set());
-            byKey.get(key)!.add(model);
-        }
-    }
-    return [...byKey.entries()]
-        .filter(([, models]) => [...models].every((m) => EDGE_MODELS.has(m)))
-        .map(([key]) => key);
-})();
+/** The generated relations map, typed: ParentModel → relationKey → target. This
+ * is what makes the scan parent-AWARE: the same key (`participants`) resolves to
+ * ProgramParticipant under Program (edge) but Participant under Household (not),
+ * so we must know the enclosing model — a flat key match can't, and would either
+ * miss the Program case (the #575 leak class) or false-flag the Household case. */
+const REL = relations as Record<string, Record<string, { model: string }>>;
 
-/** Prisma client property for each edge model (first char lower-cased, Prisma's
- * convention: `RSVP` → `rSVP`). */
-const EDGE_PROPS = [...EDGE_MODELS].map((m) => m[0].toLowerCase() + m.slice(1));
+/** Prisma client property → model name (Prisma lower-cases the first char, e.g.
+ * `RSVP` → `rSVP`, `Program` → `program`). */
+const PROP_TO_MODEL = new Map(Object.keys(REL).map((m) => [m[0].toLowerCase() + m.slice(1), m]));
 
 const READ_OPS = 'findMany|findUnique|findFirst|findUniqueOrThrow|findFirstOrThrow|count|aggregate|groupBy';
-const EDGE_READ_RE = new RegExp(`prisma\\.(${EDGE_PROPS.join('|')})\\.(${READ_OPS})`, 'g');
-const EDGE_INCLUDE_RE = new RegExp(`\\b(${EDGE_RELATION_KEYS.join('|')})\\s*:\\s*(?:true|\\{)`, 'g');
+const ROOT_RE = new RegExp(`prisma\\.(\\w+)\\.(?:${READ_OPS})\\s*(?:<[^>]*>)?\\s*\\(`, 'g');
 const HANDLER_RE = new RegExp(
     `export\\s+(?:const|async\\s+function)\\s+(${HTTP_METHODS})\\b`,
     'g',
@@ -172,18 +159,117 @@ function enclosingMethod(code: string, idx: number): string | null {
     return cur;
 }
 
-/** Rule 3: edge models READ inside a GET/HEAD handler (response-leak surface).
- * Writes (POST/PATCH/...) are GAP-2, not this rule. Returns the set of edge
- * models/keys surfaced, or []. */
+// --- tiny object-literal walker (comments already stripped) -----------------
+/** Index just past a string starting at a quote char (handles escapes; treats a
+ * template literal as opaque — `${}` interpolation in a prisma query arg is not
+ * a real case). */
+function skipString(code: string, i: number): number {
+    const q = code[i];
+    i++;
+    while (i < code.length) {
+        if (code[i] === '\\') { i += 2; continue; }
+        if (code[i] === q) return i + 1;
+        i++;
+    }
+    return i;
+}
+
+/** Index of the `}` matching the `{` at `open`, skipping strings. */
+function matchBrace(code: string, open: number): number {
+    let depth = 0;
+    for (let i = open; i < code.length; i++) {
+        const c = code[i];
+        if (c === '"' || c === "'" || c === '`') { i = skipString(code, i) - 1; continue; }
+        if (c === '{') depth++;
+        else if (c === '}' && --depth === 0) return i;
+    }
+    return code.length;
+}
+
+/** Index of the end of a value (top-level `,` or the enclosing close), skipping
+ * nested brackets and strings. */
+function skipValue(code: string, i: number, limit: number): number {
+    let depth = 0;
+    while (i < limit) {
+        const c = code[i];
+        if (c === '"' || c === "'" || c === '`') { i = skipString(code, i); continue; }
+        if (c === '{' || c === '[' || c === '(') depth++;
+        else if (c === '}' || c === ']' || c === ')') { if (depth === 0) return i; depth--; }
+        else if (c === ',' && depth === 0) return i;
+        i++;
+    }
+    return limit;
+}
+
+/** Top-level `key: value` entries of the object literal whose `{` is at `open`.
+ * `braceStart` is the index of the value's `{` if the value is an object, else
+ * null. Spreads / computed keys are skipped. */
+function objectEntries(code: string, open: number): Array<{ key: string; braceStart: number | null }> {
+    const close = matchBrace(code, open);
+    const entries: Array<{ key: string; braceStart: number | null }> = [];
+    let i = open + 1;
+    while (i < close) {
+        while (i < close && /[\s,]/.test(code[i])) i++;
+        if (i >= close) break;
+        const km = /^['"]?([A-Za-z_$][\w$]*)['"]?\s*:/.exec(code.slice(i, close));
+        if (!km) { i = skipValue(code, i, close); continue; }
+        let j = i + km[0].length;
+        while (j < close && /\s/.test(code[j])) j++;
+        entries.push({ key: km[1], braceStart: code[j] === '{' ? j : null });
+        i = skipValue(code, j, close);
+    }
+    return entries;
+}
+
+/** Walk a prisma query args object (keys where/include/select/_count/…): only
+ * include/select sub-objects expose returned relations. */
+function walkArgs(code: string, open: number, model: string, found: Set<string>): void {
+    for (const e of objectEntries(code, open)) {
+        if ((e.key === 'include' || e.key === 'select') && e.braceStart != null) {
+            walkRelations(code, e.braceStart, model, found);
+        }
+    }
+}
+
+/** Walk an include/select object whose keys are relations of `model`. Resolve
+ * each key → target model via the map; flag edge targets; recurse into nested
+ * include/select with the target model. `_count: { select: { rel: true } }`
+ * resolves its inner keys under the same `model` (and leaks roster size). */
+function walkRelations(code: string, open: number, model: string, found: Set<string>): void {
+    for (const e of objectEntries(code, open)) {
+        if (e.key === '_count') {
+            if (e.braceStart != null) walkArgs(code, e.braceStart, model, found);
+            continue;
+        }
+        const target = REL[model]?.[e.key]?.model;
+        if (!target) continue;
+        if (EDGE_MODELS.has(target)) found.add(target);
+        if (e.braceStart != null) walkArgs(code, e.braceStart, target, found);
+    }
+}
+
+/** Rule 3: edge MODELS read inside a GET/HEAD handler (response-leak surface).
+ * Writes (POST/PATCH/…) are GAP-2, not this rule, so only GET/HEAD roots count.
+ * Catches both a direct `prisma.<edgeModel>.<readOp>` and an include/select that
+ * resolves (parent-aware) to an edge model at any nesting depth. Returns the set
+ * of edge model names surfaced, or []. Limitation: a query whose args object is
+ * built in a separate variable (not inline) is not walked — direct edge-model
+ * roots are still caught; deeper relation includes built off-site rely on the
+ * validator gate's `returns:`/stripping. */
 function findEdgeReadsInReads(code: string): string[] {
     const found = new Set<string>();
-    for (const re of [EDGE_READ_RE, EDGE_INCLUDE_RE]) {
-        re.lastIndex = 0;
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(code))) {
-            const method = enclosingMethod(code, m.index);
-            if (method === 'GET' || method === 'HEAD') found.add(m[1]);
-        }
+    ROOT_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = ROOT_RE.exec(code))) {
+        const method = enclosingMethod(code, m.index);
+        if (method !== 'GET' && method !== 'HEAD') continue;
+        const model = PROP_TO_MODEL.get(m[1]);
+        if (!model) continue;
+        if (EDGE_MODELS.has(model)) found.add(model); // direct read of the edge model
+        const parenIdx = m.index + m[0].length - 1;
+        let k = parenIdx + 1;
+        while (k < code.length && /\s/.test(code[k])) k++;
+        if (code[k] === '{') walkArgs(code, k, model, found); // inline args object
     }
     return [...found];
 }
@@ -229,7 +315,6 @@ const EDGE_INCLUDE_ALLOWLIST: Record<string, string> = {
     'nav/todo-counts': 'query-shaped — counts scoped to caller (own household + programs the caller leads)',
     'profile': "query-shaped — authorize 'self'; visits are the caller's own",
     'profile/visits': 'query-shaped — self only (where participantId = caller)',
-    'programs/[id]/eligible-participants': 'admission-gated — authorize program-lead-mentor; edge keys used only as where-filters',
     'programs/[id]': 'query-shaped — participants/volunteers included only for staff/enrolled (#575)',
     'programs/mine': 'query-shaped — self + household only (where participantId in memberIds)',
     'programs': 'query-shaped — public catalog exposes _count of participants/volunteers (roster SIZE only, no identities/rows); member-only + draft visibility is gated',
@@ -276,13 +361,11 @@ describe('route auth drift-guard — every app/api/**/route.ts', () => {
     });
 
     describe('rule 3 — edge-sensitive reads in GET/HEAD must be allowlisted', () => {
-        it('derives edge relation keys from the generated map (not hard-coded)', () => {
-            // Sanity: the map yields the unambiguous edge keys and excludes the
-            // shared `participants` key. If this changes, the derivation broke.
-            expect(EDGE_RELATION_KEYS.sort()).toEqual(
-                ['programParticipants', 'programVolunteers', 'rsvps', 'visits', 'volunteers'].sort(),
-            );
-            expect(EDGE_RELATION_KEYS).not.toContain('participants');
+        it('resolves the shared `participants` key parent-aware via the map', () => {
+            // The whole point: same key, different model by parent. If this map
+            // shape changes, the parent-aware walk's assumptions broke.
+            expect(REL.Program?.participants?.model).toBe('ProgramParticipant'); // edge
+            expect(REL.Household?.participants?.model).toBe('Participant'); // not edge
         });
 
         for (const { rel, code } of routeFiles) {
@@ -354,26 +437,45 @@ describe('route auth drift-guard — detectors catch violations', () => {
 
     it('flags a direct edge-model read in a GET handler', () => {
         const synthetic = `export const GET = withAuth({}, async () => prisma.visit.findMany());`;
-        expect(findEdgeReadsInReads(stripComments(synthetic))).toContain('visit');
+        expect(findEdgeReadsInReads(stripComments(synthetic))).toContain('Visit');
     });
 
     it('flags an edge relation include in a GET handler', () => {
         const synthetic = `export const GET = handler('x', async () => prisma.program.findUnique({ include: { volunteers: true } }));`;
-        expect(findEdgeReadsInReads(stripComments(synthetic))).toContain('volunteers');
+        expect(findEdgeReadsInReads(stripComments(synthetic))).toContain('ProgramVolunteer');
+    });
+
+    // The forward-looking #575 case: a NEW route including Program.participants
+    // must be caught even though `participants` is a shared key. A flat key match
+    // that excluded the ambiguous key would MISS this — the whole reason for the
+    // parent-aware walk.
+    it('flags Program.participants include in a GET handler (the #575 leak class)', () => {
+        const synthetic = `export const GET = handler('x', async () => prisma.program.findUnique({ include: { participants: { include: { participant: true } } } }));`;
+        expect(findEdgeReadsInReads(stripComments(synthetic))).toContain('ProgramParticipant');
+    });
+
+    it('flags a nested edge include (event → program → volunteers)', () => {
+        const synthetic = `export const GET = withAuth({}, async () => prisma.event.findUnique({ include: { program: { include: { volunteers: true } } } }));`;
+        expect(findEdgeReadsInReads(stripComments(synthetic))).toContain('ProgramVolunteer');
     });
 
     it('flags an edge _count in a GET handler (roster size)', () => {
         const synthetic = `export const GET = withAuth({}, async () => prisma.program.findMany({ include: { _count: { select: { volunteers: true } } } }));`;
-        expect(findEdgeReadsInReads(stripComments(synthetic))).toContain('volunteers');
+        expect(findEdgeReadsInReads(stripComments(synthetic))).toContain('ProgramVolunteer');
     });
 
     it('does NOT flag an edge read in a write handler (POST — GAP-2, not rule 3)', () => {
-        const synthetic = `export const POST = withAuth({}, async () => prisma.rSVP.create({ data: {} }) && prisma.programParticipant.findUnique({}));`;
+        const synthetic = `export const POST = withAuth({}, async () => { await prisma.rSVP.create({ data: {} }); return prisma.programParticipant.findUnique({}); });`;
         expect(findEdgeReadsInReads(stripComments(synthetic))).toEqual([]);
     });
 
-    it('does NOT flag the ambiguous `participants` key (Household→Participant, not edge)', () => {
+    it('does NOT flag Household.participants (same key, resolves to Participant — not edge)', () => {
         const synthetic = `export const GET = withAuth({}, async () => prisma.household.findUnique({ include: { participants: true } }));`;
+        expect(findEdgeReadsInReads(stripComments(synthetic))).toEqual([]);
+    });
+
+    it('does NOT flag an edge relation used only as a where-filter (no rows returned)', () => {
+        const synthetic = `export const GET = withAuth({}, async () => prisma.participant.findMany({ where: { programParticipants: { some: { programId: 1 } } } }));`;
         expect(findEdgeReadsInReads(stripComments(synthetic))).toEqual([]);
     });
 });
