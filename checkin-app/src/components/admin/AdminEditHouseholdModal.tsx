@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Group, Loader, Modal, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Group, Loader, Modal, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 
@@ -132,7 +132,7 @@ export function AdminEditHouseholdModal({
         opened={opened}
         onClose={requestClose}
         size="lg"
-        title={<Title order={4}>Edit Household Info{displayName ? ` — ${displayName}` : ""}</Title>}
+        title={<Text fw={600} size="lg">Edit Household Info{displayName ? ` — ${displayName}` : ""}</Text>}
       >
         {loading ? (
           <Group justify="center" py="xl">
@@ -198,7 +198,7 @@ export function AdminEditHouseholdModal({
         onClose={() => setConfirming(false)}
         size="sm"
         zIndex={1100}
-        title={<Title order={5}>Use admin powers?</Title>}
+        title={<Text fw={600}>Use admin powers?</Text>}
       >
         <Alert color="orange" mb="md">
           You&apos;re editing <strong>{displayName}</strong>, a household you&apos;re not a member of. This
