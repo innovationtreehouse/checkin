@@ -38,9 +38,12 @@ export default function CreateProgramPage() {
   const [leadMentorId, setLeadMentorId] = useState("");
   const [mentorSearch, setMentorSearch] = useState("");
 
+  // End date before start date is invalid (ISO date strings compare lexically).
+  const datesInvalid = Boolean(startAt && endAt && endAt < startAt);
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name) return;
+    if (!name || datesInvalid) return;
 
     setSaving(true);
     setMessage("");
@@ -142,8 +145,22 @@ export default function CreateProgramPage() {
             </SimpleGrid>
 
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
-              <TextInput type="date" label="Start Date" value={startAt} onChange={(e) => setStartAt(e.currentTarget.value)} />
-              <TextInput type="date" label="End Date" value={endAt} onChange={(e) => setEndAt(e.currentTarget.value)} />
+              <TextInput
+                type="date"
+                label="Start Date"
+                value={startAt}
+                onChange={(e) => setStartAt(e.currentTarget.value)}
+                error={datesInvalid}
+                styles={datesInvalid ? { input: { color: 'var(--mantine-color-red-7)' } } : undefined}
+              />
+              <TextInput
+                type="date"
+                label="End Date"
+                value={endAt}
+                onChange={(e) => setEndAt(e.currentTarget.value)}
+                error={datesInvalid ? 'End date must be on or after start date.' : false}
+                styles={datesInvalid ? { input: { color: 'var(--mantine-color-red-7)' } } : undefined}
+              />
             </SimpleGrid>
 
             <Card withBorder radius="md" padding="md">
@@ -197,7 +214,7 @@ export default function CreateProgramPage() {
             />
 
             <Group justify="flex-end">
-              <Button type="submit" color="green" disabled={saving || !name.trim() || !leadMentorId} loading={saving}>
+              <Button type="submit" color="green" disabled={saving || !name.trim() || !leadMentorId || datesInvalid} loading={saving}>
                 Create Program
               </Button>
             </Group>
