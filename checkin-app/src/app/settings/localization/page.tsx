@@ -5,6 +5,7 @@ import { Button, Card, Center, Group, Loader, Select, Stack, Text, Title } from 
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
 
 interface Settings {
   timezone: string;
@@ -37,6 +38,10 @@ export default function LocalizationSettingsPage() {
   const [timezone, setTimezone] = useState("America/Chicago");
   const [locale, setLocale] = useState("en-US");
 
+  // Snapshot of the values as last loaded/saved; isDirty compares it to current
+  // state to drive the unsaved-changes guard.
+  const [initial, setInitial] = useState<Record<string, string> | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -52,6 +57,7 @@ export default function LocalizationSettingsPage() {
         const { settings } = (await res.json()) as { settings: Settings };
         setTimezone(settings.timezone);
         setLocale(settings.locale);
+        setInitial({ timezone: settings.timezone, locale: settings.locale });
       }
     } finally {
       setLoading(false);
@@ -74,6 +80,9 @@ export default function LocalizationSettingsPage() {
     } catch { flash("Network error.", true); }
     finally { setSaving(false); }
   };
+
+  const isDirty = !!initial && !shallowEqual(initial, { timezone, locale });
+  useUnsavedGuard(isDirty);
 
   if (authLoading) return <Center mih="60vh"><Loader /></Center>;
   if (!ready) return null; // redirect in flight

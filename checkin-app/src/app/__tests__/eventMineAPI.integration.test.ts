@@ -100,8 +100,8 @@ describe('My Events API Integration Tests', () => {
             data: {
                 name: 'Mine Test Event Upcoming 1',
                 programId: testProgram1Id,
-                start: futureStart1,
-                end: new Date(futureStart1.getTime() + 1 * 60 * 60 * 1000)
+                startAt: futureStart1,
+                endAt: new Date(futureStart1.getTime() + 1 * 60 * 60 * 1000)
             }
         });
         testEventUpcoming1Id = event1.id;
@@ -111,8 +111,8 @@ describe('My Events API Integration Tests', () => {
             data: {
                 name: 'Mine Test Event Past',
                 programId: testProgram1Id,
-                start: pastStart,
-                end: new Date(pastStart.getTime() + 1 * 60 * 60 * 1000)
+                startAt: pastStart,
+                endAt: new Date(pastStart.getTime() + 1 * 60 * 60 * 1000)
             }
         });
         testEventPastId = eventPast.id;
@@ -122,8 +122,8 @@ describe('My Events API Integration Tests', () => {
             data: {
                 name: 'Mine Test Event Upcoming 2',
                 programId: testProgram2Id,
-                start: futureStart2,
-                end: new Date(futureStart2.getTime() + 1 * 60 * 60 * 1000)
+                startAt: futureStart2,
+                endAt: new Date(futureStart2.getTime() + 1 * 60 * 60 * 1000)
             }
         });
         testEventUpcoming2Id = event2.id;

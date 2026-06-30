@@ -68,8 +68,8 @@ describe('GET /api/cron/reminders — auth & window edges', () => {
         const event = await prisma.event.create({
             data: {
                 name: `${TAG} ${label}`,
-                start,
-                end: new Date(start.getTime() + HOUR),
+                startAt: start,
+                endAt: new Date(start.getTime() + HOUR),
                 description: 'edge',
             },
         });
