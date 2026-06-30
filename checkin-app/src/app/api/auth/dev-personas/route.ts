@@ -23,6 +23,14 @@ export async function GET() {
         return NextResponse.json({ error: "Not available" }, { status: 404 });
     }
     if (config.checkinEnv() === 'dev') {
+        // DRIFT-GUARD ALLOWLIST (Step 7): this is the single sanctioned raw
+        // getServerSession in app/api/**. It is part of the dev persona-switch
+        // mechanism, not a normal authenticated read: on local it must serve
+        // anonymous callers (the logged-out picker is the initial login path),
+        // and on cloud-dev it gates on ANY session — including a denied one, so
+        // a denied dev session can still switch to a non-denied persona. Neither
+        // withAuth (401s anonymous) nor getOptionalSessionUser (denied → 404,
+        // breaking persona-switch) fits; this route stays on getServerSession.
         const session = await getServerSession(authOptions);
         if (!session?.user) {
             return NextResponse.json({ error: "Not available" }, { status: 404 });

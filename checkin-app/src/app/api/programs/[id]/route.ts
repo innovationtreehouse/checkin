@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { isActiveMember } from "@/lib/membership";
@@ -85,13 +84,12 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     return { Program: program };
 });
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+// withAuth rejects unauthenticated AND denied households at admission (closes
+// GAP-1: this PATCH previously had no denied check), so a denied lead mentor can
+// no longer edit their program.
+export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { id } = await ctx.params;
 
     try {
         const programId = parseInt(id, 10);
@@ -104,7 +102,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
+        const user = auth.user;
         const isLeadMentor = currentProgram.leadMentorId === user.id;
         const isSysAdminOrBoard = user.isSysadmin || user.isBoardMember;
 
@@ -146,7 +144,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         await prisma.auditLog.create({
             data: {
-                actorId: (session.user as unknown as { id: number }).id,
+                actorId: auth.user.id,
                 action: 'EDIT',
                 tableName: 'Program',
                 affectedEntityId: updatedProgram.id,
@@ -160,4 +158,4 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         console.error("Program update error:", error);
         return NextResponse.json({ error: "Failed to update program" }, { status: 500 });
     }
-}
+});
