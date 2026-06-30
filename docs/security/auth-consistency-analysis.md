@@ -1306,12 +1306,25 @@ grammar can't express, so the gate stays inline and forgettable:
 
 These stay inline even after the full migration — the param-keyed grammar genuinely can't express the
 hop. **Two levers, neither is the validator gate:**
-1. **Lift the hop into `CallerContext`** so it becomes declarative — e.g. an event→program resolver lets
-   `events/[id]*` use `authorize: 'program-lead-mentor'`. Same shape as the RSVP `eventIdsInScopePrograms`
-   capability. Every hop lifted is one IDOR-write removed from the forgettable surface.
-2. **Negative tests (the `fd192fc` pattern) as the backstop** for whatever stays inline. `trusted-adults`
-   has them; **`events/[id]/attendance`, `events/[id]/rsvp`, and `emergency-contacts/[contactId]` are the
-   under-tested ones to prioritize.**
+1. **Lift the hop into `CallerContext`** so it becomes declarative — *where the gate is uniform.* A
+   resolver that puts the relation in `CallerContext` lets a route use a declared `authorize` instead
+   of an inline `if`. This works when a route's ownership is one clean predicate.
+   > **But NOT for `events/[id]*` — verified against the code, do not attempt the obvious fold.** The
+   > tempting move is to reuse the RSVP capability's `eventIdsInScopePrograms` (events in programs I
+   > lead ∪ core-vol) as an `authorize` term for the events routes. It does not fit, for three reasons:
+   > (a) **wrong granularity** — `attendance` POST and the PATCH edit/cancel branch gate on `leadMentor`
+   > **only**, but the RSVP set is `lead ∪ core-vol`; reusing it would *widen* access (core-vols gain
+   > attendance-validation/edit) — a silent privilege escalation, not a lift. (b) **`rsvp` PATCH gates on
+   > *enrollment*** (`ProgramParticipant`), a different relation the RSVP set doesn't compute. (c)
+   > **`events/[id]` PATCH is multi-conditional** — lead-only for edit/cancel, lead∪core-vol for
+   > attendance-confirm, *within the same route* — so a single `authorize` term can't replace it; the
+   > inline branching stays regardless. A correct lift would need bespoke per-route sets (`eventIdsLed`,
+   > `enrolledEventIds`) AND still leave inline branching → low ROI. **`eventIdsInScopePrograms` stays
+   > RSVP-only; the events/[id] routes keep their inline gates as the accepted relation-hop exception.**
+2. **Negative tests (the `fd192fc` pattern) as the backstop** — this is the *primary* lever for the
+   events residue, since lever 1 doesn't apply there. `trusted-adults` has them; **`events/[id]/attendance`,
+   `events/[id]/rsvp`, and `emergency-contacts/[contactId]` are the under-tested ones to prioritize**
+   (chip `task_f13cfe70`).
 
 **Verdict on GAP-2:** "closed" = *declared + CODEOWNERS-reviewed + sensitive-reads-stripped*, **not**
 mechanically IDOR-proof. The open piece is not the validator gate (consistency, ships soon) — it is the
