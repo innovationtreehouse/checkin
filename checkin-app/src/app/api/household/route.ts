@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
+import { isValidEmail } from "@/lib/emergencyContacts/identity";
 import { isOrgAccount } from "@/lib/orgAccount";
 
 export const GET = withAuth(
@@ -57,8 +58,7 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: "Only household leads can add members" }, { status: 403 });
             }
 
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (memberEmail && !emailRegex.test(memberEmail)) {
+            if (memberEmail && !isValidEmail(memberEmail)) {
                 return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
             }
 
