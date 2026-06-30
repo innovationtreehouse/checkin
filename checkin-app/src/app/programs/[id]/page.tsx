@@ -251,7 +251,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 Manage Program
               </Button>
             )}
-            <Button variant="default" onClick={() => router.push('/programs')}>← Back</Button>
+            <Button variant="default" onClick={() => router.back()}>← Back</Button>
           </Group>
         </Group>
 
