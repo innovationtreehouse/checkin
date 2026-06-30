@@ -243,4 +243,9 @@ describe('background check is non-blocking', () => {
         expect(proc?.status).toBe('PENDING_EXTERNAL_ACTION');
         expect(proc?.paidAt).toBeNull();
     });
+
+    it('markContractSigned / markBgConsent on a non-existent process throw not_found', async () => {
+        await expect(markContractSigned(999999999)).rejects.toMatchObject({ code: 'not_found' });
+        await expect(markBgConsent(999999999, revA)).rejects.toMatchObject({ code: 'not_found' });
+    });
 });

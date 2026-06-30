@@ -331,6 +331,43 @@ describe('Trusted Adults service', () => {
         const revoked = await overrideReview(ta.reviews[0].id, boardId, 'revoke');
         expect(revoked.status).toBe('REVOKED');
     });
+
+    // decideReview acts ONLY on PENDING_BOARD_REVIEW (unlike overrideReview, which has
+    // no phase guard). Deciding any other state is a no-op 409 — pin that for each
+    // non-pending status, asserting the status is untouched and no audit row is written.
+    it('decideReview on a non-PENDING_BOARD_REVIEW review is wrong_phase, status unchanged, no new audit', async () => {
+        for (const status of ['APPROVED', 'DENIED', 'REVOKED', 'EXPIRED', 'PENDING_SUBJECT_ACTION'] as const) {
+            const ta = await discloseOne();
+            const reviewId = ta.reviews[0].id;
+            await prisma.trustedAdultReview.update({ where: { id: reviewId }, data: { status } });
+            const auditBefore = await prisma.auditLog.count({ where: { tableName: 'TrustedAdult', affectedEntityId: ta.id } });
+
+            // DENY needs no sharedNote, so it reaches the phase guard (not bad_input first).
+            await expect(decideReview(reviewId, boardId, { decision: 'DENY' })).rejects.toMatchObject({ code: 'wrong_phase' });
+
+            const after = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
+            expect(after!.status).toBe(status); // untouched
+            expect(await prisma.auditLog.count({ where: { tableName: 'TrustedAdult', affectedEntityId: ta.id } })).toBe(auditBefore);
+        }
+    });
+
+    // PENDING_SUBJECT_ACTION (board asked for info) is a dead-end in the service: there is
+    // NO resubmit/re-decide path. The board can't re-decide (wrong_phase), the family can't
+    // open a fresh review (already_open) — the only exits are withdraw or board override.
+    it('PENDING_SUBJECT_ACTION is a dead-end: no re-decide, no renew; only withdraw/override exits it', async () => {
+        const ta = await discloseOne();
+        const reviewId = ta.reviews[0].id;
+        await decideReview(reviewId, boardId, { decision: 'REQUEST_INFO', note: 'Need dates.' });
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } }))!.status).toBe('PENDING_SUBJECT_ACTION');
+
+        // Board can't re-decide it; family can't open a parallel review while one is in flight.
+        await expect(decideReview(reviewId, boardId, { decision: 'DENY' })).rejects.toMatchObject({ code: 'wrong_phase' });
+        await expect(renewTrustedAdult(ta.id, leadId)).rejects.toMatchObject({ code: 'already_open' });
+
+        // The escape hatch: a lead can withdraw it → REVOKED.
+        const withdrawn = await withdrawTrustedAdult(ta.id, leadId);
+        expect(withdrawn.status).toBe('REVOKED');
+    });
 });
 
 // Edge cases for the nightly expiry sweep. runExpirySweep returns DB-wide
