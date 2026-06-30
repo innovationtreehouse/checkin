@@ -225,13 +225,27 @@ describe('Ownership-boundary authorization', () => {
             as(memberA, { householdId: hhA });
             expect((await EC_DELETE(req('http://localhost/x', { method: 'DELETE' }), ecCtx(contact1))).status).toBe(403);
         });
-        it('a lead of a DIFFERENT household cannot edit this contact (404, not 200 — cross-household scoping)', async () => {
+        it('a lead of a DIFFERENT household cannot edit this contact (404, not 200 — and the contact is untouched)', async () => {
             as(leadB, { householdId: hhB });
             // leadB is a lead (passes the lead gate for THEIR household) but the contact
-            // belongs to HH_A — the service must not find/update it for HH_B.
+            // belongs to HH_A — the service must not find/update it for HH_B. A 404 alone
+            // doesn't prove the row was untouched (a guard that ran AFTER the write would
+            // still 404); re-read and compare. Mirrors fd192fc.
+            const before = await prisma.emergencyContact.findUnique({ where: { id: contact1 } });
             const res = await EC_PATCH(jsonReq({ name: 'Hijack', phone: '555-555-6666' }), ecCtx(contact1));
             expect(res.status).not.toBe(200);
             expect(res.status).toBe(404);
+            const after = await prisma.emergencyContact.findUnique({ where: { id: contact1 } });
+            expect(after?.name).toBe(before?.name);
+            expect(after?.phone).toBe(before?.phone);
+        });
+        it('a lead of a DIFFERENT household cannot delete this contact (404, not 200 — and the contact survives)', async () => {
+            as(leadB, { householdId: hhB });
+            const res = await EC_DELETE(req('http://localhost/x', { method: 'DELETE' }), ecCtx(contact1));
+            expect(res.status).not.toBe(200);
+            expect(res.status).toBe(404);
+            // The cross-household DELETE must not remove HH_A's contact.
+            expect(await prisma.emergencyContact.findUnique({ where: { id: contact1 } })).not.toBeNull();
         });
         it('200 for the owning lead (PATCH)', async () => {
             as(leadA, { householdId: hhA });

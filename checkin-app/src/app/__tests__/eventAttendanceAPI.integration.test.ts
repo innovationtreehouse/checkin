@@ -21,6 +21,9 @@ describe('Event Attendance API Integration Tests', () => {
     let testEventId: number;
     let testParticipant1Id: number;
     let testParticipant2Id: number;
+    // Cross-tenant attacker: lead of a DIFFERENT program (IDOR boundary).
+    let foreignLeadId: number;
+    let foreignProgramId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
@@ -74,6 +77,17 @@ describe('Event Attendance API Integration Tests', () => {
         });
         testProgramId = program.id;
 
+        // A lead of an UNRELATED program — the cross-tenant attacker for the IDOR
+        // tests. Privileged in their own program, but not lead/staff of testEvent's.
+        const foreignLead = await prisma.participant.create({
+            data: { email: 'foreignlead-event-attendance-test@example.com', name: 'Foreign Lead Att Test', household: { create: {} } }
+        });
+        foreignLeadId = foreignLead.id;
+        const foreignProgram = await prisma.program.create({
+            data: { name: 'Attendance Test Foreign Program', leadMentorId: foreignLeadId, maxParticipants: 10, minAge: 5, maxAge: 18 }
+        });
+        foreignProgramId = foreignProgram.id;
+
         const now = new Date();
         const pastStart = new Date(now.getTime() - 2 * 60 * 60 * 1000); // 2 hours ago
         const pastEnd = new Date(now.getTime() - 1 * 60 * 60 * 1000); // 1 hour ago
@@ -98,9 +112,9 @@ describe('Event Attendance API Integration Tests', () => {
             where: { id: testEventId }
         });
         await prisma.program.deleteMany({
-            where: { id: testProgramId }
+            where: { id: { in: [testProgramId, foreignProgramId] } }
         });
-        const participantIds = [testAdminId, testUserId, testLeadMentorId, testParticipant1Id, testParticipant2Id];
+        const participantIds = [testAdminId, testUserId, testLeadMentorId, testParticipant1Id, testParticipant2Id, foreignLeadId];
 
         // RESTRICT: delete participants before their (auto-created) households.
         const householdIds = (await prisma.participant.findMany({
@@ -154,6 +168,53 @@ describe('Event Attendance API Integration Tests', () => {
 
              const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testEventId) }) });
              expect(res.status).toBe(403);
+        });
+
+        // IDOR boundary: the gate is the inline `event.program.leadMentorId === caller`
+        // check (route.ts). A caller who is NOT this event's lead/admin must be 403'd
+        // AND must not write a Visit/audit row. A 403 alone doesn't prove that — a
+        // guard that ran AFTER the write would still 403. Re-query to pin it.
+        // Mirrors fd192fc (trusted-adults "assert no mutation after IDOR 403").
+        async function attendanceWriteCount() {
+            const visits = await prisma.visit.count({
+                where: { participantId: { in: [testParticipant1Id, testParticipant2Id] }, associatedEventId: testEventId }
+            });
+            const audits = await prisma.auditLog.count({
+                where: { tableName: 'Visit', secondaryAffectedEntity: testEventId }
+            });
+            return { visits, audits };
+        }
+
+        it('IDOR: a lead of a DIFFERENT program cannot mark attendance (403, no Visit written)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: foreignLeadId, isSysadmin: false, isBoardMember: false, isKeyholder: false }
+            });
+            const before = await attendanceWriteCount();
+
+            const req = new Request(`http://localhost:4000/api/events/${testEventId}/attendance`, {
+                method: 'POST',
+                body: JSON.stringify({ participantIds: [testParticipant1Id, testParticipant2Id] })
+            });
+            const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testEventId) }) });
+
+            expect(res.status).toBe(403);
+            expect(await attendanceWriteCount()).toEqual(before);
+        });
+
+        it('IDOR: a plain member of no program cannot mark attendance (403, no Visit written)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testUserId, isSysadmin: false, isBoardMember: false, isKeyholder: false }
+            });
+            const before = await attendanceWriteCount();
+
+            const req = new Request(`http://localhost:4000/api/events/${testEventId}/attendance`, {
+                method: 'POST',
+                body: JSON.stringify({ participantIds: [testParticipant1Id, testParticipant2Id] })
+            });
+            const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testEventId) }) });
+
+            expect(res.status).toBe(403);
+            expect(await attendanceWriteCount()).toEqual(before);
         });
 
         it('should return 404 Not Found for invalid event ID', async () => {
