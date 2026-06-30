@@ -23,12 +23,23 @@ doc lands, delete the standalone file so there is one plan, not two.
 > | #574 | drop dead Fee/RSVP field refs | Step 3 Blocker 1 ✅ |
 > | #575 | gate program roster from anonymous callers | §5.1a (P0 leak) ✅ |
 > | #577 | drop bare `id` from heuristic + bind `AuditLog` | Step 3 Blocker 2 ✅ |
+> | #576 | RSVP program-lead scope via `eventId` | RSVP capability ✅ |
+> | #578 | wire scope validators as a green CI gate | Step 3 Blocker 3 ✅ — **gate LIVE** |
+> | #579 | denied gate on program-edit + certify writes | GAP-1 ✅ |
+> | #580 | remove `getServerSession` from API routes | Step 7 phase 1 ✅ |
 >
-> **Step 3 Blockers 1 & 2 are now merged — `validateBindings(SCOPE_BINDINGS)` should be green.** The
-> ONLY remaining Step-3 work is **Blocker 3**: guard `validateRouteGrants` against undefined `returns`,
-> backfill `returns:` on the 5 row-scoped routes (still 2/12 declared), and wire both validators as a
-> zero-error CI gate over `allRoutes()`. See §9 Step 3. The §3/§7 analysis below is preserved as
-> rationale; branch refs are merged PRs.
+> **STATE (post-rebase 2026-06-30): the real security work is essentially done.** Leaks closed
+> (top-10, `programs/[id]`); validator gate **LIVE** (#578 — per-field stripping + grant resolvability
+> over the registry, `policy.contract.integration.test.ts`); GAP-1 closed (#579); `getServerSession`
+> gone from routes except one sanctioned, documented exception (`auth/dev-personas`); optional-session
+> reads use `getOptionalSessionUser`.
+>
+> **The ONE remaining *security* item: the drift-guard CI check (Step 7 phase 2)** — a static scan that
+> fails any route importing `getServerSession` (outside the allowlist) or calling `prisma` without a
+> sanctioned wrapper. #580 removed the instances; nothing yet stops them returning, and the class
+> already re-grew once (2→6). (Prereq: remove the 2 dead `getServerSession` imports in `shop/*`.) Plus
+> IDOR negative tests for the relation-hop write residue (in flight, §10). Everything else — Step 5
+> backfill, Step 6 collapse, derive hook, §11 edge-sensitivity — is cleanup/design, not security.
 
 **Refs analyzed (now merged):**
 
