@@ -12,6 +12,7 @@ import {
     Text,
     Textarea,
     TextInput,
+    Tooltip,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconAlertTriangle, IconPlus } from "@tabler/icons-react";
@@ -114,6 +115,13 @@ export default function TrustedAdultPanel() {
     // Don't nag before they've typed anything in either contact field.
     const showContactError = (counterpartyPhone.trim() || counterpartyEmail.trim()) && contactError;
     const canSubmit = counterpartyName.trim() && !contactError && familyContext.trim();
+    const blockedReason = !counterpartyName.trim()
+        ? "Enter the trusted adult's name."
+        : contactError
+            ? contactError
+            : !familyContext.trim()
+                ? "Add the board context."
+                : "";
 
     return (
         <Stack gap="sm">
@@ -193,9 +201,11 @@ export default function TrustedAdultPanel() {
                         onChange={(e) => setCounterpartyName(e.currentTarget.value)}
                         required
                     />
+                    <Text c="blue" fw={600} size="sm">
+                        Phone or email is required — at least one.
+                    </Text>
                     <TextInput
                         label="Their phone"
-                        description="Phone or email is required — at least one."
                         type="tel"
                         value={counterpartyPhone}
                         onChange={(e) => setCounterpartyPhone(e.currentTarget.value)}
@@ -219,9 +229,21 @@ export default function TrustedAdultPanel() {
                     {error && <Text c="red" size="sm">{error}</Text>}
                     <Group justify="flex-end">
                         <Button variant="default" onClick={close}>Cancel</Button>
-                        <Button onClick={submit} loading={submitting} disabled={!canSubmit}>
-                            Submit for board review
-                        </Button>
+                        <Tooltip label={blockedReason} disabled={!!canSubmit} withArrow>
+                            <Button
+                                onClick={(e) => {
+                                    if (!canSubmit) {
+                                        e.preventDefault();
+                                        return;
+                                    }
+                                    submit();
+                                }}
+                                loading={submitting}
+                                data-disabled={!canSubmit || undefined}
+                            >
+                                Submit for board review
+                            </Button>
+                        </Tooltip>
                     </Group>
                 </Stack>
             </Modal>
