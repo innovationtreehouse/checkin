@@ -365,7 +365,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 )}
               </Stack>
 
-              {requiresOverride && (
+              {requiresOverride && canManage && (
                 <Alert color="yellow" variant="light" mt="lg" title="Warning: Enrollment rules not met.">
                   <Text size="sm" mb="md">
                     As an Admin or Lead Mentor, you can bypass this restriction. Are you sure you want
