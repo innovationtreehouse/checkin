@@ -1209,10 +1209,23 @@ existing throw-on-unknown-role, `core.ts:162`, into a coverage test over `src/ap
 > them. Every other remaining item is uniformity/backstop; this one *prevents the next real gap*.
 >
 > **Prerequisite:** the guard fails on the existing 6 until they're converted. So Step 7 = (1) convert
-> the remaining `getServerSession` usages to `withAuth`/`handler()` (the mixed-file GET paths included
-> — they use `getServerSession` only for the manual `denied` check, which `withAuth` does for free),
-> then (2) add the CI guard. GAP-1's one-line fixes (chip, §10) close the live holes now; this closes
-> the *class*.
+> the remaining `getServerSession` usages, then (2) add the CI guard. GAP-1's one-line fixes (chip,
+> §10) close the live holes now; this closes the *class*.
+>
+> **Refinement found during conversion (`task_8659e031`): not all 6 are mandatory-session.** The
+> *writes* (`programs/[id]` PATCH, `shop/certifications` POST, `shop/tools` POST) → `withAuth({})`,
+> which also fixes GAP-1. But three are **optional-session** — they legitimately serve **anonymous**
+> callers and `withAuth` would 401 them: `attendance` GET (kiosk + anonymous), `programs` GET
+> (anonymous public catalog, test-asserted at `programsAPI.integration.test.ts:91`), and
+> `dev-personas` GET (dev login path). `withAuth` is mandatory-session, so it can't express these.
+> The fix is a **sanctioned `getOptionalSessionUser()` in `lib/auth.ts`** built on the *existing*
+> `authenticateRequest` (so the denied gate is reused, not re-implemented — a second denied check is
+> the GAP-1 class): `return auth.type === 'session' ? auth.user : undefined`. A denied household falls
+> through to `undefined` → public-only, fail-closed. This **completes the wrapper family**:
+> `withAuth`/`handler` (mandatory session) · `getOptionalSessionUser`/`authenticateRequest` (optional
+> session) · `withCron`/`withWebhook`/`withKiosk` (non-session). The phase-2 drift-guard bans raw
+> `getServerSession` in `app/api/**` and sanctions exactly these entry points (all in `lib/auth.ts`);
+> `getOptionalSessionUser` is for genuinely-public reads only, **not** an escape hatch from `withAuth`.
 
 ### Dependency summary (post-merge 2026-06-30)
 ```
