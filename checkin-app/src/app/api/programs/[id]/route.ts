@@ -119,6 +119,9 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
                 return NextResponse.json({ error: "Lead Mentor is required" }, { status: 400 });
             }
             leadMentorId = parseInt(leadMentorId);
+            if (isNaN(leadMentorId)) {
+                return NextResponse.json({ error: "Invalid lead mentor" }, { status: 400 });
+            }
         }
 
         const updateData: Record<string, unknown> = {
