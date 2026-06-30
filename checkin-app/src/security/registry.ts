@@ -15,6 +15,8 @@ defineRoute({
     endpoint: 'GET /api/profile',
     authorize: 'self',
     envelope: 'profile',
+    // Bag: { Participant } with nested visits (Visit) → event (Event).
+    returns: ['Participant', 'Visit', 'Event'],
     orderedView: [
         [
             'authenticated',
@@ -27,6 +29,11 @@ defineRoute({
     endpoint: 'GET /api/programs/[id]',
     authorize: 'public',
     envelope: null,
+    // Bag: { Program } with volunteers (ProgramVolunteer → participant Participant),
+    // participants (ProgramParticipant → participant Participant → household Household
+    // → emergencyContacts EmergencyContact), events (Event), fees (Fee), leadMentor
+    // (Participant).
+    returns: ['Program', 'ProgramParticipant', 'ProgramVolunteer', 'Participant', 'Household', 'EmergencyContact', 'Event', 'Fee'],
     orderedView: [
         ['isSysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
@@ -60,6 +67,10 @@ defineRoute({
     endpoint: 'GET /api/events/[id]',
     authorize: 'authenticated',
     envelope: null,
+    // Bag: { Event } with program (Program → volunteers ProgramVolunteer → participant
+    // Participant; participants ProgramParticipant → participant Participant), visits
+    // (Visit), rsvps (RSVP → participant Participant), attendanceConfirmedBy (Participant).
+    returns: ['Event', 'Program', 'ProgramVolunteer', 'ProgramParticipant', 'Participant', 'Visit', 'RSVP'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
@@ -85,6 +96,8 @@ defineRoute({
     endpoint: 'GET /api/programs/[id]/eligible-participants',
     authorize: 'program-lead-mentor',
     envelope: 'members',
+    // Bag: { Participant }.
+    returns: ['Participant'],
     orderedView: [
         ['isSysadmin',        ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember',     ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
@@ -96,6 +109,8 @@ defineRoute({
     endpoint: 'GET /api/directory/board',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
     envelope: 'boardMembers',
+    // Bag: { Participant }.
+    returns: ['Participant'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
@@ -110,6 +125,10 @@ defineRoute({
     endpoint: 'GET /api/membership-ops/applications',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: 'processes',
+    // Bag: { MembershipProcess } with attestations (BackgroundCheckAttestation),
+    // membership (Membership → household Household → participants Participant,
+    // leads HouseholdLead).
+    returns: ['MembershipProcess', 'BackgroundCheckAttestation', 'Membership', 'Household', 'Participant', 'HouseholdLead'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
@@ -123,6 +142,9 @@ defineRoute({
     endpoint: 'GET /api/membership/reviews',
     authorize: { anyRole: ['isBackgroundCheckReviewer'] },
     envelope: 'queue',
+    // Bag: { MembershipProcess } with membership (Membership → household Household
+    // → leads HouseholdLead → participant Participant).
+    returns: ['MembershipProcess', 'Membership', 'Household', 'HouseholdLead', 'Participant'],
     orderedView: [
         ['isBackgroundCheckReviewer', ['everyones:pii', 'member', 'public']],
     ],
@@ -135,6 +157,8 @@ defineRoute({
     endpoint: 'GET /api/trusted-adults/mine',
     authorize: 'household-member',
     envelope: 'trustedAdults',
+    // Bag: { TrustedAdult } with reviews (TrustedAdultReview).
+    returns: ['TrustedAdult', 'TrustedAdultReview'],
     orderedView: [
         ['authenticated', ['their_households:pii', 'their_households:personal', 'member', 'public']],
     ],
@@ -146,6 +170,9 @@ defineRoute({
     endpoint: 'GET /api/safety/trusted-adults',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: 'trustedAdults',
+    // Bag: { TrustedAdult } with household (Household → leads HouseholdLead →
+    // participant Participant), counterparty (Participant), reviews (TrustedAdultReview).
+    returns: ['TrustedAdult', 'Household', 'HouseholdLead', 'Participant', 'TrustedAdultReview'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
@@ -161,6 +188,8 @@ defineRoute({
     endpoint: 'GET /api/trusted-adults/operational',
     authorize: 'authenticated',
     envelope: 'trustedAdults',
+    // Bag: { TrustedAdult } with household (Household), reviews (TrustedAdultReview).
+    returns: ['TrustedAdult', 'Household', 'TrustedAdultReview'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],

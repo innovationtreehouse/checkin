@@ -13,6 +13,10 @@ import {
 } from '@/security/scopes';
 import { SCOPE_BINDINGS, OPT_OUT_PENDING_ROUTE } from '@/security/scopeBindings';
 import { classifications } from '@/security/generated/classifications';
+import { allRoutes } from '@/security/core';
+// Side-effect import: registers every route via defineRoute() so allRoutes()
+// yields the real policy surface for the CI gate below.
+import '@/security/registry';
 
 const CLS = classifications as unknown as Record<string, Record<string, string>>;
 
@@ -86,5 +90,27 @@ describe('validateRouteGrants — seam check', () => {
             { endpoint: '/api/y', orderedView: [['authenticated', ['their_own:pii', 'everyones:internal', 'public']]], returns: ['Participant'] },
         ];
         expect(validateRouteGrants(routes, bindings)).toEqual([]);
+    });
+
+    it('skips a route that has not declared `returns` (incremental coverage)', () => {
+        const routes: RouteGrantSpec[] = [
+            { endpoint: '/api/undeclared', orderedView: [['authenticated', ['their_households:pii']]] },
+        ];
+        expect(validateRouteGrants(routes, bindings)).toEqual([]);
+    });
+});
+
+// ─── THE CI GATE ─────────────────────────────────────────────────────────────
+// Asserts zero validator errors over the REAL registry. Every future route PR is
+// now mechanically checked: a binding field typo, a forgotten sensitive model, or
+// a route granting a row-scoped scope no returned model binds fails the build.
+describe('CI gate — zero errors over the real registry', () => {
+    it('validateBindings is clean (Blockers 1+2 landed)', () => {
+        expect(validateBindings(SCOPE_BINDINGS, CLS, OPT_OUT_PENDING_ROUTE)).toEqual([]);
+    });
+
+    it('validateRouteGrants is clean (every granted row-scope resolves on a returned model)', () => {
+        const routes: RouteGrantSpec[] = [...allRoutes()].map(([, spec]) => spec);
+        expect(validateRouteGrants(routes, SCOPE_BINDINGS)).toEqual([]);
     });
 });
