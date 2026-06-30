@@ -1,30 +1,22 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { handler, notFound, unauthorized } from "@/security/handler";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 import { isOrgAccount } from "@/lib/orgAccount";
 
-export const GET = withAuth(
-    {},
-    async (_req, auth) => {
-        try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-            const userId = auth.user.id;
+export const GET = handler('GET /api/household', async ({ auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
 
-            const user = await prisma.participant.findUnique({
-                where: { id: userId },
-                include: { household: { include: { participants: true, leads: true, membership: true } } }
-            });
+    const user = await prisma.participant.findUnique({
+        where: { id: auth.user.id },
+        include: { household: { include: { participants: true, leads: true, membership: true } } }
+    });
 
-            if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (!user) throw notFound('User not found');
 
-            return NextResponse.json({ household: user.household }, { status: 200 });
-        } catch (error: unknown) {
-            console.error("Household GET Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-        }
-    }
-);
+    return { Household: user.household };
+});
 
 export const PATCH = withAuth(
     {},

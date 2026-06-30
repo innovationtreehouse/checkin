@@ -23,6 +23,24 @@ defineRoute({
     ],
 });
 
+// The caller's own household: members + leads + membership. Household-scoped —
+// a member sees their household's members' PII (DOB/email/phone, pii) and the
+// household address (personal); sysadmin/board see everything. The query is
+// self-scoped, so non-members never reach a foreign household's rows; the field
+// grant is the backstop.
+defineRoute({
+    endpoint: 'GET /api/household',
+    authorize: 'authenticated',
+    envelope: 'household',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['authenticated', ['their_households:pii', 'their_households:personal',
+                           'their_own:pii', 'their_own:personal', 'their_own:internal',
+                           'member', 'public']],
+    ],
+});
+
 defineRoute({
     endpoint: 'GET /api/programs/[id]',
     authorize: 'public',
