@@ -16,7 +16,10 @@ type ProgramDetail = {
   endAt: string | null;
   leadMentorId: number | null;
   leadMentor?: { name: string | null; email: string } | null;
-  participants: { participantId: number, status?: string }[];
+  // Absent for non-enrolled callers (route gates the roster); only their own
+  // household's rows arrive when enrolled, which is all the "already enrolled"
+  // check below needs.
+  participants?: { participantId: number, status?: string }[];
   enrollmentStatus: string;
   memberPriceCents: number | null;
   nonMemberPriceCents: number | null;
@@ -311,7 +314,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 >
                   <Stack>
                     {householdMembers.map((member) => {
-                      const alreadyEnrolled = program.participants.some(p => p.participantId === member.id);
+                      const alreadyEnrolled = (program.participants ?? []).some(p => p.participantId === member.id);
 
                       let ageError: string | null = null;
                       if (program.minAge !== null || program.maxAge !== null) {

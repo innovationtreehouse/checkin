@@ -14,6 +14,10 @@ type RegProgram = {
   maxAge: number | null;
   enrollmentStatus?: string;
   maxParticipants: number | null;
+  // Anonymous callers no longer receive the participant rows (PII/association
+  // gate in the route) — only the aggregate count. Keep the rows as a fallback
+  // for staff/enrolled callers who still get them.
+  _count?: { participants?: number };
   participants?: unknown[];
 };
 
@@ -57,7 +61,7 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
           setProgram(data);
           if (data.enrollmentStatus === 'CLOSED') {
             setProgramError("Registration is currently closed for this program.");
-          } else if (data.maxParticipants !== null && data.participants?.length >= data.maxParticipants) {
+          } else if (data.maxParticipants !== null && (data._count?.participants ?? data.participants?.length ?? 0) >= data.maxParticipants) {
             setProgramError("This program is currently full.");
           }
         } else {
