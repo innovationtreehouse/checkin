@@ -41,6 +41,57 @@ defineRoute({
     ],
 });
 
+// Event roster — embeds participant PII (name/email/phone/dob, incl. minors) for
+// everyone enrolled in / RSVP'd to the program. This route is FAIL-CLOSED,
+// staff-only: the handler fn (events/[id]/route.ts) does an inline event->program
+// lead/core-vol/admin gate and throws 403 for everyone else, so non-staff never
+// receive the roster at all. That gate is NOT here in `authorize` because the
+// roster's identities (name/id, and the existence of each enrollment/RSVP/Visit
+// row) are tier 'public', so per-field stripping cannot hide the "who attends"
+// association — only admission can; and the event->program check can't be
+// expressed in the program-scoped `authorize` grammar (this [id] is an EVENT id;
+// resolveAccess keys those on a PROGRAM id). The orderedView below is therefore
+// defense-in-depth over the staff tiers only: admin -> everyones:*, and this
+// event's lead/core-vol -> their_program_participants:* via the per-row scope
+// resolver (mirrors 'GET /api/trusted-adults/operational'). internal tier is
+// granted to that scope so staff keep attendanceConfirmedAt (rendered by
+// program-ops/sessions/[id]).
+defineRoute({
+    endpoint: 'GET /api/events/[id]',
+    authorize: 'authenticated',
+    envelope: null,
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['authenticated', ['their_program_participants:pii',
+                           'their_program_participants:personal',
+                           'their_program_participants:internal',
+                           'their_own:pii',
+                           'their_own:personal',
+                           'member', 'public']],
+    ],
+});
+
+// Staff directory SEARCH for un-enrolled participants to add to a program. The
+// rows are NOT in the program (by definition), so the per-row
+// their_program_participants scope grants nothing here — admission is the real
+// boundary: 'program-lead-mentor' (resolveAccess also admits sysadmin/board)
+// restricts callers to a lead of THIS program. Once admitted, staff see the
+// directory's pii (name[public]/email[pii]/dateOfBirth[pii]) — preserving the
+// old inline behavior, which already ran a global participant query. So the
+// admitted views carry 'everyones:pii'. FINDING for the CODEOWNERS reviewer:
+// this is a deliberate global-directory grant, not a per-program scope.
+defineRoute({
+    endpoint: 'GET /api/programs/[id]/eligible-participants',
+    authorize: 'program-lead-mentor',
+    envelope: 'members',
+    orderedView: [
+        ['isSysadmin',        ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember',     ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['programLeadMentor', ['everyones:pii', 'member', 'public']],
+    ],
+});
+
 defineRoute({
     endpoint: 'GET /api/directory/board',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },

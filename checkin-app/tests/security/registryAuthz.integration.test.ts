@@ -35,7 +35,7 @@ const mockSession = require('next-auth/next').getServerSession;
 
 const TAG = 'registry-authz-test';
 
-type Gate = 'public' | 'session' | 'household-member' | 'anyRole' | 'certifier' | 'unhandled';
+type Gate = 'public' | 'session' | 'household-member' | 'anyRole' | 'certifier' | 'program-scoped' | 'unhandled';
 
 interface RoutePlan {
     endpoint: string;
@@ -54,9 +54,14 @@ function planAuthorize(authorize: Authorize): { gate: Gate; requiredRoles: Busin
     if (typeof authorize === 'object' && authorize !== null && 'anyRole' in authorize) {
         return { gate: 'anyRole', requiredRoles: [...authorize.anyRole] };
     }
-    // program-lead-mentor / program-core-volunteer / household-lead / kiosk:
-    // not in the current registry. Surfaced as 'unhandled' so a future route
-    // can't be silently skipped — it'll fail the explicit guard test below.
+    // Program-scoped gates: resolveAccess admits a lead/core-vol of THIS program
+    // OR a sysadmin/board. A plain authenticated user holds neither → 403.
+    if (authorize === 'program-lead-mentor' || authorize === 'program-core-volunteer') {
+        return { gate: 'program-scoped', requiredRoles: null };
+    }
+    // household-lead / kiosk: not in the current registry. Surfaced as
+    // 'unhandled' so a future route can't be silently skipped — it'll fail the
+    // explicit guard test below.
     return { gate: 'unhandled', requiredRoles: null };
 }
 
@@ -72,6 +77,7 @@ function importPathFor(routePath: string): string {
 describe('Registry route admission gates', () => {
     let plainUser: SessionUser;
     let programId: number;
+    let eventId: number;
     const householdIds: number[] = [];
     const participantIds: number[] = [];
     const ENV_BEFORE = process.env.CHECKIN_ENV;
@@ -104,6 +110,15 @@ describe('Registry route admission gates', () => {
         // false, so an anonymous caller is admitted and sees it.
         const program = await prisma.program.create({ data: { name: `Authz Program ${TAG}` } });
         programId = program.id;
+
+        // For event routes ('GET /api/events/[id]' etc.) whose [id] is an EVENT
+        // id, not a program id. Plain authenticated caller is admitted (gate
+        // 'session') and the existing event yields a 2xx; the roster is stripped
+        // to public for them, which is what the policy intends.
+        const event = await prisma.event.create({
+            data: { programId, name: `Authz Event ${TAG}`, startAt: new Date(), endAt: new Date() },
+        });
+        eventId = event.id;
     });
 
     beforeEach(() => {
@@ -113,6 +128,7 @@ describe('Registry route admission gates', () => {
 
     afterAll(async () => {
         process.env.CHECKIN_ENV = ENV_BEFORE;
+        await prisma.event.deleteMany({ where: { id: eventId } });
         await prisma.program.deleteMany({ where: { id: programId } });
         await prisma.participant.deleteMany({ where: { id: { in: participantIds } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
@@ -124,11 +140,14 @@ describe('Registry route admission gates', () => {
         if (typeof verb !== 'function') {
             throw new Error(`${plan.endpoint}: no ${plan.method} export — registry/route out of sync`);
         }
-        const url = `http://localhost${plan.routePath.replace(/\[(\w+)\]/g, String(programId))}`;
+        // Event routes carry an EVENT id in [id]; everything else uses the
+        // program id (the only other seeded resource).
+        const idValue = String(plan.routePath.startsWith('/api/events/') ? eventId : programId);
+        const url = `http://localhost${plan.routePath.replace(/\[(\w+)\]/g, idValue)}`;
         const hasParams = /\[(\w+)\]/.test(plan.routePath);
         const ctx = hasParams
             ? { params: Promise.resolve(Object.fromEntries(
-                  [...plan.routePath.matchAll(/\[(\w+)\]/g)].map(m => [m[1], String(programId)]),
+                  [...plan.routePath.matchAll(/\[(\w+)\]/g)].map(m => [m[1], idValue]),
               )) }
             : undefined;
         return verb(new Request(url, { method: plan.method }), ctx);
@@ -170,6 +189,13 @@ describe('Registry route admission gates', () => {
                     expect((await call(plan)).status).toBe(403);
                 });
             }
+            if (plan.gate === 'program-scoped') {
+                it('rejects an authenticated caller who is not a lead of this program with 403', async () => {
+                    // plainUser leads no program and is not sysadmin/board.
+                    mockSession.mockResolvedValue({ user: plainUser });
+                    expect((await call(plan)).status).toBe(403);
+                });
+            }
             // session / household-member / public gates have no role-level
             // under-privileged caller — any authenticated (resp. any) caller is
             // admitted by design, so there is no 403 to assert. Field-level
@@ -182,8 +208,14 @@ describe('Registry route admission gates', () => {
                 } else if (plan.gate === 'anyRole') {
                     const role = (plan.requiredRoles ?? [])[0];
                     mockSession.mockResolvedValue({ user: { ...plainUser, [role]: true } });
-                } else if (plan.gate === 'certifier') {
-                    // Admins are admitted by the certifier gate too (resolveAccess ORs isAdmin).
+                } else if (plan.gate === 'certifier' || plan.gate === 'program-scoped') {
+                    // Both gates OR-admit isAdmin in resolveAccess, so an admin is the
+                    // simplest allowed caller (no tool-status / lead-mentor seeding needed).
+                    mockSession.mockResolvedValue({ user: { ...plainUser, isSysadmin: true } });
+                } else if (plan.routePath.startsWith('/api/events/')) {
+                    // events/[id] is authorize:'authenticated' (so gate 'session'), but the
+                    // handler fn adds an inline staff-only roster gate the registry grammar
+                    // can't express ([id] is an event id). An admin clears that inline gate.
                     mockSession.mockResolvedValue({ user: { ...plainUser, isSysadmin: true } });
                 } else {
                     // session / household-member: any real authenticated user.

@@ -1,61 +1,67 @@
 import { NextResponse } from "next/server";
-import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
+import { withAuth } from "@/lib/auth";
+import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 
-export const GET = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+// FAIL-CLOSED, staff-only. This payload is fundamentally a roster — who is
+// enrolled / RSVP'd / attended — and a participant's name, id, and the very
+// existence of their enrollment/RSVP/Visit row are all tier 'public'. So the
+// handler's per-FIELD stripping (which protects email/phone/dob) CANNOT hide the
+// association "person <-> this event": stripping a non-staff caller to 'public'
+// still leaks the whole attendee name list (incl. minors). Field-tiering guards
+// fields; only admission guards the association. So we gate admission here.
+//
+// The gate can't live in the registry `authorize`: this route's [id] is an EVENT
+// id, but resolveAccess's program-scoped checks key off params.id as a PROGRAM
+// id (and fixing that touches the CODEOWNERS-gated access-resolvers). We have the
+// fetched event here, so the event->program lead/core-vol check is done inline,
+// exactly like the original hand-rolled gate. The registry policy + stripping
+// remain as defense-in-depth on the staff tiers (admin -> everyones:*, this
+// event's lead/core-vol -> their_program_participants:* via per-row scope).
+export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth, params }) => {
+    const eventId = parseInt(params.id, 10);
+    if (isNaN(eventId)) throw badRequest('Invalid event ID');
 
-    const resolvedParams = await params;
-    const eventId = parseInt(resolvedParams.id, 10);
-
-    try {
-        const event = await prisma.event.findUnique({
-            where: { id: eventId },
-            include: {
-                program: {
-                    include: {
-                        volunteers: {
-                            include: { participant: true }
-                        },
-                        participants: {
-                            include: { participant: true }
-                        }
+    const event = await prisma.event.findUnique({
+        where: { id: eventId },
+        include: {
+            program: {
+                include: {
+                    volunteers: {
+                        include: { participant: true }
+                    },
+                    participants: {
+                        include: { participant: true }
                     }
-                },
-                visits: true,
-                rsvps: {
-                    include: { participant: true }
-                },
-                attendanceConfirmedBy: {
-                    select: { name: true }
                 }
+            },
+            visits: true,
+            rsvps: {
+                include: { participant: true }
+            },
+            attendanceConfirmedBy: {
+                select: { name: true }
             }
-        });
-
-        if (!event) return NextResponse.json({ error: "Event not found" }, { status: 404 });
-
-        // Authorization: this response embeds full participant records (email, phone,
-        // dob, googleId — including minors) for everyone enrolled in / RSVP'd to the
-        // program. Restrict it to event staff, matching the PATCH handler below.
-        // Without this gate any authenticated user could harvest roster PII by
-        // enumerating sequential event IDs.
-        const userId = auth.user.id;
-        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
-        const isLeadMentor = event.program?.leadMentorId === userId;
-        const isCoreVolunteer = event.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
-        if (!isSysAdminOrBoard && !isLeadMentor && !isCoreVolunteer) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to view this event" }, { status: 403 });
         }
+    });
 
-        return NextResponse.json(event);
-    } catch (error: unknown) {
-        console.error("Failed to fetch event:", error);
-        return NextResponse.json({ error: "Failed to fetch event" }, { status: 500 });
-    }
+    if (!event) throw notFound('Event not found');
+
+    // Roster is staff-only (see header). Non-staff callers never receive it —
+    // matches the original inline gate (403 for an existing event they don't staff).
+    const isStaff = auth.type === 'session' && (
+        auth.user.isSysadmin ||
+        auth.user.isBoardMember ||
+        event.program?.leadMentorId === auth.user.id ||
+        (event.program?.volunteers?.some(v => v.participantId === auth.user.id && v.isCore) ?? false)
+    );
+    if (!isStaff) throw forbidden('Forbidden: Not authorized to view this event');
+
+    return { Event: event };
 });
 
-export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+export const PATCH = withAuth({}, async (req: Request, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const resolvedParams = await params;

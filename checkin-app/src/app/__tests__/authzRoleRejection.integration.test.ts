@@ -114,8 +114,8 @@ describe('Protected-route role rejection', () => {
         await wipe();
         plainHh = (await prisma.household.create({ data: { name: `Plain HH ${TAG}` } })).id;
         plainId = (await prisma.participant.create({ data: { name: `Plain ${TAG}`, householdId: plainHh } })).id;
-        // A real event so events/[id] GET reaches its in-handler authorization
-        // gate (a missing event short-circuits to 404 before the 403).
+        // A real event so events/[id] GET reaches its in-handler staff gate
+        // (a missing event short-circuits to 404 before the 403).
         const prog = await prisma.program.create({ data: { name: `Prog ${TAG}` } });
         programId = prog.id;
         eventId = (await prisma.event.create({
@@ -215,13 +215,19 @@ describe('Protected-route role rejection', () => {
         });
     });
 
-    // ---- events/[id] — in-handler ownership gate (needs a real event) ---------
+    // ---- events/[id] — fail-closed staff-only roster gate ---------------------
+    // GET is on the security handler() for field-tiering, but the roster (who is
+    // enrolled / RSVP'd / attended) is staff-only: a participant's name/id and
+    // the existence of their enrollment/RSVP/Visit row are tier 'public', so
+    // per-field stripping can't hide the "who attends" association. The handler fn
+    // gates admission inline (event -> program lead/core-vol/admin) and 403s
+    // everyone else, so a non-staff caller never receives the roster.
     describe('events/[id]', () => {
         it('GET 401 when unauthenticated', async () => {
             anon();
             expect((await EVENT_GET(nreq(`http://localhost/api/events/${eventId}`), idCtx(eventId))).status).toBe(401);
         });
-        it('GET 403 for a plain user who is not event staff (roster PII gate)', async () => {
+        it('GET 403 for a plain user who is not event staff (roster gate)', async () => {
             as(plainId, { householdId: plainHh });
             expect((await EVENT_GET(nreq(`http://localhost/api/events/${eventId}`), idCtx(eventId))).status).toBe(403);
         });
