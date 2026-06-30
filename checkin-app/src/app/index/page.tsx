@@ -7,16 +7,19 @@ import { NavLink, Stack, Text, TextInput, Title } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { IconSearch } from '@tabler/icons-react';
 import { PAGES, type RegistryUser } from '@/components/pageRegistry';
+import { useTodoCounts } from '@/hooks/useTodoCounts';
 
 export default function IndexPage() {
   const { data: session } = useSession();
   const signedIn = !!session;
   const user = session?.user as RegistryUser | undefined;
+  // Computed-role gates (leads ≥1 program) read from the same payload the nav uses.
+  const counts = useTodoCounts(signedIn);
   const [query, setQuery] = useState('');
 
   const visible = useMemo(
-    () => PAGES.filter((p) => p.visible(user, signedIn)),
-    [user, signedIn],
+    () => PAGES.filter((p) => p.visible(user, signedIn, counts)),
+    [user, signedIn, counts],
   );
 
   const matches = useMemo(() => {
