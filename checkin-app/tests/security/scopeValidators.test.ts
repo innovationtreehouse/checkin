@@ -53,13 +53,14 @@ describe('validateBindings — coverage (forgotten-model catcher)', () => {
     });
 });
 
-describe('validateBindings — known Fee/RSVP literal-port finding', () => {
-    it('flags Fee.participantId and RSVP.programId (fields absent on those models)', () => {
-        // Documents the deliberate literal port: these branches are required for
-        // switch-equivalence (S1) but reference columns the models lack.
+describe('validateBindings — Fee/RSVP dead-field cleanup', () => {
+    it('no longer flags Fee.participantId or RSVP.programId (dead refs removed)', () => {
+        // The literal-port branches read columns the models lack (Fee has no
+        // participantId, RSVP has no programId), never fired at runtime, and are
+        // now removed (equivalence-preserving — S1 stays green).
         const errs = validateBindings(SCOPE_BINDINGS, CLS, OPT_OUT_PENDING_ROUTE);
-        expect(errs).toContain('Fee.participantId — no such field');
-        expect(errs).toContain('RSVP.programId — no such field');
+        expect(errs).not.toContain('Fee.participantId — no such field');
+        expect(errs).not.toContain('RSVP.programId — no such field');
     });
 });
 
