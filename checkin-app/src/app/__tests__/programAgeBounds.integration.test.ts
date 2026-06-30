@@ -107,7 +107,7 @@ describe('Program Age Bounds Integration Tests', () => {
                 name: 'Age Bounds Integration Test Program',
                 minAge: 14,
                 maxAge: 18,
-                begin: new Date(),
+                startAt: new Date(),
                 phase: 'UPCOMING',
                 enrollmentStatus: 'OPEN'
             }

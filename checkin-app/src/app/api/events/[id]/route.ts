@@ -107,21 +107,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             // Block edits to an event that has already finished. Re-clearing
             // reminderSentAt on a past event is meaningless and would re-arm a
             // stale reminder; today only the cron's future-only window stops it
-            // from firing. Use end (not start) so an in-progress event still edits.
-            if (body.action === 'editTime' && event.end.getTime() < Date.now()) {
+            // from firing. Use endAt (not startAt) so an in-progress event still edits.
+            if (body.action === 'editTime' && event.endAt.getTime() < Date.now()) {
                 return NextResponse.json({ error: "Cannot edit a past event" }, { status: 400 });
             }
 
-            const { start, end, applyToFuture } = body;
+            const { startAt, endAt, applyToFuture } = body;
 
-            const timeShiftStartMs = start ? new Date(start).getTime() - event.start.getTime() : 0;
-            const timeShiftEndMs = end ? new Date(end).getTime() - event.end.getTime() : 0;
+            const timeShiftStartMs = startAt ? new Date(startAt).getTime() - event.startAt.getTime() : 0;
+            const timeShiftEndMs = endAt ? new Date(endAt).getTime() - event.endAt.getTime() : 0;
 
             if (applyToFuture && event.recurringGroupId) {
                 const futureEvents = await prisma.event.findMany({
                     where: {
                         recurringGroupId: event.recurringGroupId,
-                        start: { gte: event.start }
+                        startAt: { gte: event.startAt }
                     }
                 });
 
@@ -141,8 +141,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                         return prisma.event.update({
                             where: { id: fe.id },
                             data: {
-                                start: new Date(fe.start.getTime() + timeShiftStartMs),
-                                end: new Date(fe.end.getTime() + timeShiftEndMs)
+                                startAt: new Date(fe.startAt.getTime() + timeShiftStartMs),
+                                endAt: new Date(fe.endAt.getTime() + timeShiftEndMs)
                             }
                         });
                     });
@@ -175,8 +175,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                     const updatedEvent = await prisma.event.update({
                         where: { id: event.id },
                         data: {
-                            start: start ? new Date(start) : event.start,
-                            end: end ? new Date(end) : event.end
+                            startAt: startAt ? new Date(startAt) : event.startAt,
+                            endAt: endAt ? new Date(endAt) : event.endAt
                         }
                     });
                     // Rescheduled to a new start → attendees become eligible for a fresh

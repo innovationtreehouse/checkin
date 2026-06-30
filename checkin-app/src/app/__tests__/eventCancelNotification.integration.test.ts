@@ -71,7 +71,7 @@ describe("PATCH /api/events/[id] cancel — attendee notification (characterizat
     it('cancels the event and deletes the ATTENDING RSVP but sends NO notification (current behavior)', async () => {
         const start = new Date(Date.now() + 24 * HOUR);
         const event = await prisma.event.create({
-            data: { name: `${TAG} future`, start, end: new Date(start.getTime() + HOUR), description: 'cancel' },
+            data: { name: `${TAG} future`, startAt: start, endAt: new Date(start.getTime() + HOUR), description: 'cancel' },
         });
         await prisma.rSVP.create({ data: { eventId: event.id, participantId: attendeeId, status: 'ATTENDING' } });
 

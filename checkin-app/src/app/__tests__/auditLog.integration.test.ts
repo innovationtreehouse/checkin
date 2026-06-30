@@ -135,7 +135,7 @@ describe('AuditLog Integration Tests', () => {
             body: JSON.stringify({
                 name: 'Audit Test Program',
                 enrollmentStatus: 'OPEN',
-                begin: new Date(),
+                startAt: new Date(),
                 leadMentorId: testAdminId
             })
         });
@@ -215,7 +215,7 @@ describe('AuditLog Integration Tests', () => {
     it('should generate an AuditLog when attendance is validated', async () => {
         // First create an event and visit manually to test validation
         const event = await prisma.event.create({
-            data: { programId: testProgramId, name: 'Audit Test Event', start: new Date(), end: new Date() }
+            data: { programId: testProgramId, name: 'Audit Test Event', startAt: new Date(), endAt: new Date() }
         });
         testEventId = event.id;
 

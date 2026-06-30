@@ -11,8 +11,8 @@ import { formatCents } from '@inventory/money';
 type ProgramDetail = {
   id: number;
   name: string;
-  begin: string | null;
-  end: string | null;
+  startAt: string | null;
+  endAt: string | null;
   leadMentorId: number | null;
   leadMentor?: { name: string | null; email: string } | null;
   participants: { participantId: number, status?: string }[];
@@ -272,8 +272,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             {program.leadMentor && (
               <Text><strong>Lead Mentor:</strong> {program.leadMentor.name || 'Unnamed'}</Text>
             )}
-            <Text><strong>Starts:</strong> {program.begin ? formatDate(program.begin) : 'TBD'}</Text>
-            <Text><strong>Ends:</strong> {program.end ? formatDate(program.end) : 'Ongoing'}</Text>
+            <Text><strong>Starts:</strong> {program.startAt ? formatDate(program.startAt) : 'TBD'}</Text>
+            <Text><strong>Ends:</strong> {program.endAt ? formatDate(program.endAt) : 'Ongoing'}</Text>
             <Text>
               <strong>Enrollment:</strong>{' '}
               {program.enrollmentStatus === 'OPEN' ? <Text component="span" c="green">Open</Text> :
@@ -332,7 +332,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                         if (!member.dateOfBirth) {
                           ageError = "DOB missing";
                         } else {
-                          const age = calculateAge(member.dateOfBirth, program.begin ?? undefined);
+                          const age = calculateAge(member.dateOfBirth, program.startAt ?? undefined);
                           if (program.minAge !== null && age < program.minAge) ageError = "Too young";
                           if (program.maxAge !== null && age > program.maxAge) ageError = "Too old";
                         }

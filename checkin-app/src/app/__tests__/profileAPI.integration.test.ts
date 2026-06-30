@@ -60,8 +60,10 @@ describe('Profile API Integration Tests', () => {
         // Create visits for history testing
         await prisma.visit.createMany({
             data: [
-                { participantId: testUserId, arrivedAt: new Date(Date.now() - 3600000) },
-                { participantId: testUserId, arrivedAt: new Date(Date.now() - 7200000) }
+                // Closed (departedAt set): a participant may have only one OPEN visit
+                // (Visit_one_open_per_participant partial unique index); these are history.
+                { participantId: testUserId, arrivedAt: new Date(Date.now() - 3600000), departedAt: new Date(Date.now() - 3000000) },
+                { participantId: testUserId, arrivedAt: new Date(Date.now() - 7200000), departedAt: new Date(Date.now() - 6600000) }
             ]
         });
     });

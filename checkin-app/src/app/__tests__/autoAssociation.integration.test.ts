@@ -54,8 +54,8 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             data: {
                 programId: programAId,
                 name: 'Event A',
-                start: new Date(`${baseDateString}10:00:00Z`),
-                end: new Date(`${baseDateString}12:00:00Z`)
+                startAt: new Date(`${baseDateString}10:00:00Z`),
+                endAt: new Date(`${baseDateString}12:00:00Z`)
             }
         });
         eventAId = evtA.id;
@@ -65,8 +65,8 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             data: {
                 programId: programBId,
                 name: 'Event B',
-                start: new Date(`${baseDateString}12:00:00Z`),
-                end: new Date(`${baseDateString}14:00:00Z`)
+                startAt: new Date(`${baseDateString}12:00:00Z`),
+                endAt: new Date(`${baseDateString}14:00:00Z`)
             }
         });
         eventBId = evtB.id;
@@ -76,8 +76,8 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             data: {
                 programId: programCId,
                 name: 'Event C',
-                start: new Date(`${baseDateString}12:00:00Z`),
-                end: new Date(`${baseDateString}14:00:00Z`)
+                startAt: new Date(`${baseDateString}12:00:00Z`),
+                endAt: new Date(`${baseDateString}14:00:00Z`)
             }
         });
         eventCId = evtC.id;
@@ -87,8 +87,8 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             data: {
                 programId: programDId,
                 name: 'Event D',
-                start: new Date(`${baseDateString}14:00:00Z`),
-                end: new Date(`${baseDateString}16:00:00Z`)
+                startAt: new Date(`${baseDateString}14:00:00Z`),
+                endAt: new Date(`${baseDateString}16:00:00Z`)
             }
         });
         eventDId = evtD.id;

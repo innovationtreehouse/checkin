@@ -39,9 +39,9 @@ export async function GET() {
         const events = await prisma.event.findMany({
             where: {
                 programId: { in: [...programMembers.keys()] },
-                end: { gte: new Date() } // Only upcoming
+                endAt: { gte: new Date() } // Only upcoming
             },
-            orderBy: { start: "asc" },
+            orderBy: { startAt: "asc" },
             include: {
                 program: { select: { name: true } },
                 rsvps: {
@@ -62,8 +62,8 @@ export async function GET() {
                     id: ev.id,
                     name: ev.name,
                     description: ev.description,
-                    start: ev.start,
-                    end: ev.end,
+                    startAt: ev.startAt,
+                    endAt: ev.endAt,
                     program: ev.program,
                     participant: memberById.get(pid),
                     rsvp: ev.rsvps.find((r: typeof ev.rsvps[number]) => r.participantId === pid)?.status ?? null
