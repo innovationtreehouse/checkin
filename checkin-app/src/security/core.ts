@@ -67,6 +67,9 @@ export type Role =
     | 'isBoardMember'
     | 'isKeyholder'
     | 'isBackgroundCheckReviewer'
+    // Holds a MAY_CERTIFY_OTHERS toolStatus (a shop certifier). Not a Participant
+    // role boolean — derived from session.user.toolStatuses (see callerHoldsRole).
+    | 'certifier'
     | 'householdLead'
     | 'programLeadMentor'
     | 'programCoreVolunteer';
@@ -90,6 +93,7 @@ const VALID_ROLES = new Set<Role>([
     'isBoardMember',
     'isKeyholder',
     'isBackgroundCheckReviewer',
+    'certifier',
     'householdLead',
     'programLeadMentor',
     'programCoreVolunteer',
@@ -118,6 +122,10 @@ export type Authorize =
     | 'authenticated'
     | 'self'
     | { anyRole: BusinessRole[] }
+    // Shop certifier (a MAY_CERTIFY_OTHERS toolStatus). Admits certifiers OR
+    // admins (isSysadmin/isBoardMember) — see resolveAccess. Backed by a
+    // predicate because 'certifier' is not a Participant role boolean.
+    | 'certifier'
     | 'program-lead-mentor'
     | 'program-core-volunteer'
     | 'household-lead'
@@ -144,6 +152,14 @@ export interface RouteSpec {
      * meaningful.
      */
     orderedView: readonly OrderedViewEntry[];
+    /**
+     * The models this route's handler is declared to return (top-level bag keys
+     * + the models reached through their relations). Optional documentation of
+     * the response surface; consumed by the §8 seam validator to check the
+     * declared set against what the handler actually ships. Not enforced by the
+     * runtime stripper (that gates per-field regardless of this list).
+     */
+    returns?: readonly Models[];
 }
 
 /**

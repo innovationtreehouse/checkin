@@ -161,20 +161,36 @@ describe('Shop API Integration Tests', () => {
         it('should return 403 for common users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             const res = await getMembers() as Response;
+             const res = await getMembers(createReq('GET')) as Response;
              expect(res.status).toBe(403);
         });
 
         it('should return 200 and members for an admin', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const res = await getMembers() as Response;
+             const res = await getMembers(createReq('GET')) as Response;
              expect(res.status).toBe(200);
              const data = await res.json();
              
              // Our common user has an active membership so they should appear
              const memberEmails = data.members.map((m: { email: string }) => m.email);
              expect(memberEmails).toContain('common-shop-api-test@example.com');
+        });
+
+        it('certifier sees member names but NOT emails (pii stripped)', async () => {
+             // Certifier auth comes from a MAY_CERTIFY_OTHERS toolStatus on the
+             // session — not a role boolean. The view grants member+public only,
+             // so email (pii) is stripped while name (public) survives.
+             (getServerSession as jest.Mock).mockResolvedValue({
+                 user: { id: commonId, toolStatuses: [{ toolId: 1, level: 'MAY_CERTIFY_OTHERS' }] },
+             });
+
+             const res = await getMembers(createReq('GET')) as Response;
+             expect(res.status).toBe(200);
+             const data = await res.json();
+             expect(data.members.length).toBeGreaterThan(0);
+             expect(data.members.every((m: { name?: string }) => typeof m.name === 'string')).toBe(true);
+             expect(data.members.every((m: { email?: string }) => m.email === undefined)).toBe(true);
         });
     });
 

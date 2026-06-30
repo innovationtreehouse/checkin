@@ -25,7 +25,9 @@ type Certification = {
   tool?: { id: number; name: string };
 };
 
-type Member = { id: number; name: string | null; email: string };
+// email is omitted for certifiers (security policy strips pii from their view);
+// only admins/board receive it. Treat as optional everywhere it's read.
+type Member = { id: number; name: string | null; email?: string };
 
 type Tab = 'tools' | 'person' | 'all';
 
@@ -114,7 +116,7 @@ function GrantForm({
               label="Member" required style={{ flex: '1 1 180px' }} searchable
               placeholder="-- Member --"
               value={memberId} onChange={(v) => setMemberId(v ?? "")}
-              data={members.map(m => ({ value: String(m.id), label: m.name ?? m.email }))}
+              data={members.map(m => ({ value: String(m.id), label: m.name ?? m.email ?? `#${m.id}` }))}
             />
           )}
           <Select label="Level" w={140} value={level} onChange={(v) => setLevel(v ?? "CERTIFIED")} allowDeselect={false} data={levelOptions} />
@@ -294,7 +296,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
 
   const filtered = members.filter(m =>
     (m.name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-    m.email.toLowerCase().includes(search.toLowerCase())
+    (m.email ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (

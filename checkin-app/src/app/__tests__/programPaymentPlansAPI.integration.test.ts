@@ -24,6 +24,12 @@ const mockSession = require('next-auth/next').getServerSession;
 
 const TAG = 'payment-plans-test';
 
+// GET is now a security handler() and POST a withAuth() wrapper — both take a
+// NextRequest. Plain Request carries the fields authenticateRequest reads.
+function nextReq(url = 'http://localhost/api/finance-ops/payment-plans', init?: RequestInit) {
+    return new Request(url, init) as unknown as import('next/server').NextRequest;
+}
+
 describe('Program payment-plan routes', () => {
     let programId: number;
     let mentorId: number;
@@ -101,13 +107,13 @@ describe('Program payment-plan routes', () => {
     describe('GET /api/finance-ops/payment-plans', () => {
         it('401 without a session', async () => {
             mockSession.mockResolvedValue(null);
-            const res = await PlansGet();
+            const res = await PlansGet(nextReq());
             expect(res.status).toBe(401);
         });
 
         it('403 for a non-board, non-sysadmin user', async () => {
             mockSession.mockResolvedValue({ user: { id: selfId } });
-            const res = await PlansGet();
+            const res = await PlansGet(nextReq());
             expect(res.status).toBe(403);
         });
 
@@ -116,7 +122,7 @@ describe('Program payment-plan routes', () => {
             await enroll(noiseId, { requested: false });  // should NOT appear
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
-            const res = await PlansGet();
+            const res = await PlansGet(nextReq());
             expect(res.status).toBe(200);
             const rows = await res.json();
             const ids = rows.map((r: { participantId: number }) => r.participantId);
@@ -128,13 +134,13 @@ describe('Program payment-plan routes', () => {
     describe('POST /api/finance-ops/payment-plans (approve)', () => {
         it('401 without a session', async () => {
             mockSession.mockResolvedValue(null);
-            const res = await PlansPost(new Request('http://localhost', { method: 'POST', body: '{}' }));
+            const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: '{}' }));
             expect(res.status).toBe(401);
         });
 
         it('403 for a non-board user', async () => {
             mockSession.mockResolvedValue({ user: { id: selfId } });
-            const res = await PlansPost(new Request('http://localhost', { method: 'POST', body: JSON.stringify({ programId, participantId: selfId }) }));
+            const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ programId, participantId: selfId }) }));
             expect(res.status).toBe(403);
         });
 
@@ -142,7 +148,7 @@ describe('Program payment-plan routes', () => {
             await enroll(selfId, { requested: true });
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
-            const res = await PlansPost(new Request('http://localhost', {
+            const res = await PlansPost(nextReq('http://localhost', {
                 method: 'POST',
                 body: JSON.stringify({ programId, participantId: selfId }),
             }));

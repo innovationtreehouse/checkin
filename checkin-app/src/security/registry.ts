@@ -121,6 +121,37 @@ defineRoute({
     ],
 });
 
+// Board's payment-plan approval queue. Returns pending ProgramParticipant rows
+// with the full participant + program nested. Board/sysadmin only, and they hold
+// everyones:* so they see every field — the win is the declared policy: any role
+// later added to this view is field-stripped automatically.
+defineRoute({
+    endpoint: 'GET /api/finance-ops/payment-plans',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    returns: ['ProgramParticipant', 'Participant', 'Program'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Shop member roster (for certifying tools). Admins/board see the full row incl.
+// email (pii). Certifiers only need to NAME the member they certify, so they get
+// name (public) + member-tier — NOT everyones:pii. This deliberately TIGHTENS the
+// pre-migration behavior, which leaked every member's email to any certifier.
+defineRoute({
+    endpoint: 'GET /api/shop/members',
+    authorize: 'certifier',
+    envelope: 'members',
+    returns: ['Participant'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['certifier',     ['member', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
