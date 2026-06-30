@@ -79,6 +79,9 @@ model Participant {
 
   /// @sensitivity:pii
   dateOfBirth          DateTime?
+  /// Set when a lead marks a member as 25+ without recording a DoB, so the
+  /// member shows as "Adult" instead of "Age Unavailable". @sensitivity:internal
+  isDeclaredAdult      Boolean   @default(false)
   /// @sensitivity:internal
   lastWaiverSign       DateTime?
   /// @sensitivity:internal

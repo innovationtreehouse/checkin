@@ -45,7 +45,7 @@ export const PATCH = withAuth(
             }
 
             const body = await req.json();
-            const { memberName, memberEmail, memberDob } = body;
+            const { memberName, memberEmail, memberDob, memberOver25 } = body;
 
             const user = await prisma.participant.findUnique({ where: { id: userId }, include: { householdLeads: true } });
 
@@ -80,11 +80,17 @@ export const PATCH = withAuth(
             }
 
             if (!targetMember) {
+                // A new member's age must be known: either a DoB, or an explicit
+                // "25+" declaration (mirrors the client form's requirement).
+                if (!memberDob && !memberOver25) {
+                    return NextResponse.json({ error: "Date of birth is required for anyone under 25." }, { status: 400 });
+                }
                 targetMember = await prisma.participant.create({
                     data: {
                         name: memberName,
                         ...(memberEmail && { email: memberEmail.toLowerCase() }),
                         dateOfBirth: memberDob ? new Date(memberDob) : null,
+                        isDeclaredAdult: !memberDob && !!memberOver25,
                         householdId: user.householdId,
                     }
                 });

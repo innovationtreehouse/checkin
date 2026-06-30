@@ -201,6 +201,23 @@ describe('Nav todo-counts API', () => {
         expect(data.admin).toBeUndefined();
     });
 
+    it('surfaces a household todo for a member with no DoB and no 25+ declaration', async () => {
+        const noAge = await prisma.participant.create({
+            data: { name: 'No Age M', householdId: householdAId },
+        });
+        try {
+            const res = await callAs({ id: leadId, householdId: householdAId });
+            const data = await res.json();
+            expect(data.member.household).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ key: `member-age-${noAge.id}`, label: 'Add a date of birth for No Age M', href: '/my-household' }),
+                ]),
+            );
+        } finally {
+            await prisma.participant.delete({ where: { id: noAge.id } });
+        }
+    });
+
     it('returns the board queue for a board member and no false household todos', async () => {
         const res = await callAs({ id: boardId, householdId: householdBId, isBoardMember: true });
         expect(res.status).toBe(200);
