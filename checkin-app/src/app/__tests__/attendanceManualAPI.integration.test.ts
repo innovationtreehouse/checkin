@@ -162,6 +162,24 @@ describe('Manual Attendance API Integration Tests', () => {
             expect(currentAuditLogs).toBe(previousAuditLogs + 1);
         });
 
+        it('should return 400 if departure is blank and arrival is a stale past day', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testUserId }
+            });
+
+            const arrivedAt = new Date(Date.now() - 2 * 24 * 3600000); // 2 days ago, no departure
+
+            const req = new Request('http://localhost:4000/api/attendance/manual', {
+                method: 'POST',
+                body: JSON.stringify({ arrivedAt: arrivedAt.toISOString() })
+            });
+
+            const res = await POST(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('Departure time is required for past arrivals.');
+        });
+
         it('should successfully record a manual visit with arrivedAt only', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testUserId }

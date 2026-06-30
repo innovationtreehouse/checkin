@@ -30,6 +30,20 @@ export const POST = withAuth({}, async (req, auth) => {
             return NextResponse.json({ error: "Departure time must be after arrival time" }, { status: 400 });
         }
 
+        // Blank departure means "still in the building" → an open visit. Only allow
+        // that for a recent arrival: today (same calendar day) or within the last
+        // 6 hours (covers arriving late last night and still being here). A stale
+        // arrival with no departure would create a permanent open visit nobody
+        // scanned out of, so require a departure for it.
+        if (!departureTime) {
+            const now = new Date();
+            const withinSixHours = now.getTime() - arrivalTime.getTime() <= 6 * 60 * 60 * 1000;
+            const sameDay = arrivalTime.toDateString() === now.toDateString();
+            if (!withinSixHours && !sameDay) {
+                return NextResponse.json({ error: "Departure time is required for past arrivals." }, { status: 400 });
+            }
+        }
+
         const eventId = await findAssociatedEventAt(userId, arrivalTime);
 
         // Creating an open visit (no departure) is a read-modify-write on this
