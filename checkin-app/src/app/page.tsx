@@ -28,6 +28,7 @@ import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
 import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
 import Notifications from '@/components/Notifications';
 import { RoleBadge } from '@/components/ui/RoleBadge';
+import { formatPhone } from '@/lib/phone';
 import type { SessionUser, BoardMember } from '@/types/participant';
 
 export default function Home() {
@@ -291,7 +292,7 @@ export default function Home() {
                 </Text>
                 {member.phone && (
                   <Text size="sm">
-                    📞 <Anchor href={`tel:${member.phone.replace(/\D/g, '')}`}>{member.phone}</Anchor>
+                    📞 <Anchor href={`tel:${member.phone.replace(/\D/g, '')}`}>{formatPhone(member.phone)}</Anchor>
                   </Text>
                 )}
               </Paper>

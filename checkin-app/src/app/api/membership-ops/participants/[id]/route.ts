@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
+import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 
 export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
     { roles: ['isSysadmin', 'isBoardMember'] },
@@ -26,7 +26,7 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
             if (body.phone !== "" && body.phone !== null && !isValidPhone(body.phone)) {
                 return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
             }
-            updateData.phone = body.phone;
+            updateData.phone = body.phone === "" || body.phone === null ? null : formatPhone(body.phone);
         }
 
         if (Object.keys(updateData).length === 0) {

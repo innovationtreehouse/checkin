@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Badge, Button, Card, Center, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
 import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
+import { formatPhone } from "@/lib/phone";
 
 type Lead = { id: number; name: string | null; phone: string | null; email: string | null };
 type Household = { id: number; name: string | null; leads: Lead[] };
@@ -81,7 +82,7 @@ export default function MissingEmergencyContactsPage() {
                   {h.leads.map((l) => (
                     <Paper key={l.id} withBorder radius="sm" p="xs">
                       <Text fw={500}>{l.name || l.email || `Member #${l.id}`}</Text>
-                      <Text size="sm" c="dimmed">Phone: {l.phone || "Not provided"}</Text>
+                      <Text size="sm" c="dimmed">Phone: {l.phone ? formatPhone(l.phone) : "Not provided"}</Text>
                       {l.email && <Text size="sm" c="dimmed">Email: {l.email}</Text>}
                     </Paper>
                   ))}

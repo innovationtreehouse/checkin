@@ -12,7 +12,7 @@ import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isOrgAccount } from '@/lib/orgAccount';
 import { pickAddress, validateAddress, type StructuredAddress, type AddressField } from '@/lib/address';
 import { notifications } from '@mantine/notifications';
-import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
+import { isValidPhone, formatPhone, PHONE_ERROR } from '@/lib/phone';
 import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
 
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
@@ -362,7 +362,7 @@ export default function HouseholdPage() {
                         <>
                           <Text fw={600} style={{ wordBreak: 'break-word' }}>{p.name || "Unnamed"}</Text>
                           {p.email && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>{p.email}</Text>}
-                          {p.phone && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>{p.phone}</Text>}
+                          {p.phone && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>{formatPhone(p.phone)}</Text>}
                           {leadMissingPhone && <Badge color="red" variant="filled" mt="xs">TODO: Add phone number</Badge>}
                           <Group gap="xs" mt="sm">
                             {memberIsLead && <Badge color="grape" variant="light">Household Lead</Badge>}
@@ -464,7 +464,7 @@ export default function HouseholdPage() {
                             {c.relationship && <Badge variant="light" color="gray">{c.relationship}</Badge>}
                             {c.invalid && <Badge variant="light" color="red">Invalid — is a household member</Badge>}
                           </Group>
-                          <Text size="sm" c="dimmed">{c.phone}{c.email ? ` • ${c.email}` : ''}</Text>
+                          <Text size="sm" c="dimmed">{formatPhone(c.phone)}{c.email ? ` • ${c.email}` : ''}</Text>
                         </div>
                         <Group gap="xs" wrap="nowrap">
                           <Button size="compact-xs" variant="subtle" color="gray" onClick={() => startEditContact(c)}>Edit</Button>
