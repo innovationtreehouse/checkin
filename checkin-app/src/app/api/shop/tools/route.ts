@@ -60,7 +60,7 @@ export const POST = withAuth({}, async (req, auth) => {
                 action: 'CREATE',
                 tableName: 'Tool',
                 affectedEntityId: newTool.id,
-                newData: JSON.stringify(newTool)
+                newData: newTool
             }
         });
 

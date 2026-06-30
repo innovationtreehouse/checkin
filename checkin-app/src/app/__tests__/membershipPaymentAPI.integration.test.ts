@@ -8,6 +8,7 @@
  */
 
 import crypto from 'crypto';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import { POST as SHOPIFY_WEBHOOK } from '@/app/api/webhooks/shopify/route';
 import { POST as CERTIFY } from '@/app/api/membership-ops/applications/certify-payment/route';
 import { computeDuesCents, ensurePaymentLink, ensurePaymentLinkForUser, activate } from '@/lib/membership/payment';
@@ -168,7 +169,7 @@ describe('Membership payment API', () => {
         // The audit row records WHO certified — the acting board member, not SYSTEM_ACTOR.
         const audit = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: certProc }, orderBy: { id: 'desc' } });
         expect(audit?.actorId).toBe(leadId);
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'ACTIVE' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'ACTIVE' });
     });
 
     it('certify on a non-PENDING_PAYMENT process is rejected (409 wrong_phase, no state change)', async () => {

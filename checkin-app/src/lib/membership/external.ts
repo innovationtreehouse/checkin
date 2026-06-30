@@ -106,8 +106,8 @@ export async function advanceExternalIfComplete(processId: number) {
                 action: "EDIT",
                 tableName: "MembershipProcess",
                 affectedEntityId: processId,
-                oldData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION" }),
-                newData: JSON.stringify({ status: "PENDING_PAYMENT" }),
+                oldData: { status: "PENDING_EXTERNAL_ACTION" },
+                newData: { status: "PENDING_PAYMENT" },
             },
         });
         return tx.membershipProcess.findUnique({ where: { id: processId } });
@@ -134,7 +134,7 @@ export async function markContractSigned(processId: number, actorId: number = SY
         });
         if (count !== 1) return;
         await tx.auditLog.create({
-            data: { actorId, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, newData: JSON.stringify({ contractSignedAt: true }) },
+            data: { actorId, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, newData: { contractSignedAt: true } },
         });
     });
     return advanceExternalIfComplete(processId);
@@ -152,7 +152,7 @@ export async function markBgConsent(processId: number, actorId: number) {
         });
         if (count !== 1) return;
         await tx.auditLog.create({
-            data: { actorId, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, newData: JSON.stringify({ bgConsentAt: true }) },
+            data: { actorId, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, newData: { bgConsentAt: true } },
         });
     });
     return advanceExternalIfComplete(processId);
@@ -164,7 +164,7 @@ export async function setZohoEnvelope(processId: number, requestId: string, acto
     if (!process) throw new ExternalError("not_found", "Application not found.");
     const updated = await prisma.membershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: requestId } });
     await prisma.auditLog.create({
-        data: { actorId, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, newData: JSON.stringify({ zohoEnvelopeId: requestId }) },
+        data: { actorId, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, newData: { zohoEnvelopeId: requestId } },
     });
     return updated;
 }
@@ -344,7 +344,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
                     action: "EDIT",
                     tableName: "MembershipProcess",
                     affectedEntityId: process.id,
-                    newData: JSON.stringify({ zohoEnvelopeId: requestId, zohoActionId: actionId }),
+                    newData: { zohoEnvelopeId: requestId, zohoActionId: actionId },
                 },
             });
             logger.info(`Created Zoho signing request ${requestId} for membership process ${process.id}.`);

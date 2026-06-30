@@ -142,8 +142,8 @@ export async function activate(
                     action: "EDIT",
                     tableName: "MembershipProcess",
                     affectedEntityId: processId,
-                    oldData: JSON.stringify({ status: "BLOCKED" }),
-                    newData: JSON.stringify({ status: "BLOCKED", via: opts.via, paid: true, refundNeeded: true }),
+                    oldData: { status: "BLOCKED" },
+                    newData: { status: "BLOCKED", via: opts.via, paid: true, refundNeeded: true },
                 },
             });
             return { kind: "paid_while_blocked" as const };
@@ -173,8 +173,8 @@ export async function activate(
                 action: "EDIT",
                 tableName: "MembershipProcess",
                 affectedEntityId: processId,
-                oldData: JSON.stringify({ status: process.status }),
-                newData: JSON.stringify(activating ? { status: "ACTIVE", via: opts.via } : { status: "PENDING_BG_CLEARANCE", via: opts.via, paid: true }),
+                oldData: { status: process.status },
+                newData: activating ? { status: "ACTIVE", via: opts.via } : { status: "PENDING_BG_CLEARANCE", via: opts.via, paid: true },
             },
         });
         return activating ? { kind: "active" as const, householdId: membership.householdId } : { kind: "held" as const };

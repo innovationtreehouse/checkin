@@ -169,7 +169,7 @@ export async function startIntake(userId: number) {
             action: "CREATE",
             tableName: "MembershipProcess",
             affectedEntityId: process.id,
-            newData: JSON.stringify({ membershipId: membership.id, kind: "INITIAL", status: "INTAKE" }),
+            newData: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
         },
     });
 
@@ -358,8 +358,8 @@ export async function submitIntake(userId: number) {
             action: "EDIT",
             tableName: "MembershipProcess",
             affectedEntityId: process.id,
-            oldData: JSON.stringify({ status: "INTAKE" }),
-            newData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION", ...(bgFresh ? { bgClearedAt: true } : {}) }),
+            oldData: { status: "INTAKE" },
+            newData: { status: "PENDING_EXTERNAL_ACTION", ...(bgFresh ? { bgClearedAt: true } : {}) },
         },
     });
 

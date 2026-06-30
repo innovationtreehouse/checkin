@@ -60,13 +60,13 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
                 action: "EDIT",
                 tableName: "Household",
                 affectedEntityId: id,
-                oldData: JSON.stringify({
+                oldData: {
                     name: existing.name,
                     ...pickAddress(existing),
                     emergencyContactName: priorContact?.name ?? null,
                     emergencyContactPhone: priorContact?.phone ?? null,
-                }),
-                newData: JSON.stringify({ ...data, ...(editsContact && { emergencyContactName: body.emergencyContactName, emergencyContactPhone: body.emergencyContactPhone }) }),
+                },
+                newData: { ...data, ...(editsContact && { emergencyContactName: body.emergencyContactName, emergencyContactPhone: body.emergencyContactPhone }) },
             }
         });
 

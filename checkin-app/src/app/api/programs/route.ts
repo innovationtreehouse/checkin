@@ -143,7 +143,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 action: 'CREATE',
                 tableName: 'Program',
                 affectedEntityId: newProgram.id,
-                newData: JSON.stringify(newProgram)
+                newData: newProgram
             }
         });
 

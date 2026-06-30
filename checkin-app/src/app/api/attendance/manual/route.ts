@@ -77,7 +77,7 @@ export const POST = withAuth({}, async (req, auth) => {
                 action: "CREATE",
                 tableName: "Visit",
                 affectedEntityId: visit.id,
-                newData: JSON.stringify({ arrivedAt, departedAt, type: "manual_entry" })
+                newData: { arrivedAt, departedAt, type: "manual_entry" }
             }
         });
 

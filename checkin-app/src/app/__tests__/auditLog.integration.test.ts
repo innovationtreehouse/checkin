@@ -5,6 +5,7 @@
  */
 
 import { POST as createProgram } from '@/app/api/programs/route';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import { PATCH as updateProgramSettings } from '@/app/api/programs/[id]/settings/route';
 import { POST as enrollParticipant } from '@/app/api/programs/[id]/participants/route';
 import { POST as markAttendance } from '@/app/api/events/[id]/attendance/route';
@@ -246,9 +247,8 @@ describe('AuditLog Integration Tests', () => {
         });
 
         expect(log).toBeDefined();
-        // Prisma Json fields can be returned as string depending on setup, the API explicitly stringified it
-        const newDataString = log?.newData as string;
-        const newData = JSON.parse(newDataString);
+        // newData is now a raw JSON object (legacy rows may still be strings).
+        const newData = normalizeAuditData(log?.newData) as Record<string, unknown>;
         expect(newData.participantId).toBe(testParticipantId);
         expect(newData.associatedEventId).toBe(testEventId);
     });
@@ -367,8 +367,8 @@ describe('AuditLog Integration Tests', () => {
         expect(logs).toHaveLength(1);
         expect(logs[0].actorId).toBe(testAdminId);
         // Route stringifies oldData/newData.
-        expect(JSON.parse(logs[0].newData as string).name).toBe('Audit Edited Household');
-        expect(JSON.parse(logs[0].oldData as string).name).toBe(`${TAG} household orig`);
+        expect((normalizeAuditData(logs[0].newData) as Record<string, unknown>).name).toBe('Audit Edited Household');
+        expect((normalizeAuditData(logs[0].oldData) as Record<string, unknown>).name).toBe(`${TAG} household orig`);
     });
 
     it('visit edit (PATCH /admin/visits) writes one AuditLog snapshotting the visit', async () => {

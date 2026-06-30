@@ -57,7 +57,7 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Participant",
                     affectedEntityId: userId,
-                    newData: JSON.stringify(updatedProfile),
+                    newData: updatedProfile,
                 }
             });
 
