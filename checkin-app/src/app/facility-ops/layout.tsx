@@ -10,7 +10,7 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 export default function FacilityLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
+  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
 
   if (loading) {
     return (

@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
 export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async () => {
         try {
             const visits = await prisma.visit.findMany({
@@ -11,7 +11,7 @@ export const GET = withAuth(
                 orderBy: { arrivedAt: "desc" },
                 include: {
                     participant: {
-                        select: { email: true, name: true, sysadmin: true, keyholder: true },
+                        select: { email: true, name: true, isSysadmin: true, isKeyholder: true },
                     },
                 },
             });
@@ -25,7 +25,7 @@ export const GET = withAuth(
 );
 
 export const PATCH = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async (req, auth) => {
         try {
             const { visitId, arrivedAt, departedAt } = await req.json();

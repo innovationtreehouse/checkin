@@ -16,12 +16,12 @@ type DbClient = PrismaClient | Prisma.TransactionClient;
  * effects (notifications) intentionally run off the global client either way.
  */
 export async function processCheckin(participant: Participant, authType: string, db: DbClient = prisma) {
-    // Non-keyholders require an open facility (at least 1 keyholder present)
-    if (!participant.keyholder) {
+    // Non-keyholders require an open facility (at least 1 isKeyholder present)
+    if (!participant.isKeyholder) {
         const activeKeyholders = await db.visit.count({
             where: {
                 departedAt: null,
-                participant: { keyholder: true }
+                participant: { isKeyholder: true }
             }
         });
 
@@ -58,7 +58,7 @@ export async function processCheckin(participant: Participant, authType: string,
 
 /**
  * Process a check-out for a participant who has an active visit.
- * Handles last-keyholder logic and facility closure.
+ * Handles last-isKeyholder logic and facility closure.
  *
  * `db` is the scan route's transaction client (covered by the per-participant
  * advisory lock) or, when called standalone, the global prisma client.
@@ -71,11 +71,11 @@ export async function processCheckout(
 ) {
     let facilityClosed = false;
 
-    if (participant.keyholder) {
+    if (participant.isKeyholder) {
         const remainingKeyholders = await db.visit.count({
             where: {
                 departedAt: null,
-                participant: { keyholder: true },
+                participant: { isKeyholder: true },
                 id: { not: activeVisitId }
             }
         });
@@ -108,7 +108,7 @@ export async function processCheckout(
                 if (!confirmForceClose) {
                     const names = remainingUsers.map(u => u.participant.name || u.participant.email).join(", ");
                     return apiJson({
-                        error: `Warning! You are the last keyholder, but others are here:\n${names}\n\nBadge again within 10 seconds to confirm you've checked them and close the facility.`,
+                        error: `Warning! You are the last isKeyholder, but others are here:\n${names}\n\nBadge again within 10 seconds to confirm you've checked them and close the facility.`,
                         type: "warning" as const
                     }, 400);
                 }

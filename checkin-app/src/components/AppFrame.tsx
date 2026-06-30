@@ -50,9 +50,9 @@ import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 import { navBadgeFor, leadsAnyProgram } from '@/components/navBadges';
 
 type SessionUser = {
-  sysadmin?: boolean;
-  boardMember?: boolean;
-  keyholder?: boolean;
+  isSysadmin?: boolean;
+  isBoardMember?: boolean;
+  isKeyholder?: boolean;
   toolStatuses?: Array<{ level: string }>;
 };
 
@@ -71,7 +71,7 @@ const NAV_ITEMS: NavItem[] = [
     href: '/safety',
     label: 'Safety',
     icon: <IconShieldCheck size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember || !!u?.isKeyholder,
   },
   { href: '/my-activities', label: 'My Activities', icon: <IconActivity size={18} />, visible: (_u, signedIn) => signedIn },
   {
@@ -92,51 +92,51 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Shop Ops',
     icon: <IconTool size={18} />,
     visible: (u) =>
-      !!u?.sysadmin ||
-      !!u?.boardMember ||
+      !!u?.isSysadmin ||
+      !!u?.isBoardMember ||
       !!u?.toolStatuses?.some((ts) => ts.level === 'MAY_CERTIFY_OTHERS'),
   },
   {
     href: '/facility-ops',
     label: 'Facility Ops',
     icon: <IconBuildingWarehouse size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/membership-ops',
     label: 'Membership Ops',
     icon: <IconUsers size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/membership-audit',
     label: 'Membership Audit',
     icon: <IconUserSearch size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/program-ops',
     label: 'Program Ops',
     icon: <IconBriefcase size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/finance-ops',
     label: 'Finance Ops',
     icon: <IconCoin size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/system-status',
     label: 'System Status',
     icon: <IconSettings size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/settings',
     label: 'Settings',
     icon: <IconAdjustments size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   { href: '/index', label: 'Index', icon: <IconList size={18} />, visible: (_u, signedIn) => signedIn },
 ];

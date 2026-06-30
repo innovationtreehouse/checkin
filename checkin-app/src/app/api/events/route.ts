@@ -12,8 +12,8 @@ export async function GET() {
     if (!session) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const user = session.user as unknown as { sysadmin?: boolean; boardMember?: boolean };
-    if (!user?.sysadmin && !user?.boardMember) {
+    const user = session.user as unknown as { isSysadmin?: boolean; isBoardMember?: boolean };
+    if (!user?.isSysadmin && !user?.isBoardMember) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -40,8 +40,8 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
-        const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
+        const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
+        const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
         let isLeadMentor = false;
 
         if (programId) {

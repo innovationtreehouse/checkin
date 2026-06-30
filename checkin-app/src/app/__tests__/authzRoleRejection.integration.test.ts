@@ -19,6 +19,10 @@
  * a live authz hole.
  */
 import { PATCH as ADMIN_HH_PATCH } from '@/app/api/membership-ops/households/[id]/route';
+import { POST as PARTICIPANTS_POST } from '@/app/api/membership-ops/participants/route';
+import { PUT as PARTICIPANT_PUT } from '@/app/api/membership-ops/participants/[id]/route';
+import { POST as PARTICIPANT_HH_POST } from '@/app/api/membership-ops/participants/[id]/household/route';
+import { POST as IMPORT_POST } from '@/app/api/membership-ops/participants/import/route';
 import { POST as MERGE_POST } from '@/app/api/membership-ops/participants/merge/route';
 import { GET as MERGE_ANALYZE_GET } from '@/app/api/membership-ops/participants/merge/analyze/route';
 import { POST as IMPORT_PREVIEW_POST } from '@/app/api/membership-ops/participants/import/preview/route';
@@ -31,6 +35,28 @@ import { GET as EVENT_GET, PATCH as EVENT_PATCH } from '@/app/api/events/[id]/ro
 import { GET as NOTIFICATIONS_GET } from '@/app/api/notifications/route';
 import { POST as CONTRACT_SYNC_POST } from '@/app/api/membership/contract/sync/route';
 import { POST as ONBOARDING_POST } from '@/app/api/profile/onboarding/route';
+// ---- routes filled in by the authz drift-guard sweep ----------------------
+import { GET as BROKEN_HH_GET } from '@/app/api/admin/broken-households/route';
+import { GET as LOCALIZATION_GET, PUT as LOCALIZATION_PUT } from '@/app/api/admin/settings/localization/route';
+import { GET as BADGES_GET } from '@/app/api/facility/badges/route';
+import { GET as FAC_VISITS_GET, PATCH as FAC_VISITS_PATCH } from '@/app/api/facility/visits/route';
+import { GET as MISSING_CONTACT_GET } from '@/app/api/membership-audit/households-missing-contact/route';
+import { GET as UNCLAIMED_GET } from '@/app/api/membership-audit/unclaimed-households/route';
+import { POST as CERTIFY_PAYMENT_POST } from '@/app/api/membership-ops/applications/certify-payment/route';
+import { POST as APP_EXTERNAL_POST } from '@/app/api/membership-ops/applications/external/route';
+import { POST as REVIEW_OVERRIDE_POST } from '@/app/api/membership-ops/applications/review-override/route';
+import { GET as MOPS_HH_GET, POST as MOPS_HH_POST } from '@/app/api/membership-ops/households/route';
+import { POST as REVIEWS_POST } from '@/app/api/membership/reviews/route';
+import { GET as ROLES_GET, PATCH as ROLES_PATCH } from '@/app/api/roles/route';
+import { GET as BOARD_CONTACTS_GET } from '@/app/api/safety/board-contacts/route';
+import { POST as TA_DECISION_POST } from '@/app/api/safety/trusted-adults/decision/route';
+import { GET as SETTINGS_MEMBERSHIP_GET, PUT as SETTINGS_MEMBERSHIP_PUT } from '@/app/api/settings/membership/route';
+import { POST as BULK_RENEWALS_POST } from '@/app/api/settings/membership/bulk-open-renewals/route';
+import { GET as VOL_DESIG_GET, POST as VOL_DESIG_POST, DELETE as VOL_DESIG_DELETE } from '@/app/api/settings/membership/volunteer-designations/route';
+import { GET as AUDIT_LOG_GET } from '@/app/api/system-status/audit-log/route';
+import { GET as SS_ERRORS_GET } from '@/app/api/system-status/errors/route';
+import { GET as SS_LINKS_GET } from '@/app/api/system-status/links/route';
+import { PATCH as SS_LINK_PATCH } from '@/app/api/system-status/links/[id]/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -41,7 +67,7 @@ const TAG = 'authz-rolereject-test';
 
 function as(id: number, extra: Record<string, unknown> = {}) {
     (getServerSession as jest.Mock).mockResolvedValue({
-        user: { id, sysadmin: false, boardMember: false, keyholder: false, backgroundCheckReviewer: false, ...extra },
+        user: { id, isSysadmin: false, isBoardMember: false, isKeyholder: false, isBackgroundCheckReviewer: false, ...extra },
     });
 }
 function anon() {
@@ -105,6 +131,10 @@ describe('Protected-route role rejection', () => {
     // ---- ROLE-GATED: 401 unauthenticated + 403 plain user ---------------------
     const roleGated: Case[] = [
         { name: 'PATCH /api/membership-ops/households/[id]', invoke: () => ADMIN_HH_PATCH(nreq('http://localhost/api/membership-ops/households/1', 'PATCH', {}), idCtx(1)) },
+        { name: 'POST /api/membership-ops/participants', invoke: () => PARTICIPANTS_POST(nreq('http://localhost/api/membership-ops/participants', 'POST', {})) },
+        { name: 'PUT /api/membership-ops/participants/[id]', invoke: () => PARTICIPANT_PUT(nreq('http://localhost/api/membership-ops/participants/1', 'PUT', {}), idCtx(1)) },
+        { name: 'POST /api/membership-ops/participants/[id]/household', invoke: () => PARTICIPANT_HH_POST(nreq('http://localhost/api/membership-ops/participants/1/household', 'POST', {}), idCtx(1)) },
+        { name: 'POST /api/membership-ops/participants/import', invoke: () => IMPORT_POST(nreq('http://localhost/api/membership-ops/participants/import', 'POST')) },
         { name: 'POST /api/membership-ops/participants/merge', invoke: () => MERGE_POST(nreq('http://localhost/api/membership-ops/participants/merge', 'POST', {})) },
         { name: 'GET /api/membership-ops/participants/merge/analyze', invoke: () => MERGE_ANALYZE_GET(nreq('http://localhost/api/membership-ops/participants/merge/analyze')) },
         { name: 'POST /api/membership-ops/participants/import/preview', invoke: () => IMPORT_PREVIEW_POST(nreq('http://localhost/api/membership-ops/participants/import/preview', 'POST')) },
@@ -113,6 +143,42 @@ describe('Protected-route role rejection', () => {
         { name: 'GET /api/safety/trusted-adults', invoke: () => ADMIN_TA_GET(nreq('http://localhost/api/safety/trusted-adults')) },
         { name: 'POST /api/safety/trusted-adults/override', invoke: () => TA_OVERRIDE_POST(nreq('http://localhost/api/safety/trusted-adults/override', 'POST', {})) },
         { name: 'PATCH /api/shop/tools/[id]', invoke: () => SHOP_TOOL_PATCH(nreq('http://localhost/api/shop/tools/1', 'PATCH', {}), idCtx(1)) },
+
+        // ---- drift-guard sweep: one row per method of each role-gated route ----
+        // The withAuth roles gate fires before any body/param work, so dummy
+        // params and empty bodies reach it. All gated on isSysadmin|isBoardMember
+        // unless noted.
+        { name: 'GET /api/admin/broken-households', invoke: () => BROKEN_HH_GET(nreq('http://localhost/api/admin/broken-households')) },
+        { name: 'GET /api/admin/settings/localization', invoke: () => LOCALIZATION_GET(nreq('http://localhost/api/admin/settings/localization')) },
+        { name: 'PUT /api/admin/settings/localization (sysadmin-only)', invoke: () => LOCALIZATION_PUT(nreq('http://localhost/api/admin/settings/localization', 'PUT', {})) },
+        { name: 'GET /api/facility/badges', invoke: () => BADGES_GET(nreq('http://localhost/api/facility/badges')) },
+        { name: 'GET /api/facility/visits', invoke: () => FAC_VISITS_GET(nreq('http://localhost/api/facility/visits')) },
+        { name: 'PATCH /api/facility/visits', invoke: () => FAC_VISITS_PATCH(nreq('http://localhost/api/facility/visits', 'PATCH', {})) },
+        { name: 'GET /api/membership-audit/households-missing-contact', invoke: () => MISSING_CONTACT_GET(nreq('http://localhost/api/membership-audit/households-missing-contact')) },
+        { name: 'GET /api/membership-audit/unclaimed-households', invoke: () => UNCLAIMED_GET(nreq('http://localhost/api/membership-audit/unclaimed-households')) },
+        { name: 'POST /api/membership-ops/applications/certify-payment', invoke: () => CERTIFY_PAYMENT_POST(nreq('http://localhost/api/membership-ops/applications/certify-payment', 'POST', {})) },
+        { name: 'POST /api/membership-ops/applications/external', invoke: () => APP_EXTERNAL_POST(nreq('http://localhost/api/membership-ops/applications/external', 'POST', {})) },
+        { name: 'POST /api/membership-ops/applications/review-override', invoke: () => REVIEW_OVERRIDE_POST(nreq('http://localhost/api/membership-ops/applications/review-override', 'POST', {})) },
+        { name: 'GET /api/membership-ops/households (collection)', invoke: () => MOPS_HH_GET(nreq('http://localhost/api/membership-ops/households')) },
+        { name: 'POST /api/membership-ops/households (collection)', invoke: () => MOPS_HH_POST(nreq('http://localhost/api/membership-ops/households', 'POST', {})) },
+        { name: 'POST /api/membership/reviews (backgroundCheckReviewer-only)', invoke: () => REVIEWS_POST(nreq('http://localhost/api/membership/reviews', 'POST', {})) },
+        { name: 'GET /api/roles', invoke: () => ROLES_GET(nreq('http://localhost/api/roles')) },
+        { name: 'PATCH /api/roles', invoke: () => ROLES_PATCH(nreq('http://localhost/api/roles', 'PATCH', {})) },
+        { name: 'GET /api/safety/board-contacts', invoke: () => BOARD_CONTACTS_GET(nreq('http://localhost/api/safety/board-contacts')) },
+        { name: 'POST /api/safety/trusted-adults/decision', invoke: () => TA_DECISION_POST(nreq('http://localhost/api/safety/trusted-adults/decision', 'POST', {})) },
+        { name: 'GET /api/settings/membership', invoke: () => SETTINGS_MEMBERSHIP_GET(nreq('http://localhost/api/settings/membership')) },
+        { name: 'PUT /api/settings/membership', invoke: () => SETTINGS_MEMBERSHIP_PUT(nreq('http://localhost/api/settings/membership', 'PUT', {})) },
+        { name: 'POST /api/settings/membership/bulk-open-renewals', invoke: () => BULK_RENEWALS_POST(nreq('http://localhost/api/settings/membership/bulk-open-renewals', 'POST', {})) },
+        { name: 'GET /api/settings/membership/volunteer-designations', invoke: () => VOL_DESIG_GET(nreq('http://localhost/api/settings/membership/volunteer-designations')) },
+        { name: 'POST /api/settings/membership/volunteer-designations', invoke: () => VOL_DESIG_POST(nreq('http://localhost/api/settings/membership/volunteer-designations', 'POST', {})) },
+        { name: 'DELETE /api/settings/membership/volunteer-designations', invoke: () => VOL_DESIG_DELETE(nreq('http://localhost/api/settings/membership/volunteer-designations', 'DELETE')) },
+        { name: 'GET /api/system-status/audit-log (sysadmin-only)', invoke: () => AUDIT_LOG_GET(nreq('http://localhost/api/system-status/audit-log')) },
+        { name: 'GET /api/system-status/errors', invoke: () => SS_ERRORS_GET(nreq('http://localhost/api/system-status/errors')) },
+        { name: 'GET /api/system-status/links', invoke: () => SS_LINKS_GET(nreq('http://localhost/api/system-status/links')) },
+        // links/[id] is a GLOBAL admin resource (integrationErrorLog keyed by a
+        // global id, no household scoping) — the roles gate IS the boundary, so
+        // no cross-tenant 404 case applies here.
+        { name: 'PATCH /api/system-status/links/[id]', invoke: () => SS_LINK_PATCH(nreq('http://localhost/api/system-status/links/1', 'PATCH', {}), idCtx(1)) },
     ];
 
     describe.each(roleGated)('$name', ({ invoke }) => {
@@ -123,6 +189,23 @@ describe('Protected-route role rejection', () => {
         it('403 for a plain authenticated user (no privileged role)', async () => {
             as(plainId, { householdId: plainHh });
             expect((await invoke()).status).toBe(403);
+        });
+    });
+
+    // ---- membership/reviews POST — isBackgroundCheckReviewer PII boundary -------
+    // The attestation surface exposes applicant parents' names/emails. A
+    // isKeyholder or isBoardMember WITHOUT isBackgroundCheckReviewer status must be
+    // denied (mirror participants/search rejecting a isKeyholder). The 401/403/
+    // /plain cases are covered in the roleGated table above; this proves a
+    // privileged-but-wrong-role user does not slip through.
+    describe('POST /api/membership/reviews — non-reviewer privileged user', () => {
+        it('403 for a isBoardMember without isBackgroundCheckReviewer', async () => {
+            as(plainId, { householdId: plainHh, isBoardMember: true });
+            expect((await REVIEWS_POST(nreq('http://localhost/api/membership/reviews', 'POST', {}))).status).toBe(403);
+        });
+        it('403 for a isKeyholder without isBackgroundCheckReviewer', async () => {
+            as(plainId, { householdId: plainHh, isKeyholder: true });
+            expect((await REVIEWS_POST(nreq('http://localhost/api/membership/reviews', 'POST', {}))).status).toBe(403);
         });
     });
 

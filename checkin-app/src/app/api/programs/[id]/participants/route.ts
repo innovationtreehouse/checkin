@@ -38,7 +38,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const currentUserId = (session.user as { id: number }).id;
         const isSelfEnrollment = currentUserId === participantId;
-        const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin || (session.user as { sysadmin?: boolean, boardMember?: boolean })?.boardMember;
+        const isSysAdminOrBoard = (session.user as { isSysadmin?: boolean, isBoardMember?: boolean })?.isSysadmin || (session.user as { isSysadmin?: boolean, isBoardMember?: boolean })?.isBoardMember;
 
         const participantData = await prisma.participant.findUnique({
             where: { id: participantId },
@@ -64,7 +64,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const override = body.override === true;
 
-        // A board/sysadmin enrolling someone OUTSIDE their own household (the
+        // A board/isSysadmin enrolling someone OUTSIDE their own household (the
         // program-ops surface) is a real admin comp: it skips payment. A board
         // member enrolling their own self/dependent through the public program
         // page is just a parent — they pay like anyone else. Without this, a
@@ -76,7 +76,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
              return NextResponse.json({ error: "This bypasses all payment. Are you sure?", requiresOverride: true }, { status: 400 });
         }
 
-        // ponytail: a confirmed board/sysadmin override INTENTIONALLY bypasses
+        // ponytail: a confirmed board/isSysadmin override INTENTIONALLY bypasses
         // every soft limit — closed enrollment, age, AND capacity — so the board
         // can deliberately overfill a program. This is intent, not a missing
         // guard: see the requiresOverride:true responses the UI turns into a
@@ -201,7 +201,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
         const currentUserId = (session.user as { id: number }).id;
         const isSelfRemoval = currentUserId === participantId;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
-        const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin || (session.user as { sysadmin?: boolean, boardMember?: boolean })?.boardMember;
+        const isSysAdminOrBoard = (session.user as { isSysadmin?: boolean, isBoardMember?: boolean })?.isSysadmin || (session.user as { isSysadmin?: boolean, isBoardMember?: boolean })?.isBoardMember;
 
         if (!isSelfRemoval && !isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Not authorized to remove this participant" }, { status: 403 });

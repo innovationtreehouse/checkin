@@ -16,8 +16,8 @@ type ParticipantRow = {
   name: string | null;
   email: string | null;
   isMember?: boolean;
-  boardMember?: boolean;
-  keyholder?: boolean;
+  isBoardMember?: boolean;
+  isKeyholder?: boolean;
 };
 
 export default function PrintBadgesPage() {
@@ -94,8 +94,8 @@ export default function PrintBadgesPage() {
             id: p.id,
             name: p.name ?? '',
             isMember: !!p.isMember,
-            boardMember: !!p.boardMember,
-            keyholder: !!p.keyholder,
+            isBoardMember: !!p.isBoardMember,
+            isKeyholder: !!p.isKeyholder,
             qrDataUri,
           };
         })
@@ -157,9 +157,9 @@ export default function PrintBadgesPage() {
       header: 'Roles',
       render: (p) => (
         <Group gap={4}>
-          {p.boardMember && <Badge size="xs" color="blue">BOARD</Badge>}
-          {p.keyholder && <Badge size="xs" color="orange">KEYHOLDER</Badge>}
-          {!p.boardMember && !p.keyholder && p.isMember && (
+          {p.isBoardMember && <Badge size="xs" color="blue">BOARD</Badge>}
+          {p.isKeyholder && <Badge size="xs" color="orange">KEYHOLDER</Badge>}
+          {!p.isBoardMember && !p.isKeyholder && p.isMember && (
             <Badge size="xs" color="green">MEMBER</Badge>
           )}
         </Group>

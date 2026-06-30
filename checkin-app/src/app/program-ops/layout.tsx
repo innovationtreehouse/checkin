@@ -9,7 +9,7 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { PROGRAM_NAV_LINKS } from "@/lib/programNav";
 
 // Program/session editing is reachable by lead mentors (program.leadMentorId, not a role flag),
-// so those pages bypass the sysadmin/boardMember layout gate and self-authorize.
+// so those pages bypass the isSysadmin/isBoardMember layout gate and self-authorize.
 const isProgramFlowPath = (pathname: string | null) =>
   !!(pathname?.match(/^\/program-ops\/programs\/\d+/) ||
     pathname?.match(/^\/program-ops\/sessions\/(\d+|new)/));
@@ -21,7 +21,7 @@ export default function ProgramOpsLayout({ children }: { children: React.ReactNo
   const isProgramFlow = isProgramFlowPath(pathname);
 
   const user = session?.user;
-  const isGlobalAdmin = !!(user?.sysadmin || user?.boardMember);
+  const isGlobalAdmin = !!(user?.isSysadmin || user?.isBoardMember);
 
   useEffect(() => {
     if (status === "unauthenticated") {

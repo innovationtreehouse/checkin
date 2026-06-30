@@ -35,7 +35,7 @@ describe('Events API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-events-api-test@example.com', name: 'Admin Events Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-events-api-test@example.com', name: 'Admin Events Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -101,7 +101,7 @@ describe('Events API Integration Tests', () => {
 
         it('should return 403 Forbidden for non-admin users who are not lead mentors', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false }
              });
 
              const req = new Request('http://localhost:4000/api/events', {
@@ -115,7 +115,7 @@ describe('Events API Integration Tests', () => {
 
         it('should return 400 Bad Request if required fields are missing', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/events', {
@@ -132,7 +132,7 @@ describe('Events API Integration Tests', () => {
 
         it('should successfully create a single event as admin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/events', {
@@ -172,7 +172,7 @@ describe('Events API Integration Tests', () => {
 
         it('should successfully create recurring events as a lead mentor', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testLeadMentorId, sysadmin: false, boardMember: false }
+                user: { id: testLeadMentorId, isSysadmin: false, isBoardMember: false }
             });
 
             // Recurrence: from Oct 1 to Oct 15, on Mon (1) and Wed (3).

@@ -15,10 +15,10 @@ jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 const TAG = 'settings-test';
 
 function asBoard(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: true } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: true } });
 }
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false } });
 }
 function jsonReq(method: string, body?: unknown, url = 'http://localhost:4000/x') {
     return new Request(url, { method, ...(body ? { body: JSON.stringify(body) } : {}) }) as never;
@@ -46,7 +46,7 @@ describe('Membership settings + volunteer designations API', () => {
         prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents } : null;
         await wipe();
 
-        boardId = (await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', boardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
+        boardId = (await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
         plainId = (await prisma.participant.create({ data: { email: `plain-${TAG}@example.com`, name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
 
         // A full-price active member, for the designation warning.

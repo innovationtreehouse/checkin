@@ -74,7 +74,7 @@ export interface TrendBucket {
 }
 
 export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async (req) => {
         try {
             const url = new URL(req.url);
@@ -94,6 +94,10 @@ export const GET = withAuth(
             const whereClause: Record<string, unknown> = {
                 arrivedAt: { gte: since },
                 departedAt: { not: null },
+                // Exclude synthetic "marked present" visits (events attendance route): their
+                // arrivedAt/departedAt is the event window, not a measured duration. arrivedVia=SYSTEM
+                // is the marker — real visits use SCANNER/WEB on arrival.
+                arrivedVia: { not: "SYSTEM" },
             };
 
             if (programId) {

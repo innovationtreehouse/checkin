@@ -34,12 +34,12 @@ export const GET = withCron(async () => {
                 }
             });
 
-            // If at least one was a keyholder, the facility was left "Open". We need to alert the board.
-            const abandonedKeyholders = abandonedVisits.filter(v => v.participant.keyholder);
+            // If at least one was a isKeyholder, the facility was left "Open". We need to alert the board.
+            const abandonedKeyholders = abandonedVisits.filter(v => v.participant.isKeyholder);
             
             if (abandonedKeyholders.length > 0) {
                 const boardMembers = await prisma.participant.findMany({
-                    where: { boardMember: true },
+                    where: { isBoardMember: true },
                     select: { email: true }
                 });
 

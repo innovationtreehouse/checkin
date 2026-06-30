@@ -37,7 +37,7 @@ describe('Admin Audit API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-audit-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-audit-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
@@ -83,15 +83,15 @@ describe('Admin Audit API Integration Tests', () => {
         });
 
         it('should return 403 Forbidden for a common user', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, sysadmin: false } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, isSysadmin: false } });
 
              const req = new Request('http://localhost:4000/api/system-status/audit-log', { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(403);
         });
 
-        it('should return 200 OK and logs for a sysadmin', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+        it('should return 200 OK and logs for a isSysadmin', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request('http://localhost:4000/api/system-status/audit-log', { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest);
@@ -114,7 +114,7 @@ describe('Admin Audit API Integration Tests', () => {
         });
 
         it('should filter by action and entity and page server-side', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const url = 'http://localhost:4000/api/system-status/audit-log?action=CREATE&table=Participant&page=1';
              const req = new Request(url, { method: 'GET' });

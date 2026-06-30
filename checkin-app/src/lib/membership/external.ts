@@ -236,7 +236,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
     if (!user) throw new ExternalError("not_found", "Application not found.");
     if (!user.householdId) throw new ExternalError("no_household", "You must create a household first.");
     const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.sysadmin) {
+    if (!isLead && !user.isSysadmin) {
         throw new ExternalError("not_lead", "Only a household lead can sign the membership agreement.");
     }
 

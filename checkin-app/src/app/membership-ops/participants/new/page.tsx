@@ -24,7 +24,7 @@ export default function NewParticipantPage() {
 }
 
 function NewParticipantForm() {
-  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
   const searchParams = useSearchParams();
   const queryHouseholdId = searchParams.get('householdId');
 

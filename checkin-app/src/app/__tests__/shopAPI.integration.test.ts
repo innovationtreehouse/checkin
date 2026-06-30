@@ -36,7 +36,7 @@ describe('Shop API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         await prisma.toolStatus.deleteMany({
-            where: { userId: { in: existingUserIds } }
+            where: { participantId: { in: existingUserIds } }
         });
         await prisma.visit.deleteMany({
             where: { participantId: { in: existingUserIds } }
@@ -62,13 +62,13 @@ describe('Shop API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-shop-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-shop-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Board Member
         const board = await prisma.participant.create({
-            data: { email: 'board-shop-api-test@example.com', name: 'Board', boardMember: true, household: { create: {} } }
+            data: { email: 'board-shop-api-test@example.com', name: 'Board', isBoardMember: true, household: { create: {} } }
         });
         boardId = board.id;
 
@@ -116,7 +116,7 @@ describe('Shop API Integration Tests', () => {
                 where: { actorId: { in: existingUserIds } }
             });
             await prisma.toolStatus.deleteMany({
-                where: { userId: { in: existingUserIds } }
+                where: { participantId: { in: existingUserIds } }
             });
             await prisma.visit.deleteMany({
                 where: { participantId: { in: existingUserIds } }
@@ -166,7 +166,7 @@ describe('Shop API Integration Tests', () => {
         });
 
         it('should return 200 and members for an admin', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const res = await getMembers() as Response;
              expect(res.status).toBe(200);
@@ -198,7 +198,7 @@ describe('Shop API Integration Tests', () => {
         });
 
         it('should allow admins to create a new tool', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = createReq('POST', { body: { name: 'Shop Test Tool Admin' } });
              const res = await postTools(req) as Response;
@@ -210,7 +210,7 @@ describe('Shop API Integration Tests', () => {
         });
 
         it('should allow board members to create a new tool', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
              const req = createReq('POST', { body: { name: 'Shop Test Tool Board' } });
              const res = await postTools(req) as Response;
@@ -255,7 +255,7 @@ describe('Shop API Integration Tests', () => {
              const data = await res.json();
              expect(data.success).toBe(true);
              expect(data.certification.level).toBe('BASIC');
-             expect(data.certification.userId).toBe(commonId);
+             expect(data.certification.participantId).toBe(commonId);
 
              // Audit: first grant on this participant+tool → CREATE, no prior data.
              const auditRows = await prisma.auditLog.findMany({
@@ -276,7 +276,7 @@ describe('Shop API Integration Tests', () => {
         });
 
         it('should allow an admin to grant MAY_CERTIFY_OTHERS', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' } });
              const res = await postCerts(req) as Response;

@@ -16,7 +16,7 @@ type ParticipantOption = {
 };
 
 export default function CreateProgramPage() {
-  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember'], { redirectTo: '/system-status' });
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember'], { redirectTo: '/system-status' });
   const router = useRouter();
 
   const [name, setName] = useState("");

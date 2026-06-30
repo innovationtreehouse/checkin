@@ -53,7 +53,7 @@ describe("PATCH /api/events/[id] cancel — attendee notification (characterizat
 
     beforeEach(() => {
         jest.clearAllMocks();
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
     });
 
     afterEach(async () => {

@@ -33,6 +33,9 @@ const customJestConfig = {
         '/node_modules/',
         '/.claude/worktrees/',
         '\\.integration\\.test\\.[jt]sx?$',
+        // Flow tests drive a running dev server over HTTP — excluded from the
+        // default/unit run; run with `npm run test:flow` (see AGENTS.md).
+        '\\.flow\\.test\\.[jt]sx?$',
     ],
     modulePathIgnorePatterns: [
         '<rootDir>/../.claude/worktrees/',

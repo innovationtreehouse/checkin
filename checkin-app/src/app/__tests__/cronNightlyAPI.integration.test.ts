@@ -42,14 +42,14 @@ describe('Cron Nightly API Integration Tests', () => {
 
         // Setup Users
         const board = await prisma.participant.create({
-            data: { email: 'board-nightly@example.com', name: 'Board Member', boardMember: true, household: { create: {} } }
+            data: { email: 'board-nightly@example.com', name: 'Board Member', isBoardMember: true, household: { create: {} } }
         });
         boardMemberId = board.id;
 
-        const keyholder = await prisma.participant.create({
-            data: { email: 'keyholder-nightly@example.com', name: 'Forgetful Keyholder', keyholder: true, household: { create: {} } }
+        const isKeyholder = await prisma.participant.create({
+            data: { email: 'keyholder-nightly@example.com', name: 'Forgetful Keyholder', isKeyholder: true, household: { create: {} } }
         });
-        keyholderId = keyholder.id;
+        keyholderId = isKeyholder.id;
 
         const normalUser = await prisma.participant.create({
             data: { email: 'user-nightly@example.com', name: 'Normal User', household: { create: {} } }
@@ -143,7 +143,7 @@ describe('Cron Nightly API Integration Tests', () => {
 
             // 1. Verify Facility Close Logic
             expect(data.facilityClose.checkedOutCount).toBe(2); // Keyholder + Normal User
-            expect(data.facilityClose.boardNotified).toBe(true); // Because a keyholder was abandoned
+            expect(data.facilityClose.boardNotified).toBe(true); // Because a isKeyholder was abandoned
 
             // 2. Verify Post-Event Email Logic
             expect(data.postEvents.processedEvents).toBe(1);
@@ -198,7 +198,7 @@ describe('Cron Nightly API Integration Tests', () => {
             });
 
             const badVisit = await prisma.visit.create({
-                data: { participantId: keyholderId, arrivedAt } // keyholder -> triggers board notify
+                data: { participantId: keyholderId, arrivedAt } // isKeyholder -> triggers board notify
             });
             const goodVisitA = await prisma.visit.create({
                 data: { participantId: normalUserId, arrivedAt }
@@ -208,7 +208,7 @@ describe('Cron Nightly API Integration Tests', () => {
             });
 
             mockBadVisitIds.clear();
-            mockBadVisitIds.add(badVisit.id); // keyholder's checkout will throw
+            mockBadVisitIds.add(badVisit.id); // isKeyholder's checkout will throw
 
             try {
                 const res = await GET(cronReq());
@@ -221,7 +221,7 @@ describe('Cron Nightly API Integration Tests', () => {
                 // 2 good visits checked out; the bad one is NOT counted as success.
                 expect(data.facilityClose.checkedOutCount).toBe(2);
 
-                // Board still notified even though the keyholder's checkout failed
+                // Board still notified even though the isKeyholder's checkout failed
                 // (notification derives from the abandoned-visit list, not results).
                 expect(data.facilityClose.boardNotified).toBe(true);
                 expect(await systemNotifyCount()).toBe(1);
@@ -267,7 +267,7 @@ describe('Cron Nightly API Integration Tests', () => {
             expect(res2.status).toBe(200);
             const data2 = await res2.json();
             expect(data2.facilityClose.checkedOutCount).toBe(0); // nothing left open
-            expect(data2.facilityClose.boardNotified).toBe(false); // no abandoned keyholder
+            expect(data2.facilityClose.boardNotified).toBe(false); // no abandoned isKeyholder
             expect(data2.postEvents.emailsSent).toBe(0); // email already sent
 
             expect(await systemNotifyCount()).toBe(1); // no NEW force-checkout audit row

@@ -16,8 +16,8 @@ export async function GET() {
     const certs = session.user?.toolStatuses || [];
     const hasCertifierAuth = certs.some((ts: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => ts.level === 'MAY_CERTIFY_OTHERS');
 
-    const isAuthorized = session.user?.sysadmin ||
-        session.user?.boardMember ||
+    const isAuthorized = session.user?.isSysadmin ||
+        session.user?.isBoardMember ||
         hasCertifierAuth;
 
     if (!isAuthorized) {

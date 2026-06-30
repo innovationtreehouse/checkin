@@ -1,16 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { authenticateRequest } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 
-export async function POST(req: NextRequest) {
-    const auth = await authenticateRequest(req);
+export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req, auth) => {
     if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!auth.user.sysadmin && !auth.user.boardMember) {
-        return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 });
     }
 
     try {
@@ -121,4 +117,4 @@ export async function POST(req: NextRequest) {
         await logBackendError(error, "POST /api/membership-ops/participants");
         return NextResponse.json({ error: `Failed to create participant` }, { status: 500 });
     }
-}
+});

@@ -34,7 +34,7 @@ interface PersonaOption {
     id: number;
     email: string;
     name: string | null;
-    sysadmin?: boolean;
+    isSysadmin?: boolean;
 }
 
 function relTime(when: string | Date): string {
@@ -151,8 +151,8 @@ export default function DevDashboard() {
 
     const lastActivity = activity[0];
     const currentName = session.user.name || session.user.email;
-    // Quick "View as admin" reuses the seeded sysadmin persona (e.g. boardmember@example.com).
-    const adminPersona = personas.find((p) => p.sysadmin);
+    // Quick "View as admin" reuses the seeded isSysadmin persona (e.g. boardmember@example.com).
+    const adminPersona = personas.find((p) => p.isSysadmin);
 
     return (
         <div

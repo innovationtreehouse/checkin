@@ -21,7 +21,7 @@ jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }
 const TAG = 'membership-intake-test';
 
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false } });
 }
 function req(body?: unknown) {
     return new Request('http://localhost:4000/api/membership', {

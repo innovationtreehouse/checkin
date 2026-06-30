@@ -68,7 +68,7 @@ export default function Home() {
 
       // Use server-computed safety flags
       if (data.safety) {
-        const userIsKeyholder = (session.user as SessionUser)?.keyholder;
+        const userIsKeyholder = (session.user as SessionUser)?.isKeyholder;
         setIsLastKeyholder(data.safety.isLastKeyholder && userIsKeyholder);
         setIsTwoDeepViolation(data.safety.isTwoDeepViolation);
       } else {
@@ -143,8 +143,8 @@ export default function Home() {
 
   const user = session?.user as SessionUser | undefined;
   const canSelfCheckin =
-    !!user?.sysadmin || !!user?.boardMember || !!user?.keyholder || isDevInstance;
-  const isPrivileged = !!user?.sysadmin || !!user?.keyholder;
+    !!user?.isSysadmin || !!user?.isBoardMember || !!user?.isKeyholder || isDevInstance;
+  const isPrivileged = !!user?.isSysadmin || !!user?.isKeyholder;
 
   return (
     <Container size="sm" py="xl">
@@ -163,10 +163,10 @@ export default function Home() {
                 <Text ta="center">
                   Welcome back, <strong>{session.user?.name || session.user?.email}</strong>!
                 </Text>
-                {(user?.sysadmin || user?.keyholder) && (
+                {(user?.isSysadmin || user?.isKeyholder) && (
                   <Group justify="center" gap="xs" mt="xs">
-                    {user?.sysadmin && <RoleBadge role="sysadmin" />}
-                    {user?.keyholder && <RoleBadge role="keyholder" />}
+                    {user?.isSysadmin && <RoleBadge role="isSysadmin" />}
+                    {user?.isKeyholder && <RoleBadge role="isKeyholder" />}
                   </Group>
                 )}
               </Paper>

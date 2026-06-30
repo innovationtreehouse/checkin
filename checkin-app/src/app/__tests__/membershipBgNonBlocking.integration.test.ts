@@ -28,7 +28,7 @@ async function makeReviewer(label: string): Promise<number> {
         data: {
             email: `${label}-${TAG}@example.com`,
             name: label,
-            backgroundCheckReviewer: true,
+            isBackgroundCheckReviewer: true,
             household: { create: { name: `${label} HH ${TAG}` } },
         },
     });
@@ -38,7 +38,7 @@ async function makeReviewer(label: string): Promise<number> {
 /** A board member (notifyBoardPaidReject's recipient) in their own household. */
 async function makeBoardMember(): Promise<number> {
     const r = await prisma.participant.create({
-        data: { email: `board-${TAG}@example.com`, name: 'Board', boardMember: true, household: { create: { name: `Board HH ${TAG}` } } },
+        data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } },
     });
     return r.id;
 }
@@ -242,5 +242,10 @@ describe('background check is non-blocking', () => {
         const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
         expect(proc?.status).toBe('PENDING_EXTERNAL_ACTION');
         expect(proc?.paidAt).toBeNull();
+    });
+
+    it('markContractSigned / markBgConsent on a non-existent process throw not_found', async () => {
+        await expect(markContractSigned(999999999)).rejects.toMatchObject({ code: 'not_found' });
+        await expect(markBgConsent(999999999, revA)).rejects.toMatchObject({ code: 'not_found' });
     });
 });

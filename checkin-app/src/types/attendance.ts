@@ -11,8 +11,8 @@ export type VisitWithDetails = Prisma.VisitGetPayload<{
                 googleId: true;
                 email: true;
                 name: true;
-                keyholder: true;
-                sysadmin: true;
+                isKeyholder: true;
+                isSysadmin: true;
                 dateOfBirth: true;
                 householdId: true;
                 phone: true;

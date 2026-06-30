@@ -17,8 +17,8 @@ jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }
 
 const TAG = 'review-test';
 
-function as(id: number, roles: { backgroundCheckReviewer?: boolean; boardMember?: boolean; sysadmin?: boolean } = {}) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false, backgroundCheckReviewer: false, ...roles } });
+function as(id: number, roles: { isBackgroundCheckReviewer?: boolean; isBoardMember?: boolean; isSysadmin?: boolean } = {}) {
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false, isBackgroundCheckReviewer: false, ...roles } });
 }
 function req(body: unknown) {
     return new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify(body) }) as unknown as Parameters<typeof ATTEST>[0];
@@ -71,16 +71,16 @@ describe('Membership BG review API', () => {
                 : { email: `${slug}-${TAG}@example.com`, name: slug, household: { create: { name: `${slug} HH ${TAG}` } }, ...role };
             return prisma.participant.create({ data });
         };
-        const r1 = await mk('rev1', { backgroundCheckReviewer: true });
+        const r1 = await mk('rev1', { isBackgroundCheckReviewer: true });
         rev1 = r1.id;
-        rev1b = (await mk('rev1b', { backgroundCheckReviewer: true }, r1.householdId!)).id; // shares rev1's household
-        rev2 = (await mk('rev2', { backgroundCheckReviewer: true })).id;
-        board = (await mk('board', { boardMember: true })).id;
+        rev1b = (await mk('rev1b', { isBackgroundCheckReviewer: true }, r1.householdId!)).id; // shares rev1's household
+        rev2 = (await mk('rev2', { isBackgroundCheckReviewer: true })).id;
+        board = (await mk('board', { isBoardMember: true })).id;
         nonReviewer = (await mk('plain', {})).id;
 
         const app = await makeApplicantProcess('Applicant');
         applicantHh = app.householdId;
-        revInApplicant = (await mk('revapp', { backgroundCheckReviewer: true }, applicantHh)).id; // in applicant household
+        revInApplicant = (await mk('revapp', { isBackgroundCheckReviewer: true }, applicantHh)).id; // in applicant household
     });
 
     afterAll(async () => {
@@ -96,7 +96,7 @@ describe('Membership BG review API', () => {
     });
 
     it('blocks a reviewer in the applicant household', async () => {
-        as(revInApplicant, { backgroundCheckReviewer: true });
+        as(revInApplicant, { isBackgroundCheckReviewer: true });
         const proc = await prisma.membershipProcess.findFirst({ where: { membership: { householdId: applicantHh } } });
         const res = await ATTEST(req({ processId: proc!.id, result: 'APPROVE' }) as never);
         const data = await res.json();
@@ -106,7 +106,7 @@ describe('Membership BG review API', () => {
 
     it('2 distinct reviewers approving advances to PENDING_PAYMENT, stamps BG date, applies marked volunteer', async () => {
         const proc = await makeApplicantProcess('Approve');
-        as(rev1, { backgroundCheckReviewer: true });
+        as(rev1, { isBackgroundCheckReviewer: true });
         const r1 = await ATTEST(req({ processId: proc.processId, result: 'APPROVE' }) as never);
         expect((await r1.json()).outcome.status).toBe('PENDING_BG_REVIEW');
 
@@ -115,12 +115,12 @@ describe('Membership BG review API', () => {
         expect(dup.status).toBe(409);
 
         // reviewer sharing rev1's household -> blocked
-        as(rev1b, { backgroundCheckReviewer: true });
+        as(rev1b, { isBackgroundCheckReviewer: true });
         const shared = await ATTEST(req({ processId: proc.processId, result: 'APPROVE' }) as never);
         expect((await shared.json()).code).toBe('same_household_reviewer');
 
         // rev2 approves with volunteer checkbox -> advances
-        as(rev2, { backgroundCheckReviewer: true });
+        as(rev2, { isBackgroundCheckReviewer: true });
         const r2 = await ATTEST(req({ processId: proc.processId, result: 'APPROVE', isMarkedVolunteer: true }) as never);
         expect((await r2.json()).outcome.status).toBe('PENDING_PAYMENT');
 
@@ -140,9 +140,9 @@ describe('Membership BG review API', () => {
     it('applies volunteer status from a pre-designation (dot-insensitive), without a checkbox', async () => {
         const proc = await makeApplicantProcess('Predesig', `vol.parent-${TAG}@example.com`);
         await prisma.volunteerDesignation.create({ data: { email: `volparent-${TAG}@example.com` } }); // no dot
-        as(rev1, { backgroundCheckReviewer: true });
+        as(rev1, { isBackgroundCheckReviewer: true });
         await ATTEST(req({ processId: proc.processId, result: 'APPROVE' }) as never);
-        as(rev2, { backgroundCheckReviewer: true });
+        as(rev2, { isBackgroundCheckReviewer: true });
         await ATTEST(req({ processId: proc.processId, result: 'APPROVE' }) as never);
         const membership = await prisma.membership.findUnique({ where: { id: proc.membershipId } });
         expect(membership?.isVolunteer).toBe(true);
@@ -150,7 +150,7 @@ describe('Membership BG review API', () => {
 
     it('a single REJECT blocks the application', async () => {
         const proc = await makeApplicantProcess('Reject');
-        as(rev1, { backgroundCheckReviewer: true });
+        as(rev1, { isBackgroundCheckReviewer: true });
         const res = await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never);
         expect((await res.json()).outcome.status).toBe('BLOCKED');
         const updated = await prisma.membershipProcess.findUnique({ where: { id: proc.processId } });
@@ -164,10 +164,10 @@ describe('Membership BG review API', () => {
 
     it('board reset on a BLOCKED app clears attestations and returns it to review', async () => {
         const proc = await makeApplicantProcess('ResetMe');
-        as(rev1, { backgroundCheckReviewer: true });
+        as(rev1, { isBackgroundCheckReviewer: true });
         await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never);
 
-        as(board, { boardMember: true });
+        as(board, { isBoardMember: true });
         const res = await OVERRIDE(req({ processId: proc.processId, action: 'reset' }) as never);
         expect(res.status).toBe(200);
         const updated = await prisma.membershipProcess.findUnique({ where: { id: proc.processId } });
@@ -183,10 +183,10 @@ describe('Membership BG review API', () => {
 
     it('board override-approve on a BLOCKED app forces it to PENDING_PAYMENT', async () => {
         const proc = await makeApplicantProcess('ForceApprove');
-        as(rev1, { backgroundCheckReviewer: true });
+        as(rev1, { isBackgroundCheckReviewer: true });
         await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never);
 
-        as(board, { boardMember: true });
+        as(board, { isBoardMember: true });
         const res = await OVERRIDE(req({ processId: proc.processId, action: 'approve' }) as never);
         expect(res.status).toBe(200);
         const updated = await prisma.membershipProcess.findUnique({ where: { id: proc.processId } });
@@ -200,7 +200,7 @@ describe('Membership BG review API', () => {
 
     it('override (approve/reset) on a non-BLOCKED process is rejected (409 wrong_phase), status unchanged', async () => {
         const proc = await makeProcess('NotBlocked', 'INITIAL', 'PENDING_PAYMENT');
-        as(board, { boardMember: true });
+        as(board, { isBoardMember: true });
 
         for (const action of ['approve', 'reset'] as const) {
             const res = await OVERRIDE(req({ processId: proc.processId, action }) as never);
@@ -215,11 +215,11 @@ describe('Membership BG review API', () => {
         const proc = await makeProcess('RenewalReset', 'RENEWAL', 'RENEWAL_PENDING_BG');
 
         // A reject from an eligible reviewer (different household) blocks it.
-        as(rev1, { backgroundCheckReviewer: true });
+        as(rev1, { isBackgroundCheckReviewer: true });
         const rej = await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never);
         expect((await rej.json()).outcome.status).toBe('BLOCKED');
 
-        as(board, { boardMember: true });
+        as(board, { isBoardMember: true });
         const res = await OVERRIDE(req({ processId: proc.processId, action: 'reset' }) as never);
         expect(res.status).toBe(200);
         // Renewal branch: must restore the RENEWAL review phase, not the INITIAL one.
@@ -234,8 +234,40 @@ describe('Membership BG review API', () => {
         expect(res.status).toBe(403);
     });
 
+    it('attest on an already-decided (BLOCKED) process is rejected (409 wrong_phase), no new attestation or audit', async () => {
+        const proc = await makeApplicantProcess('AlreadyDecided');
+        as(rev1, { isBackgroundCheckReviewer: true });
+        await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never); // → BLOCKED (1 attestation, 1 audit)
+        const attBefore = await prisma.backgroundCheckAttestation.count({ where: { processId: proc.processId } });
+        const auditBefore = await prisma.auditLog.count({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId } });
+
+        // A fresh eligible reviewer (different household) tries to attest the now-decided app.
+        as(rev2, { isBackgroundCheckReviewer: true });
+        const res = await ATTEST(req({ processId: proc.processId, result: 'APPROVE' }) as never);
+        expect(res.status).toBe(409);
+        expect((await res.json()).code).toBe('wrong_phase');
+
+        // The phase guard precedes the attestation create, so nothing was written.
+        expect(await prisma.backgroundCheckAttestation.count({ where: { processId: proc.processId } })).toBe(attBefore);
+        expect(await prisma.auditLog.count({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId } })).toBe(auditBefore);
+    });
+
+    it('attest on a non-existent process returns 404 not_found', async () => {
+        as(rev1, { isBackgroundCheckReviewer: true });
+        const res = await ATTEST(req({ processId: 999999999, result: 'APPROVE' }) as never);
+        expect(res.status).toBe(404);
+        expect((await res.json()).code).toBe('not_found');
+    });
+
+    it('override on a non-existent process returns 404 not_found', async () => {
+        as(board, { isBoardMember: true });
+        const res = await OVERRIDE(req({ processId: 999999999, action: 'reset' }) as never);
+        expect(res.status).toBe(404);
+        expect((await res.json()).code).toBe('not_found');
+    });
+
     it('queue lists eligible apps for a reviewer and excludes their own-household applicants', async () => {
-        as(rev2, { backgroundCheckReviewer: true });
+        as(rev2, { isBackgroundCheckReviewer: true });
         const res = await REVIEW_QUEUE(req({}) as never);
         const data = await res.json();
         expect(Array.isArray(data.queue)).toBe(true);
@@ -255,7 +287,7 @@ describe('Membership BG review API', () => {
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
         await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } });
 
-        as(rev2, { backgroundCheckReviewer: true }); // different household → eligible
+        as(rev2, { isBackgroundCheckReviewer: true }); // different household → eligible
         const data = await (await REVIEW_QUEUE(req({}) as never)).json();
         const blob = JSON.stringify(data);
 

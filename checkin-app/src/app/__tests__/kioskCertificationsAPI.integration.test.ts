@@ -42,7 +42,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         await prisma.toolStatus.deleteMany({
-            where: { userId: { in: existingUserIds } }
+            where: { participantId: { in: existingUserIds } }
         });
 
         await prisma.tool.deleteMany({
@@ -72,7 +72,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
 
         await prisma.toolStatus.create({
             data: { 
-                userId: testUserId,
+                participantId: testUserId,
                 toolId: toolId,
                 level: 'CERTIFIED'
             }
@@ -93,7 +93,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
             where: { participantId: testUserId }
         });
         await prisma.toolStatus.deleteMany({
-            where: { userId: testUserId }
+            where: { participantId: testUserId }
         });
         await prisma.participant.deleteMany({
             where: { id: testUserId }
@@ -172,9 +172,9 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         it('should return active visits and tools for authenticated web users', async () => {
-            // This endpoint is privileged (sysadmin/boardMember/keyholder or kiosk); a plain
+            // This endpoint is privileged (isSysadmin/isBoardMember/isKeyholder or kiosk); a plain
             // member session gets 403. Grant a role flag so the session passes the gate.
-            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId, keyholder: true } });
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId, isKeyholder: true } });
             (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
 
             const req = new Request('http://localhost:4000/api/kioskdisplay/certifications', { method: 'GET' });

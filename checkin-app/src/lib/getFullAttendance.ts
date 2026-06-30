@@ -11,8 +11,8 @@ export async function getFullAttendance() {
                     googleId: true,
                     email: true,
                     name: true,
-                    keyholder: true,
-                    sysadmin: true,
+                    isKeyholder: true,
+                    isSysadmin: true,
                     dateOfBirth: true,
                     householdId: true,
                     phone: true,
@@ -44,9 +44,9 @@ export async function getFullAttendance() {
         minorMap.set(v.id, isMinor(v.participant.dateOfBirth));
     }
 
-    const keyholderVisits = activeVisits.filter(v => v.participant.keyholder);
+    const keyholderVisits = activeVisits.filter(v => v.participant.isKeyholder);
     const studentVisits = activeVisits.filter(v => minorMap.get(v.id)!);
-    const volunteerVisits = activeVisits.filter(v => !v.participant.keyholder && !minorMap.get(v.id));
+    const volunteerVisits = activeVisits.filter(v => !v.participant.isKeyholder && !minorMap.get(v.id));
 
     const counts = {
         keyholders: keyholderVisits.length,

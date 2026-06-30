@@ -71,15 +71,15 @@ describe('General Attendance API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-attend-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-attend-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Board Member
-        const boardMember = await prisma.participant.create({
-            data: { email: 'board-attend-api-test@example.com', name: 'Board Member', boardMember: true, household: { create: {} } }
+        const isBoardMember = await prisma.participant.create({
+            data: { email: 'board-attend-api-test@example.com', name: 'Board Member', isBoardMember: true, household: { create: {} } }
         });
-        boardMemberId = boardMember.id;
+        boardMemberId = isBoardMember.id;
 
         // Create Common User
         const commonUser = await prisma.participant.create({
@@ -189,7 +189,7 @@ describe('General Attendance API Integration Tests', () => {
         });
 
         it('should fetch active visits with an authenticated admin session', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
@@ -261,7 +261,7 @@ describe('General Attendance API Integration Tests', () => {
         });
 
         it('should allow an admin to check in any user', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/attendance`, {
                  method: 'POST',
@@ -291,7 +291,7 @@ describe('General Attendance API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.notified).toBeGreaterThanOrEqual(1); // There is 1 boardMember setup in beforeAll
+             expect(data.notified).toBeGreaterThanOrEqual(1); // There is 1 isBoardMember setup in beforeAll
 
              // Prove debounce log was created
              const logs = await prisma.auditLog.findMany({ where: { tableName: 'SYSTEM_NOTIFY' } });

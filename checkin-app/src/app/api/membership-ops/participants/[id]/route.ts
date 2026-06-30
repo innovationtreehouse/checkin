@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { authenticateRequest } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
-export async function PUT(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const auth = await authenticateRequest(request);
+export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
+    { roles: ['isSysadmin', 'isBoardMember'] },
+    async (request: NextRequest, auth, { params }) => {
     if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!auth.user.sysadmin && !auth.user.boardMember) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     try {
@@ -67,8 +62,8 @@ export async function PUT(
             name: updatedParticipant.name,
             email: updatedParticipant.email,
             phone: updatedParticipant.phone,
-            boardMember: updatedParticipant.boardMember,
-            keyholder: updatedParticipant.keyholder,
+            isBoardMember: updatedParticipant.isBoardMember,
+            isKeyholder: updatedParticipant.isKeyholder,
             household: updatedParticipant.household,
         };
 
@@ -77,4 +72,4 @@ export async function PUT(
         console.error("Failed to update participant:", error);
         return NextResponse.json({ error: "Failed to update participant" }, { status: 500 });
     }
-}
+});

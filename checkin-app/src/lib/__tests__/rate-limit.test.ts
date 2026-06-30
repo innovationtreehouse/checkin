@@ -1,4 +1,4 @@
-import { checkRateLimit, clientIpKey, normalizeEmail } from "../rate-limit";
+import { checkRateLimit, clientIpKey, normalizeEmail, rateLimit, rateLimitEmail } from "../rate-limit";
 
 describe("checkRateLimit", () => {
     it("allows up to the limit, blocks the N+1th, then resets after the window", () => {
@@ -82,5 +82,38 @@ describe("normalizeEmail", () => {
 
     it("keeps dots significant for non-Gmail domains", () => {
         expect(normalizeEmail("foo.bar@outlook.com")).not.toBe(normalizeEmail("foobar@outlook.com"));
+    });
+});
+
+// The pure checkRateLimit is covered above; these exercise the NextResponse
+// wrappers routes actually call — the 429 body + Retry-After header on overflow.
+// Each case uses a unique route name so the shared bucket Map doesn't leak.
+describe("rateLimit / rateLimitEmail wrappers", () => {
+    it("rateLimit returns null under the limit, then a 429 with Retry-After", async () => {
+        const req = reqWithIp("203.0.113.7");
+        const opts = { name: "wrap-ip-test", limit: 2, windowMs: 60_000 };
+
+        expect(rateLimit(req, opts)).toBeNull();
+        expect(rateLimit(req, opts)).toBeNull();
+
+        const res = rateLimit(req, opts)!;
+        expect(res).not.toBeNull();
+        expect(res.status).toBe(429);
+        const retryAfter = Number(res.headers.get("Retry-After"));
+        expect(retryAfter).toBeGreaterThan(0);
+        expect(retryAfter).toBeLessThanOrEqual(60);
+        expect((await res.json()).error).toMatch(/too many/i);
+    });
+
+    it("rateLimitEmail returns null under the limit, then a 429 with Retry-After", async () => {
+        const email = "flood-victim@example.com";
+        const opts = { name: "wrap-email-test", limit: 1, windowMs: 60_000 };
+
+        expect(rateLimitEmail(email, opts)).toBeNull();
+
+        const res = rateLimitEmail(email, opts)!;
+        expect(res.status).toBe(429);
+        expect(Number(res.headers.get("Retry-After"))).toBeGreaterThan(0);
+        expect((await res.json()).error).toMatch(/too many/i);
     });
 });

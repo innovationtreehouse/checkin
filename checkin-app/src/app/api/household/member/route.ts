@@ -31,7 +31,7 @@ export const PATCH = withAuth(
             }
 
             const isCurrentUserLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isCurrentUserLead && !user.sysadmin) {
+            if (!isCurrentUserLead && !user.isSysadmin) {
                 return NextResponse.json({ error: "Only household leads can edit members" }, { status: 403 });
             }
 

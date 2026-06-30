@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 // Empty households (no participants) are included so the board can see them,
 // even though there's no one to promote.
 export const GET = withAuth(
-    { roles: ["sysadmin", "boardMember"] },
+    { roles: ["isSysadmin", "isBoardMember"] },
     async () => {
         try {
             const households = await prisma.household.findMany({

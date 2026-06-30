@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  * manual one-time action (nothing opens automatically).
  * Body: { sendReminders?: boolean } (default false — avoids a mass email blast).
  */
-export const POST = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, auth) => {
+export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     let body: { sendReminders?: boolean } = {};
     try {

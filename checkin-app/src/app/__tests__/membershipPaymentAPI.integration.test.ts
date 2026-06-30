@@ -25,10 +25,10 @@ const VARIANT_ID = '4567';
 const DISCOUNT_CODE = 'VOLUNTEER';
 
 function asBoard(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: true } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: true } });
 }
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false } });
 }
 function shopifyReq(payload: unknown, secret: string) {
     const raw = JSON.stringify(payload);

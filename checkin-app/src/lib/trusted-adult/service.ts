@@ -378,7 +378,7 @@ export async function assertHouseholdLead(householdId: number, actorId: number) 
 async function notifyBoard(): Promise<void> {
     try {
         const board = await prisma.participant.findMany({
-            where: { boardMember: true, email: { not: null } },
+            where: { isBoardMember: true, email: { not: null } },
             select: { email: true },
         });
         const base = process.env.NEXTAUTH_URL ?? "";

@@ -9,7 +9,7 @@
  * advisory lock (route.ts ~line 40), two near-simultaneous manual check-ins for
  * one participant could both pass the open-visit re-check and both create a
  * visit, leaving two open visits — checkout closes only one, the other lingers
- * and corrupts attendance/keyholder counts.
+ * and corrupts attendance/isKeyholder counts.
  *
  * The fix wraps the open-visit check + create in a $transaction that takes
  * `pg_advisory_xact_lock(participantId)` first, then returns the existing open

@@ -50,15 +50,15 @@ export async function seedBaseline(prisma: Db): Promise<void> {
     }
 
     // 2. The 9 debug personas (solo personas get a single-person household of their own)
-    const boardMember = await prisma.participant.upsert({
+    const isBoardMember = await prisma.participant.upsert({
         where: { email: "boardmember@example.com" },
-        update: { name: "Board Member", phone: "555-555-0001", sysadmin: true, boardMember: true },
+        update: { name: "Board Member", phone: "555-555-0001", isSysadmin: true, isBoardMember: true },
         create: {
             email: "boardmember@example.com",
             name: "Board Member",
             phone: "555-555-0001",
-            sysadmin: true,
-            boardMember: true,
+            isSysadmin: true,
+            isBoardMember: true,
             household: { create: { name: "Board Member Household" } },
         },
     });
@@ -109,24 +109,24 @@ export async function seedBaseline(prisma: Db): Promise<void> {
 
     await prisma.participant.upsert({
         where: { email: "keyholder1@example.com" },
-        update: { name: "Keyholder One", phone: "555-555-0005", keyholder: true },
+        update: { name: "Keyholder One", phone: "555-555-0005", isKeyholder: true },
         create: {
             email: "keyholder1@example.com",
             name: "Keyholder One",
             phone: "555-555-0005",
-            keyholder: true,
+            isKeyholder: true,
             household: { create: { name: "Keyholder One Household" } },
         },
     });
 
     await prisma.participant.upsert({
         where: { email: "keyholder2@example.com" },
-        update: { name: "Keyholder Two", phone: "555-555-0006", keyholder: true },
+        update: { name: "Keyholder Two", phone: "555-555-0006", isKeyholder: true },
         create: {
             email: "keyholder2@example.com",
             name: "Keyholder Two",
             phone: "555-555-0006",
-            keyholder: true,
+            isKeyholder: true,
             household: { create: { name: "Keyholder Two Household" } },
         },
     });
@@ -158,12 +158,12 @@ export async function seedBaseline(prisma: Db): Promise<void> {
 
     await prisma.participant.upsert({
         where: { email: "bg.reviewer@example.com" },
-        update: { name: "BG Reviewer", phone: "555-555-0009", backgroundCheckReviewer: true },
+        update: { name: "BG Reviewer", phone: "555-555-0009", isBackgroundCheckReviewer: true },
         create: {
             email: "bg.reviewer@example.com",
             name: "BG Reviewer",
             phone: "555-555-0009",
-            backgroundCheckReviewer: true,
+            isBackgroundCheckReviewer: true,
             household: { create: { name: "BG Reviewer Household" } },
         },
     });
@@ -190,19 +190,19 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         create: { name: "Drill Press", safetyGuide: "https://example.com/drill-press-safety" },
     });
     await prisma.toolStatus.upsert({
-        where: { userId_toolId: { userId: certifiedAdult.id, toolId: tableSaw.id } },
+        where: { participantId_toolId: { participantId: certifiedAdult.id, toolId: tableSaw.id } },
         update: { level: "CERTIFIED" },
-        create: { userId: certifiedAdult.id, toolId: tableSaw.id, level: "CERTIFIED" },
+        create: { participantId: certifiedAdult.id, toolId: tableSaw.id, level: "CERTIFIED" },
     });
     await prisma.toolStatus.upsert({
-        where: { userId_toolId: { userId: certifiedAdult.id, toolId: drillPress.id } },
+        where: { participantId_toolId: { participantId: certifiedAdult.id, toolId: drillPress.id } },
         update: { level: "CERTIFIED" },
-        create: { userId: certifiedAdult.id, toolId: drillPress.id, level: "CERTIFIED" },
+        create: { participantId: certifiedAdult.id, toolId: drillPress.id, level: "CERTIFIED" },
     });
     await prisma.toolStatus.upsert({
-        where: { userId_toolId: { userId: toolCertifier.id, toolId: tableSaw.id } },
+        where: { participantId_toolId: { participantId: toolCertifier.id, toolId: tableSaw.id } },
         update: { level: "MAY_CERTIFY_OTHERS" },
-        create: { userId: toolCertifier.id, toolId: tableSaw.id, level: "MAY_CERTIFY_OTHERS" },
+        create: { participantId: toolCertifier.id, toolId: tableSaw.id, level: "MAY_CERTIFY_OTHERS" },
     });
 
     // 5. Sample program
@@ -211,7 +211,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         await prisma.program.create({
             data: {
                 name: "Woodworking 101",
-                leadMentorId: boardMember.id,
+                leadMentorId: isBoardMember.id,
                 startAt: new Date(),
                 endAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
                 phase: "UPCOMING",

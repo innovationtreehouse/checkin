@@ -33,7 +33,7 @@ describe('Admin Badges API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-badges-api-test@example.com', name: 'Admin Badges Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-badges-api-test@example.com', name: 'Admin Badges Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -75,7 +75,7 @@ describe('Admin Badges API Integration Tests', () => {
 
         it('should return 403 Forbidden for non-admin users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false }
              });
 
              const req = new Request('http://localhost:4000/api/facility/badges', {
@@ -88,7 +88,7 @@ describe('Admin Badges API Integration Tests', () => {
 
         it('should successfully return recent raw badge events for admins', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/facility/badges', {

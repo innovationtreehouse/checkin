@@ -61,7 +61,7 @@ describe('Eligible Participants API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-elig-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-elig-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
@@ -226,7 +226,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
 
         it('should return 404 Not Found for non-existent program', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const res = await GET(createReq(999999), createParams(999999));
              expect(res.status).toBe(404);
@@ -259,7 +259,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
 
         it('should filter candidates by query string via name', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const res = await GET(createReq(publicProgramId, 'Active'), createParams(publicProgramId));
              expect(res.status).toBe(200);
@@ -270,7 +270,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
 
         it('should filter candidates by query string via email', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const res = await GET(createReq(publicProgramId, 'non-member-elig'), createParams(publicProgramId));
              expect(res.status).toBe(200);

@@ -17,10 +17,10 @@ export const classifications = {
         notificationSettings: 'personal',
         householdId: 'public',
         allergies: 'personal',
-        sysadmin: 'internal',
-        boardMember: 'public',
-        keyholder: 'internal',
-        backgroundCheckReviewer: 'internal',
+        isSysadmin: 'internal',
+        isBoardMember: 'public',
+        isKeyholder: 'internal',
+        isBackgroundCheckReviewer: 'internal',
     },
     Tool: {
         id: 'public',
@@ -28,7 +28,7 @@ export const classifications = {
         safetyGuide: 'public',
     },
     ToolStatus: {
-        userId: 'public',
+        participantId: 'public',
         toolId: 'public',
         level: 'member',
     },
@@ -338,7 +338,7 @@ export const relations = {
         toolStatuses: { model: 'ToolStatus', isList: true },
     },
     ToolStatus: {
-        user: { model: 'Participant', isList: false },
+        participant: { model: 'Participant', isList: false },
         tool: { model: 'Tool', isList: false },
     },
     Household: {

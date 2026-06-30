@@ -67,10 +67,10 @@ function scanReq(body: string, headers?: Record<string, string>) {
 function sessionUser(overrides: Partial<SessionUser> & { id: number }): SessionUser {
     return {
         email: `user-${overrides.id}-${TAG}@example.com`,
-        sysadmin: false,
-        boardMember: false,
-        keyholder: false,
-        backgroundCheckReviewer: false,
+        isSysadmin: false,
+        isBoardMember: false,
+        isKeyholder: false,
+        isBackgroundCheckReviewer: false,
         ...overrides,
     };
 }
@@ -96,13 +96,13 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
         let signer: ReturnType<typeof makeKeypair>;
 
         beforeAll(async () => {
-            // A keyholder so a valid kiosk check-in opens the facility → always 200,
+            // A isKeyholder so a valid kiosk check-in opens the facility → always 200,
             // independent of facility state.
             const k = await prisma.participant.create({
                 data: {
                     name: 'Kiosk Keyholder',
                     email: `kiosk-${TAG}@example.com`,
-                    keyholder: true,
+                    isKeyholder: true,
                     household: { create: {} },
                 },
             });
@@ -260,7 +260,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             ({ id: pSameHH, householdId: hLead } = await mk('Same Household Member'));
             ({ id: pOtherHH, householdId: hOther } = await mk('Other Household Member'));
             ({ id: pStranger, householdId: hStranger } = await mk('Stranger'));
-            ({ id: pKeyholder, householdId: hKeyholder } = await mk('Open Facility Keyholder', { keyholder: true }));
+            ({ id: pKeyholder, householdId: hKeyholder } = await mk('Open Facility Keyholder', { isKeyholder: true }));
         });
 
         afterEach(async () => {
@@ -278,7 +278,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             await prisma.household.deleteMany({ where: { id: { in: hs } } });
         });
 
-        /** Open the facility so a non-keyholder check-in can reach 200. */
+        /** Open the facility so a non-isKeyholder check-in can reach 200. */
         async function openFacility() {
             await prisma.visit.create({ data: { participantId: pKeyholder, arrivedAt: new Date() } });
         }
@@ -338,6 +338,27 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             const json = await res.json();
             expect(json.error).toMatch(/not authorized/i);
             expect(await prisma.visit.count({ where: { participantId: pStranger } })).toBe(0);
+        });
+    });
+
+    // ────────────────────────────────────────────────────────────────────
+    // C. RATE LIMIT — abuse surface on the safety-critical scan path
+    // ────────────────────────────────────────────────────────────────────
+    describe('C. rate limit', () => {
+        it('floods past the configured limit → 429 with Retry-After', async () => {
+            // route.ts: rateLimit(..., { limit: 300, windowMs: 60_000 }) is the FIRST
+            // thing in POST, before auth. Flood from a dedicated IP (own bucket, no
+            // leak into other suites). The 301st request is rejected at the limiter.
+            const ip = '198.51.100.77';
+            const req = () => POST(scanReq(JSON.stringify({ participantId: 1 }), { 'x-forwarded-for': ip }));
+
+            for (let i = 0; i < 300; i++) {
+                await req(); // unauthenticated → 401, but each one counts against the window
+            }
+
+            const limited = await req();
+            expect(limited.status).toBe(429);
+            expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
         });
     });
 });

@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
         const currentUserId = session.user.id;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
-        const isSysAdminOrBoard = session.user?.sysadmin || session.user?.boardMember;
+        const isSysAdminOrBoard = session.user?.isSysadmin || session.user?.isBoardMember;
 
         if (!isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Not authorized" }, { status: 403 });

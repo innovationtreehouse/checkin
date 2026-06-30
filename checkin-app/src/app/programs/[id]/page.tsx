@@ -7,6 +7,7 @@ import { Alert, Anchor, Button, Card, Center, Checkbox, Container, Divider, Grou
 import { formatDate, calculateAge } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
+import { aggregateEnrollOutcomes, buildShopifyCheckoutUrl, type EnrollOutcome } from './enroll';
 
 type ProgramDetail = {
   id: number;
@@ -25,7 +26,7 @@ type ProgramDetail = {
   maxAge: number | null;
 };
 
-type SessionUser = { sysadmin?: boolean; boardMember?: boolean; id: number };
+type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number };
 
 export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -160,11 +161,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     setEnrolling(true);
     setMessage("");
 
-    const errors: string[] = [];
-    const enrolledIds: number[] = [];
-    let needsOverride = false;
-
     try {
+      const outcomes: EnrollOutcome[] = [];
       for (const participantId of selectedParticipantIds) {
         const res = await fetch(`/api/programs/${id}/participants`, {
           method: 'POST',
@@ -172,16 +170,13 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           body: JSON.stringify({ participantId, override })
         });
 
-        // 409 = already enrolled = desired end state (covers override retries of
-        // members that succeeded on the first pass), so treat it as enrolled.
-        if (res.ok || res.status === 409) {
-          enrolledIds.push(participantId);
-          continue;
-        }
-        const data = await res.json();
-        if (data.requiresOverride) needsOverride = true;
-        errors.push(data.error || "Failed to enroll in program.");
+        // Only the error path carries a JSON body we need (error/requiresOverride);
+        // ok and 409 (already enrolled) are both treated as enrolled downstream.
+        const data = (res.ok || res.status === 409) ? {} : await res.json();
+        outcomes.push({ participantId, ok: res.ok, status: res.status, error: data.error, requiresOverride: data.requiresOverride });
       }
+
+      const { enrolledIds, errors, needsOverride } = aggregateEnrollOutcomes(outcomes);
 
       if (enrolledIds.length > 0) {
         notifyNavRefresh();
@@ -199,17 +194,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
           if (variantId) {
             const storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
-            // ponytail: Shopify cart attributes are cart-level, not per-line-item, so
-            // N participants can't each carry their own account id on separate lines.
-            // But membership is household-level → every selected member shares ONE
-            // variant tier, so we charge qty=N of that single variant and pass all
-            // account ids comma-joined. The orders/paid webhook splits
-            // CheckMeIn_Account_ID on ',' and activates each (webhooks/shopify/route.ts,
-            // covered by webhookShopify.integration.test.ts). Constraint: this only
-            // holds while one household = one membership tier = one variant.
-            const accountIds = enrolledIds.join(',');
-            const checkoutUrl = `https://${storeDomain}/cart/${variantId}:${enrolledIds.length}?attributes[CheckMeIn_Account_ID]=${accountIds}&attributes[Program_ID]=${id}`;
-            window.location.href = checkoutUrl;
+            // qty=N single variant + comma-joined account ids — see buildShopifyCheckoutUrl.
+            window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id);
             return;
           } else {
             setSuccessMessage("Enrolled! (Note: No pricing variant configured for this tier)");
@@ -247,7 +233,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   );
 
   const user = session?.user as SessionUser | undefined;
-  const canManage = !!(session && (user?.sysadmin || user?.boardMember || user?.id === program.leadMentorId));
+  const canManage = !!(session && (user?.isSysadmin || user?.isBoardMember || user?.id === program.leadMentorId));
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.memberPriceCents || program.nonMemberPriceCents);
 

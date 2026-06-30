@@ -24,9 +24,9 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
   const router = useRouter();
   const confirmNav = useConfirmNav();
   const { data: session } = useSession();
-  const sessionUser = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
-  const { loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
-  const todoCounts = useTodoCounts(!!(sessionUser?.sysadmin || sessionUser?.boardMember));
+  const sessionUser = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
+  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
+  const todoCounts = useTodoCounts(!!(sessionUser?.isSysadmin || sessionUser?.isBoardMember));
 
   // Total member families, shown as a gray counter on the Manage Memberships tab.
   const memberFamilies = todoCounts?.admin?.memberFamilies ?? null;

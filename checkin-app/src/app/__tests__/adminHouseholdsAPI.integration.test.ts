@@ -33,7 +33,7 @@ describe('Admin Households API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-households-api-test@example.com', name: 'Admin Households Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-households-api-test@example.com', name: 'Admin Households Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -78,7 +78,7 @@ describe('Admin Households API Integration Tests', () => {
     describe('GET /api/membership-ops/households', () => {
         it('should return 403 Forbidden without session or admin', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false }
              });
 
              const req = new Request('http://localhost:4000/api/membership-ops/households', { method: 'GET' });
@@ -89,7 +89,7 @@ describe('Admin Households API Integration Tests', () => {
 
         it('should return all households when no query is provided', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/membership-ops/households', { method: 'GET' });
@@ -109,7 +109,7 @@ describe('Admin Households API Integration Tests', () => {
 
         it('should filter households based on query', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             // Search by user email in household 2
@@ -130,7 +130,7 @@ describe('Admin Households API Integration Tests', () => {
     describe('POST /api/membership-ops/households', () => {
         it('should return 403 Forbidden without session or admin', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false }
+                 user: { id: testUserId, isSysadmin: false }
              });
 
              const req = new Request('http://localhost:4000/api/membership-ops/households', {
@@ -144,7 +144,7 @@ describe('Admin Households API Integration Tests', () => {
 
         it('should return 400 Bad Request if householdId is missing', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/membership-ops/households', {
@@ -158,7 +158,7 @@ describe('Admin Households API Integration Tests', () => {
 
         it('should successfully activate membership for a household', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/membership-ops/households', {
@@ -181,7 +181,7 @@ describe('Admin Households API Integration Tests', () => {
 
         it('should successfully deactivate membership for a household', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/membership-ops/households', {

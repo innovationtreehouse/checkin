@@ -31,8 +31,8 @@ describe('Program Lifecycle Integration Tests', () => {
                 name: "Board Tester",
                 email: "board@test.com",
                 googleId: "test-auth-board",
-                sysadmin: false,
-                boardMember: true,
+                isSysadmin: false,
+                isBoardMember: true,
                 dateOfBirth: new Date('1990-01-01'),
                 household: { create: {} }
             }
@@ -134,7 +134,7 @@ describe('Program Lifecycle Integration Tests', () => {
     });
 
     it('Should require a Board Member to supply override=true when bypassing payment flows', async () => {
-        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, boardMember: true } });
+        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, isBoardMember: true } });
 
         const req = new Request(`http://localhost/api/programs/${testProgramId}/participants`, {
             method: 'POST',
@@ -149,7 +149,7 @@ describe('Program Lifecycle Integration Tests', () => {
     });
 
     it('Should allow a Board Member to override and add a participant, defaulting to ACTIVE', async () => {
-        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, boardMember: true } });
+        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, isBoardMember: true } });
 
         // Clean previous runs
         await prisma.programParticipant.deleteMany({ where: { programId: testProgramId, participantId: testParticipantId } });

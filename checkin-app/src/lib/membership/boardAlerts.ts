@@ -18,7 +18,7 @@ import { logger } from "@/lib/logger";
 export async function notifyBoardPaidReject(processId: number): Promise<void> {
     try {
         const board = await prisma.participant.findMany({
-            where: { boardMember: true, email: { not: null } },
+            where: { isBoardMember: true, email: { not: null } },
             select: { email: true },
         });
         const base = process.env.NEXTAUTH_URL ?? "";

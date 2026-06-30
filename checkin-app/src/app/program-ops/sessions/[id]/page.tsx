@@ -219,9 +219,9 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  const user = session?.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
+  const user = session?.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
   const userId = user?.id;
-  const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
+  const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
   const isLeadMentor = eventData.program?.leadMentorId === userId;
   const isCoreVolunteer = eventData.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
 
