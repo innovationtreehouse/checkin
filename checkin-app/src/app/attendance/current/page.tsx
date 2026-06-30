@@ -319,7 +319,7 @@ function KioskDisplayInner() {
   const userId = (session?.user as SessionUser)?.id;
 
   return (
-    <Box style={isKioskMode ? { cursor: "none", marginTop: -12, paddingLeft: 8 } : { marginTop: -12, paddingLeft: 8 }}>
+    <Box style={isKioskMode ? { cursor: "none", marginTop: -25, paddingLeft: 8 } : { marginTop: -25, paddingLeft: 8 }}>
       {!isKioskMode && (
         <Box style={{ maxWidth: 1200, margin: "0 auto" }}>
           <AttendanceTabs />
@@ -423,7 +423,7 @@ function KioskDisplayInner() {
         ) : (
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
             {renderColumn("🔑", counts.keyholders, "Keyholders", "blue", isFull ? keyholderList : householdKeyholders)}
-            {renderColumn("🤝", counts.volunteers, "Volunteers", "teal", isFull ? volunteerList : householdVolunteers)}
+            {renderColumn("🤝", counts.volunteers, "Volunteers/Adults", "teal", isFull ? volunteerList : householdVolunteers)}
             {renderColumn("🎓", counts.students, "Students", "grape", isFull ? studentList : householdStudents)}
           </SimpleGrid>
         )}
