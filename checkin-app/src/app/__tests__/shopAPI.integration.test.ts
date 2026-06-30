@@ -297,6 +297,25 @@ describe('Shop API Integration Tests', () => {
              expect(auditRows[0].oldData).toBeNull();
         });
 
+        // Denied-household lockout (auth-consistency §5 risk #2 / GAP-1). Certifier
+        // status is re-queried from the DB, bypassing the denial-stripped session,
+        // so a denied certifier would still pass the MAY_CERTIFY_OTHERS gate. The
+        // denied check must reject before the lookup. No certification row is written.
+        it('blocks a denied certifier from granting a certification (401, no write)', async () => {
+             const tool = await prisma.tool.create({ data: { name: 'Shop Test Tool Denied' } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: certifierId, denied: true } });
+
+             const req = createReq('POST', { body: { participantId: commonId, toolId: tool.id, level: 'BASIC' } });
+             const res = await postCerts(req) as Response;
+             expect(res.status).toBe(401);
+
+             // No toolStatus row was written for this fresh (participant, tool) pair.
+             const written = await prisma.toolStatus.findUnique({
+                 where: { participantId_toolId: { participantId: commonId, toolId: tool.id } }
+             });
+             expect(written).toBeNull();
+        });
+
         it('should forbid a Certifier from promoting someone to MAY_CERTIFY_OTHERS', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: certifierId } });
 

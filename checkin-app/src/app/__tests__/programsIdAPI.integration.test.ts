@@ -337,9 +337,29 @@ describe('Individual Program API Integration Tests', () => {
              });
              const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.program.phase).toBe('FINISHED');
+        });
+
+        // Denied-household lockout (auth-consistency §5 risk #2 / GAP-1). A denied
+        // lead mentor keeps `user.id`, so the leadMentorId-match gate would still
+        // pass — the denied check must reject before any mutation. No write occurs.
+        it('blocks a denied lead mentor from editing their own program (401, no mutation)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId, denied: true } });
+
+             const before = await prisma.program.findUnique({ where: { id: publicProgramId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ name: 'Denied Hack' })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(401);
+
+             const after = await prisma.program.findUnique({ where: { id: publicProgramId } });
+             expect(after?.name).toBe(before?.name);
+             expect(after?.name).not.toBe('Denied Hack');
         });
     });
 });
