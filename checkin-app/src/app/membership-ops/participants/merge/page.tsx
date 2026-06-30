@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Box, Button, Card, Group, List, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
+import { formatPhone } from "@/lib/phone";
 
 interface ParticipantMergeView {
   id: number;
@@ -166,7 +167,7 @@ export default function MergeParticipants() {
       <Box mb="md">
         <Text fw={600}>{p.name || "Unnamed"} (ID: {p.id})</Text>
         <Text size="sm">Email: {p.email || "—"}</Text>
-        <Text size="sm">Phone: {p.phone || "—"}</Text>
+        <Text size="sm">Phone: {p.phone ? formatPhone(p.phone) : "—"}</Text>
         <Text size="sm">Google Auth: {p.googleId ? "Yes" : "No"}</Text>
       </Box>
 

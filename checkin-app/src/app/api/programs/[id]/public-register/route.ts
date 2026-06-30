@@ -7,7 +7,7 @@ import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program
 import { createContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 import { rateLimit, rateLimitEmail } from "@/lib/rate-limit";
 import { calculateAge } from "@/lib/time";
-import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
+import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 
 interface ParentInput {
     name: string;
@@ -144,7 +144,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     data: {
                         name: parent.name,
                         email: parent.email || null,
-                        phone: parent.phone || null,
+                        phone: parent.phone ? formatPhone(parent.phone) : null,
                         householdId: household.id,
                     }
                 });
@@ -192,7 +192,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                         tableName: 'ProgramParticipant',
                         affectedEntityId: participantId,
                         secondaryAffectedEntity: programId,
-                        newData: JSON.stringify(enrollment)
+                        newData: enrollment
                     }
                 });
             }

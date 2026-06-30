@@ -8,6 +8,7 @@ import {
   SimpleGrid, Stack, Text, TextInput, Title,
 } from "@mantine/core";
 import { formatTime } from "@/lib/time";
+import { formatPhone } from "@/lib/phone";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { AttendanceTabs } from "../AttendanceTabs";
 
@@ -281,7 +282,7 @@ function KioskDisplayInner() {
               )}
             </Group>
             {!isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin) && visit.participant.phone && (
-              <Text size="xs" c="blue">📞 {visit.participant.phone}</Text>
+              <Text size="xs" c="blue">📞 {formatPhone(visit.participant.phone)}</Text>
             )}
           </Box>
           {showCheckout && (
@@ -483,7 +484,7 @@ function KioskDisplayInner() {
             <Stack align="center" gap={4} mb="lg">
               <Text fz="xl" fw={700}>{selectedParticipant.name || selectedParticipant.email.split('@')[0]}</Text>
               {selectedParticipant.phone && (
-                <Text c="dimmed">User Phone: <Anchor href={`tel:${selectedParticipant.phone.replace(/\D/g, '')}`} c="teal">{selectedParticipant.phone}</Anchor></Text>
+                <Text c="dimmed">User Phone: <Anchor href={`tel:${selectedParticipant.phone.replace(/\D/g, '')}`} c="teal">{formatPhone(selectedParticipant.phone)}</Anchor></Text>
               )}
             </Stack>
             <Alert color="red" variant="light" ta="center">
@@ -496,7 +497,7 @@ function KioskDisplayInner() {
                         {c.name}{c.relationship ? <Text component="span" c="dimmed" fz="sm"> ({c.relationship})</Text> : null}
                       </Text>
                       <Anchor href={`tel:${c.phone.replace(/\D/g, '')}`} c="red" fz="xl">
-                        📞 {c.phone}
+                        📞 {formatPhone(c.phone)}
                       </Anchor>
                     </div>
                   ))}

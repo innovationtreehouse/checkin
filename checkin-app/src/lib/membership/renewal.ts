@@ -103,7 +103,7 @@ export async function beginRenewal(processId: number) {
     });
     if (count === 1) {
         await prisma.auditLog.create({
-            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, oldData: JSON.stringify({ status: "PENDING_RENEWAL" }), newData: JSON.stringify({ status: nextStatus, ...(bgFresh ? { bgClearedAt: true } : {}) }) },
+            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: nextStatus, ...(bgFresh ? { bgClearedAt: true } : {}) } },
         });
         if (nextStatus === "RENEWAL_PENDING_BG") await notifyReviewers();
     }
@@ -137,7 +137,7 @@ export async function createRenewalProcess(membershipId: number, householdId: nu
                 data: { membershipId, kind: "RENEWAL", status: "PENDING_RENEWAL", renewalReminderSentAt: opts.remind ? now : null },
             });
             await tx.auditLog.create({
-                data: { actorId: SYSTEM_ACTOR, action: "CREATE", tableName: "MembershipProcess", affectedEntityId: created.id, newData: JSON.stringify({ kind: "RENEWAL", status: "PENDING_RENEWAL" }) },
+                data: { actorId: SYSTEM_ACTOR, action: "CREATE", tableName: "MembershipProcess", affectedEntityId: created.id, newData: { kind: "RENEWAL", status: "PENDING_RENEWAL" } },
             });
             return created;
         });

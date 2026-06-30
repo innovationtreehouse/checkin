@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
-import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
+import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 
 export const PATCH = withAuth(
     {},
@@ -46,7 +46,7 @@ export const PATCH = withAuth(
                     name: name !== undefined ? name : undefined,
                     email: email !== undefined ? (email === "" ? null : email.toLowerCase()) : undefined,
                     dateOfBirth: dob !== undefined ? (dob === "" ? null : new Date(dob + "T12:00:00Z")) : undefined,
-                    phone: phone !== undefined ? (phone === "" ? null : phone) : undefined,
+                    phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
                 }
             });
 
@@ -110,7 +110,7 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Participant",
                     affectedEntityId: targetMember.id,
-                    newData: JSON.stringify(updatedMember)
+                    newData: updatedMember
                 }
             });
 
