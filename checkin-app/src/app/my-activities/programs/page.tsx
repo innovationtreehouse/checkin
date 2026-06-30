@@ -64,7 +64,9 @@ export default function MyProgramsDashboard() {
       <Title order={1} mb="md">My Programs</Title>
 
       <Text c="dimmed" mb="lg">
-        Manage the programs you are currently enrolled in.
+        {showMembers
+          ? 'Manage the programs you and your family are currently enrolled in.'
+          : 'Manage the programs you are currently enrolled in.'}
       </Text>
 
       {error && (
