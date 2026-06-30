@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Anchor, Button, Card, Center, Loader, Stack, Text, TextInput, Title } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
+import { isMinor } from '@/lib/time';
 
 export default function ProfilePage() {
   const { data: session, status } = useSession();
@@ -83,26 +84,34 @@ export default function ProfilePage() {
 
   if (!session) return null; // Fallback while router redirects
 
+  const readOnly = isMinor(form.dob);
+
   return (
     <PageContainer>
       <Card withBorder radius="md" padding="lg" maw={620}>
         <Title order={1}>My Profile</Title>
-          <Text c="dimmed" mb="lg">Manage your personal information and contact details.</Text>
+          <Text c="dimmed" mb="lg">
+            {readOnly
+              ? "View your personal information. Ask a parent or staff member to make changes."
+              : "Manage your personal information and contact details."}
+          </Text>
 
           <form onSubmit={handleSubmit}>
             <Stack>
               <TextInput label="Email Address" value={form.email} disabled title="Email cannot be changed here." />
-              <TextInput label="Full Name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} placeholder="e.g. Jane Doe" />
-              <TextInput type="tel" label="Phone Number" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.currentTarget.value })} placeholder="(555) 123-4567" />
-              <TextInput type="date" label="Date of Birth" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.currentTarget.value })} />
+              <TextInput label="Full Name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} placeholder="e.g. Jane Doe" disabled={readOnly} />
+              <TextInput type="tel" label="Phone Number" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.currentTarget.value })} placeholder="(555) 123-4567" disabled={readOnly} />
+              <TextInput type="date" label="Date of Birth" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.currentTarget.value })} disabled={readOnly} />
 
               <Text size="sm" c="dimmed">
                 Your address is managed on the <Anchor href="/my-household">Household</Anchor> page.
               </Text>
 
-              <Button type="submit" disabled={saving} loading={saving} mt="sm">
-                Save Profile
-              </Button>
+              {!readOnly && (
+                <Button type="submit" disabled={saving} loading={saving} mt="sm">
+                  Save Profile
+                </Button>
+              )}
             </Stack>
           </form>
 

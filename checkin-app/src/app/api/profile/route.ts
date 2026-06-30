@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { handler, notFound, unauthorized } from "@/security/handler";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
+import { isMinor } from "@/lib/time";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
     if (auth.type !== 'session') throw unauthorized();
@@ -26,6 +27,14 @@ export const PATCH = withAuth(
         try {
             if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
             const userId = auth.user.id;
+
+            const me = await prisma.participant.findUnique({
+                where: { id: userId },
+                select: { dateOfBirth: true },
+            });
+            if (isMinor(me?.dateOfBirth)) {
+                return NextResponse.json({ error: "Youth profiles are read-only." }, { status: 403 });
+            }
 
             const body = await req.json();
             const { name, phone, dob, notificationSettings } = body;
