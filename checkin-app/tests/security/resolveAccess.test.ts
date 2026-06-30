@@ -34,6 +34,7 @@ const rctx = (
         programsCoreVolIn: new Set(),
         participantIdsInScopePrograms: new Set(),
         householdIdsInScopePrograms: new Set(),
+        eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
         ...callerOverrides,
     },

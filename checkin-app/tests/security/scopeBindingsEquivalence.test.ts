@@ -20,10 +20,16 @@
  * not by editing the frozen oracle below.
  *
  * The old switch has been deleted (S2). `referenceScopesHeld` below is a FROZEN
- * verbatim copy of it (the snapshot), so this stays a live regression guard:
- * any future change to scopeBindings.ts that diverges from the original switch
- * behavior fails here. (Per the task: "compare against a snapshot ... leave it
- * in for now.")
+ * copy of it (the snapshot), so this stays a live regression guard: any future
+ * change to scopeBindings.ts that diverges from the intended behavior fails here.
+ *
+ * DIVERGENCE FROM THE ORIGINAL SWITCH (one, deliberate): RSVP.
+ * The original switch grouped RSVP with ProgramParticipant/ProgramVolunteer/Fee
+ * and read `row.programId` — but RSVP has no programId column, so that grant was
+ * DEAD. The resolver now grants `their_program_participants` on RSVP via
+ * eventId → ctx.eventIdsInScopePrograms (§7.5 / §9 Step 3 Blocker 1). The RSVP
+ * branch of this oracle encodes that NEW intended behavior, not the dead switch
+ * read — so the equivalence assertion holds against the corrected resolver.
  */
 import { type CallerContext } from '@/security/access-resolvers';
 import { scopesHeld, SCOPE_BINDINGS } from '@/security/scopeBindings';
@@ -97,14 +103,15 @@ function referenceScopesHeld(
             break;
         }
         // Fee + RSVP were grouped with the two above in the original switch,
-        // reading BOTH programId and participantId. But Fee has no participantId
-        // column and RSVP has no programId column, so on any REAL row those reads
-        // were always undefined and granted nothing. The dead reads are dropped
-        // here to match the schema-correct bindings (Fee unbound/public-only;
-        // RSVP keeps only their_own) — behavior-neutral on every reachable row,
-        // diverging only on synthetic rows that carry impossible field combos.
+        // reading BOTH programId and participantId. Fee has no participantId and
+        // RSVP has no programId, so those reads were dead. #574 dropped both (Fee
+        // unbound/public-only; RSVP narrowed to their_own). THIS chip diverges
+        // further for RSVP: the program-lead grant is re-added via
+        // eventId → eventIdsInScopePrograms (a deliberate behavior change).
         case 'RSVP': {
+            const eventId = num(row.eventId);
             const participantId = num(row.participantId);
+            if (eventId !== undefined && ctx.eventIdsInScopePrograms.has(eventId)) scopes.add('their_program_participants');
             if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
             break;
         }
@@ -164,6 +171,7 @@ function ctx(opts: Partial<CallerContext> = {}): CallerContext {
         programsCoreVolIn: new Set(),
         participantIdsInScopePrograms: new Set(),
         householdIdsInScopePrograms: new Set(),
+        eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
         ...opts,
     };
@@ -179,6 +187,7 @@ const PERSONAS: Record<string, CallerContext> = {
         programsLed: new Set([100]),
         participantIdsInScopePrograms: new Set([9, 5]),
         householdIdsInScopePrograms: new Set([2]),
+        eventIdsInScopePrograms: new Set([200]),
     }),
     coreVolunteer: ctx({
         selfId: 11,
@@ -186,6 +195,7 @@ const PERSONAS: Record<string, CallerContext> = {
         programsCoreVolIn: new Set([101]),
         participantIdsInScopePrograms: new Set([9]),
         householdIdsInScopePrograms: new Set([2]),
+        eventIdsInScopePrograms: new Set([201]),
     }),
     keyholder: ctx({
         selfId: 12,
@@ -210,23 +220,23 @@ const ROWS: Array<{ label: string; row: unknown }> = [
     { label: 'present but no scope keys', row: { id: 1, name: 'X' } },
     {
         label: "caller-5 own / in-program / active",
-        row: { id: 5, householdId: 2, participantId: 5, programId: 100, userId: 5, actorId: 5, departedAt: null },
+        row: { id: 5, householdId: 2, participantId: 5, programId: 100, eventId: 200, userId: 5, actorId: 5, departedAt: null },
     },
     {
         label: 'household co-member (hh 2)',
-        row: { id: 6, householdId: 2, participantId: 6, programId: 100, userId: 6, actorId: 6, departedAt: null },
+        row: { id: 6, householdId: 2, participantId: 6, programId: 100, eventId: 200, userId: 6, actorId: 6, departedAt: null },
     },
     {
         label: 'program participant / coreVol prog / active visitor',
-        row: { id: 9, householdId: 2, participantId: 9, programId: 101, userId: 9, actorId: 9, departedAt: null },
+        row: { id: 9, householdId: 2, participantId: 9, programId: 101, eventId: 201, userId: 9, actorId: 9, departedAt: null },
     },
     {
         label: "another's / out-of-program / departed",
-        row: { id: 7, householdId: 99, participantId: 7, programId: 88, userId: 7, actorId: 7, departedAt: new Date() },
+        row: { id: 7, householdId: 99, participantId: 7, programId: 88, eventId: 88, userId: 7, actorId: 7, departedAt: new Date() },
     },
     {
         label: "lead's own program (Program row id 100)",
-        row: { id: 100, householdId: 4, participantId: 10, programId: 100, userId: 10, actorId: 10, departedAt: null },
+        row: { id: 100, householdId: 4, participantId: 10, programId: 100, eventId: 200, userId: 10, actorId: 10, departedAt: null },
     },
 ];
 

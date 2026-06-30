@@ -30,6 +30,7 @@ export type CtxSet =
     | 'programsCoreVolIn'
     | 'participantIdsInScopePrograms'
     | 'householdIdsInScopePrograms'
+    | 'eventIdsInScopePrograms'
     | 'activeVisitorIds';
 export type CtxFlag = 'isKeyholder' | 'isKiosk';
 

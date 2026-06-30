@@ -18,15 +18,13 @@
  *   - Fee / RSVP: the live switch grouped ProgramParticipant, ProgramVolunteer,
  *     Fee and RSVP under one `case` body that read BOTH `row.programId` and
  *     `row.participantId`. `Fee` has no `participantId` column and `RSVP` has no
- *     `programId` column, so on a REAL row those reads are always `undefined`
- *     and grant nothing. Those two dead reads are now DROPPED (Step 3 Blocker 1):
- *     `Fee` is unbound (it is wholly @sensitivity:public, so it needs no
- *     binding) and `RSVP` keeps only `their_own`. Behavior-identical on every
- *     reachable row — the S1 frozen oracle was split to match (impossible
- *     synthetic rows are the only divergence) — and it clears the
- *     validateBindings field-existence errors for `Fee.participantId` and
- *     `RSVP.programId`. A later chip re-adds RSVP program-lead scope via
- *     `eventId` + a new `eventIdsInScopePrograms` context set.
+ *     `programId` column, so on a REAL row those reads were always `undefined`
+ *     and granted nothing. #574 (Step 3 Blocker 1) dropped both dead reads:
+ *     `Fee` is unbound (wholly @sensitivity:public, so it needs no binding) and
+ *     `RSVP` was narrowed to `their_own`. THIS chip then RE-ADDS the RSVP
+ *     program-lead grant correctly via eventId → Event.programId
+ *     (ctx.eventIdsInScopePrograms) — a deliberate behavior change, diverging
+ *     from the dead switch read. See the RSVP binding below + §7.5/§9 Step 3.
  *
  * IMPORTANT: This file is CODEOWNERS-gated.
  */
@@ -67,17 +65,16 @@ export const SCOPE_BINDINGS = {
         their_own: { field: 'participantId', eqCtx: 'selfId' },
     },
     // Fee + RSVP shared the grouped switch case with ProgramParticipant/
-    // ProgramVolunteer. The literal port carried both scopes onto each, but
-    // `Fee` has no `participantId` column and `RSVP` has no `programId` column
-    // in classifications.ts — so those two branches read `undefined` and never
-    // fired at runtime. Removing them is equivalence-preserving (S1 stays green)
-    // and clears the validateBindings field-existence errors. Fee dropped
-    // entirely: it is wholly @sensitivity:public, so it needs no binding.
-    // RSVP keeps only `their_own` (the owner sees their own row incl.
-    // reminderSentAt:internal). A later chip re-adds RSVP program-lead scope via
-    // `eventId` + a new eventIdsInScopePrograms context set.
+    // ProgramVolunteer, reading BOTH programId and participantId. `Fee` has no
+    // participantId column and `RSVP` has no programId column, so those reads
+    // were dead. #574 dropped both — Fee is unbound (wholly @sensitivity:public,
+    // needs no binding); RSVP was narrowed to `their_own`. THIS chip RE-ADDS the
+    // RSVP program-lead grant correctly via eventId → Event.programId
+    // (ctx.eventIdsInScopePrograms) — a deliberate behavior CHANGE, not the dead
+    // switch read. See docs/security/auth-consistency-analysis.md §7.5 + §9 Step 3.
     RSVP: {
         their_own: { field: 'participantId', eqCtx: 'selfId' },
+        their_program_participants: { field: 'eventId', inCtx: 'eventIdsInScopePrograms' },
     },
     Event: {
         their_program_participants: {
