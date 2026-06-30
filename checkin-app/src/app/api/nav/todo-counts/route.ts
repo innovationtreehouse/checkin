@@ -65,7 +65,21 @@ export type TodoCounts = {
     // visibility and its green badge (sum of pending attendance to confirm).
     // `pending` mirrors the post-event email's targets (ended events not yet
     // confirmed), deep-linked to the existing confirm screen. No new capability.
-    lead?: { programs: { id: number; name: string; pending: TodoItem[] }[] };
+    lead?: { programs: LedProgram[] };
+};
+
+/** RSVP tally (Yes/Maybe/No; NO_RESPONSE omitted). */
+export type RsvpTally = { yes: number; maybe: number; no: number };
+
+/** One upcoming session, with RSVP tallies split by roster role. */
+export type UpcomingSession = { eventId: number; name: string; startAt: string; participants: RsvpTally; volunteers: RsvpTally };
+
+export type LedProgram = {
+    id: number;
+    name: string;
+    totalEnrolled: number;
+    pending: TodoItem[];
+    upcoming: UpcomingSession[];
 };
 
 // What a member-actionable membership process means, in plain terms.
@@ -201,15 +215,35 @@ export const GET = withAuth({}, async (_req, auth) => {
         select: { id: true, name: true },
     });
     if (ledPrograms.length > 0) {
-        const pendingEvents = await prisma.event.findMany({
-            where: {
-                programId: { in: ledPrograms.map((p) => p.id) },
-                endAt: { lte: new Date() },
-                attendanceConfirmedAt: null,
-            },
-            select: { id: true, name: true, programId: true },
-            orderBy: { endAt: "asc" },
-        });
+        const ledIds = ledPrograms.map((p) => p.id);
+        const now = new Date();
+        const [pendingEvents, enrolledCounts, futureEvents, volunteerRows] = await Promise.all([
+            prisma.event.findMany({
+                where: { programId: { in: ledIds }, endAt: { lte: now }, attendanceConfirmedAt: null },
+                select: { id: true, name: true, programId: true },
+                orderBy: { endAt: "asc" },
+            }),
+            // "Total Enrolled" = active (not PENDING) participants per program.
+            prisma.programParticipant.groupBy({
+                by: ["programId"],
+                where: { programId: { in: ledIds }, status: "ACTIVE" },
+                _count: { participantId: true },
+            }),
+            // All upcoming sessions, ascending; we keep the next 3 per program below.
+            prisma.event.findMany({
+                where: { programId: { in: ledIds }, startAt: { gt: now } },
+                select: { id: true, name: true, startAt: true, programId: true },
+                orderBy: { startAt: "asc" },
+            }),
+            // Volunteer roster per program — used to split RSVP tallies by role.
+            prisma.programVolunteer.findMany({
+                where: { programId: { in: ledIds } },
+                select: { programId: true, participantId: true },
+            }),
+        ]);
+        // (programId, participantId) keys that belong to a volunteer; everyone else on a roster is a participant.
+        const volunteerKeys = new Set(volunteerRows.map((v) => `${v.programId}:${v.participantId}`));
+
         const pendingByProgram = new Map<number, TodoItem[]>();
         for (const e of pendingEvents) {
             if (e.programId === null) continue;
@@ -221,8 +255,55 @@ export const GET = withAuth({}, async (_req, auth) => {
             });
             pendingByProgram.set(e.programId, items);
         }
+
+        const enrolledByProgram = new Map(enrolledCounts.map((g) => [g.programId, g._count.participantId]));
+
+        // Next 3 future sessions per program (futureEvents is already startAt-asc).
+        const upcomingByProgram = new Map<number, { id: number; name: string; startAt: Date }[]>();
+        for (const e of futureEvents) {
+            if (e.programId === null) continue;
+            const list = upcomingByProgram.get(e.programId) ?? [];
+            if (list.length < 3) list.push({ id: e.id, name: e.name, startAt: e.startAt });
+            upcomingByProgram.set(e.programId, list);
+        }
+
+        // RSVP rows for just those next-3 events. Raw rows (not groupBy) so each
+        // response can be bucketed volunteer-vs-participant by its (program, participant) key.
+        const upcomingEventIds = [...upcomingByProgram.values()].flat().map((e) => e.id);
+        const eventProgram = new Map<number, number>();
+        for (const [programId, evs] of upcomingByProgram) for (const e of evs) eventProgram.set(e.id, programId);
+        const rsvpRows = upcomingEventIds.length
+            ? await prisma.rSVP.findMany({
+                  where: { eventId: { in: upcomingEventIds } },
+                  select: { eventId: true, participantId: true, status: true },
+              })
+            : [];
+        const emptyTally = (): { participants: RsvpTally; volunteers: RsvpTally } => ({
+            participants: { yes: 0, maybe: 0, no: 0 },
+            volunteers: { yes: 0, maybe: 0, no: 0 },
+        });
+        const tallyByEvent = new Map<number, { participants: RsvpTally; volunteers: RsvpTally }>();
+        for (const r of rsvpRows) {
+            const t = tallyByEvent.get(r.eventId) ?? emptyTally();
+            const programId = eventProgram.get(r.eventId);
+            const bucket = programId !== undefined && volunteerKeys.has(`${programId}:${r.participantId}`) ? t.volunteers : t.participants;
+            if (r.status === "ATTENDING") bucket.yes += 1;
+            else if (r.status === "MAYBE") bucket.maybe += 1;
+            else if (r.status === "NOT_ATTENDING") bucket.no += 1;
+            tallyByEvent.set(r.eventId, t);
+        }
+
         result.lead = {
-            programs: ledPrograms.map((p) => ({ id: p.id, name: p.name, pending: pendingByProgram.get(p.id) ?? [] })),
+            programs: ledPrograms.map((p) => ({
+                id: p.id,
+                name: p.name,
+                totalEnrolled: enrolledByProgram.get(p.id) ?? 0,
+                pending: pendingByProgram.get(p.id) ?? [],
+                upcoming: (upcomingByProgram.get(p.id) ?? []).map((e) => {
+                    const t = tallyByEvent.get(e.id) ?? emptyTally();
+                    return { eventId: e.id, name: e.name, startAt: e.startAt.toISOString(), participants: t.participants, volunteers: t.volunteers };
+                }),
+            })),
         };
     }
 
