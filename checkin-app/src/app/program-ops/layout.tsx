@@ -9,29 +9,45 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { PROGRAM_NAV_LINKS } from "@/lib/programNav";
 import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 
-// Program/session editing is reachable by lead mentors (program.leadMentorId, not a role flag),
-// so those pages bypass the isSysadmin/isBoardMember layout gate and self-authorize.
-const isProgramFlowPath = (pathname: string | null) =>
-  !!(pathname?.match(/^\/program-ops\/programs\/\d+/) ||
-    pathname?.match(/^\/program-ops\/sessions\/(\d+|new)/));
+// A program-edit URL (/program-ops/programs/[id]) carries a PROGRAM id, so the
+// layout can gate it precisely against the caller's led-program set. Session URLs
+// (/program-ops/sessions/[id|new]) carry an EVENT id (or none), which the layout
+// can't resolve to a program without a fetch — those keep a chrome-less admit for
+// any authenticated caller and the page enforces (Event->program 403 in the API).
+const programEditId = (pathname: string | null): number | null => {
+  const m = pathname?.match(/^\/program-ops\/programs\/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+};
+const isSessionFlowPath = (pathname: string | null) =>
+  !!pathname?.match(/^\/program-ops\/sessions\/(\d+|new)/);
 
 export default function ProgramOpsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const confirmNav = useConfirmNav();
   const { data: session, status } = useSession();
-  const isProgramFlow = isProgramFlowPath(pathname);
 
   const user = session?.user;
   const isGlobalAdmin = !!(user?.isSysadmin || user?.isBoardMember);
 
+  // Row-aware: a lead mentor reaches program-edit only for the programs they lead.
+  const editProgramId = programEditId(pathname);
+  const leadsThisProgram =
+    editProgramId !== null && !!user?.programsLed?.includes(editProgramId);
+  const isSessionFlow = isSessionFlowPath(pathname);
+
+  // Chrome-less (no section tabs) for the lead-mentor edit screens, as under /admin.
+  const isChromeless = editProgramId !== null || isSessionFlow;
+  const authorized =
+    isGlobalAdmin || leadsThisProgram || (isSessionFlow && status === "authenticated");
+
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/");
-    } else if (status === "authenticated" && !isGlobalAdmin && !isProgramFlow) {
+    } else if (status === "authenticated" && !authorized) {
       router.push("/");
     }
-  }, [status, isGlobalAdmin, isProgramFlow, router]);
+  }, [status, authorized, router]);
 
   if (status === "loading") {
     return (
@@ -44,10 +60,9 @@ export default function ProgramOpsLayout({ children }: { children: React.ReactNo
     );
   }
 
-  if (!session || (!isGlobalAdmin && !isProgramFlow)) return null;
+  if (!session || !authorized) return null;
 
-  // Lead-mentor editing pages render chrome-less (no section tabs), as they did under /admin.
-  if (isProgramFlow) return <>{children}</>;
+  if (isChromeless) return <>{children}</>;
 
   // Active tab = the longest nav href that prefixes the current route (null on the hub).
   const active =
