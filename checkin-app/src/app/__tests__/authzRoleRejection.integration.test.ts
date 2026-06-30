@@ -98,6 +98,9 @@ type Case = { name: string; invoke: () => Promise<Response> };
 describe('Protected-route role rejection', () => {
     let plainId = 0, plainHh = 0;
     let eventId = 0, programId = 0;
+    // events/[id] PATCH IDOR fixtures: an event owned by ownerLead's program, and
+    // foreignLead = lead of a DIFFERENT program (the cross-program attacker).
+    let ownerLeadId = 0, foreignLeadId = 0, ownedEventId = 0;
 
     async function wipe() {
         const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
@@ -121,6 +124,19 @@ describe('Protected-route role rejection', () => {
         eventId = (await prisma.event.create({
             data: { programId, name: `Evt ${TAG}`, startAt: new Date('2030-01-01T10:00:00Z'), endAt: new Date('2030-01-01T12:00:00Z') },
         })).id;
+
+        // events/[id] PATCH IDOR setup: an event whose program is led by ownerLead,
+        // plus foreignLead who leads a SEPARATE program (privileged elsewhere, but
+        // not staff of ownedEvent — the cross-program attacker).
+        const ownerHh = (await prisma.household.create({ data: { name: `Owner HH ${TAG}` } })).id;
+        ownerLeadId = (await prisma.participant.create({ data: { name: `OwnerLead ${TAG}`, householdId: ownerHh } })).id;
+        const ownedProgram = await prisma.program.create({ data: { name: `Owned Prog ${TAG}`, leadMentorId: ownerLeadId } });
+        ownedEventId = (await prisma.event.create({
+            data: { programId: ownedProgram.id, name: `Owned Evt ${TAG}`, startAt: new Date('2030-02-01T10:00:00Z'), endAt: new Date('2030-02-01T12:00:00Z') },
+        })).id;
+        const foreignHh = (await prisma.household.create({ data: { name: `Foreign HH ${TAG}` } })).id;
+        foreignLeadId = (await prisma.participant.create({ data: { name: `ForeignLead ${TAG}`, householdId: foreignHh } })).id;
+        await prisma.program.create({ data: { name: `Foreign Prog ${TAG}`, leadMentorId: foreignLeadId } });
     });
 
     afterAll(async () => {
@@ -235,6 +251,26 @@ describe('Protected-route role rejection', () => {
             anon();
             const res = await EVENT_PATCH(nreq(`http://localhost/api/events/${eventId}`, 'PATCH', { action: 'cancel' }), idCtx(eventId));
             expect(res.status).toBe(401);
+        });
+        // IDOR boundary (route migrated in #571): the gate is the inline
+        // `event.program.leadMentorId === caller` check. A lead of a DIFFERENT
+        // program must be 403'd AND must not mutate the event — a 403 that still
+        // wrote would be the real bug. Re-read to pin it. Mirrors fd192fc.
+        it('PATCH 403 for a lead of a DIFFERENT program (confirmAttendance) — and the event is untouched', async () => {
+            as(foreignLeadId);
+            const before = await prisma.event.findUnique({ where: { id: ownedEventId }, select: { attendanceConfirmedAt: true, attendanceConfirmedById: true } });
+            expect(before?.attendanceConfirmedAt).toBeNull();
+            const res = await EVENT_PATCH(nreq(`http://localhost/api/events/${ownedEventId}`, 'PATCH', { action: 'confirmAttendance' }), idCtx(ownedEventId));
+            expect(res.status).toBe(403);
+            const after = await prisma.event.findUnique({ where: { id: ownedEventId }, select: { attendanceConfirmedAt: true, attendanceConfirmedById: true } });
+            expect(after?.attendanceConfirmedAt).toBeNull();
+            expect(after?.attendanceConfirmedById).toBeNull();
+        });
+        it('PATCH 403 for a lead of a DIFFERENT program (cancel) — and the event survives', async () => {
+            as(foreignLeadId);
+            const res = await EVENT_PATCH(nreq(`http://localhost/api/events/${ownedEventId}`, 'PATCH', { action: 'cancel' }), idCtx(ownedEventId));
+            expect(res.status).toBe(403);
+            expect(await prisma.event.findUnique({ where: { id: ownedEventId } })).not.toBeNull();
         });
     });
 
