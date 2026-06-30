@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { withAuth } from "@/lib/auth";
+import { authenticateRequest } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 
-export const POST = withAuth<{ params: Promise<{ id: string }> }>(
-    { roles: ['isSysadmin', 'isBoardMember'] },
-    async (req: NextRequest, auth, { params }) => {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
+        const auth = await authenticateRequest(req);
         if (auth.type !== 'session') {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        if (!auth.user.isSysadmin && !auth.user.isBoardMember) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
         const participantId = parseInt(id);
@@ -88,4 +90,4 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
         await logBackendError(error, "POST /api/membership-ops/participants/[id]/household");
         return NextResponse.json({ error: `Internal server error` }, { status: 500 });
     }
-});
+}

@@ -1,83 +1,66 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
+import { handler } from "@/security/handler";
 
 export const dynamic = 'force-dynamic';
 
-// Emergency contacts are their own entity now; the admin editor still works in
-// terms of a single primary contact, so map the household's primary valid contact
-// back onto the flat emergencyContactName/Phone shape the client expects. Include
-// it inline (below) with this where/order so Prisma infers the result type.
-const PRIMARY_CONTACT_WHERE = { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } };
-function withFlatContact<T extends { emergencyContacts: { name: string; phone: string }[] }>(h: T) {
-    const primary = h.emergencyContacts[0] ?? null;
-    const { emergencyContacts: _drop, ...rest } = h;
-    void _drop;
-    return { ...rest, emergencyContactName: primary?.name ?? null, emergencyContactPhone: primary?.phone ?? null };
-}
+// Emergency contacts are their own entity. The admin editor edits a single primary
+// contact, so the GET nests the household's primary valid contact as an
+// EmergencyContact row (selecting householdId so the field stripper can resolve its
+// row scope). The client reads `emergencyContacts[0]`.
+const PRIMARY_CONTACT_INCLUDE = {
+    emergencyContacts: {
+        where: { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } },
+        orderBy: [{ priority: "asc" as const }, { id: "asc" as const }],
+        select: { id: true, householdId: true, name: true, phone: true },
+        take: 1,
+    },
+} satisfies Prisma.HouseholdInclude;
 
-export const GET = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
-    async (req) => {
-        try {
-            const url = new URL(req.url);
-            const id = url.searchParams.get('id');
-            const q = url.searchParams.get('q') || '';
+// GET is field-stripped via the security registry (sysadmin/board see full
+// participant + emergency-contact PII; a lesser role admitted would be stripped to
+// public). Single (`?id=`) and list both return the `households` array envelope —
+// `?id=` collapses to a one-element array.
+export const GET = handler('GET /api/membership-ops/households', async ({ req }) => {
+    const url = new URL(req.url);
+    const id = url.searchParams.get('id');
+    const q = url.searchParams.get('q') || '';
 
-            if (id) {
-                const household = await prisma.household.findUnique({
-                    where: { id: parseInt(id) },
-                    include: {
-                        participants: {
-                            select: { id: true, name: true, email: true }
-                        },
-                        membership: true,
-                        emergencyContacts: {
-                            where: PRIMARY_CONTACT_WHERE,
-                            orderBy: [{ priority: "asc" }, { id: "asc" }],
-                            select: { name: true, phone: true },
-                            take: 1,
-                        },
-                    }
-                });
-                return NextResponse.json({ household: household ? withFlatContact(household) : null });
-            }
-
-            const whereClause = q ? {
-                OR: [
-                    { name: { contains: q, mode: 'insensitive' as const } },
-                    { participants: { some: { name: { contains: q, mode: 'insensitive' as const } } } },
-                    { participants: { some: { email: { contains: q, mode: 'insensitive' as const } } } },
-                ]
-            } : {};
-
-            const households = await prisma.household.findMany({
-                where: whereClause,
-                include: {
-                    participants: {
-                        select: { id: true, name: true, email: true, isBoardMember: true }
-                    },
-                    membership: true,
-                    emergencyContacts: {
-                        where: PRIMARY_CONTACT_WHERE,
-                        orderBy: [{ priority: "asc" }, { id: "asc" }],
-                        select: { name: true, phone: true },
-                        take: 1,
-                    },
-                },
-                orderBy: {
-                    id: 'desc'
-                },
-                ...(q && { take: 20 })
-            });
-
-            return NextResponse.json({ households: households.map(withFlatContact) });
-        } catch (error) {
-            console.error("Failed to fetch households:", error);
-            return NextResponse.json({ error: "Failed to fetch households" }, { status: 500 });
-        }
+    if (id) {
+        const household = await prisma.household.findUnique({
+            where: { id: parseInt(id) },
+            include: {
+                participants: { select: { id: true, name: true, email: true } },
+                membership: true,
+                ...PRIMARY_CONTACT_INCLUDE,
+            },
+        });
+        return { Household: household ? [household] : [] };
     }
-);
+
+    const whereClause = q ? {
+        OR: [
+            { name: { contains: q, mode: 'insensitive' as const } },
+            { participants: { some: { name: { contains: q, mode: 'insensitive' as const } } } },
+            { participants: { some: { email: { contains: q, mode: 'insensitive' as const } } } },
+        ]
+    } : {};
+
+    const households = await prisma.household.findMany({
+        where: whereClause,
+        include: {
+            participants: { select: { id: true, name: true, email: true, isBoardMember: true } },
+            membership: true,
+            ...PRIMARY_CONTACT_INCLUDE,
+        },
+        orderBy: { id: 'desc' },
+        ...(q && { take: 20 })
+    });
+
+    return { Household: households };
+});
 
 export const POST = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },

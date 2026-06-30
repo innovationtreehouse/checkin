@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { withAuth } from "@/lib/auth";
+import { authenticateRequest } from "@/lib/auth";
 import * as xlsx from "xlsx";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { parseImportDob } from "@/lib/importDob";
 import { calculateAge } from "@/lib/time";
 
-export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req: NextRequest, auth) => {
+export async function POST(req: NextRequest) {
     try {
+        const auth = await authenticateRequest(req);
         if (auth.type !== 'session') {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        if (!auth.user.isSysadmin && !auth.user.isBoardMember) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
         const formData = await req.formData();
@@ -414,4 +418,4 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         await logBackendError(error, "POST /api/membership-ops/participants/import");
         return NextResponse.json({ error: `Internal server error` }, { status: 500 });
     }
-});
+}

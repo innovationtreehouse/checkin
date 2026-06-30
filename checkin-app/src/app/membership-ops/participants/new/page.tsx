@@ -52,9 +52,10 @@ function NewParticipantForm() {
           const res = await fetch(`/api/membership-ops/households?id=${queryHouseholdId}`);
           if (res.ok) {
             const data = await res.json();
-            if (data.household) {
-              setHouseholdId(data.household.id.toString());
-              setHouseholdSearch(data.household.name || `Household #${data.household.id}`);
+            const household = data.households?.[0];
+            if (household) {
+              setHouseholdId(household.id.toString());
+              setHouseholdSearch(household.name || `Household #${household.id}`);
             }
           }
         } catch (err) {

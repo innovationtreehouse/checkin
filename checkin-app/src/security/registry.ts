@@ -65,6 +65,31 @@ defineRoute({
     ],
 });
 
+// Admin merge-analysis view: two participants side-by-side (household + activity
+// counts) for the merge tool. Full participant PII to sysadmin/board only.
+defineRoute({
+    endpoint: 'GET /api/membership-ops/participants/merge/analyze',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'participants',
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Admin households list / single-household lookup. Exposes every household's
+// members (names + emails) + primary emergency contact (personal), so only
+// sysadmin/board may see the sensitive bands.
+defineRoute({
+    endpoint: 'GET /api/membership-ops/households',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'households',
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // Background-check reviewers' queue. Reviewers must see applicant parents' names
 // + emails (to look them up on Averity) but NOT internal/personal fields — so the
 // grant is deliberately limited to pii + public.
