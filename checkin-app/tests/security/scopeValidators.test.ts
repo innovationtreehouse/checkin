@@ -37,14 +37,18 @@ describe('validateBindings — field-existence (typo catcher)', () => {
 
 describe('validateBindings — coverage (forgotten-model catcher)', () => {
     it('flags a sensitive, scopable, unbound, un-queued model', () => {
-        // MembershipProcess is sensitive + scopable; drop it from the queue → error.
+        // VolunteerDesignation is sensitive (email pii) + scopable via its
+        // createdById FK; with an empty queue it must error. (MembershipProcess
+        // was the old exemplar but is now un-scopable by the direct-FK heuristic
+        // once bare `id` left SCOPABLE_FIELDS — it has only membershipId/
+        // certifiedById, neither a recognised actor FK.)
         const errs = validateBindings(SCOPE_BINDINGS, CLS, new Set());
-        expect(errs.some(e => e.startsWith('MembershipProcess is sensitive and scopable'))).toBe(true);
+        expect(errs.some(e => e.startsWith('VolunteerDesignation is sensitive and scopable'))).toBe(true);
     });
 
     it('does not flag it when queued in OPT_OUT_PENDING_ROUTE', () => {
         const errs = validateBindings(SCOPE_BINDINGS, CLS, OPT_OUT_PENDING_ROUTE);
-        expect(errs.some(e => e.startsWith('MembershipProcess is sensitive'))).toBe(false);
+        expect(errs.some(e => e.startsWith('VolunteerDesignation is sensitive'))).toBe(false);
     });
 
     it('isScopable: structurally un-scopable model (no actor FK) is exempt', () => {

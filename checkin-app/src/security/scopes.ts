@@ -144,15 +144,17 @@ function allMatches(scopeMap: Partial<Record<Scope, Match>>): Match[] {
  * binding is even expressible, so its sensitive fields are reachable only via
  * `everyones:*` (admin) grants. That is a derivable fact, not a human opt-out.
  *
- * ponytail: bare `id` over-broadens this — admin-only models with a PK but no
- * actor FK (BoardSettings, ErrorLog, DevLedger, AuditLog has actorId) would be
- * judged "scopable" and demand a binding/pending entry. `id` is a real scope
- * key only for the actor model (Participant.their_own) and Household, both of
- * which are already bound (so the coverage loop skips them). Kept as the doc
- * §7.3 specifies; revisit the exact set when this validator is WIRED (Step 3).
+ * `id` is intentionally excluded: it is a bare primary key on every model, so
+ * judging on it makes isScopable true everywhere and falsely demands a binding
+ * for admin-only log/settings models (BoardSettings, ErrorLog, etc.). It IS a
+ * real scope field for Participant/Household/Program (`field: 'id'`), but all
+ * three are BOUND, and the coverage loop skips bound models BEFORE isScopable
+ * runs — so isScopable only ever judges UNBOUND models, where `id` carries no
+ * actor meaning. The truth about id-as-scope lives in SCOPE_BINDINGS, not here.
+ *
+ * ponytail: name-list heuristic; derive from schema FKs if it drifts.
  */
 const SCOPABLE_FIELDS = new Set([
-    'id',
     'householdId',
     'programId',
     'participantId',

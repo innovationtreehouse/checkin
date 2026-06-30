@@ -15,6 +15,9 @@
  * and deterministic proof: if the two diverge it is the binding, not the ctx.
  *
  * On a mismatch the BINDING is wrong — fix scopeBindings.ts, never this test.
+ * EXCEPTION: a binding deliberately added after the S2 snapshot (e.g. AuditLog,
+ * Blocker 2) is encoded as an explicit expected delta in `expectedFromSnapshot`,
+ * not by editing the frozen oracle below.
  *
  * The old switch has been deleted (S2). `referenceScopesHeld` below is a FROZEN
  * verbatim copy of it (the snapshot), so this stays a live regression guard:
@@ -207,35 +210,34 @@ const ROWS: Array<{ label: string; row: unknown }> = [
     { label: 'present but no scope keys', row: { id: 1, name: 'X' } },
     {
         label: "caller-5 own / in-program / active",
-        row: { id: 5, householdId: 2, participantId: 5, programId: 100, userId: 5, departedAt: null },
+        row: { id: 5, householdId: 2, participantId: 5, programId: 100, userId: 5, actorId: 5, departedAt: null },
     },
     {
         label: 'household co-member (hh 2)',
-        row: { id: 6, householdId: 2, participantId: 6, programId: 100, userId: 6, departedAt: null },
+        row: { id: 6, householdId: 2, participantId: 6, programId: 100, userId: 6, actorId: 6, departedAt: null },
     },
     {
         label: 'program participant / coreVol prog / active visitor',
-        row: { id: 9, householdId: 2, participantId: 9, programId: 101, userId: 9, departedAt: null },
+        row: { id: 9, householdId: 2, participantId: 9, programId: 101, userId: 9, actorId: 9, departedAt: null },
     },
     {
         label: "another's / out-of-program / departed",
-        row: { id: 7, householdId: 99, participantId: 7, programId: 88, userId: 7, departedAt: new Date() },
+        row: { id: 7, householdId: 99, participantId: 7, programId: 88, userId: 7, actorId: 7, departedAt: new Date() },
     },
     {
         label: "lead's own program (Program row id 100)",
-        row: { id: 100, householdId: 4, participantId: 10, programId: 100, userId: 10, departedAt: null },
+        row: { id: 100, householdId: 4, participantId: 10, programId: 100, userId: 10, actorId: 10, departedAt: null },
     },
 ];
 
 const MODELS = [
-    ...Object.keys(SCOPE_BINDINGS),
+    ...Object.keys(SCOPE_BINDINGS), // includes AuditLog (now bound — Blocker 2)
     // unbound-but-sensitive, structurally-unscopable, and unknown — all must
     // resolve identically (everyones-only, or {} via fail-closed) under both.
     // 'Fee' kept here after its binding was dropped (public-only) so S1 still
     // exercises it as an unbound model rather than silently losing coverage.
     'Fee',
     'Tool',
-    'AuditLog',
     'BoardSettings',
     'MembershipProcess',
     'UnknownModelXYZ',
@@ -247,18 +249,48 @@ function eq(a: Set<string>, b: Set<string>): boolean {
     return true;
 }
 
-describe('S1 — scopesHeld ≡ frozen switch (set-equality across personas × models × rows)', () => {
-    it('is set-equal for every combination', () => {
+/**
+ * The frozen switch is the S2 snapshot of pre-refactor behavior. A binding added
+ * AFTER that snapshot legitimately diverges from it; this wraps the oracle with
+ * those intentional, documented deltas so the test stays an explicit contract
+ * (not a silenced mismatch).
+ *
+ * AuditLog.their_own (Blocker 2, §7.5.1): the switch had no AuditLog case, so it
+ * yields {everyones}. AuditLog was later bound `their_own: actorId` purely so the
+ * coverage validator passes — runtime-inert (no route grants their_own:internal
+ * on AuditLog). On a row whose actorId === selfId the table therefore adds
+ * their_own where the snapshot did not. That is the one expected diff.
+ */
+function expectedFromSnapshot(
+    model: string,
+    row: Record<string, unknown> | null | undefined,
+    callerCtx: CallerContext,
+): Set<Scope> {
+    const expected = referenceScopesHeld(model, row, callerCtx);
+    if (
+        model === 'AuditLog' &&
+        row &&
+        typeof row === 'object' &&
+        typeof row.actorId === 'number' &&
+        row.actorId === callerCtx.selfId
+    ) {
+        expected.add('their_own');
+    }
+    return expected;
+}
+
+describe('S1 — scopesHeld ≡ frozen switch + intentional deltas (personas × models × rows)', () => {
+    it('matches the snapshot (plus documented post-snapshot bindings)', () => {
         const mismatches: string[] = [];
         for (const [pName, pCtx] of Object.entries(PERSONAS)) {
             for (const model of MODELS) {
                 for (const { label, row } of ROWS) {
-                    const live = referenceScopesHeld(model, row as Record<string, unknown>, pCtx);
+                    const expected = expectedFromSnapshot(model, row as Record<string, unknown>, pCtx);
                     const next = scopesHeld(model, row as Record<string, unknown>, pCtx);
-                    if (!eq(live as Set<string>, next as Set<string>)) {
+                    if (!eq(expected as Set<string>, next as Set<string>)) {
                         mismatches.push(
                             `${pName} / ${model} / ${label}: ` +
-                                `switch={${[...live].sort().join(',')}} table={${[...next].sort().join(',')}}`,
+                                `expected={${[...expected].sort().join(',')}} table={${[...next].sort().join(',')}}`,
                         );
                     }
                 }
@@ -270,6 +302,6 @@ describe('S1 — scopesHeld ≡ frozen switch (set-equality across personas × m
     it('covers every bound model', () => {
         // Guard against the row set silently not exercising a model.
         expect(MODELS).toEqual(expect.arrayContaining(Object.keys(SCOPE_BINDINGS)));
-        expect(Object.keys(SCOPE_BINDINGS).length).toBe(18);
+        expect(Object.keys(SCOPE_BINDINGS).length).toBe(19); // -Fee (Blocker 1) +AuditLog (Blocker 2)
     });
 });

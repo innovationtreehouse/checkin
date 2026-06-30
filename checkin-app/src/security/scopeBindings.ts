@@ -99,6 +99,13 @@ export const SCOPE_BINDINGS = {
     ToolStatus: { their_own: { field: 'participantId', eqCtx: 'selfId' } },
     Account: { their_own: { field: 'userId', eqCtx: 'selfId' } },
     Session: { their_own: { field: 'userId', eqCtx: 'selfId' } },
+    // Bound for coverage; admin-only by tier-grant control (no route grants
+    // their_own:internal on AuditLog — only everyones:internal/admin views read
+    // audit rows). Audit rows record who-did-what-to-whom (incl. staff actions
+    // ON members), so exposing them to the actor would leak investigation/
+    // safeguarding context. A "your own actions" view would be a conscious
+    // future decision. See docs/security/auth-consistency-analysis.md §7.5.1.
+    AuditLog: { their_own: { field: 'actorId', eqCtx: 'selfId' } },
     TrustedAdult: {
         their_households: { field: 'householdId', eqCtx: 'householdId' },
         their_program_households: { field: 'householdId', inCtx: 'householdIdsInScopePrograms' },
