@@ -1,41 +1,22 @@
-import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
-import { authenticateRequest } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/scan-service";
-import { logBackendError } from "@/lib/logger";
 import { config } from "@/lib/config";
-import { rateLimit } from "@/lib/rate-limit";
+import { withKiosk } from "@/lib/kioskAuth";
 
-export async function POST(req: NextRequest) {
+// High cap: kiosks burst and a whole facility may share one NAT IP. withKiosk
+// reads the raw body, authenticates it (kiosk signature OR session), rejects
+// unauthenticated, and hands us the parsed body + actor. We own authorization.
+export const POST = withKiosk(
+    { rateLimit: { name: "scan", limit: 300 } },
+    async (_req, body: { participantId?: unknown }, auth) => {
     const startTime = Date.now();
 
-    // High cap: kiosks burst and a whole facility may share one NAT IP.
-    const limited = rateLimit(req, { name: "scan", limit: 300, windowMs: 60_000 });
-    if (limited) return limited;
-
     try {
-        const rawBody = await req.text();
-
-        // 1. Authenticate
-        const auth = await authenticateRequest(req, rawBody);
-
-        let body;
-        try {
-            body = JSON.parse(rawBody);
-        } catch {
-            return apiError("Invalid JSON payload.", 400);
-        }
-
         const participantId = body.participantId;
 
         if (!participantId || typeof participantId !== 'number') {
             return apiError("A valid numeric participantId is required.", 400);
-        }
-
-        // 2. Authorization
-        if (auth.type === 'unauthenticated') {
-            return apiError("Unauthorized: Missing kiosk signature or invalid session", 401);
         }
 
         // Web session: check if user can scan this participant
@@ -154,11 +135,9 @@ export async function POST(req: NextRequest) {
         await finalizeFacilityClose(res);
 
         return res;
-    } catch (error) {
-        console.error("Scan processing error:", error);
-        await logBackendError(error, "POST /api/scan");
-        return apiError("Internal Server Error while processing scan.", 500);
     } finally {
+        // Errors propagate to withKiosk's top-level catch/500; this finally only
+        // records the metric. Times the handler body (post-auth), not rate-limit.
         const durationMs = Date.now() - startTime;
         prisma.systemMetricLog.create({
             data: {
@@ -167,4 +146,4 @@ export async function POST(req: NextRequest) {
             }
         }).catch((err: unknown) => console.error("Failed to log scan_response_time metric:", err));
     }
-}
+});
