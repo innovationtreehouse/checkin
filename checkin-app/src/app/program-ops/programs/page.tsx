@@ -10,6 +10,7 @@ type Program = {
   id: number;
   name: string;
   phase?: string;
+  enrollmentStatus?: "OPEN" | "CLOSED";
   memberOnly?: boolean;
   startAt?: string | null;
   endAt?: string | null;
@@ -89,6 +90,15 @@ export default function AdminProgramsIndex() {
       sortBy: (p) => p.phase ?? "",
     },
     {
+      header: "Enrollment",
+      render: (p) => (
+        <Badge color={p.enrollmentStatus === "OPEN" ? "green" : "gray"} variant="light">
+          {p.enrollmentStatus === "OPEN" ? "Open" : "Closed"}
+        </Badge>
+      ),
+      sortBy: (p) => p.enrollmentStatus ?? "CLOSED",
+    },
+    {
       header: "Participants",
       align: "right",
       render: (p) => p._count?.participants ?? 0,
@@ -101,7 +111,7 @@ export default function AdminProgramsIndex() {
       sortBy: (p) => p._count?.events ?? 0,
     },
     {
-      header: "Visibility",
+      header: "Access",
       render: (p) => (
         <Badge color={p.memberOnly ? 'grape' : 'blue'} variant="light">
           {p.memberOnly ? 'Member Only' : 'Public'}
