@@ -51,6 +51,58 @@ export function normalizeAddressInput(input: Partial<Record<AddressField, unknow
     return out;
 }
 
+/** The 50 states + DC. Source of truth for the 2-letter `state` check. */
+const US_STATES = new Set([
+    "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
+    "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+    "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
+    "VA","WA","WV","WI","WY","DC",
+]);
+
+export const STATE_ERROR = "Enter a valid 2-letter state code (e.g. TX).";
+export const ZIP_ERROR = "Enter a valid ZIP (5 digits, or 9 as 12345-6789).";
+
+/** Valid US state abbreviation (case-insensitive). */
+export function isValidState(state: string | null | undefined): boolean {
+    return US_STATES.has((state ?? "").trim().toUpperCase());
+}
+
+/** 5-digit ZIP or ZIP+4 ("12345" or "12345-6789"; bare 9 digits also ok). */
+export function isValidZip(zip: string | null | undefined): boolean {
+    return /^\d{5}(?:-?\d{4})?$/.test((zip ?? "").trim());
+}
+
+/**
+ * Validate a full address for the household form. line1/city/state/postalCode are
+ * required; line2 is optional. Returns a per-field error map ({} when valid) so a
+ * client can render inline messages. Shared by the API write boundary via
+ * {@link assertValidAddress}.
+ */
+export function validateAddress(a: Partial<StructuredAddress> | null | undefined): Partial<Record<AddressField, string>> {
+    const errors: Partial<Record<AddressField, string>> = {};
+    if (!a?.line1?.trim()) errors.line1 = "Street address is required.";
+    if (!a?.city?.trim()) errors.city = "City is required.";
+    if (!a?.state?.trim()) errors.state = "State is required.";
+    else if (!isValidState(a.state)) errors.state = STATE_ERROR;
+    if (!a?.postalCode?.trim()) errors.postalCode = "ZIP is required.";
+    else if (!isValidZip(a.postalCode)) errors.postalCode = ZIP_ERROR;
+    return errors;
+}
+
+export class AddressValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "AddressValidationError";
+    }
+}
+
+/** Throw on first error; for server-side trust boundaries. */
+export function assertValidAddress(a: Partial<StructuredAddress> | null | undefined): void {
+    const errors = validateAddress(a);
+    const first = Object.values(errors)[0];
+    if (first) throw new AddressValidationError(first);
+}
+
 /** Single-line display, skipping blank components. e.g. "123 Main St, Apt 2, Austin, TX 78701". */
 export function formatAddress(a: Partial<StructuredAddress> | null | undefined): string {
     if (!a) return "";
@@ -72,5 +124,16 @@ if (process.argv[1] && process.argv[1].endsWith("address.ts")) {
     assert(formatAddress({ line1: "1 A St", line2: "Apt 2", city: "Austin", state: "TX", postalCode: "78701" }) === "1 A St, Apt 2, Austin, TX 78701", "format full");
     assert(isAddressEmpty({ line1: " ", state: null }), "empty detection");
     assert(!isAddressEmpty({ line1: "x" }), "non-empty detection");
+    assert(isValidState("tx") && isValidState(" CA "), "valid state");
+    assert(!isValidState("XX") && !isValidState(""), "invalid state");
+    assert(isValidZip("78701") && isValidZip("78701-1234") && isValidZip("787011234"), "valid zip");
+    assert(!isValidZip("1234") && !isValidZip("abcde") && !isValidZip(""), "invalid zip");
+    const good = validateAddress({ line1: "1 A St", city: "Austin", state: "TX", postalCode: "78701" });
+    assert(Object.keys(good).length === 0, "full address valid");
+    const bad = validateAddress({ line1: "", city: "Austin", state: "XX", postalCode: "12" });
+    assert(!!bad.line1 && bad.state === STATE_ERROR && bad.postalCode === ZIP_ERROR, "errors reported");
+    let threw = false;
+    try { assertValidAddress({ line1: "1 A St", city: "Austin", state: "TX", postalCode: "bad" }); } catch { threw = true; }
+    assert(threw, "assert throws on invalid");
     console.log("address self-check OK");
 }
