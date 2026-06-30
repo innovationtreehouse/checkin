@@ -74,6 +74,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // A denied household is locked out of the whole app (auth flags stripped but id kept).
+    // Gate here because certifier status is re-queried from the DB, bypassing the denial-stripped session.
+    if (session.user?.denied) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     try {
         const body = await req.json();
         const { participantId, toolId, level } = body;
