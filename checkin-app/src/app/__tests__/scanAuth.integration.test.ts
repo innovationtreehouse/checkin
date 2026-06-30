@@ -340,4 +340,25 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             expect(await prisma.visit.count({ where: { participantId: pStranger } })).toBe(0);
         });
     });
+
+    // ────────────────────────────────────────────────────────────────────
+    // C. RATE LIMIT — abuse surface on the safety-critical scan path
+    // ────────────────────────────────────────────────────────────────────
+    describe('C. rate limit', () => {
+        it('floods past the configured limit → 429 with Retry-After', async () => {
+            // route.ts: rateLimit(..., { limit: 300, windowMs: 60_000 }) is the FIRST
+            // thing in POST, before auth. Flood from a dedicated IP (own bucket, no
+            // leak into other suites). The 301st request is rejected at the limiter.
+            const ip = '198.51.100.77';
+            const req = () => POST(scanReq(JSON.stringify({ participantId: 1 }), { 'x-forwarded-for': ip }));
+
+            for (let i = 0; i < 300; i++) {
+                await req(); // unauthenticated → 401, but each one counts against the window
+            }
+
+            const limited = await req();
+            expect(limited.status).toBe(429);
+            expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
+        });
+    });
 });

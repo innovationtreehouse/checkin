@@ -33,9 +33,10 @@ function sign(body: string, secret = SECRET): string {
     return crypto.createHmac('sha256', secret).update(body, 'utf8').digest('base64');
 }
 
-function webhookReq(body: string, signature: string | null) {
+function webhookReq(body: string, signature: string | null, ip?: string) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (signature !== null) headers['x-shopify-hmac-sha256'] = signature;
+    if (ip) headers['x-forwarded-for'] = ip;
     return new Request('http://localhost/api/webhooks/shopify', {
         method: 'POST',
         headers,
@@ -173,6 +174,26 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         });
         expect(rows).toHaveLength(2);
         expect(rows.every(r => r.status === 'ACTIVE')).toBe(true);
+    });
+
+    it('rate-limits a flood (429 + Retry-After) AHEAD of the HMAC check — bad sig still 429, not 401', async () => {
+        // route.ts: rateLimit(..., { limit: 60, windowMs: 60_000 }) runs BEFORE the
+        // signature verify. Flood from a dedicated IP (own bucket, no leak into the
+        // other cases) with a DELIBERATELY BAD signature: the first 60 burn the
+        // window returning 401 (bad sig), the 61st is rejected at the limiter.
+        const ip = '198.51.100.21';
+        const body = programPayload(String(p1));
+        const badSig = sign(body, 'wrong-secret');
+
+        for (let i = 0; i < 60; i++) {
+            const res = await POST(webhookReq(body, badSig, ip));
+            expect(res.status).toBe(401); // limiter not yet tripped → reaches HMAC, fails it
+        }
+
+        const limited = await POST(webhookReq(body, badSig, ip));
+        // 429 (limiter), NOT 401 (HMAC) — proves the limiter precedes signature verify.
+        expect(limited.status).toBe(429);
+        expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
     });
 
     it('routes a Membership_Process_ID payload to activateByProcessId and returns 200', async () => {
