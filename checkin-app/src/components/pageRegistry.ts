@@ -5,17 +5,28 @@
 // every target re-enforces its own gate on arrival, so a drifted predicate at
 // worst shows a link that 403s. See docs/designs/INDEX_PAGE_SCOPING.md.
 
+import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
+import { leadsAnyProgram } from '@/components/navBadges';
+
 export type RegistryUser = {
   isSysadmin?: boolean;
   isBoardMember?: boolean;
   isKeyholder?: boolean;
+  householdLead?: boolean;
   toolStatuses?: Array<{ level: string }>;
 };
 
-type Visible = (user: RegistryUser | undefined, signedIn: boolean) => boolean;
+// counts mirrors the nav: computed roles (leads ≥1 program) aren't on the
+// session user, they ride in on the todo-counts payload the index already fetches.
+type Visible = (user: RegistryUser | undefined, signedIn: boolean, counts: TodoCounts | null) => boolean;
 
 const PUBLIC: Visible = () => true;
 const SIGNED_IN: Visible = (_u, signedIn) => signedIn;
+// Household lead only — the membership application and trusted-adult management
+// belong to the lead, not every member (a youth/dependent must not see them).
+const HOUSEHOLD_LEAD: Visible = (u, signedIn) => signedIn && !!u?.householdLead;
+// Program lead mentors only — mirrors the staff "My Programs" nav gate.
+const LEADS_PROGRAM: Visible = (_u, signedIn, counts) => signedIn && leadsAnyProgram(counts);
 const BOARD: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember;
 const SYSADMIN: Visible = (u) => !!u?.isSysadmin;
 const SAFETY: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember || !!u?.isKeyholder;
@@ -39,14 +50,15 @@ export const PAGES: PageEntry[] = [
   { href: '/my-activities/events', label: 'My Events', section: 'Personal', visible: SIGNED_IN },
   { href: '/my-activities/programs', label: 'My Programs', section: 'Personal', visible: SIGNED_IN },
   { href: '/profile', label: 'My Profile', section: 'Personal', visible: SIGNED_IN },
-  // Staff home for program lead mentors. Lead status is computed per-request
-  // (program.leadMentorId), not expressible from the session user here, so this
-  // over-lists to all signed-in members; the page self-guards and redirects a
-  // non-lead. Distinct from the attendee "My Programs" tab above.
-  { href: '/my-programs', label: 'My Programs (Staff)', section: 'Personal', keywords: 'lead mentor program staff attendance', visible: SIGNED_IN },
-  { href: '/my-programs/conflicts', label: 'Attendance Conflicts', section: 'Personal', keywords: 'lead mentor duplicate overlapping visit attendance', visible: SIGNED_IN },
+  // Staff home for program lead mentors. Lead status rides in on the todo-counts
+  // payload (leadsAnyProgram), matching the nav gate. Distinct from the attendee
+  // "My Programs" tab above.
+  { href: '/my-programs', label: 'My Programs (Staff)', section: 'Personal', keywords: 'lead mentor program staff attendance', visible: LEADS_PROGRAM },
+  { href: '/my-programs/conflicts', label: 'Attendance Conflicts', section: 'Personal', keywords: 'lead mentor duplicate overlapping visit attendance', visible: LEADS_PROGRAM },
+  // Stays visible to all members: also the Join/renewal entry for new applicants
+  // who aren't a household lead yet (gating it on lead would break joining).
   { href: '/membership', label: 'Membership Application', section: 'Personal', keywords: 'join intake', visible: SIGNED_IN },
-  { href: '/trusted-adults', label: 'Trusted Adults', section: 'Personal', visible: SIGNED_IN },
+  { href: '/trusted-adults', label: 'Trusted Adults', section: 'Personal', visible: HOUSEHOLD_LEAD },
 
   // Attendance — any signed-in member
   { href: '/attendance/current', label: 'Attendance', section: 'Attendance', visible: SIGNED_IN },

@@ -151,16 +151,19 @@ function KioskCertificationsInner() {
   return (
     <Box
       style={{
-        position: 'absolute',
-        inset: 0,
-        height: '100%',
+        // Kiosk renders bare (no AppShell) and fills the viewport via absolute
+        // inset. In-app this lives inside AppShell.Main, where absolute inset
+        // escapes over the header/navbar — so use normal flow with a height that
+        // clears the 60px header + 28px footer + md padding (#594).
+        ...(isKioskMode
+          ? { position: 'absolute' as const, inset: 0, height: '100%', cursor: 'none' }
+          : { height: 'calc(100dvh - 120px)' }),
         minHeight: 0,
         padding: isKioskMode ? '1.5rem' : '2rem 1rem',
         overflow: 'hidden',
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
-        ...(isKioskMode ? { cursor: 'none' } : {}),
       }}
     >
       <Card withBorder radius="md" padding={isKioskMode ? 'xs' : 'md'} style={{ width: "100%", maxWidth: isKioskMode ? "100%" : 1200, margin: "0 auto", flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
