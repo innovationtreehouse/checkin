@@ -1253,6 +1253,79 @@ appears nowhere on this path.**
 
 ---
 
+## 10. Security-gap vs cleanup triage (verdict)
+
+**Headline:** the real leaks are closed (top-10, `programs/[id]` #575). The remaining ~36 reads / ~43
+writes are uniformity / backstop / drift-guard. The single remaining item that is genuinely *security*
+is the **drift-guard (Step 7)** — preventive, because the class it guards has already re-grown.
+`derive`-hook / Step 6 collapse = cleanup (admission is already correct; no leak depends on it).
+
+### GAP-1 — denied-household lockout bypass *(low severity, real, fixed in-flight)*
+Two `getServerSession` write paths gate on a signal that **survives denial** (per `authClaims.ts:33`,
+denial strips role flags + toolStatuses but keeps `id`): `programs/[id]` PATCH (gates on
+`leadMentorId === user.id`) and `shop/certifications` POST (re-queries certifier status from the DB,
+not the stripped session). A denied lead-mentor / certifier still acts. One-line `if
+(session.user.denied) return 401` each (mirroring `attendance/route.ts:21`), or — root fix — convert
+to `withAuth`, which enforces the denied gate for free. Both queued.
+
+### GAP-2 — IDOR via hand-rolled row checks *(the structural class)*
+`withAuth` does admission only; **49 of 63** sites pass no roles (`auth.ts:69`) and re-implement "is
+this my row?" inline. Each is an independent chance to forget the ownership check → IDOR. The team
+already hit one (`fd192fc`, trusted-adult "assert no mutation after IDOR 403"). The lever is
+declarative `authorize` (collapses 69 review surfaces into one CODEOWNERS-gated registry).
+
+**Calibration — what is and isn't actually closed (the part that matters in practice):**
+
+- **The validators do NOT detect IDOR.** IDOR is *under-restriction*; the checks catch the opposite or
+  adjacent: `validateBindings` (models bound), `validateRouteGrants` (grants *resolve* → catches
+  **over**-restriction). **No check judges whether a grant is too *permissive*** — a route handing
+  `everyones:pii` to `authenticated` passes every validator. Appropriateness is caught by **CODEOWNERS
+  review of `registry.ts` + negative tests**, not by a green gate. So "the gate stops the next IDOR"
+  is false; the gate ensures *consistency*, not *tightness*.
+- **The runtime anti-IDOR is per-row scope stripping** (`scopesHeld`+`stripBag`) — and it covers only
+  **reads of sensitive-tier fields**. It cannot touch: (1) IDOR reads of **public-tier** data
+  (names/existence — the §5.1a association class); (2) **any write** (stripping is a response filter;
+  the mutation already happened). A write is gated *only* by `authorize`, and only if `authorize` is
+  row-aware.
+- **Most of the "69" are NOT live IDOR.** Sensitive-field reads → stripping covers; role-gated reads →
+  admission covers; writes whose `[id]` *is* the owned entity (`programs/[id]/*`, `shop/tools/[id]`,
+  `membership-ops/*`) → declarative `authorize` (`program-lead-mentor` / `{anyRole}`) closes them.
+
+**The residual IDOR-write surface (what actually matters — ~6 endpoints).** Mutations whose `[id]`
+names a **child** entity and whose ownership lives on a **parent relation** the param-keyed `authorize`
+grammar can't express, so the gate stays inline and forgettable:
+
+| endpoint | `[id]` → owner hop | current gate | note |
+|---|---|---|---|
+| `events/[id]` PATCH | event → program lead | inline `leadMentorId === user.id` | was GAP-1-adjacent |
+| `events/[id]/attendance` POST | event → program lead | inline (`route.ts:25`) | under-tested |
+| `events/[id]/rsvp` PATCH | event → program participant | inline 403 | under-tested |
+| `household/emergency-contacts/[contactId]` PATCH/DELETE | contact → household lead | inline + **query scoped to `householdId`** | better-defended |
+| `trusted-adults/[id]/renew` POST | trustedAdult → household/subject | service-layer check | **has** `fd192fc` IDOR test |
+| `trusted-adults/[id]/withdraw` POST | trustedAdult → household/subject | service-layer check | **has** `fd192fc` IDOR test |
+
+These stay inline even after the full migration — the param-keyed grammar genuinely can't express the
+hop. **Two levers, neither is the validator gate:**
+1. **Lift the hop into `CallerContext`** so it becomes declarative — e.g. an event→program resolver lets
+   `events/[id]*` use `authorize: 'program-lead-mentor'`. Same shape as the RSVP `eventIdsInScopePrograms`
+   capability. Every hop lifted is one IDOR-write removed from the forgettable surface.
+2. **Negative tests (the `fd192fc` pattern) as the backstop** for whatever stays inline. `trusted-adults`
+   has them; **`events/[id]/attendance`, `events/[id]/rsvp`, and `emergency-contacts/[contactId]` are the
+   under-tested ones to prioritize.**
+
+**Verdict on GAP-2:** "closed" = *declared + CODEOWNERS-reviewed + sensitive-reads-stripped*, **not**
+mechanically IDOR-proof. The open piece is not the validator gate (consistency, ships soon) — it is the
+relation-hop **write** residue above, which needs `CallerContext` extensions + targeted tests.
+
+### Drift-guard (Step 7) — preventive security, not hygiene
+Proof it's security: the doc once recorded 2 `getServerSession` routes; `origin/main` is back to **6
+usages**, and GAP-1 is a re-grown risk-#2 instance. New routes keep reaching for `getServerSession`
+because nothing stops them. The guard stops the *class*. (Subtlety: not every inline `403` is drift —
+relation-hop gates like the §10 table are an accepted, must-be-commented exception; distinguish them
+from un-migrated drift.)
+
+---
+
 ## Appendix — exact mechanism inventory (main, post-correction)
 
 - **handler() (7):** `directory/board`, `membership-ops/applications`, `membership/reviews`*,
