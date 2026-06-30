@@ -98,7 +98,7 @@ export default function CommunicationPage() {
           <Checkbox
             checked={settings.emailNewsletter}
             onChange={(e) => persist({ emailNewsletter: e.currentTarget.checked })}
-            label="Subscribe to the weekly newsletter"
+            label="Subscribe to the monthly newsletter"
           />
           <Checkbox
             checked={settings.notifyNewPrograms}
