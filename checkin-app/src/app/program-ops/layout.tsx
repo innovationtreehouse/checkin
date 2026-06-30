@@ -7,6 +7,7 @@ import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PROGRAM_NAV_LINKS } from "@/lib/programNav";
+import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 
 // Program/session editing is reachable by lead mentors (program.leadMentorId, not a role flag),
 // so those pages bypass the isSysadmin/isBoardMember layout gate and self-authorize.
@@ -17,6 +18,7 @@ const isProgramFlowPath = (pathname: string | null) =>
 export default function ProgramOpsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const confirmNav = useConfirmNav();
   const { data: session, status } = useSession();
   const isProgramFlow = isProgramFlowPath(pathname);
 
@@ -57,7 +59,7 @@ export default function ProgramOpsLayout({ children }: { children: React.ReactNo
       <Tabs
         value={active}
         onChange={(value) => {
-          if (value && value !== active) router.push(value);
+          if (value && value !== active && confirmNav()) router.push(value);
         }}
         mb="md"
       >
