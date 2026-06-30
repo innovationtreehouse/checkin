@@ -1,56 +1,54 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
-import { logger, logIntegrationError } from "@/lib/logger";
+import { logger } from "@/lib/logger";
 import { activateByProcessId } from "@/lib/membership/payment";
-import { rateLimit } from "@/lib/rate-limit";
+import { withWebhook } from "@/lib/webhookAuth";
+
+interface ShopifyOrder {
+    id?: number | string;
+    note_attributes?: { name: string; value: string }[];
+}
+
+/**
+ * Verify the Shopify HMAC over the EXACT raw bytes. Config-not-set is a server
+ * error (500); missing/wrong signature is unauthorized (401). Must run on the raw
+ * body before it is parsed — re-serializing JSON would change the bytes.
+ */
+function verifyShopifyHmac(req: Request, rawBody: string): { ok: true } | { ok: false; status: number; error: string } {
+    const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    if (!secret) {
+        logger.error("Shopify webhook received but SHOPIFY_WEBHOOK_SECRET is not configured.");
+        return { ok: false, status: 500, error: "Configuration Error" };
+    }
+
+    const headerSignature = req.headers.get("x-shopify-hmac-sha256");
+    if (!headerSignature) {
+        return { ok: false, status: 401, error: "Missing signature" };
+    }
+
+    const generatedSignature = crypto
+        .createHmac("sha256", secret)
+        .update(rawBody, "utf8")
+        .digest("base64");
+
+    // Convert both signatures to Buffers to prevent timing attacks using crypto.timingSafeEqual.
+    // Since HMAC-SHA256 in base64 is a known fixed length, an early length check does not leak
+    // any secret information about the signature itself.
+    const generatedBuffer = Buffer.from(generatedSignature);
+    const headerBuffer = Buffer.from(headerSignature);
+
+    if (generatedBuffer.length !== headerBuffer.length || !crypto.timingSafeEqual(generatedBuffer, headerBuffer)) {
+        logger.error("Shopify webhook signature mismatch.");
+        return { ok: false, status: 401, error: "Invalid signature" };
+    }
+
+    return { ok: true };
+}
 
 // Shopify Webhook for `orders/paid` or `orders/create`
 // Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE
-export async function POST(req: Request) {
-    // Guard BEFORE the HMAC verify so a flood can't burn CPU on signature checks.
-    const limited = rateLimit(req, { name: "webhook-shopify", limit: 60, windowMs: 60_000 });
-    if (limited) return limited;
-
-    const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
-
-    if (!secret) {
-        logger.error("Shopify webhook received but SHOPIFY_WEBHOOK_SECRET is not configured.");
-        return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
-    }
-
-    try {
-        const rawBody = await req.text();
-        const headerSignature = req.headers.get("x-shopify-hmac-sha256");
-
-        if (!headerSignature) {
-            return NextResponse.json({ error: "Missing signature" }, { status: 401 });
-        }
-
-        const generatedSignature = crypto
-            .createHmac("sha256", secret)
-            .update(rawBody, "utf8")
-            .digest("base64");
-
-        // Convert both signatures to Buffers to prevent timing attacks using crypto.timingSafeEqual.
-        // Since HMAC-SHA256 in base64 is a known fixed length, an early length check does not leak
-        // any secret information about the signature itself.
-        const generatedBuffer = Buffer.from(generatedSignature);
-        const headerBuffer = Buffer.from(headerSignature);
-
-        if (generatedBuffer.length !== headerBuffer.length || !crypto.timingSafeEqual(generatedBuffer, headerBuffer)) {
-            logger.error("Shopify webhook signature mismatch.");
-            return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-        }
-
-        let order;
-        try {
-            order = JSON.parse(rawBody);
-        } catch (parseError) {
-            logger.error("Failed to parse Shopify webhook payload:", parseError);
-            return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
-        }
-
+export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac }, async (_req, order: ShopifyOrder) => {
         // Iterate through line items to find CheckMeIn_Account_ID and Program_ID
         // We set these custom attributes in the permalink URL:
         // https://[store].myshopify.com/cart/[VariantID]:1?attributes[CheckMeIn_Account_ID]=123&attributes[Program_ID]=456
@@ -136,9 +134,4 @@ export async function POST(req: Request) {
 
         // Always return 200 OK to Shopify to acknowledge receipt, even if missing attributes.
         return NextResponse.json({ success: true });
-    } catch (error) {
-        logger.error("Shopify webhook error:", error);
-        await logIntegrationError("shopify-webhook", error, { operation: "POST /api/webhooks/shopify" });
-        return NextResponse.json({ error: "Webhook Error" }, { status: 500 });
-    }
-}
+});

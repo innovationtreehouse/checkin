@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireCronSecret } from "@/lib/cronAuth";
+import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 
@@ -17,11 +17,7 @@ import { sendNotification } from "@/lib/notifications";
  * with itself; two overlapping runs could both read `reminderSentAt: null`
  * before either stamps and double-send.
  */
-export async function GET(req: Request) {
-    const denied = requireCronSecret(req);
-    if (denied) return denied;
-
-    try {
+export const GET = withCron(async () => {
         const now = new Date();
         const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
         // Look 15 minutes past the 2h mark so a 15m-interval cron can't miss an event.
@@ -73,8 +69,4 @@ export async function GET(req: Request) {
         await Promise.all(notificationPromises);
 
         return NextResponse.json({ success: true, processedEvents: upcomingEvents.length, notificationsSent });
-    } catch (error) {
-        console.error("Failed to run cron reminders:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-    }
-}
+});

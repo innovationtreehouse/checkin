@@ -1,22 +1,14 @@
 import { NextResponse } from "next/server";
-import { requireCronSecret } from "@/lib/cronAuth";
+import { withCron } from "@/lib/cronAuth";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 
 /**
  * Expected to be called by an external CRON trigger (e.g. Vercel Cron or CloudWatch Events)
  * GET /api/cron/post-event
  */
-export async function GET(req: Request) {
-    const denied = requireCronSecret(req);
-    if (denied) return denied;
+export const GET = withCron(async () => {
+    // By default, this uses the 1-hour delay rule
+    const result = await processPostEventEmails({ forceImmediate: false });
 
-    try {
-        // By default, this uses the 1-hour delay rule
-        const result = await processPostEventEmails({ forceImmediate: false });
-        
-        return NextResponse.json({ success: true, ...result });
-    } catch (error) {
-        console.error("Failed to run cron post-event:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-    }
-}
+    return NextResponse.json({ success: true, ...result });
+});

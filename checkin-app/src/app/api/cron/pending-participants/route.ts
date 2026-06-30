@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
-import { requireCronSecret } from "@/lib/cronAuth";
+import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 
-export async function GET(req: Request) {
-    const denied = requireCronSecret(req);
-    if (denied) return denied;
-
-    try {
+export const GET = withCron(async () => {
         const now = new Date();
         const pendingParticipants = await prisma.programParticipant.findMany({
             where: {
@@ -68,8 +64,4 @@ export async function GET(req: Request) {
         }
 
         return NextResponse.json({ success: true, processed: pendingParticipants.length, kicked: kickedCount, warned: warnedCount });
-    } catch (error) {
-        console.error("Cron script error:", error);
-        return NextResponse.json({ error: "Cron Failed" }, { status: 500 });
-    }
-}
+});
