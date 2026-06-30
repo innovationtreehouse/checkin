@@ -38,18 +38,18 @@ const isExpired = (t: JWT | null): boolean =>
 
 describe('NextAuth JWT expiry boundary', () => {
     it('honors the claims of a token still inside maxAge (just-valid)', async () => {
-        const token = await encode({ token: { id: 7, sysadmin: true }, secret: SECRET, maxAge: MAX_AGE });
+        const token = await encode({ token: { id: 7, isSysadmin: true }, secret: SECRET, maxAge: MAX_AGE });
         const decoded = await tryDecode(token, SECRET);
         expect(decoded).not.toBeNull();
         expect(decoded!.id).toBe(7);
-        expect(decoded!.sysadmin).toBe(true);
+        expect(decoded!.isSysadmin).toBe(true);
         // Inside the window → NextAuth keeps the session alive.
         expect(isExpired(decoded)).toBe(false);
     });
 
     it('treats a token whose exp is just past maxAge as expired — claims not honored', async () => {
         // maxAge -1 → exp one second in the past: the just-expired edge.
-        const token = await encode({ token: { id: 7, sysadmin: true }, secret: SECRET, maxAge: -1 });
+        const token = await encode({ token: { id: 7, isSysadmin: true }, secret: SECRET, maxAge: -1 });
         const decoded = await tryDecode(token, SECRET);
         // Past the edge → NextAuth drops the session even though the ciphertext decrypts.
         expect(isExpired(decoded)).toBe(true);
@@ -58,7 +58,7 @@ describe('NextAuth JWT expiry boundary', () => {
 
 describe('NextAuth JWT tampering boundary', () => {
     it('rejects a token sealed with a different secret (forged) — claims not honored', async () => {
-        const token = await encode({ token: { id: 7, sysadmin: true }, secret: 'attacker-secret', maxAge: MAX_AGE });
+        const token = await encode({ token: { id: 7, isSysadmin: true }, secret: 'attacker-secret', maxAge: MAX_AGE });
         const decoded = await tryDecode(token, SECRET);
         expect(decoded).toBeNull();
     });
@@ -69,7 +69,7 @@ describe('NextAuth JWT tampering boundary', () => {
     });
 
     it('rejects a valid token whose ciphertext was bit-flipped', async () => {
-        const token = await encode({ token: { id: 7, sysadmin: true }, secret: SECRET, maxAge: MAX_AGE });
+        const token = await encode({ token: { id: 7, isSysadmin: true }, secret: SECRET, maxAge: MAX_AGE });
         // Corrupt a character in the middle so the AEAD tag check fails.
         const mid = Math.floor(token.length / 2);
         const flipped = token.slice(0, mid) + (token[mid] === 'A' ? 'B' : 'A') + token.slice(mid + 1);

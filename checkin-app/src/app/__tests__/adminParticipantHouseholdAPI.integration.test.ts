@@ -28,7 +28,7 @@ describe('Admin Participant Household API Integration Tests', () => {
         });
 
         const admin = await prisma.participant.create({
-            data: { email: 'admin-household-api-test@example.com', name: 'Admin Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-household-api-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -72,7 +72,7 @@ describe('Admin Participant Household API Integration Tests', () => {
     describe('POST /api/membership-ops/participants/[id]/household', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testUserId, sysadmin: false, boardMember: false }
+                user: { id: testUserId, isSysadmin: false, isBoardMember: false }
             });
 
             const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}/household`, {
@@ -86,7 +86,7 @@ describe('Admin Participant Household API Integration Tests', () => {
 
         it('should successfully add a participant to an existing household', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const subjectBefore = await prisma.participant.findUnique({ where: { id: testParticipantId } });
@@ -117,7 +117,7 @@ describe('Admin Participant Household API Integration Tests', () => {
 
         it('should successfully create a new household for the participant', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}/household`, {

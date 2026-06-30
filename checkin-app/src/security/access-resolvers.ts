@@ -3,7 +3,7 @@
  *
  * Two layers of resolution:
  *   1. CallerContext — built once per request: caller's identity, household,
- *      programs led/coreVol'd in, active visitors in the building (if keyholder).
+ *      programs led/coreVol'd in, active visitors in the building (if isKeyholder).
  *   2. scopesHeld(modelName, row, ctx) — called once per row in the response:
  *      returns the set of Scopes the caller holds for that particular row.
  *
@@ -50,7 +50,7 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
 
     ctx.selfId = auth.user.id;
     ctx.householdId = auth.user.householdId;
-    ctx.isKeyholder = auth.user.keyholder;
+    ctx.isKeyholder = auth.user.isKeyholder;
 
     const ledPrograms = await prisma.program.findMany({
         where: { leadMentorId: auth.user.id },
@@ -254,9 +254,9 @@ export function scopesHeld(
             //                              familyContext[pii] + notes[personal]).
             //   their_program_households → a program lead of the household's kids
             //                              (sees personal-tier notes, NOT pii).
-            //   keyholders               → any keyholder, global (personal-tier notes).
+            //   keyholders               → any isKeyholder, global (personal-tier notes).
             // The board's familyContext (pii) and decisionNote (internal) are never
-            // granted to the program/keyholder scopes.
+            // granted to the program/isKeyholder scopes.
             const householdId = num(row.householdId);
             if (householdId !== undefined && householdId === ctx.householdId) scopes.add('their_households');
             if (householdId !== undefined && ctx.householdIdsInScopePrograms.has(householdId)) {
@@ -268,7 +268,7 @@ export function scopesHeld(
         // MembershipProcess, BackgroundCheckAttestation, Corporation,
         // CorporationLead, CorporationMember, AuditLog, VerificationToken,
         // ErrorLog, SystemMetricLog, Tool — no per-row scopes beyond 'everyones'
-        // yet. Admin (sysadmin/boardMember) views grant 'everyones:*' so they
+        // yet. Admin (isSysadmin/isBoardMember) views grant 'everyones:*' so they
         // still get through. These SHOULD be row-scoped too (they carry
         // membershipId / processId / corporationId); until each has a case +
         // ROW_SCOPE_KEY entry, a non-admin view cannot see them and an admin
@@ -294,14 +294,14 @@ export function callerHoldsRole(
             return auth.type === 'session';
         case 'kiosk':
             return auth.type === 'kiosk';
-        case 'sysadmin':
-            return auth.type === 'session' && auth.user.sysadmin;
-        case 'boardMember':
-            return auth.type === 'session' && auth.user.boardMember;
-        case 'keyholder':
-            return auth.type === 'session' && auth.user.keyholder;
-        case 'backgroundCheckReviewer':
-            return auth.type === 'session' && auth.user.backgroundCheckReviewer;
+        case 'isSysadmin':
+            return auth.type === 'session' && auth.user.isSysadmin;
+        case 'isBoardMember':
+            return auth.type === 'session' && auth.user.isBoardMember;
+        case 'isKeyholder':
+            return auth.type === 'session' && auth.user.isKeyholder;
+        case 'isBackgroundCheckReviewer':
+            return auth.type === 'session' && auth.user.isBackgroundCheckReviewer;
         case 'householdLead':
             return auth.type === 'session' && !!auth.user.householdLead;
         case 'programLeadMentor': {
@@ -331,7 +331,7 @@ export async function resolveAccess(
     ctx: ResolverContext,
 ): Promise<{ allowed: boolean }> {
     const { auth, params, callerContext } = ctx;
-    const isAdmin = auth.type === 'session' && (auth.user.sysadmin || auth.user.boardMember);
+    const isAdmin = auth.type === 'session' && (auth.user.isSysadmin || auth.user.isBoardMember);
 
     if (typeof authorize === 'string') {
         switch (authorize) {

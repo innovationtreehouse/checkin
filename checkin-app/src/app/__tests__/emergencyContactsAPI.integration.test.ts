@@ -16,7 +16,7 @@ jest.mock("next-auth/next", () => ({ getServerSession: jest.fn() }));
 const TAG = "ec-api-test";
 
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false } });
 }
 function postReq(body: unknown) {
     return new Request("http://localhost:4000/api/household/emergency-contacts", {

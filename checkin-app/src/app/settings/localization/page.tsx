@@ -32,8 +32,8 @@ const LOCALE_OPTIONS = [
 ];
 
 export default function LocalizationSettingsPage() {
-  // Stricter than the /settings layout (sysadmin OR board): localization is sysadmin-only.
-  const { ready, loading: authLoading } = useRequireRole(["sysadmin"]);
+  // Stricter than the /settings layout (isSysadmin OR board): localization is isSysadmin-only.
+  const { ready, loading: authLoading } = useRequireRole(["isSysadmin"]);
 
   const [timezone, setTimezone] = useState("America/Chicago");
   const [locale, setLocale] = useState("en-US");

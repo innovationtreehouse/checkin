@@ -58,7 +58,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
 
     beforeAll(async () => {
         const admin = await prisma.participant.create({
-            data: { name: 'Cancel Admin', email: `admin-${TAG}@example.com`, sysadmin: true, household: { create: {} } },
+            data: { name: 'Cancel Admin', email: `admin-${TAG}@example.com`, isSysadmin: true, household: { create: {} } },
         });
         adminId = admin.id;
         adminHouseholdId = admin.householdId;
@@ -73,7 +73,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
     beforeEach(() => {
         jest.clearAllMocks();
         process.env.CRON_SECRET = SECRET;
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
     });
 
     afterEach(async () => {

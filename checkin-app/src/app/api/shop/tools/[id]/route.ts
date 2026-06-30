@@ -11,7 +11,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const isAuthorized = session.user?.sysadmin || session.user?.boardMember;
+    const isAuthorized = session.user?.isSysadmin || session.user?.isBoardMember;
     if (!isAuthorized) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

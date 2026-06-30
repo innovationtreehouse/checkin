@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  *   approve — board override: clear the check, activating if already paid else
  *             leaving it at PENDING_PAYMENT
  */
-export const POST = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, auth) => {
+export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     let body: { processId?: number; action?: "reset" | "approve" };
     try {

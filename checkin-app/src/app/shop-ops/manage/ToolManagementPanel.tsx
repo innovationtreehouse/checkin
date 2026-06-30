@@ -516,8 +516,8 @@ export function ToolManagementPanel() {
     return <Center mih="40vh"><Loader /></Center>;
   }
 
-  const isSysadmin = session?.user?.sysadmin;
-  const isBoardMember = session?.user?.boardMember;
+  const isSysadmin = session?.user?.isSysadmin;
+  const isBoardMember = session?.user?.isBoardMember;
   const isAdmin = isSysadmin || isBoardMember;
 
   const hasCertifierAuth = (session?.user?.toolStatuses ?? []).some((ts: { level?: string }) => ts.level === 'MAY_CERTIFY_OTHERS');

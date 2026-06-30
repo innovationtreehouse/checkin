@@ -28,7 +28,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const currentUserId = session.user.id;
         const isLeadMentor = event.program?.leadMentorId === currentUserId;
-        const isSysAdminOrBoardOrKeyholder = session.user?.sysadmin || session.user?.boardMember || session.user?.keyholder;
+        const isSysAdminOrBoardOrKeyholder = session.user?.isSysadmin || session.user?.isBoardMember || session.user?.isKeyholder;
 
         if (!isLeadMentor && !isSysAdminOrBoardOrKeyholder) {
             return NextResponse.json({ error: "Forbidden: Not authorized to validate attendance" }, { status: 403 });

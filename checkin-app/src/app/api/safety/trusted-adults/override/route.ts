@@ -13,10 +13,10 @@ const STATUS_FOR: Record<TrustedAdultError["code"], number> = {
 };
 
 /**
- * POST /api/safety/trusted-adults/override — board/sysadmin force a review to a
+ * POST /api/safety/trusted-adults/override — board/isSysadmin force a review to a
  * terminal state regardless of phase. Body: { reviewId, action: approve|deny|revoke }.
  */
-export const POST = withAuth({ roles: ["boardMember", "sysadmin"] }, async (req, auth) => {
+export const POST = withAuth({ roles: ["isBoardMember", "isSysadmin"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     let body: { reviewId?: number; action?: "approve" | "deny" | "revoke"; sharedNote?: string };
     try {
@@ -29,7 +29,7 @@ export const POST = withAuth({ roles: ["boardMember", "sysadmin"] }, async (req,
     }
     try {
         const outcome = await overrideReview(body.reviewId, auth.user.id, body.action!, body.sharedNote, {
-            isSysadmin: auth.user.sysadmin === true,
+            isSysadmin: auth.user.isSysadmin === true,
         });
         return NextResponse.json({ status: outcome.status });
     } catch (error) {

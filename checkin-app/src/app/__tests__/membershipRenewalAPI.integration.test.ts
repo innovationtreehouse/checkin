@@ -71,9 +71,9 @@ describe('Membership renewal', () => {
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
         prevBoundary = existing?.membershipYearBoundary ?? null;
         await wipe();
-        const r1 = await prisma.participant.create({ data: { email: `rev1-${TAG}@example.com`, name: 'Rev1', backgroundCheckReviewer: true, household: { create: { name: `Rev1 HH ${TAG}` } } } });
+        const r1 = await prisma.participant.create({ data: { email: `rev1-${TAG}@example.com`, name: 'Rev1', isBackgroundCheckReviewer: true, household: { create: { name: `Rev1 HH ${TAG}` } } } });
         rev1 = r1.id;
-        rev2 = (await prisma.participant.create({ data: { email: `rev2-${TAG}@example.com`, name: 'Rev2', backgroundCheckReviewer: true, household: { create: { name: `Rev2 HH ${TAG}` } } } })).id;
+        rev2 = (await prisma.participant.create({ data: { email: `rev2-${TAG}@example.com`, name: 'Rev2', isBackgroundCheckReviewer: true, household: { create: { name: `Rev2 HH ${TAG}` } } } })).id;
     });
 
     afterAll(async () => {

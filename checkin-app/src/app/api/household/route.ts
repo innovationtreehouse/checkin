@@ -35,7 +35,7 @@ export const PATCH = withAuth(
 
             // Internal staff (@innovationtreehouse.org) accounts are not real member families,
             // so they may not build out a household with extra members via self-service. The
-            // admin participant-add flow (sysadmin/boardMember) is separate and stays open.
+            // admin participant-add flow (isSysadmin/isBoardMember) is separate and stays open.
             if (isOrgAccount(auth.user)) {
                 return NextResponse.json(
                     { error: "Staff accounts cannot add household members. Use the membership-ops participant tools instead." },
@@ -53,7 +53,7 @@ export const PATCH = withAuth(
             }
 
             const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isLead && !user.sysadmin) {
+            if (!isLead && !user.isSysadmin) {
                 return NextResponse.json({ error: "Only household leads can add members" }, { status: 403 });
             }
 

@@ -75,7 +75,7 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
         jest.useFakeTimers(FAKE_TIMER_OPTS);
         try {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: userId, sysadmin: false, boardMember: false }
+                user: { id: userId, isSysadmin: false, isBoardMember: false }
             });
 
             const req = new Request(`http://localhost:4000/api/programs/${programId}/participants`, {

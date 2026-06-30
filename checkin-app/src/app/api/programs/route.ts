@@ -20,7 +20,7 @@ export async function GET(req: Request) {
 
         if (session && session.user) {
             const user = session.user;
-            if (user.sysadmin || user.boardMember) {
+            if (user.isSysadmin || user.isBoardMember) {
                 canSeeMemberOnly = true;
             } else {
                 canSeeMemberOnly = await isActiveMember(user.id);
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
         let userId: number | undefined;
         if (session && session.user) {
             userId = session.user.id;
-            if (session.user.sysadmin || session.user.boardMember) {
+            if (session.user.isSysadmin || session.user.isBoardMember) {
                 canSeeDrafts = true;
             }
         }
@@ -87,7 +87,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
-    const canCreate = session?.user?.sysadmin || session?.user?.boardMember;
+    const canCreate = session?.user?.isSysadmin || session?.user?.isBoardMember;
 
     if (!session || !canCreate) {
         return NextResponse.json({ error: "Forbidden: Only Admin or Board Members can create programs" }, { status: 403 });

@@ -39,7 +39,7 @@ describe('Event Attendance API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-event-attendance-test@example.com', name: 'Admin Att Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-event-attendance-test@example.com', name: 'Admin Att Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -144,7 +144,7 @@ describe('Event Attendance API Integration Tests', () => {
 
         it('should return 403 Forbidden for non-admin/non-lead-mentor users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false, keyholder: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false, isKeyholder: false }
              });
 
              const req = new Request(`http://localhost:4000/api/events/${testEventId}/attendance`, {
@@ -158,7 +158,7 @@ describe('Event Attendance API Integration Tests', () => {
 
         it('should return 404 Not Found for invalid event ID', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false, keyholder: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false, isKeyholder: false }
             });
 
             const req = new Request(`http://localhost:4000/api/events/9999999/attendance`, {
@@ -172,7 +172,7 @@ describe('Event Attendance API Integration Tests', () => {
 
         it('should create a synthetic visit for a participant with no existing visit', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testLeadMentorId, sysadmin: false, boardMember: false, keyholder: false }
+                user: { id: testLeadMentorId, isSysadmin: false, isBoardMember: false, isKeyholder: false }
             });
 
             const req = new Request(`http://localhost:4000/api/events/${testEventId}/attendance`, {
@@ -212,7 +212,7 @@ describe('Event Attendance API Integration Tests', () => {
 
         it('should link an existing unassociated visit that overlaps with the event', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             // Create a general visit that overlaps with the event

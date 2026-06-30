@@ -17,7 +17,7 @@ function withFlatContact<T extends { emergencyContacts: { name: string; phone: s
 }
 
 export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async (req) => {
         try {
             const url = new URL(req.url);
@@ -55,7 +55,7 @@ export const GET = withAuth(
                 where: whereClause,
                 include: {
                     participants: {
-                        select: { id: true, name: true, email: true, boardMember: true }
+                        select: { id: true, name: true, email: true, isBoardMember: true }
                     },
                     membership: true,
                     emergencyContacts: {
@@ -80,7 +80,7 @@ export const GET = withAuth(
 );
 
 export const POST = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async (req, auth) => {
         try {
             const body = await req.json();
@@ -102,7 +102,7 @@ export const POST = withAuth(
                     // containing a board member cannot be denied. Remove the board role first.
                     // Enforced server-side; the UI's disabled button is only a courtesy.
                     const boardMemberInHousehold = await prisma.participant.findFirst({
-                        where: { householdId, boardMember: true },
+                        where: { householdId, isBoardMember: true },
                         select: { id: true }
                     });
                     if (boardMemberInHousehold) {

@@ -15,8 +15,8 @@ type Participant = {
   id: number;
   email: string;
   name?: string | null;
-  keyholder: boolean;
-  sysadmin: boolean;
+  isKeyholder: boolean;
+  isSysadmin: boolean;
   dateOfBirth?: string | null;
   householdId?: number | null;
   phone?: string | null;
@@ -46,7 +46,7 @@ const isStudent = (dob: string | undefined | null) => {
   return age < 18;
 };
 
-type SessionUser = { id: number; sysadmin?: boolean; keyholder?: boolean; boardMember?: boolean; householdId?: number | null };
+type SessionUser = { id: number; isSysadmin?: boolean; isKeyholder?: boolean; isBoardMember?: boolean; householdId?: number | null };
 
 function KioskDisplayInner() {
   const searchParams = useSearchParams();
@@ -65,9 +65,9 @@ function KioskDisplayInner() {
   const [searchResults, setSearchResults] = useState<Participant[]>([]);
   const [checkingInId, setCheckingInId] = useState<number | null>(null);
 
-  const currentUserIsSysadmin = (session?.user as SessionUser)?.sysadmin || false;
-  const currentUserIsKeyholder = (session?.user as SessionUser)?.keyholder || false;
-  const currentUserIsBoardMember = (session?.user as SessionUser)?.boardMember || false;
+  const currentUserIsSysadmin = (session?.user as SessionUser)?.isSysadmin || false;
+  const currentUserIsKeyholder = (session?.user as SessionUser)?.isKeyholder || false;
+  const currentUserIsBoardMember = (session?.user as SessionUser)?.isBoardMember || false;
   const currentUserHouseholdId = (session?.user as SessionUser)?.householdId || null;
   const canManuallyCheckInGlobal = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
   const canAdminCheckout = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
@@ -78,14 +78,14 @@ function KioskDisplayInner() {
   const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
 
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
-  const keyholderList = fullAttendance.filter(v => v.participant.keyholder);
-  const volunteerList = fullAttendance.filter(v => !v.participant.keyholder && !isStudent(v.participant.dateOfBirth));
+  const keyholderList = fullAttendance.filter(v => v.participant.isKeyholder);
+  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !isStudent(v.participant.dateOfBirth));
   const studentList = fullAttendance.filter(v => isStudent(v.participant.dateOfBirth));
 
   const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
   const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
-  const householdKeyholders = limitedHousehold.filter(v => v.participant.keyholder);
-  const householdVolunteers = limitedHousehold.filter(v => !v.participant.keyholder && !isStudent(v.participant.dateOfBirth));
+  const householdKeyholders = limitedHousehold.filter(v => v.participant.isKeyholder);
+  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !isStudent(v.participant.dateOfBirth));
   const householdStudents = limitedHousehold.filter(v => isStudent(v.participant.dateOfBirth));
 
   const isCheckedIn = isFull
@@ -408,7 +408,7 @@ function KioskDisplayInner() {
         )}
         {!safety.isTwoDeepViolation && safety.isLastKeyholder && (
           <Alert color="yellow" icon="⚠️" title="Warning" mb="lg">
-            Only one keyholder is currently in the building.
+            Only one isKeyholder is currently in the building.
           </Alert>
         )}
 

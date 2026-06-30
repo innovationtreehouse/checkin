@@ -10,10 +10,10 @@ declare module "next-auth" {
       image?: string | null;
       // Household membership is DENIED — login is blocked; all role flags are forced false.
       denied?: boolean;
-      sysadmin?: boolean;
-      keyholder?: boolean;
-      boardMember?: boolean;
-      backgroundCheckReviewer?: boolean;
+      isSysadmin?: boolean;
+      isKeyholder?: boolean;
+      isBoardMember?: boolean;
+      isBackgroundCheckReviewer?: boolean;
       householdId?: number | null;
       householdLead?: boolean;
       toolStatuses?: { toolId: number; level: string }[];
@@ -28,10 +28,10 @@ declare module "next-auth" {
 
   interface User {
     id: number | string;
-    sysadmin?: boolean;
-    keyholder?: boolean;
-    boardMember?: boolean;
-    backgroundCheckReviewer?: boolean;
+    isSysadmin?: boolean;
+    isKeyholder?: boolean;
+    isBoardMember?: boolean;
+    isBackgroundCheckReviewer?: boolean;
     householdId?: number | null;
     householdLead?: boolean;
     toolStatuses?: { toolId: number; level: string }[];
@@ -50,10 +50,10 @@ declare module "next-auth/jwt" {
     emailVerified?: boolean;
     // Inert impersonation provenance — display/audit only, never read by authz.
     impersonatedBy?: string | null;
-    sysadmin?: boolean;
-    keyholder?: boolean;
-    boardMember?: boolean;
-    backgroundCheckReviewer?: boolean;
+    isSysadmin?: boolean;
+    isKeyholder?: boolean;
+    isBoardMember?: boolean;
+    isBackgroundCheckReviewer?: boolean;
     householdId?: number | null;
     householdLead?: boolean;
     toolStatuses?: { toolId: number; level: string }[];

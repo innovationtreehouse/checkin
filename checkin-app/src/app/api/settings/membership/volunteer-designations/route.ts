@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** GET — list all volunteer email designations. */
-export const GET = withAuth({ roles: ["sysadmin", "boardMember"] }, async () => {
+export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
     const designations = await prisma.volunteerDesignation.findMany({ orderBy: { createdAt: "desc" } });
     return NextResponse.json({ designations });
 });
@@ -16,7 +16,7 @@ export const GET = withAuth({ roles: ["sysadmin", "boardMember"] }, async () => 
  * POST — designate an email as a volunteer household. Body: { email }.
  * Non-blocking warning if that email already has an ACTIVE, full-price membership.
  */
-export const POST = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req, auth) => {
+export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     let body: { email?: string };
     try {
@@ -48,7 +48,7 @@ export const POST = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req,
 });
 
 /** DELETE — remove a designation. Query: ?id=<n>. */
-export const DELETE = withAuth({ roles: ["sysadmin", "boardMember"] }, async (req) => {
+export const DELETE = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req) => {
     const id = parseInt(new URL(req.url).searchParams.get("id") || "", 10);
     if (isNaN(id)) return NextResponse.json({ error: "id is required" }, { status: 400 });
     await prisma.volunteerDesignation.delete({ where: { id } }).catch(() => null);

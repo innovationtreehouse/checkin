@@ -65,7 +65,7 @@ describe('AuditLog Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-audit-test@example.com', name: 'Admin Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-audit-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -125,7 +125,7 @@ describe('AuditLog Integration Tests', () => {
     beforeEach(() => {
         // Reset mocks and default to admin session
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: testAdminId, sysadmin: true }
+            user: { id: testAdminId, isSysadmin: true }
         });
     });
 
@@ -307,7 +307,7 @@ describe('AuditLog Integration Tests', () => {
 
         const req = new Request('http://localhost:4000/api/roles', {
             method: 'PATCH',
-            body: JSON.stringify({ targetUserId: target.id, keyholder: true }),
+            body: JSON.stringify({ targetUserId: target.id, isKeyholder: true }),
         });
 
         const res = await updateRoles(req as never);
@@ -318,7 +318,7 @@ describe('AuditLog Integration Tests', () => {
         });
         expect(logs).toHaveLength(1);
         expect(logs[0].actorId).toBe(testAdminId);
-        expect((logs[0].newData as { keyholder?: boolean }).keyholder).toBe(true);
+        expect((logs[0].newData as { isKeyholder?: boolean }).isKeyholder).toBe(true);
     });
 
     it('participant merge (POST /admin/participants/merge) writes one AuditLog tombstoning the merged id', async () => {

@@ -9,7 +9,7 @@ import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/li
  *
  * Distinct from the participant-level "assign household" flow — this edits the
  * household record itself, on behalf of a member, using admin privileges. Gated
- * to sysadmin + board, and every edit is written to the audit log with before/
+ * to isSysadmin + board, and every edit is written to the audit log with before/
  * after snapshots since the actor is not a member of the household they touch.
  */
 export async function PATCH(
@@ -20,7 +20,7 @@ export async function PATCH(
     if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    if (!auth.user.sysadmin && !auth.user.boardMember) {
+    if (!auth.user.isSysadmin && !auth.user.isBoardMember) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

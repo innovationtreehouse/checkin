@@ -112,8 +112,8 @@ interface ParticipantBadge {
     id: number;
     name: string;
     isMember: boolean;
-    boardMember: boolean;
-    keyholder: boolean;
+    isBoardMember: boolean;
+    isKeyholder: boolean;
     qrDataUri: string;
 }
 
@@ -175,12 +175,12 @@ export default function BadgeDocument({ badges }: { badges: ParticipantBadge[] }
                                     </View>
 
                                     <View style={styles.roleContainer}>
-                                        {badge.boardMember && (
+                                        {badge.isBoardMember && (
                                             <View style={{ ...styles.rolePill, backgroundColor: '#3b82f6' }}>
                                                 <Text style={styles.roleText}>BOARD</Text>
                                             </View>
                                         )}
-                                        {badge.keyholder && (
+                                        {badge.isKeyholder && (
                                             <View style={{ ...styles.rolePill, backgroundColor: '#f59e0b' }}>
                                                 <Text style={styles.roleText}>KEYHOLDER</Text>
                                             </View>

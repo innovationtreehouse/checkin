@@ -16,13 +16,13 @@ jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }
 const TAG = 'bulk-renewal-test';
 
 function asSysadmin(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: true, boardMember: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: true, isBoardMember: false } });
 }
 function asBoard(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: true } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: true } });
 }
 function asPlain(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false } });
 }
 function jsonReq(body?: unknown) {
     return new Request('http://localhost:4000/x', { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) }) as never;
@@ -55,8 +55,8 @@ describe('Bulk renewal migration', () => {
         const maxRow = await prisma.membershipProcess.findFirst({ orderBy: { id: 'desc' }, select: { id: true } });
         preMaxProcessId = maxRow?.id ?? 0;
         await wipe();
-        sysId = (await prisma.participant.create({ data: { email: `sys-${TAG}@example.com`, name: 'Sys', sysadmin: true, household: { create: { name: `Sys HH ${TAG}` } } } })).id;
-        boardId = (await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', boardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
+        sysId = (await prisma.participant.create({ data: { email: `sys-${TAG}@example.com`, name: 'Sys', isSysadmin: true, household: { create: { name: `Sys HH ${TAG}` } } } })).id;
+        boardId = (await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
         plainId = (await prisma.participant.create({ data: { email: `plain-${TAG}@example.com`, name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
         mA = await makeActive('A');
         mB = await makeActive('B');
@@ -97,7 +97,7 @@ describe('Bulk renewal migration', () => {
         expect(count).toBe(1);
     });
 
-    it('a sysadmin may also trigger it', async () => {
+    it('a isSysadmin may also trigger it', async () => {
         asSysadmin(sysId);
         const res = await BULK(jsonReq({ sendReminders: false }));
         expect(res.status).toBe(200);

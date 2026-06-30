@@ -96,13 +96,13 @@ model Participant {
   allergies String?
 
   /// @sensitivity:internal
-  sysadmin                Boolean @default(false)
+  isSysadmin                Boolean @default(false)
   /// @sensitivity:public
-  boardMember             Boolean @default(false)
+  isBoardMember             Boolean @default(false)
   /// @sensitivity:internal
-  keyholder               Boolean @default(false)
+  isKeyholder               Boolean @default(false)
   /// @sensitivity:internal
-  backgroundCheckReviewer Boolean @default(false)
+  isBackgroundCheckReviewer Boolean @default(false)
 
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")

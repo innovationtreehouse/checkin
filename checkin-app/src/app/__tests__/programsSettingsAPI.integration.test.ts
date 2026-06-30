@@ -43,7 +43,7 @@ describe('Program Settings API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-settings-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-settings-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
@@ -154,7 +154,7 @@ describe('Program Settings API Integration Tests', () => {
         });
 
         it('should allow admins to reassign the leadMentorId', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
                  method: 'PATCH',
@@ -170,7 +170,7 @@ describe('Program Settings API Integration Tests', () => {
         });
 
         it('should reject a negative maxParticipants with 400', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
                  method: 'PATCH',
@@ -181,7 +181,7 @@ describe('Program Settings API Integration Tests', () => {
         });
 
         it('should reject a zero maxParticipants with 400', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
                  method: 'PATCH',
@@ -202,7 +202,7 @@ describe('Program Settings API Integration Tests', () => {
 
              const before = await prisma.program.findUnique({ where: { id: targetProgramId } });
 
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
                  method: 'PATCH',
@@ -220,7 +220,7 @@ describe('Program Settings API Integration Tests', () => {
         });
 
         it('should allow editing maxAge after creation (regression: was non-updatable)', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
                  method: 'PATCH',
@@ -237,7 +237,7 @@ describe('Program Settings API Integration Tests', () => {
         });
 
         it('should reject minAge greater than maxAge with 400', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
                  method: 'PATCH',

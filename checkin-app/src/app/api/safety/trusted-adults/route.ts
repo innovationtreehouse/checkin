@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/safety/trusted-adults — the board's review queue: every link with a
  * review awaiting board action, awaiting the subject, or expired (needing
- * renewal). Exposes subject + counterparty PII, so only sysadmin/board are
+ * renewal). Exposes subject + counterparty PII, so only isSysadmin/board are
  * admitted and the field grant is explicit per role in the registry.
  */
 export const GET = handler("GET /api/safety/trusted-adults", async () => {

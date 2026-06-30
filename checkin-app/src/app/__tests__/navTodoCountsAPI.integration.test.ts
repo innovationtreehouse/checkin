@@ -6,7 +6,7 @@
  *
  * Verifies the guiding rule of the nav badges: a count only includes items the
  * *viewer can resolve*. Member counts are scoped to the caller's household and
- * exclude reviewer/board states; the admin block appears only for board/sysadmin
+ * exclude reviewer/board states; the admin block appears only for board/isSysadmin
  * and tallies the board's own queue. The board's only actionable membership
  * state is BLOCKED — the background-check review states (PENDING_BG_REVIEW /
  * RENEWAL_PENDING_BG) are reviewer (RBAC) work and must NOT count for the board.
@@ -132,7 +132,7 @@ describe('Nav todo-counts API', () => {
 
         // Household B: a board member with no household todos of their own.
         const board = await prisma.participant.create({
-            data: { email: `board-${TAG}@example.com`, name: 'Board B', dateOfBirth: new Date('1980-01-01'), phone: '555-0000', boardMember: true, household: { create: {} } },
+            data: { email: `board-${TAG}@example.com`, name: 'Board B', dateOfBirth: new Date('1980-01-01'), phone: '555-0000', isBoardMember: true, household: { create: {} } },
         });
         boardId = board.id;
         householdBId = board.householdId;
@@ -202,7 +202,7 @@ describe('Nav todo-counts API', () => {
     });
 
     it('returns the board queue for a board member and no false household todos', async () => {
-        const res = await callAs({ id: boardId, householdId: householdBId, boardMember: true });
+        const res = await callAs({ id: boardId, householdId: householdBId, isBoardMember: true });
         expect(res.status).toBe(200);
         const data = await res.json();
         expect(data.member.household).toHaveLength(0);
@@ -219,7 +219,7 @@ describe('Nav todo-counts API', () => {
 
     it('counts BLOCKED for the board but not the reviewer-owned review states', async () => {
         const boardMembershipCount = async () => {
-            const res = await callAs({ id: boardId, householdId: householdBId, boardMember: true });
+            const res = await callAs({ id: boardId, householdId: householdBId, isBoardMember: true });
             const data = await res.json();
             return data.admin.membership as number;
         };
@@ -242,7 +242,7 @@ describe('Nav todo-counts API', () => {
 
     it('counts member families but excludes org-email-only (staff) households', async () => {
         const memberFamilies = async () => {
-            const res = await callAs({ id: boardId, householdId: householdBId, boardMember: true });
+            const res = await callAs({ id: boardId, householdId: householdBId, isBoardMember: true });
             return (await res.json()).admin.memberFamilies as number;
         };
         const before = await memberFamilies();

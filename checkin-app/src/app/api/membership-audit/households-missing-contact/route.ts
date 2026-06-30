@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  * contact" predicate is owned by the emergency-contacts service — this route
  * only hydrates the ids it returns.
  */
-export const GET = withAuth({ roles: ["sysadmin", "boardMember"] }, async () => {
+export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
     const ids = await findHouseholdsMissingValidContact();
     if (ids.length === 0) return NextResponse.json({ households: [] });
 

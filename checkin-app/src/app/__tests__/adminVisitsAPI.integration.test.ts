@@ -43,7 +43,7 @@ describe('Admin Visits API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-visits-api-test@example.com', name: 'Admin Visits Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-visits-api-test@example.com', name: 'Admin Visits Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
         const checkAdmin = await prisma.participant.findUnique({ where: { id: testAdminId } });
@@ -101,9 +101,9 @@ describe('Admin Visits API Integration Tests', () => {
             expect(res.status).toBe(403);
         });
 
-        it('should return the latest visits for a sysadmin', async () => {
+        it('should return the latest visits for a isSysadmin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/facility/visits', {
@@ -151,7 +151,7 @@ describe('Admin Visits API Integration Tests', () => {
 
         it('should return 400 Bad Request if visitId is missing', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/facility/visits', {
@@ -167,7 +167,7 @@ describe('Admin Visits API Integration Tests', () => {
 
         it('should update the visit and log to audit block when an admin requests it', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             const previousAuditLogs = await prisma.auditLog.count({

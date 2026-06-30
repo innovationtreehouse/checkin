@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
         const { attendance, counts, safety } = await getFullAttendance();
 
         // Determine access level
-        const isAdmin = isKiosk || user?.sysadmin || user?.boardMember || user?.keyholder;
+        const isAdmin = isKiosk || user?.isSysadmin || user?.isBoardMember || user?.isKeyholder;
 
         if (isAdmin) {
             // Full access: return all visits + counts
@@ -114,10 +114,10 @@ export async function DELETE(req: Request) {
         // Check permissions:
         // 1. User checking out themselves
         // 2. User is the household lead checking out a family member
-        // 3. User is an admin (sysadmin, keyholder, board member)
+        // 3. User is an admin (isSysadmin, isKeyholder, board member)
         const isSelf = visit.participantId === Number(user.id);
         const isHouseholdCheckOut = Boolean(user.householdId && visit.participant.householdId === user.householdId && user.householdLead);
-        const isAdmin = user.sysadmin || user.keyholder || user.boardMember;
+        const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
         if (!isSelf && !isHouseholdCheckOut && !isAdmin) {
             return NextResponse.json({ error: "Forbidden: You are not authorized to check out this user." }, { status: 403 });
@@ -141,7 +141,7 @@ export async function POST(req: Request) {
     if (!user) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const isAdmin = user.sysadmin || user.keyholder || user.boardMember;
+    const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
     try {
         const body = await req.json();
@@ -233,7 +233,7 @@ export async function POST(req: Request) {
 
             // Find all board members
             const boardMembers = await prisma.participant.findMany({
-                where: { boardMember: true },
+                where: { isBoardMember: true },
                 select: { email: true, name: true }
             });
 

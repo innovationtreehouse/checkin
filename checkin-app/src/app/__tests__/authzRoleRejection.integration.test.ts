@@ -63,7 +63,7 @@ const TAG = 'authz-rolereject-test';
 
 function as(id: number, extra: Record<string, unknown> = {}) {
     (getServerSession as jest.Mock).mockResolvedValue({
-        user: { id, sysadmin: false, boardMember: false, keyholder: false, backgroundCheckReviewer: false, ...extra },
+        user: { id, isSysadmin: false, isBoardMember: false, isKeyholder: false, isBackgroundCheckReviewer: false, ...extra },
     });
 }
 function anon() {
@@ -138,7 +138,7 @@ describe('Protected-route role rejection', () => {
 
         // ---- drift-guard sweep: one row per method of each role-gated route ----
         // The withAuth roles gate fires before any body/param work, so dummy
-        // params and empty bodies reach it. All gated on sysadmin|boardMember
+        // params and empty bodies reach it. All gated on isSysadmin|isBoardMember
         // unless noted.
         { name: 'GET /api/admin/broken-households', invoke: () => BROKEN_HH_GET(nreq('http://localhost/api/admin/broken-households')) },
         { name: 'GET /api/admin/settings/localization', invoke: () => LOCALIZATION_GET(nreq('http://localhost/api/admin/settings/localization')) },
@@ -184,19 +184,19 @@ describe('Protected-route role rejection', () => {
         });
     });
 
-    // ---- membership/reviews POST — backgroundCheckReviewer PII boundary -------
+    // ---- membership/reviews POST — isBackgroundCheckReviewer PII boundary -------
     // The attestation surface exposes applicant parents' names/emails. A
-    // keyholder or boardMember WITHOUT backgroundCheckReviewer status must be
-    // denied (mirror participants/search rejecting a keyholder). The 401/403/
+    // isKeyholder or isBoardMember WITHOUT isBackgroundCheckReviewer status must be
+    // denied (mirror participants/search rejecting a isKeyholder). The 401/403/
     // /plain cases are covered in the roleGated table above; this proves a
     // privileged-but-wrong-role user does not slip through.
     describe('POST /api/membership/reviews — non-reviewer privileged user', () => {
-        it('403 for a boardMember without backgroundCheckReviewer', async () => {
-            as(plainId, { householdId: plainHh, boardMember: true });
+        it('403 for a isBoardMember without isBackgroundCheckReviewer', async () => {
+            as(plainId, { householdId: plainHh, isBoardMember: true });
             expect((await REVIEWS_POST(nreq('http://localhost/api/membership/reviews', 'POST', {}))).status).toBe(403);
         });
-        it('403 for a keyholder without backgroundCheckReviewer', async () => {
-            as(plainId, { householdId: plainHh, keyholder: true });
+        it('403 for a isKeyholder without isBackgroundCheckReviewer', async () => {
+            as(plainId, { householdId: plainHh, isKeyholder: true });
             expect((await REVIEWS_POST(nreq('http://localhost/api/membership/reviews', 'POST', {}))).status).toBe(403);
         });
     });

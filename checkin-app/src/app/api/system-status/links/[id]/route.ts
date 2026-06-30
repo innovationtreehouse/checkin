@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/auth";
 
 // Mark an integration error resolved / unresolved.
 export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
-    { roles: ["sysadmin", "boardMember"] },
+    { roles: ["isSysadmin", "isBoardMember"] },
     async (req: NextRequest, _auth, { params }) => {
         const { id } = await params;
         const errorId = parseInt(id, 10);

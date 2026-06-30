@@ -6,7 +6,7 @@ import { logBackendError } from "@/lib/logger";
 export const dynamic = 'force-dynamic';
 
 export const POST = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async (req, auth) => {
         try {
             const body = await req.json();

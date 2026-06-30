@@ -28,7 +28,7 @@ async function makeReviewer(label: string): Promise<number> {
         data: {
             email: `${label}-${TAG}@example.com`,
             name: label,
-            backgroundCheckReviewer: true,
+            isBackgroundCheckReviewer: true,
             household: { create: { name: `${label} HH ${TAG}` } },
         },
     });
@@ -38,7 +38,7 @@ async function makeReviewer(label: string): Promise<number> {
 /** A board member (notifyBoardPaidReject's recipient) in their own household. */
 async function makeBoardMember(): Promise<number> {
     const r = await prisma.participant.create({
-        data: { email: `board-${TAG}@example.com`, name: 'Board', boardMember: true, household: { create: { name: `Board HH ${TAG}` } } },
+        data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } },
     });
     return r.id;
 }

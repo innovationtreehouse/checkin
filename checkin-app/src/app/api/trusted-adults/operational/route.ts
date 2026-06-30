@@ -6,14 +6,14 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/trusted-adults/operational — approved trusted adults with the board's
  * shared note, for the people who act on them: keyholders (global) and program
- * leads (the households whose children are in their programs). Board/sysadmin see
+ * leads (the households whose children are in their programs). Board/isSysadmin see
  * all. The registry view strips familyContext (pii) + internal notes; this handler
  * additionally restricts WHICH rows are returned so existence isn't leaked.
  */
 export const GET = handler("GET /api/trusted-adults/operational", async ({ auth }) => {
     if (auth.type !== "session") throw unauthorized();
     const u = auth.user;
-    const privileged = u.sysadmin || u.boardMember || u.keyholder;
+    const privileged = u.isSysadmin || u.isBoardMember || u.isKeyholder;
 
     const where: { reviews: { some: { status: "APPROVED" } }; householdId?: { in: number[] } } = {
         reviews: { some: { status: "APPROVED" } },

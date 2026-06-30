@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
         if (auth.type === 'session') {
             const user = auth.user;
             const isSelf = participantId === Number(user.id);
-            const isAdmin = user.sysadmin || user.keyholder || user.boardMember;
+            const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
             // In production, only privileged users may self-check-in via web.
             // Everyone else must use the kiosk badge scanner.
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
 
         // Facility-wide close runs here, AFTER the per-participant transaction
         // commits and the advisory lock is released. Keeping the sweep + email
-        // kick out of the locked section means a last-keyholder close no longer
+        // kick out of the locked section means a last-isKeyholder close no longer
         // blocks concurrent scans for other participants. No-op unless the
         // response reports facilityClosed.
         await finalizeFacilityClose(res);

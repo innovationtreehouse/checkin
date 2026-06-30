@@ -11,7 +11,7 @@ export async function PUT(
     if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    if (!auth.user.sysadmin && !auth.user.boardMember) {
+    if (!auth.user.isSysadmin && !auth.user.isBoardMember) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -67,8 +67,8 @@ export async function PUT(
             name: updatedParticipant.name,
             email: updatedParticipant.email,
             phone: updatedParticipant.phone,
-            boardMember: updatedParticipant.boardMember,
-            keyholder: updatedParticipant.keyholder,
+            isBoardMember: updatedParticipant.isBoardMember,
+            isKeyholder: updatedParticipant.isKeyholder,
             household: updatedParticipant.household,
         };
 

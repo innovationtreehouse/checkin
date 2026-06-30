@@ -28,8 +28,8 @@ defineRoute({
     authorize: 'public',
     envelope: null,
     orderedView: [
-        ['sysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['boardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isSysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['programLeadMentor',    ['their_program_participants:pii',
                                   'their_program_participants:personal',
                                   'member', 'public']],
@@ -43,25 +43,25 @@ defineRoute({
 
 defineRoute({
     endpoint: 'GET /api/directory/board',
-    authorize: { anyRole: ['sysadmin', 'boardMember', 'keyholder'] },
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
     envelope: 'boardMembers',
     orderedView: [
-        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['keyholder',   ['member', 'public']],
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isKeyholder',   ['member', 'public']],
     ],
 });
 
 // Board's in-flight membership applications. Exposes every applicant household's
-// PII (parents + children names/emails), so only sysadmin/board may see it, and
+// PII (parents + children names/emails), so only isSysadmin/board may see it, and
 // the field grant is explicit per role.
 defineRoute({
     endpoint: 'GET /api/membership-ops/applications',
-    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: 'processes',
     orderedView: [
-        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
     ],
 });
 
@@ -70,10 +70,10 @@ defineRoute({
 // grant is deliberately limited to pii + public.
 defineRoute({
     endpoint: 'GET /api/membership/reviews',
-    authorize: { anyRole: ['backgroundCheckReviewer'] },
+    authorize: { anyRole: ['isBackgroundCheckReviewer'] },
     envelope: 'queue',
     orderedView: [
-        ['backgroundCheckReviewer', ['everyones:pii', 'member', 'public']],
+        ['isBackgroundCheckReviewer', ['everyones:pii', 'member', 'public']],
     ],
 });
 
@@ -93,11 +93,11 @@ defineRoute({
 // and the board's internal decision notes (internal).
 defineRoute({
     endpoint: 'GET /api/safety/trusted-adults',
-    authorize: { anyRole: ['sysadmin', 'boardMember'] },
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: 'trustedAdults',
     orderedView: [
-        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
     ],
 });
 
@@ -111,9 +111,9 @@ defineRoute({
     authorize: 'authenticated',
     envelope: 'trustedAdults',
     orderedView: [
-        ['sysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['boardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['keyholder',   ['keyholders:personal', 'their_program_households:personal', 'their_households:personal', 'member', 'public']],
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isKeyholder',   ['keyholders:personal', 'their_program_households:personal', 'their_households:personal', 'member', 'public']],
         // Catch-all: program leads (and household members) match here. Scopes are
         // per-row, so a caller only receives 'personal' on rows where they hold
         // their_program_households (a kid in their program) or their_households.

@@ -10,22 +10,22 @@ type UserRole = {
   id: number;
   name: string | null;
   email: string;
-  sysadmin: boolean;
-  boardMember: boolean;
-  keyholder: boolean;
-  backgroundCheckReviewer: boolean;
+  isSysadmin: boolean;
+  isBoardMember: boolean;
+  isKeyholder: boolean;
+  isBackgroundCheckReviewer: boolean;
   isYouth: boolean;
 };
 
 const ROLE_COLUMNS: { field: keyof UserRole; label: string }[] = [
-  { field: 'sysadmin', label: 'Sysadmin' },
-  { field: 'boardMember', label: 'Board Member' },
-  { field: 'keyholder', label: 'Keyholder' },
-  { field: 'backgroundCheckReviewer', label: 'BG Reviewer' },
+  { field: 'isSysadmin', label: 'Sysadmin' },
+  { field: 'isBoardMember', label: 'Board Member' },
+  { field: 'isKeyholder', label: 'Keyholder' },
+  { field: 'isBackgroundCheckReviewer', label: 'BG Reviewer' },
 ];
 
 export default function RoleAssignmentPage() {
-  const { user, ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
+  const { user, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
 
   const [users, setUsers] = useState<UserRole[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +34,7 @@ export default function RoleAssignmentPage() {
   const [userSearchText, setUserSearchText] = useState("");
   const [hideYouth, setHideYouth] = useState(true);
 
-  const currentUserIsSysadmin = !!user?.sysadmin;
+  const currentUserIsSysadmin = !!user?.isSysadmin;
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -147,7 +147,7 @@ export default function RoleAssignmentPage() {
                     <Center>
                       <Checkbox
                         checked={user[col.field] as boolean}
-                        disabled={savingId === user.id || (col.field === 'sysadmin' && !currentUserIsSysadmin)}
+                        disabled={savingId === user.id || (col.field === 'isSysadmin' && !currentUserIsSysadmin)}
                         onChange={(e) => handleRoleChange(user.id, col.field, e.currentTarget.checked)}
                       />
                     </Center>

@@ -20,10 +20,10 @@ const TAG = 'membership-external-test';
 const SECRET = 'zoho-test-secret';
 
 function asBoard(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: true } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: true } });
 }
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false } });
 }
 
 function boardReq(body: unknown) {
@@ -78,7 +78,7 @@ describe('Membership EXTERNAL phase API', () => {
         process.env.ZOHO_WEBHOOK_SECRET = SECRET;
         await wipe();
 
-        const board = await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', boardMember: true, household: { create: {} } } });
+        const board = await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: {} } } });
         boardId = board.id;
         const user = await prisma.participant.create({ data: { email: `user-${TAG}@example.com`, name: 'User', household: { create: {} } } });
         plainUserId = user.id;

@@ -67,10 +67,10 @@ function scanReq(body: string, headers?: Record<string, string>) {
 function sessionUser(overrides: Partial<SessionUser> & { id: number }): SessionUser {
     return {
         email: `user-${overrides.id}-${TAG}@example.com`,
-        sysadmin: false,
-        boardMember: false,
-        keyholder: false,
-        backgroundCheckReviewer: false,
+        isSysadmin: false,
+        isBoardMember: false,
+        isKeyholder: false,
+        isBackgroundCheckReviewer: false,
         ...overrides,
     };
 }
@@ -96,13 +96,13 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
         let signer: ReturnType<typeof makeKeypair>;
 
         beforeAll(async () => {
-            // A keyholder so a valid kiosk check-in opens the facility → always 200,
+            // A isKeyholder so a valid kiosk check-in opens the facility → always 200,
             // independent of facility state.
             const k = await prisma.participant.create({
                 data: {
                     name: 'Kiosk Keyholder',
                     email: `kiosk-${TAG}@example.com`,
-                    keyholder: true,
+                    isKeyholder: true,
                     household: { create: {} },
                 },
             });
@@ -260,7 +260,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             ({ id: pSameHH, householdId: hLead } = await mk('Same Household Member'));
             ({ id: pOtherHH, householdId: hOther } = await mk('Other Household Member'));
             ({ id: pStranger, householdId: hStranger } = await mk('Stranger'));
-            ({ id: pKeyholder, householdId: hKeyholder } = await mk('Open Facility Keyholder', { keyholder: true }));
+            ({ id: pKeyholder, householdId: hKeyholder } = await mk('Open Facility Keyholder', { isKeyholder: true }));
         });
 
         afterEach(async () => {
@@ -278,7 +278,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             await prisma.household.deleteMany({ where: { id: { in: hs } } });
         });
 
-        /** Open the facility so a non-keyholder check-in can reach 200. */
+        /** Open the facility so a non-isKeyholder check-in can reach 200. */
         async function openFacility() {
             await prisma.visit.create({ data: { participantId: pKeyholder, arrivedAt: new Date() } });
         }

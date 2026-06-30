@@ -12,11 +12,11 @@ type Household = {
   id: number;
   name?: string | null;
   membership?: { status: string } | null;
-  participants?: { id: number; name?: string | null; email?: string | null; boardMember?: boolean }[] | null;
+  participants?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean }[] | null;
 };
 
 export default function AdminHouseholdsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
   const router = useRouter();
 
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -140,7 +140,7 @@ export default function AdminHouseholdsPage() {
               const status = household.membership?.status;
               const hasActiveMembership = status === "ACTIVE";
               const isDenied = status === "DENIED";
-              const hasBoardMember = household.participants?.some((p) => p.boardMember) ?? false;
+              const hasBoardMember = household.participants?.some((p) => p.isBoardMember) ?? false;
 
               return (
                 <Table.Tr key={household.id}>

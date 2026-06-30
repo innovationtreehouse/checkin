@@ -39,7 +39,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
 
         // Acting board member (in their own household).
         const board = await prisma.participant.create({
-            data: { email: `board-${TAG}@example.com`, name: 'Board Actor', boardMember: true, household: { create: {} } },
+            data: { email: `board-${TAG}@example.com`, name: 'Board Actor', isBoardMember: true, household: { create: {} } },
         });
         boardId = board.id;
 
@@ -68,7 +68,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
     });
 
     it('grants an inactive household, sets ACTIVE, and writes an audit row', async () => {
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
         const res = await post({ householdId: inactiveHouseholdId, active: true });
         expect(res.status).toBe(200);
@@ -86,7 +86,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
     });
 
     it('revokes an active household, sets REVOKED, and writes an audit row', async () => {
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
         const res = await post({ householdId: activeHouseholdId, active: false });
         expect(res.status).toBe(200);

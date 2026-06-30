@@ -62,7 +62,7 @@ export async function authenticateRequest(
  *
  * Example usage:
  *   export const GET = withAuth(
- *       { roles: ['sysadmin', 'boardMember'] },
+ *       { roles: ['isSysadmin', 'isBoardMember'] },
  *       async (req, auth) => { ... }
  *   );
  */

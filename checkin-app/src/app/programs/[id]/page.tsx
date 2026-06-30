@@ -26,7 +26,7 @@ type ProgramDetail = {
   maxAge: number | null;
 };
 
-type SessionUser = { sysadmin?: boolean; boardMember?: boolean; id: number };
+type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number };
 
 export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -233,7 +233,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   );
 
   const user = session?.user as SessionUser | undefined;
-  const canManage = !!(session && (user?.sysadmin || user?.boardMember || user?.id === program.leadMentorId));
+  const canManage = !!(session && (user?.isSysadmin || user?.isBoardMember || user?.id === program.leadMentorId));
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.memberPriceCents || program.nonMemberPriceCents);
 

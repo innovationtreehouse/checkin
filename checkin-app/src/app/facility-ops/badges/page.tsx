@@ -23,7 +23,7 @@ const COLUMNS: DataTableColumn<BadgeEvent>[] = [
 ];
 
 export default function AdminBadgesPage() {
-  const { ready, loading: authLoading } = useRequireRole(['sysadmin']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin']);
 
   const [loading, setLoading] = useState(true);
   const [badges, setBadges] = useState<BadgeEvent[]>([]);

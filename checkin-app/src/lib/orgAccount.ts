@@ -6,7 +6,7 @@ import { ORG_DOMAIN } from './config';
  * claim; fall back to the email suffix when `hd` isn't present (e.g. credential login).
  *
  * Used to block staff from building out a household with extra members via self-service.
- * The admin participant-add flow (sysadmin/boardMember acting on a household's behalf)
+ * The admin participant-add flow (isSysadmin/isBoardMember acting on a household's behalf)
  * is deliberately NOT gated by this.
  */
 export function isOrgAccount(user: { hd?: string | null; email?: string | null }): boolean {
