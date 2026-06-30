@@ -237,7 +237,9 @@ export function validateBindings(
 export interface RouteGrantSpec {
     endpoint: string;
     orderedView: readonly (readonly [unknown, readonly string[]])[];
-    returns: readonly string[];
+    // Optional: a route that hasn't declared its response surface is skipped by
+    // validateRouteGrants (incremental coverage), not errored.
+    returns?: readonly string[];
 }
 
 export function validateRouteGrants(
@@ -246,6 +248,11 @@ export function validateRouteGrants(
 ): string[] {
     const errors: string[] = [];
     for (const spec of routes) {
+        // `returns` is optional on RouteSpec — a route that hasn't declared its
+        // response surface yet is skipped (incremental coverage), not errored.
+        // The check tightens automatically as routes backfill `returns`.
+        const returns = spec.returns ?? [];
+        if (returns.length === 0) continue;
         const grantedScopes = new Set<Scope>();
         for (const [, tokens] of spec.orderedView) {
             for (const tok of tokens) {
@@ -258,13 +265,13 @@ export function validateRouteGrants(
         for (const scope of grantedScopes) {
             // 'everyones' is seeded on every row by the engine — never needs a binding.
             if (scope === 'everyones') continue;
-            const resolvable = spec.returns.some(
+            const resolvable = returns.some(
                 model => bindings[model] && scope in bindings[model]!,
             );
             if (!resolvable) {
                 errors.push(
                     `${spec.endpoint}: grants '${scope}:*' but none of its returns ` +
-                        `[${spec.returns.join(', ')}] bind '${scope}' — that grant silently ` +
+                        `[${returns.join(', ')}] bind '${scope}' — that grant silently ` +
                         `resolves to nothing (over-restriction).`,
                 );
             }
