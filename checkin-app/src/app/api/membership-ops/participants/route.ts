@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
+import { isValidEmail } from "@/lib/emergencyContacts/identity";
 
 export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req, auth) => {
     if (auth.type !== 'session') {
@@ -15,17 +16,15 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         // a paid member (defaults false — new participants are visitors, not members).
         const { name, email, parentEmail, dob, householdId, alreadyMember = false } = body;
 
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
         if (!email && !parentEmail && !householdId) {
             return NextResponse.json({ error: "Email, Parent Email, or Household assignment is required" }, { status: 400 });
         }
 
-        if (email && !emailRegex.test(email)) {
+        if (email && !isValidEmail(email)) {
              return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
         }
-        
-        if (parentEmail && !emailRegex.test(parentEmail)) {
+
+        if (parentEmail && !isValidEmail(parentEmail)) {
              return NextResponse.json({ error: "Invalid parent email format" }, { status: 400 });
         }
 
