@@ -10,7 +10,8 @@ import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isOrgAccount } from '@/lib/orgAccount';
-import { pickAddress, type StructuredAddress } from '@/lib/address';
+import { pickAddress, validateAddress, type StructuredAddress, type AddressField } from '@/lib/address';
+import { notifications } from '@mantine/notifications';
 import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
 import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
 
@@ -46,7 +47,10 @@ export default function HouseholdPage() {
   // Snapshot of the address as last loaded/saved; isDirty compares it to current
   // state to drive the unsaved-changes guard.
   const [initialAddress, setInitialAddress] = useState<StructuredAddress>(blankAddress);
+  const [addressErrors, setAddressErrors] = useState<Partial<Record<AddressField, string>>>({});
   const [savingSettings, setSavingSettings] = useState(false);
+  // Transient "Updated" confirmation shown in the Address card header for 5s.
+  const [addressSaved, setAddressSaved] = useState(false);
 
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [contactForm, setContactForm] = useState(blankContactForm);
@@ -92,6 +96,9 @@ export default function HouseholdPage() {
   }, [status, router, fetchHousehold, fetchContacts]);
 
   const handleSaveSettings = async () => {
+    const errors = validateAddress(address);
+    setAddressErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     setSavingSettings(true);
     try {
       const householdRes = await fetch('/api/household/settings', {
@@ -102,6 +109,8 @@ export default function HouseholdPage() {
 
       if (householdRes.ok) {
         setMessage("Settings updated successfully!");
+        setAddressSaved(true);
+        setTimeout(() => setAddressSaved(false), 5000);
         fetchHousehold();
         notifyNavRefresh();
       } else {
@@ -403,15 +412,18 @@ export default function HouseholdPage() {
 
         {household && viewerIsLead && (
           <Card withBorder radius="md" padding="lg">
-            <Title order={3} c="blue" mb="md">Household Address</Title>
+            <Group justify="space-between" align="center" mb="md">
+              <Title order={3} c="blue">Household Address</Title>
+              {addressSaved && <Badge color="green" variant="light">✓ Updated</Badge>}
+            </Group>
             <Text size="sm" c="dimmed" mb="sm">The main address associated with this household.</Text>
             <Stack gap="xs">
-              <TextInput label="Street Address" value={address.line1 ?? ""} onChange={(e) => setAddress({ ...address, line1: e.currentTarget.value })} placeholder="123 Main St" />
+              <TextInput label="Street Address" required value={address.line1 ?? ""} error={addressErrors.line1} onChange={(e) => { setAddress({ ...address, line1: e.currentTarget.value }); setAddressErrors({ ...addressErrors, line1: undefined }); }} placeholder="123 Main St" />
               <TextInput label="Apt / Suite (optional)" value={address.line2 ?? ""} onChange={(e) => setAddress({ ...address, line2: e.currentTarget.value })} placeholder="Apt 4B" />
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                <TextInput label="City" value={address.city ?? ""} onChange={(e) => setAddress({ ...address, city: e.currentTarget.value })} />
-                <TextInput label="State" maxLength={2} value={address.state ?? ""} onChange={(e) => setAddress({ ...address, state: e.currentTarget.value })} placeholder="TX" />
-                <TextInput label="ZIP" value={address.postalCode ?? ""} onChange={(e) => setAddress({ ...address, postalCode: e.currentTarget.value })} placeholder="78701" />
+                <TextInput label="City" required value={address.city ?? ""} error={addressErrors.city} onChange={(e) => { setAddress({ ...address, city: e.currentTarget.value }); setAddressErrors({ ...addressErrors, city: undefined }); }} />
+                <TextInput label="State" required maxLength={2} value={address.state ?? ""} error={addressErrors.state} onChange={(e) => { setAddress({ ...address, state: e.currentTarget.value }); setAddressErrors({ ...addressErrors, state: undefined }); }} placeholder="TX" />
+                <TextInput label="ZIP" required value={address.postalCode ?? ""} error={addressErrors.postalCode} onChange={(e) => { setAddress({ ...address, postalCode: e.currentTarget.value }); setAddressErrors({ ...addressErrors, postalCode: undefined }); }} placeholder="78701" />
               </SimpleGrid>
             </Stack>
             <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="md">
@@ -460,9 +472,13 @@ export default function HouseholdPage() {
                             size="compact-xs"
                             variant="subtle"
                             color="red"
-                            disabled={isLastValid}
-                            title={isLastValid ? "Add a second emergency contact before removing this one." : undefined}
-                            onClick={() => handleDeleteContact(c.id)}
+                            onClick={() => {
+                              if (isLastValid) {
+                                notifications.show({ color: "red", title: "Can't remove last emergency contact", message: "Add a new one first." });
+                                return;
+                              }
+                              handleDeleteContact(c.id);
+                            }}
                           >Remove</Button>
                         </Group>
                       </Group>
