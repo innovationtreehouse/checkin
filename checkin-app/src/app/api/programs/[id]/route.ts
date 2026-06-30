@@ -148,8 +148,8 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
                 action: 'EDIT',
                 tableName: 'Program',
                 affectedEntityId: updatedProgram.id,
-                oldData: JSON.stringify(currentProgram),
-                newData: JSON.stringify(updatedProgram)
+                oldData: currentProgram,
+                newData: updatedProgram
             }
         });
 

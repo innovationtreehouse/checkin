@@ -71,7 +71,8 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
             action: "EDIT",
             tableName: "BoardSettings",
             affectedEntityId: 1,
-            newData: JSON.stringify(data),
+            // data holds a Date (membershipYearBoundary); clone to a JSON-safe object.
+            newData: JSON.parse(JSON.stringify(data)),
         },
     });
 

@@ -150,8 +150,8 @@ export const POST = withAuth({}, async (req, auth) => {
                 tableName: 'ToolStatus',
                 affectedEntityId: pId,
                 secondaryAffectedEntity: tId,
-                oldData: currentStatus ? JSON.stringify(currentStatus) : Prisma.JsonNull,
-                newData: JSON.stringify(upsertedCert)
+                oldData: currentStatus ?? Prisma.JsonNull,
+                newData: upsertedCert
             }
         });
 

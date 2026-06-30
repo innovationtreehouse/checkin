@@ -7,6 +7,7 @@
  */
 
 import { POST } from '@/app/api/events/[id]/attendance/route';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 // Mock NextAuth
@@ -203,7 +204,7 @@ describe('Event Attendance API Integration Tests', () => {
             expect(auditRows[0].actorId).toBe(testLeadMentorId);
             expect(auditRows[0].action).toBe('CREATE');
             expect(auditRows[0].affectedEntityId).toBe(visits[0].id);
-            expect(JSON.parse(auditRows[0].newData as string)).toEqual({
+            expect(normalizeAuditData(auditRows[0].newData)).toEqual({
                 participantId: testParticipant1Id,
                 associatedEventId: testEventId,
                 synthetic: true
@@ -255,7 +256,7 @@ describe('Event Attendance API Integration Tests', () => {
             expect(auditRows[0].actorId).toBe(testAdminId);
             expect(auditRows[0].action).toBe('EDIT');
             expect(auditRows[0].affectedEntityId).toBe(visits[0].id);
-            expect(JSON.parse(auditRows[0].newData as string)).toEqual({
+            expect(normalizeAuditData(auditRows[0].newData)).toEqual({
                 participantId: testParticipant2Id,
                 associatedEventId: testEventId,
                 synthetic: false

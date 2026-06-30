@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { normalizeAuditData } from "@/lib/auditPayload";
 import {
   Badge,
   Center,
@@ -160,7 +161,11 @@ export function AuditLogPanel() {
                       {l.oldData != null || l.newData != null ? (
                         <ScrollArea.Autosize mah={68} maw={420}>
                           <Code block fz="xs" style={{ background: "transparent" }}>
-                            {JSON.stringify({ old: l.oldData, new: l.newData }, null, 2)}
+                            {JSON.stringify(
+                              { old: normalizeAuditData(l.oldData), new: normalizeAuditData(l.newData) },
+                              null,
+                              2,
+                            )}
                           </Code>
                         </ScrollArea.Autosize>
                       ) : (

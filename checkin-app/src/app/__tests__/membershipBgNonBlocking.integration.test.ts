@@ -12,6 +12,7 @@
  */
 
 import { markContractSigned, markBgConsent } from '@/lib/membership/external';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import { attest } from '@/lib/membership/review';
 import { certifyPaymentPlan, activate } from '@/lib/membership/payment';
 import { submitIntake } from '@/lib/membership/intake';
@@ -232,7 +233,7 @@ describe('background check is non-blocking', () => {
         await activate(processId, { via: 'payment', shopifyOrderId: 'pay-2' }); // retry — no-op
         expect(await statusOf(processId)).toBe('ACTIVE');
         const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true } });
-        const activations = audits.filter((a) => String(a.newData).includes('"status":"ACTIVE"')).length;
+        const activations = audits.filter((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"status":"ACTIVE"')).length;
         expect(activations).toBe(1);
     });
 
