@@ -32,7 +32,7 @@ function patch(eventId: number, body: Record<string, unknown>) {
         method: 'PATCH',
         body: JSON.stringify(body),
     });
-    return PATCH(req, { params: Promise.resolve({ id: String(eventId) }) });
+    return PATCH(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(eventId) }) });
 }
 
 describe('PATCH /api/events/[id] cancel — transaction rollback on partial failure', () => {

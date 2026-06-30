@@ -1,36 +1,22 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { addDays, parseISO, isBefore, isEqual, getDay, setHours, setMinutes } from 'date-fns';
 import { fromZonedTime } from 'date-fns-tz';
 import { getAppSettings } from "@/lib/appSettings";
 
 // List standalone (one-time) events — those with no associated program.
-export async function GET() {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const user = session.user as unknown as { isSysadmin?: boolean; isBoardMember?: boolean };
-    if (!user?.isSysadmin && !user?.isBoardMember) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
+export const GET = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async () => {
     const events = await prisma.event.findMany({
         where: { programId: null },
         orderBy: { startAt: "desc" },
         select: { id: true, name: true, startAt: true, endAt: true, description: true },
     });
     return NextResponse.json(events);
-}
+});
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+export const POST = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     try {
         const body = await req.json();
@@ -40,8 +26,8 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
-        const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
+        const user = auth.user;
+        const isSysAdminOrBoard = user.isSysadmin || user.isBoardMember;
         let isLeadMentor = false;
 
         if (programId) {
@@ -142,4 +128,4 @@ export async function POST(req: Request) {
         console.error("Event creation error:", error);
         return NextResponse.json({ error: "Failed to create event(s)" }, { status: 500 });
     }
-}
+});

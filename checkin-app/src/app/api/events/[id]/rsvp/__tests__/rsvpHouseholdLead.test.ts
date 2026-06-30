@@ -29,7 +29,7 @@ jest.mock('@/lib/prisma', () => ({
 const params = Promise.resolve({ id: '5' });
 const body = (b: object) => new Request('http://localhost/api/events/5/rsvp', {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b),
-});
+}) as unknown as import("next/server").NextRequest;
 
 beforeEach(() => {
     jest.clearAllMocks();

@@ -172,7 +172,7 @@ describe('My Events API Integration Tests', () => {
     describe('GET /api/events/mine', () => {
         it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
-             const res = await GET() as Response;
+             const res = await GET(new Request('http://localhost') as unknown as import("next/server").NextRequest) as Response;
              expect(res.status).toBe(401);
         });
 
@@ -180,7 +180,7 @@ describe('My Events API Integration Tests', () => {
              (getServerSession as jest.Mock).mockResolvedValue({
                  user: { id: testUserId }
              });
-             const res = await GET() as Response;
+             const res = await GET(new Request('http://localhost') as unknown as import("next/server").NextRequest) as Response;
              expect(res.status).toBe(200);
 
              const data = await res.json();
@@ -198,7 +198,7 @@ describe('My Events API Integration Tests', () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testVolunteerId }
             });
-            const res = await GET() as Response;
+            const res = await GET(new Request('http://localhost') as unknown as import("next/server").NextRequest) as Response;
             expect(res.status).toBe(200);
 
             const data = await res.json();
@@ -213,7 +213,7 @@ describe('My Events API Integration Tests', () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testUserId }
             });
-            const res = await GET() as Response;
+            const res = await GET(new Request('http://localhost') as unknown as import("next/server").NextRequest) as Response;
             const data = await res.json();
             
             const hasPastEvent = data.some((e: { name: string }) => e.name === 'Mine Test Event Past');

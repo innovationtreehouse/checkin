@@ -44,7 +44,7 @@ function patchReq(body: Record<string, unknown>) {
 }
 
 function patch(eventId: number, body: Record<string, unknown>) {
-    return PATCH(patchReq(body), { params: Promise.resolve({ id: String(eventId) }) });
+    return PATCH(patchReq(body) as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(eventId) }) });
 }
 
 function cronReq() {

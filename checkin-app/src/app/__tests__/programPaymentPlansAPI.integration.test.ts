@@ -101,7 +101,7 @@ describe('Program payment-plan routes', () => {
         return new Request(`http://localhost/api/programs/${programId}/request-payment-plan`, {
             method: 'POST',
             body: JSON.stringify(body),
-        });
+        }) as unknown as import("next/server").NextRequest;
     }
 
     describe('GET /api/finance-ops/payment-plans', () => {

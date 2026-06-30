@@ -149,7 +149,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: validUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(200);
 
         const data = await res.json();
@@ -167,7 +167,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: underageUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(400);
 
         const data = await res.json();
@@ -186,7 +186,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: overageUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(400);
 
         const data = await res.json();
@@ -205,7 +205,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: noDobUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(400);
 
         const data = await res.json();
@@ -223,7 +223,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: exactlyMinUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(200);
 
         const data = await res.json();
@@ -240,7 +240,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: exactlyMaxUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(200);
 
         const data = await res.json();
@@ -257,7 +257,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: turns14TomorrowUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(400);
 
         const data = await res.json();
@@ -275,7 +275,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: turned19YesterdayUserId })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(400);
 
         const data = await res.json();
@@ -294,7 +294,7 @@ describe('Program Age Bounds Integration Tests', () => {
             body: JSON.stringify({ participantId: underageUserId, override: true })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(200);
 
         const data = await res.json();

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
@@ -8,10 +9,18 @@ import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTra
 import { logBackendError } from "@/lib/logger";
 import { config } from "@/lib/config";
 
+// GET is kiosk-first with distinct signature-failure semantics (403 on bad signature,
+// not 401), so it keeps its own kiosk plumbing rather than moving to withAuth. The one
+// thing it was missing — the denied-household gate — is applied inline below.
 export async function GET(req: NextRequest) {
     try {
         // Determine caller identity
         const session = await getServerSession(authOptions);
+        // A denied household is locked out of the whole app — treat as unauthenticated
+        // even on this kiosk-tolerant route, so a denied member can't read counts/safety.
+        if (session?.user?.denied) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
         const user = session?.user;
         const hasKioskHeaders = req.headers.get("x-kiosk-signature");
         const pubKeys = getKioskPublicKeys();
@@ -86,13 +95,9 @@ export async function GET(req: NextRequest) {
     }
 }
 
-export async function DELETE(req: Request) {
-    const session = await getServerSession(authOptions);
-    const user = session?.user;
-
-    if (!user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+export const DELETE = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const user = auth.user;
 
     try {
         const body = await req.json();
@@ -132,15 +137,11 @@ export async function DELETE(req: Request) {
         await logBackendError(error, "DELETE /api/attendance");
         return NextResponse.json({ error: "Failed to force checkout" }, { status: 500 });
     }
-}
+});
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-    const user = session?.user;
-
-    if (!user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+export const POST = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const user = auth.user;
     const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
     try {
@@ -261,4 +262,4 @@ export async function POST(req: Request) {
         await logBackendError(error, "POST /api/attendance");
         return NextResponse.json({ error: "Failed to process notification" }, { status: 500 });
     }
-}
+});

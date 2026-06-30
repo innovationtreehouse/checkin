@@ -213,7 +213,8 @@ describe('Eligible Participants API Integration Tests', () => {
     const createReq = (id: number, search: string = '') => {
         return {
             nextUrl: new URL(`http://localhost:4000/api/programs/${id}/eligible-participants${search ? `?q=${encodeURIComponent(search)}` : ''}`),
-            method: 'GET'
+            method: 'GET',
+            headers: new Headers(),
         } as unknown as never;
     };
 

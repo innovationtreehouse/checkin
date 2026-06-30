@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { createShopifyProgramVariants } from "@/lib/shopify";
@@ -8,8 +9,17 @@ import { logBackendError } from "@/lib/logger";
 import { isActiveMember } from "@/lib/membership";
 import { dollarsToCentsOrNull } from "@inventory/money";
 
+// GET is the PUBLIC program catalog — anonymous callers legitimately get the
+// non-draft, non-memberOnly list (asserted by programsAPI.integration.test.ts),
+// so it can't move to withAuth (which 401s anonymous). Instead apply the
+// denied-household gate inline: a denied member is locked out of the whole app,
+// so collapse a denied session to anonymous — they see only the public list and
+// never the memberOnly programs isActiveMember would otherwise reveal (P0-C).
 export async function GET(req: Request) {
-    const session = await getServerSession(authOptions);
+    let session = await getServerSession(authOptions);
+    if (session?.user?.denied) {
+        session = null;
+    }
 
     try {
         const { searchParams } = new URL(req.url);
@@ -85,13 +95,8 @@ export async function GET(req: Request) {
     }
 }
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-    const canCreate = session?.user?.isSysadmin || session?.user?.isBoardMember;
-
-    if (!session || !canCreate) {
-        return NextResponse.json({ error: "Forbidden: Only Admin or Board Members can create programs" }, { status: 403 });
-    }
+export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req, auth) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     // Hoisted so the catch can name an orphaned Shopify product (created, but DB write failed) for manual cleanup.
     let shopifyData: { shopifyProductId: string, shopifyMemberVariantId: string | null, shopifyNonMemberVariantId: string | null } | null = null;
@@ -139,7 +144,7 @@ export async function POST(req: Request) {
 
         await prisma.auditLog.create({
             data: {
-                actorId: session.user.id,
+                actorId: auth.user.id,
                 action: 'CREATE',
                 tableName: 'Program',
                 affectedEntityId: newProgram.id,
@@ -164,4 +169,4 @@ export async function POST(req: Request) {
         await logBackendError(error, "POST /api/programs");
         return NextResponse.json({ error: "Failed to create program" }, { status: 500 });
     }
-}
+});

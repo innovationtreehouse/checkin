@@ -1,18 +1,13 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
 import { calculateAge } from "@/lib/time";
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     try {
         const programId = parseInt(id, 10);
@@ -36,9 +31,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const currentUserId = (session.user as { id: number }).id;
+        const currentUserId = auth.user.id;
         const isSelfEnrollment = currentUserId === participantId;
-        const isSysAdminOrBoard = (session.user as { isSysadmin?: boolean, isBoardMember?: boolean })?.isSysadmin || (session.user as { isSysadmin?: boolean, isBoardMember?: boolean })?.isBoardMember;
+        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
 
         const participantData = await prisma.participant.findUnique({
             where: { id: participantId },
@@ -160,7 +155,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         console.error("Enrollment creation error:", error);
         return NextResponse.json({ error: "Failed to enroll participant" }, { status: 500 });
     }
-}
+});
 
 // Prisma known-request errors carry a string `code`. Duck-typed so we don't
 // pull in the generated Prisma namespace just for one check.
@@ -169,13 +164,9 @@ function isPrismaError(error: unknown, code: string): boolean {
         && (error as { code: unknown }).code === code;
 }
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     try {
         const programId = parseInt(id, 10);
@@ -198,10 +189,10 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const currentUserId = (session.user as { id: number }).id;
+        const currentUserId = auth.user.id;
         const isSelfRemoval = currentUserId === participantId;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
-        const isSysAdminOrBoard = (session.user as { isSysadmin?: boolean, isBoardMember?: boolean })?.isSysadmin || (session.user as { isSysadmin?: boolean, isBoardMember?: boolean })?.isBoardMember;
+        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
 
         if (!isSelfRemoval && !isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Not authorized to remove this participant" }, { status: 403 });
@@ -237,4 +228,4 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
         console.error("Enrollment deletion error:", error);
         return NextResponse.json({ error: "Failed to remove participant" }, { status: 500 });
     }
-}
+});

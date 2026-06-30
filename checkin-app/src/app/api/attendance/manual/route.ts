@@ -1,19 +1,14 @@
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
-import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth";
+import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { logBackendError } from "@/lib/logger";
 
-export async function POST(req: NextRequest) {
+export const POST = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     try {
-        const session = await getServerSession(authOptions);
-        if (!session || !session.user || !session.user.id) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-
-        const userId = session.user.id;
+        const userId = auth.user.id;
         const body = await req.json();
         const { arrivedAt, departedAt } = body;
 
@@ -92,4 +87,4 @@ export async function POST(req: NextRequest) {
         await logBackendError(error, "POST /api/attendance/manual");
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
-}
+});
