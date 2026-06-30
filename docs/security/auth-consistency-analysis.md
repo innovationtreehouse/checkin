@@ -1350,6 +1350,41 @@ from un-migrated drift.)
 
 ---
 
+## 11. Edge/association sensitivity — investigation verdict: KEEP workarounds, DO NOT build the primitive
+
+**The pattern is real and distinct from field-tier sensitivity.** Confirmed against
+`classifications.ts`: `ProgramParticipant` (programId/participantId/status) and `RSVP`
+(eventId/participantId/status) have **zero** sensitive-tier fields — the leak is 100% *edge
+existence*. `fieldVisible('public', …)` ignores scopes (`core.ts:240`), so per-field stripping is
+*structurally incapable* of protecting these. Extra kicker: `stripValue` keeps rows and `.map`s arrays
+(`stripper.ts:46`), so even if tiered, the **array length (roster size) leaks**.
+
+**Read-side instances the primitive could target — only 3, all closed:** `programs/[id]` GET (inline
+query-shape, `:55-82`, leaked pre-#575), `events/[id]` GET (inline admission `forbidden()`, `:51-59`),
+`attendance` GET (hand-shaped self+household, `:68-81`). (`facility/visits` = admin-role admission, not
+edge-specific; `events/[id]/rsvp` PATCH = a write, GAP-2, out of scope for any read mechanism.)
+
+**Verdict: keep the per-route workarounds.** A row-drop-by-scope primitive fails the cost test:
+1. **It doesn't collapse the 3.** Each route's "who sees the edge" boundary is bespoke and *absent from
+   the scope vocabulary*: `programs/[id]` = enrolled-household-member (no `enrolled_household` scope),
+   `attendance` = same-household visitors (no `household_visitors` scope), `events/[id]` = whole-route
+   staff-only. Row-drop presupposes scopes that **don't exist** — you'd build new CODEOWNERS-gated
+   scopes *first*. And for `events/[id]` row-drop turns a `403` into an empty `200` — strictly worse.
+2. **`_count` breaks it.** `programs/[id]` deliberately keeps `_count.participants` (spots-remaining)
+   **public** while hiding the rows. One row-drop flag can't say "rows private, count public."
+3. **Reads only** — zero help for the §10 write residue. Any "it helps IDOR" claim is false.
+4. **N=3, all closed, zero open leaks.** New classification concept + stripper change + new scopes +
+   re-audit every association model, to refactor 3 closed cases = textbook over-engineering.
+
+**The cheap, preventive substitute (do this instead):** the real residual risk is a *new* roster route
+forgetting to gate an `include` — exactly the pre-#575 failure. A ~20–30 line **edge-include
+drift-guard**: any `handler()`/route that `include`s `{ ProgramParticipant, ProgramVolunteer, RSVP,
+Visit }` must be admission-gated, query-shaped, or admin-role-gated, else CI fails. No runtime
+mechanism, catches the class at a fraction of the cost. **It is a sibling of the Step-7 drift-guard —
+fold it in as a third rule of the same static route scan** (Step-7 chip `task_64466db5`).
+
+---
+
 ## Appendix — exact mechanism inventory (main, post-correction)
 
 - **handler() (7):** `directory/board`, `membership-ops/applications`, `membership/reviews`*,
