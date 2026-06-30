@@ -63,6 +63,13 @@ describe("Emergency Contacts API — removal prohibition", () => {
         await prisma.$disconnect();
     });
 
+    it("rejects a contact with a malformed email — 400", async () => {
+        asUser(leadId);
+        const res = await POST(postReq({ name: "Bad Email", phone: "555-555-9000", email: "not-an-email" }));
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe("Invalid email format");
+    });
+
     it("blocks removing the only valid contact", async () => {
         asUser(leadId);
         const created = await (await POST(postReq({ name: "Aunt May", phone: "555-555-2000" }))).json();

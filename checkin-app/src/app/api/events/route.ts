@@ -119,7 +119,7 @@ export const POST = withAuth({}, async (req, auth) => {
                 action: 'CREATE',
                 tableName: 'Event',
                 affectedEntityId: programId ? parseInt(programId) : 0,
-                newData: JSON.stringify({ count: insertedEvents.count, sample: eventsToCreate[0] })
+                newData: { count: insertedEvents.count, sample: eventsToCreate[0] }
             }
         });
 

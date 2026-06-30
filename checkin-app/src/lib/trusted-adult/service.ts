@@ -432,8 +432,8 @@ function audit(
             action,
             tableName: "TrustedAdult",
             affectedEntityId: taId,
-            oldData: JSON.stringify(oldData),
-            newData: JSON.stringify(newData),
+            oldData,
+            newData,
         },
     });
 }

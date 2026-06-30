@@ -10,6 +10,7 @@
  */
 
 import { attest, ReviewError } from '@/lib/membership/review';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import prisma from '@/lib/prisma';
 
 jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
@@ -104,7 +105,7 @@ describe('attest() concurrency', () => {
 
         // advanceToPayment ran exactly once → exactly one PENDING_PAYMENT audit row, stamped with the winner's id.
         const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true, actorId: true } });
-        const advances = audits.filter((a) => String(a.newData).includes('"status":"PENDING_PAYMENT"'));
+        const advances = audits.filter((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"status":"PENDING_PAYMENT"'));
         expect(advances).toHaveLength(1);
         expect(advances[0].actorId).toBe(winner); // not revA (prior approver) nor the loser
     });
@@ -115,7 +116,7 @@ describe('attest() concurrency', () => {
         await attest(revB, processId, { result: 'REJECT' });
 
         const blocked = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, orderBy: { id: 'desc' } });
-        expect(String(blocked?.newData)).toContain('"status":"BLOCKED"');
+        expect(JSON.stringify(normalizeAuditData(blocked?.newData))).toContain('"status":"BLOCKED"');
         expect(blocked?.actorId).toBe(revB);
         expect(blocked?.actorId).not.toBe(revA);
     });

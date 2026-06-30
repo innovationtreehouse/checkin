@@ -192,7 +192,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                         tableName: 'ProgramParticipant',
                         affectedEntityId: participantId,
                         secondaryAffectedEntity: programId,
-                        newData: JSON.stringify(enrollment)
+                        newData: enrollment
                     }
                 });
             }

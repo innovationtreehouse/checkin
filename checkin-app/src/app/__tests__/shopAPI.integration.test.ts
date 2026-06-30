@@ -7,6 +7,7 @@
  */
 
 import { GET as getMembers } from '@/app/api/shop/members/route';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import { GET as getTools, POST as postTools } from '@/app/api/shop/tools/route';
 import { GET as getCerts, POST as postCerts } from '@/app/api/shop/certifications/route';
 import prisma from '@/lib/prisma';
@@ -328,7 +329,7 @@ describe('Shop API Integration Tests', () => {
              expect(auditRows.length).toBe(1);
              expect(auditRows[0].action).toBe('EDIT');
              expect(auditRows[0].oldData).not.toBeNull();
-             expect(JSON.parse(auditRows[0].oldData as string).level).toBe('BASIC');
+             expect((normalizeAuditData(auditRows[0].oldData) as Record<string, unknown>).level).toBe('BASIC');
         });
 
         it('re-cert by a certifier writes an EDIT audit row with the prior level in oldData and the acting certifier as actor', async () => {
@@ -373,7 +374,7 @@ describe('Shop API Integration Tests', () => {
                 expect(editRow.action).toBe('EDIT');
                 expect(editRow.actorId).toBe(reCertifier.id); // the acting certifier, not an admin
                 expect(editRow.oldData).not.toBeNull();
-                expect(JSON.parse(editRow.oldData as string).level).toBe('BASIC'); // prior level snapshot
+                expect((normalizeAuditData(editRow.oldData) as Record<string, unknown>).level).toBe('BASIC'); // prior level snapshot
             } finally {
                 await prisma.auditLog.deleteMany({ where: { affectedEntityId: target.id, tableName: 'ToolStatus' } });
                 await prisma.toolStatus.deleteMany({ where: { toolId: tool.id } });

@@ -285,6 +285,21 @@ describe('Individual Program API Integration Tests', () => {
              expect(res.status).toBe(401);
         });
 
+        // P1-3: bad-parse id (malformed input) returns 400, matching GET — NOT the
+        // 404 reserved for a valid id with no matching row. Checked before the
+        // not-found/forbidden gates, so even an admin gets 400.
+        it('returns 400 for an unparseable program ID (not 404)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const badParams = { params: Promise.resolve({ id: 'abc' }) };
+             const req = new Request('http://localhost:4000/api/programs/abc', {
+                 method: 'PATCH',
+                 body: JSON.stringify({ name: 'Nope' })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, badParams as unknown as never);
+             expect(res.status).toBe(400);
+        });
+
         it('should block common users from updating a program', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 

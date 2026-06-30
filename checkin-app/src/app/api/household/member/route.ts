@@ -110,7 +110,7 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Participant",
                     affectedEntityId: targetMember.id,
-                    newData: JSON.stringify(updatedMember)
+                    newData: updatedMember
                 }
             });
 

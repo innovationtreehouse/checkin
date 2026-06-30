@@ -49,7 +49,7 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Household",
                     affectedEntityId: user.householdId,
-                    newData: JSON.stringify({ emergencyContactName, emergencyContactPhone, ...pickAddress(updatedHousehold) })
+                    newData: { emergencyContactName, emergencyContactPhone, ...pickAddress(updatedHousehold) }
                 }
             });
 

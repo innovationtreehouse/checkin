@@ -371,7 +371,7 @@ async function audit(
     newData: object,
 ) {
     await tx.auditLog.create({
-        data: { actorId, action, tableName, affectedEntityId, newData: JSON.stringify(newData) },
+        data: { actorId, action, tableName, affectedEntityId, newData },
     });
 }
 
