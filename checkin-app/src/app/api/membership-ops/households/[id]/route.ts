@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { authenticateRequest } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 import { upsertPrimaryContact, getPrimaryValidContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/lib/address";
 
@@ -12,16 +12,11 @@ import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/li
  * to isSysadmin + board, and every edit is written to the audit log with before/
  * after snapshots since the actor is not a member of the household they touch.
  */
-export async function PATCH(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const auth = await authenticateRequest(request);
+export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
+    { roles: ['isSysadmin', 'isBoardMember'] },
+    async (request: NextRequest, auth, { params }) => {
     if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!auth.user.isSysadmin && !auth.user.isBoardMember) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     try {
@@ -83,4 +78,4 @@ export async function PATCH(
         console.error("Failed to update household:", error);
         return NextResponse.json({ error: "Failed to update household" }, { status: 500 });
     }
-}
+});
