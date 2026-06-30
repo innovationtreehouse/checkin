@@ -29,6 +29,11 @@ export interface CallerContext {
     /** Household IDs of those participants — i.e. households with a child in a
      *  program the caller leads/core-vols. Drives the 'their_program_households' scope. */
     householdIdsInScopePrograms: Set<number>;
+    /** Event IDs whose Event.programId is in programsLed ∪ programsCoreVolIn.
+     *  RSVP has no programId column (PK [eventId, participantId]); it reaches a
+     *  program only via eventId → Event.programId. Drives 'their_program_participants'
+     *  on RSVP. */
+    eventIdsInScopePrograms: Set<number>;
     /** Participant IDs with an un-departed Visit. Only populated for keyholders. */
     activeVisitorIds: Set<number>;
 }
@@ -43,6 +48,7 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
         programsCoreVolIn: new Set(),
         participantIdsInScopePrograms: new Set(),
         householdIdsInScopePrograms: new Set(),
+        eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
     };
 
@@ -82,6 +88,18 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
             select: { householdId: true },
         });
         for (const m of members) ctx.householdIdsInScopePrograms.add(m.householdId);
+    }
+
+    // Events belonging to the caller's programs — RSVP reaches a program only via
+    // eventId → Event.programId (RSVP has no programId column). Drives the
+    // 'their_program_participants' scope on RSVP rows.
+    const scopePrograms = [...ctx.programsLed, ...ctx.programsCoreVolIn];
+    if (scopePrograms.length) {
+        const events = await prisma.event.findMany({
+            where: { programId: { in: scopePrograms } },
+            select: { id: true },
+        });
+        for (const e of events) ctx.eventIdsInScopePrograms.add(e.id);
     }
 
     if (ctx.isKeyholder) {

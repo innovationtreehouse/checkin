@@ -57,14 +57,16 @@ describe('validateBindings — coverage (forgotten-model catcher)', () => {
     });
 });
 
-describe('validateBindings — Fee/RSVP dead-field cleanup', () => {
-    it('no longer flags Fee.participantId or RSVP.programId (dead refs removed)', () => {
-        // The literal-port branches read columns the models lack (Fee has no
-        // participantId, RSVP has no programId), never fired at runtime, and are
-        // now removed (equivalence-preserving — S1 stays green).
+describe('validateBindings — Fee/RSVP dead-field cleanup + RSVP eventId re-add', () => {
+    it('no longer flags Fee.participantId (Fee unbound) or RSVP.programId (RSVP now eventId-bound)', () => {
+        // #574 dropped the dead literal-port reads (Fee has no participantId, RSVP
+        // has no programId). Fee is now unbound (public-only); RSVP is re-bound on
+        // the real `eventId` column by this chip. Neither field-existence error
+        // should appear, and RSVP must be clean.
         const errs = validateBindings(SCOPE_BINDINGS, CLS, OPT_OUT_PENDING_ROUTE);
         expect(errs).not.toContain('Fee.participantId — no such field');
         expect(errs).not.toContain('RSVP.programId — no such field');
+        expect(errs.some(e => e.startsWith('RSVP.'))).toBe(false);
     });
 });
 

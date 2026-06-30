@@ -25,6 +25,7 @@ function ctx(opts: Partial<CallerContext> = {}): CallerContext {
         programsCoreVolIn: new Set(),
         participantIdsInScopePrograms: new Set(),
         householdIdsInScopePrograms: new Set(),
+        eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
         ...opts,
     };
