@@ -24,6 +24,15 @@ async function leadHousehold(userId: number): Promise<number | { error: string; 
     return user.householdId;
 }
 
+// SECURITY — deliberately on withAuth(), NOT the handler() field-stripper
+// (P0-B4a step 3, decision 3b). leadHousehold() admits only a lead (or sysadmin)
+// of the caller's OWN household, so every admitted caller is entitled to all of
+// it — there is no mixed-role over-exposure for the stripper to remove. Migrating
+// would be a no-op AND mildly worse: the `invalid` badge derives from
+// conflictParticipantId (internal tier), so handler() adoption would force
+// granting their_households:internal, leaking conflictedAt/createdAt/updatedAt to
+// the wire to reconstruct a flag the server already computes. See
+// docs/designs/p0-b4a-household-handler-migration.md.
 export const GET = withAuth({}, async (_req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const hh = await leadHousehold(auth.user.id);

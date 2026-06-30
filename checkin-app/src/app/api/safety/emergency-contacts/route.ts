@@ -3,6 +3,18 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 
+// SECURITY — deliberately on withAuth(), NOT the handler() field-stripper
+// (P0-B4a step 4, decision: skip). This is the front-desk/safety emergency view:
+// every admitted role (sysadmin | boardMember | keyholder) legitimately needs the
+// emergency-contact names/phones/emails and check-in presence to do their job —
+// the test even asserts "200 for a keyholder (emergency access is allowed)". The
+// payload carries no board-only field (no DOB, internal notes, or address), so
+// the audience is uniformly entitled and per-field stripping has nothing to
+// remove. Worse: routing keyholders through a non-PII view would strip the
+// emergency phone they need, breaking the endpoint's purpose. If the board ever
+// rules keyholders must see names+presence but NOT phone/email, revisit and
+// migrate (keyholder -> member,public; sysadmin/board -> everyones:*). See
+// docs/designs/p0-b4a-household-handler-migration.md.
 export const GET = withAuth(
     { roles: ['sysadmin', 'boardMember', 'keyholder'] },
     async () => {
