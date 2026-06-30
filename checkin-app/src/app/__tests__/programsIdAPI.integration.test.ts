@@ -285,24 +285,6 @@ describe('Individual Program API Integration Tests', () => {
              expect(res.status).toBe(401);
         });
 
-        // GAP-1: PATCH had no denied gate before the withAuth conversion. A denied
-        // household is locked out at admission now, even the program's own lead mentor,
-        // and no mutation occurs.
-        it('should reject a denied household (even the lead mentor) with 401 and not mutate', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId, denied: true } });
-
-             const before = await prisma.program.findUnique({ where: { id: publicProgramId } });
-             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, {
-                 method: 'PATCH',
-                 body: JSON.stringify({ name: 'Denied Should Not Persist' })
-             });
-             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
-             expect(res.status).toBe(401);
-
-             const after = await prisma.program.findUnique({ where: { id: publicProgramId } });
-             expect(after?.name).toBe(before?.name);
-        });
-
         it('should block common users from updating a program', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 

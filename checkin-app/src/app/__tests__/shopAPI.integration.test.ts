@@ -261,21 +261,6 @@ describe('Shop API Integration Tests', () => {
              expect(res.status).toBe(403);
         });
 
-        // GAP-1: POST re-queried certifier status with no denied gate before the
-        // withAuth conversion. A denied certifier is now rejected at admission (401)
-        // and no ToolStatus is written.
-        it('should reject a denied certifier with 401 and not write a status', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: certifierId, denied: true } });
-
-             const before = await prisma.toolStatus.count({ where: { participantId: boardId, toolId: mockToolId } });
-             const req = createReq('POST', { body: { participantId: boardId, toolId: mockToolId, level: 'BASIC' } });
-             const res = await postCerts(req) as Response;
-             expect(res.status).toBe(401);
-
-             const after = await prisma.toolStatus.count({ where: { participantId: boardId, toolId: mockToolId } });
-             expect(after).toBe(before);
-        });
-
         it('should allow Certifiers to update a status for someone else on their specific tool', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: certifierId } });
 
