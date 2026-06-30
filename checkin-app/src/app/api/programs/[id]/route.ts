@@ -93,6 +93,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // A denied household is locked out of the whole app (auth flags stripped but id kept).
+    // Gate here because this handler authorizes on user.id (leadMentorId match), which survives denial.
+    if (session.user?.denied) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
