@@ -11,6 +11,7 @@ import {
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 import { formatDateTime, calculateAge } from '@/lib/time';
+import { formatPhone } from '@/lib/phone';
 
 type ProgramDetail = {
   id: number;
@@ -557,13 +558,13 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         </Group>
                         <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs" spacing="xs">
                           <Text size="sm" c="dimmed"><strong>Email:</strong> {p.participant.email}</Text>
-                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone || 'N/A'}</Text>
+                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone ? formatPhone(p.participant.phone) : 'N/A'}</Text>
                           <Text size="sm" c="dimmed"><strong>Joined:</strong> {p.joinedAt ? formatDateTime(p.joinedAt) : 'N/A'}</Text>
                           {p.participant.household && (
                             <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
                               <strong>Emergency Contact{(p.participant.household.emergencyContacts?.length ?? 0) > 1 ? 's' : ''}:</strong>{' '}
                               {p.participant.household.emergencyContacts && p.participant.household.emergencyContacts.length > 0
-                                ? p.participant.household.emergencyContacts.map((c) => `${c.name} - ${c.phone}`).join('; ')
+                                ? p.participant.household.emergencyContacts.map((c) => `${c.name} - ${formatPhone(c.phone)}`).join('; ')
                                 : 'N/A'}
                             </Text>
                           )}
@@ -587,7 +588,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         </Group>
                         <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs" spacing="xs">
                           <Text size="sm" c="dimmed"><strong>Email:</strong> {p.participant.email}</Text>
-                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone || 'N/A'}</Text>
+                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone ? formatPhone(p.participant.phone) : 'N/A'}</Text>
                           <Text size="sm" c="dimmed"><strong>Pending Since:</strong> {p.pendingSince ? formatDateTime(p.pendingSince) : 'Unknown'}</Text>
                         </SimpleGrid>
                       </Card>

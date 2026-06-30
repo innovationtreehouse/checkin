@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import type { Prisma, EmergencyContact } from "@/generated/prisma/client";
 import { identityKeys, sameIdentity, identityMatchReason, normalizeEmail, normalizePhone } from "./identity";
-import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
+import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 
 /**
  * Emergency-contact write/read model. Enforces the not-a-household-member rule
@@ -68,7 +68,7 @@ function matchingMember(candidate: { name?: string | null; phone?: string | null
 function cleaned(input: ContactInput) {
     return {
         name: input.name.trim(),
-        phone: input.phone.trim(),
+        phone: formatPhone(input.phone),
         email: input.email?.trim() ? input.email.trim() : null,
         relationship: input.relationship?.trim() ? input.relationship.trim() : null,
         phoneDigits: normalizePhone(input.phone),
@@ -183,7 +183,7 @@ export async function upsertPrimaryContact(
 
     const data = {
         name,
-        phone,
+        phone: formatPhone(phone),
         email,
         phoneDigits: normalizePhone(phone),
         emailNorm: normalizeEmail(email),

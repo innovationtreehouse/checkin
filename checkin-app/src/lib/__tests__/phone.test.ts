@@ -1,4 +1,4 @@
-import { isValidPhone, normalizePhone, assertValidPhone, PhoneValidationError } from "@/lib/phone";
+import { isValidPhone, normalizePhone, formatPhone, assertValidPhone, PhoneValidationError } from "@/lib/phone";
 
 describe("normalizePhone", () => {
     it("strips all non-digits", () => {
@@ -30,6 +30,27 @@ describe("isValidPhone", () => {
         expect(isValidPhone("")).toBe(false);
         expect(isValidPhone(null)).toBe(false);
         expect(isValidPhone(undefined)).toBe(false);
+    });
+});
+
+describe("formatPhone", () => {
+    it("renders 10 digits in any format as xxx-xxx-xxxx", () => {
+        expect(formatPhone("5551234567")).toBe("555-123-4567");
+        expect(formatPhone("(555) 123-4567")).toBe("555-123-4567");
+        expect(formatPhone("555.123.4567")).toBe("555-123-4567");
+    });
+
+    it("drops a leading country code", () => {
+        expect(formatPhone("15551234567")).toBe("555-123-4567");
+        expect(formatPhone("+1 (555) 123-4567")).toBe("555-123-4567");
+    });
+
+    it("leaves unrecognizable / partial values trimmed but unchanged", () => {
+        expect(formatPhone("555123")).toBe("555123");
+        expect(formatPhone("  ext 7 ")).toBe("ext 7");
+        expect(formatPhone("")).toBe("");
+        expect(formatPhone(null)).toBe("");
+        expect(formatPhone(undefined)).toBe("");
     });
 });
 
