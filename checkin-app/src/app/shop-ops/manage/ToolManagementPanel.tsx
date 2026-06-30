@@ -18,10 +18,10 @@ type Tool = {
 };
 
 type Certification = {
-  userId: number;
+  participantId: number;
   toolId: number;
   level: "BASIC" | "DOF" | "CERTIFIED" | "INSTRUCTOR" | "MAY_CERTIFY_OTHERS";
-  user?: { id: number; name: string | null };
+  participant?: { id: number; name: string | null };
   tool?: { id: number; name: string };
 };
 
@@ -234,8 +234,8 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
                       ) : (
                         <Stack gap={6} mb="md">
                           {certs.map((c) => (
-                            <Group key={`${c.userId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
-                              <Text size="sm">{c.user?.name ?? 'Unnamed'}</Text>
+                            <Group key={`${c.participantId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
+                              <Text size="sm">{c.participant?.name ?? 'Unnamed'}</Text>
                               <ToolLevelBadge level={toToolLevel(c.level)} />
                             </Group>
                           ))}
@@ -325,7 +325,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
                       ) : (
                         <Stack gap={6} mb="md">
                           {certs.map((c) => (
-                            <Group key={`${c.userId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
+                            <Group key={`${c.participantId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
                               <Text size="sm">{c.tool?.name ?? 'Unknown Tool'}</Text>
                               <ToolLevelBadge level={toToolLevel(c.level)} />
                             </Group>
@@ -374,11 +374,11 @@ function AllTab() {
   // Build the person×tool matrix from the flat cert list.
   const memberMap = new Map<number, string>();
   const toolMap = new Map<number, string>();
-  const cell = new Map<string, Certification>(); // `${userId}-${toolId}` -> cert
+  const cell = new Map<string, Certification>(); // `${participantId}-${toolId}` -> cert
   for (const c of certs) {
-    if (c.user) memberMap.set(c.user.id, c.user.name ?? 'Unnamed');
+    if (c.participant) memberMap.set(c.participant.id, c.participant.name ?? 'Unnamed');
     if (c.tool) toolMap.set(c.tool.id, c.tool.name);
-    cell.set(`${c.userId}-${c.toolId}`, c);
+    cell.set(`${c.participantId}-${c.toolId}`, c);
   }
   const byName = (a: [number, string], b: [number, string]) => a[1].localeCompare(b[1]);
   const allMembers = [...memberMap].sort(byName);

@@ -151,13 +151,13 @@ export const POST = withAuth(
                 for (const tool of mergeParticipant.toolStatuses) {
                     if (!keepParticipant.toolStatuses.find(k => k.toolId === tool.toolId)) {
                         await tx.toolStatus.update({
-                            where: { userId_toolId: { toolId: tool.toolId, userId: mergeId } },
-                            data: { userId: keepId }
+                            where: { participantId_toolId: { toolId: tool.toolId, participantId: mergeId } },
+                            data: { participantId: keepId }
                         });
                         moved.toolStatuses.migrated++;
                     } else {
                         await tx.toolStatus.delete({
-                            where: { userId_toolId: { toolId: tool.toolId, userId: mergeId } }
+                            where: { participantId_toolId: { toolId: tool.toolId, participantId: mergeId } }
                         });
                         moved.toolStatuses.deleted++;
                     }

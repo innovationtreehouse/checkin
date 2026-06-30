@@ -135,16 +135,16 @@ model Tool {
 
 model ToolStatus {
   /// @sensitivity:public
-  userId Int
+  participantId Int
   /// @sensitivity:public
   toolId Int
   /// @sensitivity:member
   level  ToolLevel
 
-  user Participant @relation(fields: [userId], references: [id])
+  participant Participant @relation(fields: [participantId], references: [id])
   tool Tool        @relation(fields: [toolId], references: [id])
 
-  @@id([userId, toolId])
+  @@id([participantId, toolId])
 }
 
 model Household {

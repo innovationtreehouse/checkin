@@ -233,9 +233,15 @@ export function scopesHeld(
             if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
             break;
         }
-        case 'ToolStatus':
+        case 'ToolStatus': {
+            // ToolStatus renamed userId -> participantId (Person = Participant).
+            const participantId = num(row.participantId);
+            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
+            break;
+        }
         case 'Account':
         case 'Session': {
+            // NextAuth-mandated: these keep userId (mapped to participant_id col).
             const userId = num(row.userId);
             if (userId !== undefined && userId === ctx.selfId) scopes.add('their_own');
             break;

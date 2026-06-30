@@ -13,7 +13,7 @@ describe("GET /api/cron/post-event", () => {
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Past Event' } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Future Event' } } });
         await prisma.program.deleteMany({ where: { name: 'Test Program' } });
-        await prisma.toolStatus.deleteMany({ where: { user: { email: { contains: 'example.com' } } } });
+        await prisma.toolStatus.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
         await prisma.householdLead.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
         await prisma.rawBadgeLog.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
         await prisma.participant.deleteMany({ where: { email: { contains: 'example.com' } } });
