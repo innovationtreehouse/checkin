@@ -19,6 +19,10 @@
  * a live authz hole.
  */
 import { PATCH as ADMIN_HH_PATCH } from '@/app/api/membership-ops/households/[id]/route';
+import { POST as PARTICIPANTS_POST } from '@/app/api/membership-ops/participants/route';
+import { PUT as PARTICIPANT_PUT } from '@/app/api/membership-ops/participants/[id]/route';
+import { POST as PARTICIPANT_HH_POST } from '@/app/api/membership-ops/participants/[id]/household/route';
+import { POST as IMPORT_POST } from '@/app/api/membership-ops/participants/import/route';
 import { POST as MERGE_POST } from '@/app/api/membership-ops/participants/merge/route';
 import { GET as MERGE_ANALYZE_GET } from '@/app/api/membership-ops/participants/merge/analyze/route';
 import { POST as IMPORT_PREVIEW_POST } from '@/app/api/membership-ops/participants/import/preview/route';
@@ -127,6 +131,10 @@ describe('Protected-route role rejection', () => {
     // ---- ROLE-GATED: 401 unauthenticated + 403 plain user ---------------------
     const roleGated: Case[] = [
         { name: 'PATCH /api/membership-ops/households/[id]', invoke: () => ADMIN_HH_PATCH(nreq('http://localhost/api/membership-ops/households/1', 'PATCH', {}), idCtx(1)) },
+        { name: 'POST /api/membership-ops/participants', invoke: () => PARTICIPANTS_POST(nreq('http://localhost/api/membership-ops/participants', 'POST', {})) },
+        { name: 'PUT /api/membership-ops/participants/[id]', invoke: () => PARTICIPANT_PUT(nreq('http://localhost/api/membership-ops/participants/1', 'PUT', {}), idCtx(1)) },
+        { name: 'POST /api/membership-ops/participants/[id]/household', invoke: () => PARTICIPANT_HH_POST(nreq('http://localhost/api/membership-ops/participants/1/household', 'POST', {}), idCtx(1)) },
+        { name: 'POST /api/membership-ops/participants/import', invoke: () => IMPORT_POST(nreq('http://localhost/api/membership-ops/participants/import', 'POST')) },
         { name: 'POST /api/membership-ops/participants/merge', invoke: () => MERGE_POST(nreq('http://localhost/api/membership-ops/participants/merge', 'POST', {})) },
         { name: 'GET /api/membership-ops/participants/merge/analyze', invoke: () => MERGE_ANALYZE_GET(nreq('http://localhost/api/membership-ops/participants/merge/analyze')) },
         { name: 'POST /api/membership-ops/participants/import/preview', invoke: () => IMPORT_PREVIEW_POST(nreq('http://localhost/api/membership-ops/participants/import/preview', 'POST')) },

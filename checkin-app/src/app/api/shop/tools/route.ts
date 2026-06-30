@@ -1,15 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
-import { authenticateRequest } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
 
-export async function GET(req: NextRequest) {
-    // authenticateRequest funnels the denied-household check (auth.ts) — a raw
-    // getServerSession would let a board-denied member keep reading shop data.
-    const auth = await authenticateRequest(req);
-
+export const GET = withAuth({}, async (_req, auth) => {
+    // withAuth funnels the denied-household check (auth.ts) and rejects kiosk —
+    // a raw getServerSession would let a board-denied member keep reading shop data.
     if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -29,7 +27,7 @@ export async function GET(req: NextRequest) {
         await logBackendError(error, "GET /api/shop/tools");
         return NextResponse.json({ error: "Failed to fetch tools" }, { status: 500 });
     }
-}
+});
 
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
