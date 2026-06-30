@@ -1195,11 +1195,24 @@ After the hook: make `withAuth` register a permissive policy + call `handler()` 
 code path**. Delete `src/lib/auth.ts`'s `roles`/admission logic; `authenticateRequest` survives as the
 internal primitive shared by the four wrappers.
 
-### Step 7 — Lock it with the drift-guard *(makes the rule a rule)*
+### Step 7 — Lock it with the drift-guard *(HIGHEST-LEVERAGE REMAINING ITEM — preventive security, not hygiene)*
 CI test that fails on any new `getServerSession` / `authenticateRequest` import outside the wrapper
 libs, and on any route file that calls `prisma` without a registered policy (extend the registry's
-existing throw-on-unknown-role, `core.ts:162`, into a coverage test over `src/app/api/**`). Without
-this, buckets (b)/(c) regrow.
+existing throw-on-unknown-role, `core.ts:162`, into a coverage test over `src/app/api/**`).
+
+> **This is the single most valuable remaining item, and it is *security*, not cleanup — proven by
+> the fact that drift has *already re-grown* since the migration.** The doc once recorded 2
+> `getServerSession` routes; current `origin/main` has **6 files** using it (`attendance`, `programs`,
+> `programs/[id]`, `shop/certifications`, `shop/tools`, `auth/dev-personas`), and **GAP-1** (§10) — a
+> live denied-household-lockout bypass on `programs/[id]` PATCH and `shop/certifications` POST — is a
+> re-grown instance of risk #2. New routes keep reaching for `getServerSession` because nothing stops
+> them. Every other remaining item is uniformity/backstop; this one *prevents the next real gap*.
+>
+> **Prerequisite:** the guard fails on the existing 6 until they're converted. So Step 7 = (1) convert
+> the remaining `getServerSession` usages to `withAuth`/`handler()` (the mixed-file GET paths included
+> — they use `getServerSession` only for the manual `denied` check, which `withAuth` does for free),
+> then (2) add the CI guard. GAP-1's one-line fixes (chip, §10) close the live holes now; this closes
+> the *class*.
 
 ### Dependency summary (post-merge 2026-06-30)
 ```
