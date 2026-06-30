@@ -17,6 +17,8 @@ type ParticipantDetail = {
   isCore?: boolean;
 };
 
+type RSVPStatus = "ATTENDING" | "NOT_ATTENDING" | "NO_RESPONSE" | "MAYBE";
+
 type EventData = {
   id: number;
   name: string;
@@ -38,6 +40,14 @@ type EventData = {
     arrivedAt: string;
     departedAt: string | null;
   }[];
+  rsvps: { participantId: number; status: RSVPStatus }[];
+};
+
+const RSVP_BADGE: Record<RSVPStatus, { label: string; color: string }> = {
+  ATTENDING: { label: 'Attending', color: 'green' },
+  MAYBE: { label: 'Maybe', color: 'yellow' },
+  NOT_ATTENDING: { label: 'Not attending', color: 'red' },
+  NO_RESPONSE: { label: 'No response', color: 'gray' },
 };
 
 export default function EventAdminPage({ params }: { params: Promise<{ id: string }> }) {
@@ -309,6 +319,61 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
     );
   };
 
+  const renderRsvpList = () => {
+    if (!eventData.program) return null;
+
+    const statusByParticipant = new Map(eventData.rsvps.map(r => [r.participantId, r.status]));
+    const roster = [
+      ...eventData.program.volunteers.map(v => ({ ...v, role: v.isCore ? 'Core Volunteer' : 'Volunteer' })),
+      ...eventData.program.participants.map(p => ({ ...p, role: 'Participant' })),
+    ];
+    const ROLE_RANK: Record<string, number> = { 'Core Volunteer': 1, 'Volunteer': 2, 'Participant': 3 };
+    roster.sort((a, b) =>
+      ROLE_RANK[a.role] !== ROLE_RANK[b.role]
+        ? ROLE_RANK[a.role] - ROLE_RANK[b.role]
+        : (a.participant.name || "").localeCompare(b.participant.name || "")
+    );
+
+    return (
+      <Card withBorder radius="md" padding="lg" mb="lg">
+        <Title order={4} mb="md">RSVPs</Title>
+        <Table.ScrollContainer minWidth={400}>
+          <Table verticalSpacing="sm">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Name</Table.Th>
+                <Table.Th>Role</Table.Th>
+                <Table.Th>RSVP</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {roster.map((member) => {
+                const badge = RSVP_BADGE[statusByParticipant.get(member.participantId) ?? 'NO_RESPONSE'];
+                return (
+                  <Table.Tr key={`${member.role}-${member.participantId}`}>
+                    <Table.Td>
+                      <Text fw={500}>{member.participant.name || 'Unnamed'}</Text>
+                      <Text size="xs" c="dimmed">{member.participant.email}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge color={member.role === 'Participant' ? 'cyan' : 'yellow'} variant="light">{member.role}</Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge color={badge.color} variant="light">{badge.label}</Badge>
+                    </Table.Td>
+                  </Table.Tr>
+                );
+              })}
+              {roster.length === 0 && (
+                <Table.Tr><Table.Td colSpan={3} ta="center"><Text c="dimmed" py="md">No roster found for this program.</Text></Table.Td></Table.Tr>
+              )}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      </Card>
+    );
+  };
+
   return (
     <Container size="lg" pb="md">
       <Card withBorder radius="md" padding="lg">
@@ -358,6 +423,9 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
             {renderRosterGrid()}
           </Card>
         )}
+
+        {/* ENROLLED INDIVIDUALS + RSVP STATUS */}
+        {renderRsvpList()}
 
         {/* FUTURE EVENT: EDIT / CANCEL */}
         {!isPastEvent && canManageEventInfo && (

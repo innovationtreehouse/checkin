@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import { Card, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 
 type OneTimeEvent = {
@@ -26,7 +25,6 @@ export default function OneTimeEventsList() {
   const [futureOnly, setFutureOnly] = useState(true);
   // Snapshot "now" once on mount — Date.now() is impure and can't run during render.
   const [now] = useState(() => Date.now());
-  const router = useRouter();
 
   useEffect(() => {
     fetch("/api/events")
@@ -87,11 +85,7 @@ export default function OneTimeEventsList() {
             </Table.Thead>
             <Table.Tbody>
               {rows.map((e) => (
-                <Table.Tr
-                  key={e.id}
-                  onClick={() => router.push(`/admin/events/${e.id}`)}
-                  style={{ cursor: "pointer" }}
-                >
+                <Table.Tr key={e.id}>
                   <Table.Td>{e.name}</Table.Td>
                   <Table.Td>{fmt(e.startAt)}</Table.Td>
                   <Table.Td>{fmt(e.endAt)}</Table.Td>

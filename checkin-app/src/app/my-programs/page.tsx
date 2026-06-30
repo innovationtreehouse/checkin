@@ -50,15 +50,51 @@ export default function MyProgramsHome() {
   );
 }
 
+const fmtSession = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric" });
+
+type RsvpTally = LedProgram['upcoming'][number]['participants'];
+
+function RsvpRow({ label, tally }: { label: string; tally: RsvpTally }) {
+  return (
+    <Group justify="space-between" wrap="nowrap" mt={4}>
+      <Text size="xs" c="dimmed" w={90}>{label}</Text>
+      <Group gap="xs" wrap="nowrap">
+        <Badge color="green" variant="light">Yes {tally.yes}</Badge>
+        <Badge color="yellow" variant="light">Maybe {tally.maybe}</Badge>
+        <Badge color="red" variant="light">No {tally.no}</Badge>
+      </Group>
+    </Group>
+  );
+}
+
 function ProgramSection({ program }: { program: LedProgram }) {
   return (
     <Card withBorder radius="md" padding="lg">
-      <Group justify="space-between" mb="sm">
+      <Group justify="space-between" align="flex-start" mb="sm">
         <Title order={3}>{program.name}</Title>
         <Button component={Link} href={`/program-ops/programs/${program.id}`} variant="subtle" size="xs">
           Manage
         </Button>
       </Group>
+
+      <Text ta="center" fw={600} mb="md">
+        Total Enrolled: {program.totalEnrolled}
+      </Text>
+
+      {program.upcoming.length > 0 && (
+        <Stack gap="sm" mb="md">
+          <Text fw={600} size="sm">Next sessions</Text>
+          {program.upcoming.map((s) => (
+            <div key={s.eventId}>
+              <Text size="sm" fw={500}>{fmtSession(s.startAt)} — {s.name}</Text>
+              <RsvpRow label="Participants" tally={s.participants} />
+              <RsvpRow label="Volunteers" tally={s.volunteers} />
+            </div>
+          ))}
+        </Stack>
+      )}
+
       {program.pending.length === 0 ? (
         <Text c="dimmed" size="sm">No attendance to confirm.</Text>
       ) : (
