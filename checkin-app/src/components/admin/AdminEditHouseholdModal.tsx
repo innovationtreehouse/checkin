@@ -8,8 +8,7 @@ import { pickAddress, type StructuredAddress } from "@/lib/address";
 export type AdminHousehold = {
   id: number;
   name: string | null;
-  emergencyContactName: string | null;
-  emergencyContactPhone: string | null;
+  emergencyContacts?: { name: string | null; phone: string | null }[];
 } & Partial<StructuredAddress>;
 
 type FormState = {
@@ -65,15 +64,16 @@ export function AdminEditHouseholdModal({
       try {
         const res = await fetch(`/api/membership-ops/households?id=${householdId}`);
         const data = await res.json();
-        const h: AdminHousehold | null = data.household;
+        const h: AdminHousehold | null = data.households?.[0] ?? null;
         if (cancelled) return;
         if (h) {
           const a = pickAddress(h);
+          const contact = h.emergencyContacts?.[0];
           const loaded: FormState = {
             name: h.name || "",
             line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "",
-            emergencyContactName: h.emergencyContactName || "",
-            emergencyContactPhone: h.emergencyContactPhone || "",
+            emergencyContactName: contact?.name || "",
+            emergencyContactPhone: contact?.phone || "",
           };
           setForm(loaded);
           setInitial(loaded);
