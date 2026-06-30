@@ -246,6 +246,8 @@ export const authOptions: NextAuthOptions = {
                         },
                         // One row is enough to mark this participant a household lead.
                         householdLeads: { take: 1, select: { participantId: true } },
+                        // Program ids led — drives the client program-ops row gate.
+                        programsLed: { select: { id: true } },
                         household: { include: { membership: true } }
                     }
                 }));
@@ -285,6 +287,8 @@ export const authOptions: NextAuthOptions = {
                         },
                         // One row is enough to mark this participant a household lead.
                         householdLeads: { take: 1, select: { participantId: true } },
+                        // Program ids led — drives the client program-ops row gate.
+                        programsLed: { select: { id: true } },
                         household: { include: { membership: true } }
                     }
                 }));
@@ -313,6 +317,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.isBackgroundCheckReviewer = token.isBackgroundCheckReviewer;
                 session.user.householdId = token.householdId;
                 session.user.householdLead = token.householdLead ?? false;
+                session.user.programsLed = token.programsLed ?? [];
                 session.user.toolStatuses = token.toolStatuses || [];
                 session.user.impersonatedBy = token.impersonatedBy ?? null;
                 // Surface the org-gate claims so dev-only server actions (assertDevActor) can

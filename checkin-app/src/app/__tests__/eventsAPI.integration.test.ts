@@ -7,6 +7,7 @@
  */
 
 import { POST } from '@/app/api/events/route';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -167,7 +168,7 @@ describe('Events API Integration Tests', () => {
             expect(logs[0].action).toBe('CREATE');
             expect(logs[0].affectedEntityId).toBe(testProgramId);
             // newData is a JSON-stringified summary: { count, sample }.
-            expect(JSON.parse(logs[0].newData as string)).toMatchObject({ count: 1 });
+            expect(normalizeAuditData(logs[0].newData)).toMatchObject({ count: 1 });
         });
 
         it('should successfully create recurring events as a lead mentor', async () => {

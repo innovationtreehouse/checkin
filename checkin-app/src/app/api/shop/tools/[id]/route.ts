@@ -33,7 +33,7 @@ export const PATCH = withAuth(
                 action: 'EDIT',
                 tableName: 'Tool',
                 affectedEntityId: toolId,
-                newData: JSON.stringify(tool),
+                newData: tool,
             },
         });
 

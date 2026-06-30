@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { createContact, listContacts, EmergencyContactError } from "@/lib/emergencyContacts/service";
+import { isValidEmail } from "@/lib/emergencyContacts/identity";
 
 /** Shape a contact for the client, exposing the validity flag. */
 function present(c: { id: number; name: string; phone: string; email: string | null; relationship: string | null; priority: number; conflictParticipantId: number | null }) {
@@ -39,6 +40,9 @@ export const POST = withAuth({}, async (req, auth) => {
 
     try {
         const { name, phone, email, relationship, priority } = await req.json();
+        if (email && !isValidEmail(email)) {
+            return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+        }
         const contact = await createContact(prisma, hh, { name, phone, email, relationship, priority });
         await prisma.auditLog.create({
             data: {
@@ -47,7 +51,7 @@ export const POST = withAuth({}, async (req, auth) => {
                 tableName: "EmergencyContact",
                 affectedEntityId: contact.id,
                 secondaryAffectedEntity: hh,
-                newData: JSON.stringify({ name: contact.name, phone: contact.phone }),
+                newData: { name: contact.name, phone: contact.phone },
             },
         });
         return NextResponse.json({ contact: present(contact) }, { status: 201 });

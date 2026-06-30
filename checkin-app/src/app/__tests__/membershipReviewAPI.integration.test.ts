@@ -7,6 +7,7 @@
  */
 
 import { GET as REVIEW_QUEUE, POST as ATTEST } from '@/app/api/membership/reviews/route';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import { POST as OVERRIDE } from '@/app/api/membership-ops/applications/review-override/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
@@ -133,7 +134,7 @@ describe('Membership BG review API', () => {
 
         // The advance audit records the reviewer whose attestation triggered it (rev2), not rev1/SYSTEM.
         const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId }, orderBy: { id: 'desc' } });
-        const advance = audits.find((a) => String(a.newData).includes('"status":"PENDING_PAYMENT"'));
+        const advance = audits.find((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"status":"PENDING_PAYMENT"'));
         expect(advance?.actorId).toBe(rev2);
     });
 
@@ -159,7 +160,7 @@ describe('Membership BG review API', () => {
         // The BLOCKED audit records the rejecting reviewer.
         const audit = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId }, orderBy: { id: 'desc' } });
         expect(audit?.actorId).toBe(rev1);
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'BLOCKED' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'BLOCKED' });
     });
 
     it('board reset on a BLOCKED app clears attestations and returns it to review', async () => {
@@ -178,7 +179,7 @@ describe('Membership BG review API', () => {
         // The reset audit records the acting board member and the action.
         const audit = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId }, orderBy: { id: 'desc' } });
         expect(audit?.actorId).toBe(board);
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ action: 'board reset' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ action: 'board reset' });
     });
 
     it('board override-approve on a BLOCKED app forces it to PENDING_PAYMENT', async () => {
@@ -194,7 +195,7 @@ describe('Membership BG review API', () => {
 
         // The advance audit records the acting board member.
         const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: proc.processId }, orderBy: { id: 'desc' } });
-        const advance = audits.find((a) => String(a.newData).includes('"status":"PENDING_PAYMENT"'));
+        const advance = audits.find((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"status":"PENDING_PAYMENT"'));
         expect(advance?.actorId).toBe(board);
     });
 

@@ -295,8 +295,8 @@ function audit(db: TxClient | typeof prisma, actorId: number, processId: number,
             action: "EDIT",
             tableName: "MembershipProcess",
             affectedEntityId: processId,
-            oldData: JSON.stringify(oldData),
-            newData: JSON.stringify(newData),
+            oldData,
+            newData,
         },
     });
 }

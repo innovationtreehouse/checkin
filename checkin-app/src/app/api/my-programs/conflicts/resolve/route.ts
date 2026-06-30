@@ -66,7 +66,7 @@ export const POST = withAuth({}, async (req, auth) => {
         tableName: "Visit",
         affectedEntityId: visit.id,
         secondaryAffectedEntity: visit.associatedEventId,
-        oldData: JSON.stringify({
+        oldData: {
           participantId: visit.participantId,
           arrivedAt: visit.arrivedAt,
           departedAt: visit.departedAt,
@@ -74,7 +74,7 @@ export const POST = withAuth({}, async (req, auth) => {
           departedVia: visit.departedVia,
           associatedEventId: visit.associatedEventId,
           reason: "duplicate-attendance-conflict",
-        }),
+        },
       },
     });
   });

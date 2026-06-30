@@ -8,6 +8,7 @@
  */
 
 import { PUT } from '@/app/api/admin/settings/localization/route';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -81,7 +82,7 @@ describe('Localization settings API', () => {
         expect(logs[0].action).toBe('EDIT');
         expect(logs[0].affectedEntityId).toBe(1);
         // Route records the after-image in newData (it does not capture oldData).
-        expect(JSON.parse(logs[0].newData as string)).toEqual({ timezone: 'America/New_York', locale: 'es-ES' });
+        expect(normalizeAuditData(logs[0].newData)).toEqual({ timezone: 'America/New_York', locale: 'es-ES' });
         expect(logs[0].oldData).toBeNull();
     });
 });
