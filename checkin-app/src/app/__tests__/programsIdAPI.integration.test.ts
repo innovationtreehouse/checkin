@@ -19,8 +19,13 @@ describe('Individual Program API Integration Tests', () => {
     let commonId: number;
     let memberId: number;
     let memberHouseholdId: number;
+    let enrolledId: number;
     let publicProgramId: number;
     let memberOnlyProgramId: number;
+
+    // Distinctive name we assert NEVER appears in an anonymous response — the
+    // roster/association leak (#P0-5.1a) is closed iff this string is absent.
+    const ENROLLED_NAME = 'Roster Leak Canary';
 
     beforeAll(async () => {
         // Clean up any leaked state
@@ -96,10 +101,20 @@ describe('Individual Program API Integration Tests', () => {
             data: { name: 'Member Only Prog ID API Test', phase: 'RUNNING', memberOnly: true, leadMentorId: leadId }
         });
         memberOnlyProgramId = memberOnlyProgram.id;
+
+        // Enroll a participant with a recognizable name into the public program so
+        // the leak tests have a roster identity to look for.
+        const enrolled = await prisma.participant.create({
+            data: { email: 'enrolled-prog-id-api-test@example.com', name: ENROLLED_NAME, household: { create: {} } }
+        });
+        enrolledId = enrolled.id;
+        await prisma.programParticipant.create({
+            data: { programId: publicProgramId, participantId: enrolledId, status: 'ACTIVE' }
+        });
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, leadId, commonId, memberId];
+        const existingUserIds = [adminId, leadId, commonId, memberId, enrolledId];
 
         if (memberHouseholdId) {
             await prisma.membership.deleteMany({
@@ -109,6 +124,10 @@ describe('Individual Program API Integration Tests', () => {
 
         const validProgramIds = [publicProgramId, memberOnlyProgramId].filter(id => id !== undefined);
         if (validProgramIds.length > 0) {
+            // ProgramParticipant has no cascade — clear enrollments before the program.
+            await prisma.programParticipant.deleteMany({
+                where: { programId: { in: validProgramIds } }
+            });
             await prisma.program.deleteMany({
                 where: { id: { in: validProgramIds } }
             });
@@ -186,9 +205,71 @@ describe('Individual Program API Integration Tests', () => {
              const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}`, { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.name).toBe('Member Only Prog ID API Test');
+        });
+
+        // ── Roster / association leak regression (auth-consistency §5.1a) ───────────
+        // ProgramParticipant rows + Participant.name are tier 'public', so per-field
+        // stripping cannot hide WHO is enrolled. The route gates the association:
+        // anonymous/non-enrolled get metadata + counts only, never the roster.
+        it('does NOT leak the participant roster to an unauthenticated caller', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue(null);
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             // Metadata still flows (public catalog/registration page).
+             expect(data.name).toBe('Public Prog ID API Test');
+             // Roster rows are absent — no participant/volunteer arrays at all.
+             expect(data.participants).toBeUndefined();
+             expect(data.volunteers).toBeUndefined();
+             // The enrolled identity must not appear anywhere in the payload.
+             expect(JSON.stringify(data)).not.toContain(ENROLLED_NAME);
+             // Capacity is preserved via an aggregate count, not the rows.
+             expect(data._count?.participants).toBe(1);
+        });
+
+        it('does NOT leak the roster to a plain authenticated non-enrolled caller', async () => {
+             // memberId is authenticated but not enrolled in / staffing this program.
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: memberId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.name).toBe('Public Prog ID API Test');
+             expect(data.participants).toBeUndefined();
+             expect(JSON.stringify(data)).not.toContain(ENROLLED_NAME);
+        });
+
+        it('returns the roster to the program lead mentor (staff tier unchanged)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(Array.isArray(data.participants)).toBe(true);
+             expect(data.participants.some((p: { participantId: number }) => p.participantId === enrolledId)).toBe(true);
+             expect(JSON.stringify(data)).toContain(ENROLLED_NAME);
+        });
+
+        it('returns the roster to an enrolled participant (their own household)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: enrolledId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(Array.isArray(data.participants)).toBe(true);
+             expect(data.participants.some((p: { participantId: number }) => p.participantId === enrolledId)).toBe(true);
         });
     });
 
