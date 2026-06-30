@@ -26,9 +26,12 @@ import { type CallerContext } from '@/security/access-resolvers';
 import { scopesHeld, SCOPE_BINDINGS } from '@/security/scopeBindings';
 import type { Scope } from '@/security/core';
 
-// ─── FROZEN reference oracle: verbatim copy of the deleted switch ──────────────
+// ─── FROZEN reference oracle: snapshot of the deleted switch ───────────────────
 // Do NOT "simplify" or sync this to scopeBindings.ts — its whole value is being
-// an independent snapshot of the pre-refactor behavior.
+// an independent snapshot of the pre-refactor behavior. ONE deliberate edit:
+// the Fee/RSVP dead reads (Fee.participantId, RSVP.programId — columns those
+// models lack) were dropped to match the schema-correct bindings. That is
+// behavior-identical on every reachable row; see the case body below.
 const ROW_SCOPE_KEY: Record<string, string> = { EmergencyContact: 'householdId' };
 
 function referenceScopesHeld(
@@ -83,15 +86,26 @@ function referenceScopesHeld(
             break;
         }
         case 'ProgramParticipant':
-        case 'ProgramVolunteer':
-        case 'Fee':
-        case 'RSVP': {
+        case 'ProgramVolunteer': {
             const programId = num(row.programId);
             const participantId = num(row.participantId);
             if (programId !== undefined && (ctx.programsLed.has(programId) || ctx.programsCoreVolIn.has(programId))) scopes.add('their_program_participants');
             if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
             break;
         }
+        // Fee + RSVP were grouped with the two above in the original switch,
+        // reading BOTH programId and participantId. But Fee has no participantId
+        // column and RSVP has no programId column, so on any REAL row those reads
+        // were always undefined and granted nothing. The dead reads are dropped
+        // here to match the schema-correct bindings (Fee unbound/public-only;
+        // RSVP keeps only their_own) — behavior-neutral on every reachable row,
+        // diverging only on synthetic rows that carry impossible field combos.
+        case 'RSVP': {
+            const participantId = num(row.participantId);
+            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
+            break;
+        }
+        // 'Fee': no case — public-only, resolves to {everyones} like any unbound model.
         case 'Event': {
             const programId = num(row.programId);
             if (programId !== undefined && (ctx.programsLed.has(programId) || ctx.programsCoreVolIn.has(programId))) scopes.add('their_program_participants');
@@ -217,6 +231,9 @@ const MODELS = [
     ...Object.keys(SCOPE_BINDINGS),
     // unbound-but-sensitive, structurally-unscopable, and unknown — all must
     // resolve identically (everyones-only, or {} via fail-closed) under both.
+    // 'Fee' kept here after its binding was dropped (public-only) so S1 still
+    // exercises it as an unbound model rather than silently losing coverage.
+    'Fee',
     'Tool',
     'AuditLog',
     'BoardSettings',
@@ -253,6 +270,6 @@ describe('S1 — scopesHeld ≡ frozen switch (set-equality across personas × m
     it('covers every bound model', () => {
         // Guard against the row set silently not exercising a model.
         expect(MODELS).toEqual(expect.arrayContaining(Object.keys(SCOPE_BINDINGS)));
-        expect(Object.keys(SCOPE_BINDINGS).length).toBe(19);
+        expect(Object.keys(SCOPE_BINDINGS).length).toBe(18);
     });
 });

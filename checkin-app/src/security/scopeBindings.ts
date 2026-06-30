@@ -19,13 +19,14 @@
  *     Fee and RSVP under one `case` body that read BOTH `row.programId` and
  *     `row.participantId`. `Fee` has no `participantId` column and `RSVP` has no
  *     `programId` column, so on a REAL row those reads are always `undefined`
- *     and grant nothing. But the resolver is a pure function of an arbitrary
- *     row, and S1 (set-equality vs the switch) feeds rows that carry those
- *     fields — so to stay behavior-identical the branches are ported VERBATIM,
- *     not dropped. Consequence: validateBindings' field-existence check will
- *     flag `Fee.participantId` and `RSVP.programId` once wired (Step 3). That is
- *     a real finding about the grouped switch case, surfaced — not silently
- *     papered over.
+ *     and grant nothing. Those two dead reads are now DROPPED (Step 3 Blocker 1):
+ *     `Fee` is unbound (it is wholly @sensitivity:public, so it needs no
+ *     binding) and `RSVP` keeps only `their_own`. Behavior-identical on every
+ *     reachable row — the S1 frozen oracle was split to match (impossible
+ *     synthetic rows are the only divergence) — and it clears the
+ *     validateBindings field-existence errors for `Fee.participantId` and
+ *     `RSVP.programId`. A later chip re-adds RSVP program-lead scope via
+ *     `eventId` + a new `eventIdsInScopePrograms` context set.
  *
  * IMPORTANT: This file is CODEOWNERS-gated.
  */
@@ -66,26 +67,16 @@ export const SCOPE_BINDINGS = {
         their_own: { field: 'participantId', eqCtx: 'selfId' },
     },
     // Fee + RSVP shared the grouped switch case with ProgramParticipant/
-    // ProgramVolunteer — ported VERBATIM (both scopes) so the resolver is
-    // set-equal to the switch on any row shape (S1 proves it). NOTE: `Fee` has
-    // no `participantId` column and `RSVP` has no `programId` column in
-    // classifications.ts, so those two branches never fire on a real row — they
-    // are inert in production but kept for exact switch-equivalence. The
-    // field-existence validator (validateBindings) will flag `Fee.participantId`
-    // and `RSVP.programId` when wired; the team decides then whether to keep the
-    // literal port or narrow the grouped case. See report.
-    Fee: {
-        their_program_participants: {
-            field: 'programId',
-            inCtx: ['programsLed', 'programsCoreVolIn'],
-        },
-        their_own: { field: 'participantId', eqCtx: 'selfId' },
-    },
+    // ProgramVolunteer. The literal port carried both scopes onto each, but
+    // `Fee` has no `participantId` column and `RSVP` has no `programId` column
+    // in classifications.ts — so those two branches read `undefined` and never
+    // fired at runtime. Removing them is equivalence-preserving (S1 stays green)
+    // and clears the validateBindings field-existence errors. Fee dropped
+    // entirely: it is wholly @sensitivity:public, so it needs no binding.
+    // RSVP keeps only `their_own` (the owner sees their own row incl.
+    // reminderSentAt:internal). A later chip re-adds RSVP program-lead scope via
+    // `eventId` + a new eventIdsInScopePrograms context set.
     RSVP: {
-        their_program_participants: {
-            field: 'programId',
-            inCtx: ['programsLed', 'programsCoreVolIn'],
-        },
         their_own: { field: 'participantId', eqCtx: 'selfId' },
     },
     Event: {
