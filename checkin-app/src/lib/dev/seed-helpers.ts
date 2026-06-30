@@ -190,19 +190,19 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         create: { name: "Drill Press", safetyGuide: "https://example.com/drill-press-safety" },
     });
     await prisma.toolStatus.upsert({
-        where: { userId_toolId: { userId: certifiedAdult.id, toolId: tableSaw.id } },
+        where: { participantId_toolId: { participantId: certifiedAdult.id, toolId: tableSaw.id } },
         update: { level: "CERTIFIED" },
-        create: { userId: certifiedAdult.id, toolId: tableSaw.id, level: "CERTIFIED" },
+        create: { participantId: certifiedAdult.id, toolId: tableSaw.id, level: "CERTIFIED" },
     });
     await prisma.toolStatus.upsert({
-        where: { userId_toolId: { userId: certifiedAdult.id, toolId: drillPress.id } },
+        where: { participantId_toolId: { participantId: certifiedAdult.id, toolId: drillPress.id } },
         update: { level: "CERTIFIED" },
-        create: { userId: certifiedAdult.id, toolId: drillPress.id, level: "CERTIFIED" },
+        create: { participantId: certifiedAdult.id, toolId: drillPress.id, level: "CERTIFIED" },
     });
     await prisma.toolStatus.upsert({
-        where: { userId_toolId: { userId: toolCertifier.id, toolId: tableSaw.id } },
+        where: { participantId_toolId: { participantId: toolCertifier.id, toolId: tableSaw.id } },
         update: { level: "MAY_CERTIFY_OTHERS" },
-        create: { userId: toolCertifier.id, toolId: tableSaw.id, level: "MAY_CERTIFY_OTHERS" },
+        create: { participantId: toolCertifier.id, toolId: tableSaw.id, level: "MAY_CERTIFY_OTHERS" },
     });
 
     // 5. Sample program

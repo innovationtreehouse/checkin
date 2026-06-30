@@ -42,7 +42,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         await prisma.toolStatus.deleteMany({
-            where: { userId: { in: existingUserIds } }
+            where: { participantId: { in: existingUserIds } }
         });
 
         await prisma.tool.deleteMany({
@@ -72,7 +72,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
 
         await prisma.toolStatus.create({
             data: { 
-                userId: testUserId,
+                participantId: testUserId,
                 toolId: toolId,
                 level: 'CERTIFIED'
             }
@@ -93,7 +93,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
             where: { participantId: testUserId }
         });
         await prisma.toolStatus.deleteMany({
-            where: { userId: testUserId }
+            where: { participantId: testUserId }
         });
         await prisma.participant.deleteMany({
             where: { id: testUserId }
