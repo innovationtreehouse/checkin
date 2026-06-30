@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireCronSecret } from "@/lib/cronAuth";
+import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
 
-export async function GET(req: Request) {
-    const denied = requireCronSecret(req);
-    if (denied) return denied;
-
-    try {
+export const GET = withCron(async () => {
         const now = new Date();
 
         // 1. Find all users who are currently checked in (abandoned visits)
@@ -78,9 +74,4 @@ export async function GET(req: Request) {
             },
             postEvents: emailResult
         });
-
-    } catch (error) {
-        console.error("Failed to run nightly cron:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-    }
-}
+});
