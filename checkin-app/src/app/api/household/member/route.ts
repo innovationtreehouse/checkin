@@ -13,7 +13,7 @@ export const PATCH = withAuth(
             const userId = auth.user.id;
 
             const body = await req.json();
-            const { participantId, name, email, dob, phone, isLead } = body;
+            const { participantId, name, email, dob, phone, isLead, over25 } = body;
 
             if (!participantId) {
                 return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
@@ -47,6 +47,8 @@ export const PATCH = withAuth(
                     email: email !== undefined ? (email === "" ? null : email.toLowerCase()) : undefined,
                     dateOfBirth: dob !== undefined ? (dob === "" ? null : new Date(dob + "T12:00:00Z")) : undefined,
                     phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
+                    // A real DoB supersedes the 25+ flag; otherwise honor the checkbox.
+                    isDeclaredAdult: over25 !== undefined ? (dob ? false : !!over25) : undefined,
                 }
             });
 

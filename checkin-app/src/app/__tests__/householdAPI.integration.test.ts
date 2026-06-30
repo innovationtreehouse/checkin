@@ -114,9 +114,11 @@ describe('Household API Integration Tests', () => {
             where: { actorId: { in: currentIds } }
         });
 
-        // RESTRICT: delete participants before their households
+        // RESTRICT: delete participants before their households. Sweep by household
+        // too, so members the API created without a tracked id/email (e.g. a 25+
+        // member with no email) don't leave a dangling FK to a household below.
         await prisma.participant.deleteMany({
-            where: { id: { in: currentIds } }
+            where: { OR: [{ id: { in: currentIds } }, { householdId: { in: validHouseholdIds } }] }
         });
 
         if (validHouseholdIds.length > 0) {
@@ -197,7 +199,7 @@ describe('Household API Integration Tests', () => {
 
             const req = new Request('http://localhost:4000/api/household', {
                 method: 'PATCH',
-                body: JSON.stringify({ memberName: 'New Child', memberEmail: 'new-child-household-api-test@example.com' })
+                body: JSON.stringify({ memberName: 'New Child', memberEmail: 'new-child-household-api-test@example.com', memberDob: '2015-01-01' })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
@@ -207,6 +209,35 @@ describe('Household API Integration Tests', () => {
             expect(data.member).toBeDefined();
             expect(data.member.name).toBe('New Child');
             expect(data.member.householdId).toBe(householdId);
+        });
+
+        it('should reject a new member with neither a DoB nor a 25+ declaration (400)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
+
+            const req = new Request('http://localhost:4000/api/household', {
+                method: 'PATCH',
+                body: JSON.stringify({ memberName: 'No Age Given' })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toMatch(/Date of birth is required/);
+        });
+
+        it('should create a 25+ member without a DoB as a declared adult', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
+
+            const req = new Request('http://localhost:4000/api/household', {
+                method: 'PATCH',
+                body: JSON.stringify({ memberName: 'Adult NoDob', memberOver25: true })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.member.isDeclaredAdult).toBe(true);
+            expect(data.member.dateOfBirth).toBeNull();
         });
 
         it('should reject a staff (@innovationtreehouse.org) account adding a member (403)', async () => {
@@ -232,7 +263,7 @@ describe('Household API Integration Tests', () => {
 
             const req = new Request('http://localhost:4000/api/household', {
                 method: 'PATCH',
-                body: JSON.stringify({ memberName: 'Non Staff Child', memberEmail: 'nonstaff-child-household-api-test@example.com' })
+                body: JSON.stringify({ memberName: 'Non Staff Child', memberEmail: 'nonstaff-child-household-api-test@example.com', memberDob: '2015-01-01' })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);

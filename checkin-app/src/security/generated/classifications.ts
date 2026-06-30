@@ -11,6 +11,7 @@ export const classifications = {
         emailVerified: 'internal',
         image: 'public',
         dateOfBirth: 'pii',
+        isDeclaredAdult: 'internal',
         lastWaiverSign: 'internal',
         waiverSignedBy: 'internal',
         lastBackgroundCheck: 'internal',

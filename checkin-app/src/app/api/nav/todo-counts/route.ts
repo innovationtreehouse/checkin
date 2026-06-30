@@ -118,7 +118,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 select: { participantId: true },
             })) !== null;
 
-        const [hh, leadsMissingPhone, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
+        const [hh, leadsMissingPhone, membersMissingAge, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
             isLead
                 ? prisma.household.findUnique({
                       where: { id: householdId },
@@ -139,6 +139,14 @@ export const GET = withAuth({}, async (_req, auth) => {
                 ? prisma.householdLead.findMany({
                       where: { householdId, OR: [{ participant: { phone: null } }, { participant: { phone: "" } }] },
                       select: { participant: { select: { id: true, name: true } } },
+                  })
+                : Promise.resolve([]),
+            // A member with no DoB and no 25+ declaration shows "Age Unavailable"
+            // on the household page; the lead must add one or the other.
+            isLead
+                ? prisma.participant.findMany({
+                      where: { householdId, dateOfBirth: null, isDeclaredAdult: false },
+                      select: { id: true, name: true },
                   })
                 : Promise.resolve([]),
             prisma.membershipProcess.findMany({
@@ -166,6 +174,9 @@ export const GET = withAuth({}, async (_req, auth) => {
         }
         for (const l of leadsMissingPhone) {
             householdTodos.push({ key: `lead-phone-${l.participant.id}`, label: `Add a phone number for ${l.participant.name ?? "the household lead"}`, href: "/my-household" });
+        }
+        for (const m of membersMissingAge) {
+            householdTodos.push({ key: `member-age-${m.id}`, label: `Add a date of birth for ${m.name ?? "a household member"}`, href: "/my-household" });
         }
         for (const p of membershipProcs) {
             householdTodos.push({
