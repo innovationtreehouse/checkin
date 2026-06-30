@@ -105,7 +105,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId })
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(200);
 
         const data = await res.json();
@@ -129,7 +129,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId }) // Adding someone else
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(403);
     });
 
@@ -141,7 +141,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId }) // No override flag
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(400);
         
         const data = await res.json();
@@ -159,7 +159,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId, override: true })
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(200);
 
         const dbRecord = await prisma.programParticipant.findUnique({

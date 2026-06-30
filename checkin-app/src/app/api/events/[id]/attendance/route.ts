@@ -1,15 +1,10 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     try {
         const eventId = parseInt(id, 10);
@@ -26,9 +21,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return NextResponse.json({ error: "Event not found" }, { status: 404 });
         }
 
-        const currentUserId = session.user.id;
+        const currentUserId = auth.user.id;
         const isLeadMentor = event.program?.leadMentorId === currentUserId;
-        const isSysAdminOrBoardOrKeyholder = session.user?.isSysadmin || session.user?.isBoardMember || session.user?.isKeyholder;
+        const isSysAdminOrBoardOrKeyholder = auth.user.isSysadmin || auth.user.isBoardMember || auth.user.isKeyholder;
 
         if (!isLeadMentor && !isSysAdminOrBoardOrKeyholder) {
             return NextResponse.json({ error: "Forbidden: Not authorized to validate attendance" }, { status: 403 });
@@ -127,4 +122,4 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         console.error("Attendance validation error:", error);
         return NextResponse.json({ error: "Failed to validate attendance" }, { status: 500 });
     }
-}
+});

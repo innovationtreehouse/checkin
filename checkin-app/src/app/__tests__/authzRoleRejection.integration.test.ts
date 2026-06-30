@@ -32,6 +32,8 @@ import { GET as ADMIN_TA_GET } from '@/app/api/safety/trusted-adults/route';
 import { POST as TA_OVERRIDE_POST } from '@/app/api/safety/trusted-adults/override/route';
 import { PATCH as SHOP_TOOL_PATCH } from '@/app/api/shop/tools/[id]/route';
 import { GET as EVENT_GET, PATCH as EVENT_PATCH } from '@/app/api/events/[id]/route';
+import { GET as EVENTS_LIST_GET } from '@/app/api/events/route';
+import { POST as PROGRAMS_POST } from '@/app/api/programs/route';
 import { GET as NOTIFICATIONS_GET } from '@/app/api/notifications/route';
 import { POST as CONTRACT_SYNC_POST } from '@/app/api/membership/contract/sync/route';
 import { POST as ONBOARDING_POST } from '@/app/api/profile/onboarding/route';
@@ -143,6 +145,10 @@ describe('Protected-route role rejection', () => {
         { name: 'GET /api/safety/trusted-adults', invoke: () => ADMIN_TA_GET(nreq('http://localhost/api/safety/trusted-adults')) },
         { name: 'POST /api/safety/trusted-adults/override', invoke: () => TA_OVERRIDE_POST(nreq('http://localhost/api/safety/trusted-adults/override', 'POST', {})) },
         { name: 'PATCH /api/shop/tools/[id]', invoke: () => SHOP_TOOL_PATCH(nreq('http://localhost/api/shop/tools/1', 'PATCH', {}), idCtx(1)) },
+        // P0-B2: routes collapsed from getServerSession onto the withAuth roles gate.
+        // (finance-ops/payment-plans POST is covered in programPaymentPlansAPI; its GET is now a handler().)
+        { name: 'GET /api/events (standalone list)', invoke: () => EVENTS_LIST_GET(nreq('http://localhost/api/events')) },
+        { name: 'POST /api/programs', invoke: () => PROGRAMS_POST(nreq('http://localhost/api/programs', 'POST', {})) },
 
         // ---- drift-guard sweep: one row per method of each role-gated route ----
         // The withAuth roles gate fires before any body/param work, so dummy

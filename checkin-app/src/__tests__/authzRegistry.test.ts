@@ -58,6 +58,7 @@ const AUTHZ_TESTED = new Set<string>([
     // POST deny-path (401 anon / 403 non-board) in programPaymentPlansAPI.integration.test.ts.
     'finance-ops/payment-plans',
     'admin/settings/localization',
+    'events',
     'facility/badges',
     'facility/trends',
     'facility/visits',
@@ -78,6 +79,7 @@ const AUTHZ_TESTED = new Set<string>([
     'membership-ops/participants/merge/analyze',
     'membership/reviews',
     'participants/search',
+    'programs',
     'roles',
     'safety/board-contacts',
     'safety/emergency-contacts',
@@ -86,6 +88,7 @@ const AUTHZ_TESTED = new Set<string>([
     'settings/membership',
     'settings/membership/bulk-open-renewals',
     'settings/membership/volunteer-designations',
+    'shop/tools/[id]',
     'system-status/audit-log',
     'system-status/errors',
     'system-status/health',

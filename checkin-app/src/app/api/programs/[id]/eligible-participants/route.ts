@@ -1,17 +1,12 @@
 import { NextResponse, NextRequest } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { ACTIVE_MEMBER_PARTICIPANT_WHERE } from "@/lib/membership";
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withAuth({}, async (req: NextRequest, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     try {
         const programId = parseInt(id, 10);
@@ -24,9 +19,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const currentUserId = session.user.id;
+        const currentUserId = auth.user.id;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
-        const isSysAdminOrBoard = session.user?.isSysadmin || session.user?.isBoardMember;
+        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
 
         if (!isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Not authorized" }, { status: 403 });
@@ -70,4 +65,4 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         console.error("Failed to fetch eligible participants:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
-}
+});

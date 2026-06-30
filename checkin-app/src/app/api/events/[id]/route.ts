@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const GET = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const resolvedParams = await params;
     const eventId = parseInt(resolvedParams.id, 10);
@@ -42,9 +40,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         // program. Restrict it to event staff, matching the PATCH handler below.
         // Without this gate any authenticated user could harvest roster PII by
         // enumerating sequential event IDs.
-        const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
-        const userId = user.id;
-        const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
+        const userId = auth.user.id;
+        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
         const isLeadMentor = event.program?.leadMentorId === userId;
         const isCoreVolunteer = event.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
         if (!isSysAdminOrBoard && !isLeadMentor && !isCoreVolunteer) {
@@ -56,11 +53,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         console.error("Failed to fetch event:", error);
         return NextResponse.json({ error: "Failed to fetch event" }, { status: 500 });
     }
-}
+});
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const resolvedParams = await params;
     const eventId = parseInt(resolvedParams.id, 10);
@@ -74,9 +70,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         if (!event) return NextResponse.json({ error: "Event not found" }, { status: 404 });
 
-        const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
-        const userId = user.id;
-        const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
+        const userId = auth.user.id;
+        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
         const isLeadMentor = event.program?.leadMentorId === userId;
         const isCoreVolunteer = event.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
 
@@ -271,4 +266,4 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         console.error("Failed to update event:", error);
         return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
     }
-}
+});

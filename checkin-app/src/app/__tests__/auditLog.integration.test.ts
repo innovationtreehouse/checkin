@@ -140,7 +140,7 @@ describe('AuditLog Integration Tests', () => {
             })
         });
 
-        const res = await createProgram(req);
+        const res = await createProgram(req as unknown as import("next/server").NextRequest);
         expect(res.status).toBe(200);
 
         const responseData = await res.json();
@@ -167,7 +167,7 @@ describe('AuditLog Integration Tests', () => {
             body: JSON.stringify({ leadMentorNotificationSettings: { notifyRsvp: true } })
         });
 
-        const res = await updateProgramSettings(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await updateProgramSettings(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(200);
 
         // Verify Audit Log
@@ -192,7 +192,7 @@ describe('AuditLog Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId, override: true })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         const data = await res.json();
         if (res.status !== 200) console.error("Enrollment error:", data);
         expect(res.status).toBe(200);
@@ -229,7 +229,7 @@ describe('AuditLog Integration Tests', () => {
             body: JSON.stringify({ participantIds: [testParticipantId] })
         });
 
-        const res = await markAttendance(req, { params: Promise.resolve({ id: testEventId.toString() }) });
+        const res = await markAttendance(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testEventId.toString() }) });
         expect(res.status).toBe(200);
 
         // Verify Audit Log: one row per validated Visit, keyed by the Visit PK

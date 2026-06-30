@@ -1,15 +1,10 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     try {
         const programId = parseInt(id, 10);
@@ -25,8 +20,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const currentUserId = session.user.id;
-        const isSysAdminOrBoard = session.user?.isSysadmin || session.user?.isBoardMember;
+        const currentUserId = auth.user.id;
+        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
 
         if (!isSysAdminOrBoard && !isLeadMentor) {
@@ -120,4 +115,4 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         console.error("Program settings update error:", error);
         return NextResponse.json({ error: "Failed to update program settings" }, { status: 500 });
     }
-}
+});

@@ -83,7 +83,7 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
                 body: JSON.stringify({ participantId: userId })
             });
 
-            const res = await enrollParticipant(req, { params: Promise.resolve({ id: programId.toString() }) });
+            const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: programId.toString() }) });
             // Age as of startAt (2026-09-01) = 14 -> eligible. Enrollment-time age (13) would 400.
             expect(res.status).toBe(200);
             const data = await res.json();
