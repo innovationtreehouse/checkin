@@ -20,7 +20,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const body = await req.json();
         const { participantId } = body;
 
-        if (!participantId) {
+        if (!participantId || typeof participantId !== 'number') {
             return NextResponse.json({ error: "participantId is required" }, { status: 400 });
         }
 
@@ -37,6 +37,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return NextResponse.json({ error: "Forbidden: Not authorized to assign volunteers" }, { status: 403 });
         }
 
+        // ponytail: no eligibility gate (age/membership) on volunteers — they're
+        // staff/mentors, not enrollees. ProgramVolunteer has only isCore; any
+        // participant is assignable. Add a gate here only if product asks for one.
         const assignment = await prisma.programVolunteer.create({
             data: {
                 programId,
@@ -58,9 +61,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         return NextResponse.json({ success: true, assignment });
     } catch (error) {
+        // P2002 = unique violation on @@id([programId, participantId]). Benign
+        // double-submit re-assigns the same volunteer; 409 instead of 500.
+        if (isPrismaError(error, 'P2002')) {
+            return NextResponse.json({ error: "Participant is already a volunteer for this program." }, { status: 409 });
+        }
+        // P2003 = FK violation: participantId points at no Participant row. Bad
+        // input, not a server fault; 400 instead of 500.
+        if (isPrismaError(error, 'P2003')) {
+            return NextResponse.json({ error: "Participant not found" }, { status: 400 });
+        }
         console.error("Volunteer assignment error:", error);
         return NextResponse.json({ error: "Failed to assign volunteer" }, { status: 500 });
     }
+}
+
+// Prisma known-request errors carry a string `code`. Duck-typed so we don't
+// pull in the generated Prisma namespace just for one check.
+function isPrismaError(error: unknown, code: string): boolean {
+    return typeof error === 'object' && error !== null && 'code' in error
+        && (error as { code: unknown }).code === code;
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {

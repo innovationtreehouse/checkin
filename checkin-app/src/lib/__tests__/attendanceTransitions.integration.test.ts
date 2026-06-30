@@ -56,7 +56,7 @@ describe('attendanceTransitions', () => {
 
     function makeEvent(label: string, start: Date, end: Date) {
         return prisma.event.create({
-            data: { name: `${TAG} ${label}`, programId, start, end, description: 'x' },
+            data: { name: `${TAG} ${label}`, programId, startAt: start, endAt: end, description: 'x' },
         });
     }
 

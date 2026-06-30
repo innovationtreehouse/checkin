@@ -104,7 +104,7 @@ describe('Public Program Registration API Integration Tests', () => {
         // Free, minAge 18, starts 2026-09-01. Used to prove the age gate judges
         // age as of the program START date, not registration time.
         const startBasisProgram = await prisma.program.create({
-            data: { name: 'Start Basis Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', minAge: 18, begin: new Date('2026-09-01T00:00:00.000Z') }
+            data: { name: 'Start Basis Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', minAge: 18, startAt: new Date('2026-09-01T00:00:00.000Z') }
         });
         startBasisProgramId = startBasisProgram.id;
     });
@@ -340,7 +340,7 @@ describe('Public Program Registration API Integration Tests', () => {
         // GAP 3: the under-min case is covered above; these add the missing
         // over-MAX rejection and an in-bounds success, so both ends of the
         // public-register age gate (independent of the authenticated route) are
-        // exercised. exactAgeProgram is minAge 18 / maxAge 21, begin null -> age
+        // exercised. exactAgeProgram is minAge 18 / maxAge 21, startAt null -> age
         // judged as of now, frozen here for determinism.
         it('should reject a participant over the maximum age', async () => {
             jest.useFakeTimers(FAKE_TIMER_OPTS);

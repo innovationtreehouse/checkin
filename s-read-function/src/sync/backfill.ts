@@ -34,6 +34,8 @@ export interface OrdersBulkStatus {
   objectCount?: string | null;
   errorCode?: string | null;
   ingested?: number;
+  /** JSONL lines skipped because they failed to parse (partial-parse visibility on the sync_run). */
+  badLines?: number;
 }
 
 export interface BackfillResult extends Record<string, unknown> {
@@ -92,6 +94,7 @@ async function stepOrdersBulk(
 
   if (op.status === "COMPLETED") {
     let ingested = 0;
+    let badLines = 0;
     if (op.url) {
       // Capture the verbatim JSONL durably, then reassemble + ingest from it (one core path).
       const jsonl = await downloadBulkJsonl(op.url);
@@ -103,15 +106,17 @@ async function stepOrdersBulk(
         syncRunId,
       });
       ingested = res.ingested;
+      badLines = res.badLineCount;
       await advanceWatermark(prisma, storeId, ObjectType.ORDER, res.maxOccurredAt);
       logger.info("orders backfill captured + ingested", {
         exportId: res.exportId.toString(),
         records: res.recordCount,
         ingested,
+        badLines,
       });
     }
     await setBulkState(prisma, storeId, ObjectType.ORDER, { bulkOperationId: null, bulkStatus: "COMPLETED" });
-    return { action: "INGESTED", status: "COMPLETED", ingested };
+    return { action: "INGESTED", status: "COMPLETED", ingested, badLines };
   }
 
   if (op.status === "FAILED" || op.status === "CANCELED" || op.status === "EXPIRED") {

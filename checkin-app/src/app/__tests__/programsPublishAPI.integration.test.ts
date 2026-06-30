@@ -74,8 +74,8 @@ describe('Program Publish API Integration Tests', () => {
                 events: {
                     create: {
                         name: 'Publish API Test Event',
-                        start: new Date(Date.now() + 86400000),
-                        end: new Date(Date.now() + 90000000)
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
                     }
                 }
             }
@@ -89,8 +89,8 @@ describe('Program Publish API Integration Tests', () => {
                 events: {
                     create: {
                         name: 'No Lead Publish API Test Event',
-                        start: new Date(Date.now() + 86400000),
-                        end: new Date(Date.now() + 90000000)
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
                     }
                 }
             }
@@ -117,8 +117,8 @@ describe('Program Publish API Integration Tests', () => {
                 events: {
                     create: {
                         name: 'Finished Publish API Test Event',
-                        start: new Date(Date.now() + 86400000),
-                        end: new Date(Date.now() + 90000000)
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
                     }
                 }
             }
