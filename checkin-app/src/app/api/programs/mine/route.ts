@@ -23,10 +23,10 @@ export async function GET() {
                 participantId: true,
                 participant: { select: { id: true, name: true } },
                 program: {
-                    select: { id: true, name: true, begin: true, end: true }
+                    select: { id: true, name: true, startAt: true, endAt: true }
                 }
             },
-            orderBy: { program: { begin: "asc" } }
+            orderBy: { program: { startAt: "asc" } }
         });
 
         return NextResponse.json(enrollments);

@@ -1,16 +1,20 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
+import { authenticateRequest } from "@/lib/auth";
 import { Prisma } from '@/generated/prisma/client';
 import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
 
-export async function GET(req: Request) {
-    const session = await getServerSession(authOptions);
+export async function GET(req: NextRequest) {
+    // authenticateRequest funnels the denied-household check (auth.ts) — a raw
+    // getServerSession would let a board-denied member keep reading shop data.
+    const auth = await authenticateRequest(req);
 
-    if (!session) {
+    if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const session = { user: auth.user };
 
     try {
         const { searchParams } = new URL(req.url);
@@ -54,7 +58,7 @@ export async function GET(req: Request) {
             where: whereClause,
             include: {
                 tool: true,
-                user: toolIdParam ? { select: { id: true, name: true, email: true } } : false
+                user: toolIdParam ? { select: { id: true, name: true } } : false
             }
         });
 

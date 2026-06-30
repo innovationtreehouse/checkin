@@ -14,8 +14,8 @@ type EventData = {
   id: number;
   name: string;
   description: string | null;
-  start: string;
-  end: string;
+  startAt: string;
+  endAt: string;
   program: { name: string } | null;
   participant: { id: number; name: string | null };
   rsvp: RsvpStatus | null;
@@ -113,8 +113,8 @@ export default function ParticipantEventsDashboard() {
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
           {groupByEvent(events).map((rows) => {
             const ev = rows[0];
-            const startStr = formatDateTime(ev.start, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-            const endStr = formatTime(ev.end, { hour: '2-digit', minute: '2-digit' });
+            const startStr = formatDateTime(ev.startAt, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const endStr = formatTime(ev.endAt, { hour: '2-digit', minute: '2-digit' });
             // Multi-member cards must always show whose RSVP is whose, even for non-leads.
             const labelMembers = showMembers || rows.length > 1;
 

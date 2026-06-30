@@ -204,11 +204,11 @@ export const GET = withAuth({}, async (_req, auth) => {
         const pendingEvents = await prisma.event.findMany({
             where: {
                 programId: { in: ledPrograms.map((p) => p.id) },
-                end: { lte: new Date() },
+                endAt: { lte: new Date() },
                 attendanceConfirmedAt: null,
             },
             select: { id: true, name: true, programId: true },
-            orderBy: { end: "asc" },
+            orderBy: { endAt: "asc" },
         });
         const pendingByProgram = new Map<number, TodoItem[]>();
         for (const e of pendingEvents) {

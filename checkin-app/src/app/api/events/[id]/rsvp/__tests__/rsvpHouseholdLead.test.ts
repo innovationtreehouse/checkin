@@ -34,7 +34,7 @@ const body = (b: object) => new Request('http://localhost/api/events/5/rsvp', {
 beforeEach(() => {
     jest.clearAllMocks();
     // Program-less event in the future → enrollment check is skipped.
-    mockEventFindUnique.mockResolvedValue({ id: 5, programId: null, end: new Date(Date.now() + 3600_000) });
+    mockEventFindUnique.mockResolvedValue({ id: 5, programId: null, endAt: new Date(Date.now() + 3600_000) });
     mockRsvpUpsert.mockResolvedValue({ eventId: 5, participantId: 2, status: 'ATTENDING' });
 });
 

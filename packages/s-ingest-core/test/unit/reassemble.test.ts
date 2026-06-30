@@ -6,24 +6,63 @@
  * bulkOrders.ts). Previously it was exercised only indirectly through one DB test.
  */
 import { describe, it, expect } from "vitest";
-import { parseBulkJsonl, reassembleOrders } from "../../src/ingest/bulkOrders.js";
+import { parseBulkJsonl, reassembleOrders, ingestBulkOrders } from "../../src/ingest/bulkOrders.js";
 import { normalizeOrder } from "../../src/shopify/schemas.js";
+import { EventSource } from "../../src/generated/prisma/client.js";
 
 const orderId = "gid://shopify/Order/7001";
 
 describe("parseBulkJsonl", () => {
   it("parses one record per non-blank line", () => {
     const text = ['{"id":"a"}', "", "   ", '{"id":"b"}', ""].join("\n");
-    expect(parseBulkJsonl(text)).toEqual([{ id: "a" }, { id: "b" }]);
+    expect(parseBulkJsonl(text)).toEqual({ records: [{ id: "a" }, { id: "b" }], badLines: [] });
   });
 
-  it("returns [] for an empty or whitespace-only blob", () => {
-    expect(parseBulkJsonl("")).toEqual([]);
-    expect(parseBulkJsonl("\n   \n")).toEqual([]);
+  it("returns no records for an empty or whitespace-only blob", () => {
+    expect(parseBulkJsonl("")).toEqual({ records: [], badLines: [] });
+    expect(parseBulkJsonl("\n   \n")).toEqual({ records: [], badLines: [] });
   });
 
-  it("throws on a malformed JSON line (corrupt export must not pass silently)", () => {
-    expect(() => parseBulkJsonl('{"id":"a"}\n{not json}')).toThrow();
+  it("skips a malformed line, keeps the good ones, and records the bad one (no throw)", () => {
+    const text = ['{"id":"a"}', "{not json}", '{"id":"b"}'].join("\n");
+    const { records, badLines } = parseBulkJsonl(text);
+    expect(records).toEqual([{ id: "a" }, { id: "b" }]);
+    expect(badLines).toHaveLength(1);
+    expect(badLines[0]).toMatchObject({ line: 2, raw: "{not json}" });
+    expect(badLines[0].error).toBeTruthy();
+  });
+
+  it("collects every bad line for an all-garbage / truncated blob", () => {
+    const { records, badLines } = parseBulkJsonl("{oops\n}also bad\n{trunc");
+    expect(records).toEqual([]);
+    expect(badLines.map((b) => b.line)).toEqual([1, 2, 3]);
+  });
+});
+
+describe("ingestBulkOrders failure policy", () => {
+  // Minimal fake: only shopifyBulkExport.create is reachable before the loud-fail throw.
+  const fakePrisma = (capture: { jsonl?: string } = {}) =>
+    ({
+      shopifyBulkExport: {
+        create: async ({ data }: { data: { jsonl: string } }) => {
+          capture.jsonl = data.jsonl;
+          return { id: 1n };
+        },
+      },
+    }) as unknown as Parameters<typeof ingestBulkOrders>[0];
+
+  it("fails loudly on a mostly-broken export, AFTER persisting the raw payload", async () => {
+    const jsonl = ["{bad1}", "{bad2}", '{"id":"gid://shopify/Order/1"}'].join("\n"); // 2/3 bad > 10%
+    const capture: { jsonl?: string } = {};
+    await expect(
+      ingestBulkOrders(fakePrisma(capture), {
+        storeId: "s",
+        jsonl,
+        bulkOperationId: "op",
+        source: EventSource.BACKFILL,
+      }),
+    ).rejects.toThrow(/unparseable/);
+    expect(capture.jsonl).toBe(jsonl); // raw payload captured before the throw → replayable
   });
 });
 

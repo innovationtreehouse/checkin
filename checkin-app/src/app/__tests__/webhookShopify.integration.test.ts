@@ -19,7 +19,10 @@ jest.mock('@/lib/membership/payment', () => ({
     activateByProcessId: jest.fn().mockResolvedValue(undefined),
 }));
 
+// Keep the REAL logIntegrationError (it writes to the DB — the 500-catch test
+// below asserts that write) but silence the console logger.
 jest.mock('@/lib/logger', () => ({
+    ...jest.requireActual('@/lib/logger'),
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
@@ -71,6 +74,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     });
 
     afterAll(async () => {
+        await prisma.integrationErrorLog.deleteMany({ where: { source: 'shopify-webhook' } });
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.delete({ where: { id: programId } });
         await prisma.participant.deleteMany({ where: { id: { in: [p1, p2] } } });
@@ -179,5 +183,23 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         const res = await POST(webhookReq(body, sign(body)));
         expect(res.status).toBe(200);
         expect(activateByProcessId).toHaveBeenCalledWith(42, '98765');
+    });
+
+    it('returns 500 and writes one IntegrationErrorLog row when a handler throws', async () => {
+        // Clean slate so the survivor count is exact.
+        await prisma.integrationErrorLog.deleteMany({ where: { source: 'shopify-webhook' } });
+        (activateByProcessId as jest.Mock).mockRejectedValueOnce(new Error('handler boom'));
+
+        const body = JSON.stringify({
+            id: 13579,
+            note_attributes: [{ name: 'Membership_Process_ID', value: '99' }],
+        });
+        const res = await POST(webhookReq(body, sign(body)));
+        expect(res.status).toBe(500);
+
+        const rows = await prisma.integrationErrorLog.findMany({ where: { source: 'shopify-webhook' } });
+        expect(rows).toHaveLength(1);
+        expect(rows[0].message).toBe('handler boom');
+        expect(rows[0].context).toEqual({ operation: 'POST /api/webhooks/shopify' });
     });
 });

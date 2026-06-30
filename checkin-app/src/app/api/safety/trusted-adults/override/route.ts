@@ -28,7 +28,9 @@ export const POST = withAuth({ roles: ["boardMember", "sysadmin"] }, async (req,
         return NextResponse.json({ error: "reviewId and action (approve|deny|revoke) are required" }, { status: 400 });
     }
     try {
-        const outcome = await overrideReview(body.reviewId, auth.user.id, body.action!, body.sharedNote);
+        const outcome = await overrideReview(body.reviewId, auth.user.id, body.action!, body.sharedNote, {
+            isSysadmin: auth.user.sysadmin === true,
+        });
         return NextResponse.json({ status: outcome.status });
     } catch (error) {
         if (error instanceof TrustedAdultError) {
