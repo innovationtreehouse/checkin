@@ -150,6 +150,9 @@ describe('Shop API Integration Tests', () => {
         return {
             url,
             method,
+            // authenticateRequest probes kiosk headers before the session path;
+            // return null so it falls through to the mocked getServerSession.
+            headers: { get: () => null },
             json: queryAndBody?.body ? jest.fn().mockResolvedValue(queryAndBody.body) : undefined
         } as unknown as never;
     };
@@ -179,7 +182,7 @@ describe('Shop API Integration Tests', () => {
         it('should allow anyone authenticated to GET tool list', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             const res = await getTools() as Response;
+             const res = await getTools(createReq('GET')) as Response;
              expect(res.status).toBe(200);
              const data = await res.json();
              expect(Array.isArray(data)).toBe(true);

@@ -19,8 +19,8 @@ export async function GET() {
 
     const events = await prisma.event.findMany({
         where: { programId: null },
-        orderBy: { start: "desc" },
-        select: { id: true, name: true, start: true, end: true, description: true },
+        orderBy: { startAt: "desc" },
+        select: { id: true, name: true, startAt: true, endAt: true, description: true },
     });
     return NextResponse.json(events);
 }
@@ -82,8 +82,8 @@ export async function POST(req: Request) {
                 name,
                 description: description || null,
                 programId: programId ? parseInt(programId, 10) : null,
-                start: startD,
-                end: endD
+                startAt: startD,
+                endAt: endD
             });
         } else {
             // Recurring events
@@ -106,8 +106,8 @@ export async function POST(req: Request) {
                         name,
                         description: description || null,
                         programId: programId ? parseInt(programId, 10) : null,
-                        start: startD,
-                        end: endD,
+                        startAt: startD,
+                        endAt: endD,
                         recurringGroupId
                     });
                 }

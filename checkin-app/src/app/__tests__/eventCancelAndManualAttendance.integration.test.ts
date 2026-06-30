@@ -95,8 +95,8 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
         return prisma.event.create({
             data: {
                 name: `${TAG} ${label}`,
-                start,
-                end: new Date(start.getTime() + HOUR),
+                startAt: start,
+                endAt: new Date(start.getTime() + HOUR),
                 description: 'x',
                 ...(recurringGroupId ? { recurringGroupId } : {}),
             },
@@ -247,7 +247,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             });
 
             const newStart = new Date(Date.now() - 90 * MIN);
-            const res = await patch(event.id, { action: 'editTime', start: newStart.toISOString() });
+            const res = await patch(event.id, { action: 'editTime', startAt: newStart.toISOString() });
             expect(res.status).toBe(400);
 
             // Guard fires before the clear → reminderSentAt preserved.

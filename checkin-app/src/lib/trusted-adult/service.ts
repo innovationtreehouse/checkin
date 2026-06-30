@@ -264,10 +264,40 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
     return result.updated;
 }
 
-/** Board / sysadmin override: force a review to a terminal state regardless of phase. */
-export async function overrideReview(reviewId: number, actorId: number, action: "approve" | "deny" | "revoke", sharedNote?: string | null) {
-    const review = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
+/**
+ * Board / sysadmin override: force a review to a terminal state regardless of phase.
+ *
+ * Same conflict-of-interest rule as decideReview — a board member may not override
+ * their OWN household's review (else they could force-approve their own trusted adult,
+ * the very thing decideReview forbids). A sysadmin is the deliberate remedy and bypasses
+ * the check (opts.isSysadmin); the route sets it only when the actor holds that role.
+ */
+export async function overrideReview(
+    reviewId: number,
+    actorId: number,
+    action: "approve" | "deny" | "revoke",
+    sharedNote?: string | null,
+    opts?: { isSysadmin?: boolean },
+) {
+    const review = await prisma.trustedAdultReview.findUnique({
+        where: { id: reviewId },
+        include: { trustedAdult: { select: { householdId: true, counterpartyParticipantId: true } } },
+    });
     if (!review) throw new TrustedAdultError("not_found", "Review not found.");
+
+    if (!opts?.isSysadmin) {
+        const me = await prisma.participant.findUnique({ where: { id: actorId }, select: { householdId: true } });
+        if (
+            isTrustedAdultConflict({
+                actorParticipantId: actorId,
+                actorHouseholdId: me?.householdId,
+                taHouseholdId: review.trustedAdult.householdId,
+                taCounterpartyParticipantId: review.trustedAdult.counterpartyParticipantId,
+            })
+        ) {
+            throw new TrustedAdultError("forbidden", "You can't override your own household's trusted-adult review — a sysadmin must.");
+        }
+    }
 
     const now = new Date();
     const data: Record<string, unknown> = { decidedById: actorId };

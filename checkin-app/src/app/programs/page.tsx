@@ -10,8 +10,8 @@ import { PageContainer } from '@/components/ui/PageContainer';
 type ProgramSummary = {
   id: number;
   name: string;
-  begin: string | null;
-  end: string | null;
+  startAt: string | null;
+  endAt: string | null;
   memberOnly: boolean;
   phase: string;
   enrollmentStatus: string;
@@ -104,8 +104,8 @@ export default function PublicProgramsDirectory() {
                 </Group>
 
                 <Text c="dimmed" style={{ flex: 1 }} mb="md">
-                  {program.begin ? formatDate(program.begin) : 'Start Date TBD'}
-                  {program.end ? ` - ${formatDate(program.end)}` : ' (Ongoing)'}
+                  {program.startAt ? formatDate(program.startAt) : 'Start Date TBD'}
+                  {program.endAt ? ` - ${formatDate(program.endAt)}` : ' (Ongoing)'}
                 </Text>
 
                 <Card withBorder radius="sm" padding="xs" mb="md">
