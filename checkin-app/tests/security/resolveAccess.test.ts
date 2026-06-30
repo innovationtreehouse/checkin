@@ -117,6 +117,45 @@ describe("resolveAccess 'household-lead'", () => {
     });
 });
 
+describe("resolveAccess 'certifier'", () => {
+    const certifier = (id: number): AuthResult => ({
+        type: 'session',
+        user: {
+            id,
+            email: 'c@x.test',
+            isSysadmin: false,
+            isBoardMember: false,
+            isKeyholder: false,
+            isBackgroundCheckReviewer: false,
+            toolStatuses: [{ toolId: 1, level: 'MAY_CERTIFY_OTHERS' }],
+        },
+    });
+
+    test('caller holding a MAY_CERTIFY_OTHERS toolStatus → allowed', async () => {
+        expect((await resolveAccess('certifier', rctx(certifier(1)))).allowed).toBe(true);
+    });
+
+    test('admin who is not a certifier → allowed (admin bypass)', async () => {
+        const admin = session(1);
+        if (admin.type === 'session') admin.user.isSysadmin = true;
+        expect((await resolveAccess('certifier', rctx(admin))).allowed).toBe(true);
+    });
+
+    test('authenticated caller with only a CERTIFIED (not MAY_CERTIFY_OTHERS) status → denied', async () => {
+        const u = session(1);
+        if (u.type === 'session') u.user.toolStatuses = [{ toolId: 1, level: 'CERTIFIED' }];
+        expect((await resolveAccess('certifier', rctx(u))).allowed).toBe(false);
+    });
+
+    test('plain authenticated caller (no toolStatuses) → denied', async () => {
+        expect((await resolveAccess('certifier', rctx(session(1)))).allowed).toBe(false);
+    });
+
+    test('no session → denied', async () => {
+        expect((await resolveAccess('certifier', rctx({ type: 'unauthenticated' }))).allowed).toBe(false);
+    });
+});
+
 describe("resolveAccess 'kiosk'", () => {
     test('kiosk caller → allowed', async () => {
         expect((await resolveAccess('kiosk', rctx({ type: 'kiosk' }))).allowed).toBe(true);

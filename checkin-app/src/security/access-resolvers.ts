@@ -279,6 +279,14 @@ export function scopesHeld(
     return scopes;
 }
 
+/** A certifier holds at least one MAY_CERTIFY_OTHERS toolStatus on the session. */
+function isCertifier(auth: AuthResult): boolean {
+    return (
+        auth.type === 'session' &&
+        (auth.user.toolStatuses ?? []).some(ts => ts.level === 'MAY_CERTIFY_OTHERS')
+    );
+}
+
 export function callerHoldsRole(
     role: Role,
     auth: AuthResult,
@@ -302,6 +310,8 @@ export function callerHoldsRole(
             return auth.type === 'session' && auth.user.isKeyholder;
         case 'isBackgroundCheckReviewer':
             return auth.type === 'session' && auth.user.isBackgroundCheckReviewer;
+        case 'certifier':
+            return isCertifier(auth);
         case 'householdLead':
             return auth.type === 'session' && !!auth.user.householdLead;
         case 'programLeadMentor': {
@@ -351,6 +361,9 @@ export async function resolveAccess(
             }
             case 'kiosk':
                 return { allowed: auth.type === 'kiosk' };
+            case 'certifier':
+                // Certifiers see the shop member roster; admins always may too.
+                return { allowed: isCertifier(auth) || isAdmin };
             case 'program-lead-mentor': {
                 const id = parseInt(params.id ?? '', 10);
                 if (isNaN(id)) return { allowed: false };

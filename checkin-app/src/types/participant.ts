@@ -14,6 +14,9 @@ export interface SessionUser {
     isBackgroundCheckReviewer: boolean;
     householdId?: number;
     householdLead?: boolean;
+    // Shop tool certifications carried on the session (set by the jwt/session
+    // callbacks). level === 'MAY_CERTIFY_OTHERS' marks a certifier.
+    toolStatuses?: { toolId: number; level: string }[];
 }
 
 export interface BoardMember {

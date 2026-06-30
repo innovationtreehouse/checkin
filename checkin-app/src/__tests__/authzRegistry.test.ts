@@ -55,6 +55,8 @@ function isRoleGated(file: string): boolean {
  */
 const AUTHZ_TESTED = new Set<string>([
     'admin/broken-households',
+    // POST deny-path (401 anon / 403 non-board) in programPaymentPlansAPI.integration.test.ts.
+    'finance-ops/payment-plans',
     'admin/settings/localization',
     'facility/badges',
     'facility/trends',

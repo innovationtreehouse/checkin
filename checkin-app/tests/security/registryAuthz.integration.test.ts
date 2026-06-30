@@ -35,7 +35,7 @@ const mockSession = require('next-auth/next').getServerSession;
 
 const TAG = 'registry-authz-test';
 
-type Gate = 'public' | 'session' | 'household-member' | 'anyRole' | 'unhandled';
+type Gate = 'public' | 'session' | 'household-member' | 'anyRole' | 'certifier' | 'unhandled';
 
 interface RoutePlan {
     endpoint: string;
@@ -50,6 +50,7 @@ function planAuthorize(authorize: Authorize): { gate: Gate; requiredRoles: Busin
     if (authorize === 'public') return { gate: 'public', requiredRoles: null };
     if (authorize === 'authenticated' || authorize === 'self') return { gate: 'session', requiredRoles: null };
     if (authorize === 'household-member') return { gate: 'household-member', requiredRoles: null };
+    if (authorize === 'certifier') return { gate: 'certifier', requiredRoles: null };
     if (typeof authorize === 'object' && authorize !== null && 'anyRole' in authorize) {
         return { gate: 'anyRole', requiredRoles: [...authorize.anyRole] };
     }
@@ -162,6 +163,13 @@ describe('Registry route admission gates', () => {
                     expect((await call(plan)).status).toBe(403);
                 });
             }
+            if (plan.gate === 'certifier') {
+                it('rejects an authenticated non-certifier (and non-admin) with 403', async () => {
+                    // plainUser holds no toolStatuses and no admin flag.
+                    mockSession.mockResolvedValue({ user: plainUser });
+                    expect((await call(plan)).status).toBe(403);
+                });
+            }
             // session / household-member / public gates have no role-level
             // under-privileged caller — any authenticated (resp. any) caller is
             // admitted by design, so there is no 403 to assert. Field-level
@@ -174,6 +182,9 @@ describe('Registry route admission gates', () => {
                 } else if (plan.gate === 'anyRole') {
                     const role = (plan.requiredRoles ?? [])[0];
                     mockSession.mockResolvedValue({ user: { ...plainUser, [role]: true } });
+                } else if (plan.gate === 'certifier') {
+                    // Admins are admitted by the certifier gate too (resolveAccess ORs isAdmin).
+                    mockSession.mockResolvedValue({ user: { ...plainUser, isSysadmin: true } });
                 } else {
                     // session / household-member: any real authenticated user.
                     mockSession.mockResolvedValue({ user: plainUser });
