@@ -57,6 +57,31 @@ export async function authenticateRequest(
 }
 
 /**
+ * Read the OPTIONAL web session for routes that legitimately serve anonymous
+ * callers (the public program catalog, kiosk-tolerant attendance reads) and so
+ * cannot use withAuth — which 401s anonymous.
+ *
+ * Built on authenticateRequest so there is ONE denied gate, not a parallel
+ * implementation that can drift (the exact hand-rolled-denied class GAP-1 came
+ * from): a denied household already resolves to `unauthenticated` in
+ * authenticateRequest, so it falls through to `undefined` here → sees the
+ * public-only view, same as anonymous. Kiosk requests also resolve to
+ * `undefined` (this returns only real session users); a kiosk-tolerant route
+ * keeps its own kiosk plumbing.
+ *
+ * Scope: this is for genuinely PUBLIC / optional-session reads only. It is NOT
+ * an escape hatch for routes that should require a session — those use withAuth
+ * (mandatory). Route files MUST source an optional session through this helper
+ * instead of calling getServerSession directly, so the Step 7 drift-guard can
+ * ban getServerSession in app/api/** outright. The session read lives here in
+ * the auth boundary, alongside authenticateRequest.
+ */
+export async function getOptionalSessionUser(req: Request): Promise<SessionUser | undefined> {
+    const auth = await authenticateRequest(req as NextRequest);
+    return auth.type === 'session' ? auth.user : undefined;
+}
+
+/**
  * Higher-order function for route handlers with auth.
  * `roles` uses the actual Prisma business role field names — no abstract groupings.
  *

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
-import { withAuth } from "@/lib/auth";
+import { withAuth, getOptionalSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
@@ -14,20 +12,16 @@ import { config } from "@/lib/config";
 // thing it was missing — the denied-household gate — is applied inline below.
 export async function GET(req: NextRequest) {
     try {
-        // Determine caller identity
-        const session = await getServerSession(authOptions);
-        // A denied household is locked out of the whole app — treat as unauthenticated
-        // even on this kiosk-tolerant route, so a denied member can't read counts/safety.
-        if (session?.user?.denied) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const user = session?.user;
+        // Determine caller identity. getOptionalSessionUser applies the shared
+        // denied-household gate (a denied member resolves to undefined), so even
+        // on this kiosk-tolerant route a denied member can't read counts/safety.
+        const user = await getOptionalSessionUser(req);
         const hasKioskHeaders = req.headers.get("x-kiosk-signature");
         const pubKeys = getKioskPublicKeys();
 
         let isKiosk = false;
 
-        if (!session && pubKeys.length > 0 && hasKioskHeaders) {
+        if (!user && pubKeys.length > 0 && hasKioskHeaders) {
             // Kiosk request — verify signature
             const result = verifyKioskSignature(
                 "GET",
@@ -42,16 +36,16 @@ export async function GET(req: NextRequest) {
                 return NextResponse.json({ error: result.error }, { status: result.status });
             }
             isKiosk = true;
-        } else if (!session && pubKeys.length > 0) {
+        } else if (!user && pubKeys.length > 0) {
             // No session and no kiosk headers — reject
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        } else if (!session && pubKeys.length === 0 && config.isLocal()) {
+        } else if (!user && pubKeys.length === 0 && config.isLocal()) {
             // Local dev only (CHECKIN_ENV=local): no pubKey configured, treat as kiosk.
             // Deliberately gated on isLocal() — on the cloud dev instance or prod an
             // unset KIOSK_PUBLIC_KEY must NOT grant full attendance/safety access to
             // anonymous callers. Mirrors the keyless-kiosk gating in src/lib/auth.ts.
             isKiosk = true;
-        } else if (!session) {
+        } else if (!user) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 

@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
@@ -29,12 +27,11 @@ export const GET = withAuth({}, async (_req, auth) => {
     }
 });
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
+export const POST = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const session = { user: auth.user };
 
     const isAuthorized = session.user?.isSysadmin || session.user?.isBoardMember;
 
@@ -72,4 +69,4 @@ export async function POST(req: Request) {
         await logBackendError(error, "POST /api/shop/tools");
         return NextResponse.json({ error: "Failed to create tool" }, { status: 500 });
     }
-}
+});

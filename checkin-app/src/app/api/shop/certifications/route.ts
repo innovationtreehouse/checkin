@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import { withAuth } from "@/lib/auth";
 import { Prisma } from '@/generated/prisma/client';
 import prisma from "@/lib/prisma";
@@ -67,18 +65,14 @@ export const GET = withAuth({}, async (req, auth) => {
     }
 });
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
+// withAuth funnels the denied-household check at admission (closes GAP-1: this
+// POST previously re-queried certifier status with no denied gate), then the
+// certifier (MAY_CERTIFY_OTHERS) authorization runs as before.
+export const POST = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    // A denied household is locked out of the whole app (auth flags stripped but id kept).
-    // Gate here because certifier status is re-queried from the DB, bypassing the denial-stripped session.
-    if (session.user?.denied) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const session = { user: auth.user };
 
     try {
         const body = await req.json();
@@ -166,4 +160,4 @@ export async function POST(req: Request) {
         await logBackendError(error, "POST /api/shop/certifications");
         return NextResponse.json({ error: "Failed to upsert certification" }, { status: 500 });
     }
-}
+});
