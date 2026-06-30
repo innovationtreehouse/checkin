@@ -212,8 +212,8 @@ export async function seedBaseline(prisma: Db): Promise<void> {
             data: {
                 name: "Woodworking 101",
                 leadMentorId: boardMember.id,
-                begin: new Date(),
-                end: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+                startAt: new Date(),
+                endAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
                 phase: "UPCOMING",
                 enrollmentStatus: "OPEN",
                 memberOnly: false,
@@ -266,13 +266,13 @@ export async function createFamily(prisma: Db): Promise<string> {
 /** + Program — a program with a materials fee and a couple of active participants. */
 export async function createProgram(prisma: Db): Promise<string> {
     const tag = uid();
-    const begin = new Date();
-    const end = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+    const startAt = new Date();
+    const endAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
     const program = await prisma.program.create({
         data: {
             name: `Test Program ${tag}`,
-            begin,
-            end,
+            startAt,
+            endAt,
             phase: "UPCOMING",
             enrollmentStatus: "OPEN",
             minAge: 8,
@@ -296,14 +296,14 @@ export async function createProgram(prisma: Db): Promise<string> {
 export async function createEvent(prisma: Db): Promise<string> {
     const tag = uid();
     const latestProgram = await prisma.program.findFirst({ orderBy: { id: "desc" } });
-    const start = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+    const startAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const endAt = new Date(startAt.getTime() + 2 * 60 * 60 * 1000);
     const event = await prisma.event.create({
         data: {
             name: `Test Event ${tag}`,
             programId: latestProgram?.id ?? null,
-            start,
-            end,
+            startAt,
+            endAt,
             description: "Auto-generated dev event",
         },
     });

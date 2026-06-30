@@ -118,15 +118,15 @@ describe('Nav todo-counts API', () => {
         const ledProgram = await prisma.program.create({ data: { name: `Led ${TAG}`, leadMentorId: leadId } });
         ledProgramId = ledProgram.id;
         const pendingEvent = await prisma.event.create({
-            data: { programId: ledProgramId, name: `Pending ${TAG}`, start: daysFromNow(-1), end: daysFromNow(-1) },
+            data: { programId: ledProgramId, name: `Pending ${TAG}`, startAt: daysFromNow(-1), endAt: daysFromNow(-1) },
         });
         pendingEventId = pendingEvent.id;
         const confirmedEvent = await prisma.event.create({
-            data: { programId: ledProgramId, name: `Confirmed ${TAG}`, start: daysFromNow(-2), end: daysFromNow(-2), attendanceConfirmedAt: new Date() },
+            data: { programId: ledProgramId, name: `Confirmed ${TAG}`, startAt: daysFromNow(-2), endAt: daysFromNow(-2), attendanceConfirmedAt: new Date() },
         });
         confirmedEventId = confirmedEvent.id;
         const futureEvent = await prisma.event.create({
-            data: { programId: ledProgramId, name: `Future ${TAG}`, start: daysFromNow(3), end: daysFromNow(3) },
+            data: { programId: ledProgramId, name: `Future ${TAG}`, startAt: daysFromNow(3), endAt: daysFromNow(3) },
         });
         futureEventId = futureEvent.id;
 

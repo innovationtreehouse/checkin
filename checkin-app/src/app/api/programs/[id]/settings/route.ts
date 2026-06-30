@@ -37,8 +37,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         const {
             name,
             leadMentorId,
-            begin,
-            end,
+            startAt,
+            endAt,
             phase,
             enrollmentStatus,
             memberOnly,
@@ -78,8 +78,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         // Build data object for Prisma
         const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
         if (name !== undefined) updateData.name = name;
-        if (begin !== undefined) updateData.begin = begin ? new Date(begin) : null;
-        if (end !== undefined) updateData.end = end ? new Date(end) : null;
+        if (startAt !== undefined) updateData.startAt = startAt ? new Date(startAt) : null;
+        if (endAt !== undefined) updateData.endAt = endAt ? new Date(endAt) : null;
         if (phase !== undefined) updateData.phase = phase;
         if (enrollmentStatus !== undefined) updateData.enrollmentStatus = enrollmentStatus;
         if (memberOnly !== undefined) updateData.memberOnly = memberOnly;

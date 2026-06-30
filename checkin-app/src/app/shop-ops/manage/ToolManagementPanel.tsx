@@ -21,7 +21,7 @@ type Certification = {
   userId: number;
   toolId: number;
   level: "BASIC" | "DOF" | "CERTIFIED" | "INSTRUCTOR" | "MAY_CERTIFY_OTHERS";
-  user?: { id: number; name: string | null; email: string };
+  user?: { id: number; name: string | null };
   tool?: { id: number; name: string };
 };
 
@@ -235,7 +235,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
                         <Stack gap={6} mb="md">
                           {certs.map((c) => (
                             <Group key={`${c.userId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
-                              <Text size="sm">{c.user?.name ?? 'Unnamed'} <Text component="span" c="dimmed" size="xs">({c.user?.email})</Text></Text>
+                              <Text size="sm">{c.user?.name ?? 'Unnamed'}</Text>
                               <ToolLevelBadge level={toToolLevel(c.level)} />
                             </Group>
                           ))}

@@ -13,16 +13,53 @@
 import type { PrismaClient } from "../db/client.js";
 import { EventSource, ObjectType } from "../generated/prisma/client.js";
 import { legacyIdFromGid } from "../dates.js";
+import { logger } from "../logger.js";
 import type { OrderNode } from "../shopify/schemas.js";
 import { ingestNode } from "./ingestNode.js";
 
-/** Split a JSONL blob into parsed records, ignoring blank lines. */
-export function parseBulkJsonl(text: string): Record<string, unknown>[] {
-  return text
-    .split("\n")
-    .filter((l) => l.trim().length > 0)
-    .map((l) => JSON.parse(l) as Record<string, unknown>);
+/** A single JSONL line that failed `JSON.parse`, retained for diagnosis instead of aborting. */
+export interface BadJsonlLine {
+  /** 1-based line number within the blob. */
+  line: number;
+  /** The raw, unparseable line content. */
+  raw: string;
+  error: string;
 }
+
+export interface ParsedBulkJsonl {
+  records: Record<string, unknown>[];
+  /** Lines that failed to parse. Empty on a clean export. */
+  badLines: BadJsonlLine[];
+}
+
+/**
+ * Split a JSONL blob into parsed records, ignoring blank lines. A line that fails to parse
+ * (truncated/garbled byte from Shopify) is SKIPPED and collected into `badLines` rather than
+ * throwing — one bad line must not abort the whole orders backfill. Callers decide the failure
+ * policy from `badLines` (ingestBulkOrders fails loudly only when a large fraction is bad).
+ */
+export function parseBulkJsonl(text: string): ParsedBulkJsonl {
+  const records: Record<string, unknown>[] = [];
+  const badLines: BadJsonlLine[] = [];
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    if (raw.trim().length === 0) continue;
+    try {
+      records.push(JSON.parse(raw) as Record<string, unknown>);
+    } catch (err) {
+      badLines.push({ line: i + 1, raw, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return { records, badLines };
+}
+
+/**
+ * If more than this fraction of non-empty lines fail to parse, the export is treated as corrupt
+ * (likely truncated) and the run fails loudly — a mostly-broken export must not masquerade as a
+ * successful partial import. A handful of bad lines below the threshold is logged and imported.
+ */
+const MAX_BAD_LINE_FRACTION = 0.1;
 
 function childGid(child: unknown): string {
   return String((child as { id?: unknown } | null | undefined)?.id ?? "");
@@ -112,6 +149,8 @@ export interface IngestBulkOrdersResult {
   exportId: bigint;
   recordCount: number;
   ingested: number;
+  /** Lines skipped because they failed to parse — surfaced on the sync_run so a partial parse is visible. */
+  badLineCount: number;
   maxOccurredAt: Date | null;
 }
 
@@ -123,8 +162,9 @@ export async function ingestBulkOrders(
   prisma: PrismaClient,
   args: IngestBulkOrdersArgs,
 ): Promise<IngestBulkOrdersResult> {
-  const records = parseBulkJsonl(args.jsonl);
-
+  // Persist the verbatim JSONL FIRST so a parse/reassembly bug always leaves the offending
+  // payload behind for reingestBulkExports to replay. recordCount counts non-empty lines here
+  // (parse-independent) — the durable count of records present, including any that don't parse.
   const exp = await prisma.shopifyBulkExport.create({
     data: {
       storeId: args.storeId,
@@ -132,11 +172,30 @@ export async function ingestBulkOrders(
       bulkOperationId: args.bulkOperationId,
       source: args.source,
       syncRunId: args.syncRunId ?? null,
-      recordCount: records.length,
+      recordCount: args.jsonl.split("\n").filter((l) => l.trim().length > 0).length,
       jsonl: args.jsonl,
     },
     select: { id: true },
   });
+
+  const { records, badLines } = parseBulkJsonl(args.jsonl);
+  const total = records.length + badLines.length;
+  if (badLines.length > 0) {
+    logger.warn("bulk orders JSONL had unparseable lines", {
+      storeId: args.storeId,
+      exportId: exp.id.toString(),
+      badLineCount: badLines.length,
+      total,
+      firstBadLines: badLines.slice(0, 5).map((b) => b.line),
+    });
+    // A truncated / mostly-broken export must fail the run, not look like a partial success.
+    if (badLines.length / total > MAX_BAD_LINE_FRACTION) {
+      throw Object.assign(
+        new Error(`bulk orders export unparseable: ${badLines.length}/${total} lines failed to parse`),
+        { partialCounts: { exportId: exp.id.toString(), recordCount: total, parsed: records.length, badLineCount: badLines.length } },
+      );
+    }
+  }
 
   let ingested = 0;
   let maxOccurredAt: Date | null = null;
@@ -152,7 +211,7 @@ export async function ingestBulkOrders(
     if (res.occurredAt && (!maxOccurredAt || res.occurredAt > maxOccurredAt)) maxOccurredAt = res.occurredAt;
   }
 
-  return { exportId: exp.id, recordCount: records.length, ingested, maxOccurredAt };
+  return { exportId: exp.id, recordCount: records.length, ingested, badLineCount: badLines.length, maxOccurredAt };
 }
 
 export interface ReingestBulkExportsArgs {
@@ -191,7 +250,7 @@ export async function reingestBulkExports(
   for (const { id } of ids) {
     const row = await prisma.shopifyBulkExport.findUnique({ where: { id }, select: { storeId: true, jsonl: true } });
     if (!row) continue;
-    for (const node of reassembleOrders(parseBulkJsonl(row.jsonl))) {
+    for (const node of reassembleOrders(parseBulkJsonl(row.jsonl).records)) {
       await ingestNode(prisma, {
         storeId: row.storeId,
         objectType: ObjectType.ORDER,

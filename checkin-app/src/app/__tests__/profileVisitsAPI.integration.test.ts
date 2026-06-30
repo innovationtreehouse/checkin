@@ -53,9 +53,12 @@ describe('Profile Visits API Integration Tests', () => {
         // Create visits for the test user
         await prisma.visit.createMany({
             data: [
-                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 1000) }, // Just now
-                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 86400000) }, // 1 day ago
-                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 864000000) }, // 10 days ago (outside 7 day window)
+                // Closed (departedAt set): a participant may have only one OPEN visit
+                // (Visit_one_open_per_participant partial unique index), and this
+                // window test filters by arrivedAt, so departure time is irrelevant.
+                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 1000), departedAt: new Date(now.getTime() - 500) }, // Just now
+                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 86400000), departedAt: new Date(now.getTime() - 86399000) }, // 1 day ago
+                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 864000000), departedAt: new Date(now.getTime() - 863999000) }, // 10 days ago (outside 7 day window)
             ]
         });
     });

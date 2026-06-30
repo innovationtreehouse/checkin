@@ -12,7 +12,7 @@ import MembershipFlowStepper from "@/components/MembershipFlowStepper";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
-import { useUnsavedGuard } from "@/components/UnsavedChangesProvider";
+import { useUnsavedGuard, useConfirmNav } from "@/components/UnsavedChangesProvider";
 
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
@@ -429,6 +429,7 @@ export default function MembershipPage() {
   // save/submit re-snapshots, so this flips back to false then.
   const isDirty = savedForm !== null && currentForm !== savedForm;
   useUnsavedGuard(isDirty);
+  const confirmNav = useConfirmNav();
 
   if (sessionStatus === "loading" || loading) {
     return <Center mih="60vh"><Loader /></Center>;
@@ -455,7 +456,7 @@ export default function MembershipPage() {
     <Container size="lg" pb="md">
       <Group justify="space-between" align="center" wrap="wrap" mb="lg">
         <Title order={1}>Treehouse Membership</Title>
-        <Button component={Link} href="/" variant="default">← Home</Button>
+        <Button component={Link} href="/" variant="default" onNavigate={(e) => { if (!confirmNav()) e.preventDefault(); }}>← Home</Button>
       </Group>
 
       {message && <Alert color={isError ? "red" : "green"} mb="lg">{message}</Alert>}

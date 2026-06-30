@@ -113,7 +113,7 @@ describe('Protected-route role rejection', () => {
         const prog = await prisma.program.create({ data: { name: `Prog ${TAG}` } });
         programId = prog.id;
         eventId = (await prisma.event.create({
-            data: { programId, name: `Evt ${TAG}`, start: new Date('2030-01-01T10:00:00Z'), end: new Date('2030-01-01T12:00:00Z') },
+            data: { programId, name: `Evt ${TAG}`, startAt: new Date('2030-01-01T10:00:00Z'), endAt: new Date('2030-01-01T12:00:00Z') },
         })).id;
     });
 
