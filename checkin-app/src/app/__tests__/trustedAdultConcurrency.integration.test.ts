@@ -19,6 +19,7 @@
  */
 
 import { createTrustedAdult, decideReview, renewTrustedAdult, TrustedAdultError } from '@/lib/trusted-adult/service';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import prisma from '@/lib/prisma';
 
 const sendEmail = jest.fn().mockResolvedValue(true);
@@ -119,8 +120,8 @@ describe('trusted-adult mutation concurrency', () => {
             where: { tableName: 'TrustedAdult', affectedEntityId: ta.id },
             select: { newData: true },
         });
-        const decisions = audits.filter((x) => String(x.newData).includes('"decision":'));
+        const decisions = audits.filter((x) => JSON.stringify(normalizeAuditData(x.newData)).includes('"decision":'));
         expect(decisions).toHaveLength(1);
-        expect(String(decisions[0].newData)).toContain(`"status":"${review!.status}"`);
+        expect(JSON.stringify(normalizeAuditData(decisions[0].newData))).toContain(`"status":"${review!.status}"`);
     });
 });

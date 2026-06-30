@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { handler, notFound, unauthorized } from "@/security/handler";
-import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
+import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
     if (auth.type !== 'session') throw unauthorized();
@@ -38,7 +38,7 @@ export const PATCH = withAuth(
                 where: { id: userId },
                 data: {
                     name: name !== undefined ? name : undefined,
-                    phone: phone !== undefined ? phone : undefined,
+                    phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
                     dateOfBirth: dob ? new Date(dob) : undefined,
                     notificationSettings: notificationSettings !== undefined ? notificationSettings : undefined,
                 },
@@ -57,7 +57,7 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Participant",
                     affectedEntityId: userId,
-                    newData: JSON.stringify(updatedProfile),
+                    newData: updatedProfile,
                 }
             });
 

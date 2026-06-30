@@ -51,7 +51,7 @@ export const POST = withAuth(
                     tableName: "HouseholdLead",
                     affectedEntityId: targetHouseholdId,
                     secondaryAffectedEntity: participantId,
-                    newData: JSON.stringify(newLead)
+                    newData: newLead
                 }
             });
 
@@ -137,7 +137,7 @@ export const DELETE = withAuth(
                     tableName: "HouseholdLead",
                     affectedEntityId: user.householdId,
                     secondaryAffectedEntity: participantId,
-                    oldData: JSON.stringify(existingLead)
+                    oldData: existingLead
                 }
             });
 

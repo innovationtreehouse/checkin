@@ -66,6 +66,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
 
     const resolvedParams = await params;
     const eventId = parseInt(resolvedParams.id, 10);
+    if (isNaN(eventId)) return NextResponse.json({ error: "Invalid event ID" }, { status: 400 });
     const body = await req.json();
 
     try {

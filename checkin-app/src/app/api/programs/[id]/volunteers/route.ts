@@ -50,7 +50,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                 tableName: 'ProgramVolunteer',
                 affectedEntityId: participantId,
                 secondaryAffectedEntity: programId,
-                newData: JSON.stringify(assignment)
+                newData: assignment
             }
         });
 
@@ -124,7 +124,7 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
                 tableName: 'ProgramVolunteer',
                 affectedEntityId: participantId,
                 secondaryAffectedEntity: programId,
-                oldData: JSON.stringify(assignment)
+                oldData: assignment
             }
         });
 
@@ -184,7 +184,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
                 tableName: 'ProgramVolunteer',
                 affectedEntityId: participantId,
                 secondaryAffectedEntity: programId,
-                newData: JSON.stringify(assignment)
+                newData: assignment
             }
         });
 

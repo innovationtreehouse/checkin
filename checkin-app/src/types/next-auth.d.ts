@@ -16,6 +16,9 @@ declare module "next-auth" {
       isBackgroundCheckReviewer?: boolean;
       householdId?: number | null;
       householdLead?: boolean;
+      // Program ids this user is the lead mentor of. Client-side row gate only
+      // (the API is the real boundary); mirrors access-resolvers' programsLed.
+      programsLed?: number[];
       toolStatuses?: { toolId: number; level: string }[];
       // Inert impersonation provenance — display/audit only, never read by authz.
       impersonatedBy?: string | null;
@@ -56,6 +59,7 @@ declare module "next-auth/jwt" {
     isBackgroundCheckReviewer?: boolean;
     householdId?: number | null;
     householdLead?: boolean;
+    programsLed?: number[];
     toolStatuses?: { toolId: number; level: string }[];
   }
 }

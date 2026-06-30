@@ -8,6 +8,7 @@
  * the household-lead guard.
  */
 
+import { normalizeAuditData } from '@/lib/auditPayload';
 import {
     createTrustedAdult,
     decideReview,
@@ -99,7 +100,7 @@ describe('Trusted Adults service', () => {
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(leadId); // the disclosing lead, not SYSTEM_ACTOR
         expect(audit?.action).toBe('CREATE');
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ created: true, status: 'PENDING_BOARD_REVIEW' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ created: true, status: 'PENDING_BOARD_REVIEW' });
     });
 
     it('rejects a disclosure missing name, contact, or family context', async () => {
@@ -131,7 +132,7 @@ describe('Trusted Adults service', () => {
 
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(boardId); // the deciding board member
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', decision: 'APPROVE' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'APPROVED', decision: 'APPROVE' });
     });
 
     it('refuses a decider with a conflict of interest: own household, or being the counterparty', async () => {
@@ -162,7 +163,7 @@ describe('Trusted Adults service', () => {
 
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(boardId);
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'PENDING_SUBJECT_ACTION', decision: 'REQUEST_INFO' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'PENDING_SUBJECT_ACTION', decision: 'REQUEST_INFO' });
     });
 
     it('audit records the deciding/overriding board member on DENY and override-deny', async () => {
@@ -170,13 +171,13 @@ describe('Trusted Adults service', () => {
         await decideReview(ta.reviews[0].id, boardId, { decision: 'DENY' });
         const denyAudit = await latestAudit(ta.id);
         expect(denyAudit?.actorId).toBe(boardId);
-        expect(JSON.parse(String(denyAudit?.newData))).toMatchObject({ status: 'DENIED', decision: 'DENY' });
+        expect(normalizeAuditData(denyAudit?.newData)).toMatchObject({ status: 'DENIED', decision: 'DENY' });
 
         const ta2 = await discloseOne();
         await overrideReview(ta2.reviews[0].id, boardId, 'deny');
         const overrideAudit = await latestAudit(ta2.id);
         expect(overrideAudit?.actorId).toBe(boardId);
-        expect(JSON.parse(String(overrideAudit?.newData))).toMatchObject({ status: 'DENIED', override: 'deny' });
+        expect(normalizeAuditData(overrideAudit?.newData)).toMatchObject({ status: 'DENIED', override: 'deny' });
     });
 
     it('renewal opens a fresh review reusing the same trusted adult, and refuses while one is open', async () => {
@@ -190,7 +191,7 @@ describe('Trusted Adults service', () => {
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(leadId); // the renewing lead
         expect(audit?.action).toBe('CREATE');
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ renewal: review.id, status: 'PENDING_BOARD_REVIEW' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ renewal: review.id, status: 'PENDING_BOARD_REVIEW' });
 
         await expect(renewTrustedAdult(ta.id, leadId)).rejects.toMatchObject({ code: 'already_open' });
     });
@@ -225,7 +226,7 @@ describe('Trusted Adults service', () => {
         // The system, not a person, drives the nightly expiry transition.
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(0); // SYSTEM_ACTOR
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'EXPIRED' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'EXPIRED' });
     });
 
     it('a lead can withdraw; board override can force-revoke; force-approve needs a note', async () => {
@@ -236,7 +237,7 @@ describe('Trusted Adults service', () => {
 
         const withdrawAudit = await latestAudit(ta.id);
         expect(withdrawAudit?.actorId).toBe(leadId); // the withdrawing lead
-        expect(JSON.parse(String(withdrawAudit?.newData))).toMatchObject({ status: 'REVOKED' });
+        expect(normalizeAuditData(withdrawAudit?.newData)).toMatchObject({ status: 'REVOKED' });
 
         const ta2 = await discloseOne();
         const reviewId = ta2.reviews[0].id;
@@ -245,13 +246,13 @@ describe('Trusted Adults service', () => {
         expect(approved.status).toBe('APPROVED');
         const approveAudit = await latestAudit(ta2.id);
         expect(approveAudit?.actorId).toBe(boardId); // the overriding board member
-        expect(JSON.parse(String(approveAudit?.newData))).toMatchObject({ status: 'APPROVED', override: 'approve' });
+        expect(normalizeAuditData(approveAudit?.newData)).toMatchObject({ status: 'APPROVED', override: 'approve' });
 
         const revoked = await overrideReview(reviewId, boardId, 'revoke');
         expect(revoked.status).toBe('REVOKED');
         const revokeAudit = await latestAudit(ta2.id);
         expect(revokeAudit?.actorId).toBe(boardId);
-        expect(JSON.parse(String(revokeAudit?.newData))).toMatchObject({ status: 'REVOKED', override: 'revoke' });
+        expect(normalizeAuditData(revokeAudit?.newData)).toMatchObject({ status: 'REVOKED', override: 'revoke' });
     });
 
     // overrideReview's defining job: force a terminal state regardless of the review's
@@ -267,8 +268,8 @@ describe('Trusted Adults service', () => {
         expect(revoked.status).toBe('REVOKED');
 
         const audit = await latestAudit(ta.id);
-        expect(JSON.parse(String(audit?.oldData))).toMatchObject({ status: 'APPROVED' });
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'REVOKED', override: 'revoke' });
+        expect(normalizeAuditData(audit?.oldData)).toMatchObject({ status: 'APPROVED' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'REVOKED', override: 'revoke' });
     });
 
     it('override-approves an already DENIED review and audits the prior DENIED state', async () => {
@@ -279,8 +280,8 @@ describe('Trusted Adults service', () => {
         expect(approved.status).toBe('APPROVED');
 
         const audit = await latestAudit(ta.id);
-        expect(JSON.parse(String(audit?.oldData))).toMatchObject({ status: 'DENIED' });
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', override: 'approve' });
+        expect(normalizeAuditData(audit?.oldData)).toMatchObject({ status: 'DENIED' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'APPROVED', override: 'approve' });
     });
 
     it('re-overrides an already-overridden terminal review with no phase guard', async () => {
@@ -292,8 +293,8 @@ describe('Trusted Adults service', () => {
         expect(reapproved.status).toBe('APPROVED');
 
         const audit = await latestAudit(ta.id);
-        expect(JSON.parse(String(audit?.oldData))).toMatchObject({ status: 'REVOKED' });
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', override: 'approve' });
+        expect(normalizeAuditData(audit?.oldData)).toMatchObject({ status: 'REVOKED' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'APPROVED', override: 'approve' });
     });
 
     // Conflict of interest on the OVERRIDE path — mirrors decideReview's rule. A board
@@ -323,7 +324,7 @@ describe('Trusted Adults service', () => {
 
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(boardLeadId);
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', override: 'approve' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'APPROVED', override: 'approve' });
     });
 
     it('allows a cross-household board member to override (no conflict)', async () => {

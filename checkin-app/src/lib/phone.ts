@@ -22,6 +22,20 @@ export function isValidPhone(phone: string | null | undefined): boolean {
     return d.length === 10 || (d.length === 11 && d.startsWith("1"));
 }
 
+/**
+ * Canonical display/storage form: `"5551234567"` / `"(555) 123-4567"` ->
+ * `"555-123-4567"`. A leading US country code (11 digits, leading 1) is
+ * dropped. Anything that isn't a recognizable 10/11-digit number is returned
+ * trimmed-but-unchanged, so legacy/partial values render as-is instead of being
+ * mangled. Write boundaries call this so the stored value is always dashed.
+ */
+export function formatPhone(phone: string | null | undefined): string {
+    const d = normalizePhone(phone);
+    const ten = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+    if (ten.length !== 10) return (phone ?? "").trim();
+    return `${ten.slice(0, 3)}-${ten.slice(3, 6)}-${ten.slice(6)}`;
+}
+
 export const PHONE_ERROR = "Enter a valid 10-digit US phone number.";
 
 /** Throw if invalid; for server-side trust boundaries. */

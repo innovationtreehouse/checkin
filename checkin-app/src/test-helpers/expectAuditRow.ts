@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { normalizeAuditData } from "@/lib/auditPayload";
 
 /**
  * Fetch the latest AuditLog row matching {action, tableName, affectedEntityId}
@@ -34,7 +35,5 @@ export async function expectAuditRow(
 
 /** Read a Json audit column whether it was stored as an object or a JSON string. */
 export function auditJson(v: unknown): Record<string, unknown> {
-    if (v == null) return {};
-    if (typeof v === "string") return JSON.parse(v);
-    return v as Record<string, unknown>;
+    return (normalizeAuditData(v) ?? {}) as Record<string, unknown>;
 }

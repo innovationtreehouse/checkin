@@ -12,6 +12,7 @@
  */
 
 import { syncContractStatus } from '@/lib/membership/external';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import { POST as SYNC_ROUTE } from '@/app/api/membership/contract/sync/route';
 import { getRequestStatus } from '@/lib/membership/contract/zohoClient';
 import prisma from '@/lib/prisma';
@@ -64,8 +65,8 @@ async function audits(processId: number) {
         select: { actorId: true, newData: true },
     });
     return {
-        signed: rows.filter((r) => String(r.newData).includes('"contractSignedAt":true')),
-        advanced: rows.filter((r) => String(r.newData).includes('"status":"PENDING_PAYMENT"')),
+        signed: rows.filter((r) => JSON.stringify(normalizeAuditData(r.newData)).includes('"contractSignedAt":true')),
+        advanced: rows.filter((r) => JSON.stringify(normalizeAuditData(r.newData)).includes('"status":"PENDING_PAYMENT"')),
     };
 }
 

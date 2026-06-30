@@ -53,6 +53,12 @@ export const POST = withAuth({}, async (req, auth) => {
         const [startHr, startMin] = startTime.split(':').map(Number);
         const [endHr, endMin] = endTime.split(':').map(Number);
 
+        // Each event (single or recurring) spans one day's wall-clock window, so
+        // compare time-of-day once here rather than per-iteration. End must be after start.
+        if (endHr * 60 + endMin <= startHr * 60 + startMin) {
+            return NextResponse.json({ error: "Event end time must be after start time" }, { status: 400 });
+        }
+
         const eventsToCreate = [];
 
         if (!recurrence || !recurrence.daysOfWeek || recurrence.daysOfWeek.length === 0 || !recurrence.until) {
@@ -119,7 +125,7 @@ export const POST = withAuth({}, async (req, auth) => {
                 action: 'CREATE',
                 tableName: 'Event',
                 affectedEntityId: programId ? parseInt(programId) : 0,
-                newData: JSON.stringify({ count: insertedEvents.count, sample: eventsToCreate[0] })
+                newData: { count: insertedEvents.count, sample: eventsToCreate[0] }
             }
         });
 
