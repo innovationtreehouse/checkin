@@ -41,6 +41,21 @@ defineRoute({
     ],
 });
 
+// The caller's household's recent visits (check-in history). Household-scoped:
+// members see arrival/departure times ('personal') for their own household's
+// visits via the Visit `their_households` scope; rows are already filtered to
+// the household by the query. The visitor name/event name are 'public'.
+defineRoute({
+    endpoint: 'GET /api/household/visits',
+    authorize: 'authenticated',
+    envelope: 'visits',
+    orderedView: [
+        ['sysadmin',      ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['boardMember',   ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['authenticated', ['their_households:personal', 'their_own:personal', 'member', 'public']],
+    ],
+});
+
 defineRoute({
     endpoint: 'GET /api/programs/[id]',
     authorize: 'public',

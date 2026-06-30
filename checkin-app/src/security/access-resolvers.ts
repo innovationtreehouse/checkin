@@ -223,6 +223,14 @@ export function scopesHeld(
         case 'Visit': {
             const participantId = num(row.participantId);
             if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
+            // A household sees its own members' visit history (arrival/departure
+            // times, 'personal'). The visitor's householdId is denormalized via
+            // the nested participant the query selects; absent → no grant.
+            const participant = row.participant as Record<string, unknown> | null | undefined;
+            const visitorHouseholdId = num(participant?.householdId);
+            if (visitorHouseholdId !== undefined && visitorHouseholdId === ctx.householdId) {
+                scopes.add('their_households');
+            }
             if (ctx.isKeyholder && row.departedAt == null) {
                 scopes.add('all_current_visitors');
             }
