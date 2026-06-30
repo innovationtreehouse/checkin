@@ -28,7 +28,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
                 tableName: "EmergencyContact",
                 affectedEntityId: contact.id,
                 secondaryAffectedEntity: hh,
-                newData: JSON.stringify({ name: contact.name, phone: contact.phone }),
+                newData: { name: contact.name, phone: contact.phone },
             },
         });
         return NextResponse.json({ contact });

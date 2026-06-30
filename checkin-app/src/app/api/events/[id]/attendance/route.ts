@@ -79,7 +79,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                             tableName: 'Visit',
                             affectedEntityId: updated.id,
                             secondaryAffectedEntity: eventId,
-                            newData: JSON.stringify({ participantId: pId, associatedEventId: eventId, synthetic: false })
+                            newData: { participantId: pId, associatedEventId: eventId, synthetic: false }
                         }
                     });
                 } else {
@@ -109,7 +109,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                             tableName: 'Visit',
                             affectedEntityId: newVisit.id,
                             secondaryAffectedEntity: eventId,
-                            newData: JSON.stringify({ participantId: pId, associatedEventId: eventId, synthetic: true })
+                            newData: { participantId: pId, associatedEventId: eventId, synthetic: true }
                         }
                     });
                 }

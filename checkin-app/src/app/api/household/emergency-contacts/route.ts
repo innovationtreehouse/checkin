@@ -51,7 +51,7 @@ export const POST = withAuth({}, async (req, auth) => {
                 tableName: "EmergencyContact",
                 affectedEntityId: contact.id,
                 secondaryAffectedEntity: hh,
-                newData: JSON.stringify({ name: contact.name, phone: contact.phone }),
+                newData: { name: contact.name, phone: contact.phone },
             },
         });
         return NextResponse.json({ contact: present(contact) }, { status: 201 });

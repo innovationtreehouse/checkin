@@ -96,7 +96,7 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Participant",
                     affectedEntityId: targetMember.id,
-                    newData: JSON.stringify({ householdId: user.householdId, email: targetMember.email, name: targetMember.name })
+                    newData: { householdId: user.householdId, email: targetMember.email, name: targetMember.name }
                 }
             });
 

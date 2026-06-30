@@ -12,6 +12,7 @@
  */
 
 import { markContractSigned, markBgConsent, advanceExternalIfComplete } from '@/lib/membership/external';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import { notifyReviewers } from '@/lib/membership/review';
 import prisma from '@/lib/prisma';
 
@@ -32,7 +33,7 @@ async function makeExternalProcess(data: Record<string, unknown> = {}): Promise<
 
 async function advanceAudits(processId: number): Promise<number> {
     const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true } });
-    return audits.filter((a) => String(a.newData).includes('"status":"PENDING_PAYMENT"')).length;
+    return audits.filter((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"status":"PENDING_PAYMENT"')).length;
 }
 
 async function wipe() {
@@ -72,8 +73,8 @@ describe('EXTERNAL advance concurrency', () => {
         // Each mutation's audit row carries its own actor: SYSTEM_ACTOR for the contract sign
         // (default), the board member's id (1) for the bg-consent mark.
         const all = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true, actorId: true } });
-        expect(all.find((a) => String(a.newData).includes('"contractSignedAt":true'))?.actorId).toBe(0);
-        expect(all.find((a) => String(a.newData).includes('"bgConsentAt":true'))?.actorId).toBe(1);
+        expect(all.find((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"contractSignedAt":true'))?.actorId).toBe(0);
+        expect(all.find((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"bgConsentAt":true'))?.actorId).toBe(1);
     });
 
     it('second markContractSigned is a no-op (one contractSignedAt audit, idempotent)', async () => {
@@ -82,7 +83,7 @@ describe('EXTERNAL advance concurrency', () => {
         await Promise.all([markContractSigned(processId), markContractSigned(processId)]);
 
         const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true, actorId: true } });
-        const signed = audits.filter((a) => String(a.newData).includes('"contractSignedAt":true'));
+        const signed = audits.filter((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"contractSignedAt":true'));
         expect(signed).toHaveLength(1);
         expect(signed[0].actorId).toBe(0); // markContractSigned default actor = SYSTEM_ACTOR
     });

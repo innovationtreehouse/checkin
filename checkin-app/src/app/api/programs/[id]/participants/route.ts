@@ -134,7 +134,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                 tableName: 'ProgramParticipant',
                 affectedEntityId: participantId,
                 secondaryAffectedEntity: programId,
-                newData: JSON.stringify(enrollment)
+                newData: enrollment
             }
         });
 
@@ -214,7 +214,7 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
                 tableName: 'ProgramParticipant',
                 affectedEntityId: participantId,
                 secondaryAffectedEntity: programId,
-                oldData: JSON.stringify(enrollment)
+                oldData: enrollment
             }
         });
 
