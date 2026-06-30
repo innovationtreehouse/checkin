@@ -15,7 +15,7 @@
  */
 import prisma from '@/lib/prisma';
 import type { AuthResult } from '@/types/auth';
-import type { Authorize, Role, Scope } from './core';
+import type { Authorize, Role } from './core';
 
 export interface CallerContext {
     selfId?: number;
@@ -96,188 +96,19 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
 }
 
 /**
- * Models whose sensitive fields MUST be gated per-row by a scope key the row
- * carries. If that key isn't present on the (possibly nested) row — e.g. a
- * query selected the row but not its `householdId` — we cannot prove the
- * caller's relationship to it, so `scopesHeld` returns NO scopes (not even
- * `'everyones'`) and the stripper drops every sensitive field. This fails
- * CLOSED: a missing selected column must never let an `everyones:*` (admin/
- * board) view leak a whole row. Each entry also needs a `case` below that
- * derives the row-scoped grant from the same key.
+ * Per-row scope resolver. The imperative `switch (modelName)` that used to live
+ * here is now a declarative `SCOPE_BINDINGS` table interpreted by one engine
+ * (scopes.ts), so the bindings can be checked in CI (field typos, forgotten
+ * models, route-grant seam). Behavior is identical — proved by the S1
+ * equivalence test (tests/security/scopeBindingsEquivalence.test.ts) which
+ * asserted set-equality with the old switch across every persona × model × row
+ * before this swap. Re-exported here so existing call sites
+ * (`import { scopesHeld } from './access-resolvers'`) are unchanged.
+ *
+ * The old `ROW_SCOPE_KEY` fail-closed map moved to scopeBindings.ts (it gates
+ * EmergencyContact: a key-less row yields NO scopes, not even `everyones`).
  */
-const ROW_SCOPE_KEY: Record<string, string> = {
-    EmergencyContact: 'householdId',
-};
-
-/**
- * Per-row scope resolver. Returns the set of Scopes the caller holds on the
- * given row. `'everyones'` is included for non-row-scoped models (unconditional
- * scope); for models in `ROW_SCOPE_KEY` it is granted only once the row's scope
- * key is present, so a key-less row fails closed.
- */
-export function scopesHeld(
-    modelName: string,
-    row: Record<string, unknown> | null | undefined,
-    ctx: CallerContext,
-): Set<Scope> {
-    if (!row || typeof row !== 'object') {
-        // No row to gate on. Row-scoped models fail closed; others get the broad scope.
-        return modelName in ROW_SCOPE_KEY ? new Set<Scope>() : new Set<Scope>(['everyones']);
-    }
-
-    const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
-
-    // Defense-in-depth: row-scoped model missing its scope key → fail closed.
-    const scopeKey = ROW_SCOPE_KEY[modelName];
-    if (scopeKey !== undefined && num(row[scopeKey]) === undefined) {
-        return new Set<Scope>();
-    }
-
-    const scopes = new Set<Scope>(['everyones']);
-
-    switch (modelName) {
-        case 'Participant': {
-            const id = num(row.id);
-            const householdId = num(row.householdId);
-            if (id !== undefined && id === ctx.selfId) scopes.add('their_own');
-            if (householdId !== undefined && householdId === ctx.householdId) scopes.add('their_households');
-            if (id !== undefined && ctx.participantIdsInScopePrograms.has(id)) {
-                scopes.add('their_program_participants');
-            }
-            if (id !== undefined && ctx.isKeyholder && ctx.activeVisitorIds.has(id)) {
-                scopes.add('all_current_visitors');
-            }
-            break;
-        }
-        case 'Household': {
-            const id = num(row.id);
-            if (id !== undefined && id === ctx.householdId) scopes.add('their_households');
-            break;
-        }
-        case 'EmergencyContact': {
-            // Row-scoped (see ROW_SCOPE_KEY): householdId is guaranteed present
-            // by the fail-closed guard above. Belongs to one household, so the
-            // household's own members/leads see its personal fields.
-            const householdId = num(row.householdId);
-            if (householdId !== undefined && householdId === ctx.householdId) {
-                scopes.add('their_households');
-            }
-            break;
-        }
-        case 'HouseholdLead': {
-            const householdId = num(row.householdId);
-            const participantId = num(row.participantId);
-            if (householdId !== undefined && householdId === ctx.householdId) {
-                scopes.add('their_households');
-            }
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            break;
-        }
-        case 'Membership': {
-            const householdId = num(row.householdId);
-            if (householdId !== undefined && householdId === ctx.householdId) {
-                scopes.add('their_households');
-            }
-            break;
-        }
-        case 'Program': {
-            const id = num(row.id);
-            if (id !== undefined && (ctx.programsLed.has(id) || ctx.programsCoreVolIn.has(id))) {
-                scopes.add('their_program_participants');
-            }
-            break;
-        }
-        case 'ProgramParticipant':
-        case 'ProgramVolunteer':
-        case 'Fee':
-        case 'RSVP': {
-            const programId = num(row.programId);
-            const participantId = num(row.participantId);
-            if (
-                programId !== undefined &&
-                (ctx.programsLed.has(programId) || ctx.programsCoreVolIn.has(programId))
-            ) {
-                scopes.add('their_program_participants');
-            }
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            break;
-        }
-        case 'Event': {
-            const programId = num(row.programId);
-            if (
-                programId !== undefined &&
-                (ctx.programsLed.has(programId) || ctx.programsCoreVolIn.has(programId))
-            ) {
-                scopes.add('their_program_participants');
-            }
-            break;
-        }
-        case 'FeePayment': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            if (participantId !== undefined && ctx.participantIdsInScopePrograms.has(participantId)) {
-                scopes.add('their_program_participants');
-            }
-            break;
-        }
-        case 'Visit': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            if (ctx.isKeyholder && row.departedAt == null) {
-                scopes.add('all_current_visitors');
-            }
-            break;
-        }
-        case 'RawBadgeLog': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            break;
-        }
-        case 'ToolStatus': {
-            // ToolStatus renamed userId -> participantId (Person = Participant).
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            break;
-        }
-        case 'Account':
-        case 'Session': {
-            // NextAuth-mandated: these keep userId (mapped to participant_id col).
-            const userId = num(row.userId);
-            if (userId !== undefined && userId === ctx.selfId) scopes.add('their_own');
-            break;
-        }
-        case 'TrustedAdult':
-        case 'TrustedAdultReview': {
-            // A Trusted Adult belongs to a household. householdId is denormalized
-            // onto review rows so nested rows resolve the same scopes.
-            //   their_households         → the household's own members/leads (sees
-            //                              familyContext[pii] + notes[personal]).
-            //   their_program_households → a program lead of the household's kids
-            //                              (sees personal-tier notes, NOT pii).
-            //   keyholders               → any isKeyholder, global (personal-tier notes).
-            // The board's familyContext (pii) and decisionNote (internal) are never
-            // granted to the program/isKeyholder scopes.
-            const householdId = num(row.householdId);
-            if (householdId !== undefined && householdId === ctx.householdId) scopes.add('their_households');
-            if (householdId !== undefined && ctx.householdIdsInScopePrograms.has(householdId)) {
-                scopes.add('their_program_households');
-            }
-            if (ctx.isKeyholder) scopes.add('keyholders');
-            break;
-        }
-        // MembershipProcess, BackgroundCheckAttestation, Corporation,
-        // CorporationLead, CorporationMember, AuditLog, VerificationToken,
-        // ErrorLog, SystemMetricLog, Tool — no per-row scopes beyond 'everyones'
-        // yet. Admin (isSysadmin/isBoardMember) views grant 'everyones:*' so they
-        // still get through. These SHOULD be row-scoped too (they carry
-        // membershipId / processId / corporationId); until each has a case +
-        // ROW_SCOPE_KEY entry, a non-admin view cannot see them and an admin
-        // view sees them ungated. Add them to ROW_SCOPE_KEY as cases land.
-        // ponytail: EmergencyContact done first (carries householdId);
-        // extend to the rest when a route needs non-admin access to them.
-    }
-    return scopes;
-}
+export { scopesHeld } from './scopeBindings';
 
 /** A certifier holds at least one MAY_CERTIFY_OTHERS toolStatus on the session. */
 function isCertifier(auth: AuthResult): boolean {
