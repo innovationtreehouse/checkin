@@ -102,12 +102,12 @@ export const PAGES: PageEntry[] = [
   { href: '/membership-ops/participants/import', label: 'Import Participants', section: 'Membership Ops', visible: BOARD },
   { href: '/membership-ops/participants/merge', label: 'Merge Participants', section: 'Membership Ops', visible: BOARD },
   { href: '/membership-ops/review', label: 'Membership Review', section: 'Membership Ops', visible: BOARD },
-  { href: '/membership-ops/broken', label: 'Broken Households', section: 'Membership Ops', keywords: 'lead leadless no lead unclaimed', visible: BOARD },
 
   // Membership Audit — board
   { href: '/membership-audit', label: 'Membership Audit', section: 'Membership Audit', visible: BOARD },
   { href: '/membership-audit/emergency-contacts', label: 'Missing Emergency Contacts', section: 'Membership Audit', visible: BOARD },
   { href: '/membership-audit/unclaimed', label: 'Unclaimed Accounts', section: 'Membership Audit', visible: BOARD },
+  { href: '/membership-audit/broken', label: 'Broken Households', section: 'Membership Audit', keywords: 'lead leadless no lead unclaimed', visible: BOARD },
 
   // Program Ops — board
   { href: '/program-ops', label: 'Program Ops', section: 'Program Ops', visible: BOARD },
