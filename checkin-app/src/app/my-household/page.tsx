@@ -33,13 +33,13 @@ function validateMemberFields(f: { name: string; email: string; dob: string; ove
 
 // Upper-right age chip for a member card. A DoB drives an exact age; absent a
 // DoB we trust the 25+ declaration, else the age is unknown and flagged red.
-function ageBadge(p: Member): { label: string; color: string } {
+function ageBadge(p: Member): { label: string; color: string; variant: string } {
   if (p.dateOfBirth) {
     const age = calculateAge(p.dateOfBirth);
-    return age < 18 ? { label: `Age (${age})`, color: 'blue' } : { label: 'Adult', color: 'gray' };
+    return age < 18 ? { label: `Age (${age})`, color: 'blue', variant: 'light' } : { label: 'Adult', color: 'gray', variant: 'light' };
   }
-  if (p.isDeclaredAdult) return { label: 'Adult', color: 'gray' };
-  return { label: 'Age Unavailable', color: 'red' };
+  if (p.isDeclaredAdult) return { label: 'Adult', color: 'gray', variant: 'light' };
+  return { label: 'Age Unavailable', color: 'red', variant: 'filled' };
 }
 
 type Member = { id: number; name?: string; email?: string; dateOfBirth?: string; phone?: string; isDeclaredAdult?: boolean };
@@ -406,7 +406,7 @@ export default function HouseholdPage() {
                         <>
                           <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
                             <Text fw={600} style={{ wordBreak: 'break-word' }}>{p.name || "Unnamed"}</Text>
-                            {(() => { const b = ageBadge(p); return <Badge color={b.color} variant="light" style={{ flexShrink: 0 }}>{b.label}</Badge>; })()}
+                            {(() => { const b = ageBadge(p); return <Badge color={b.color} variant={b.variant} style={{ flexShrink: 0 }}>{b.label}</Badge>; })()}
                           </Group>
                           {p.email && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>{p.email}</Text>}
                           {p.phone && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>{formatPhone(p.phone)}</Text>}
