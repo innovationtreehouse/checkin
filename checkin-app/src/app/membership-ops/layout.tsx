@@ -25,12 +25,17 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
   const confirmNav = useConfirmNav();
   const { data: session } = useSession();
   const sessionUser = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean; isBackgroundCheckReviewer?: boolean } | undefined;
-  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
-  const todoCounts = useTodoCounts(!!(sessionUser?.isSysadmin || sessionUser?.isBoardMember));
+  const isAdmin = !!(sessionUser?.isSysadmin || sessionUser?.isBoardMember);
+  // Reviewers are let in so they can reach the Review tab (linked from their notifications);
+  // the admin tools below stay scoped to sysadmin/board and each page 403s independently.
+  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember", "isBackgroundCheckReviewer"]);
+  const todoCounts = useTodoCounts(isAdmin);
 
-  // Background-check Review tab is reviewer-only; the page itself 403s non-reviewers.
-  const navLinks = MEMBERSHIP_OPS_NAV_LINKS.filter(
-    (l) => l.href !== "/membership-ops/review" || sessionUser?.isBackgroundCheckReviewer,
+  // Review tab is for reviewers + board members (implicit reviewers); all other tabs
+  // are admin-only. A reviewer-only user therefore sees just the Review tab.
+  const canReview = !!(sessionUser?.isBackgroundCheckReviewer || sessionUser?.isBoardMember);
+  const navLinks = MEMBERSHIP_OPS_NAV_LINKS.filter((l) =>
+    l.href === "/membership-ops/review" ? canReview : isAdmin,
   );
 
   // Total member families, shown as a gray counter on the Manage Memberships tab.
