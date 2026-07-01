@@ -272,7 +272,7 @@ export default function Home() {
       <Modal
         opened={showBoardDirectory}
         onClose={() => setShowBoardDirectory(false)}
-        title={<Title order={4}>Board Directory</Title>}
+        title={<Text span fw={700} fz="lg">Board Directory</Text>}
         centered
       >
         {loadingBoard ? (
