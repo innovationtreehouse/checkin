@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus } from "@/lib/membership/external";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
@@ -136,6 +137,14 @@ export async function getIntakeState(userId: number) {
  * Begin (or resume) an INITIAL application for the caller's household. Ensures a
  * household exists, anchors a Membership (status NONE), and opens a
  * MembershipProcess at INTAKE. Idempotent: an in-flight process is returned as-is.
+ *
+ * The caller's own read of `user.household.membership.processes` (above) is stale
+ * the instant it's read, so a double-click or two tabs can both pass it and both
+ * reach the create. Mirrors renewal's createRenewalProcess: the check+create is
+ * re-run inside a transaction holding a `SELECT ... FOR UPDATE` lock on the
+ * Membership row, so a concurrent caller blocks until the winner commits, then
+ * sees the winner's in-flight process instead of inserting a duplicate. The
+ * partial unique index `membership_one_inflight_initial` is defense-in-depth.
  */
 export async function startIntake(userId: number) {
     const user = await loadUserWithHousehold(userId);
@@ -148,32 +157,52 @@ export async function startIntake(userId: number) {
         throw new IntakeError("already_member", "Your household is already an active member.");
     }
 
-    const existing = user.household?.membership?.processes
-        .filter((p) => p.kind === "INITIAL" && IN_FLIGHT_INITIAL_STATUSES.includes(p.status))
-        .sort((a, b) => b.id - a.id)[0];
-    if (existing) return existing;
-
     const membership = await prisma.membership.upsert({
         where: { householdId },
         create: { householdId, status: "NONE" },
         update: {},
     });
 
-    const process = await prisma.membershipProcess.create({
-        data: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
-    });
+    try {
+        return await prisma.$transaction(async (tx) => {
+            // Lock the membership row so overlapping starts serialize here, not at the INSERT.
+            await tx.$queryRaw`SELECT id FROM "Membership" WHERE id = ${membership.id} FOR UPDATE`;
+            const existing = await tx.membershipProcess.findFirst({
+                where: { membershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+                orderBy: { id: "desc" },
+            });
+            if (existing) return existing;
 
-    await prisma.auditLog.create({
-        data: {
-            actorId: userId,
-            action: "CREATE",
-            tableName: "MembershipProcess",
-            affectedEntityId: process.id,
-            newData: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
-        },
-    });
+            const process = await tx.membershipProcess.create({
+                data: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
+            });
 
-    return process;
+            await tx.auditLog.create({
+                data: {
+                    actorId: userId,
+                    action: "CREATE",
+                    tableName: "MembershipProcess",
+                    affectedEntityId: process.id,
+                    newData: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
+                },
+            });
+
+            return process;
+        });
+    } catch (e) {
+        // The FOR UPDATE lock serializes same-version callers, but a rolling deploy can
+        // leave a pre-fix instance (no lock) inserting concurrently — the partial unique
+        // index membership_one_inflight_initial then rejects the duplicate with P2002.
+        // Return the winner instead of surfacing a 500 to the applicant (mirrors renewal).
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+            const winner = await prisma.membershipProcess.findFirst({
+                where: { membershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+                orderBy: { id: "desc" },
+            });
+            if (winner) return winner;
+        }
+        throw e;
+    }
 }
 
 /** Persist intake form data onto the caller's household + participants. Resumable; never deletes. */
