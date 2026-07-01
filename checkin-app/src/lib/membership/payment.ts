@@ -111,14 +111,15 @@ export async function ensurePaymentLinkForUser(userId: number) {
  * the application BLOCKED — never activate without a valid check) and alert the
  * board to refund, rather than dropping the payment on the floor.
  *
- * H2: for the Shopify path (opts.via === "payment"), an order that doesn't cover
- * the household's expected dues (computeDuesCents) is also NOT a silent no-op —
- * it stays PENDING_PAYMENT (no paidAt), the board is alerted the same way as a
- * paid-while-blocked mismatch, and a follow-up correct payment activates normally.
+ * H2: for the Shopify path (opts.via === "payment"), an order that doesn't
+ * actually contain the membership product (opts.hasMembershipItem) is also NOT
+ * a silent no-op — it stays PENDING_PAYMENT (no paidAt), the board is alerted
+ * the same way as a paid-while-blocked mismatch, and a follow-up correct
+ * payment activates normally.
  */
 export async function activate(
     processId: number,
-    opts: { via: "payment" | "certified"; actorId?: number; shopifyOrderId?: string; paidAmountCents?: number },
+    opts: { via: "payment" | "certified"; actorId?: number; shopifyOrderId?: string; hasMembershipItem?: boolean },
 ) {
     const result = await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "MembershipProcess" WHERE id = ${processId} FOR UPDATE`;
@@ -164,48 +165,39 @@ export async function activate(
             return { kind: "noop" as const };
         }
 
-        // H2: a real Shopify order (opts.via === "payment") must actually cover the
-        // dues for THIS household's tier before we activate anything. Expected dues
-        // come from our own membership.isVolunteer flag, not from the order's
-        // discount_codes — so if a non-volunteer appends the volunteer discount code
-        // to the (public) checkout link, they still owe the non-volunteer rate and
-        // this simply fails as underpayment. That sidesteps comparing
-        // order.discount_codes[].code against BoardSettings.volunteerDiscountCode
-        // (see TODO #278 in the webhook route) — simpler, and just as correct, since
-        // the only thing that matters is whether enough money arrived for this
-        // household's real tier. A board "certified" payment-plan override has no
-        // Shopify order at all, so it's exempt (opts.via !== "payment"). Only runs
-        // when paidAmountCents is actually supplied: activateByProcessId (the only
-        // production caller of the "payment" path) always passes the order's real
-        // total — parsed-but-zero included, which correctly fails closed below —
-        // so this only skips for callers that never had an amount to check.
-        if (opts.via === "payment" && opts.paidAmountCents !== undefined) {
-            const expectedDuesCents = await computeDuesCents(membership.isVolunteer);
-            const paidCents = opts.paidAmountCents;
-            // expectedDuesCents <= 0 means dues aren't configured yet (BoardSettings dues
-            // columns default to 0). Treat that as "unpriced", NOT "free": without this
-            // guard the check degrades to `paidCents < 0` — always false — and ANY order
-            // (even a $0/garbage total) would activate for free, reopening H2. Fail closed;
-            // a genuinely free membership would be granted via the board certify path, not Shopify.
-            if (expectedDuesCents <= 0 || paidCents < expectedDuesCents) {
-                await tx.auditLog.create({
-                    data: {
-                        actorId: SYSTEM_ACTOR,
-                        action: "EDIT",
-                        tableName: "MembershipProcess",
-                        affectedEntityId: processId,
-                        oldData: { status: "PENDING_PAYMENT" },
-                        newData: { status: "PENDING_PAYMENT", via: opts.via, underpaid: true, paidCents, expectedDuesCents, shopifyOrderId: opts.shopifyOrderId ?? null },
-                    },
-                });
-                // Do NOT set paidAt: elsewhere (clearBackgroundCheck, overrideBlocked) a
-                // truthy paidAt means "payment step satisfied, skip straight to/through
-                // background clearance" — setting it here would let a later bg-check
-                // clearance activate the membership without ever paying the shortfall.
-                // Status stays PENDING_PAYMENT so a follow-up correct payment (new
-                // Shopify order, new webhook) activates normally on its own.
-                return { kind: "underpaid" as const };
-            }
+        // H2: a real Shopify order (opts.via === "payment") must actually contain
+        // the membership product before we activate anything — checked by variant
+        // id (stable, and the same id the checkout link is built from), not by
+        // order total, which drifts if BoardSettings dues fall out of sync with
+        // Shopify's real price and doesn't stop someone paying for unrelated items
+        // that happen to add up to the right amount (see #625 for the systemic
+        // price/settings-alignment fix, including volunteer-discount eligibility).
+        // A board "certified" payment-plan override has no Shopify order at all, so
+        // it's exempt (opts.via !== "payment"). Only runs when hasMembershipItem is
+        // actually supplied: activateByProcessId (the only production caller of the
+        // "payment" path) always passes it, so this only skips for callers that
+        // never had an order to check.
+        if (opts.via === "payment" && opts.hasMembershipItem === false) {
+            // An order tagged with a valid process id but containing no
+            // membership product is anomalous, not a normal underpayment —
+            // still not a silent no-op though: audit it and alert the board.
+            await tx.auditLog.create({
+                data: {
+                    actorId: SYSTEM_ACTOR,
+                    action: "EDIT",
+                    tableName: "MembershipProcess",
+                    affectedEntityId: processId,
+                    oldData: { status: "PENDING_PAYMENT" },
+                    newData: { status: "PENDING_PAYMENT", via: opts.via, noMembershipItem: true, shopifyOrderId: opts.shopifyOrderId ?? null },
+                },
+            });
+            // Do NOT set paidAt: elsewhere (clearBackgroundCheck, overrideBlocked) a
+            // truthy paidAt means "payment step satisfied, skip straight to/through
+            // background clearance" — setting it here would let a later bg-check
+            // clearance activate the membership without a real membership payment.
+            // Status stays PENDING_PAYMENT so a follow-up correct payment (new
+            // Shopify order, new webhook) activates normally on its own.
+            return { kind: "underpaid" as const };
         }
 
         const activating = !!process.bgClearedAt;
@@ -250,8 +242,8 @@ export async function certifyPaymentPlan(processId: number, actorId: number) {
 }
 
 /** Webhook path: activate the process tied to a paid Shopify draft order. */
-export async function activateByProcessId(processId: number, shopifyOrderId: string, paidAmountCents: number) {
-    return activate(processId, { via: "payment", shopifyOrderId, paidAmountCents });
+export async function activateByProcessId(processId: number, shopifyOrderId: string, hasMembershipItem: boolean) {
+    return activate(processId, { via: "payment", shopifyOrderId, hasMembershipItem });
 }
 
 /** Send the one "welcome — your membership is active" email to a household's leads. */

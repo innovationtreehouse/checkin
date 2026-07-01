@@ -8,16 +8,7 @@ import { withWebhook } from "@/lib/webhookAuth";
 interface ShopifyOrder {
     id?: number | string;
     note_attributes?: { name: string; value: string }[];
-    // Decimal string in the shop's currency major units (e.g. "49.00" for $49.00),
-    // per Shopify's order payload — NOT cents. Converted below to match the cents
-    // BoardSettings.{normal,volunteer}DuesCents are stored in.
-    total_price?: string;
-}
-
-/** order.total_price ("49.00") → cents. Unparseable/missing → 0 (fail closed: don't activate). */
-function totalPriceCents(order: ShopifyOrder): number {
-    const n = Number(order.total_price);
-    return Number.isFinite(n) ? Math.round(n * 100) : 0;
+    line_items?: { variant_id?: number | string }[];
 }
 
 /**
@@ -78,22 +69,36 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
 
         // Membership payment → activate the household membership.
         //
-        // H2 (fixed): activateByProcessId now checks order.total_price against the
-        // expected dues for that process's household/tier (computeDuesCents in
-        // payment.ts) and refuses to activate an underpaid order — see the H2 note
-        // on activate() in payment.ts for how that's kept safe/idempotent.
+        // H2 (fixed): activateByProcessId now checks that the order actually
+        // CONTAINS the membership product (its Shopify variant id), not just that
+        // it totals enough — a total-price check drifts if BoardSettings dues fall
+        // out of sync with Shopify's real price, and an attacker could otherwise pay
+        // for unrelated items (e.g. a workshop) that happen to add up to the same
+        // amount. A variant id is stable and is the same id the checkout link is
+        // built from (buildMembershipCheckoutUrl), so it can't silently drift the
+        // way a price copy can. See the H2 note on activate() in payment.ts for how
+        // that's kept safe/idempotent. Issue #625 tracks the systemic fix for
+        // keeping BoardSettings dues/prices aligned with Shopify (which also covers
+        // the volunteer-discount-eligibility gap below).
         //
         // TODO(#278) still open: we still trust the customer-controlled
         // Membership_Process_ID cart attribute for WHICH process to credit (no
         // per-process checkout token yet), and the volunteer discount code is still
         // a self-serve code on a public cart link rather than gated to a Shopify
         // customer segment. Neither enables over-activation on its own now that the
-        // amount is checked, but both remain honor-system until a real token /
-        // Shopify-side segment exists.
+        // membership item is checked, but both remain honor-system until a real
+        // token / Shopify-side segment exists.
         if (membershipProcessIdStr) {
             const processId = parseInt(membershipProcessIdStr, 10);
             if (!isNaN(processId)) {
-                const proc = await activateByProcessId(processId, order.id ? String(order.id) : "", totalPriceCents(order));
+                const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+                const membershipVariantIds = new Set(
+                    [settings?.membershipVariantId, settings?.shopifyNormalVariantId, settings?.shopifyVolunteerVariantId].filter(
+                        (v): v is string => !!v,
+                    ),
+                );
+                const hasMembershipItem = (order.line_items ?? []).some((li) => membershipVariantIds.has(String(li.variant_id)));
+                const proc = await activateByProcessId(processId, order.id ? String(order.id) : "", hasMembershipItem);
                 if (proc?.status === "ACTIVE") {
                     logger.info(`[SHOPIFY WEBHOOK] Activated membership for process ${processId}`);
                 } else if (proc?.status === "BLOCKED") {

@@ -3,12 +3,13 @@
  */
 /**
  * Unit test for the H2 fix in activate() (prisma mocked, no DB): a Shopify
- * payment (opts.via === "payment") must cover the household's expected dues
- * before a PENDING_PAYMENT process activates.
- *   - paid < dues  -> NOT activated, no paidAt, board alerted (notifyBoardPaidReject).
- *   - paid >= dues -> activates as before (status ACTIVE, membership ACTIVE).
+ * payment (opts.via === "payment") must actually contain the membership
+ * product (its Shopify variant) before a PENDING_PAYMENT process activates.
+ *   - no membership variant in the order -> NOT activated, no paidAt, board alerted (notifyBoardPaidReject).
+ *   - membership variant present         -> activates as before (status ACTIVE, membership ACTIVE).
+ *   - a "certified" (board) activation never had an order to check, so it's exempt regardless.
  */
-import { activateByProcessId } from '@/lib/membership/payment';
+import { activate, activateByProcessId } from '@/lib/membership/payment';
 
 jest.mock('@/lib/prisma', () => {
     const mock = {
@@ -34,20 +35,19 @@ const { notifyBoardPaidReject } = require('@/lib/membership/boardAlerts');
 
 const PROCESS_ID = 5;
 const MEMBERSHIP_ID = 9;
-const NORMAL_DUES_CENTS = 10000;
 
 beforeEach(() => {
     jest.clearAllMocks();
-    prisma.boardSettings.findUnique.mockResolvedValue({ normalDuesCents: NORMAL_DUES_CENTS, volunteerDuesCents: 2500 });
+    prisma.boardSettings.findUnique.mockResolvedValue({ normalDuesCents: 10000, volunteerDuesCents: 2500 });
     prisma.membership.findUnique.mockResolvedValue({ householdId: 3, isVolunteer: false });
 });
 
-it('does NOT activate a PENDING_PAYMENT process when the order total is below dues', async () => {
+it('does NOT activate a PENDING_PAYMENT process when the order has no membership item', async () => {
     prisma.membershipProcess.findUnique.mockResolvedValue({
         id: PROCESS_ID, status: 'PENDING_PAYMENT', paidAt: null, bgClearedAt: null, membershipId: MEMBERSHIP_ID,
     });
 
-    await activateByProcessId(PROCESS_ID, 'order-1', NORMAL_DUES_CENTS - 1);
+    await activateByProcessId(PROCESS_ID, 'order-1', false);
 
     expect(prisma.membershipProcess.update).not.toHaveBeenCalled();
     expect(prisma.membership.update).not.toHaveBeenCalled();
@@ -55,18 +55,18 @@ it('does NOT activate a PENDING_PAYMENT process when the order total is below du
     expect(prisma.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
             data: expect.objectContaining({
-                newData: expect.objectContaining({ status: 'PENDING_PAYMENT', underpaid: true }),
+                newData: expect.objectContaining({ status: 'PENDING_PAYMENT', noMembershipItem: true }),
             }),
         }),
     );
 });
 
-it('activates a PENDING_PAYMENT process when the order total meets dues', async () => {
+it('activates a PENDING_PAYMENT process when the order contains the membership item', async () => {
     prisma.membershipProcess.findUnique.mockResolvedValue({
         id: PROCESS_ID, status: 'PENDING_PAYMENT', paidAt: null, bgClearedAt: new Date(), membershipId: MEMBERSHIP_ID,
     });
 
-    await activateByProcessId(PROCESS_ID, 'order-2', NORMAL_DUES_CENTS);
+    await activateByProcessId(PROCESS_ID, 'order-2', true);
 
     expect(prisma.membershipProcess.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'ACTIVE' }) }),
@@ -77,17 +77,17 @@ it('activates a PENDING_PAYMENT process when the order total meets dues', async 
     expect(notifyBoardPaidReject).not.toHaveBeenCalled();
 });
 
-it('does NOT activate when dues are unconfigured (expectedDuesCents 0), even for a positive payment', async () => {
-    // BoardSettings dues default to 0 on a fresh/reset deploy; a 0 floor must NOT mean
-    // "any payment covers it" — that would free-activate. Fail closed instead.
-    prisma.boardSettings.findUnique.mockResolvedValue({ normalDuesCents: 0, volunteerDuesCents: 0 });
+it('a certified (board) activation is exempt from the membership-item check', async () => {
+    // certifyPaymentPlan never has a Shopify order to check (via !== "payment"),
+    // so it activates even though no hasMembershipItem is passed at all.
     prisma.membershipProcess.findUnique.mockResolvedValue({
         id: PROCESS_ID, status: 'PENDING_PAYMENT', paidAt: null, bgClearedAt: new Date(), membershipId: MEMBERSHIP_ID,
     });
 
-    await activateByProcessId(PROCESS_ID, 'order-3', 5000);
+    await activate(PROCESS_ID, { via: 'certified', actorId: 1 });
 
-    expect(prisma.membershipProcess.update).not.toHaveBeenCalled();
-    expect(prisma.membership.update).not.toHaveBeenCalled();
-    expect(notifyBoardPaidReject).toHaveBeenCalledWith(PROCESS_ID);
+    expect(prisma.membershipProcess.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'ACTIVE' }) }),
+    );
+    expect(notifyBoardPaidReject).not.toHaveBeenCalled();
 });

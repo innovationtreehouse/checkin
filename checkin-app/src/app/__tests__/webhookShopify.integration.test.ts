@@ -28,6 +28,7 @@ jest.mock('@/lib/logger', () => ({
 
 const SECRET = 'shopify-test-secret';
 const TAG = 'shopify-webhook-test';
+const MEMBERSHIP_VARIANT_ID = '778899';
 
 function sign(body: string, secret = SECRET): string {
     return crypto.createHmac('sha256', secret).update(body, 'utf8').digest('base64');
@@ -50,6 +51,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     let p2: number;
     let h1: number;
     let h2: number;
+    let prevMembershipVariantId: string | null = null;
 
     beforeAll(async () => {
         const program = await prisma.program.create({
@@ -67,6 +69,17 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         });
         p2 = b.id;
         h2 = b.householdId;
+
+        // Route now checks the order's line items against BoardSettings'
+        // configured membership variant id(s) — seed one so the routing test
+        // below can prove a matching order activates.
+        const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+        prevMembershipVariantId = existing?.membershipVariantId ?? null;
+        await prisma.boardSettings.upsert({
+            where: { id: 1 },
+            create: { id: 1, membershipVariantId: MEMBERSHIP_VARIANT_ID },
+            update: { membershipVariantId: MEMBERSHIP_VARIANT_ID },
+        });
     });
 
     beforeEach(() => {
@@ -75,6 +88,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     });
 
     afterAll(async () => {
+        await prisma.boardSettings.update({ where: { id: 1 }, data: { membershipVariantId: prevMembershipVariantId } });
         await prisma.integrationErrorLog.deleteMany({ where: { source: 'shopify-webhook' } });
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.delete({ where: { id: programId } });
@@ -199,13 +213,14 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     it('routes a Membership_Process_ID payload to activateByProcessId and returns 200', async () => {
         const body = JSON.stringify({
             id: 98765,
-            total_price: '100.00',
+            line_items: [{ variant_id: MEMBERSHIP_VARIANT_ID }],
             note_attributes: [{ name: 'Membership_Process_ID', value: '42' }],
         });
         const res = await POST(webhookReq(body, sign(body)));
         expect(res.status).toBe(200);
-        // H2: the parsed order total (in cents) is forwarded so activate() can enforce dues.
-        expect(activateByProcessId).toHaveBeenCalledWith(42, '98765', 10000);
+        // H2: whether the order actually contains the configured membership variant
+        // is forwarded so activate() can enforce it.
+        expect(activateByProcessId).toHaveBeenCalledWith(42, '98765', true);
     });
 
     it('returns 500 and writes one IntegrationErrorLog row when a handler throws', async () => {
