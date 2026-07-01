@@ -76,6 +76,9 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
                       size="md"
                       color={isBroken ? "treehouseGreen" : "gray"}
                       variant={isBroken ? "filled" : "light"}
+                      // Active tab recolors its content to the tabs color (green); pin a readable
+                      // label color so the count isn't rendered green-on-green on the active tab.
+                      c={isBroken ? "var(--mantine-color-black)" : "var(--mantine-color-gray-7)"}
                       aria-label={isBroken ? `${todoCount} household${todoCount === 1 ? "" : "s"} without a lead` : `${todoCount} application${todoCount === 1 ? "" : "s"}`}
                     >
                       {todoCount}
@@ -85,6 +88,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
                       size="md"
                       color="gray"
                       variant="light"
+                      c="var(--mantine-color-gray-7)"
                       aria-label={`${memberFamilies} member famil${memberFamilies === 1 ? "y" : "ies"}`}
                     >
                       {memberFamilies}

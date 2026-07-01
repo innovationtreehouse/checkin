@@ -29,9 +29,9 @@ export const MEMBERSHIP_OPS_NAV_LINKS: MembershipOpsNavLink[] = [
   // API route are kept intact. See it.failing cases ("should keep the HIGHER" / "should keep the
   // ACTIVE") in src/app/api/membership-ops/participants/merge/__tests__/route.integration.test.ts.
   // { name: "Merge Participants", href: "/membership-ops/participants/merge", icon: "🔗", description: "Combine duplicate participant records." },
-  { name: "Manage Memberships", href: "/membership-ops/households", icon: "🏠", description: "Grant or revoke household facility membership." },
+  { name: "Households", href: "/membership-ops/households", icon: "🏠", description: "Grant or revoke household facility membership." },
   { name: "Volunteer Memberships", href: "/membership-ops/volunteer-memberships", icon: "🙋", description: "Designate volunteer-only emails for reduced dues." },
-  { name: "Membership Applications", href: "/membership-ops/applications", icon: "📋", description: "Review and approve membership applications." },
+  { name: "Applications", href: "/membership-ops/applications", icon: "📋", description: "Review and approve membership applications." },
   // "Unclaimed Accounts" moved to Membership Audit (/membership-audit/unclaimed).
   { name: "Background-check Review", href: "/membership-ops/review", icon: "🔍", description: "Review submitted membership background checks." },
   { name: "Broken Households", href: "/membership-ops/broken", icon: "⚠️", description: "Households with no lead — assign one so the family can be claimed." },
