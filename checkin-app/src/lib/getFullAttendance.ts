@@ -8,11 +8,12 @@ export async function getFullAttendance() {
             participant: {
                 select: {
                     id: true,
-                    googleId: true,
+                    // email is read only to resolve the name fallback below and never
+                    // leaves this function (M1) — same pattern as the certifications
+                    // grid (#329). googleId/isSysadmin aren't rendered anywhere downstream.
                     email: true,
                     name: true,
                     isKeyholder: true,
-                    isSysadmin: true,
                     dateOfBirth: true,
                     householdId: true,
                     phone: true,
@@ -65,6 +66,22 @@ export async function getFullAttendance() {
         isTwoDeepViolation: unaccompaniedStudents.length > 0 && adultVisits.length < 2,
     };
 
-    return { attendance: activeVisits, counts, safety };
+    // Drop email/googleId from the wire (M1): resolve the same name-or-email-prefix
+    // fallback the UI already falls back to (`name || email.split("@")[0]`) here,
+    // server-side, so `name` is always populated and the raw address never ships.
+    const attendance = activeVisits.map(v => ({
+        ...v,
+        participant: {
+            id: v.participant.id,
+            name: v.participant.name?.trim() || v.participant.email?.split("@")[0] || null,
+            isKeyholder: v.participant.isKeyholder,
+            dateOfBirth: v.participant.dateOfBirth,
+            householdId: v.participant.householdId,
+            phone: v.participant.phone,
+            household: v.participant.household,
+        },
+    }));
+
+    return { attendance, counts, safety };
 }
 

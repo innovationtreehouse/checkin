@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
+import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 
 export const PATCH = withAuth(
     {},
@@ -49,7 +50,8 @@ export const PATCH = withAuth(
                     phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
                     // A real DoB supersedes the 25+ flag; otherwise honor the checkbox.
                     isDeclaredAdult: over25 !== undefined ? (dob ? false : !!over25) : undefined,
-                }
+                },
+                select: HOUSEHOLD_PEER_SELECT,
             });
 
             // Set when the field edits saved but the requested promotion to lead
