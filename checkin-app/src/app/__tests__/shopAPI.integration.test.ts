@@ -254,6 +254,31 @@ describe('Shop API Integration Tests', () => {
              expect(data.length).toBeGreaterThanOrEqual(1);
         });
 
+        it('enforces object-level authorization on ?participantId (L1 IDOR fix)', async () => {
+            // Self-lookup — always allowed, no participantId gate applies.
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
+            let res = await getCerts(createReq('GET', { searchParams: `participantId=${commonId}` })) as Response;
+            expect(res.status).toBe(200);
+
+            // Plain member reading another member's certifications — forbidden.
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
+            res = await getCerts(createReq('GET', { searchParams: `participantId=${adminId}` })) as Response;
+            expect(res.status).toBe(403);
+
+            // Sysadmin/board reading another member's certifications — allowed.
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+            res = await getCerts(createReq('GET', { searchParams: `participantId=${commonId}` })) as Response;
+            expect(res.status).toBe(200);
+
+            // Certifier (MAY_CERTIFY_OTHERS on the session) reading another member's
+            // certifications — allowed, same derivation as callerHoldsRole('certifier', ...).
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: certifierId, toolStatuses: [{ toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' }] },
+            });
+            res = await getCerts(createReq('GET', { searchParams: `participantId=${commonId}` })) as Response;
+            expect(res.status).toBe(200);
+        });
+
         it('should return 403 for common users attempting a certification grant', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 

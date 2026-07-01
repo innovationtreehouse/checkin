@@ -38,6 +38,18 @@ export const GET = withAuth({}, async (req, auth) => {
 
         if (participantIdParam) {
             targetUserId = parseInt(participantIdParam, 10);
+
+            // Looking up someone else's certifications requires admin/board or
+            // certifier standing — mirrors the ?all=true gate above and the same
+            // MAY_CERTIFY_OTHERS derivation used by callerHoldsRole('certifier', ...)
+            // in src/security/access-resolvers.ts. Self-lookups stay open to anyone.
+            if (targetUserId !== session.user.id) {
+                const isCertifier = (session.user.toolStatuses ?? []).some(ts => ts.level === 'MAY_CERTIFY_OTHERS');
+                const isAuthorized = session.user?.isSysadmin || session.user?.isBoardMember || isCertifier;
+                if (!isAuthorized) {
+                    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+                }
+            }
         }
 
         let whereClause: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
