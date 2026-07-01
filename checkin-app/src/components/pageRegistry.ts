@@ -53,7 +53,7 @@ export const PAGES: PageEntry[] = [
   // Staff home for program lead mentors. Lead status rides in on the todo-counts
   // payload (leadsAnyProgram), matching the nav gate. Distinct from the attendee
   // "My Programs" tab above.
-  { href: '/my-programs', label: 'My Programs (Staff)', section: 'Personal', keywords: 'lead mentor program staff attendance', visible: LEADS_PROGRAM },
+  { href: '/my-programs/attendance', label: 'My Programs (Staff)', section: 'Personal', keywords: 'lead mentor program staff attendance', visible: LEADS_PROGRAM },
   { href: '/my-programs/conflicts', label: 'Attendance Conflicts', section: 'Personal', keywords: 'lead mentor duplicate overlapping visit attendance', visible: LEADS_PROGRAM },
   // Stays visible to all members: also the Join/renewal entry for new applicants
   // who aren't a household lead yet (gating it on lead would break joining).
@@ -143,4 +143,5 @@ export const REGISTRY_EXCLUDED: string[] = [
   '/signin',                 // auth surface
   '/settings',               // redirects to /settings/membership
   '/attendance',             // redirects to /attendance/current
+  '/my-programs',            // redirects to /my-programs/attendance
 ];
