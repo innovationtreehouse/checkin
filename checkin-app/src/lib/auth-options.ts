@@ -169,8 +169,11 @@ export const authOptions: NextAuthOptions = {
                     } else {
                         const personaId = parseInt(String(credentials?.personaId ?? ""), 10);
                         if (isNaN(personaId)) return null;
-                        dbParticipant = await prisma.participant.findUnique({
-                            where: { id: personaId },
+                        // Restrict the mintable target to seeded @example.com personas (matches the
+                        // dev-personas picker's filter) so a caller can never mint a real participant,
+                        // even if one exists in the dev DB.
+                        dbParticipant = await prisma.participant.findFirst({
+                            where: { id: personaId, email: { endsWith: "@example.com" } },
                         });
                     }
                     if (!dbParticipant) return null;
