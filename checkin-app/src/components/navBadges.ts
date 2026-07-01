@@ -37,8 +37,11 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
     }
     case '/attendance': {
       const mine = counts.buildingHousehold;
+      const blue = (n: number, label: string): NavBadge[] =>
+        n > 0 ? [{ count: n, color: 'blue', label }] : [];
       return [
-        ...green(mine, `${mine} from your household currently in the building`),
+        // Blue not green: informational (who's here), not an action to take.
+        ...blue(mine, `${mine} from your household currently in the building`),
         ...gray(counts.building, `${counts.building} people currently in the building`),
       ];
     }
