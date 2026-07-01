@@ -18,9 +18,11 @@ export const GET = withAuth({}, async (req, auth) => {
         const toolIdParam = searchParams.get('toolId');
         const allParam = searchParams.get('all');
 
-        // ?all=true returns every assignment — admin/board only
+        // ?all=true returns every assignment — visible to admins/board, any tool
+        // certifier (MAY_CERTIFY_OTHERS on some tool), and any keyholder.
         if (allParam === 'true') {
-            const isAuthorized = session.user?.isSysadmin || session.user?.isBoardMember;
+            const hasCertifierAuth = (session.user?.toolStatuses ?? []).some(ts => ts.level === 'MAY_CERTIFY_OTHERS');
+            const isAuthorized = session.user?.isSysadmin || session.user?.isBoardMember || session.user?.isKeyholder || hasCertifierAuth;
             if (!isAuthorized) {
                 return NextResponse.json({ error: "Forbidden" }, { status: 403 });
             }
@@ -28,7 +30,7 @@ export const GET = withAuth({}, async (req, auth) => {
                 orderBy: [{ tool: { name: 'asc' } }, { participant: { name: 'asc' } }],
                 include: {
                     tool: true,
-                    participant: { select: { id: true, name: true, email: true } },
+                    participant: { select: { id: true, name: true } },
                 },
             });
             return NextResponse.json(certifications);
