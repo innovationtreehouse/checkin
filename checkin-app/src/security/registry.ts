@@ -137,16 +137,18 @@ defineRoute({
 
 // Background-check reviewers' queue. Reviewers must see applicant parents' names
 // + emails (to look them up on Averity) but NOT internal/personal fields — so the
-// grant is deliberately limited to pii + public.
+// grant is deliberately limited to pii + public. Board members are implicit
+// reviewers (canReviewBackgroundChecks) and get the same limited band.
 defineRoute({
     endpoint: 'GET /api/membership/reviews',
-    authorize: { anyRole: ['isBackgroundCheckReviewer'] },
+    authorize: { anyRole: ['isBackgroundCheckReviewer', 'isBoardMember'] },
     envelope: 'queue',
     // Bag: { MembershipProcess } with membership (Membership → household Household
     // → leads HouseholdLead → participant Participant).
     returns: ['MembershipProcess', 'Membership', 'Household', 'HouseholdLead', 'Participant'],
     orderedView: [
         ['isBackgroundCheckReviewer', ['everyones:pii', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'member', 'public']],
     ],
 });
 

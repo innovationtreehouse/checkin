@@ -214,18 +214,18 @@ describe('Protected-route role rejection', () => {
         });
     });
 
-    // ---- membership/reviews POST — isBackgroundCheckReviewer PII boundary -------
-    // The attestation surface exposes applicant parents' names/emails. A
-    // isKeyholder or isBoardMember WITHOUT isBackgroundCheckReviewer status must be
-    // denied (mirror participants/search rejecting a isKeyholder). The 401/403/
-    // /plain cases are covered in the roleGated table above; this proves a
-    // privileged-but-wrong-role user does not slip through.
-    describe('POST /api/membership/reviews — non-reviewer privileged user', () => {
-        it('403 for a isBoardMember without isBackgroundCheckReviewer', async () => {
+    // ---- membership/reviews POST — reviewer PII boundary ----------------------
+    // The attestation surface exposes applicant parents' names/emails. Reviewers
+    // AND board members (implicit reviewers, canReviewBackgroundChecks) may pass;
+    // any other privileged-but-wrong role (e.g. isKeyholder) must be denied. A
+    // board member clears the role gate and stops at body validation (400, not
+    // 403); a keyholder is rejected at the gate.
+    describe('POST /api/membership/reviews — privileged role gate', () => {
+        it('board member passes the role gate (400 bad body, not 403)', async () => {
             as(plainId, { householdId: plainHh, isBoardMember: true });
-            expect((await REVIEWS_POST(nreq('http://localhost/api/membership/reviews', 'POST', {}))).status).toBe(403);
+            expect((await REVIEWS_POST(nreq('http://localhost/api/membership/reviews', 'POST', {}))).status).toBe(400);
         });
-        it('403 for a isKeyholder without isBackgroundCheckReviewer', async () => {
+        it('403 for a isKeyholder without reviewer/board role', async () => {
             as(plainId, { householdId: plainHh, isKeyholder: true });
             expect((await REVIEWS_POST(nreq('http://localhost/api/membership/reviews', 'POST', {}))).status).toBe(403);
         });

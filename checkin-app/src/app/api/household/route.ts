@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
 import { isOrgAccount } from "@/lib/orgAccount";
+import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 
 export const GET = withAuth(
     {},
@@ -14,7 +15,15 @@ export const GET = withAuth(
 
             const user = await prisma.participant.findUnique({
                 where: { id: userId },
-                include: { household: { include: { participants: true, leads: true, membership: true } } }
+                include: {
+                    household: {
+                        include: {
+                            participants: { select: HOUSEHOLD_PEER_SELECT },
+                            leads: true,
+                            membership: true,
+                        }
+                    }
+                }
             });
 
             if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -74,7 +83,8 @@ export const PATCH = withAuth(
 
                     targetMember = await prisma.participant.update({
                         where: { id: targetMember.id },
-                        data: { householdId: user.householdId }
+                        data: { householdId: user.householdId },
+                        select: HOUSEHOLD_PEER_SELECT,
                     });
                 }
             }
@@ -92,7 +102,8 @@ export const PATCH = withAuth(
                         dateOfBirth: memberDob ? new Date(memberDob) : null,
                         isDeclaredAdult: !memberDob && !!memberOver25,
                         householdId: user.householdId,
-                    }
+                    },
+                    select: HOUSEHOLD_PEER_SELECT,
                 });
             }
 

@@ -63,11 +63,11 @@ describe('Membership notifications API', () => {
         expect(data.membership.blocked).toBe(0); // not board
     });
 
-    it('a board member sees the blocked count', async () => {
+    it('a board member sees the blocked count and (as an implicit reviewer) pending reviews', async () => {
         as(boardId, { isBoardMember: true });
         const data = await (await NOTIFS(req())).json();
         expect(data.membership.blocked).toBeGreaterThanOrEqual(1);
-        expect(data.membership.pendingReviews).toBe(0); // not a reviewer
+        expect(data.membership.pendingReviews).toBeGreaterThanOrEqual(1); // board is an implicit reviewer
     });
 
     it('a plain user sees nothing', async () => {
