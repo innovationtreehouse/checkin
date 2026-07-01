@@ -59,7 +59,7 @@ jest.mock('@/lib/dev/ledger', () => ({ recordLedger: jest.fn() }));
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { participant: { findUnique: jest.fn() } },
+    default: { participant: { findUnique: jest.fn(), findFirst: jest.fn() } },
 }));
 
 // jest.setup.js globally mocks @/lib/auth-options to `{}` (it normally pulls GoogleProvider's heavy
@@ -75,6 +75,8 @@ const mockEvaluateMint = evaluateMint as jest.Mock;
 const mockRecordLedger = recordLedger as jest.Mock;
 const mockFindUnique = (prisma as unknown as { participant: { findUnique: jest.Mock } })
     .participant.findUnique;
+const mockFindFirst = (prisma as unknown as { participant: { findFirst: jest.Mock } })
+    .participant.findFirst;
 const mockCheckinEnv = config.checkinEnv as jest.Mock;
 
 // next-auth v4 CredentialsProvider returns { id: "credentials", authorize: () => null, options }:
@@ -125,6 +127,7 @@ describe('persona-mint authorize() glue', () => {
         // No mint, no audit, no participant lookup.
         expect(mockRecordLedger).not.toHaveBeenCalled();
         expect(mockFindUnique).not.toHaveBeenCalled();
+        expect(mockFindFirst).not.toHaveBeenCalled();
     });
 
     it('dev, non-org caller → null (no participant lookup, no ledger)', async () => {
@@ -140,6 +143,7 @@ describe('persona-mint authorize() glue', () => {
         expect(result).toBeNull();
         expect(mockRecordLedger).not.toHaveBeenCalled();
         expect(mockFindUnique).not.toHaveBeenCalled();
+        expect(mockFindFirst).not.toHaveBeenCalled();
     });
 
     it('dev, anonymous caller → null', async () => {
@@ -157,7 +161,7 @@ describe('persona-mint authorize() glue', () => {
     it('dev, org caller → mints the persona AND audits the IMPERSONATOR, not the persona', async () => {
         mockGetToken.mockResolvedValue(ORG_CALLER);
         // Target persona has a DIFFERENT email than the caller — the swap-bug tripwire.
-        mockFindUnique.mockResolvedValue({ id: 42, email: 'jane@example.com', name: 'Jane Persona' });
+        mockFindFirst.mockResolvedValue({ id: 42, email: 'jane@example.com', name: 'Jane Persona' });
 
         const result = await getAuthorize()({ mode: 'impersonate', personaId: '42' }, REQ);
 
@@ -187,6 +191,29 @@ describe('persona-mint authorize() glue', () => {
         expect(actor).toBe('daniel@innovationtreehouse.org');
         expect(actor).not.toBe('jane@example.com');
         expect(detail).toBe('jane@example.com'); // persona is the detail, not the actor
+    });
+
+    it('impersonate mode only resolves @example.com personas, even for a caller that passes evaluateMint (L2)', async () => {
+        mockGetToken.mockResolvedValue(ORG_CALLER);
+
+        // Success: an @example.com persona is found via the id+email-suffix filter.
+        mockFindFirst.mockResolvedValueOnce({ id: 42, email: 'jane@example.com', name: 'Jane Persona' });
+        const minted = await getAuthorize()({ mode: 'impersonate', personaId: '42' }, REQ);
+        expect(minted).toEqual({
+            id: '42',
+            email: 'jane@example.com',
+            name: 'Jane Persona',
+            impersonatedBy: 'daniel@innovationtreehouse.org',
+        });
+        expect(mockFindFirst).toHaveBeenCalledWith({
+            where: { id: 42, email: { endsWith: '@example.com' } },
+        });
+
+        // Failure: a real (non-@example.com) participant id never satisfies the filtered query —
+        // the DB where-clause excludes it even though the caller already passed evaluateMint.
+        mockFindFirst.mockResolvedValueOnce(null);
+        const denied = await getAuthorize()({ mode: 'impersonate', personaId: '7' }, REQ);
+        expect(denied).toBeNull();
     });
 
     it('return-to-me → clears impersonatedBy and audits a plain login as the real human', async () => {
@@ -229,7 +256,7 @@ describe('persona-mint authorize() glue', () => {
             emailVerified: true,
             impersonatedBy: null,
         });
-        mockFindUnique.mockResolvedValue({ id: 99, email: 'victim@example.com', name: 'Victim' });
+        mockFindFirst.mockResolvedValue({ id: 99, email: 'victim@example.com', name: 'Victim' });
 
         await getAuthorize()({ mode: 'impersonate', personaId: '99' }, REQ);
 
