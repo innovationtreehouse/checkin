@@ -30,8 +30,9 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
             }
 
+            // Leads/sysadmins edit anyone; anyone may edit their own record.
             const isCurrentUserLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isCurrentUserLead && !user.isSysadmin) {
+            if (!isCurrentUserLead && !user.isSysadmin && participantId !== userId) {
                 return NextResponse.json({ error: "Only household leads can edit members" }, { status: 403 });
             }
 
