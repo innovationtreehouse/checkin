@@ -522,8 +522,10 @@ export function ToolManagementPanel() {
   const isBoardMember = session?.user?.isBoardMember;
   const isAdmin = isSysadmin || isBoardMember;
 
+  const isKeyholder = session?.user?.isKeyholder;
   const hasCertifierAuth = (session?.user?.toolStatuses ?? []).some((ts: { level?: string }) => ts.level === 'MAY_CERTIFY_OTHERS');
   const isCertifier = isSysadmin || isBoardMember || hasCertifierAuth;
+  const canSeeAll = isCertifier || isKeyholder;
 
   if (!isCertifier && !isAdmin) {
     return (
@@ -540,7 +542,7 @@ export function ToolManagementPanel() {
       <ScrollableTabsList mb="md">
         <Tabs.Tab value="tools">All Tools</Tabs.Tab>
         <Tabs.Tab value="person">By Person</Tabs.Tab>
-        {isAdmin && <Tabs.Tab value="all">All Assignments</Tabs.Tab>}
+        {canSeeAll && <Tabs.Tab value="all">All Assignments</Tabs.Tab>}
       </ScrollableTabsList>
 
       <Tabs.Panel value="tools">
@@ -549,7 +551,7 @@ export function ToolManagementPanel() {
       <Tabs.Panel value="person">
         <PersonTab members={members} tools={tools} isCertifier={!!isCertifier} isAdmin={!!isAdmin} />
       </Tabs.Panel>
-      {isAdmin && (
+      {canSeeAll && (
         <Tabs.Panel value="all">
           <AllTab />
         </Tabs.Panel>
