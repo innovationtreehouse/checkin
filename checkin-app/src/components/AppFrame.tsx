@@ -308,19 +308,24 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                 rightSection={
                   badges.length > 0 ? (
                     <Group gap={4} wrap="nowrap">
-                      {badges.map((badge) => (
-                        <Badge
-                          key={badge.color}
-                          size="md"
-                          color={badge.color}
-                          variant="filled"
-                          aria-label={badge.label}
-                          // Gray fill is light; white text on it fails contrast. Force dark text.
-                          styles={badge.color === 'gray' ? { label: { color: 'var(--mantine-color-dark-9)' } } : undefined}
-                        >
-                          {badge.count}
-                        </Badge>
-                      ))}
+                      {badges.map((badge) => {
+                        // Two badge shades, each with its own readable font (same convention as
+                        // the membership-ops tabs): green action badges are green fill + dark
+                        // text; gray informational badges are light-gray fill + dark text.
+                        const isGray = badge.color === 'gray';
+                        return (
+                          <Badge
+                            key={badge.color}
+                            size="md"
+                            color={badge.color}
+                            variant={isGray ? 'light' : 'filled'}
+                            c={isGray ? 'var(--mantine-color-gray-7)' : 'var(--mantine-color-black)'}
+                            aria-label={badge.label}
+                          >
+                            {badge.count}
+                          </Badge>
+                        );
+                      })}
                     </Group>
                   ) : undefined
                 }

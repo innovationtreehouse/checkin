@@ -91,7 +91,10 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
                   ) : showMemberFamilies ? (
                     <Badge
                       size="md"
-                      color="gray"
+                      // Dark-gray total counter: gray.8 is dark enough for white text (plain
+                      // gray filled = gray.6 ≈ #868e96, where white fails contrast). Pinned white
+                      // also survives the active tab's green recolor.
+                      color="gray.8"
                       variant="filled"
                       c="white"
                       aria-label={`${memberFamilies} member famil${memberFamilies === 1 ? "y" : "ies"}`}
