@@ -1,0 +1,11 @@
+{
+  "type": "event",
+  "event": {
+    "name": "Open House & Maker Fair",
+    "description": "One-time community open house. No program attached.",
+    "programId": null,
+    "startDate": "2026-07-18",
+    "startTime": "10:00",
+    "endTime": "14:00"
+  }
+}
