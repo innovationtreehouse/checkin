@@ -57,7 +57,9 @@ export default function SafetyLayout({ children }: { children: React.ReactNode }
             <Tabs.Tab
               key={t.href}
               value={t.href}
-              rightSection={t.count ? <Badge size="xs" circle color="green">{t.count}</Badge> : undefined}
+              // Active tab recolors its content to the tabs color (green); pin dark text so the
+              // green count badge isn't rendered green-on-green on the active tab.
+              rightSection={t.count ? <Badge size="xs" circle color="green" c="var(--mantine-color-black)">{t.count}</Badge> : undefined}
             >
               {t.name}
             </Tabs.Tab>
