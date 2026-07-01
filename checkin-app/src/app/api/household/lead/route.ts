@@ -86,22 +86,26 @@ export const DELETE = withAuth(
                 include: { householdLeads: true }
             });
 
-            if (!user?.householdId) {
-                 return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
-            }
-
-            const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isLead && !user.isSysadmin) {
-                return NextResponse.json({ error: "Only household leads or sysadmins can remove leads" }, { status: 403 });
-            }
-
             const targetMember = await prisma.participant.findUnique({ where: { id: participantId } });
-            if (!targetMember || targetMember.householdId !== user.householdId) {
-                return NextResponse.json({ error: "Member not found in your household" }, { status: 404 });
+            if (!targetMember) {
+                return NextResponse.json({ error: "Participant not found" }, { status: 404 });
+            }
+            const targetHouseholdId = targetMember.householdId;
+            if (!targetHouseholdId) {
+                return NextResponse.json({ error: "Member has no household" }, { status: 400 });
+            }
+
+            // Board members and sysadmins can remove a lead from ANY household — the
+            // mirror of the promote path in POST. A regular household lead can only
+            // remove leads within their own household.
+            const isPrivileged = !!user?.isSysadmin || !!user?.isBoardMember;
+            const isLeadOfTarget = !!user?.householdLeads.some(lead => lead.householdId === targetHouseholdId);
+            if (!isPrivileged && !isLeadOfTarget) {
+                return NextResponse.json({ error: "Only household leads, board members, or sysadmins can remove leads" }, { status: 403 });
             }
 
             const allLeads = await prisma.householdLead.findMany({
-                where: { householdId: user.householdId }
+                where: { householdId: targetHouseholdId }
             });
 
             if (allLeads.length <= 1 && allLeads.some(l => l.participantId === participantId)) {
@@ -111,7 +115,7 @@ export const DELETE = withAuth(
             const existingLead = await prisma.householdLead.findUnique({
                 where: {
                     householdId_participantId: {
-                        householdId: user.householdId,
+                        householdId: targetHouseholdId,
                         participantId: participantId
                     }
                 }
@@ -124,7 +128,7 @@ export const DELETE = withAuth(
             await prisma.householdLead.delete({
                 where: {
                     householdId_participantId: {
-                        householdId: user.householdId,
+                        householdId: targetHouseholdId,
                         participantId: participantId
                     }
                 }
@@ -135,7 +139,7 @@ export const DELETE = withAuth(
                     actorId: userId,
                     action: "DELETE",
                     tableName: "HouseholdLead",
-                    affectedEntityId: user.householdId,
+                    affectedEntityId: targetHouseholdId,
                     secondaryAffectedEntity: participantId,
                     oldData: existingLead
                 }
