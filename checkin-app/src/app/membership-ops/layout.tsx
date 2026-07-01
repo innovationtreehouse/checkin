@@ -15,7 +15,6 @@ import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 function membershipTodoCountFor(href: string, counts: TodoCounts | null): number {
   if (!counts?.admin) return 0;
   if (href === "/membership-ops/applications") return counts.admin.applicationsTotal;
-  if (href === "/membership-ops/broken") return counts.admin.brokenHouseholds;
   return 0;
 }
 
@@ -67,7 +66,6 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
         <ScrollableTabsList>
           {navLinks.map((link) => {
             const todoCount = membershipTodoCountFor(link.href, todoCounts);
-            const isBroken = link.href === "/membership-ops/broken";
             const showMemberFamilies =
               link.href === "/membership-ops/households" && memberFamilies !== null;
             return (
@@ -79,12 +77,12 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
                   todoCount > 0 ? (
                     <Badge
                       size="md"
-                      color={isBroken ? "treehouseGreen" : "gray"}
-                      variant={isBroken ? "filled" : "light"}
+                      color="gray"
+                      variant="light"
                       // Active tab recolors its content to the tabs color (green); pin a readable
                       // label color so the count isn't rendered green-on-green on the active tab.
-                      c={isBroken ? "var(--mantine-color-black)" : "var(--mantine-color-gray-7)"}
-                      aria-label={isBroken ? `${todoCount} household${todoCount === 1 ? "" : "s"} without a lead` : `${todoCount} application${todoCount === 1 ? "" : "s"}`}
+                      c="var(--mantine-color-gray-7)"
+                      aria-label={`${todoCount} application${todoCount === 1 ? "" : "s"}`}
                     >
                       {todoCount}
                     </Badge>

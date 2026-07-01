@@ -34,5 +34,5 @@ export const MEMBERSHIP_OPS_NAV_LINKS: MembershipOpsNavLink[] = [
   { name: "Applications", href: "/membership-ops/applications", icon: "📋", description: "Review and approve membership applications." },
   // "Unclaimed Accounts" moved to Membership Audit (/membership-audit/unclaimed).
   { name: "Background-check Review", href: "/membership-ops/review", icon: "🔍", description: "Review submitted membership background checks." },
-  { name: "Broken Households", href: "/membership-ops/broken", icon: "⚠️", description: "Households with no lead — assign one so the family can be claimed." },
+  // "Broken Households" moved to Membership Audit (/membership-audit/broken).
 ];
