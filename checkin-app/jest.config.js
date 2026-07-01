@@ -15,6 +15,24 @@ const customJestConfig = {
     // tests that failed by THROWING (schema/mock rot) vs honest assertions.
     reporters: ['default', '<rootDir>/test/failureClassifierReporter.js'],
     setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+    // Coverage (only collected when a run passes --coverage; normal runs are
+    // unaffected). v8 provider because next/jest transforms with SWC, not babel,
+    // so babel-plugin-istanbul never instruments — v8 reads Node's own coverage.
+    coverageProvider: 'v8',
+    coverageDirectory: 'coverage',
+    coverageReporters: ['text-summary', 'lcov', 'json-summary'],
+    // Count every source file, so untested files show as 0% rather than vanishing.
+    collectCoverageFrom: [
+        'src/**/*.{ts,tsx}',
+        '!src/**/*.d.ts',
+        '!src/**/__tests__/**',
+        '!src/**/__mocks__/**',
+        '!src/**/*.test.{ts,tsx}',
+        '!src/generated/**',          // generated Prisma client
+        '!src/security/generated/**', // generated classification mirror
+        '!src/types/**',              // type-only declarations
+        '!src/test-helpers/**',
+    ],
     // Integration tier only (gated by INTEGRATION_DB): clone one Postgres DB per
     // worker so parallel workers can't corrupt each other. No-op for `test:ci`.
     globalSetup: '<rootDir>/test/integrationGlobalSetup.js',

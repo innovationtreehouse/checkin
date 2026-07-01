@@ -440,7 +440,7 @@ function KioskDisplayInner() {
       </Card>
 
       {/* Admin Sign Out Modal */}
-      <Modal opened={showSignOutModal} onClose={() => setShowSignOutModal(false)} title={<Title order={4}>Sign Out A User</Title>} size="lg">
+      <Modal opened={showSignOutModal} onClose={() => setShowSignOutModal(false)} title={<Text span fw={700} fz="lg">Sign Out A User</Text>} size="lg">
         <TextInput
           placeholder="Search checked-in users..."
           value={searchSignOutQuery}
@@ -476,7 +476,7 @@ function KioskDisplayInner() {
       <Modal
         opened={!!selectedParticipant}
         onClose={() => setSelectedParticipant(null)}
-        title={<Title order={4} c="yellow">🆘 Emergency Contact Info</Title>}
+        title={<Text span fw={700} fz="lg" c="yellow">🆘 Emergency Contact Info</Text>}
         centered
       >
         {selectedParticipant && (

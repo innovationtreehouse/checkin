@@ -24,9 +24,19 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
   const router = useRouter();
   const confirmNav = useConfirmNav();
   const { data: session } = useSession();
-  const sessionUser = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
-  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
-  const todoCounts = useTodoCounts(!!(sessionUser?.isSysadmin || sessionUser?.isBoardMember));
+  const sessionUser = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean; isBackgroundCheckReviewer?: boolean } | undefined;
+  const isAdmin = !!(sessionUser?.isSysadmin || sessionUser?.isBoardMember);
+  // Reviewers are let in so they can reach the Review tab (linked from their notifications);
+  // the admin tools below stay scoped to sysadmin/board and each page 403s independently.
+  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember", "isBackgroundCheckReviewer"]);
+  const todoCounts = useTodoCounts(isAdmin);
+
+  // Review tab is for reviewers + board members (implicit reviewers); all other tabs
+  // are admin-only. A reviewer-only user therefore sees just the Review tab.
+  const canReview = !!(sessionUser?.isBackgroundCheckReviewer || sessionUser?.isBoardMember);
+  const navLinks = MEMBERSHIP_OPS_NAV_LINKS.filter((l) =>
+    l.href === "/membership-ops/review" ? canReview : isAdmin,
+  );
 
   // Total member families, shown as a gray counter on the Manage Memberships tab.
   const memberFamilies = todoCounts?.admin?.memberFamilies ?? null;
@@ -46,7 +56,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
 
   // Longest-prefix match so sub-routes (e.g. /participants/123) keep their parent tab active.
   const activeTab =
-    [...MEMBERSHIP_OPS_NAV_LINKS]
+    [...navLinks]
       .sort((a, b) => b.href.length - a.href.length)
       .find((l) => pathname === l.href || pathname.startsWith(l.href + "/"))?.href ?? null;
 
@@ -55,7 +65,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
       <Stack>
       <Tabs value={activeTab} onChange={(value) => { if (value && confirmNav()) router.push(value); }}>
         <ScrollableTabsList>
-          {MEMBERSHIP_OPS_NAV_LINKS.map((link) => {
+          {navLinks.map((link) => {
             const todoCount = membershipTodoCountFor(link.href, todoCounts);
             const isBroken = link.href === "/membership-ops/broken";
             const showMemberFamilies =
@@ -71,6 +81,9 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
                       size="md"
                       color={isBroken ? "treehouseGreen" : "gray"}
                       variant={isBroken ? "filled" : "light"}
+                      // Active tab recolors its content to the tabs color (green); pin a readable
+                      // label color so the count isn't rendered green-on-green on the active tab.
+                      c={isBroken ? "var(--mantine-color-black)" : "var(--mantine-color-gray-7)"}
                       aria-label={isBroken ? `${todoCount} household${todoCount === 1 ? "" : "s"} without a lead` : `${todoCount} application${todoCount === 1 ? "" : "s"}`}
                     >
                       {todoCount}
@@ -79,7 +92,8 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
                     <Badge
                       size="md"
                       color="gray"
-                      variant="light"
+                      variant="filled"
+                      c="white"
                       aria-label={`${memberFamilies} member famil${memberFamilies === 1 ? "y" : "ies"}`}
                     >
                       {memberFamilies}
