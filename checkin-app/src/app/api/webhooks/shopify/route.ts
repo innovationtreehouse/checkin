@@ -8,6 +8,7 @@ import { withWebhook } from "@/lib/webhookAuth";
 interface ShopifyOrder {
     id?: number | string;
     note_attributes?: { name: string; value: string }[];
+    line_items?: { variant_id?: number | string }[];
 }
 
 /**
@@ -68,23 +69,36 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
 
         // Membership payment → activate the household membership.
         //
-        // TODO(#278): we trust the Membership_Process_ID rather than
-        // validating the order. The volunteer discount is a self-serve code on a
-        // public cart link, so a non-volunteer could append ?discount=<code> and
-        // underpay — and this handler would still activate them. We do NOT check
-        // entitlement, amount, product, or discount code here.
+        // H2 (fixed): activateByProcessId now checks that the order actually
+        // CONTAINS the membership product (its Shopify variant id), not just that
+        // it totals enough — a total-price check drifts if BoardSettings dues fall
+        // out of sync with Shopify's real price, and an attacker could otherwise pay
+        // for unrelated items (e.g. a workshop) that happen to add up to the same
+        // amount. A variant id is stable and is the same id the checkout link is
+        // built from (buildMembershipCheckoutUrl), so it can't silently drift the
+        // way a price copy can. See the H2 note on activate() in payment.ts for how
+        // that's kept safe/idempotent. Issue #625 tracks the systemic fix for
+        // keeping BoardSettings dues/prices aligned with Shopify (which also covers
+        // the volunteer-discount-eligibility gap below).
         //
-        // Long-term fix: gate the volunteer coupon to an auto-managed Shopify
-        // customer segment (only volunteer households are members of it), so
-        // Shopify itself refuses the code for everyone else and no app-side check
-        // is needed. Until that exists, the order payload carries enough to
-        // validate manually if we want a stopgap: order.discount_codes[].code vs
-        // BoardSettings.volunteerDiscountCode + membership.isVolunteer, and
-        // order.total_price vs the expected tier dues.
+        // TODO(#278) still open: we still trust the customer-controlled
+        // Membership_Process_ID cart attribute for WHICH process to credit (no
+        // per-process checkout token yet), and the volunteer discount code is still
+        // a self-serve code on a public cart link rather than gated to a Shopify
+        // customer segment. Neither enables over-activation on its own now that the
+        // membership item is checked, but both remain honor-system until a real
+        // token / Shopify-side segment exists.
         if (membershipProcessIdStr) {
             const processId = parseInt(membershipProcessIdStr, 10);
             if (!isNaN(processId)) {
-                const proc = await activateByProcessId(processId, order.id ? String(order.id) : "");
+                const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+                const membershipVariantIds = new Set(
+                    [settings?.membershipVariantId, settings?.shopifyNormalVariantId, settings?.shopifyVolunteerVariantId].filter(
+                        (v): v is string => !!v,
+                    ),
+                );
+                const hasMembershipItem = (order.line_items ?? []).some((li) => membershipVariantIds.has(String(li.variant_id)));
+                const proc = await activateByProcessId(processId, order.id ? String(order.id) : "", hasMembershipItem);
                 if (proc?.status === "ACTIVE") {
                     logger.info(`[SHOPIFY WEBHOOK] Activated membership for process ${processId}`);
                 } else if (proc?.status === "BLOCKED") {
