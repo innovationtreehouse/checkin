@@ -37,22 +37,28 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
     }
     case '/attendance': {
       const mine = counts.buildingHousehold;
+      const blue = (n: number, label: string): NavBadge[] =>
+        n > 0 ? [{ count: n, color: 'blue', label }] : [];
       return [
-        ...green(mine, `${mine} from your household currently in the building`),
+        // Blue not green: informational (who's here), not an action to take.
+        ...blue(mine, `${mine} from your household currently in the building`),
         ...gray(counts.building, `${counts.building} people currently in the building`),
       ];
     }
     case '/programs':
       return gray(counts.activePrograms, `${counts.activePrograms} active programs`);
     case '/membership-ops':
-      // Pending membership applications awaiting board review, plus households
-      // with no lead that the board needs to fix.
-      return green(counts.admin ? counts.admin.membership + counts.admin.brokenHouseholds : 0, 'Pending membership reviews and leadless households');
+      // Pending membership applications awaiting board review.
+      return green(counts.admin ? counts.admin.membership : 0, 'Pending membership reviews');
     case '/membership-audit': {
-      // Gray: gaps the household must close, not the board — missing emergency
-      // contacts plus accounts created at registration but never claimed.
-      const total = counts.admin ? counts.admin.householdsMissingContact + counts.admin.unclaimedHouseholds : 0;
-      return gray(total, 'Households missing an emergency contact or with an unclaimed account');
+      // Green: leadless households the board must fix (assign a lead). Gray: gaps
+      // the household must close — missing emergency contacts plus accounts created
+      // at registration but never claimed.
+      const grayTotal = counts.admin ? counts.admin.householdsMissingContact + counts.admin.unclaimedHouseholds : 0;
+      return [
+        ...green(counts.admin ? counts.admin.brokenHouseholds : 0, 'Leadless households needing a lead assigned'),
+        ...gray(grayTotal, 'Households missing an emergency contact or with an unclaimed account'),
+      ];
     }
     case '/finance-ops':
       // Pending participants awaiting payment-plan approval.

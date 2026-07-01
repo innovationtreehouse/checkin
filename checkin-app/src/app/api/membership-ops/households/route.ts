@@ -31,6 +31,7 @@ export const GET = withAuth(
                         participants: {
                             select: { id: true, name: true, email: true }
                         },
+                        householdLeads: { select: { participantId: true } },
                         membership: true,
                         emergencyContacts: {
                             where: PRIMARY_CONTACT_WHERE,

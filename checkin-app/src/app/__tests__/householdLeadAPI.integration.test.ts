@@ -257,7 +257,7 @@ describe('Household Lead API Integration Tests', () => {
             const res = await DELETE(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(403);
             const data = await res.json();
-            expect(data.error).toBe('Only household leads or sysadmins can remove leads');
+            expect(data.error).toBe('Only household leads, board members, or sysadmins can remove leads');
         });
         
          it('should fail when trying to remove the last lead', async () => {
@@ -299,6 +299,35 @@ describe('Household Lead API Integration Tests', () => {
                 } 
             });
             expect(demotedLead).toBeNull();
+        });
+
+        it('should let a board member remove a lead from a household they do not belong to', async () => {
+            // Board member sits in neither household. Give otherHousehold a second
+            // lead (testOtherMemberId) so the last-lead guard doesn't fire, then have
+            // the board member demote testOtherLeadId.
+            const boardHousehold = await prisma.household.create({
+                data: { name: 'Board Lead Test Household' }
+            });
+            const boardUser = await prisma.participant.create({
+                data: { email: 'board-lead-api-test@example.com', name: 'Board User', isBoardMember: true, householdId: boardHousehold.id }
+            });
+            await prisma.householdLead.create({
+                data: { householdId: otherHouseholdId, participantId: testOtherMemberId }
+            });
+
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardUser.id } });
+
+            const req = new Request('http://localhost:4000/api/household/lead', {
+                method: 'DELETE',
+                body: JSON.stringify({ participantId: testOtherLeadId })
+            });
+            const res = await DELETE(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+
+            const removed = await prisma.householdLead.findUnique({
+                where: { householdId_participantId: { householdId: otherHouseholdId, participantId: testOtherLeadId } }
+            });
+            expect(removed).toBeNull();
         });
     });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Card, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { Card, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput } from "@mantine/core";
 
 type OneTimeEvent = {
   id: number;
@@ -48,7 +48,6 @@ export default function OneTimeEventsList() {
   return (
     <Stack>
       <div>
-        <Title order={1}>One Time Events</Title>
         <Text c="dimmed">Browse all one-off / standalone events.</Text>
       </div>
 
