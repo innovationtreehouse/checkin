@@ -483,7 +483,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
       <Modal
         opened={!!editingAttendance}
         onClose={() => !actionLoading && setEditingAttendance(null)}
-        title={<Title order={4}>Manual Edit: {editingAttendance?.participant.name}</Title>}
+        title={<Text span fw={700} fz="lg">Manual Edit: {editingAttendance?.participant.name}</Text>}
         centered
       >
         <Stack>
