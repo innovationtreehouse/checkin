@@ -416,7 +416,7 @@ export default function HouseholdPage() {
                             {!memberIsLead && isAdult && viewerIsLead && (
                               <Button size="compact-xs" variant="light" onClick={() => handleMakeLead(p.id)}>Make Lead</Button>
                             )}
-                            {viewerIsLead && (
+                            {(viewerIsLead || p.id === userId) && (
                               <Button size="compact-xs" variant="subtle" color="gray" onClick={() => {
                                 setEditingMemberId(p.id);
                                 setEditErrors({});
