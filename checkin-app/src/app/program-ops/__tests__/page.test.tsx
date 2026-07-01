@@ -6,7 +6,7 @@ jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 import { redirect } from "next/navigation";
 import ProgramOpsIndex from "../page";
 
-beforeEach(() => (redirect as jest.Mock).mockClear());
+beforeEach(() => (redirect as unknown as jest.Mock).mockClear());
 
 describe("ProgramOpsIndex", () => {
   it("redirects to the programs list", () => {
