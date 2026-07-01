@@ -11,7 +11,7 @@ const PAGE_SIZE = 50;
 const ACTIONS = ["CREATE", "EDIT", "DELETE", "BECOME_ADMIN"] as const;
 
 export const GET = withAuth(
-    { roles: ['sysadmin'] },
+    { roles: ['isSysadmin'] },
     async (req: NextRequest) => {
         try {
             const sp = new URL(req.url).searchParams;

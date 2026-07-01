@@ -40,7 +40,7 @@ function patch(eventId: number, body: Record<string, unknown>) {
         method: 'PATCH',
         body: JSON.stringify(body),
     });
-    return PATCH(req, { params: Promise.resolve({ id: String(eventId) }) });
+    return PATCH(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(eventId) }) });
 }
 
 function cronReq() {
@@ -58,7 +58,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
 
     beforeAll(async () => {
         const admin = await prisma.participant.create({
-            data: { name: 'Cancel Admin', email: `admin-${TAG}@example.com`, sysadmin: true, household: { create: {} } },
+            data: { name: 'Cancel Admin', email: `admin-${TAG}@example.com`, isSysadmin: true, household: { create: {} } },
         });
         adminId = admin.id;
         adminHouseholdId = admin.householdId;
@@ -73,7 +73,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
     beforeEach(() => {
         jest.clearAllMocks();
         process.env.CRON_SECRET = SECRET;
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
     });
 
     afterEach(async () => {
@@ -95,8 +95,8 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
         return prisma.event.create({
             data: {
                 name: `${TAG} ${label}`,
-                start,
-                end: new Date(start.getTime() + HOUR),
+                startAt: start,
+                endAt: new Date(start.getTime() + HOUR),
                 description: 'x',
                 ...(recurringGroupId ? { recurringGroupId } : {}),
             },
@@ -247,7 +247,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             });
 
             const newStart = new Date(Date.now() - 90 * MIN);
-            const res = await patch(event.id, { action: 'editTime', start: newStart.toISOString() });
+            const res = await patch(event.id, { action: 'editTime', startAt: newStart.toISOString() });
             expect(res.status).toBe(400);
 
             // Guard fires before the clear → reminderSentAt preserved.

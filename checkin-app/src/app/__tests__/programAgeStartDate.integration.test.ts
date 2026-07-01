@@ -5,12 +5,12 @@
  * Integration Test: age eligibility on the AUTHENTICATED enroll route is judged
  * as of the program's START date, not enrollment time (commit 2fd96fe).
  *
- * The existing programAgeBounds test sets begin = new Date(), which collapses
+ * The existing programAgeBounds test sets startAt = new Date(), which collapses
  * every boundary to "age today" and leaves the start-date logic unguarded. Here
  * the program begins ~8 months in the FUTURE and the participant's calendar age
- * crosses the minAge boundary in that window: 13 today, 14 by `begin`.
+ * crosses the minAge boundary in that window: 13 today, 14 by `startAt`.
  *
- * Correct (calculateAge(dob, begin)) -> eligible -> 200.
+ * Correct (calculateAge(dob, startAt)) -> eligible -> 200.
  * Revert (calculateAge(dob), i.e. age-as-of-now) -> 13 < 14 -> 400. This test
  * fails if the route is reverted to enrollment-time age.
  */
@@ -46,7 +46,7 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
             data: {
                 name: 'Age StartDate Test Program',
                 minAge: 14,
-                begin: new Date('2026-09-01T00:00:00.000Z'),
+                startAt: new Date('2026-09-01T00:00:00.000Z'),
                 phase: 'UPCOMING',
                 enrollmentStatus: 'OPEN'
             }
@@ -54,9 +54,9 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
         programId = program.id;
 
         // Born 2012-04-01: age 13 as of 2026-01-01 (frozen now), turns 14 on
-        // 2026-04-01 — BEFORE the 2026-09-01 start. Eligible as of begin only.
+        // 2026-04-01 — BEFORE the 2026-09-01 start. Eligible as of startAt only.
         const user = await prisma.participant.create({
-            data: { email: 'turns14-age-startdate-test@example.com', name: 'Turns 14 Before Start', dob: new Date('2012-04-01T00:00:00.000Z'), household: { create: {} } }
+            data: { email: 'turns14-age-startdate-test@example.com', name: 'Turns 14 Before Start', dateOfBirth: new Date('2012-04-01T00:00:00.000Z'), household: { create: {} } }
         });
         userId = user.id;
     });
@@ -75,7 +75,7 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
         jest.useFakeTimers(FAKE_TIMER_OPTS);
         try {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: userId, sysadmin: false, boardMember: false }
+                user: { id: userId, isSysadmin: false, isBoardMember: false }
             });
 
             const req = new Request(`http://localhost:4000/api/programs/${programId}/participants`, {
@@ -83,8 +83,8 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
                 body: JSON.stringify({ participantId: userId })
             });
 
-            const res = await enrollParticipant(req, { params: Promise.resolve({ id: programId.toString() }) });
-            // Age as of begin (2026-09-01) = 14 -> eligible. Enrollment-time age (13) would 400.
+            const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: programId.toString() }) });
+            // Age as of startAt (2026-09-01) = 14 -> eligible. Enrollment-time age (13) would 400.
             expect(res.status).toBe(200);
             const data = await res.json();
             expect(data.success).toBe(true);

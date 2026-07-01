@@ -1,10 +1,10 @@
 import prisma from "@/lib/prisma";
-import { eligibleReviewProcessIds } from "@/lib/membership/review";
+import { canReviewBackgroundChecks, eligibleReviewProcessIds } from "@/lib/membership/review";
 
 export interface MembershipNotifications {
     /** Applications this background-check reviewer may currently attest. */
     pendingReviews: number;
-    /** Applications stuck at BLOCKED (board/sysadmin). */
+    /** Applications stuck at BLOCKED (board/isSysadmin). */
     blocked: number;
 }
 
@@ -15,13 +15,13 @@ export interface MembershipNotifications {
  */
 export async function getMembershipNotifications(user: {
     id: number;
-    backgroundCheckReviewer?: boolean;
-    sysadmin?: boolean;
-    boardMember?: boolean;
+    isBackgroundCheckReviewer?: boolean;
+    isSysadmin?: boolean;
+    isBoardMember?: boolean;
 }): Promise<MembershipNotifications> {
-    const pendingReviews = user.backgroundCheckReviewer ? (await eligibleReviewProcessIds(user.id)).length : 0;
+    const pendingReviews = canReviewBackgroundChecks(user) ? (await eligibleReviewProcessIds(user.id)).length : 0;
     const blocked =
-        user.sysadmin || user.boardMember
+        user.isSysadmin || user.isBoardMember
             ? await prisma.membershipProcess.count({ where: { status: "BLOCKED" } })
             : 0;
     return { pendingReviews, blocked };

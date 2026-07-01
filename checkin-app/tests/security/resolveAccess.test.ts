@@ -11,10 +11,10 @@ const session = (id: number): AuthResult => ({
     user: {
         id,
         email: 'u@x.test',
-        sysadmin: false,
-        boardMember: false,
-        keyholder: false,
-        backgroundCheckReviewer: false,
+        isSysadmin: false,
+        isBoardMember: false,
+        isKeyholder: false,
+        isBackgroundCheckReviewer: false,
     },
 });
 
@@ -34,6 +34,7 @@ const rctx = (
         programsCoreVolIn: new Set(),
         participantIdsInScopePrograms: new Set(),
         householdIdsInScopePrograms: new Set(),
+        eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
         ...callerOverrides,
     },
@@ -74,7 +75,7 @@ describe("resolveAccess 'program-lead-mentor'", () => {
 
     test('admin who does not lead it → allowed (admin bypass)', async () => {
         const admin = session(1);
-        if (admin.type === 'session') admin.user.sysadmin = true;
+        if (admin.type === 'session') admin.user.isSysadmin = true;
         expect((await resolveAccess('program-lead-mentor', rctx(admin, { id: '5' }))).allowed).toBe(true);
     });
 
@@ -114,6 +115,45 @@ describe("resolveAccess 'household-lead'", () => {
 
     test('no session → denied', async () => {
         expect((await resolveAccess('household-lead', rctx({ type: 'unauthenticated' }))).allowed).toBe(false);
+    });
+});
+
+describe("resolveAccess 'certifier'", () => {
+    const certifier = (id: number): AuthResult => ({
+        type: 'session',
+        user: {
+            id,
+            email: 'c@x.test',
+            isSysadmin: false,
+            isBoardMember: false,
+            isKeyholder: false,
+            isBackgroundCheckReviewer: false,
+            toolStatuses: [{ toolId: 1, level: 'MAY_CERTIFY_OTHERS' }],
+        },
+    });
+
+    test('caller holding a MAY_CERTIFY_OTHERS toolStatus → allowed', async () => {
+        expect((await resolveAccess('certifier', rctx(certifier(1)))).allowed).toBe(true);
+    });
+
+    test('admin who is not a certifier → allowed (admin bypass)', async () => {
+        const admin = session(1);
+        if (admin.type === 'session') admin.user.isSysadmin = true;
+        expect((await resolveAccess('certifier', rctx(admin))).allowed).toBe(true);
+    });
+
+    test('authenticated caller with only a CERTIFIED (not MAY_CERTIFY_OTHERS) status → denied', async () => {
+        const u = session(1);
+        if (u.type === 'session') u.user.toolStatuses = [{ toolId: 1, level: 'CERTIFIED' }];
+        expect((await resolveAccess('certifier', rctx(u))).allowed).toBe(false);
+    });
+
+    test('plain authenticated caller (no toolStatuses) → denied', async () => {
+        expect((await resolveAccess('certifier', rctx(session(1)))).allowed).toBe(false);
+    });
+
+    test('no session → denied', async () => {
+        expect((await resolveAccess('certifier', rctx({ type: 'unauthenticated' }))).allowed).toBe(false);
     });
 });
 

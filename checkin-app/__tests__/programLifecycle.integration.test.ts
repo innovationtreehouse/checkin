@@ -31,9 +31,9 @@ describe('Program Lifecycle Integration Tests', () => {
                 name: "Board Tester",
                 email: "board@test.com",
                 googleId: "test-auth-board",
-                sysadmin: false,
-                boardMember: true,
-                dob: new Date('1990-01-01'),
+                isSysadmin: false,
+                isBoardMember: true,
+                dateOfBirth: new Date('1990-01-01'),
                 household: { create: {} }
             }
         });
@@ -45,7 +45,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 name: "Mentor Tester",
                 email: "mentor@test.com",
                 googleId: "test-auth-mentor",
-                dob: new Date('1985-01-01'),
+                dateOfBirth: new Date('1985-01-01'),
                 household: { create: {} }
             }
         });
@@ -57,7 +57,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 name: "Standard Tester",
                 email: "participant@test.com",
                 googleId: "test-auth-std",
-                dob: new Date('2000-01-01'),
+                dateOfBirth: new Date('2000-01-01'),
                 household: { create: {} }
             }
         });
@@ -105,7 +105,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId })
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(200);
 
         const data = await res.json();
@@ -129,19 +129,19 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId }) // Adding someone else
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(403);
     });
 
     it('Should require a Board Member to supply override=true when bypassing payment flows', async () => {
-        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, boardMember: true } });
+        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, isBoardMember: true } });
 
         const req = new Request(`http://localhost/api/programs/${testProgramId}/participants`, {
             method: 'POST',
             body: JSON.stringify({ participantId: testParticipantId }) // No override flag
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(400);
         
         const data = await res.json();
@@ -149,7 +149,7 @@ describe('Program Lifecycle Integration Tests', () => {
     });
 
     it('Should allow a Board Member to override and add a participant, defaulting to ACTIVE', async () => {
-        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, boardMember: true } });
+        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, isBoardMember: true } });
 
         // Clean previous runs
         await prisma.programParticipant.deleteMany({ where: { programId: testProgramId, participantId: testParticipantId } });
@@ -159,7 +159,7 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId, override: true })
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(200);
 
         const dbRecord = await prisma.programParticipant.findUnique({

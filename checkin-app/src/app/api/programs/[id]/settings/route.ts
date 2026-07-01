@@ -1,15 +1,10 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     try {
         const programId = parseInt(id, 10);
@@ -25,8 +20,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const currentUserId = session.user.id;
-        const isSysAdminOrBoard = session.user?.sysadmin || session.user?.boardMember;
+        const currentUserId = auth.user.id;
+        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
 
         if (!isSysAdminOrBoard && !isLeadMentor) {
@@ -37,8 +32,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         const {
             name,
             leadMentorId,
-            begin,
-            end,
+            startAt,
+            endAt,
             phase,
             enrollmentStatus,
             memberOnly,
@@ -78,8 +73,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         // Build data object for Prisma
         const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
         if (name !== undefined) updateData.name = name;
-        if (begin !== undefined) updateData.begin = begin ? new Date(begin) : null;
-        if (end !== undefined) updateData.end = end ? new Date(end) : null;
+        if (startAt !== undefined) updateData.startAt = startAt ? new Date(startAt) : null;
+        if (endAt !== undefined) updateData.endAt = endAt ? new Date(endAt) : null;
         if (phase !== undefined) updateData.phase = phase;
         if (enrollmentStatus !== undefined) updateData.enrollmentStatus = enrollmentStatus;
         if (memberOnly !== undefined) updateData.memberOnly = memberOnly;
@@ -120,4 +115,4 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         console.error("Program settings update error:", error);
         return NextResponse.json({ error: "Failed to update program settings" }, { status: 500 });
     }
-}
+});

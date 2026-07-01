@@ -65,7 +65,7 @@ const STATUS_COLORS: Record<string, string> = {
 const label = (s: string) => s.replace(/_/g, " ");
 
 export default function AdminTrustedAdultsPage() {
-    const { ready, loading: authLoading, user } = useRequireRole(["sysadmin", "boardMember"]);
+    const { ready, loading: authLoading, user } = useRequireRole(["isSysadmin", "isBoardMember"]);
     const [items, setItems] = useState<TrustedAdult[]>([]);
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState<number | null>(null);

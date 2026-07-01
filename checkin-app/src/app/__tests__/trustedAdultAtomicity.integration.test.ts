@@ -78,7 +78,7 @@ describe('Trusted Adults — mutation + audit are atomic', () => {
         leadId = lead.id;
         await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
         const boardHh = await prisma.household.create({ data: { name: `Board HH ${TAG}` } });
-        boardId = (await prisma.participant.create({ data: { name: 'Boardie', boardMember: true, householdId: boardHh.id } })).id;
+        boardId = (await prisma.participant.create({ data: { name: 'Boardie', isBoardMember: true, householdId: boardHh.id } })).id;
     });
 
     afterAll(async () => {

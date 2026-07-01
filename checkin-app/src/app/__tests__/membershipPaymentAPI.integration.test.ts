@@ -8,6 +8,7 @@
  */
 
 import crypto from 'crypto';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import { POST as SHOPIFY_WEBHOOK } from '@/app/api/webhooks/shopify/route';
 import { POST as CERTIFY } from '@/app/api/membership-ops/applications/certify-payment/route';
 import { computeDuesCents, ensurePaymentLink, ensurePaymentLinkForUser, activate } from '@/lib/membership/payment';
@@ -25,10 +26,10 @@ const VARIANT_ID = '4567';
 const DISCOUNT_CODE = 'VOLUNTEER';
 
 function asBoard(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: true } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: true } });
 }
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false } });
 }
 function shopifyReq(payload: unknown, secret: string) {
     const raw = JSON.stringify(payload);
@@ -136,7 +137,8 @@ describe('Membership payment API', () => {
     });
 
     it('orders/paid webhook activates the membership (and is idempotent)', async () => {
-        const payload = { id: 555, note_attributes: [{ name: 'Membership_Process_ID', value: String(normalProc) }] };
+        // line_items must contain the configured membershipVariantId or the H2 check rejects it (no membership item).
+        const payload = { id: 555, line_items: [{ variant_id: VARIANT_ID }], note_attributes: [{ name: 'Membership_Process_ID', value: String(normalProc) }] };
         const res = await SHOPIFY_WEBHOOK(shopifyReq(payload, WEBHOOK_SECRET) as never);
         expect(res.status).toBe(200);
 
@@ -168,7 +170,7 @@ describe('Membership payment API', () => {
         // The audit row records WHO certified — the acting board member, not SYSTEM_ACTOR.
         const audit = await prisma.auditLog.findFirst({ where: { tableName: 'MembershipProcess', affectedEntityId: certProc }, orderBy: { id: 'desc' } });
         expect(audit?.actorId).toBe(leadId);
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'ACTIVE' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'ACTIVE' });
     });
 
     it('certify on a non-PENDING_PAYMENT process is rejected (409 wrong_phase, no state change)', async () => {

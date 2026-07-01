@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
+import { isValidEmail } from "@/lib/emergencyContacts/identity";
 import { isOrgAccount } from "@/lib/orgAccount";
+import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 
 export const GET = withAuth(
     {},
@@ -13,7 +15,15 @@ export const GET = withAuth(
 
             const user = await prisma.participant.findUnique({
                 where: { id: userId },
-                include: { household: { include: { participants: true, leads: true, membership: true } } }
+                include: {
+                    household: {
+                        include: {
+                            participants: { select: HOUSEHOLD_PEER_SELECT },
+                            leads: true,
+                            membership: true,
+                        }
+                    }
+                }
             });
 
             if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -35,7 +45,7 @@ export const PATCH = withAuth(
 
             // Internal staff (@innovationtreehouse.org) accounts are not real member families,
             // so they may not build out a household with extra members via self-service. The
-            // admin participant-add flow (sysadmin/boardMember) is separate and stays open.
+            // admin participant-add flow (isSysadmin/isBoardMember) is separate and stays open.
             if (isOrgAccount(auth.user)) {
                 return NextResponse.json(
                     { error: "Staff accounts cannot add household members. Use the membership-ops participant tools instead." },
@@ -44,7 +54,7 @@ export const PATCH = withAuth(
             }
 
             const body = await req.json();
-            const { memberName, memberEmail, memberDob } = body;
+            const { memberName, memberEmail, memberDob, memberOver25 } = body;
 
             const user = await prisma.participant.findUnique({ where: { id: userId }, include: { householdLeads: true } });
 
@@ -53,12 +63,11 @@ export const PATCH = withAuth(
             }
 
             const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isLead && !user.sysadmin) {
+            if (!isLead && !user.isSysadmin) {
                 return NextResponse.json({ error: "Only household leads can add members" }, { status: 403 });
             }
 
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (memberEmail && !emailRegex.test(memberEmail)) {
+            if (memberEmail && !isValidEmail(memberEmail)) {
                 return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
             }
 
@@ -74,19 +83,27 @@ export const PATCH = withAuth(
 
                     targetMember = await prisma.participant.update({
                         where: { id: targetMember.id },
-                        data: { householdId: user.householdId }
+                        data: { householdId: user.householdId },
+                        select: HOUSEHOLD_PEER_SELECT,
                     });
                 }
             }
 
             if (!targetMember) {
+                // A new member's age must be known: either a DoB, or an explicit
+                // "25+" declaration (mirrors the client form's requirement).
+                if (!memberDob && !memberOver25) {
+                    return NextResponse.json({ error: "Date of birth is required for anyone under 25." }, { status: 400 });
+                }
                 targetMember = await prisma.participant.create({
                     data: {
                         name: memberName,
                         ...(memberEmail && { email: memberEmail.toLowerCase() }),
-                        dob: memberDob ? new Date(memberDob) : null,
+                        dateOfBirth: memberDob ? new Date(memberDob) : null,
+                        isDeclaredAdult: !memberDob && !!memberOver25,
                         householdId: user.householdId,
-                    }
+                    },
+                    select: HOUSEHOLD_PEER_SELECT,
                 });
             }
 
@@ -96,7 +113,7 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Participant",
                     affectedEntityId: targetMember.id,
-                    newData: JSON.stringify({ householdId: user.householdId, email: targetMember.email, name: targetMember.name })
+                    newData: { householdId: user.householdId, email: targetMember.email, name: targetMember.name }
                 }
             });
 

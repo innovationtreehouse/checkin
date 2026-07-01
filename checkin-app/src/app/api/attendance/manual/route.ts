@@ -1,19 +1,14 @@
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
-import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth";
+import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { logBackendError } from "@/lib/logger";
 
-export async function POST(req: NextRequest) {
+export const POST = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     try {
-        const session = await getServerSession(authOptions);
-        if (!session || !session.user || !session.user.id) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-
-        const userId = session.user.id;
+        const userId = auth.user.id;
         const body = await req.json();
         const { arrivedAt, departedAt } = body;
 
@@ -33,6 +28,20 @@ export async function POST(req: NextRequest) {
 
         if (departureTime && departureTime <= arrivalTime) {
             return NextResponse.json({ error: "Departure time must be after arrival time" }, { status: 400 });
+        }
+
+        // Blank departure means "still in the building" → an open visit. Only allow
+        // that for a recent arrival: today (same calendar day) or within the last
+        // 6 hours (covers arriving late last night and still being here). A stale
+        // arrival with no departure would create a permanent open visit nobody
+        // scanned out of, so require a departure for it.
+        if (!departureTime) {
+            const now = new Date();
+            const withinSixHours = now.getTime() - arrivalTime.getTime() <= 6 * 60 * 60 * 1000;
+            const sameDay = arrivalTime.toDateString() === now.toDateString();
+            if (!withinSixHours && !sameDay) {
+                return NextResponse.json({ error: "Departure time is required for past arrivals." }, { status: 400 });
+            }
         }
 
         const eventId = await findAssociatedEventAt(userId, arrivalTime);
@@ -82,7 +91,7 @@ export async function POST(req: NextRequest) {
                 action: "CREATE",
                 tableName: "Visit",
                 affectedEntityId: visit.id,
-                newData: JSON.stringify({ arrivedAt, departedAt, type: "manual_entry" })
+                newData: { arrivedAt, departedAt, type: "manual_entry" }
             }
         });
 
@@ -92,4 +101,4 @@ export async function POST(req: NextRequest) {
         await logBackendError(error, "POST /api/attendance/manual");
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
-}
+});

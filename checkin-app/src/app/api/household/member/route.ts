@@ -3,7 +3,8 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
-import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
+import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
+import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 
 export const PATCH = withAuth(
     {},
@@ -13,7 +14,7 @@ export const PATCH = withAuth(
             const userId = auth.user.id;
 
             const body = await req.json();
-            const { participantId, name, email, dob, phone, isLead } = body;
+            const { participantId, name, email, dob, phone, isLead, over25 } = body;
 
             if (!participantId) {
                 return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
@@ -30,8 +31,9 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
             }
 
+            // Leads/sysadmins edit anyone; anyone may edit their own record.
             const isCurrentUserLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isCurrentUserLead && !user.sysadmin) {
+            if (!isCurrentUserLead && !user.isSysadmin && participantId !== userId) {
                 return NextResponse.json({ error: "Only household leads can edit members" }, { status: 403 });
             }
 
@@ -45,9 +47,12 @@ export const PATCH = withAuth(
                 data: {
                     name: name !== undefined ? name : undefined,
                     email: email !== undefined ? (email === "" ? null : email.toLowerCase()) : undefined,
-                    dob: dob !== undefined ? (dob === "" ? null : new Date(dob + "T12:00:00Z")) : undefined,
-                    phone: phone !== undefined ? (phone === "" ? null : phone) : undefined,
-                }
+                    dateOfBirth: dob !== undefined ? (dob === "" ? null : new Date(dob + "T12:00:00Z")) : undefined,
+                    phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
+                    // A real DoB supersedes the 25+ flag; otherwise honor the checkbox.
+                    isDeclaredAdult: over25 !== undefined ? (dob ? false : !!over25) : undefined,
+                },
+                select: HOUSEHOLD_PEER_SELECT,
             });
 
             // Set when the field edits saved but the requested promotion to lead
@@ -110,7 +115,7 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Participant",
                     affectedEntityId: targetMember.id,
-                    newData: JSON.stringify(updatedMember)
+                    newData: updatedMember
                 }
             });
 

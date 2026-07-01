@@ -24,7 +24,7 @@ export function SettingsTabs({ active }: { active: SettingsTab }) {
   const router = useRouter();
   const confirmNav = useConfirmNav();
   const { data: session } = useSession();
-  const isSysadmin = !!session?.user?.sysadmin;
+  const isSysadmin = !!session?.user?.isSysadmin;
   const tabs = TABS.filter((t) => !t.sysadminOnly || isSysadmin);
   return (
     <Tabs

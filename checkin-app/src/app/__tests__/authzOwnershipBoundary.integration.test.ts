@@ -44,7 +44,7 @@ const TAG = 'authz-ownership-test';
 
 function as(id: number, extra: Record<string, unknown> = {}) {
     (getServerSession as jest.Mock).mockResolvedValue({
-        user: { id, sysadmin: false, boardMember: false, keyholder: false, backgroundCheckReviewer: false, ...extra },
+        user: { id, isSysadmin: false, isBoardMember: false, isKeyholder: false, isBackgroundCheckReviewer: false, ...extra },
     });
 }
 function anon() {
@@ -66,6 +66,21 @@ function taReq(id: number, action: 'withdraw' | 'renew') {
     const r = new Request(`http://localhost/api/trusted-adults/${id}/${action}`, { method: 'POST' });
     (r as unknown as { nextUrl: URL }).nextUrl = new URL(r.url);
     return r as never;
+}
+// Post-403 no-mutation probes for the trusted-adult IDOR cases. A 403 alone does
+// not prove the row was untouched — a guard that ran AFTER a write would still
+// 403. Re-read the latest review's status, the review count (renew must not open
+// a new one), and the TrustedAdult audit-row count (a write would log one).
+function latestReviewStatus(taId: number) {
+    return prisma.trustedAdultReview
+        .findFirst({ where: { trustedAdultId: taId }, orderBy: { id: 'desc' }, select: { status: true } })
+        .then((r) => r?.status);
+}
+function reviewCount(taId: number) {
+    return prisma.trustedAdultReview.count({ where: { trustedAdultId: taId } });
+}
+function taAuditCount(taId: number) {
+    return prisma.auditLog.count({ where: { tableName: 'TrustedAdult', affectedEntityId: taId } });
 }
 
 describe('Ownership-boundary authorization', () => {
@@ -131,7 +146,7 @@ describe('Ownership-boundary authorization', () => {
         // Trusted adults owned by HH_A.
         const taW = await prisma.trustedAdult.create({
             data: {
-                householdId: hhA, counterpartyName: 'Aunt May', counterpartyPhone: '555-0001',
+                householdId: hhA, counterpartyName: 'Aunt May', counterpartyPhone: '555-555-0001',
                 familyContext: 'ctx', disclosedById: leadA,
                 reviews: { create: { householdId: hhA, kind: 'INITIAL', status: 'PENDING_BOARD_REVIEW' } },
             },
@@ -139,7 +154,7 @@ describe('Ownership-boundary authorization', () => {
         taWithdrawId = taW.id;
         const taR = await prisma.trustedAdult.create({
             data: {
-                householdId: hhA, counterpartyName: 'Uncle Ben', counterpartyPhone: '555-0002',
+                householdId: hhA, counterpartyName: 'Uncle Ben', counterpartyPhone: '555-555-0002',
                 familyContext: 'ctx', disclosedById: leadA,
                 reviews: { create: { householdId: hhA, kind: 'INITIAL', status: 'APPROVED' } },
             },
@@ -148,8 +163,8 @@ describe('Ownership-boundary authorization', () => {
 
         // Two emergency contacts in HH_A (DELETE needs a second valid contact to exist).
         as(leadA, { householdId: hhA });
-        contact1 = (await (await EC_POST(jsonReq({ name: 'Contact One', phone: '555-1111' }, 'POST'))).json()).contact.id;
-        contact2 = (await (await EC_POST(jsonReq({ name: 'Contact Two', phone: '555-2222' }, 'POST'))).json()).contact.id;
+        contact1 = (await (await EC_POST(jsonReq({ name: 'Contact One', phone: '555-555-1111' }, 'POST'))).json()).contact.id;
+        contact2 = (await (await EC_POST(jsonReq({ name: 'Contact Two', phone: '555-555-2222' }, 'POST'))).json()).contact.id;
     });
 
     afterAll(async () => {
@@ -188,7 +203,7 @@ describe('Ownership-boundary authorization', () => {
         });
         it('403 for a non-lead member (POST)', async () => {
             as(memberA, { householdId: hhA });
-            expect((await EC_POST(jsonReq({ name: 'X', phone: '555-9' }, 'POST'))).status).toBe(403);
+            expect((await EC_POST(jsonReq({ name: 'X', phone: '555-555-0009' }, 'POST'))).status).toBe(403);
         });
         it('200 for the lead (GET)', async () => {
             as(leadA, { householdId: hhA });
@@ -210,17 +225,31 @@ describe('Ownership-boundary authorization', () => {
             as(memberA, { householdId: hhA });
             expect((await EC_DELETE(req('http://localhost/x', { method: 'DELETE' }), ecCtx(contact1))).status).toBe(403);
         });
-        it('a lead of a DIFFERENT household cannot edit this contact (404, not 200 — cross-household scoping)', async () => {
+        it('a lead of a DIFFERENT household cannot edit this contact (404, not 200 — and the contact is untouched)', async () => {
             as(leadB, { householdId: hhB });
             // leadB is a lead (passes the lead gate for THEIR household) but the contact
-            // belongs to HH_A — the service must not find/update it for HH_B.
-            const res = await EC_PATCH(jsonReq({ name: 'Hijack', phone: '555-6666' }), ecCtx(contact1));
+            // belongs to HH_A — the service must not find/update it for HH_B. A 404 alone
+            // doesn't prove the row was untouched (a guard that ran AFTER the write would
+            // still 404); re-read and compare. Mirrors fd192fc.
+            const before = await prisma.emergencyContact.findUnique({ where: { id: contact1 } });
+            const res = await EC_PATCH(jsonReq({ name: 'Hijack', phone: '555-555-6666' }), ecCtx(contact1));
             expect(res.status).not.toBe(200);
             expect(res.status).toBe(404);
+            const after = await prisma.emergencyContact.findUnique({ where: { id: contact1 } });
+            expect(after?.name).toBe(before?.name);
+            expect(after?.phone).toBe(before?.phone);
+        });
+        it('a lead of a DIFFERENT household cannot delete this contact (404, not 200 — and the contact survives)', async () => {
+            as(leadB, { householdId: hhB });
+            const res = await EC_DELETE(req('http://localhost/x', { method: 'DELETE' }), ecCtx(contact1));
+            expect(res.status).not.toBe(200);
+            expect(res.status).toBe(404);
+            // The cross-household DELETE must not remove HH_A's contact.
+            expect(await prisma.emergencyContact.findUnique({ where: { id: contact1 } })).not.toBeNull();
         });
         it('200 for the owning lead (PATCH)', async () => {
             as(leadA, { householdId: hhA });
-            expect((await EC_PATCH(jsonReq({ name: 'Contact One Edited', phone: '555-1111' }), ecCtx(contact1))).status).toBe(200);
+            expect((await EC_PATCH(jsonReq({ name: 'Contact One Edited', phone: '555-555-1111' }), ecCtx(contact1))).status).toBe(200);
         });
         it('200 for the owning lead (DELETE, second valid contact present)', async () => {
             as(leadA, { householdId: hhA });
@@ -234,13 +263,19 @@ describe('Ownership-boundary authorization', () => {
             anon();
             expect((await TA_WITHDRAW(taReq(taWithdrawId, 'withdraw'))).status).toBe(401);
         });
-        it('403 for a lead of a DIFFERENT household attacking by id (IDOR boundary)', async () => {
+        it('403 for a lead of a DIFFERENT household attacking by id (IDOR boundary) — and the review is untouched', async () => {
             as(leadB, { householdId: hhB });
+            const auditBefore = await taAuditCount(taWithdrawId);
             expect((await TA_WITHDRAW(taReq(taWithdrawId, 'withdraw'))).status).toBe(403);
+            expect(await latestReviewStatus(taWithdrawId)).toBe('PENDING_BOARD_REVIEW');
+            expect(await taAuditCount(taWithdrawId)).toBe(auditBefore);
         });
-        it('403 for a non-lead member of the owning household', async () => {
+        it('403 for a non-lead member of the owning household — and the review is untouched', async () => {
             as(memberA, { householdId: hhA });
+            const auditBefore = await taAuditCount(taWithdrawId);
             expect((await TA_WITHDRAW(taReq(taWithdrawId, 'withdraw'))).status).toBe(403);
+            expect(await latestReviewStatus(taWithdrawId)).toBe('PENDING_BOARD_REVIEW');
+            expect(await taAuditCount(taWithdrawId)).toBe(auditBefore);
         });
         it('200 for a lead of the owning household', async () => {
             as(leadA, { householdId: hhA });
@@ -254,13 +289,21 @@ describe('Ownership-boundary authorization', () => {
             anon();
             expect((await TA_RENEW(taReq(taRenewId, 'renew'))).status).toBe(401);
         });
-        it('403 for a lead of a DIFFERENT household attacking by id (IDOR boundary)', async () => {
+        it('403 for a lead of a DIFFERENT household attacking by id (IDOR boundary) — and no review is opened', async () => {
             as(leadB, { householdId: hhB });
+            const [reviewsBefore, auditBefore] = [await reviewCount(taRenewId), await taAuditCount(taRenewId)];
             expect((await TA_RENEW(taReq(taRenewId, 'renew'))).status).toBe(403);
+            expect(await latestReviewStatus(taRenewId)).toBe('APPROVED');
+            expect(await reviewCount(taRenewId)).toBe(reviewsBefore);
+            expect(await taAuditCount(taRenewId)).toBe(auditBefore);
         });
-        it('403 for a non-lead member of the owning household', async () => {
+        it('403 for a non-lead member of the owning household — and no review is opened', async () => {
             as(memberA, { householdId: hhA });
+            const [reviewsBefore, auditBefore] = [await reviewCount(taRenewId), await taAuditCount(taRenewId)];
             expect((await TA_RENEW(taReq(taRenewId, 'renew'))).status).toBe(403);
+            expect(await latestReviewStatus(taRenewId)).toBe('APPROVED');
+            expect(await reviewCount(taRenewId)).toBe(reviewsBefore);
+            expect(await taAuditCount(taRenewId)).toBe(auditBefore);
         });
         it('200 for a lead of the owning household', async () => {
             as(leadA, { householdId: hhA });

@@ -5,14 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useSession, signIn } from "next-auth/react";
 import {
   Alert,
-  Anchor,
   Button,
   Card,
   Container,
   Divider,
   Group,
-  Loader,
-  Modal,
   Paper,
   Stack,
   Text,
@@ -28,7 +25,7 @@ import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
 import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
 import Notifications from '@/components/Notifications';
 import { RoleBadge } from '@/components/ui/RoleBadge';
-import type { SessionUser, BoardMember } from '@/types/participant';
+import type { SessionUser } from '@/types/participant';
 
 export default function Home() {
   const router = useRouter();
@@ -42,10 +39,6 @@ export default function Home() {
   const [isLastKeyholder, setIsLastKeyholder] = useState(false);
   const [isTwoDeepViolation, setIsTwoDeepViolation] = useState(false);
   const [isMember, setIsMember] = useState<boolean | null>(null);
-
-  const [showBoardDirectory, setShowBoardDirectory] = useState(false);
-  const [boardMembers, setBoardMembers] = useState<BoardMember[]>([]);
-  const [loadingBoard, setLoadingBoard] = useState(false);
 
   const checkAttendanceStatus = useCallback(async () => {
     if (!session?.user) return;
@@ -68,7 +61,7 @@ export default function Home() {
 
       // Use server-computed safety flags
       if (data.safety) {
-        const userIsKeyholder = (session.user as SessionUser)?.keyholder;
+        const userIsKeyholder = (session.user as SessionUser)?.isKeyholder;
         setIsLastKeyholder(data.safety.isLastKeyholder && userIsKeyholder);
         setIsTwoDeepViolation(data.safety.isTwoDeepViolation);
       } else {
@@ -81,11 +74,15 @@ export default function Home() {
   }, [session]);
 
   useEffect(() => {
+    // Async fetch that syncs React state from the server; state is set in the
+    // promise continuation, not synchronously in this effect body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     checkAttendanceStatus();
   }, [checkAttendanceStatus]);
 
   useEffect(() => {
     if (!session?.user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsMember(null);
       return;
     }
@@ -123,34 +120,16 @@ export default function Home() {
     setLoading(false);
   };
 
-  const fetchBoardDirectory = async () => {
-    setShowBoardDirectory(true);
-    setLoadingBoard(true);
-    try {
-      const res = await fetch('/api/directory/board');
-      if (res.ok) {
-        const data = await res.json();
-        setBoardMembers(data.boardMembers);
-      } else {
-        setMessage("Failed to load board directory.");
-      }
-    } catch {
-      setMessage("Network error loading directory.");
-    } finally {
-      setLoadingBoard(false);
-    }
-  };
-
   const user = session?.user as SessionUser | undefined;
   const canSelfCheckin =
-    !!user?.sysadmin || !!user?.boardMember || !!user?.keyholder || isDevInstance;
-  const isPrivileged = !!user?.sysadmin || !!user?.keyholder;
+    !!user?.isSysadmin || !!user?.isBoardMember || !!user?.isKeyholder || isDevInstance;
+  const isPrivileged = !!user?.isSysadmin || !!user?.isKeyholder;
 
   return (
     <Container size="sm" py="xl">
       <Card withBorder shadow="sm" radius="md" padding="xl">
         <Stack align="center" gap="xs" mb="lg">
-          <Title order={1}>{isDevInstance ? 'CMI-dev' : 'CheckMeIn'}</Title>
+          <Title order={1} tt="lowercase">{isDevInstance ? 'CMI-dev' : 'CheckMeIn'}</Title>
           <Text c="dimmed" size="lg">
             The next-generation facility check-in system.
           </Text>
@@ -163,10 +142,10 @@ export default function Home() {
                 <Text ta="center">
                   Welcome back, <strong>{session.user?.name || session.user?.email}</strong>!
                 </Text>
-                {(user?.sysadmin || user?.keyholder) && (
+                {(user?.isSysadmin || user?.isKeyholder) && (
                   <Group justify="center" gap="xs" mt="xs">
-                    {user?.sysadmin && <RoleBadge role="sysadmin" />}
-                    {user?.keyholder && <RoleBadge role="keyholder" />}
+                    {user?.isSysadmin && <RoleBadge role="isSysadmin" />}
+                    {user?.isKeyholder && <RoleBadge role="isKeyholder" />}
                   </Group>
                 )}
               </Paper>
@@ -216,7 +195,7 @@ export default function Home() {
                     variant="default"
                     fullWidth
                     leftSection={<IconAddressBook size={18} />}
-                    onClick={fetchBoardDirectory}
+                    onClick={() => router.push('/safety/board-contacts')}
                   >
                     View Board Directory
                   </Button>
@@ -267,38 +246,6 @@ export default function Home() {
           </Alert>
         )}
       </Card>
-
-      <Modal
-        opened={showBoardDirectory}
-        onClose={() => setShowBoardDirectory(false)}
-        title={<Title order={4}>Board Directory</Title>}
-        centered
-      >
-        {loadingBoard ? (
-          <Group justify="center" py="md">
-            <Loader size="sm" />
-            <Text c="dimmed">Loading contacts...</Text>
-          </Group>
-        ) : boardMembers.length === 0 ? (
-          <Text c="dimmed">No board members found.</Text>
-        ) : (
-          <Stack>
-            {boardMembers.map((member) => (
-              <Paper key={member.id} withBorder radius="md" p="md">
-                <Text fw={600}>{member.name || 'Unnamed'}</Text>
-                <Text size="sm">
-                  ✉️ <Anchor href={`mailto:${member.email}`}>{member.email}</Anchor>
-                </Text>
-                {member.phone && (
-                  <Text size="sm">
-                    📞 <Anchor href={`tel:${member.phone.replace(/\D/g, '')}`}>{member.phone}</Anchor>
-                  </Text>
-                )}
-              </Paper>
-            ))}
-          </Stack>
-        )}
-      </Modal>
     </Container>
   );
 }

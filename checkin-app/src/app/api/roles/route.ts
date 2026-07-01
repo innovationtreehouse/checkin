@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
 export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async () => {
         try {
             const eighteenYearsAgo = new Date();
@@ -14,18 +14,18 @@ export const GET = withAuth(
                     id: true,
                     email: true,
                     name: true,
-                    dob: true,
-                    sysadmin: true,
-                    boardMember: true,
-                    keyholder: true,
-                    backgroundCheckReviewer: true,
+                    dateOfBirth: true,
+                    isSysadmin: true,
+                    isBoardMember: true,
+                    isKeyholder: true,
+                    isBackgroundCheckReviewer: true,
                 },
                 orderBy: { name: "asc" },
             });
             // Don't leak dob (PII); expose only a youth flag for filtering.
-            const participants = rows.map(({ dob, ...p }: (typeof rows)[number]) => ({
+            const participants = rows.map(({ dateOfBirth, ...p }: (typeof rows)[number]) => ({
                 ...p,
-                isYouth: dob != null && dob > eighteenYearsAgo,
+                isYouth: dateOfBirth != null && dateOfBirth > eighteenYearsAgo,
             }));
             return NextResponse.json({ participants });
         } catch (error) {
@@ -36,7 +36,7 @@ export const GET = withAuth(
 );
 
 export const PATCH = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async (req, auth) => {
         try {
             const body = await req.json();
@@ -46,15 +46,15 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: "Missing 'targetUserId'" }, { status: 400 });
             }
 
-            // Board Members cannot modify sysadmin privileges
-            if (auth.type === 'session' && !auth.user.sysadmin && roleUpdates.sysadmin !== undefined) {
+            // Board Members cannot modify isSysadmin privileges
+            if (auth.type === 'session' && !auth.user.isSysadmin && roleUpdates.isSysadmin !== undefined) {
                 return NextResponse.json(
-                    { error: "Only Sysadmins can modify sysadmin privileges" },
+                    { error: "Only Sysadmins can modify isSysadmin privileges" },
                     { status: 403 }
                 );
             }
 
-            const allowedFields = ["sysadmin", "boardMember", "keyholder", "backgroundCheckReviewer"];
+            const allowedFields = ["isSysadmin", "isBoardMember", "isKeyholder", "isBackgroundCheckReviewer"];
             const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
             for (const field of allowedFields) {
                 if (roleUpdates[field] !== undefined) {
@@ -73,10 +73,10 @@ export const PATCH = withAuth(
                     id: true,
                     email: true,
                     name: true,
-                    sysadmin: true,
-                    boardMember: true,
-                    keyholder: true,
-                    backgroundCheckReviewer: true,
+                    isSysadmin: true,
+                    isBoardMember: true,
+                    isKeyholder: true,
+                    isBackgroundCheckReviewer: true,
                 },
             });
 

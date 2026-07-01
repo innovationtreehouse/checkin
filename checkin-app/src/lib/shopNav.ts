@@ -28,7 +28,7 @@ export const SHOP_NAV_LINKS: ShopNavLink[] = [
 ];
 
 export function shopRoles(user: Session["user"] | undefined): ShopRoles {
-  const isAdmin = !!user?.sysadmin || !!user?.boardMember;
+  const isAdmin = !!user?.isSysadmin || !!user?.isBoardMember;
   const isCertifier =
     isAdmin || !!user?.toolStatuses?.some((ts) => ts.level === "MAY_CERTIFY_OTHERS");
   return { isAdmin, isCertifier };

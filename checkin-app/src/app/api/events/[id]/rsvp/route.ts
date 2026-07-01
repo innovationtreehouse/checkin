@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import type { Session } from "next-auth";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { canActFor } from "@/lib/household/activityMembers";
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    // canActFor only reads session.user; reconstruct the minimal shape from auth.user.
+    const session = { user: auth.user } as unknown as Session;
 
     try {
         const eventId = parseInt(id, 10);
@@ -44,9 +42,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             return NextResponse.json({ error: "Event not found" }, { status: 404 });
         }
 
-        // Can't RSVP to an event that already finished. Use end (not start) so an
+        // Can't RSVP to an event that already finished. Use endAt (not startAt) so an
         // in-progress event still accepts RSVPs.
-        if (event.end.getTime() < Date.now()) {
+        if (event.endAt.getTime() < Date.now()) {
             return NextResponse.json({ error: "Cannot RSVP to a past event" }, { status: 400 });
         }
 
@@ -95,4 +93,4 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         console.error("RSVP update error:", error);
         return NextResponse.json({ error: "Failed to update RSVP" }, { status: 500 });
     }
-}
+});

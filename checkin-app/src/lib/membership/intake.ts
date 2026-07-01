@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus } from "@/lib/membership/external";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
@@ -74,7 +75,7 @@ async function loadUserWithHousehold(userId: number) {
 
 function assertLead(user: NonNullable<Awaited<ReturnType<typeof loadUserWithHousehold>>>) {
     const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.sysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
+    if (!isLead && !user.isSysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
 }
 
 /** Read the caller's current membership/application state, prefilled for the form. */
@@ -98,11 +99,11 @@ export async function getIntakeState(userId: number) {
     const primary = parents.find((p) => p.id === userId) ?? null;
     const secondary = parents.find((p) => p.id !== userId) ?? null;
 
-    const shape = (p: { id: number; name: string | null; email: string | null; dob: Date | null; allergies: string | null }) => ({
+    const shape = (p: { id: number; name: string | null; email: string | null; dateOfBirth: Date | null; allergies: string | null }) => ({
         id: p.id,
         name: p.name,
         email: p.email,
-        dob: p.dob ? p.dob.toISOString().slice(0, 10) : null,
+        dob: p.dateOfBirth ? p.dateOfBirth.toISOString().slice(0, 10) : null,
         allergies: p.allergies,
     });
 
@@ -136,6 +137,14 @@ export async function getIntakeState(userId: number) {
  * Begin (or resume) an INITIAL application for the caller's household. Ensures a
  * household exists, anchors a Membership (status NONE), and opens a
  * MembershipProcess at INTAKE. Idempotent: an in-flight process is returned as-is.
+ *
+ * The caller's own read of `user.household.membership.processes` (above) is stale
+ * the instant it's read, so a double-click or two tabs can both pass it and both
+ * reach the create. Mirrors renewal's createRenewalProcess: the check+create is
+ * re-run inside a transaction holding a `SELECT ... FOR UPDATE` lock on the
+ * Membership row, so a concurrent caller blocks until the winner commits, then
+ * sees the winner's in-flight process instead of inserting a duplicate. The
+ * partial unique index `membership_one_inflight_initial` is defense-in-depth.
  */
 export async function startIntake(userId: number) {
     const user = await loadUserWithHousehold(userId);
@@ -148,32 +157,52 @@ export async function startIntake(userId: number) {
         throw new IntakeError("already_member", "Your household is already an active member.");
     }
 
-    const existing = user.household?.membership?.processes
-        .filter((p) => p.kind === "INITIAL" && IN_FLIGHT_INITIAL_STATUSES.includes(p.status))
-        .sort((a, b) => b.id - a.id)[0];
-    if (existing) return existing;
-
     const membership = await prisma.membership.upsert({
         where: { householdId },
         create: { householdId, status: "NONE" },
         update: {},
     });
 
-    const process = await prisma.membershipProcess.create({
-        data: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
-    });
+    try {
+        return await prisma.$transaction(async (tx) => {
+            // Lock the membership row so overlapping starts serialize here, not at the INSERT.
+            await tx.$queryRaw`SELECT id FROM "Membership" WHERE id = ${membership.id} FOR UPDATE`;
+            const existing = await tx.membershipProcess.findFirst({
+                where: { membershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+                orderBy: { id: "desc" },
+            });
+            if (existing) return existing;
 
-    await prisma.auditLog.create({
-        data: {
-            actorId: userId,
-            action: "CREATE",
-            tableName: "MembershipProcess",
-            affectedEntityId: process.id,
-            newData: JSON.stringify({ membershipId: membership.id, kind: "INITIAL", status: "INTAKE" }),
-        },
-    });
+            const process = await tx.membershipProcess.create({
+                data: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
+            });
 
-    return process;
+            await tx.auditLog.create({
+                data: {
+                    actorId: userId,
+                    action: "CREATE",
+                    tableName: "MembershipProcess",
+                    affectedEntityId: process.id,
+                    newData: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
+                },
+            });
+
+            return process;
+        });
+    } catch (e) {
+        // The FOR UPDATE lock serializes same-version callers, but a rolling deploy can
+        // leave a pre-fix instance (no lock) inserting concurrently — the partial unique
+        // index membership_one_inflight_initial then rejects the duplicate with P2002.
+        // Return the winner instead of surfacing a 500 to the applicant (mirrors renewal).
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+            const winner = await prisma.membershipProcess.findFirst({
+                where: { membershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+                orderBy: { id: "desc" },
+            });
+            if (winner) return winner;
+        }
+        throw e;
+    }
 }
 
 /** Persist intake form data onto the caller's household + participants. Resumable; never deletes. */
@@ -236,7 +265,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             where: { id: userId },
             data: {
                 ...(input.primaryParent.name !== undefined && { name: input.primaryParent.name }),
-                ...(input.primaryParent.dob !== undefined && { dob: toDate(input.primaryParent.dob) }),
+                ...(input.primaryParent.dob !== undefined && { dateOfBirth: toDate(input.primaryParent.dob) }),
                 ...(input.primaryParent.allergies !== undefined && { allergies: input.primaryParent.allergies }),
             },
         });
@@ -250,7 +279,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 where: { id: sp.id },
                 data: {
                     ...(sp.name !== undefined && { name: sp.name }),
-                    ...(sp.dob !== undefined && { dob: toDate(sp.dob) }),
+                    ...(sp.dob !== undefined && { dateOfBirth: toDate(sp.dob) }),
                     ...(sp.allergies !== undefined && { allergies: sp.allergies }),
                 },
             });
@@ -262,7 +291,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     householdId,
                     name: sp.name ?? null,
                     ...(sp.email && { email: sp.email.toLowerCase() }),
-                    dob: toDate(sp.dob),
+                    dateOfBirth: toDate(sp.dob),
                     allergies: sp.allergies ?? null,
                 },
             });
@@ -278,7 +307,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 where: { id: child.id },
                 data: {
                     ...(child.name !== undefined && { name: child.name }),
-                    ...(child.dob !== undefined && { dob: toDate(child.dob) }),
+                    ...(child.dob !== undefined && { dateOfBirth: toDate(child.dob) }),
                     ...(child.allergies !== undefined && { allergies: child.allergies }),
                 },
             });
@@ -288,7 +317,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     householdId,
                     name: child.name,
                     ...(child.email && { email: child.email.toLowerCase() }),
-                    dob: toDate(child.dob),
+                    dateOfBirth: toDate(child.dob),
                     allergies: child.allergies ?? null,
                 },
             });
@@ -358,8 +387,8 @@ export async function submitIntake(userId: number) {
             action: "EDIT",
             tableName: "MembershipProcess",
             affectedEntityId: process.id,
-            oldData: JSON.stringify({ status: "INTAKE" }),
-            newData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION", ...(bgFresh ? { bgClearedAt: true } : {}) }),
+            oldData: { status: "INTAKE" },
+            newData: { status: "PENDING_EXTERNAL_ACTION", ...(bgFresh ? { bgClearedAt: true } : {}) },
         },
     });
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Badge, Card, Center, Group, List, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { formatPhone } from "@/lib/phone";
 
 type ParticipantInfo = {
   id: number;
@@ -38,7 +39,7 @@ type EmergencyContactInfo = {
 };
 
 export default function EmergencyContactsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember', 'keyholder']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember', 'isKeyholder']);
 
   const [households, setHouseholds] = useState<Household[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,7 +153,7 @@ export default function EmergencyContactsPage() {
                     {h.leads.map((l) => (
                       <Paper key={l.id} withBorder radius="sm" p="xs">
                         <Text fw={500}>{l.name || l.email}</Text>
-                        <Text size="sm" c="dimmed">Phone: {l.phone || "Not Provided"}</Text>
+                        <Text size="sm" c="dimmed">Phone: {l.phone ? formatPhone(l.phone) : "Not Provided"}</Text>
                       </Paper>
                     ))}
                   </Stack>
@@ -171,7 +172,7 @@ export default function EmergencyContactsPage() {
                     h.emergencyContacts.filter(c => !c.invalid).map((c) => (
                       <Paper key={c.id} withBorder radius="sm" p="md" bg="var(--mantine-color-red-light)">
                         <Text fw={600}>{c.name}{c.relationship ? ` (${c.relationship})` : ''}</Text>
-                        <Text size="sm" mt={4}>Phone: {c.phone || "Not Provided"}</Text>
+                        <Text size="sm" mt={4}>Phone: {c.phone ? formatPhone(c.phone) : "Not Provided"}</Text>
                         {c.email && <Text size="sm">Email: {c.email}</Text>}
                       </Paper>
                     ))

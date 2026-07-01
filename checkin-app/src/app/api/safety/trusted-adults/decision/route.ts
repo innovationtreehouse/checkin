@@ -19,7 +19,7 @@ const DECISIONS = new Set(["APPROVE", "DENY", "REQUEST_INFO"]);
  * Body: { reviewId, decision, sharedNote?, note? }. APPROVE requires sharedNote
  * (the outward note keyholders & program leads see). Single entry, no quorum.
  */
-export const POST = withAuth({ roles: ["boardMember", "sysadmin"] }, async (req, auth) => {
+export const POST = withAuth({ roles: ["isBoardMember", "isSysadmin"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     let body: { reviewId?: number; decision?: string; sharedNote?: string; note?: string };
     try {

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, Center, Checkbox, Container, Group, Loader, Select, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
+import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
 
 const DAYS_MAP = [
   { label: 'Sun', value: 0 },
@@ -24,9 +25,10 @@ export function NewEventForm() {
 
   const [programs, setPrograms] = useState<{ id: number, name: string }[]>([]);
 
+  const defaultProgramId = searchParams.get('programId') || ""; // URL-prefilled, not a user edit
   const [name, setName] = useState("");
   const [description] = useState("");
-  const [programId, setProgramId] = useState(searchParams.get('programId') || "");
+  const [programId, setProgramId] = useState(defaultProgramId);
   const [startDate, setStartDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
@@ -38,7 +40,18 @@ export function NewEventForm() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [message, setMessage] = useState("");
+
+  // Dirty = any field (incl. recurrence) changed from blank creation defaults.
+  // daysOfWeek joined to a string so it fits shallowEqual's primitive compare.
+  const isDirty =
+    !submitted &&
+    !shallowEqual(
+      { name: "", programId: defaultProgramId, startDate: "", startTime: "", endTime: "", repeats: false, daysOfWeek: "", until: "" },
+      { name, programId, startDate, startTime, endTime, repeats, daysOfWeek: daysOfWeek.join(','), until },
+    );
+  useUnsavedGuard(isDirty);
 
   const fetchPrograms = useCallback(async () => {
     try {
@@ -65,10 +78,26 @@ export function NewEventForm() {
     );
   };
 
+  // Event spans one day's wall-clock window (mirrors API): end must beat start on
+  // the same date. Build real Dates and guard bad/empty input so we never false-flag.
+  const timeError = (() => {
+    if (!startTime || !endTime) return false;
+    const base = startDate || '2000-01-01'; // date not picked yet → still compare times
+    const start = new Date(`${base}T${startTime}`);
+    const end = new Date(`${base}T${endTime}`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return false;
+    return end <= start;
+  })();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setMessage("");
+
+    if (timeError) {
+      setSaving(false);
+      return; // fields are already highlighted; skip the doomed server round-trip
+    }
 
     if (repeats && (daysOfWeek.length === 0 || !until)) {
       setMessage("Please select at least one day of the week and an end date for recurring events.");
@@ -107,7 +136,8 @@ export function NewEventForm() {
       });
 
       if (res.ok) {
-        router.push(programId ? `/program-ops/programs/${programId}` : '/programs');
+        setSubmitted(true); // clear unsaved-changes guard before redirect
+        router.push('/program-ops/events');
       } else {
         const err = await res.json();
         setMessage(err.error || "Failed to create event");
@@ -153,8 +183,8 @@ export function NewEventForm() {
 
           <SimpleGrid cols={{ base: 1, sm: 3 }}>
             <TextInput type="date" label={repeats ? 'Start Date' : 'Date'} required value={startDate} onChange={(e) => setStartDate(e.currentTarget.value)} />
-            <TextInput type="time" label="Start Time" required value={startTime} onChange={(e) => setStartTime(e.currentTarget.value)} />
-            <TextInput type="time" label="End Time" required value={endTime} onChange={(e) => setEndTime(e.currentTarget.value)} />
+            <TextInput type="time" label="Start Time" required value={startTime} onChange={(e) => setStartTime(e.currentTarget.value)} error={timeError} styles={timeError ? { input: { color: 'var(--mantine-color-red-6)' } } : undefined} />
+            <TextInput type="time" label="End Time" required value={endTime} onChange={(e) => setEndTime(e.currentTarget.value)} error={timeError ? 'End time must be after start time' : undefined} styles={timeError ? { input: { color: 'var(--mantine-color-red-6)' } } : undefined} />
           </SimpleGrid>
 
           <Card withBorder radius="md" padding="md">

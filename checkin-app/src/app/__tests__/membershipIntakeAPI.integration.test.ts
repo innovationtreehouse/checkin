@@ -21,7 +21,7 @@ jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }
 const TAG = 'membership-intake-test';
 
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false } });
 }
 function req(body?: unknown) {
     return new Request('http://localhost:4000/api/membership', {
@@ -130,7 +130,7 @@ describe('Membership Intake API', () => {
         const patchReq = new Request('http://localhost:4000/api/membership/intake', {
             method: 'PATCH',
             body: JSON.stringify({
-                household: { line1: '1 Treehouse Way', emergencyContactName: 'Aunt May', emergencyContactPhone: '555-0100' },
+                household: { line1: '1 Treehouse Way', emergencyContactName: 'Aunt May', emergencyContactPhone: '555-555-0100' },
                 primaryParent: { name: 'Lead Parent', dob: '1985-04-01', allergies: 'peanuts' },
                 children: [{ name: 'Kid One', dob: '2015-06-01' }],
             }),
@@ -199,7 +199,7 @@ describe('Membership Intake API', () => {
         const patch = new Request('http://localhost:4000/api/membership/intake', {
             method: 'PATCH',
             body: JSON.stringify({
-                household: { line1: '9 Audit Way', emergencyContactName: 'Aunt Audit', emergencyContactPhone: '555-9001' },
+                household: { line1: '9 Audit Way', emergencyContactName: 'Aunt Audit', emergencyContactPhone: '555-555-9001' },
                 primaryParent: { name: 'Audit Lead' },
             }),
         });

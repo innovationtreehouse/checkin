@@ -52,7 +52,8 @@ export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
 });
 
 // POST /api/membership/reviews — submit an attestation { processId, result, isMarkedVolunteer }.
-export const POST = withAuth({ roles: ["backgroundCheckReviewer"] }, async (req, auth) => {
+// Board members are implicit reviewers (see canReviewBackgroundChecks); attest() re-checks.
+export const POST = withAuth({ roles: ["isBackgroundCheckReviewer", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     let body: { processId?: number; result?: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean };
     try {

@@ -1,16 +1,11 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     try {
         const programId = parseInt(id, 10);
@@ -40,13 +35,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         }
 
         // Authorization: only the participant themselves, a lead of their household,
-        // the program's lead mentor, or a sysadmin/board member may request a payment
+        // the program's lead mentor, or a isSysadmin/board member may request a payment
         // plan for this enrollment. Without this gate any authenticated user could flip
         // isPaymentPlanRequested on an arbitrary participant's enrollment (IDOR).
-        const currentUserId = (session.user as { id: number }).id;
+        const currentUserId = auth.user.id;
         const isSelf = currentUserId === participantId;
-        const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin
-            || (session.user as { sysadmin?: boolean, boardMember?: boolean })?.boardMember;
+        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
         const isLeadMentor = participant.program?.leadMentorId === currentUserId;
 
         let isHouseholdLead = false;
@@ -84,4 +78,4 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         console.error("Payment plan request error:", error);
         return NextResponse.json({ error: "Failed to request payment plan" }, { status: 500 });
     }
-}
+});

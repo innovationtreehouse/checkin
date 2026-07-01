@@ -6,7 +6,7 @@
  *
  * Verifies the guiding rule of the nav badges: a count only includes items the
  * *viewer can resolve*. Member counts are scoped to the caller's household and
- * exclude reviewer/board states; the admin block appears only for board/sysadmin
+ * exclude reviewer/board states; the admin block appears only for board/isSysadmin
  * and tallies the board's own queue. The board's only actionable membership
  * state is BLOCKED — the background-check review states (PENDING_BG_REVIEW /
  * RENEWAL_PENDING_BG) are reviewer (RBAC) work and must NOT count for the board.
@@ -15,6 +15,7 @@
 import { GET } from '@/app/api/nav/todo-counts/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { ORG_DOMAIN } from '@/lib/config';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -31,6 +32,10 @@ describe('Nav todo-counts API', () => {
     let membershipId: number;
     let program1Id: number;
     let program2Id: number;
+    let ledProgramId: number;
+    let pendingEventId: number;
+    let confirmedEventId: number;
+    let futureEventId: number;
     const trustedAdultIds: number[] = [];
 
     const daysFromNow = (n: number) => {
@@ -43,14 +48,14 @@ describe('Nav todo-counts API', () => {
         // Household A: a lead with a full slate of *member-actionable* todos, plus
         // one reviewer-owned membership state that must NOT count for the member.
         const lead = await prisma.participant.create({
-            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dob: new Date('1985-01-01'), phone: '555-0001', household: { create: {} } },
+            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dateOfBirth: new Date('1985-01-01'), phone: '555-0001', household: { create: {} } },
         });
         leadId = lead.id;
         householdAId = lead.householdId;
         await prisma.householdLead.create({ data: { householdId: householdAId, participantId: leadId } });
 
         const second = await prisma.participant.create({
-            data: { email: `member2-${TAG}@example.com`, name: 'Member A2', dob: new Date('1987-01-01'), householdId: householdAId },
+            data: { email: `member2-${TAG}@example.com`, name: 'Member A2', dateOfBirth: new Date('1987-01-01'), householdId: householdAId },
         });
         secondMemberId = second.id;
 
@@ -107,9 +112,27 @@ describe('Nav todo-counts API', () => {
         await prisma.programParticipant.create({ data: { programId: program1Id, participantId: leadId, status: 'PENDING' } });
         await prisma.programParticipant.create({ data: { programId: program2Id, participantId: secondMemberId, status: 'PENDING', isPaymentPlanRequested: true } });
 
+        // The lead also *runs* a program (leadMentorId). Three events: one ended
+        // and unconfirmed (the inbox item), one ended but already confirmed, one
+        // still in the future. Only the first should surface in the lead bucket.
+        const ledProgram = await prisma.program.create({ data: { name: `Led ${TAG}`, leadMentorId: leadId } });
+        ledProgramId = ledProgram.id;
+        const pendingEvent = await prisma.event.create({
+            data: { programId: ledProgramId, name: `Pending ${TAG}`, startAt: daysFromNow(-1), endAt: daysFromNow(-1) },
+        });
+        pendingEventId = pendingEvent.id;
+        const confirmedEvent = await prisma.event.create({
+            data: { programId: ledProgramId, name: `Confirmed ${TAG}`, startAt: daysFromNow(-2), endAt: daysFromNow(-2), attendanceConfirmedAt: new Date() },
+        });
+        confirmedEventId = confirmedEvent.id;
+        const futureEvent = await prisma.event.create({
+            data: { programId: ledProgramId, name: `Future ${TAG}`, startAt: daysFromNow(3), endAt: daysFromNow(3) },
+        });
+        futureEventId = futureEvent.id;
+
         // Household B: a board member with no household todos of their own.
         const board = await prisma.participant.create({
-            data: { email: `board-${TAG}@example.com`, name: 'Board B', dob: new Date('1980-01-01'), phone: '555-0000', boardMember: true, household: { create: {} } },
+            data: { email: `board-${TAG}@example.com`, name: 'Board B', dateOfBirth: new Date('1980-01-01'), phone: '555-0000', isBoardMember: true, household: { create: {} } },
         });
         boardId = board.id;
         householdBId = board.householdId;
@@ -119,7 +142,8 @@ describe('Nav todo-counts API', () => {
         await prisma.trustedAdultReview.deleteMany({ where: { trustedAdultId: { in: trustedAdultIds } } });
         await prisma.trustedAdult.deleteMany({ where: { id: { in: trustedAdultIds } } });
         await prisma.programParticipant.deleteMany({ where: { programId: { in: [program1Id, program2Id] } } });
-        await prisma.program.deleteMany({ where: { id: { in: [program1Id, program2Id] } } });
+        await prisma.event.deleteMany({ where: { id: { in: [pendingEventId, confirmedEventId, futureEventId] } } });
+        await prisma.program.deleteMany({ where: { id: { in: [program1Id, program2Id, ledProgramId] } } });
         await prisma.membershipProcess.deleteMany({ where: { membershipId } });
         await prisma.membership.deleteMany({ where: { id: membershipId } });
         await prisma.householdLead.deleteMany({ where: { householdId: householdAId } });
@@ -152,14 +176,50 @@ describe('Nav todo-counts API', () => {
         );
     });
 
+    it('surfaces a lead bucket with only ended-and-unconfirmed attendance', async () => {
+        const res = await callAs({ id: leadId, householdId: householdAId });
+        const data = await res.json();
+        expect(data.lead).toBeDefined();
+        const led = data.lead.programs.find((p: { id: number }) => p.id === ledProgramId);
+        expect(led).toBeDefined();
+        // Only the ended-unconfirmed event — confirmed and future events excluded.
+        expect(led.pending).toHaveLength(1);
+        expect(led.pending[0]).toEqual(
+            expect.objectContaining({ href: `/program-ops/sessions/${pendingEventId}?from=my-programs` }),
+        );
+    });
+
+    it('omits the lead bucket for a caller who leads no program', async () => {
+        const res = await callAs({ id: secondMemberId, householdId: householdAId });
+        const data = await res.json();
+        expect(data.lead).toBeUndefined();
+    });
+
     it('omits the admin block for a non-admin caller', async () => {
         const res = await callAs({ id: leadId, householdId: householdAId });
         const data = await res.json();
         expect(data.admin).toBeUndefined();
     });
 
+    it('surfaces a household todo for a member with no DoB and no 25+ declaration', async () => {
+        const noAge = await prisma.participant.create({
+            data: { name: 'No Age M', householdId: householdAId },
+        });
+        try {
+            const res = await callAs({ id: leadId, householdId: householdAId });
+            const data = await res.json();
+            expect(data.member.household).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ key: `member-age-${noAge.id}`, label: 'Add a date of birth for No Age M', href: '/my-household' }),
+                ]),
+            );
+        } finally {
+            await prisma.participant.delete({ where: { id: noAge.id } });
+        }
+    });
+
     it('returns the board queue for a board member and no false household todos', async () => {
-        const res = await callAs({ id: boardId, householdId: householdBId, boardMember: true });
+        const res = await callAs({ id: boardId, householdId: householdBId, isBoardMember: true });
         expect(res.status).toBe(200);
         const data = await res.json();
         expect(data.member.household).toHaveLength(0);
@@ -176,7 +236,7 @@ describe('Nav todo-counts API', () => {
 
     it('counts BLOCKED for the board but not the reviewer-owned review states', async () => {
         const boardMembershipCount = async () => {
-            const res = await callAs({ id: boardId, householdId: householdBId, boardMember: true });
+            const res = await callAs({ id: boardId, householdId: householdBId, isBoardMember: true });
             const data = await res.json();
             return data.admin.membership as number;
         };
@@ -195,5 +255,28 @@ describe('Nav todo-counts API', () => {
         expect(await boardMembershipCount()).toBe(before + 1);
 
         await prisma.membershipProcess.deleteMany({ where: { id: { in: [...reviewerProcs.map((p) => p.id), blocked.id] } } });
+    });
+
+    it('counts member families but excludes org-email-only (staff) households', async () => {
+        const memberFamilies = async () => {
+            const res = await callAs({ id: boardId, householdId: householdBId, isBoardMember: true });
+            return (await res.json()).admin.memberFamilies as number;
+        };
+        const before = await memberFamilies();
+
+        // Staff household: only an org-email participant → must NOT count.
+        const staff = await prisma.participant.create({
+            data: { email: `staff-${TAG}@${ORG_DOMAIN}`, name: 'Staff', household: { create: {} } },
+        });
+        expect(await memberFamilies()).toBe(before);
+
+        // Member family: a non-org email → +1.
+        const member = await prisma.participant.create({
+            data: { email: `family-${TAG}@example.com`, name: 'Family', household: { create: {} } },
+        });
+        expect(await memberFamilies()).toBe(before + 1);
+
+        await prisma.participant.deleteMany({ where: { id: { in: [staff.id, member.id] } } });
+        await prisma.household.deleteMany({ where: { id: { in: [staff.householdId, member.householdId] } } });
     });
 });

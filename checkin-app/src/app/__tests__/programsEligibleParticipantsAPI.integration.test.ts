@@ -27,7 +27,12 @@ describe('Eligible Participants API Integration Tests', () => {
     let memberOnlyProgramId: number;
     let testHouseholdId: number;
 
+    const ENV_BEFORE = process.env.CHECKIN_ENV;
     beforeAll(async () => {
+        // The route now authenticates via authenticateRequest, whose local-kiosk
+        // fallback (CHECKIN_ENV=local) treats a cookieless request as kiosk. Pin to
+        // 'dev' so unauthenticated stays unauthenticated (401), like registryAuthz.
+        process.env.CHECKIN_ENV = 'dev';
         // Clean up any leaked state
         const existingUsers = await prisma.participant.findMany({
             where: { email: { contains: 'elig-api-test' } },
@@ -61,7 +66,7 @@ describe('Eligible Participants API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-elig-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-elig-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
@@ -87,7 +92,7 @@ describe('Eligible Participants API Integration Tests', () => {
                         membership: {
                             create: {
                                 status: 'ACTIVE',
-                                since: new Date()
+                                memberSince: new Date()
                             }
                         }
                     }
@@ -103,7 +108,7 @@ describe('Eligible Participants API Integration Tests', () => {
                 membership: {
                     create: {
                         status: 'ACTIVE',
-                        since: new Date()
+                        memberSince: new Date()
                     }
                 }
             }
@@ -157,6 +162,7 @@ describe('Eligible Participants API Integration Tests', () => {
     });
 
     afterAll(async () => {
+        process.env.CHECKIN_ENV = ENV_BEFORE;
         const existingUserIds = [adminId, leadId, commonId, activeMemberId, householdMemberId, nonMemberId, alreadyEnrolledId].filter(id => id !== undefined);
         const validProgramIds = [publicProgramId, memberOnlyProgramId].filter(id => id !== undefined);
 
@@ -210,11 +216,14 @@ describe('Eligible Participants API Integration Tests', () => {
 
     // Helper function to mock Next.js App Router params
     const createParams = (id: number) => ({ params: Promise.resolve({ id: id.toString() }) });
+    // A REAL Request: the route now runs through the security handler(), which
+    // calls authenticateRequest(req) and reads req.headers — a bare {nextUrl}
+    // mock crashes there. The route reads the query via new URL(req.url).
     const createReq = (id: number, search: string = '') => {
-        return {
-            nextUrl: new URL(`http://localhost:4000/api/programs/${id}/eligible-participants${search ? `?q=${encodeURIComponent(search)}` : ''}`),
-            method: 'GET'
-        } as unknown as never;
+        return new Request(
+            `http://localhost:4000/api/programs/${id}/eligible-participants${search ? `?q=${encodeURIComponent(search)}` : ''}`,
+            { method: 'GET' },
+        ) as unknown as never;
     };
 
     describe('GET /api/programs/[id]/eligible-participants', () => {
@@ -226,7 +235,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
 
         it('should return 404 Not Found for non-existent program', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const res = await GET(createReq(999999), createParams(999999));
              expect(res.status).toBe(404);
@@ -259,7 +268,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
 
         it('should filter candidates by query string via name', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const res = await GET(createReq(publicProgramId, 'Active'), createParams(publicProgramId));
              expect(res.status).toBe(200);
@@ -270,7 +279,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
 
         it('should filter candidates by query string via email', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const res = await GET(createReq(publicProgramId, 'non-member-elig'), createParams(publicProgramId));
              expect(res.status).toBe(200);

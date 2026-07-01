@@ -106,7 +106,7 @@ describe("upsertPrimaryContact — partial tolerance + member rejection", () => 
 
     it("persists the optional email + its normalized key", async () => {
         const hh = await makeHousehold("upsert-email");
-        const c = await upsertPrimaryContact(prisma, hh, { name: "Aunt May", phone: "555-4000", email: "  Aunt.May@Example.COM " });
+        const c = await upsertPrimaryContact(prisma, hh, { name: "Aunt May", phone: "555-555-4009", email: "  Aunt.May@Example.COM " });
         expect(c?.email).toBe("Aunt.May@Example.COM");
         expect(c?.emailNorm).toBe("aunt.may@example.com");
     });

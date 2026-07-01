@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth, getOptionalSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { createShopifyProgramVariants } from "@/lib/shopify";
@@ -8,8 +7,15 @@ import { logBackendError } from "@/lib/logger";
 import { isActiveMember } from "@/lib/membership";
 import { dollarsToCentsOrNull } from "@inventory/money";
 
+// GET is the PUBLIC program catalog — anonymous callers legitimately get the
+// non-draft, non-memberOnly list (asserted by programsAPI.integration.test.ts),
+// so it can't move to withAuth (which 401s anonymous). getOptionalSessionUser
+// applies the shared denied-household gate: a denied member is locked out of
+// the whole app, so it collapses to undefined (anonymous) — they see only the
+// public list and never the memberOnly programs isActiveMember would otherwise
+// reveal (P0-C).
 export async function GET(req: Request) {
-    const session = await getServerSession(authOptions);
+    const user = await getOptionalSessionUser(req);
 
     try {
         const { searchParams } = new URL(req.url);
@@ -18,9 +24,8 @@ export async function GET(req: Request) {
         // Determine if the user is allowed to see memberOnly programs
         let canSeeMemberOnly = false;
 
-        if (session && session.user) {
-            const user = session.user;
-            if (user.sysadmin || user.boardMember) {
+        if (user) {
+            if (user.isSysadmin || user.isBoardMember) {
                 canSeeMemberOnly = true;
             } else {
                 canSeeMemberOnly = await isActiveMember(user.id);
@@ -32,8 +37,8 @@ export async function GET(req: Request) {
         if (activeOnly) {
             andClauses.push({
                 OR: [
-                    { end: null },
-                    { end: { gte: new Date() } }
+                    { endAt: null },
+                    { endAt: { gte: new Date() } }
                 ]
             });
         }
@@ -44,9 +49,9 @@ export async function GET(req: Request) {
 
         let canSeeDrafts = false;
         let userId: number | undefined;
-        if (session && session.user) {
-            userId = session.user.id;
-            if (session.user.sysadmin || session.user.boardMember) {
+        if (user) {
+            userId = user.id;
+            if (user.isSysadmin || user.isBoardMember) {
                 canSeeDrafts = true;
             }
         }
@@ -66,7 +71,7 @@ export async function GET(req: Request) {
 
         const programs = await prisma.program.findMany({
             where: andClauses.length > 0 ? { AND: andClauses } : undefined,
-            orderBy: { begin: 'asc' },
+            orderBy: { startAt: 'asc' },
             include: {
                 _count: {
                     select: {
@@ -85,20 +90,15 @@ export async function GET(req: Request) {
     }
 }
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-    const canCreate = session?.user?.sysadmin || session?.user?.boardMember;
-
-    if (!session || !canCreate) {
-        return NextResponse.json({ error: "Forbidden: Only Admin or Board Members can create programs" }, { status: 403 });
-    }
+export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req, auth) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     // Hoisted so the catch can name an orphaned Shopify product (created, but DB write failed) for manual cleanup.
     let shopifyData: { shopifyProductId: string, shopifyMemberVariantId: string | null, shopifyNonMemberVariantId: string | null } | null = null;
 
     try {
         const body = await req.json();
-        const { name, leadMentorId, begin, end, memberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
+        const { name, leadMentorId, startAt, endAt, memberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
 
         if (!name) {
             return NextResponse.json({ error: "Program name is required" }, { status: 400 });
@@ -123,8 +123,8 @@ export async function POST(req: Request) {
             data: {
                 name,
                 leadMentorId: parseInt(leadMentorId, 10),
-                begin: begin ? new Date(begin) : null,
-                end: end ? new Date(end) : null,
+                startAt: startAt ? new Date(startAt) : null,
+                endAt: endAt ? new Date(endAt) : null,
                 memberOnly: memberOnly || false,
                 minAge: minAge || null,
                 maxAge: maxAge || null,
@@ -139,11 +139,11 @@ export async function POST(req: Request) {
 
         await prisma.auditLog.create({
             data: {
-                actorId: session.user.id,
+                actorId: auth.user.id,
                 action: 'CREATE',
                 tableName: 'Program',
                 affectedEntityId: newProgram.id,
-                newData: JSON.stringify(newProgram)
+                newData: newProgram
             }
         });
 
@@ -164,4 +164,4 @@ export async function POST(req: Request) {
         await logBackendError(error, "POST /api/programs");
         return NextResponse.json({ error: "Failed to create program" }, { status: 500 });
     }
-}
+});

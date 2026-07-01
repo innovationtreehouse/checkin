@@ -5,7 +5,7 @@ import { withAuth } from "@/lib/auth";
 export const dynamic = 'force-dynamic';
 
 export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async (req) => {
         try {
             const url = new URL(req.url);

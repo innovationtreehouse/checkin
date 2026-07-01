@@ -28,7 +28,7 @@ function patch(eventId: number, body: Record<string, unknown>) {
         method: 'PATCH',
         body: JSON.stringify(body),
     });
-    return PATCH(req, { params: Promise.resolve({ id: String(eventId) }) });
+    return PATCH(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(eventId) }) });
 }
 
 describe("PATCH /api/events/[id] cancel — attendee notification (characterization)", () => {
@@ -53,7 +53,7 @@ describe("PATCH /api/events/[id] cancel — attendee notification (characterizat
 
     beforeEach(() => {
         jest.clearAllMocks();
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
     });
 
     afterEach(async () => {
@@ -71,7 +71,7 @@ describe("PATCH /api/events/[id] cancel — attendee notification (characterizat
     it('cancels the event and deletes the ATTENDING RSVP but sends NO notification (current behavior)', async () => {
         const start = new Date(Date.now() + 24 * HOUR);
         const event = await prisma.event.create({
-            data: { name: `${TAG} future`, start, end: new Date(start.getTime() + HOUR), description: 'cancel' },
+            data: { name: `${TAG} future`, startAt: start, endAt: new Date(start.getTime() + HOUR), description: 'cancel' },
         });
         await prisma.rSVP.create({ data: { eventId: event.id, participantId: attendeeId, status: 'ATTENDING' } });
 

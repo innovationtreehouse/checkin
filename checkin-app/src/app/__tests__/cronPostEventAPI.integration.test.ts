@@ -13,7 +13,7 @@ describe("GET /api/cron/post-event", () => {
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Past Event' } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Future Event' } } });
         await prisma.program.deleteMany({ where: { name: 'Test Program' } });
-        await prisma.toolStatus.deleteMany({ where: { user: { email: { contains: 'example.com' } } } });
+        await prisma.toolStatus.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
         await prisma.householdLead.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
         await prisma.rawBadgeLog.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
         await prisma.participant.deleteMany({ where: { email: { contains: 'example.com' } } });
@@ -43,8 +43,8 @@ describe("GET /api/cron/post-event", () => {
         const event = await prisma.event.create({
             data: {
                 name: "Past Event",
-                start: pastStart,
-                end: pastEnd,
+                startAt: pastStart,
+                endAt: pastEnd,
                 programId: program.id,
                 postEventEmailSent: false
             }
@@ -98,8 +98,8 @@ describe("GET /api/cron/post-event", () => {
         await prisma.event.create({
             data: {
                 name: "Future Event",
-                start: futureStart,
-                end: futureEnd,
+                startAt: futureStart,
+                endAt: futureEnd,
                 programId: program.id,
                 postEventEmailSent: false
             }
@@ -128,8 +128,8 @@ describe("GET /api/cron/post-event", () => {
         await prisma.event.create({
             data: {
                 name: "Past Event Sent",
-                start: pastStart,
-                end: pastEnd,
+                startAt: pastStart,
+                endAt: pastEnd,
                 programId: program.id,
                 postEventEmailSent: true
             }

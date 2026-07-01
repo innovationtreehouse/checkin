@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { handler, notFound, unauthorized } from "@/security/handler";
-import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
+import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
+import { isMinor } from "@/lib/time";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
     if (auth.type !== 'session') throw unauthorized();
@@ -27,6 +28,14 @@ export const PATCH = withAuth(
             if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
             const userId = auth.user.id;
 
+            const me = await prisma.participant.findUnique({
+                where: { id: userId },
+                select: { dateOfBirth: true },
+            });
+            if (isMinor(me?.dateOfBirth)) {
+                return NextResponse.json({ error: "Youth profiles are read-only." }, { status: 403 });
+            }
+
             const body = await req.json();
             const { name, phone, dob, notificationSettings } = body;
 
@@ -38,15 +47,15 @@ export const PATCH = withAuth(
                 where: { id: userId },
                 data: {
                     name: name !== undefined ? name : undefined,
-                    phone: phone !== undefined ? phone : undefined,
-                    dob: dob ? new Date(dob) : undefined,
+                    phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
+                    dateOfBirth: dob ? new Date(dob) : undefined,
                     notificationSettings: notificationSettings !== undefined ? notificationSettings : undefined,
                 },
                 select: {
                     name: true,
                     email: true,
                     phone: true,
-                    dob: true,
+                    dateOfBirth: true,
                     notificationSettings: true,
                 }
             });
@@ -57,7 +66,7 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Participant",
                     affectedEntityId: userId,
-                    newData: JSON.stringify(updatedProfile),
+                    newData: updatedProfile,
                 }
             });
 

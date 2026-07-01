@@ -89,7 +89,7 @@ export default function CreateToolPage() {
       </Card>
 
       <Card withBorder radius="md" padding="md" w={260}>
-        <Text fw={600} size="sm" mb="xs">Existing tools</Text>
+        <Text fw={700} size="sm" mb="xs">Existing tools</Text>
         <ScrollArea.Autosize mah={420} type="auto">
           <Stack gap={4}>
             {tools.map((t) => (

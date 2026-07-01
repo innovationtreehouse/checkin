@@ -56,11 +56,11 @@ describe('Bulk import: preview vs commit consistency', () => {
     beforeAll(async () => {
         await cleanup();
         const admin = await prisma.participant.create({
-            data: { email: 'admin-consist-import-test@example.com', name: 'Admin Consist Import Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-consist-import-test@example.com', name: 'Admin Consist Import Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: testAdminId, sysadmin: true, boardMember: false }
+            user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
         });
     });
 
@@ -141,8 +141,8 @@ describe('Bulk import: preview vs commit consistency', () => {
         expect(body.success).toBe(true);
 
         // Commit's Excel-serial branch parses 33239 -> 1991-01-01 (an ADULT)...
-        const anchor = await prisma.participant.findUnique({ where: { email: ANCHOR_EMAIL }, select: { id: true, dob: true } });
-        expect(anchor?.dob?.getUTCFullYear()).toBe(1991);
+        const anchor = await prisma.participant.findUnique({ where: { email: ANCHOR_EMAIL }, select: { id: true, dateOfBirth: true } });
+        expect(anchor?.dateOfBirth?.getUTCFullYear()).toBe(1991);
         // ...and commit therefore makes the adult a household lead.
         const lead = await prisma.householdLead.findFirst({ where: { participantId: anchor!.id } });
         expect(lead).not.toBeNull();

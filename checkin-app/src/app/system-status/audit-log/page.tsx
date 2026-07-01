@@ -5,8 +5,8 @@ import { AuditLogPanel } from "@/components/admin/AuditLogPanel";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
 export default function SystemStatusAuditLogPage() {
-  // Audit Log is sysadmin-only; boardMembers reaching this URL directly are bounced.
-  const { loading, ready } = useRequireRole(["sysadmin"], { redirectTo: "/system-status/health" });
+  // Audit Log is isSysadmin-only; boardMembers reaching this URL directly are bounced.
+  const { loading, ready } = useRequireRole(["isSysadmin"], { redirectTo: "/system-status/health" });
 
   if (loading) {
     return (

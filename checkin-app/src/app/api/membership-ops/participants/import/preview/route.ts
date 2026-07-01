@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { authenticateRequest } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 import * as xlsx from "xlsx";
 import { parseImportDob } from "@/lib/importDob";
 
@@ -23,14 +23,10 @@ interface RowPreview {
     existingParticipant?: { id: number; name: string | null };
 }
 
-export async function POST(req: NextRequest) {
+export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req: NextRequest, auth) => {
     try {
-        const auth = await authenticateRequest(req);
         if (auth.type !== 'session') {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        if (!auth.user.sysadmin && !auth.user.boardMember) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
         const formData = await req.formData();
@@ -254,7 +250,7 @@ export async function POST(req: NextRequest) {
             } else if (!sameHouseholdAs) {
                 // No email, no parent email, no household ref — match by name
                 const matchQuery: Record<string, unknown> = { name: fullName };
-                if (parsedDob) matchQuery.dob = parsedDob;
+                if (parsedDob) matchQuery.dateOfBirth = parsedDob;
 
                 const existing = await prisma.participant.findFirst({
                     where: matchQuery,
@@ -304,4 +300,4 @@ export async function POST(req: NextRequest) {
         console.error("Error in participant import preview:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
-}
+});

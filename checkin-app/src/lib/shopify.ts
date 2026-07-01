@@ -240,7 +240,7 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
     try {
         const admins = await prisma.participant.findMany({
             where: {
-                OR: [{ sysadmin: true }, { boardMember: true }],
+                OR: [{ isSysadmin: true }, { isBoardMember: true }],
                 email: { not: null }
             },
             select: { email: true }

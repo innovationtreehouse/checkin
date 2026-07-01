@@ -10,8 +10,8 @@ import { PageContainer } from '@/components/ui/PageContainer';
 type ProgramSummary = {
   id: number;
   name: string;
-  begin: string | null;
-  end: string | null;
+  startAt: string | null;
+  endAt: string | null;
   memberOnly: boolean;
   phase: string;
   enrollmentStatus: string;
@@ -30,7 +30,7 @@ export default function PublicProgramsDirectory() {
   const [message, setMessage] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
 
-  const isAuthorized = session && (session.user?.sysadmin || session.user?.boardMember);
+  const isAuthorized = session && (session.user?.isSysadmin || session.user?.isBoardMember);
 
   useEffect(() => {
     const fetchPrograms = async () => {
@@ -91,7 +91,7 @@ export default function PublicProgramsDirectory() {
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
           {programs.map((program) => {
-            const canManage = session && (session.user?.sysadmin || session.user?.boardMember || session.user?.id === program.leadMentorId);
+            const canManage = session && (session.user?.isSysadmin || session.user?.isBoardMember || session.user?.id === program.leadMentorId);
             return (
               <Card key={program.id} withBorder radius="md" padding="lg">
                 <Group justify="space-between" align="flex-start" mb="sm">
@@ -104,8 +104,8 @@ export default function PublicProgramsDirectory() {
                 </Group>
 
                 <Text c="dimmed" style={{ flex: 1 }} mb="md">
-                  {program.begin ? formatDate(program.begin) : 'Start Date TBD'}
-                  {program.end ? ` - ${formatDate(program.end)}` : ' (Ongoing)'}
+                  {program.startAt ? formatDate(program.startAt) : 'Start Date TBD'}
+                  {program.endAt ? ` - ${formatDate(program.endAt)}` : ' (Ongoing)'}
                 </Text>
 
                 <Card withBorder radius="sm" padding="xs" mb="md">

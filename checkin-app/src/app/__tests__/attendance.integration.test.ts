@@ -44,7 +44,7 @@ describe('Attendance API Integration Tests', () => {
         testHouseholdId = household.id;
 
         const admin = await prisma.participant.create({
-            data: { email: 'admin-attendance-test@example.com', name: 'Admin Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-attendance-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
         testAdminHouseholdId = admin.householdId;
@@ -106,7 +106,7 @@ describe('Attendance API Integration Tests', () => {
 
         it('should return active visits for an authenticated session', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/attendance', {
@@ -137,7 +137,7 @@ describe('Attendance API Integration Tests', () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { 
                     id: testParticipantId, 
-                    sysadmin: false, 
+                    isSysadmin: false, 
                     householdId: testHouseholdId, 
                     householdLead: true 
                 }
@@ -158,7 +158,7 @@ describe('Attendance API Integration Tests', () => {
 
         it('should not allow a regular user to check out someone else', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testHouseholdMemberId, sysadmin: false, householdId: testHouseholdId }
+                user: { id: testHouseholdMemberId, isSysadmin: false, householdId: testHouseholdId }
             });
 
             const req = new Request('http://localhost:4000/api/attendance', {
@@ -177,7 +177,7 @@ describe('Attendance API Integration Tests', () => {
     describe('POST /api/attendance', () => {
         it('should allow an admin to manually check in a user', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             // Ensure testHouseholdMemberId is checked out before we check them in
@@ -200,7 +200,7 @@ describe('Attendance API Integration Tests', () => {
 
         it('should return 400 when trying to check in an already checked in user', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/attendance', {

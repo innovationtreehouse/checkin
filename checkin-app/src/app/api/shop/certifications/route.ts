@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import { Prisma } from '@/generated/prisma/client';
 import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
 
-export async function GET(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
+export const GET = withAuth({}, async (req, auth) => {
+    // withAuth funnels the denied-household check (auth.ts) and rejects kiosk —
+    // a raw getServerSession would let a board-denied member keep reading shop data.
+    if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const session = { user: auth.user };
 
     try {
         const { searchParams } = new URL(req.url);
@@ -20,15 +20,15 @@ export async function GET(req: Request) {
 
         // ?all=true returns every assignment — admin/board only
         if (allParam === 'true') {
-            const isAuthorized = session.user?.sysadmin || session.user?.boardMember;
+            const isAuthorized = session.user?.isSysadmin || session.user?.isBoardMember;
             if (!isAuthorized) {
                 return NextResponse.json({ error: "Forbidden" }, { status: 403 });
             }
             const certifications = await prisma.toolStatus.findMany({
-                orderBy: [{ tool: { name: 'asc' } }, { user: { name: 'asc' } }],
+                orderBy: [{ tool: { name: 'asc' } }, { participant: { name: 'asc' } }],
                 include: {
                     tool: true,
-                    user: { select: { id: true, name: true, email: true } },
+                    participant: { select: { id: true, name: true, email: true } },
                 },
             });
             return NextResponse.json(certifications);
@@ -47,14 +47,14 @@ export async function GET(req: Request) {
             whereClause = { toolId: parseInt(toolIdParam, 10) };
         } else {
             // Looking up a specific person's certifications
-            whereClause = { userId: targetUserId };
+            whereClause = { participantId: targetUserId };
         }
 
         const certifications = await prisma.toolStatus.findMany({
             where: whereClause,
             include: {
                 tool: true,
-                user: toolIdParam ? { select: { id: true, name: true, email: true } } : false
+                participant: toolIdParam ? { select: { id: true, name: true } } : false
             }
         });
 
@@ -63,14 +63,16 @@ export async function GET(req: Request) {
         await logBackendError(error, "GET /api/shop/certifications");
         return NextResponse.json({ error: "Failed to fetch certifications" }, { status: 500 });
     }
-}
+});
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
+// withAuth funnels the denied-household check at admission (closes GAP-1: this
+// POST previously re-queried certifier status with no denied gate), then the
+// certifier (MAY_CERTIFY_OTHERS) authorization runs as before.
+export const POST = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const session = { user: auth.user };
 
     try {
         const body = await req.json();
@@ -86,7 +88,7 @@ export async function POST(req: Request) {
         }
 
         const currentUserId = session.user.id;
-        const isSysAdminOrBoard = session.user?.sysadmin || session.user?.boardMember;
+        const isSysAdminOrBoard = session.user?.isSysadmin || session.user?.isBoardMember;
 
         let hasCertifierPermission = isSysAdminOrBoard;
 
@@ -94,8 +96,8 @@ export async function POST(req: Request) {
             // Check if user is a certifier for this specific tool
             const currentUserStatus = await prisma.toolStatus.findUnique({
                 where: {
-                    userId_toolId: {
-                        userId: currentUserId,
+                    participantId_toolId: {
+                        participantId: currentUserId,
                         toolId: parseInt(toolId, 10)
                     }
                 }
@@ -121,13 +123,13 @@ export async function POST(req: Request) {
         const pId = parseInt(participantId, 10);
 
         const currentStatus = await prisma.toolStatus.findUnique({
-            where: { userId_toolId: { userId: pId, toolId: tId } }
+            where: { participantId_toolId: { participantId: pId, toolId: tId } }
         });
 
         const upsertedCert = await prisma.toolStatus.upsert({
             where: {
-                userId_toolId: {
-                    userId: pId,
+                participantId_toolId: {
+                    participantId: pId,
                     toolId: tId
                 }
             },
@@ -135,7 +137,7 @@ export async function POST(req: Request) {
                 level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'INSTRUCTOR' | 'MAY_CERTIFY_OTHERS'
             },
             create: {
-                userId: pId,
+                participantId: pId,
                 toolId: tId,
                 level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'INSTRUCTOR' | 'MAY_CERTIFY_OTHERS'
             }
@@ -148,8 +150,8 @@ export async function POST(req: Request) {
                 tableName: 'ToolStatus',
                 affectedEntityId: pId,
                 secondaryAffectedEntity: tId,
-                oldData: currentStatus ? JSON.stringify(currentStatus) : Prisma.JsonNull,
-                newData: JSON.stringify(upsertedCert)
+                oldData: currentStatus ?? Prisma.JsonNull,
+                newData: upsertedCert
             }
         });
 
@@ -158,4 +160,4 @@ export async function POST(req: Request) {
         await logBackendError(error, "POST /api/shop/certifications");
         return NextResponse.json({ error: "Failed to upsert certification" }, { status: 500 });
     }
-}
+});

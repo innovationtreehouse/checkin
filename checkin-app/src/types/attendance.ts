@@ -2,18 +2,18 @@ import type { Prisma } from '@/generated/prisma/client';
 
 /**
  * Visit with included participant and event data, as returned by getFullAttendance.
+ * PII-minimized (M1): email/googleId and role flags are deliberately NOT part of this
+ * shape — getFullAttendance resolves the display name server-side and strips them, so a
+ * consumer typed against this can't reach back for the raw address/identifiers.
  */
 export type VisitWithDetails = Prisma.VisitGetPayload<{
     include: {
         participant: {
             select: {
                 id: true;
-                googleId: true;
-                email: true;
                 name: true;
-                keyholder: true;
-                sysadmin: true;
-                dob: true;
+                isKeyholder: true;
+                dateOfBirth: true;
                 householdId: true;
                 phone: true;
                 household: {

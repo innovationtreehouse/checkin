@@ -16,7 +16,7 @@ jest.mock("next-auth/next", () => ({ getServerSession: jest.fn() }));
 const TAG = "ec-api-test";
 
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false } });
 }
 function postReq(body: unknown) {
     return new Request("http://localhost:4000/api/household/emergency-contacts", {
@@ -61,6 +61,13 @@ describe("Emergency Contacts API — removal prohibition", () => {
     afterAll(async () => {
         await wipe();
         await prisma.$disconnect();
+    });
+
+    it("rejects a contact with a malformed email — 400", async () => {
+        asUser(leadId);
+        const res = await POST(postReq({ name: "Bad Email", phone: "555-555-9000", email: "not-an-email" }));
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe("Invalid email format");
     });
 
     it("blocks removing the only valid contact", async () => {

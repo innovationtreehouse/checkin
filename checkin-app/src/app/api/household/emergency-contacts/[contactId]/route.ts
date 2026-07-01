@@ -7,7 +7,7 @@ async function leadHousehold(userId: number): Promise<number | { error: string; 
     const user = await prisma.participant.findUnique({ where: { id: userId }, include: { householdLeads: true } });
     if (!user?.householdId) return { error: "You must create a household first.", status: 400 };
     const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.sysadmin) return { error: "Only household leads can manage emergency contacts.", status: 403 };
+    if (!isLead && !user.isSysadmin) return { error: "Only household leads can manage emergency contacts.", status: 403 };
     return user.householdId;
 }
 
@@ -28,7 +28,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
                 tableName: "EmergencyContact",
                 affectedEntityId: contact.id,
                 secondaryAffectedEntity: hh,
-                newData: JSON.stringify({ name: contact.name, phone: contact.phone }),
+                newData: { name: contact.name, phone: contact.phone },
             },
         });
         return NextResponse.json({ contact });

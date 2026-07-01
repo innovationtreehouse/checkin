@@ -8,6 +8,7 @@ import {
   SimpleGrid, Stack, Text, TextInput, Title,
 } from "@mantine/core";
 import { formatTime } from "@/lib/time";
+import { formatPhone } from "@/lib/phone";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { AttendanceTabs } from "../AttendanceTabs";
 
@@ -15,9 +16,9 @@ type Participant = {
   id: number;
   email: string;
   name?: string | null;
-  keyholder: boolean;
-  sysadmin: boolean;
-  dob?: string | null;
+  isKeyholder: boolean;
+  isSysadmin: boolean;
+  dateOfBirth?: string | null;
   householdId?: number | null;
   phone?: string | null;
   household?: { emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[] } | null;
@@ -46,7 +47,7 @@ const isStudent = (dob: string | undefined | null) => {
   return age < 18;
 };
 
-type SessionUser = { id: number; sysadmin?: boolean; keyholder?: boolean; boardMember?: boolean; householdId?: number | null };
+type SessionUser = { id: number; isSysadmin?: boolean; isKeyholder?: boolean; isBoardMember?: boolean; householdId?: number | null };
 
 function KioskDisplayInner() {
   const searchParams = useSearchParams();
@@ -65,9 +66,9 @@ function KioskDisplayInner() {
   const [searchResults, setSearchResults] = useState<Participant[]>([]);
   const [checkingInId, setCheckingInId] = useState<number | null>(null);
 
-  const currentUserIsSysadmin = (session?.user as SessionUser)?.sysadmin || false;
-  const currentUserIsKeyholder = (session?.user as SessionUser)?.keyholder || false;
-  const currentUserIsBoardMember = (session?.user as SessionUser)?.boardMember || false;
+  const currentUserIsSysadmin = (session?.user as SessionUser)?.isSysadmin || false;
+  const currentUserIsKeyholder = (session?.user as SessionUser)?.isKeyholder || false;
+  const currentUserIsBoardMember = (session?.user as SessionUser)?.isBoardMember || false;
   const currentUserHouseholdId = (session?.user as SessionUser)?.householdId || null;
   const canManuallyCheckInGlobal = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
   const canAdminCheckout = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
@@ -78,15 +79,15 @@ function KioskDisplayInner() {
   const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
 
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
-  const keyholderList = fullAttendance.filter(v => v.participant.keyholder);
-  const volunteerList = fullAttendance.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
-  const studentList = fullAttendance.filter(v => isStudent(v.participant.dob));
+  const keyholderList = fullAttendance.filter(v => v.participant.isKeyholder);
+  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !isStudent(v.participant.dateOfBirth));
+  const studentList = fullAttendance.filter(v => isStudent(v.participant.dateOfBirth));
 
   const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
   const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
-  const householdKeyholders = limitedHousehold.filter(v => v.participant.keyholder);
-  const householdVolunteers = limitedHousehold.filter(v => !v.participant.keyholder && !isStudent(v.participant.dob));
-  const householdStudents = limitedHousehold.filter(v => isStudent(v.participant.dob));
+  const householdKeyholders = limitedHousehold.filter(v => v.participant.isKeyholder);
+  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !isStudent(v.participant.dateOfBirth));
+  const householdStudents = limitedHousehold.filter(v => isStudent(v.participant.dateOfBirth));
 
   const isCheckedIn = isFull
     ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)
@@ -281,7 +282,7 @@ function KioskDisplayInner() {
               )}
             </Group>
             {!isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin) && visit.participant.phone && (
-              <Text size="xs" c="blue">📞 {visit.participant.phone}</Text>
+              <Text size="xs" c="blue">📞 {formatPhone(visit.participant.phone)}</Text>
             )}
           </Box>
           {showCheckout && (
@@ -318,7 +319,7 @@ function KioskDisplayInner() {
   const userId = (session?.user as SessionUser)?.id;
 
   return (
-    <Box style={isKioskMode ? { cursor: "none", marginTop: -12, paddingLeft: 8 } : { marginTop: -12, paddingLeft: 8 }}>
+    <Box style={isKioskMode ? { cursor: "none", marginTop: -25, paddingLeft: 8 } : { marginTop: -25, paddingLeft: 8 }}>
       {!isKioskMode && (
         <Box style={{ maxWidth: 1200, margin: "0 auto" }}>
           <AttendanceTabs />
@@ -408,7 +409,7 @@ function KioskDisplayInner() {
         )}
         {!safety.isTwoDeepViolation && safety.isLastKeyholder && (
           <Alert color="yellow" icon="⚠️" title="Warning" mb="lg">
-            Only one keyholder is currently in the building.
+            Only one isKeyholder is currently in the building.
           </Alert>
         )}
 
@@ -422,7 +423,7 @@ function KioskDisplayInner() {
         ) : (
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
             {renderColumn("🔑", counts.keyholders, "Keyholders", "blue", isFull ? keyholderList : householdKeyholders)}
-            {renderColumn("🤝", counts.volunteers, "Volunteers", "teal", isFull ? volunteerList : householdVolunteers)}
+            {renderColumn("🤝", counts.volunteers, "Volunteers/Adults", "teal", isFull ? volunteerList : householdVolunteers)}
             {renderColumn("🎓", counts.students, "Students", "grape", isFull ? studentList : householdStudents)}
           </SimpleGrid>
         )}
@@ -439,7 +440,7 @@ function KioskDisplayInner() {
       </Card>
 
       {/* Admin Sign Out Modal */}
-      <Modal opened={showSignOutModal} onClose={() => setShowSignOutModal(false)} title={<Title order={4}>Sign Out A User</Title>} size="lg">
+      <Modal opened={showSignOutModal} onClose={() => setShowSignOutModal(false)} title={<Text span fw={700} fz="lg">Sign Out A User</Text>} size="lg">
         <TextInput
           placeholder="Search checked-in users..."
           value={searchSignOutQuery}
@@ -475,7 +476,7 @@ function KioskDisplayInner() {
       <Modal
         opened={!!selectedParticipant}
         onClose={() => setSelectedParticipant(null)}
-        title={<Title order={4} c="yellow">🆘 Emergency Contact Info</Title>}
+        title={<Text span fw={700} fz="lg" c="yellow">🆘 Emergency Contact Info</Text>}
         centered
       >
         {selectedParticipant && (
@@ -483,7 +484,7 @@ function KioskDisplayInner() {
             <Stack align="center" gap={4} mb="lg">
               <Text fz="xl" fw={700}>{selectedParticipant.name || selectedParticipant.email.split('@')[0]}</Text>
               {selectedParticipant.phone && (
-                <Text c="dimmed">User Phone: <Anchor href={`tel:${selectedParticipant.phone.replace(/\D/g, '')}`} c="teal">{selectedParticipant.phone}</Anchor></Text>
+                <Text c="dimmed">User Phone: <Anchor href={`tel:${selectedParticipant.phone.replace(/\D/g, '')}`} c="teal">{formatPhone(selectedParticipant.phone)}</Anchor></Text>
               )}
             </Stack>
             <Alert color="red" variant="light" ta="center">
@@ -496,7 +497,7 @@ function KioskDisplayInner() {
                         {c.name}{c.relationship ? <Text component="span" c="dimmed" fz="sm"> ({c.relationship})</Text> : null}
                       </Text>
                       <Anchor href={`tel:${c.phone.replace(/\D/g, '')}`} c="red" fz="xl">
-                        📞 {c.phone}
+                        📞 {formatPhone(c.phone)}
                       </Anchor>
                     </div>
                   ))}

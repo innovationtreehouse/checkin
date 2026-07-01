@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Center, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
-import { formatDateTime } from '@/lib/time';
+import { formatDateTime, formatTime } from '@/lib/time';
 
 type RsvpStatus = "ATTENDING" | "NOT_ATTENDING" | "MAYBE";
 
@@ -14,12 +14,23 @@ type EventData = {
   id: number;
   name: string;
   description: string | null;
-  start: string;
-  end: string;
+  startAt: string;
+  endAt: string;
   program: { name: string } | null;
   participant: { id: number; name: string | null };
   rsvp: RsvpStatus | null;
 };
+
+// Group (event, member) rows into one bucket per event, preserving first-seen order.
+function groupByEvent(events: EventData[]): EventData[][] {
+  const byId = new Map<number, EventData[]>();
+  for (const ev of events) {
+    const rows = byId.get(ev.id);
+    if (rows) rows.push(ev);
+    else byId.set(ev.id, [ev]);
+  }
+  return [...byId.values()];
+}
 
 const RSVP_OPTIONS: { status: RsvpStatus; label: string; color: string }[] = [
   { status: 'ATTENDING', label: 'Yes', color: 'green' },
@@ -100,44 +111,52 @@ export default function ParticipantEventsDashboard() {
         </Card>
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-          {events.map((ev) => {
-            const userRSVP = ev.rsvp;
-            const startStr = formatDateTime(ev.start, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          {groupByEvent(events).map((rows) => {
+            const ev = rows[0];
+            const startStr = formatDateTime(ev.startAt, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const endStr = formatTime(ev.endAt, { hour: '2-digit', minute: '2-digit' });
+            // Multi-member cards must always show whose RSVP is whose, even for non-leads.
+            const labelMembers = showMembers || rows.length > 1;
 
             return (
-              <Card key={`${ev.id}-${ev.participant.id}`} withBorder radius="md" padding="lg">
+              <Card key={ev.id} withBorder radius="md" padding="lg">
                 <Stack gap="sm" h="100%">
                   <div>
-                    {showMembers && (
-                      <Badge variant="light" mb={4}>{ev.participant.name ?? 'Member'}</Badge>
-                    )}
                     {ev.program && (
                       <Text size="xs" c="cyan" fw={600} tt="uppercase">{ev.program.name}</Text>
                     )}
                     <Title order={4}>{ev.name}</Title>
-                    <Text size="sm" c="dimmed">📅 {startStr}</Text>
+                    <Text size="sm" c="dimmed">📅 {startStr} – {endStr}</Text>
                   </div>
 
                   {ev.description && (
                     <Text size="sm" lineClamp={2}>{ev.description}</Text>
                   )}
 
-                  <div style={{ marginTop: 'auto' }}>
-                    <Text size="sm" c="dimmed" mb={4}>RSVP Status:</Text>
-                    <Button.Group>
-                      {RSVP_OPTIONS.map((opt) => (
-                        <Button
-                          key={opt.status}
-                          fullWidth
-                          variant={userRSVP === opt.status ? 'filled' : 'default'}
-                          color={opt.color}
-                          onClick={() => handleRSVP(ev.id, ev.participant.id, opt.status)}
-                        >
-                          {opt.label}
-                        </Button>
-                      ))}
-                    </Button.Group>
-                  </div>
+                  <Stack gap="xs" style={{ marginTop: 'auto' }}>
+                    {rows.map((member) => (
+                      <div key={member.participant.id}>
+                        {labelMembers ? (
+                          <Badge variant="light" mb={4}>{member.participant.name ?? 'Member'}</Badge>
+                        ) : (
+                          <Text size="sm" c="dimmed" mb={4}>RSVP Status:</Text>
+                        )}
+                        <Button.Group>
+                          {RSVP_OPTIONS.map((opt) => (
+                            <Button
+                              key={opt.status}
+                              fullWidth
+                              variant={member.rsvp === opt.status ? 'filled' : 'default'}
+                              color={opt.color}
+                              onClick={() => handleRSVP(ev.id, member.participant.id, opt.status)}
+                            >
+                              {opt.label}
+                            </Button>
+                          ))}
+                        </Button.Group>
+                      </div>
+                    ))}
+                  </Stack>
                 </Stack>
               </Card>
             );

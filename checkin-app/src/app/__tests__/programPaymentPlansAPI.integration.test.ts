@@ -24,6 +24,12 @@ const mockSession = require('next-auth/next').getServerSession;
 
 const TAG = 'payment-plans-test';
 
+// GET is now a security handler() and POST a withAuth() wrapper — both take a
+// NextRequest. Plain Request carries the fields authenticateRequest reads.
+function nextReq(url = 'http://localhost/api/finance-ops/payment-plans', init?: RequestInit) {
+    return new Request(url, init) as unknown as import('next/server').NextRequest;
+}
+
 describe('Program payment-plan routes', () => {
     let programId: number;
     let mentorId: number;
@@ -46,7 +52,7 @@ describe('Program payment-plan routes', () => {
         programId = program.id;
 
         const board = await prisma.participant.create({
-            data: { name: 'PP Board', email: `board-${TAG}@example.com`, boardMember: true, household: { create: {} } },
+            data: { name: 'PP Board', email: `board-${TAG}@example.com`, isBoardMember: true, household: { create: {} } },
         });
         boardId = board.id;
         householdIds.push(board.householdId);
@@ -95,28 +101,28 @@ describe('Program payment-plan routes', () => {
         return new Request(`http://localhost/api/programs/${programId}/request-payment-plan`, {
             method: 'POST',
             body: JSON.stringify(body),
-        });
+        }) as unknown as import("next/server").NextRequest;
     }
 
     describe('GET /api/finance-ops/payment-plans', () => {
         it('401 without a session', async () => {
             mockSession.mockResolvedValue(null);
-            const res = await PlansGet();
+            const res = await PlansGet(nextReq());
             expect(res.status).toBe(401);
         });
 
         it('403 for a non-board, non-sysadmin user', async () => {
             mockSession.mockResolvedValue({ user: { id: selfId } });
-            const res = await PlansGet();
+            const res = await PlansGet(nextReq());
             expect(res.status).toBe(403);
         });
 
         it('returns only PENDING + isPaymentPlanRequested rows to a board member', async () => {
             await enroll(selfId, { requested: true });   // should appear
             await enroll(noiseId, { requested: false });  // should NOT appear
-            mockSession.mockResolvedValue({ user: { id: boardId, boardMember: true } });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
-            const res = await PlansGet();
+            const res = await PlansGet(nextReq());
             expect(res.status).toBe(200);
             const rows = await res.json();
             const ids = rows.map((r: { participantId: number }) => r.participantId);
@@ -128,21 +134,21 @@ describe('Program payment-plan routes', () => {
     describe('POST /api/finance-ops/payment-plans (approve)', () => {
         it('401 without a session', async () => {
             mockSession.mockResolvedValue(null);
-            const res = await PlansPost(new Request('http://localhost', { method: 'POST', body: '{}' }));
+            const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: '{}' }));
             expect(res.status).toBe(401);
         });
 
         it('403 for a non-board user', async () => {
             mockSession.mockResolvedValue({ user: { id: selfId } });
-            const res = await PlansPost(new Request('http://localhost', { method: 'POST', body: JSON.stringify({ programId, participantId: selfId }) }));
+            const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ programId, participantId: selfId }) }));
             expect(res.status).toBe(403);
         });
 
         it('board approval flips the enrollment to ACTIVE and clears the request flags', async () => {
             await enroll(selfId, { requested: true });
-            mockSession.mockResolvedValue({ user: { id: boardId, boardMember: true } });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
-            const res = await PlansPost(new Request('http://localhost', {
+            const res = await PlansPost(nextReq('http://localhost', {
                 method: 'POST',
                 body: JSON.stringify({ programId, participantId: selfId }),
             }));
@@ -180,7 +186,7 @@ describe('Program payment-plan routes', () => {
 
         it('404 when the participant is not enrolled in the program', async () => {
             await prisma.programParticipant.deleteMany({ where: { programId, participantId: otherId } });
-            mockSession.mockResolvedValue({ user: { id: boardId, boardMember: true } });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
             const res = await RequestPost(requestReq({ participantId: otherId }), params(programId));
             expect(res.status).toBe(404);
         });

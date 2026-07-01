@@ -1,18 +1,13 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
 import { calculateAge } from "@/lib/time";
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     try {
         const programId = parseInt(id, 10);
@@ -36,13 +31,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const currentUserId = (session.user as { id: number }).id;
+        const currentUserId = auth.user.id;
         const isSelfEnrollment = currentUserId === participantId;
-        const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin || (session.user as { sysadmin?: boolean, boardMember?: boolean })?.boardMember;
+        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
 
         const participantData = await prisma.participant.findUnique({
             where: { id: participantId },
-            select: { dob: true, householdId: true }
+            select: { dateOfBirth: true, householdId: true }
         });
 
         let isHouseholdLead = false;
@@ -64,7 +59,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const override = body.override === true;
 
-        // A board/sysadmin enrolling someone OUTSIDE their own household (the
+        // A board/isSysadmin enrolling someone OUTSIDE their own household (the
         // program-ops surface) is a real admin comp: it skips payment. A board
         // member enrolling their own self/dependent through the public program
         // page is just a parent — they pay like anyone else. Without this, a
@@ -76,7 +71,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
              return NextResponse.json({ error: "This bypasses all payment. Are you sure?", requiresOverride: true }, { status: 400 });
         }
 
-        // ponytail: a confirmed board/sysadmin override INTENTIONALLY bypasses
+        // ponytail: a confirmed board/isSysadmin override INTENTIONALLY bypasses
         // every soft limit — closed enrollment, age, AND capacity — so the board
         // can deliberately overfill a program. This is intent, not a missing
         // guard: see the requiresOverride:true responses the UI turns into a
@@ -96,11 +91,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
             // Check Age
             if (currentProgram.minAge !== null || currentProgram.maxAge !== null) {
-                if (!participantData?.dob) {
+                if (!participantData?.dateOfBirth) {
                     return NextResponse.json({ error: "Participant Date of Birth is missing.", requiresOverride: true }, { status: 400 });
                 }
                 // Age as of program start; now for dateless programs.
-                const age = calculateAge(participantData.dob, currentProgram.begin ?? undefined);
+                const age = calculateAge(participantData.dateOfBirth, currentProgram.startAt ?? undefined);
                 if (currentProgram.minAge !== null && age < currentProgram.minAge) {
                     return NextResponse.json({ error: `Participant must be at least ${currentProgram.minAge} years old.`, requiresOverride: true }, { status: 400 });
                 }
@@ -139,7 +134,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 tableName: 'ProgramParticipant',
                 affectedEntityId: participantId,
                 secondaryAffectedEntity: programId,
-                newData: JSON.stringify(enrollment)
+                newData: enrollment
             }
         });
 
@@ -160,7 +155,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         console.error("Enrollment creation error:", error);
         return NextResponse.json({ error: "Failed to enroll participant" }, { status: 500 });
     }
-}
+});
 
 // Prisma known-request errors carry a string `code`. Duck-typed so we don't
 // pull in the generated Prisma namespace just for one check.
@@ -169,13 +164,9 @@ function isPrismaError(error: unknown, code: string): boolean {
         && (error as { code: unknown }).code === code;
 }
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     try {
         const programId = parseInt(id, 10);
@@ -198,10 +189,10 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const currentUserId = (session.user as { id: number }).id;
+        const currentUserId = auth.user.id;
         const isSelfRemoval = currentUserId === participantId;
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
-        const isSysAdminOrBoard = (session.user as { sysadmin?: boolean, boardMember?: boolean })?.sysadmin || (session.user as { sysadmin?: boolean, boardMember?: boolean })?.boardMember;
+        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
 
         if (!isSelfRemoval && !isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Not authorized to remove this participant" }, { status: 403 });
@@ -223,7 +214,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
                 tableName: 'ProgramParticipant',
                 affectedEntityId: participantId,
                 secondaryAffectedEntity: programId,
-                oldData: JSON.stringify(enrollment)
+                oldData: enrollment
             }
         });
 
@@ -237,4 +228,4 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
         console.error("Enrollment deletion error:", error);
         return NextResponse.json({ error: "Failed to remove participant" }, { status: 500 });
     }
-}
+});

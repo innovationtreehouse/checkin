@@ -1,45 +1,24 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { handler } from "@/security/handler";
 import { ACTIVE_MEMBER_PARTICIPANT_WHERE } from "@/lib/membership";
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-    const session = await getServerSession(authOptions);
+export const GET = handler('GET /api/shop/members', async () => {
+    // Select email too: admins/board are granted everyones:pii and see it. For a
+    // certifier the view holds only member+public, so the stripper drops email
+    // and keeps name. Field-stripping — not the query — decides who sees what.
+    const members = await prisma.participant.findMany({
+        where: ACTIVE_MEMBER_PARTICIPANT_WHERE,
+        select: {
+            id: true,
+            name: true,
+            email: true,
+        },
+        orderBy: {
+            name: 'asc'
+        }
+    });
 
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const certs = session.user?.toolStatuses || [];
-    const hasCertifierAuth = certs.some((ts: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => ts.level === 'MAY_CERTIFY_OTHERS');
-
-    const isAuthorized = session.user?.sysadmin ||
-        session.user?.boardMember ||
-        hasCertifierAuth;
-
-    if (!isAuthorized) {
-        return NextResponse.json({ error: "Forbidden: Requires Admin, Board, or Certifier role" }, { status: 403 });
-    }
-
-    try {
-        const members = await prisma.participant.findMany({
-            where: ACTIVE_MEMBER_PARTICIPANT_WHERE,
-            select: {
-                id: true,
-                name: true,
-                email: true,
-            },
-            orderBy: {
-                name: 'asc'
-            }
-        });
-
-        return NextResponse.json({ members });
-    } catch (error) {
-        console.error("Failed to fetch shop members:", error);
-        return NextResponse.json({ error: "Failed to fetch members" }, { status: 500 });
-    }
-}
+    return { Participant: members };
+});

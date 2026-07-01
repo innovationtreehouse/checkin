@@ -42,7 +42,7 @@ describe('Broken Households API Integration Tests', () => {
 
         // Acting board member (not a member of any test household below).
         const board = await prisma.participant.create({
-            data: { email: 'board-broken-api-test@example.com', name: 'Board Broken Test', boardMember: true, household: { create: {} } }
+            data: { email: 'board-broken-api-test@example.com', name: 'Board Broken Test', isBoardMember: true, household: { create: {} } }
         });
         boardId = board.id;
 
@@ -50,11 +50,11 @@ describe('Broken Households API Integration Tests', () => {
         const broken = await prisma.household.create({ data: { name: 'Broken API Test HH Broken' } });
         brokenHouseholdId = broken.id;
         const adult = await prisma.participant.create({
-            data: { email: 'adult-broken-api-test@example.com', name: 'Broken Adult', householdId: brokenHouseholdId, dob: new Date('1990-01-01') }
+            data: { email: 'adult-broken-api-test@example.com', name: 'Broken Adult', householdId: brokenHouseholdId, dateOfBirth: new Date('1990-01-01') }
         });
         brokenAdultId = adult.id;
         await prisma.participant.create({
-            data: { email: 'minor-broken-api-test@example.com', name: 'Broken Minor', householdId: brokenHouseholdId, dob: new Date('2015-01-01') }
+            data: { email: 'minor-broken-api-test@example.com', name: 'Broken Minor', householdId: brokenHouseholdId, dateOfBirth: new Date('2015-01-01') }
         });
 
         // 2. Leadless household with no participants -> still broken (included).
@@ -65,7 +65,7 @@ describe('Broken Households API Integration Tests', () => {
         const led = await prisma.household.create({ data: { name: 'Broken API Test HH Led' } });
         ledHouseholdId = led.id;
         const leadMember = await prisma.participant.create({
-            data: { email: 'lead-broken-api-test@example.com', name: 'Existing Lead', householdId: ledHouseholdId, dob: new Date('1985-01-01') }
+            data: { email: 'lead-broken-api-test@example.com', name: 'Existing Lead', householdId: ledHouseholdId, dateOfBirth: new Date('1985-01-01') }
         });
         await prisma.householdLead.create({
             data: { householdId: ledHouseholdId, participantId: leadMember.id }
@@ -76,7 +76,7 @@ describe('Broken Households API Integration Tests', () => {
 
     it('GET lists leadless households (including empty) and excludes led ones', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: boardId, sysadmin: false, boardMember: true }
+            user: { id: boardId, isSysadmin: false, isBoardMember: true }
         });
 
         const req = new Request('http://localhost:4000/api/admin/broken-households', { method: 'GET' });
@@ -95,7 +95,7 @@ describe('Broken Households API Integration Tests', () => {
 
     it('POST lets a board member assign a lead to a household they are not in, un-breaking it', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: boardId, sysadmin: false, boardMember: true }
+            user: { id: boardId, isSysadmin: false, isBoardMember: true }
         });
 
         const req = new Request('http://localhost:4000/api/household/lead', {

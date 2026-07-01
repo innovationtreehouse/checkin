@@ -11,12 +11,13 @@ import {
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 import { formatDateTime, calculateAge } from '@/lib/time';
+import { formatPhone } from '@/lib/phone';
 
 type ProgramDetail = {
   id: number;
   name: string;
-  begin: string | null;
-  end: string | null;
+  startAt: string | null;
+  endAt: string | null;
   leadMentorId: number | null;
   phase: string;
   enrollmentStatus: string;
@@ -37,14 +38,14 @@ type ProgramDetail = {
     };
   }[];
   volunteers: { participantId: number; isCore: boolean; participant: { name: string | null; email: string } }[];
-  events: { id: number; name: string; start: string; end: string; attendanceConfirmedAt: string | null }[];
+  events: { id: number; name: string; startAt: string; endAt: string; attendanceConfirmedAt: string | null }[];
   leadMentor: { name: string | null; email: string } | null;
   memberPriceCents: number | null;
   nonMemberPriceCents: number | null;
   shopifyProductId: string | null;
 };
 
-type ParticipantOption = { id: number; name: string | null; email: string; dob?: string | null };
+type ParticipantOption = { id: number; name: string | null; email: string; dateOfBirth?: string | null };
 
 const PHASE_BADGE: Record<string, { label: string; color: string }> = {
   PLANNING: { label: 'Planning', color: 'gray' },
@@ -61,8 +62,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   const [program, setProgram] = useState<ProgramDetail | null>(null);
 
   // Form States
-  const [begin, setBegin] = useState("");
-  const [end, setEnd] = useState("");
+  const [startAt, setStartAt] = useState("");
+  const [endAt, setEndAt] = useState("");
   const [minAge, setMinAge] = useState("");
   const [maxAge, setMaxAge] = useState("");
   const [maxParticipants, setMaxParticipants] = useState("");
@@ -91,6 +92,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState<'general' | 'roster' | 'events'>('general');
 
@@ -100,8 +102,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       if (res.ok) {
         const data = await res.json();
         setProgram(data);
-        setBegin(data.begin ? data.begin.split('T')[0] : "");
-        setEnd(data.end ? data.end.split('T')[0] : "");
+        setStartAt(data.startAt ? data.startAt.split('T')[0] : "");
+        setEndAt(data.endAt ? data.endAt.split('T')[0] : "");
         setMinAge(data.minAge !== null ? String(data.minAge) : "");
         setMaxAge(data.maxAge !== null ? String(data.maxAge) : "");
         setMaxParticipants(data.maxParticipants !== null ? String(data.maxParticipants) : "");
@@ -199,8 +201,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          begin: begin || null,
-          end: end || null,
+          startAt: startAt || null,
+          endAt: endAt || null,
           minAge: minAge ? parseInt(minAge) : null,
           maxAge: maxAge ? parseInt(maxAge) : null,
           maxParticipants: maxParticipants ? parseInt(maxParticipants) : null,
@@ -211,7 +213,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         })
       });
       if (res.ok) {
-        setMessage("Settings updated successfully.");
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 3000);
         fetchProgram();
       } else {
         const data = await res.json();
@@ -261,8 +264,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     e.preventDefault();
     if (!newPartId) return;
 
-    const u = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
-    if (u?.sysadmin || u?.boardMember) {
+    const u = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
+    if (u?.isSysadmin || u?.isBoardMember) {
       if (!confirm("Warning: Adding a participant manually bypasses all payment requirements. Are you sure you wish to proceed?")) return;
     }
 
@@ -304,8 +307,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     </Container>
   );
 
-  const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
-  const isAuthorized = program.leadMentorId === user?.id || user?.sysadmin || user?.boardMember;
+  const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
+  const isAuthorized = program.leadMentorId === user?.id || user?.isSysadmin || user?.isBoardMember;
   const activeParticipants = program.participants.filter(p => p.status === 'ACTIVE');
   const pendingParticipants = program.participants.filter(p => p.status === 'PENDING');
 
@@ -321,7 +324,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   }
 
   const sortedVolunteers = program.volunteers ? [...program.volunteers].sort((a, b) => (b.isCore ? 1 : 0) - (a.isCore ? 1 : 0)) : [];
-  const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
+  const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
   const phaseBadge = PHASE_BADGE[program.phase];
   // Pricing is fixed at creation; derive rather than track as state.
   const isFree = program.memberPriceCents === null && program.nonMemberPriceCents === null;
@@ -432,8 +435,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                 </Card>
 
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                  <TextInput type="date" label="Start Date" value={begin} onChange={e => setBegin(e.currentTarget.value)} />
-                  <TextInput type="date" label="End Date" value={end} onChange={e => setEnd(e.currentTarget.value)} />
+                  <TextInput type="date" label="Start Date" value={startAt} onChange={e => setStartAt(e.currentTarget.value)} />
+                  <TextInput type="date" label="End Date" value={endAt} onChange={e => setEndAt(e.currentTarget.value)} />
                   <NumberInput label="Minimum Age (Optional)" value={minAge} onChange={v => setMinAge(String(v))} min={0} placeholder="e.g. 14" />
                   <NumberInput label="Maximum Age (Optional)" value={maxAge} onChange={v => setMaxAge(String(v))} min={0} placeholder="e.g. 18" />
                 </SimpleGrid>
@@ -471,9 +474,12 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                     ]} />
                 </SimpleGrid>
 
-                <Button type="submit" color="green" disabled={saving || !leadMentorIdInput} loading={saving} style={{ alignSelf: 'flex-start' }}>
-                  Save Settings
-                </Button>
+                <Group gap="sm">
+                  <Button type="submit" color="green" disabled={saving || !leadMentorIdInput} loading={saving}>
+                    Save Settings
+                  </Button>
+                  {justSaved && <Text c="green" fw={500}>✓ Saved</Text>}
+                </Group>
               </Stack>
             </form>
           </Tabs.Panel>
@@ -523,8 +529,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         partResults,
                         (p) => { setNewPartId(p.id.toString()); setPartSearch(`${p.name || 'Unnamed'} (${p.email})`); setPartResults([]); },
                         (p) => {
-                          if (!p.dob) return null;
-                          const age = calculateAge(p.dob, program.begin ?? undefined);
+                          if (!p.dateOfBirth) return null;
+                          const age = calculateAge(p.dateOfBirth, program.startAt ?? undefined);
                           let warning: string | null = null;
                           if (program.minAge !== null && age < program.minAge) warning = `⚠️ Too Young (${age})`;
                           if (program.maxAge !== null && age > program.maxAge) warning = `⚠️ Too Old (${age})`;
@@ -552,13 +558,13 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         </Group>
                         <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs" spacing="xs">
                           <Text size="sm" c="dimmed"><strong>Email:</strong> {p.participant.email}</Text>
-                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone || 'N/A'}</Text>
+                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone ? formatPhone(p.participant.phone) : 'N/A'}</Text>
                           <Text size="sm" c="dimmed"><strong>Joined:</strong> {p.joinedAt ? formatDateTime(p.joinedAt) : 'N/A'}</Text>
                           {p.participant.household && (
                             <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
                               <strong>Emergency Contact{(p.participant.household.emergencyContacts?.length ?? 0) > 1 ? 's' : ''}:</strong>{' '}
                               {p.participant.household.emergencyContacts && p.participant.household.emergencyContacts.length > 0
-                                ? p.participant.household.emergencyContacts.map((c) => `${c.name} - ${c.phone}`).join('; ')
+                                ? p.participant.household.emergencyContacts.map((c) => `${c.name} - ${formatPhone(c.phone)}`).join('; ')
                                 : 'N/A'}
                             </Text>
                           )}
@@ -582,7 +588,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         </Group>
                         <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs" spacing="xs">
                           <Text size="sm" c="dimmed"><strong>Email:</strong> {p.participant.email}</Text>
-                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone || 'N/A'}</Text>
+                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone ? formatPhone(p.participant.phone) : 'N/A'}</Text>
                           <Text size="sm" c="dimmed"><strong>Pending Since:</strong> {p.pendingSince ? formatDateTime(p.pendingSince) : 'Unknown'}</Text>
                         </SimpleGrid>
                       </Card>
@@ -610,12 +616,12 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                 </Table.Thead>
                 <Table.Tbody>
                   {program.events.map(ev => {
-                    const isPastEvent = new Date(ev.end) < new Date();
+                    const isPastEvent = new Date(ev.endAt) < new Date();
                     const needsConfirmation = isPastEvent && !ev.attendanceConfirmedAt;
                     return (
                       <Table.Tr key={ev.id}>
                         <Table.Td fw={500}>{ev.name}</Table.Td>
-                        <Table.Td c="dimmed">{formatDateTime(ev.start)}</Table.Td>
+                        <Table.Td c="dimmed">{formatDateTime(ev.startAt)}</Table.Td>
                         <Table.Td ta="right">
                           {needsConfirmation ? (
                             <Button component={Link} href={`/program-ops/sessions/${ev.id}`} size="compact-xs" color="yellow" variant="light">Confirm Attendance</Button>

@@ -4,11 +4,11 @@ import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 
 export const GET = withAuth(
-    { roles: ['sysadmin', 'boardMember', 'keyholder'] },
+    { roles: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
     async () => {
         try {
             const members = await prisma.participant.findMany({
-                where: { boardMember: true },
+                where: { isBoardMember: true },
                 select: { id: true, name: true, phone: true, email: true },
                 orderBy: { name: "asc" },
             });

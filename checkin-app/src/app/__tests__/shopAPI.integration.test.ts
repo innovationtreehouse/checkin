@@ -7,6 +7,7 @@
  */
 
 import { GET as getMembers } from '@/app/api/shop/members/route';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import { GET as getTools, POST as postTools } from '@/app/api/shop/tools/route';
 import { GET as getCerts, POST as postCerts } from '@/app/api/shop/certifications/route';
 import prisma from '@/lib/prisma';
@@ -36,7 +37,7 @@ describe('Shop API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         await prisma.toolStatus.deleteMany({
-            where: { userId: { in: existingUserIds } }
+            where: { participantId: { in: existingUserIds } }
         });
         await prisma.visit.deleteMany({
             where: { participantId: { in: existingUserIds } }
@@ -62,13 +63,13 @@ describe('Shop API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-shop-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-shop-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Board Member
         const board = await prisma.participant.create({
-            data: { email: 'board-shop-api-test@example.com', name: 'Board', boardMember: true, household: { create: {} } }
+            data: { email: 'board-shop-api-test@example.com', name: 'Board', isBoardMember: true, household: { create: {} } }
         });
         boardId = board.id;
 
@@ -116,7 +117,7 @@ describe('Shop API Integration Tests', () => {
                 where: { actorId: { in: existingUserIds } }
             });
             await prisma.toolStatus.deleteMany({
-                where: { userId: { in: existingUserIds } }
+                where: { participantId: { in: existingUserIds } }
             });
             await prisma.visit.deleteMany({
                 where: { participantId: { in: existingUserIds } }
@@ -150,6 +151,9 @@ describe('Shop API Integration Tests', () => {
         return {
             url,
             method,
+            // authenticateRequest probes kiosk headers before the session path;
+            // return null so it falls through to the mocked getServerSession.
+            headers: { get: () => null },
             json: queryAndBody?.body ? jest.fn().mockResolvedValue(queryAndBody.body) : undefined
         } as unknown as never;
     };
@@ -158,14 +162,14 @@ describe('Shop API Integration Tests', () => {
         it('should return 403 for common users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             const res = await getMembers() as Response;
+             const res = await getMembers(createReq('GET')) as Response;
              expect(res.status).toBe(403);
         });
 
         it('should return 200 and members for an admin', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const res = await getMembers() as Response;
+             const res = await getMembers(createReq('GET')) as Response;
              expect(res.status).toBe(200);
              const data = await res.json();
              
@@ -173,13 +177,29 @@ describe('Shop API Integration Tests', () => {
              const memberEmails = data.members.map((m: { email: string }) => m.email);
              expect(memberEmails).toContain('common-shop-api-test@example.com');
         });
+
+        it('certifier sees member names but NOT emails (pii stripped)', async () => {
+             // Certifier auth comes from a MAY_CERTIFY_OTHERS toolStatus on the
+             // session — not a role boolean. The view grants member+public only,
+             // so email (pii) is stripped while name (public) survives.
+             (getServerSession as jest.Mock).mockResolvedValue({
+                 user: { id: commonId, toolStatuses: [{ toolId: 1, level: 'MAY_CERTIFY_OTHERS' }] },
+             });
+
+             const res = await getMembers(createReq('GET')) as Response;
+             expect(res.status).toBe(200);
+             const data = await res.json();
+             expect(data.members.length).toBeGreaterThan(0);
+             expect(data.members.every((m: { name?: string }) => typeof m.name === 'string')).toBe(true);
+             expect(data.members.every((m: { email?: string }) => m.email === undefined)).toBe(true);
+        });
     });
 
     describe('/api/shop/tools', () => {
         it('should allow anyone authenticated to GET tool list', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             const res = await getTools() as Response;
+             const res = await getTools(createReq('GET')) as Response;
              expect(res.status).toBe(200);
              const data = await res.json();
              expect(Array.isArray(data)).toBe(true);
@@ -195,7 +215,7 @@ describe('Shop API Integration Tests', () => {
         });
 
         it('should allow admins to create a new tool', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = createReq('POST', { body: { name: 'Shop Test Tool Admin' } });
              const res = await postTools(req) as Response;
@@ -207,7 +227,7 @@ describe('Shop API Integration Tests', () => {
         });
 
         it('should allow board members to create a new tool', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
              const req = createReq('POST', { body: { name: 'Shop Test Tool Board' } });
              const res = await postTools(req) as Response;
@@ -252,7 +272,7 @@ describe('Shop API Integration Tests', () => {
              const data = await res.json();
              expect(data.success).toBe(true);
              expect(data.certification.level).toBe('BASIC');
-             expect(data.certification.userId).toBe(commonId);
+             expect(data.certification.participantId).toBe(commonId);
 
              // Audit: first grant on this participant+tool → CREATE, no prior data.
              const auditRows = await prisma.auditLog.findMany({
@@ -261,6 +281,25 @@ describe('Shop API Integration Tests', () => {
              expect(auditRows.length).toBe(1);
              expect(auditRows[0].action).toBe('CREATE');
              expect(auditRows[0].oldData).toBeNull();
+        });
+
+        // Denied-household lockout (auth-consistency §5 risk #2 / GAP-1). Certifier
+        // status is re-queried from the DB, bypassing the denial-stripped session,
+        // so a denied certifier would still pass the MAY_CERTIFY_OTHERS gate. The
+        // denied check must reject before the lookup. No certification row is written.
+        it('blocks a denied certifier from granting a certification (401, no write)', async () => {
+             const tool = await prisma.tool.create({ data: { name: 'Shop Test Tool Denied' } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: certifierId, denied: true } });
+
+             const req = createReq('POST', { body: { participantId: commonId, toolId: tool.id, level: 'BASIC' } });
+             const res = await postCerts(req) as Response;
+             expect(res.status).toBe(401);
+
+             // No toolStatus row was written for this fresh (participant, tool) pair.
+             const written = await prisma.toolStatus.findUnique({
+                 where: { participantId_toolId: { participantId: commonId, toolId: tool.id } }
+             });
+             expect(written).toBeNull();
         });
 
         it('should forbid a Certifier from promoting someone to MAY_CERTIFY_OTHERS', async () => {
@@ -273,7 +312,7 @@ describe('Shop API Integration Tests', () => {
         });
 
         it('should allow an admin to grant MAY_CERTIFY_OTHERS', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' } });
              const res = await postCerts(req) as Response;
@@ -290,7 +329,7 @@ describe('Shop API Integration Tests', () => {
              expect(auditRows.length).toBe(1);
              expect(auditRows[0].action).toBe('EDIT');
              expect(auditRows[0].oldData).not.toBeNull();
-             expect(JSON.parse(auditRows[0].oldData as string).level).toBe('BASIC');
+             expect((normalizeAuditData(auditRows[0].oldData) as Record<string, unknown>).level).toBe('BASIC');
         });
 
         it('re-cert by a certifier writes an EDIT audit row with the prior level in oldData and the acting certifier as actor', async () => {
@@ -335,7 +374,7 @@ describe('Shop API Integration Tests', () => {
                 expect(editRow.action).toBe('EDIT');
                 expect(editRow.actorId).toBe(reCertifier.id); // the acting certifier, not an admin
                 expect(editRow.oldData).not.toBeNull();
-                expect(JSON.parse(editRow.oldData as string).level).toBe('BASIC'); // prior level snapshot
+                expect((normalizeAuditData(editRow.oldData) as Record<string, unknown>).level).toBe('BASIC'); // prior level snapshot
             } finally {
                 await prisma.auditLog.deleteMany({ where: { affectedEntityId: target.id, tableName: 'ToolStatus' } });
                 await prisma.toolStatus.deleteMany({ where: { toolId: tool.id } });

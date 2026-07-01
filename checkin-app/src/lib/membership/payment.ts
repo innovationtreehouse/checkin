@@ -110,10 +110,16 @@ export async function ensurePaymentLinkForUser(userId: number) {
  * webhook landed, the money is already at Shopify. We record the payment (keeping
  * the application BLOCKED — never activate without a valid check) and alert the
  * board to refund, rather than dropping the payment on the floor.
+ *
+ * H2: for the Shopify path (opts.via === "payment"), an order that doesn't
+ * actually contain the membership product (opts.hasMembershipItem) is also NOT
+ * a silent no-op — it stays PENDING_PAYMENT (no paidAt), the board is alerted
+ * the same way as a paid-while-blocked mismatch, and a follow-up correct
+ * payment activates normally.
  */
 export async function activate(
     processId: number,
-    opts: { via: "payment" | "certified"; actorId?: number; shopifyOrderId?: string },
+    opts: { via: "payment" | "certified"; actorId?: number; shopifyOrderId?: string; hasMembershipItem?: boolean },
 ) {
     const result = await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "MembershipProcess" WHERE id = ${processId} FOR UPDATE`;
@@ -123,7 +129,7 @@ export async function activate(
         if (process.paidAt || process.status === "ACTIVE") {
             return { kind: "noop" as const };
         }
-        const membership = await tx.membership.findUnique({ where: { id: process.membershipId }, select: { householdId: true } });
+        const membership = await tx.membership.findUnique({ where: { id: process.membershipId }, select: { householdId: true, isVolunteer: true } });
         if (!membership) throw new PaymentError("not_found", "Membership not found.");
 
         const now = new Date();
@@ -142,8 +148,8 @@ export async function activate(
                     action: "EDIT",
                     tableName: "MembershipProcess",
                     affectedEntityId: processId,
-                    oldData: JSON.stringify({ status: "BLOCKED" }),
-                    newData: JSON.stringify({ status: "BLOCKED", via: opts.via, paid: true, refundNeeded: true }),
+                    oldData: { status: "BLOCKED" },
+                    newData: { status: "BLOCKED", via: opts.via, paid: true, refundNeeded: true },
                 },
             });
             return { kind: "paid_while_blocked" as const };
@@ -157,6 +163,41 @@ export async function activate(
         if (process.status !== "PENDING_PAYMENT") {
             logger.warn(`[membership] activate() ignored payment for process ${processId} in status ${process.status} — no payment was due`);
             return { kind: "noop" as const };
+        }
+
+        // H2: a real Shopify order (opts.via === "payment") must actually contain
+        // the membership product before we activate anything — checked by variant
+        // id (stable, and the same id the checkout link is built from), not by
+        // order total, which drifts if BoardSettings dues fall out of sync with
+        // Shopify's real price and doesn't stop someone paying for unrelated items
+        // that happen to add up to the right amount (see #625 for the systemic
+        // price/settings-alignment fix, including volunteer-discount eligibility).
+        // A board "certified" payment-plan override has no Shopify order at all, so
+        // it's exempt (opts.via !== "payment"). Only runs when hasMembershipItem is
+        // actually supplied: activateByProcessId (the only production caller of the
+        // "payment" path) always passes it, so this only skips for callers that
+        // never had an order to check.
+        if (opts.via === "payment" && opts.hasMembershipItem === false) {
+            // An order tagged with a valid process id but containing no
+            // membership product is anomalous, not a normal underpayment —
+            // still not a silent no-op though: audit it and alert the board.
+            await tx.auditLog.create({
+                data: {
+                    actorId: SYSTEM_ACTOR,
+                    action: "EDIT",
+                    tableName: "MembershipProcess",
+                    affectedEntityId: processId,
+                    oldData: { status: "PENDING_PAYMENT" },
+                    newData: { status: "PENDING_PAYMENT", via: opts.via, noMembershipItem: true, shopifyOrderId: opts.shopifyOrderId ?? null },
+                },
+            });
+            // Do NOT set paidAt: elsewhere (clearBackgroundCheck, overrideBlocked) a
+            // truthy paidAt means "payment step satisfied, skip straight to/through
+            // background clearance" — setting it here would let a later bg-check
+            // clearance activate the membership without a real membership payment.
+            // Status stays PENDING_PAYMENT so a follow-up correct payment (new
+            // Shopify order, new webhook) activates normally on its own.
+            return { kind: "underpaid" as const };
         }
 
         const activating = !!process.bgClearedAt;
@@ -173,8 +214,8 @@ export async function activate(
                 action: "EDIT",
                 tableName: "MembershipProcess",
                 affectedEntityId: processId,
-                oldData: JSON.stringify({ status: process.status }),
-                newData: JSON.stringify(activating ? { status: "ACTIVE", via: opts.via } : { status: "PENDING_BG_CLEARANCE", via: opts.via, paid: true }),
+                oldData: { status: process.status },
+                newData: activating ? { status: "ACTIVE", via: opts.via } : { status: "PENDING_BG_CLEARANCE", via: opts.via, paid: true },
             },
         });
         return activating ? { kind: "active" as const, householdId: membership.householdId } : { kind: "held" as const };
@@ -183,7 +224,7 @@ export async function activate(
     // Side effects outside the transaction: a slow/failed send must not roll back
     // the write, and only the call that actually recorded the change emits one.
     if (result.kind === "active") await sendCongrats(result.householdId);
-    if (result.kind === "paid_while_blocked") await notifyBoardPaidReject(processId);
+    if (result.kind === "paid_while_blocked" || result.kind === "underpaid") await notifyBoardPaidReject(processId);
     return prisma.membershipProcess.findUnique({ where: { id: processId } });
 }
 
@@ -201,8 +242,8 @@ export async function certifyPaymentPlan(processId: number, actorId: number) {
 }
 
 /** Webhook path: activate the process tied to a paid Shopify draft order. */
-export async function activateByProcessId(processId: number, shopifyOrderId: string) {
-    return activate(processId, { via: "payment", shopifyOrderId });
+export async function activateByProcessId(processId: number, shopifyOrderId: string, hasMembershipItem: boolean) {
+    return activate(processId, { via: "payment", shopifyOrderId, hasMembershipItem });
 }
 
 /** Send the one "welcome — your membership is active" email to a household's leads. */

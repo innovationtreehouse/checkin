@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import type { MembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
 import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/service";
+import { ORG_DOMAIN } from "@/lib/config";
 
 /**
  * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
@@ -26,7 +27,7 @@ const MEMBER_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["INTAKE", "PEND
 // membership-queue action is overriding/resetting a BLOCKED application
 // (governance escape hatch — see overrideBlocked in src/lib/membership/review.ts).
 // PENDING_BG_REVIEW / RENEWAL_PENDING_BG are background-check-reviewer (RBAC,
-// role backgroundCheckReviewer) work, surfaced by the reviewer notifications
+// role isBackgroundCheckReviewer) work, surfaced by the reviewer notifications
 // badge (src/lib/membership/notifications.ts) — NOT the board. The board can
 // still SEE those in the applications list, but they don't count here.
 const BOARD_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["BLOCKED"];
@@ -55,7 +56,30 @@ export type TodoCounts = {
     // every in-flight (non-ACTIVE) application, the gray count shown on the
     // Applications tab — mirrors what /api/admin/membership lists.
     // `brokenHouseholds` = households with no lead at all (green).
-    admin?: { membership: number; applicationsTotal: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number };
+    // `memberFamilies` = total member families (gray), shown on the Manage Memberships tab:
+    // households with >=1 non-org-email (or null-email) participant. Staff households hold
+    // only the org-email lead, so they fall out.
+    admin?: { membership: number; applicationsTotal: number; programsPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number };
+    // Lead surface: programs the caller runs (program.leadMentorId). Present only
+    // when they lead ≥1 program — drives the staff "My Programs" nav item's
+    // visibility and its green badge (sum of pending attendance to confirm).
+    // `pending` mirrors the post-event email's targets (ended events not yet
+    // confirmed), deep-linked to the existing confirm screen. No new capability.
+    lead?: { programs: LedProgram[] };
+};
+
+/** RSVP tally (Yes/Maybe/No; NO_RESPONSE omitted). */
+export type RsvpTally = { yes: number; maybe: number; no: number };
+
+/** One upcoming session, with RSVP tallies split by roster role. */
+export type UpcomingSession = { eventId: number; name: string; startAt: string; participants: RsvpTally; volunteers: RsvpTally };
+
+export type LedProgram = {
+    id: number;
+    name: string;
+    totalEnrolled: number;
+    pending: TodoItem[];
+    upcoming: UpcomingSession[];
 };
 
 // What a member-actionable membership process means, in plain terms.
@@ -94,7 +118,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 select: { participantId: true },
             })) !== null;
 
-        const [hh, leadsMissingPhone, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
+        const [hh, leadsMissingPhone, membersMissingAge, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
             isLead
                 ? prisma.household.findUnique({
                       where: { id: householdId },
@@ -115,6 +139,14 @@ export const GET = withAuth({}, async (_req, auth) => {
                 ? prisma.householdLead.findMany({
                       where: { householdId, OR: [{ participant: { phone: null } }, { participant: { phone: "" } }] },
                       select: { participant: { select: { id: true, name: true } } },
+                  })
+                : Promise.resolve([]),
+            // A member with no DoB and no 25+ declaration shows "Age Unavailable"
+            // on the household page; the lead must add one or the other.
+            isLead
+                ? prisma.participant.findMany({
+                      where: { householdId, dateOfBirth: null, isDeclaredAdult: false },
+                      select: { id: true, name: true },
                   })
                 : Promise.resolve([]),
             prisma.membershipProcess.findMany({
@@ -142,6 +174,9 @@ export const GET = withAuth({}, async (_req, auth) => {
         }
         for (const l of leadsMissingPhone) {
             householdTodos.push({ key: `lead-phone-${l.participant.id}`, label: `Add a phone number for ${l.participant.name ?? "the household lead"}`, href: "/my-household" });
+        }
+        for (const m of membersMissingAge) {
+            householdTodos.push({ key: `member-age-${m.id}`, label: `Add a date of birth for ${m.name ?? "a household member"}`, href: "/my-household" });
         }
         for (const p of membershipProcs) {
             householdTodos.push({
@@ -181,9 +216,111 @@ export const GET = withAuth({}, async (_req, auth) => {
         activePrograms,
     };
 
-    // ---- Admin surface (board's own queue) — only for board/sysadmin ----
-    if (user.sysadmin || user.boardMember) {
-        const [membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds] = await Promise.all([
+    // ---- Lead surface (programs the caller runs as lead mentor) ----
+    // Same targets as the post-event email (src/lib/postEventEmails.ts): events
+    // that have ended with attendance not yet confirmed, in a program the caller
+    // leads. Surfaced in-app additively; the email keeps firing. Each item deep-
+    // links to the existing confirm screen — no new capability, no new PII.
+    const ledPrograms = await prisma.program.findMany({
+        where: { leadMentorId: user.id },
+        select: { id: true, name: true },
+    });
+    if (ledPrograms.length > 0) {
+        const ledIds = ledPrograms.map((p) => p.id);
+        const now = new Date();
+        const [pendingEvents, enrolledCounts, futureEvents, volunteerRows] = await Promise.all([
+            prisma.event.findMany({
+                where: { programId: { in: ledIds }, endAt: { lte: now }, attendanceConfirmedAt: null },
+                select: { id: true, name: true, programId: true },
+                orderBy: { endAt: "asc" },
+            }),
+            // "Total Enrolled" = active (not PENDING) participants per program.
+            prisma.programParticipant.groupBy({
+                by: ["programId"],
+                where: { programId: { in: ledIds }, status: "ACTIVE" },
+                _count: { participantId: true },
+            }),
+            // All upcoming sessions, ascending; we keep the next 3 per program below.
+            prisma.event.findMany({
+                where: { programId: { in: ledIds }, startAt: { gt: now } },
+                select: { id: true, name: true, startAt: true, programId: true },
+                orderBy: { startAt: "asc" },
+            }),
+            // Volunteer roster per program — used to split RSVP tallies by role.
+            prisma.programVolunteer.findMany({
+                where: { programId: { in: ledIds } },
+                select: { programId: true, participantId: true },
+            }),
+        ]);
+        // (programId, participantId) keys that belong to a volunteer; everyone else on a roster is a participant.
+        const volunteerKeys = new Set(volunteerRows.map((v) => `${v.programId}:${v.participantId}`));
+
+        const pendingByProgram = new Map<number, TodoItem[]>();
+        for (const e of pendingEvents) {
+            if (e.programId === null) continue;
+            const items = pendingByProgram.get(e.programId) ?? [];
+            items.push({
+                key: `attendance-${e.id}`,
+                label: `Confirm attendance for ${e.name}`,
+                href: `/program-ops/sessions/${e.id}?from=my-programs`,
+            });
+            pendingByProgram.set(e.programId, items);
+        }
+
+        const enrolledByProgram = new Map(enrolledCounts.map((g) => [g.programId, g._count.participantId]));
+
+        // Next 3 future sessions per program (futureEvents is already startAt-asc).
+        const upcomingByProgram = new Map<number, { id: number; name: string; startAt: Date }[]>();
+        for (const e of futureEvents) {
+            if (e.programId === null) continue;
+            const list = upcomingByProgram.get(e.programId) ?? [];
+            if (list.length < 3) list.push({ id: e.id, name: e.name, startAt: e.startAt });
+            upcomingByProgram.set(e.programId, list);
+        }
+
+        // RSVP rows for just those next-3 events. Raw rows (not groupBy) so each
+        // response can be bucketed volunteer-vs-participant by its (program, participant) key.
+        const upcomingEventIds = [...upcomingByProgram.values()].flat().map((e) => e.id);
+        const eventProgram = new Map<number, number>();
+        for (const [programId, evs] of upcomingByProgram) for (const e of evs) eventProgram.set(e.id, programId);
+        const rsvpRows = upcomingEventIds.length
+            ? await prisma.rSVP.findMany({
+                  where: { eventId: { in: upcomingEventIds } },
+                  select: { eventId: true, participantId: true, status: true },
+              })
+            : [];
+        const emptyTally = (): { participants: RsvpTally; volunteers: RsvpTally } => ({
+            participants: { yes: 0, maybe: 0, no: 0 },
+            volunteers: { yes: 0, maybe: 0, no: 0 },
+        });
+        const tallyByEvent = new Map<number, { participants: RsvpTally; volunteers: RsvpTally }>();
+        for (const r of rsvpRows) {
+            const t = tallyByEvent.get(r.eventId) ?? emptyTally();
+            const programId = eventProgram.get(r.eventId);
+            const bucket = programId !== undefined && volunteerKeys.has(`${programId}:${r.participantId}`) ? t.volunteers : t.participants;
+            if (r.status === "ATTENDING") bucket.yes += 1;
+            else if (r.status === "MAYBE") bucket.maybe += 1;
+            else if (r.status === "NOT_ATTENDING") bucket.no += 1;
+            tallyByEvent.set(r.eventId, t);
+        }
+
+        result.lead = {
+            programs: ledPrograms.map((p) => ({
+                id: p.id,
+                name: p.name,
+                totalEnrolled: enrolledByProgram.get(p.id) ?? 0,
+                pending: pendingByProgram.get(p.id) ?? [],
+                upcoming: (upcomingByProgram.get(p.id) ?? []).map((e) => {
+                    const t = tallyByEvent.get(e.id) ?? emptyTally();
+                    return { eventId: e.id, name: e.name, startAt: e.startAt.toISOString(), participants: t.participants, volunteers: t.volunteers };
+                }),
+            })),
+        };
+    }
+
+    // ---- Admin surface (board's own queue) — only for board/isSysadmin ----
+    if (user.isSysadmin || user.isBoardMember) {
+        const [membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies] = await Promise.all([
             prisma.membershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -208,8 +345,18 @@ export const GET = withAuth({}, async (_req, auth) => {
             prisma.household.count({
                 where: { leads: { none: {} } },
             }),
+            // Member families: households with >=1 non-org-email participant. A null email is
+            // not an org address, but Prisma's `NOT endsWith` skips null rows — list it
+            // explicitly so null-email members (e.g. children) count.
+            prisma.household.count({
+                where: {
+                    participants: {
+                        some: { OR: [{ email: null }, { NOT: { email: { endsWith: `@${ORG_DOMAIN}` } } }] },
+                    },
+                },
+            }),
         ]);
-        result.admin = { membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds };
+        result.admin = { membership, applicationsTotal, programsPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies };
     }
 
     return NextResponse.json(result);

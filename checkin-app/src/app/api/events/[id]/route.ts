@@ -1,69 +1,72 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
+import { withAuth } from "@/lib/auth";
+import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+// FAIL-CLOSED, staff-only. This payload is fundamentally a roster — who is
+// enrolled / RSVP'd / attended — and a participant's name, id, and the very
+// existence of their enrollment/RSVP/Visit row are all tier 'public'. So the
+// handler's per-FIELD stripping (which protects email/phone/dob) CANNOT hide the
+// association "person <-> this event": stripping a non-staff caller to 'public'
+// still leaks the whole attendee name list (incl. minors). Field-tiering guards
+// fields; only admission guards the association. So we gate admission here.
+//
+// The gate can't live in the registry `authorize`: this route's [id] is an EVENT
+// id, but resolveAccess's program-scoped checks key off params.id as a PROGRAM
+// id (and fixing that touches the CODEOWNERS-gated access-resolvers). We have the
+// fetched event here, so the event->program lead/core-vol check is done inline,
+// exactly like the original hand-rolled gate. The registry policy + stripping
+// remain as defense-in-depth on the staff tiers (admin -> everyones:*, this
+// event's lead/core-vol -> their_program_participants:* via per-row scope).
+export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth, params }) => {
+    const eventId = parseInt(params.id, 10);
+    if (isNaN(eventId)) throw badRequest('Invalid event ID');
 
-    const resolvedParams = await params;
-    const eventId = parseInt(resolvedParams.id, 10);
-
-    try {
-        const event = await prisma.event.findUnique({
-            where: { id: eventId },
-            include: {
-                program: {
-                    include: {
-                        volunteers: {
-                            include: { participant: true }
-                        },
-                        participants: {
-                            include: { participant: true }
-                        }
+    const event = await prisma.event.findUnique({
+        where: { id: eventId },
+        include: {
+            program: {
+                include: {
+                    volunteers: {
+                        include: { participant: true }
+                    },
+                    participants: {
+                        include: { participant: true }
                     }
-                },
-                visits: true,
-                rsvps: {
-                    include: { participant: true }
-                },
-                attendanceConfirmedBy: {
-                    select: { name: true }
                 }
+            },
+            visits: true,
+            rsvps: {
+                include: { participant: true }
+            },
+            attendanceConfirmedBy: {
+                select: { name: true }
             }
-        });
-
-        if (!event) return NextResponse.json({ error: "Event not found" }, { status: 404 });
-
-        // Authorization: this response embeds full participant records (email, phone,
-        // dob, googleId — including minors) for everyone enrolled in / RSVP'd to the
-        // program. Restrict it to event staff, matching the PATCH handler below.
-        // Without this gate any authenticated user could harvest roster PII by
-        // enumerating sequential event IDs.
-        const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
-        const userId = user.id;
-        const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
-        const isLeadMentor = event.program?.leadMentorId === userId;
-        const isCoreVolunteer = event.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
-        if (!isSysAdminOrBoard && !isLeadMentor && !isCoreVolunteer) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to view this event" }, { status: 403 });
         }
+    });
 
-        return NextResponse.json(event);
-    } catch (error: unknown) {
-        console.error("Failed to fetch event:", error);
-        return NextResponse.json({ error: "Failed to fetch event" }, { status: 500 });
-    }
-}
+    if (!event) throw notFound('Event not found');
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Roster is staff-only (see header). Non-staff callers never receive it —
+    // matches the original inline gate (403 for an existing event they don't staff).
+    const isStaff = auth.type === 'session' && (
+        auth.user.isSysadmin ||
+        auth.user.isBoardMember ||
+        event.program?.leadMentorId === auth.user.id ||
+        (event.program?.volunteers?.some(v => v.participantId === auth.user.id && v.isCore) ?? false)
+    );
+    if (!isStaff) throw forbidden('Forbidden: Not authorized to view this event');
+
+    return { Event: event };
+});
+
+export const PATCH = withAuth({}, async (req: Request, auth, { params }: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const resolvedParams = await params;
     const eventId = parseInt(resolvedParams.id, 10);
+    if (isNaN(eventId)) return NextResponse.json({ error: "Invalid event ID" }, { status: 400 });
     const body = await req.json();
 
     try {
@@ -74,9 +77,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         if (!event) return NextResponse.json({ error: "Event not found" }, { status: 404 });
 
-        const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
-        const userId = user.id;
-        const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
+        const userId = auth.user.id;
+        const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
         const isLeadMentor = event.program?.leadMentorId === userId;
         const isCoreVolunteer = event.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
 
@@ -99,7 +101,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         // Action: Edit / Cancel Time
         if (body.action === 'editTime' || body.action === 'cancel') {
-            // Core volunteers can't edit or cancel events. Only lead mentors, sysadmin, board.
+            // Core volunteers can't edit or cancel events. Only lead mentors, isSysadmin, board.
             if (!isSysAdminOrBoard && !isLeadMentor) {
                 return NextResponse.json({ error: "Forbidden: Only Lead Mentors or Admins can edit/cancel events" }, { status: 403 });
             }
@@ -107,21 +109,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             // Block edits to an event that has already finished. Re-clearing
             // reminderSentAt on a past event is meaningless and would re-arm a
             // stale reminder; today only the cron's future-only window stops it
-            // from firing. Use end (not start) so an in-progress event still edits.
-            if (body.action === 'editTime' && event.end.getTime() < Date.now()) {
+            // from firing. Use endAt (not startAt) so an in-progress event still edits.
+            if (body.action === 'editTime' && event.endAt.getTime() < Date.now()) {
                 return NextResponse.json({ error: "Cannot edit a past event" }, { status: 400 });
             }
 
-            const { start, end, applyToFuture } = body;
+            const { startAt, endAt, applyToFuture } = body;
 
-            const timeShiftStartMs = start ? new Date(start).getTime() - event.start.getTime() : 0;
-            const timeShiftEndMs = end ? new Date(end).getTime() - event.end.getTime() : 0;
+            const timeShiftStartMs = startAt ? new Date(startAt).getTime() - event.startAt.getTime() : 0;
+            const timeShiftEndMs = endAt ? new Date(endAt).getTime() - event.endAt.getTime() : 0;
 
             if (applyToFuture && event.recurringGroupId) {
                 const futureEvents = await prisma.event.findMany({
                     where: {
                         recurringGroupId: event.recurringGroupId,
-                        start: { gte: event.start }
+                        startAt: { gte: event.startAt }
                     }
                 });
 
@@ -141,8 +143,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                         return prisma.event.update({
                             where: { id: fe.id },
                             data: {
-                                start: new Date(fe.start.getTime() + timeShiftStartMs),
-                                end: new Date(fe.end.getTime() + timeShiftEndMs)
+                                startAt: new Date(fe.startAt.getTime() + timeShiftStartMs),
+                                endAt: new Date(fe.endAt.getTime() + timeShiftEndMs)
                             }
                         });
                     });
@@ -175,8 +177,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                     const updatedEvent = await prisma.event.update({
                         where: { id: event.id },
                         data: {
-                            start: start ? new Date(start) : event.start,
-                            end: end ? new Date(end) : event.end
+                            startAt: startAt ? new Date(startAt) : event.startAt,
+                            endAt: endAt ? new Date(endAt) : event.endAt
                         }
                     });
                     // Rescheduled to a new start → attendees become eligible for a fresh
@@ -271,4 +273,4 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         console.error("Failed to update event:", error);
         return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
     }
-}
+});

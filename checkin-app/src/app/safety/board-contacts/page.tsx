@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, Center, Loader, Stack, Table, Text, Title } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { formatPhone } from "@/lib/phone";
 
 type BoardMember = {
   id: number;
@@ -12,7 +13,7 @@ type BoardMember = {
 };
 
 export default function BoardContactInfoPage() {
-  const { ready, loading: authLoading } = useRequireRole(['sysadmin', 'boardMember', 'keyholder']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember', 'isKeyholder']);
 
   const [members, setMembers] = useState<BoardMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +77,7 @@ export default function BoardContactInfoPage() {
               {members.map((m) => (
                 <Table.Tr key={m.id}>
                   <Table.Td>{m.name || `Member #${m.id}`}</Table.Td>
-                  <Table.Td>{m.phone || "Not Provided"}</Table.Td>
+                  <Table.Td>{m.phone ? formatPhone(m.phone) : "Not Provided"}</Table.Td>
                   <Table.Td>{m.email || "Not Provided"}</Table.Td>
                 </Table.Tr>
               ))}

@@ -8,12 +8,15 @@ export interface SessionUser {
     name?: string;
     // Household membership is DENIED — login blocked; role flags below are forced false.
     denied?: boolean;
-    sysadmin: boolean;
-    boardMember: boolean;
-    keyholder: boolean;
-    backgroundCheckReviewer: boolean;
+    isSysadmin: boolean;
+    isBoardMember: boolean;
+    isKeyholder: boolean;
+    isBackgroundCheckReviewer: boolean;
     householdId?: number;
     householdLead?: boolean;
+    // Shop tool certifications carried on the session (set by the jwt/session
+    // callbacks). level === 'MAY_CERTIFY_OTHERS' marks a certifier.
+    toolStatuses?: { toolId: number; level: string }[];
 }
 
 export interface BoardMember {

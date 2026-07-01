@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/auth";
 
 // Link Status data source: recent external-integration failures.
 export const GET = withAuth(
-    { roles: ["sysadmin", "boardMember"] },
+    { roles: ["isSysadmin", "isBoardMember"] },
     async () => {
         try {
             // 90-day TTL purge on read (admin opening the tab). ponytail: no cron needed.

@@ -56,9 +56,9 @@ describe('withAuth', () => {
     });
 
     it('returns 401 for a denied household, treating it as unauthenticated', async () => {
-        mockSession.mockResolvedValue({ user: user({ denied: true, sysadmin: true }) });
+        mockSession.mockResolvedValue({ user: user({ denied: true, isSysadmin: true }) });
         // Even a route that would otherwise admit this user is locked out.
-        const route = withAuth({ roles: ['sysadmin'] }, handler);
+        const route = withAuth({ roles: ['isSysadmin'] }, handler);
         const res = await route(sessionReq());
 
         expect(res.status).toBe(401);
@@ -76,8 +76,8 @@ describe('withAuth', () => {
     });
 
     it('returns 403 for a session lacking all required roles', async () => {
-        mockSession.mockResolvedValue({ user: user({ sysadmin: false, boardMember: false }) });
-        const route = withAuth({ roles: ['sysadmin', 'boardMember'] }, handler);
+        mockSession.mockResolvedValue({ user: user({ isSysadmin: false, isBoardMember: false }) });
+        const route = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, handler);
         const res = await route(sessionReq());
 
         expect(res.status).toBe(403);
@@ -97,8 +97,8 @@ describe('withAuth', () => {
     });
 
     it('invokes the handler for a session holding a required role', async () => {
-        mockSession.mockResolvedValue({ user: user({ boardMember: true }) });
-        const route = withAuth({ roles: ['sysadmin', 'boardMember'] }, handler);
+        mockSession.mockResolvedValue({ user: user({ isBoardMember: true }) });
+        const route = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, handler);
         const res = await route(sessionReq());
 
         expect(res.status).toBe(200);

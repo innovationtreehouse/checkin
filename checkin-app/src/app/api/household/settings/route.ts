@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { upsertPrimaryContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
-import { normalizeAddressInput, pickAddress } from "@/lib/address";
+import { normalizeAddressInput, pickAddress, assertValidAddress, AddressValidationError } from "@/lib/address";
 
 export const PATCH = withAuth(
     {},
@@ -14,6 +14,10 @@ export const PATCH = withAuth(
             const body = await req.json();
             const { emergencyContactName, emergencyContactPhone } = body;
             const addressData = normalizeAddressInput(body);
+            // Address is optional on this route (emergency-contact-only PATCHes
+            // send no address keys); when any address field is supplied, the
+            // whole address must be complete + valid.
+            if (Object.keys(addressData).length > 0) assertValidAddress(addressData);
 
             const user = await prisma.participant.findUnique({
                 where: { id: userId },
@@ -25,7 +29,7 @@ export const PATCH = withAuth(
             }
 
             const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isLead && !user.sysadmin) {
+            if (!isLead && !user.isSysadmin) {
                 return NextResponse.json({ error: "Only household leads can edit household settings" }, { status: 403 });
             }
 
@@ -49,14 +53,14 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Household",
                     affectedEntityId: user.householdId,
-                    newData: JSON.stringify({ emergencyContactName, emergencyContactPhone, ...pickAddress(updatedHousehold) })
+                    newData: { emergencyContactName, emergencyContactPhone, ...pickAddress(updatedHousehold) }
                 }
             });
 
             return NextResponse.json({ household: updatedHousehold }, { status: 200 });
 
         } catch (error: unknown) {
-            if (error instanceof EmergencyContactError) {
+            if (error instanceof EmergencyContactError || error instanceof AddressValidationError) {
                 return NextResponse.json({ error: error.message }, { status: 400 });
             }
             console.error("Household Settings PATCH Error:", error);

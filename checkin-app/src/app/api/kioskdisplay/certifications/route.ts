@@ -5,10 +5,10 @@ import { withAuth } from "@/lib/auth";
 // Serves the participant roster for the tool-certification grid: id, a display name, and
 // tool certs. The raw email is read only to resolve the name fallback and never leaves the
 // DB (#329). Same data class as /api/attendance, so the same gate: a valid kiosk signature, or
-// a privileged session (sysadmin/boardMember/keyholder). A plain member session gets
+// a privileged session (isSysadmin/isBoardMember/isKeyholder). A plain member session gets
 // 403 — withAuth handles the kiosk path, role check, denied-household, and local dev.
 export const GET = withAuth(
-    { roles: ["sysadmin", "boardMember", "keyholder"], allowKiosk: true },
+    { roles: ["isSysadmin", "isBoardMember", "isKeyholder"], allowKiosk: true },
     async (req: NextRequest) => {
     try {
         const url = new URL(req.url);

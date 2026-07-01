@@ -18,14 +18,16 @@ type Tool = {
 };
 
 type Certification = {
-  userId: number;
+  participantId: number;
   toolId: number;
   level: "BASIC" | "DOF" | "CERTIFIED" | "INSTRUCTOR" | "MAY_CERTIFY_OTHERS";
-  user?: { id: number; name: string | null; email: string };
+  participant?: { id: number; name: string | null };
   tool?: { id: number; name: string };
 };
 
-type Member = { id: number; name: string | null; email: string };
+// email is omitted for certifiers (security policy strips pii from their view);
+// only admins/board receive it. Treat as optional everywhere it's read.
+type Member = { id: number; name: string | null; email?: string };
 
 type Tab = 'tools' | 'person' | 'all';
 
@@ -114,7 +116,7 @@ function GrantForm({
               label="Member" required style={{ flex: '1 1 180px' }} searchable
               placeholder="-- Member --"
               value={memberId} onChange={(v) => setMemberId(v ?? "")}
-              data={members.map(m => ({ value: String(m.id), label: m.name ?? m.email }))}
+              data={members.map(m => ({ value: String(m.id), label: m.name ?? m.email ?? `#${m.id}` }))}
             />
           )}
           <Select label="Level" w={140} value={level} onChange={(v) => setLevel(v ?? "CERTIFIED")} allowDeselect={false} data={levelOptions} />
@@ -234,8 +236,8 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
                       ) : (
                         <Stack gap={6} mb="md">
                           {certs.map((c) => (
-                            <Group key={`${c.userId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
-                              <Text size="sm">{c.user?.name ?? 'Unnamed'} <Text component="span" c="dimmed" size="xs">({c.user?.email})</Text></Text>
+                            <Group key={`${c.participantId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
+                              <Text size="sm">{c.participant?.name ?? 'Unnamed'}</Text>
                               <ToolLevelBadge level={toToolLevel(c.level)} />
                             </Group>
                           ))}
@@ -294,7 +296,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
 
   const filtered = members.filter(m =>
     (m.name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-    m.email.toLowerCase().includes(search.toLowerCase())
+    (m.email ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -325,7 +327,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
                       ) : (
                         <Stack gap={6} mb="md">
                           {certs.map((c) => (
-                            <Group key={`${c.userId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
+                            <Group key={`${c.participantId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
                               <Text size="sm">{c.tool?.name ?? 'Unknown Tool'}</Text>
                               <ToolLevelBadge level={toToolLevel(c.level)} />
                             </Group>
@@ -374,11 +376,11 @@ function AllTab() {
   // Build the person×tool matrix from the flat cert list.
   const memberMap = new Map<number, string>();
   const toolMap = new Map<number, string>();
-  const cell = new Map<string, Certification>(); // `${userId}-${toolId}` -> cert
+  const cell = new Map<string, Certification>(); // `${participantId}-${toolId}` -> cert
   for (const c of certs) {
-    if (c.user) memberMap.set(c.user.id, c.user.name ?? 'Unnamed');
+    if (c.participant) memberMap.set(c.participant.id, c.participant.name ?? 'Unnamed');
     if (c.tool) toolMap.set(c.tool.id, c.tool.name);
-    cell.set(`${c.userId}-${c.toolId}`, c);
+    cell.set(`${c.participantId}-${c.toolId}`, c);
   }
   const byName = (a: [number, string], b: [number, string]) => a[1].localeCompare(b[1]);
   const allMembers = [...memberMap].sort(byName);
@@ -516,8 +518,8 @@ export function ToolManagementPanel() {
     return <Center mih="40vh"><Loader /></Center>;
   }
 
-  const isSysadmin = session?.user?.sysadmin;
-  const isBoardMember = session?.user?.boardMember;
+  const isSysadmin = session?.user?.isSysadmin;
+  const isBoardMember = session?.user?.isBoardMember;
   const isAdmin = isSysadmin || isBoardMember;
 
   const hasCertifierAuth = (session?.user?.toolStatuses ?? []).some((ts: { level?: string }) => ts.level === 'MAY_CERTIFY_OTHERS');

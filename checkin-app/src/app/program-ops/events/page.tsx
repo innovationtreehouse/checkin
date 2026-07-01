@@ -1,14 +1,13 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import { Card, Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 
 type OneTimeEvent = {
   id: number;
   name: string;
-  start: string;
-  end: string;
+  startAt: string;
+  endAt: string;
   description: string | null;
 };
 
@@ -26,7 +25,6 @@ export default function OneTimeEventsList() {
   const [futureOnly, setFutureOnly] = useState(true);
   // Snapshot "now" once on mount — Date.now() is impure and can't run during render.
   const [now] = useState(() => Date.now());
-  const router = useRouter();
 
   useEffect(() => {
     fetch("/api/events")
@@ -39,10 +37,10 @@ export default function OneTimeEventsList() {
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return events.filter((e) => {
-      if (futureOnly && new Date(e.end).getTime() < now) return false;
+      if (futureOnly && new Date(e.endAt).getTime() < now) return false;
       if (!q) return true;
       // Search across name, description, and the displayed date strings.
-      const hay = [e.name, e.description ?? "", fmt(e.start), fmt(e.end)].join(" ").toLowerCase();
+      const hay = [e.name, e.description ?? "", fmt(e.startAt), fmt(e.endAt)].join(" ").toLowerCase();
       return hay.includes(q);
     });
   }, [events, search, futureOnly, now]);
@@ -87,14 +85,10 @@ export default function OneTimeEventsList() {
             </Table.Thead>
             <Table.Tbody>
               {rows.map((e) => (
-                <Table.Tr
-                  key={e.id}
-                  onClick={() => router.push(`/admin/events/${e.id}`)}
-                  style={{ cursor: "pointer" }}
-                >
+                <Table.Tr key={e.id}>
                   <Table.Td>{e.name}</Table.Td>
-                  <Table.Td>{fmt(e.start)}</Table.Td>
-                  <Table.Td>{fmt(e.end)}</Table.Td>
+                  <Table.Td>{fmt(e.startAt)}</Table.Td>
+                  <Table.Td>{fmt(e.endAt)}</Table.Td>
                   <Table.Td>{e.description || "—"}</Table.Td>
                 </Table.Tr>
               ))}

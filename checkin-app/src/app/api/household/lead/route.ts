@@ -31,7 +31,7 @@ export const POST = withAuth(
             // Board members and sysadmins can set a lead on ANY household (e.g. fixing
             // a leadless household imported without a primary contact). A regular
             // household lead can only promote within their own household.
-            const isPrivileged = !!user?.sysadmin || !!user?.boardMember;
+            const isPrivileged = !!user?.isSysadmin || !!user?.isBoardMember;
             const isLeadOfTarget = !!user?.householdLeads.some(lead => lead.householdId === targetHouseholdId);
             if (!isPrivileged && !isLeadOfTarget) {
                 return NextResponse.json({ error: "Only household leads, board members, or sysadmins can promote members" }, { status: 403 });
@@ -51,7 +51,7 @@ export const POST = withAuth(
                     tableName: "HouseholdLead",
                     affectedEntityId: targetHouseholdId,
                     secondaryAffectedEntity: participantId,
-                    newData: JSON.stringify(newLead)
+                    newData: newLead
                 }
             });
 
@@ -91,7 +91,7 @@ export const DELETE = withAuth(
             }
 
             const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isLead && !user.sysadmin) {
+            if (!isLead && !user.isSysadmin) {
                 return NextResponse.json({ error: "Only household leads or sysadmins can remove leads" }, { status: 403 });
             }
 
@@ -137,7 +137,7 @@ export const DELETE = withAuth(
                     tableName: "HouseholdLead",
                     affectedEntityId: user.householdId,
                     secondaryAffectedEntity: participantId,
-                    oldData: JSON.stringify(existingLead)
+                    oldData: existingLead
                 }
             });
 

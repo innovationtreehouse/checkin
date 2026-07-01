@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth, getOptionalSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
@@ -8,17 +7,21 @@ import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTra
 import { logBackendError } from "@/lib/logger";
 import { config } from "@/lib/config";
 
+// GET is kiosk-first with distinct signature-failure semantics (403 on bad signature,
+// not 401), so it keeps its own kiosk plumbing rather than moving to withAuth. The one
+// thing it was missing — the denied-household gate — is applied inline below.
 export async function GET(req: NextRequest) {
     try {
-        // Determine caller identity
-        const session = await getServerSession(authOptions);
-        const user = session?.user;
+        // Determine caller identity. getOptionalSessionUser applies the shared
+        // denied-household gate (a denied member resolves to undefined), so even
+        // on this kiosk-tolerant route a denied member can't read counts/safety.
+        const user = await getOptionalSessionUser(req);
         const hasKioskHeaders = req.headers.get("x-kiosk-signature");
         const pubKeys = getKioskPublicKeys();
 
         let isKiosk = false;
 
-        if (!session && pubKeys.length > 0 && hasKioskHeaders) {
+        if (!user && pubKeys.length > 0 && hasKioskHeaders) {
             // Kiosk request — verify signature
             const result = verifyKioskSignature(
                 "GET",
@@ -33,23 +36,23 @@ export async function GET(req: NextRequest) {
                 return NextResponse.json({ error: result.error }, { status: result.status });
             }
             isKiosk = true;
-        } else if (!session && pubKeys.length > 0) {
+        } else if (!user && pubKeys.length > 0) {
             // No session and no kiosk headers — reject
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        } else if (!session && pubKeys.length === 0 && config.isLocal()) {
+        } else if (!user && pubKeys.length === 0 && config.isLocal()) {
             // Local dev only (CHECKIN_ENV=local): no pubKey configured, treat as kiosk.
             // Deliberately gated on isLocal() — on the cloud dev instance or prod an
             // unset KIOSK_PUBLIC_KEY must NOT grant full attendance/safety access to
             // anonymous callers. Mirrors the keyless-kiosk gating in src/lib/auth.ts.
             isKiosk = true;
-        } else if (!session) {
+        } else if (!user) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         const { attendance, counts, safety } = await getFullAttendance();
 
         // Determine access level
-        const isAdmin = isKiosk || user?.sysadmin || user?.boardMember || user?.keyholder;
+        const isAdmin = isKiosk || user?.isSysadmin || user?.isBoardMember || user?.isKeyholder;
 
         if (isAdmin) {
             // Full access: return all visits + counts
@@ -86,13 +89,9 @@ export async function GET(req: NextRequest) {
     }
 }
 
-export async function DELETE(req: Request) {
-    const session = await getServerSession(authOptions);
-    const user = session?.user;
-
-    if (!user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+export const DELETE = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const user = auth.user;
 
     try {
         const body = await req.json();
@@ -114,10 +113,10 @@ export async function DELETE(req: Request) {
         // Check permissions:
         // 1. User checking out themselves
         // 2. User is the household lead checking out a family member
-        // 3. User is an admin (sysadmin, keyholder, board member)
+        // 3. User is an admin (isSysadmin, isKeyholder, board member)
         const isSelf = visit.participantId === Number(user.id);
         const isHouseholdCheckOut = Boolean(user.householdId && visit.participant.householdId === user.householdId && user.householdLead);
-        const isAdmin = user.sysadmin || user.keyholder || user.boardMember;
+        const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
         if (!isSelf && !isHouseholdCheckOut && !isAdmin) {
             return NextResponse.json({ error: "Forbidden: You are not authorized to check out this user." }, { status: 403 });
@@ -132,16 +131,12 @@ export async function DELETE(req: Request) {
         await logBackendError(error, "DELETE /api/attendance");
         return NextResponse.json({ error: "Failed to force checkout" }, { status: 500 });
     }
-}
+});
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-    const user = session?.user;
-
-    if (!user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const isAdmin = user.sysadmin || user.keyholder || user.boardMember;
+export const POST = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const user = auth.user;
+    const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
     try {
         const body = await req.json();
@@ -169,31 +164,51 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "Forbidden: You are not authorized to check in this user." }, { status: 403 });
             }
 
-            // Verify they aren't already checked in
-            const activeVisit = await prisma.visit.findFirst({
-                where: {
-                    participantId: participant.id,
-                    departedAt: null
-                }
-            });
-
-            if (activeVisit) {
-                return NextResponse.json({ error: "User is already checked in" }, { status: 400 });
-            }
-
             const arrivalTime = new Date();
             const eventId = await findAssociatedEventAt(participant.id, arrivalTime);
 
-            const newVisit = await prisma.visit.create({
-                data: {
-                    participantId: participant.id,
-                    arrivedAt: arrivalTime,
-                    arrivedVia: "WEB",
-                    associatedEventId: eventId
+            // Read-then-create on this participant's open-visit state. Without
+            // serialization, two concurrent MANUAL_CHECKINs — or one racing a kiosk
+            // /api/scan or /api/attendance/manual — both pass the "already checked in?"
+            // guard and create two open visits (a later checkout closes only one; the
+            // other lingers open forever, inflating the two-deep supervision count).
+            // Same per-participant advisory xact lock used by /api/scan and
+            // /api/attendance/manual; the lock key is the participant id, so all three
+            // paths serialize against each other. Re-check under the lock, then create.
+            const result = await prisma.$transaction(async (tx) => {
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(${participant.id})`;
+
+                const activeVisit = await tx.visit.findFirst({
+                    where: {
+                        participantId: participant.id,
+                        departedAt: null
+                    }
+                });
+
+                if (activeVisit) {
+                    return { alreadyCheckedIn: true as const };
                 }
+
+                const visit = await tx.visit.create({
+                    data: {
+                        participantId: participant.id,
+                        arrivedAt: arrivalTime,
+                        arrivedVia: "WEB",
+                        associatedEventId: eventId
+                    }
+                });
+
+                return { alreadyCheckedIn: false as const, visit };
+            }, {
+                maxWait: 5000,
+                timeout: 15000,
             });
 
-            return NextResponse.json({ success: true, visit: newVisit });
+            if (result.alreadyCheckedIn) {
+                return NextResponse.json({ error: "User is already checked in" }, { status: 400 });
+            }
+
+            return NextResponse.json({ success: true, visit: result.visit });
         }
 
         if (type === 'TWO_DEEP_VIOLATION') {
@@ -213,7 +228,7 @@ export async function POST(req: Request) {
 
             // Find all board members
             const boardMembers = await prisma.participant.findMany({
-                where: { boardMember: true },
+                where: { isBoardMember: true },
                 select: { email: true, name: true }
             });
 
@@ -241,4 +256,4 @@ export async function POST(req: Request) {
         await logBackendError(error, "POST /api/attendance");
         return NextResponse.json({ error: "Failed to process notification" }, { status: 500 });
     }
-}
+});

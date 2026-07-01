@@ -683,8 +683,8 @@ def main():
     KioskHandler.backend = backend
     KioskHandler.kiosk_path = kiosk_path
     KioskHandler.disable_blackout = disable_blackout
-    server = ThreadingHTTPServer(("0.0.0.0", port), KioskHandler)
-    log.info(f"Proxy running on http://0.0.0.0:{port}")
+    server = ThreadingHTTPServer(("127.0.0.1", port), KioskHandler)
+    log.info(f"Proxy running on http://127.0.0.1:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

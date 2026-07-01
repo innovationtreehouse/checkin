@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
  * GET /api/membership-ops/applications — in-flight membership applications for the board.
  * Every process not yet ACTIVE, with its household + external-phase flags.
  *
- * Field visibility is governed by the security registry (sysadmin/board get the
+ * Field visibility is governed by the security registry (isSysadmin/board get the
  * full applicant PII; anyone else admitted would be stripped to public). The bag
  * is keyed by the model name so the stripper can classify it; the 'processes'
  * envelope preserves the response shape consumers expect.

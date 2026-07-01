@@ -7,16 +7,19 @@ import { NavLink, Stack, Text, TextInput, Title } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { IconSearch } from '@tabler/icons-react';
 import { PAGES, type RegistryUser } from '@/components/pageRegistry';
+import { useTodoCounts } from '@/hooks/useTodoCounts';
 
 export default function IndexPage() {
   const { data: session } = useSession();
   const signedIn = !!session;
   const user = session?.user as RegistryUser | undefined;
+  // Computed-role gates (leads ≥1 program) read from the same payload the nav uses.
+  const counts = useTodoCounts(signedIn);
   const [query, setQuery] = useState('');
 
   const visible = useMemo(
-    () => PAGES.filter((p) => p.visible(user, signedIn)),
-    [user, signedIn],
+    () => PAGES.filter((p) => p.visible(user, signedIn, counts)),
+    [user, signedIn, counts],
   );
 
   const matches = useMemo(() => {
@@ -27,15 +30,15 @@ export default function IndexPage() {
     );
   }, [visible, query]);
 
-  // Preserve registry order within each section heading.
+  // Group by section (first-seen section order, registry page order within).
   const grouped = useMemo(() => {
-    const out: { section: string; pages: typeof matches }[] = [];
+    const bySection = new Map<string, typeof matches>();
     for (const p of matches) {
-      const last = out[out.length - 1];
-      if (last && last.section === p.section) last.pages.push(p);
-      else out.push({ section: p.section, pages: [p] });
+      const pages = bySection.get(p.section);
+      if (pages) pages.push(p);
+      else bySection.set(p.section, [p]);
     }
-    return out;
+    return Array.from(bySection, ([section, pages]) => ({ section, pages }));
   }, [matches]);
 
   return (

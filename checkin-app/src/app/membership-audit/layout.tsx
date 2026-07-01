@@ -17,9 +17,9 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
   const pathname = usePathname();
   const router = useRouter();
   const { data: session } = useSession();
-  const sessionUser = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
-  const { loading, ready } = useRequireRole(["sysadmin", "boardMember"]);
-  const todoCounts = useTodoCounts(!!(sessionUser?.sysadmin || sessionUser?.boardMember));
+  const sessionUser = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
+  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
+  const todoCounts = useTodoCounts(!!(sessionUser?.isSysadmin || sessionUser?.isBoardMember));
 
   if (loading) {
     return (
@@ -64,7 +64,10 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
                     <Badge
                       size="md"
                       color="gray"
-                      variant="filled"
+                      variant="light"
+                      // Light-gray informational count: light fill + dark text. Pinned so the
+                      // active tab's green recolor doesn't turn the number green.
+                      c="var(--mantine-color-gray-7)"
                       aria-label={label}
                     >
                       {count}

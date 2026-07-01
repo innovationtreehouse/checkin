@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
@@ -17,11 +17,13 @@ type ParticipantDetail = {
   isCore?: boolean;
 };
 
+type RSVPStatus = "ATTENDING" | "NOT_ATTENDING" | "NO_RESPONSE" | "MAYBE";
+
 type EventData = {
   id: number;
   name: string;
-  start: string;
-  end: string;
+  startAt: string;
+  endAt: string;
   attendanceConfirmedAt: string | null;
   attendanceConfirmedBy?: { name: string | null } | null;
   recurringGroupId: string | null;
@@ -38,12 +40,25 @@ type EventData = {
     arrivedAt: string;
     departedAt: string | null;
   }[];
+  rsvps: { participantId: number; status: RSVPStatus }[];
+};
+
+const RSVP_BADGE: Record<RSVPStatus, { label: string; color: string }> = {
+  ATTENDING: { label: 'Attending', color: 'green' },
+  MAYBE: { label: 'Maybe', color: 'yellow' },
+  NOT_ATTENDING: { label: 'Not attending', color: 'red' },
+  NO_RESPONSE: { label: 'No response', color: 'gray' },
 };
 
 export default function EventAdminPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data: session, status } = useSession();
   const router = useRouter();
+  // Leads reach this screen from their My Programs inbox (?from=my-programs).
+  // When they do, "back" and post-confirm return there instead of the board's
+  // program-edit page. Board/program-ops flow (no param) is unchanged.
+  const searchParams = useSearchParams();
+  const fromMyPrograms = searchParams.get('from') === 'my-programs';
 
   const [eventData, setEventData] = useState<EventData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,8 +85,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         const data = await res.json();
         setEventData(data);
 
-        const startStr = toDatetimeLocal(data.start);
-        const endStr = toDatetimeLocal(data.end);
+        const startStr = toDatetimeLocal(data.startAt);
+        const endStr = toDatetimeLocal(data.endAt);
         setNewStart(startStr);
         setNewEnd(endStr);
       } else {
@@ -101,6 +116,12 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         body: JSON.stringify({ action: 'confirmAttendance' })
       });
       if (res.ok) {
+        // From the lead's inbox, the work is done → return to My Programs (the
+        // item drops off there). Board/program-ops flow stays on the page.
+        if (fromMyPrograms) {
+          router.push('/my-programs');
+          return;
+        }
         setMessage("Attendance confirmed successfully!");
         fetchEvent();
       } else {
@@ -123,7 +144,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
       const res = await fetch(`/api/events/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'editTime', start: startIso, end: endIso, applyToFuture })
+        body: JSON.stringify({ action: 'editTime', startAt: startIso, endAt: endIso, applyToFuture })
       });
       if (res.ok) {
         setMessage("Event time updated successfully!");
@@ -208,16 +229,16 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  const user = session?.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
+  const user = session?.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
   const userId = user?.id;
-  const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
+  const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
   const isLeadMentor = eventData.program?.leadMentorId === userId;
   const isCoreVolunteer = eventData.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
 
   const canManageAttendance = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
   const canManageEventInfo = isSysAdminOrBoard || isLeadMentor;
 
-  const isPastEvent = new Date(eventData.end) < new Date();
+  const isPastEvent = new Date(eventData.endAt) < new Date();
 
   const renderRosterGrid = () => {
     if (!eventData.program) return null;
@@ -277,8 +298,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
                             setManualDeparted(visit.departedAt ? toDatetimeLocal(visit.departedAt) : "");
                           } else {
                             setManualStatus("Absent");
-                            setManualArrived(toDatetimeLocal(eventData.start));
-                            setManualDeparted(toDatetimeLocal(eventData.end));
+                            setManualArrived(toDatetimeLocal(eventData.startAt));
+                            setManualDeparted(toDatetimeLocal(eventData.endAt));
                           }
                         }}>
                           Manual Edit
@@ -298,16 +319,82 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
     );
   };
 
+  const renderRsvpList = () => {
+    if (!eventData.program) return null;
+
+    const statusByParticipant = new Map(eventData.rsvps.map(r => [r.participantId, r.status]));
+    const roster = [
+      ...eventData.program.volunteers.map(v => ({ ...v, role: v.isCore ? 'Core Volunteer' : 'Volunteer' })),
+      ...eventData.program.participants.map(p => ({ ...p, role: 'Participant' })),
+    ];
+    const ROLE_RANK: Record<string, number> = { 'Core Volunteer': 1, 'Volunteer': 2, 'Participant': 3 };
+    roster.sort((a, b) =>
+      ROLE_RANK[a.role] !== ROLE_RANK[b.role]
+        ? ROLE_RANK[a.role] - ROLE_RANK[b.role]
+        : (a.participant.name || "").localeCompare(b.participant.name || "")
+    );
+
+    return (
+      <Card withBorder radius="md" padding="lg" mb="lg">
+        <Title order={4} mb="md">RSVPs</Title>
+        <Table.ScrollContainer minWidth={400}>
+          <Table verticalSpacing="sm">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Name</Table.Th>
+                <Table.Th>Role</Table.Th>
+                <Table.Th>RSVP</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {roster.map((member) => {
+                const badge = RSVP_BADGE[statusByParticipant.get(member.participantId) ?? 'NO_RESPONSE'];
+                return (
+                  <Table.Tr key={`${member.role}-${member.participantId}`}>
+                    <Table.Td>
+                      <Text fw={500}>{member.participant.name || 'Unnamed'}</Text>
+                      <Text size="xs" c="dimmed">{member.participant.email}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge color={member.role === 'Participant' ? 'cyan' : 'yellow'} variant="light">{member.role}</Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge color={badge.color} variant="light">{badge.label}</Badge>
+                    </Table.Td>
+                  </Table.Tr>
+                );
+              })}
+              {roster.length === 0 && (
+                <Table.Tr><Table.Td colSpan={3} ta="center"><Text c="dimmed" py="md">No roster found for this program.</Text></Table.Td></Table.Tr>
+              )}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      </Card>
+    );
+  };
+
   return (
     <Container size="lg" pb="md">
       <Card withBorder radius="md" padding="lg">
         <Group justify="space-between" align="flex-start" wrap="wrap" mb="lg">
           <div>
             <Title order={1}>{eventData.name}</Title>
-            <Text c="dimmed" fz="lg">{formatDateTime(eventData.start)} - {formatDateTime(eventData.end)}</Text>
+            <Text c="dimmed" fz="lg">{formatDateTime(eventData.startAt)} - {formatDateTime(eventData.endAt)}</Text>
           </div>
-          <Button variant="default" onClick={() => router.push(eventData.program?.id ? `/program-ops/programs/${eventData.program.id}` : '/program-ops/programs')}>
-            ← Back to Program
+          <Button
+            variant="default"
+            onClick={() =>
+              router.push(
+                fromMyPrograms
+                  ? '/my-programs'
+                  : eventData.program?.id
+                    ? `/program-ops/programs/${eventData.program.id}`
+                    : '/program-ops/programs',
+              )
+            }
+          >
+            {fromMyPrograms ? '← Back to My Programs' : '← Back to Program'}
           </Button>
         </Group>
 
@@ -336,6 +423,9 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
             {renderRosterGrid()}
           </Card>
         )}
+
+        {/* ENROLLED INDIVIDUALS + RSVP STATUS */}
+        {renderRsvpList()}
 
         {/* FUTURE EVENT: EDIT / CANCEL */}
         {!isPastEvent && canManageEventInfo && (
@@ -393,7 +483,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
       <Modal
         opened={!!editingAttendance}
         onClose={() => !actionLoading && setEditingAttendance(null)}
-        title={<Title order={4}>Manual Edit: {editingAttendance?.participant.name}</Title>}
+        title={<Text span fw={700} fz="lg">Manual Edit: {editingAttendance?.participant.name}</Text>}
         centered
       >
         <Stack>

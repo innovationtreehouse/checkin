@@ -234,7 +234,7 @@ export default function MembershipSettingsPage() {
             <Text c="yellow.7" size="sm">
               ⚠️ One-time go-live action. Opens a renewal cycle for <strong>every active member</strong> so
               they renew for the upcoming year. Press this once, after your existing members are
-              imported (board or sysadmin).
+              imported (board or isSysadmin).
             </Text>
             <Checkbox
               my="sm"

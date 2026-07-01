@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import type { Session } from "next-auth";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { activityMembers } from "@/lib/household/activityMembers";
 
-export async function GET() {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+export const GET = withAuth({}, async (_req, auth) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // activityMembers only reads session.user; reconstruct the minimal shape from auth.user.
+    const session = { user: auth.user } as unknown as Session;
 
     try {
         // Self, or every household member when the session is a household lead.
@@ -39,9 +37,9 @@ export async function GET() {
         const events = await prisma.event.findMany({
             where: {
                 programId: { in: [...programMembers.keys()] },
-                end: { gte: new Date() } // Only upcoming
+                endAt: { gte: new Date() } // Only upcoming
             },
-            orderBy: { start: "asc" },
+            orderBy: { startAt: "asc" },
             include: {
                 program: { select: { name: true } },
                 rsvps: {
@@ -62,8 +60,8 @@ export async function GET() {
                     id: ev.id,
                     name: ev.name,
                     description: ev.description,
-                    start: ev.start,
-                    end: ev.end,
+                    startAt: ev.startAt,
+                    endAt: ev.endAt,
                     program: ev.program,
                     participant: memberById.get(pid),
                     rsvp: ev.rsvps.find((r: typeof ev.rsvps[number]) => r.participantId === pid)?.status ?? null
@@ -75,4 +73,4 @@ export async function GET() {
         console.error("Failed to fetch user events:", error);
         return NextResponse.json({ error: "Failed to fetch events" }, { status: 500 });
     }
-}
+});

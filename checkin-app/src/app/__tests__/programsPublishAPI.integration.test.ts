@@ -49,7 +49,7 @@ describe('Program Publish API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.participant.create({
-            data: { email: 'admin-publish-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-publish-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
@@ -74,8 +74,8 @@ describe('Program Publish API Integration Tests', () => {
                 events: {
                     create: {
                         name: 'Publish API Test Event',
-                        start: new Date(Date.now() + 86400000),
-                        end: new Date(Date.now() + 90000000)
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
                     }
                 }
             }
@@ -89,8 +89,8 @@ describe('Program Publish API Integration Tests', () => {
                 events: {
                     create: {
                         name: 'No Lead Publish API Test Event',
-                        start: new Date(Date.now() + 86400000),
-                        end: new Date(Date.now() + 90000000)
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
                     }
                 }
             }
@@ -117,8 +117,8 @@ describe('Program Publish API Integration Tests', () => {
                 events: {
                     create: {
                         name: 'Finished Publish API Test Event',
-                        start: new Date(Date.now() + 86400000),
-                        end: new Date(Date.now() + 90000000)
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
                     }
                 }
             }
@@ -175,7 +175,7 @@ describe('Program Publish API Integration Tests', () => {
         });
 
         it('should return 404 Not Found for non-existent program', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request('http://localhost:4000/api/programs/999999/publish', {
                  method: 'POST',
@@ -199,7 +199,7 @@ describe('Program Publish API Integration Tests', () => {
         });
 
         it('should return 400 Bad Request if no lead mentor is assigned', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${noLeadProgramId}/publish`, {
                  method: 'POST',
@@ -212,7 +212,7 @@ describe('Program Publish API Integration Tests', () => {
         });
 
         it('should return 400 Bad Request if no events are scheduled', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${noEventsProgramId}/publish`, {
                  method: 'POST',
@@ -225,7 +225,7 @@ describe('Program Publish API Integration Tests', () => {
         });
 
         it('should reject re-publishing a FINISHED program and leave its phase unchanged', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${finishedProgramId}/publish`, {
                  method: 'POST',

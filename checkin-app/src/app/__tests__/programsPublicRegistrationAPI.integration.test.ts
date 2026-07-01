@@ -104,7 +104,7 @@ describe('Public Program Registration API Integration Tests', () => {
         // Free, minAge 18, starts 2026-09-01. Used to prove the age gate judges
         // age as of the program START date, not registration time.
         const startBasisProgram = await prisma.program.create({
-            data: { name: 'Start Basis Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', minAge: 18, begin: new Date('2026-09-01T00:00:00.000Z') }
+            data: { name: 'Start Basis Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', minAge: 18, startAt: new Date('2026-09-01T00:00:00.000Z') }
         });
         startBasisProgramId = startBasisProgram.id;
     });
@@ -340,7 +340,7 @@ describe('Public Program Registration API Integration Tests', () => {
         // GAP 3: the under-min case is covered above; these add the missing
         // over-MAX rejection and an in-bounds success, so both ends of the
         // public-register age gate (independent of the authenticated route) are
-        // exercised. exactAgeProgram is minAge 18 / maxAge 21, begin null -> age
+        // exercised. exactAgeProgram is minAge 18 / maxAge 21, startAt null -> age
         // judged as of now, frozen here for determinism.
         it('should reject a participant over the maximum age', async () => {
             jest.useFakeTimers(FAKE_TIMER_OPTS);
@@ -434,6 +434,53 @@ describe('Public Program Registration API Integration Tests', () => {
             });
             expect(enrollments.length).toBe(2);
             expect(enrollments[0].status).toBe('PENDING');
+        });
+
+        // Atomicity: a single registration whose participant count exceeds the
+        // remaining seats must be rejected as a whole, leaving ZERO partial
+        // state. This is the only path that passes seats>1 to
+        // lockProgramAndCheckCapacity, so it's the only one exercising the
+        // all-or-nothing rollback on overflow.
+        it('should leave no partial state when one registration overflows capacity', async () => {
+            const overflowProgram = await prisma.program.create({
+                data: { name: 'Overflow Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', maxParticipants: 2 }
+            });
+            const overflowEmail = `overflow-parent-${Date.now()}@test.com`;
+            const householdsBefore = await prisma.household.count();
+            try {
+                const req = new Request(`http://localhost:4000/api/programs/${overflowProgram.id}/public-register`, {
+                    method: 'POST',
+                    headers: { 'x-forwarded-for': '203.0.113.30' }, // own rate-limit bucket
+                    body: JSON.stringify({
+                        parents: [{ name: 'Overflow Parent', email: overflowEmail, phone: '555-300-1111' }],
+                        emergencyContact: { name: 'Aunt Sue', phone: '555-300-2222' },
+                        // 3 children into a 2-seat program: 0 enrolled + 3 > 2.
+                        participants: [
+                            { name: 'Kid A', dob: '2012-01-01' },
+                            { name: 'Kid B', dob: '2013-01-01' },
+                            { name: 'Kid C', dob: '2014-01-01' },
+                        ]
+                    })
+                });
+                const res = await POST(req as unknown as import("next/server").NextRequest, createParams(overflowProgram.id) as unknown as never);
+                expect(res.status).toBe(400);
+                const data = await res.json();
+                expect(data.error).toMatch(/open spots/i);
+
+                // No enrollments created on the program.
+                const enrollments = await prisma.programParticipant.count({ where: { programId: overflowProgram.id } });
+                expect(enrollments).toBe(0);
+
+                // No orphan parent/child Participant rows (whole tx rolled back).
+                const parent = await prisma.participant.findUnique({ where: { email: overflowEmail } });
+                expect(parent).toBeNull();
+
+                // No orphan Household row left behind.
+                const householdsAfter = await prisma.household.count();
+                expect(householdsAfter).toBe(householdsBefore);
+            } finally {
+                await prisma.program.delete({ where: { id: overflowProgram.id } });
+            }
         });
 
         it('should set status to ACTIVE if the program is free', async () => {

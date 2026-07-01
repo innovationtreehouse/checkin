@@ -5,6 +5,7 @@
  */
 
 import { POST as createProgram } from '@/app/api/programs/route';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import { PATCH as updateProgramSettings } from '@/app/api/programs/[id]/settings/route';
 import { POST as enrollParticipant } from '@/app/api/programs/[id]/participants/route';
 import { POST as markAttendance } from '@/app/api/events/[id]/attendance/route';
@@ -65,7 +66,7 @@ describe('AuditLog Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-audit-test@example.com', name: 'Admin Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-audit-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -125,7 +126,7 @@ describe('AuditLog Integration Tests', () => {
     beforeEach(() => {
         // Reset mocks and default to admin session
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: testAdminId, sysadmin: true }
+            user: { id: testAdminId, isSysadmin: true }
         });
     });
 
@@ -135,12 +136,12 @@ describe('AuditLog Integration Tests', () => {
             body: JSON.stringify({
                 name: 'Audit Test Program',
                 enrollmentStatus: 'OPEN',
-                begin: new Date(),
+                startAt: new Date(),
                 leadMentorId: testAdminId
             })
         });
 
-        const res = await createProgram(req);
+        const res = await createProgram(req as unknown as import("next/server").NextRequest);
         expect(res.status).toBe(200);
 
         const responseData = await res.json();
@@ -167,7 +168,7 @@ describe('AuditLog Integration Tests', () => {
             body: JSON.stringify({ leadMentorNotificationSettings: { notifyRsvp: true } })
         });
 
-        const res = await updateProgramSettings(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await updateProgramSettings(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         expect(res.status).toBe(200);
 
         // Verify Audit Log
@@ -192,7 +193,7 @@ describe('AuditLog Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId, override: true })
         });
 
-        const res = await enrollParticipant(req, { params: Promise.resolve({ id: testProgramId.toString() }) });
+        const res = await enrollParticipant(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testProgramId.toString() }) });
         const data = await res.json();
         if (res.status !== 200) console.error("Enrollment error:", data);
         expect(res.status).toBe(200);
@@ -215,7 +216,7 @@ describe('AuditLog Integration Tests', () => {
     it('should generate an AuditLog when attendance is validated', async () => {
         // First create an event and visit manually to test validation
         const event = await prisma.event.create({
-            data: { programId: testProgramId, name: 'Audit Test Event', start: new Date(), end: new Date() }
+            data: { programId: testProgramId, name: 'Audit Test Event', startAt: new Date(), endAt: new Date() }
         });
         testEventId = event.id;
 
@@ -229,7 +230,7 @@ describe('AuditLog Integration Tests', () => {
             body: JSON.stringify({ participantIds: [testParticipantId] })
         });
 
-        const res = await markAttendance(req, { params: Promise.resolve({ id: testEventId.toString() }) });
+        const res = await markAttendance(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testEventId.toString() }) });
         expect(res.status).toBe(200);
 
         // Verify Audit Log: one row per validated Visit, keyed by the Visit PK
@@ -246,9 +247,8 @@ describe('AuditLog Integration Tests', () => {
         });
 
         expect(log).toBeDefined();
-        // Prisma Json fields can be returned as string depending on setup, the API explicitly stringified it
-        const newDataString = log?.newData as string;
-        const newData = JSON.parse(newDataString);
+        // newData is now a raw JSON object (legacy rows may still be strings).
+        const newData = normalizeAuditData(log?.newData) as Record<string, unknown>;
         expect(newData.participantId).toBe(testParticipantId);
         expect(newData.associatedEventId).toBe(testEventId);
     });
@@ -307,7 +307,7 @@ describe('AuditLog Integration Tests', () => {
 
         const req = new Request('http://localhost:4000/api/roles', {
             method: 'PATCH',
-            body: JSON.stringify({ targetUserId: target.id, keyholder: true }),
+            body: JSON.stringify({ targetUserId: target.id, isKeyholder: true }),
         });
 
         const res = await updateRoles(req as never);
@@ -318,7 +318,7 @@ describe('AuditLog Integration Tests', () => {
         });
         expect(logs).toHaveLength(1);
         expect(logs[0].actorId).toBe(testAdminId);
-        expect((logs[0].newData as { keyholder?: boolean }).keyholder).toBe(true);
+        expect((logs[0].newData as { isKeyholder?: boolean }).isKeyholder).toBe(true);
     });
 
     it('participant merge (POST /admin/participants/merge) writes one AuditLog tombstoning the merged id', async () => {
@@ -367,8 +367,8 @@ describe('AuditLog Integration Tests', () => {
         expect(logs).toHaveLength(1);
         expect(logs[0].actorId).toBe(testAdminId);
         // Route stringifies oldData/newData.
-        expect(JSON.parse(logs[0].newData as string).name).toBe('Audit Edited Household');
-        expect(JSON.parse(logs[0].oldData as string).name).toBe(`${TAG} household orig`);
+        expect((normalizeAuditData(logs[0].newData) as Record<string, unknown>).name).toBe('Audit Edited Household');
+        expect((normalizeAuditData(logs[0].oldData) as Record<string, unknown>).name).toBe(`${TAG} household orig`);
     });
 
     it('visit edit (PATCH /admin/visits) writes one AuditLog snapshotting the visit', async () => {

@@ -47,16 +47,16 @@ describe('POST /api/scan — real check-in/out logic', () => {
     beforeAll(async () => {
         (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'kiosk' });
 
-        const keyholder = await prisma.participant.create({
+        const isKeyholder = await prisma.participant.create({
             data: {
                 name: 'Keyholder Scan',
-                email: `keyholder-${TAG}@example.com`,
-                keyholder: true,
+                email: `isKeyholder-${TAG}@example.com`,
+                isKeyholder: true,
                 household: { create: {} },
             },
         });
-        keyholderId = keyholder.id;
-        keyholderHouseholdId = keyholder.householdId;
+        keyholderId = isKeyholder.id;
+        keyholderHouseholdId = isKeyholder.householdId;
 
         const normal = await prisma.participant.create({
             data: {
@@ -93,7 +93,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
         expect(visits).toBe(0);
     });
 
-    it('lets a keyholder check in (opening the facility) and creates an open visit', async () => {
+    it('lets a isKeyholder check in (opening the facility) and creates an open visit', async () => {
         const res = await POST(scanReq(keyholderId));
         expect(res.status).toBe(200);
         const json = await res.json();
@@ -105,7 +105,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
     });
 
     it('orders check-in then check-out on a second scan: arrivedAt set first, departedAt after', async () => {
-        // Seed an open keyholder visit so the facility is open for the normal user.
+        // Seed an open isKeyholder visit so the facility is open for the normal user.
         await prisma.visit.create({ data: { participantId: keyholderId, arrivedAt: new Date() } });
 
         // First scan → check-in.

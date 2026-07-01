@@ -8,6 +8,7 @@
  * the household-lead guard.
  */
 
+import { normalizeAuditData } from '@/lib/auditPayload';
 import {
     createTrustedAdult,
     decideReview,
@@ -29,6 +30,7 @@ describe('Trusted Adults service', () => {
     let leadId = 0;
     let outsiderId = 0;
     let boardId = 0;
+    let boardLeadId = 0; // board member who is ALSO a lead of householdId — the self-conflict actor
 
     async function wipe() {
         const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
@@ -50,10 +52,18 @@ describe('Trusted Adults service', () => {
         leadId = lead.id;
         await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
 
+        // A board member who is also a lead of the disclosing household: overriding this
+        // household's own review is a conflict of interest (force-approve Grandma for their kids).
+        const boardLead = await prisma.participant.create({
+            data: { name: 'BoardLead', email: `boardlead-${TAG}@ex.com`, isBoardMember: true, householdId: hh.id },
+        });
+        boardLeadId = boardLead.id;
+        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: boardLead.id } });
+
         const outHh = await prisma.household.create({ data: { name: `Outsider HH ${TAG}` } });
         outsiderId = (await prisma.participant.create({ data: { name: 'Outsider', householdId: outHh.id } })).id;
         const boardHh = await prisma.household.create({ data: { name: `Board HH ${TAG}` } });
-        boardId = (await prisma.participant.create({ data: { name: 'Boardie', email: `board-${TAG}@ex.com`, boardMember: true, householdId: boardHh.id } })).id;
+        boardId = (await prisma.participant.create({ data: { name: 'Boardie', email: `board-${TAG}@ex.com`, isBoardMember: true, householdId: boardHh.id } })).id;
     });
 
     afterAll(async () => {
@@ -90,7 +100,7 @@ describe('Trusted Adults service', () => {
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(leadId); // the disclosing lead, not SYSTEM_ACTOR
         expect(audit?.action).toBe('CREATE');
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ created: true, status: 'PENDING_BOARD_REVIEW' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ created: true, status: 'PENDING_BOARD_REVIEW' });
     });
 
     it('rejects a disclosure missing name, contact, or family context', async () => {
@@ -122,7 +132,7 @@ describe('Trusted Adults service', () => {
 
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(boardId); // the deciding board member
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', decision: 'APPROVE' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'APPROVED', decision: 'APPROVE' });
     });
 
     it('refuses a decider with a conflict of interest: own household, or being the counterparty', async () => {
@@ -153,7 +163,7 @@ describe('Trusted Adults service', () => {
 
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(boardId);
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'PENDING_SUBJECT_ACTION', decision: 'REQUEST_INFO' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'PENDING_SUBJECT_ACTION', decision: 'REQUEST_INFO' });
     });
 
     it('audit records the deciding/overriding board member on DENY and override-deny', async () => {
@@ -161,13 +171,13 @@ describe('Trusted Adults service', () => {
         await decideReview(ta.reviews[0].id, boardId, { decision: 'DENY' });
         const denyAudit = await latestAudit(ta.id);
         expect(denyAudit?.actorId).toBe(boardId);
-        expect(JSON.parse(String(denyAudit?.newData))).toMatchObject({ status: 'DENIED', decision: 'DENY' });
+        expect(normalizeAuditData(denyAudit?.newData)).toMatchObject({ status: 'DENIED', decision: 'DENY' });
 
         const ta2 = await discloseOne();
         await overrideReview(ta2.reviews[0].id, boardId, 'deny');
         const overrideAudit = await latestAudit(ta2.id);
         expect(overrideAudit?.actorId).toBe(boardId);
-        expect(JSON.parse(String(overrideAudit?.newData))).toMatchObject({ status: 'DENIED', override: 'deny' });
+        expect(normalizeAuditData(overrideAudit?.newData)).toMatchObject({ status: 'DENIED', override: 'deny' });
     });
 
     it('renewal opens a fresh review reusing the same trusted adult, and refuses while one is open', async () => {
@@ -181,7 +191,7 @@ describe('Trusted Adults service', () => {
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(leadId); // the renewing lead
         expect(audit?.action).toBe('CREATE');
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ renewal: review.id, status: 'PENDING_BOARD_REVIEW' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ renewal: review.id, status: 'PENDING_BOARD_REVIEW' });
 
         await expect(renewTrustedAdult(ta.id, leadId)).rejects.toMatchObject({ code: 'already_open' });
     });
@@ -216,7 +226,7 @@ describe('Trusted Adults service', () => {
         // The system, not a person, drives the nightly expiry transition.
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(0); // SYSTEM_ACTOR
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'EXPIRED' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'EXPIRED' });
     });
 
     it('a lead can withdraw; board override can force-revoke; force-approve needs a note', async () => {
@@ -227,7 +237,7 @@ describe('Trusted Adults service', () => {
 
         const withdrawAudit = await latestAudit(ta.id);
         expect(withdrawAudit?.actorId).toBe(leadId); // the withdrawing lead
-        expect(JSON.parse(String(withdrawAudit?.newData))).toMatchObject({ status: 'REVOKED' });
+        expect(normalizeAuditData(withdrawAudit?.newData)).toMatchObject({ status: 'REVOKED' });
 
         const ta2 = await discloseOne();
         const reviewId = ta2.reviews[0].id;
@@ -236,13 +246,13 @@ describe('Trusted Adults service', () => {
         expect(approved.status).toBe('APPROVED');
         const approveAudit = await latestAudit(ta2.id);
         expect(approveAudit?.actorId).toBe(boardId); // the overriding board member
-        expect(JSON.parse(String(approveAudit?.newData))).toMatchObject({ status: 'APPROVED', override: 'approve' });
+        expect(normalizeAuditData(approveAudit?.newData)).toMatchObject({ status: 'APPROVED', override: 'approve' });
 
         const revoked = await overrideReview(reviewId, boardId, 'revoke');
         expect(revoked.status).toBe('REVOKED');
         const revokeAudit = await latestAudit(ta2.id);
         expect(revokeAudit?.actorId).toBe(boardId);
-        expect(JSON.parse(String(revokeAudit?.newData))).toMatchObject({ status: 'REVOKED', override: 'revoke' });
+        expect(normalizeAuditData(revokeAudit?.newData)).toMatchObject({ status: 'REVOKED', override: 'revoke' });
     });
 
     // overrideReview's defining job: force a terminal state regardless of the review's
@@ -258,8 +268,8 @@ describe('Trusted Adults service', () => {
         expect(revoked.status).toBe('REVOKED');
 
         const audit = await latestAudit(ta.id);
-        expect(JSON.parse(String(audit?.oldData))).toMatchObject({ status: 'APPROVED' });
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'REVOKED', override: 'revoke' });
+        expect(normalizeAuditData(audit?.oldData)).toMatchObject({ status: 'APPROVED' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'REVOKED', override: 'revoke' });
     });
 
     it('override-approves an already DENIED review and audits the prior DENIED state', async () => {
@@ -270,8 +280,8 @@ describe('Trusted Adults service', () => {
         expect(approved.status).toBe('APPROVED');
 
         const audit = await latestAudit(ta.id);
-        expect(JSON.parse(String(audit?.oldData))).toMatchObject({ status: 'DENIED' });
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', override: 'approve' });
+        expect(normalizeAuditData(audit?.oldData)).toMatchObject({ status: 'DENIED' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'APPROVED', override: 'approve' });
     });
 
     it('re-overrides an already-overridden terminal review with no phase guard', async () => {
@@ -283,8 +293,81 @@ describe('Trusted Adults service', () => {
         expect(reapproved.status).toBe('APPROVED');
 
         const audit = await latestAudit(ta.id);
-        expect(JSON.parse(String(audit?.oldData))).toMatchObject({ status: 'REVOKED' });
-        expect(JSON.parse(String(audit?.newData))).toMatchObject({ status: 'APPROVED', override: 'approve' });
+        expect(normalizeAuditData(audit?.oldData)).toMatchObject({ status: 'REVOKED' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'APPROVED', override: 'approve' });
+    });
+
+    // Conflict of interest on the OVERRIDE path — mirrors decideReview's rule. A board
+    // member who leads the disclosing household must not override its own review (they'd
+    // force-approve their own trusted adult). Only a sysadmin is the remedy that bypasses.
+    it('refuses a board member overriding their OWN household review, leaving DB + audit untouched', async () => {
+        const ta = await discloseOne();
+        const reviewId = ta.reviews[0].id;
+        const before = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
+        const auditBefore = await latestAudit(ta.id);
+
+        await expect(overrideReview(reviewId, boardLeadId, 'approve', SHARED)).rejects.toMatchObject({ code: 'forbidden' });
+
+        // State machine and audit log both unchanged — the rejected override wrote nothing.
+        const after = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
+        expect(after!.status).toBe(before!.status);
+        expect(after!.decidedById).toBeNull();
+        const auditAfter = await latestAudit(ta.id);
+        expect(auditAfter?.id).toBe(auditBefore?.id); // no new audit row appended
+    });
+
+    it('allows a sysadmin to override their own household review (the deliberate remedy)', async () => {
+        const ta = await discloseOne();
+        // Same actor whose board role is conflicted, but acting AS sysadmin → bypass.
+        const approved = await overrideReview(ta.reviews[0].id, boardLeadId, 'approve', SHARED, { isSysadmin: true });
+        expect(approved.status).toBe('APPROVED');
+
+        const audit = await latestAudit(ta.id);
+        expect(audit?.actorId).toBe(boardLeadId);
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'APPROVED', override: 'approve' });
+    });
+
+    it('allows a cross-household board member to override (no conflict)', async () => {
+        const ta = await discloseOne(); // householdId; boardId lives in a different household
+        const revoked = await overrideReview(ta.reviews[0].id, boardId, 'revoke');
+        expect(revoked.status).toBe('REVOKED');
+    });
+
+    // decideReview acts ONLY on PENDING_BOARD_REVIEW (unlike overrideReview, which has
+    // no phase guard). Deciding any other state is a no-op 409 — pin that for each
+    // non-pending status, asserting the status is untouched and no audit row is written.
+    it('decideReview on a non-PENDING_BOARD_REVIEW review is wrong_phase, status unchanged, no new audit', async () => {
+        for (const status of ['APPROVED', 'DENIED', 'REVOKED', 'EXPIRED', 'PENDING_SUBJECT_ACTION'] as const) {
+            const ta = await discloseOne();
+            const reviewId = ta.reviews[0].id;
+            await prisma.trustedAdultReview.update({ where: { id: reviewId }, data: { status } });
+            const auditBefore = await prisma.auditLog.count({ where: { tableName: 'TrustedAdult', affectedEntityId: ta.id } });
+
+            // DENY needs no sharedNote, so it reaches the phase guard (not bad_input first).
+            await expect(decideReview(reviewId, boardId, { decision: 'DENY' })).rejects.toMatchObject({ code: 'wrong_phase' });
+
+            const after = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
+            expect(after!.status).toBe(status); // untouched
+            expect(await prisma.auditLog.count({ where: { tableName: 'TrustedAdult', affectedEntityId: ta.id } })).toBe(auditBefore);
+        }
+    });
+
+    // PENDING_SUBJECT_ACTION (board asked for info) is a dead-end in the service: there is
+    // NO resubmit/re-decide path. The board can't re-decide (wrong_phase), the family can't
+    // open a fresh review (already_open) — the only exits are withdraw or board override.
+    it('PENDING_SUBJECT_ACTION is a dead-end: no re-decide, no renew; only withdraw/override exits it', async () => {
+        const ta = await discloseOne();
+        const reviewId = ta.reviews[0].id;
+        await decideReview(reviewId, boardId, { decision: 'REQUEST_INFO', note: 'Need dates.' });
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } }))!.status).toBe('PENDING_SUBJECT_ACTION');
+
+        // Board can't re-decide it; family can't open a parallel review while one is in flight.
+        await expect(decideReview(reviewId, boardId, { decision: 'DENY' })).rejects.toMatchObject({ code: 'wrong_phase' });
+        await expect(renewTrustedAdult(ta.id, leadId)).rejects.toMatchObject({ code: 'already_open' });
+
+        // The escape hatch: a lead can withdraw it → REVOKED.
+        const withdrawn = await withdrawTrustedAdult(ta.id, leadId);
+        expect(withdrawn.status).toBe('REVOKED');
     });
 });
 

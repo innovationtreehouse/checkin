@@ -41,12 +41,12 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
         await cleanup();
 
         const admin = await prisma.participant.create({
-            data: { email: 'admin-unclaimed-api-test@example.com', name: 'Admin Unclaimed Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-unclaimed-api-test@example.com', name: 'Admin Unclaimed Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.participant.create({
-            data: { email: 'user-unclaimed-api-test@example.com', name: 'User Unclaimed Test', sysadmin: false, household: { create: {} } }
+            data: { email: 'user-unclaimed-api-test@example.com', name: 'User Unclaimed Test', isSysadmin: false, household: { create: {} } }
         });
         testUserId = user.id;
 
@@ -81,7 +81,7 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
     describe('GET /api/membership-audit/unclaimed-households', () => {
         it('should return 403 Forbidden without admin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testUserId, sysadmin: false, boardMember: false }
+                user: { id: testUserId, isSysadmin: false, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/membership-audit/unclaimed-households', { method: 'GET' });
@@ -91,7 +91,7 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
 
         it('lists households whose lead never signed in, and drops ones with a claimed lead even if a student never signs in', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true }
+                user: { id: testAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/membership-audit/unclaimed-households', { method: 'GET' });

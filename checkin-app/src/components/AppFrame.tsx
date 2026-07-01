@@ -5,6 +5,7 @@ import {
   ActionIcon,
   AppShell,
   Badge,
+  Box,
   Burger,
   Button,
   Group,
@@ -12,7 +13,6 @@ import {
   Title,
   Tooltip,
   useMantineColorScheme,
-  useComputedColorScheme,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
@@ -34,6 +34,7 @@ import {
   IconTool,
   IconUser,
   IconUsers,
+  IconUsersGroup,
   IconUserSearch,
 } from '@tabler/icons-react';
 import { useSession, signIn, signOut } from 'next-auth/react';
@@ -46,11 +47,12 @@ import { BuildInfoFooter } from '@/components/BuildInfoFooter';
 import { useTodoCounts } from '@/hooks/useTodoCounts';
 import { useConfirmNav } from '@/components/UnsavedChangesProvider';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
+import { navBadgeFor, leadsAnyProgram } from '@/components/navBadges';
 
 type SessionUser = {
-  sysadmin?: boolean;
-  boardMember?: boolean;
-  keyholder?: boolean;
+  isSysadmin?: boolean;
+  isBoardMember?: boolean;
+  isKeyholder?: boolean;
   toolStatuses?: Array<{ level: string }>;
 };
 
@@ -58,7 +60,9 @@ type NavItem = {
   href: string;
   label: string;
   icon: React.ReactNode;
-  visible: (user: SessionUser | undefined, signedIn: boolean) => boolean;
+  // counts is passed so computed-role items (e.g. the staff "My Programs" home,
+  // gated on leading ≥1 program) can decide visibility from the todo-counts payload.
+  visible: (user: SessionUser | undefined, signedIn: boolean, counts: TodoCounts | null) => boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -67,9 +71,19 @@ const NAV_ITEMS: NavItem[] = [
     href: '/safety',
     label: 'Safety',
     icon: <IconShieldCheck size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember || !!u?.keyholder,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember || !!u?.isKeyholder,
   },
   { href: '/my-activities', label: 'My Activities', icon: <IconActivity size={18} />, visible: (_u, signedIn) => signedIn },
+  {
+    // Staff home for program lead mentors — distinct route from the attendee
+    // "My Programs" tab at /my-activities/programs. Visible only to someone who
+    // leads ≥1 program; that signal rides in on the todo-counts payload the nav
+    // already fetches (no new session field).
+    href: '/my-programs',
+    label: 'My Programs',
+    icon: <IconUsersGroup size={18} />,
+    visible: (_u, signedIn, counts) => signedIn && leadsAnyProgram(counts),
+  },
   { href: '/attendance', label: 'Attendance', icon: <IconClipboardList size={18} />, visible: (_u, signedIn) => signedIn },
   { href: '/programs', label: 'Programs', icon: <IconCalendarEvent size={18} />, visible: () => true },
   { href: '/communication', label: 'Communication', icon: <IconMail size={18} />, visible: (_u, signedIn) => signedIn },
@@ -78,51 +92,51 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Shop Ops',
     icon: <IconTool size={18} />,
     visible: (u) =>
-      !!u?.sysadmin ||
-      !!u?.boardMember ||
+      !!u?.isSysadmin ||
+      !!u?.isBoardMember ||
       !!u?.toolStatuses?.some((ts) => ts.level === 'MAY_CERTIFY_OTHERS'),
   },
   {
     href: '/facility-ops',
     label: 'Facility Ops',
     icon: <IconBuildingWarehouse size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/membership-ops',
     label: 'Membership Ops',
     icon: <IconUsers size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/membership-audit',
     label: 'Membership Audit',
     icon: <IconUserSearch size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/program-ops',
     label: 'Program Ops',
     icon: <IconBriefcase size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/finance-ops',
     label: 'Finance Ops',
     icon: <IconCoin size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/system-status',
     label: 'System Status',
     icon: <IconSettings size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   {
     href: '/settings',
     label: 'Settings',
     icon: <IconAdjustments size={18} />,
-    visible: (u) => !!u?.sysadmin || !!u?.boardMember,
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   { href: '/index', label: 'Index', icon: <IconList size={18} />, visible: (_u, signedIn) => signedIn },
 ];
@@ -131,71 +145,21 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-type NavBadge = { count: number; color: string; label: string };
-
-/**
- * Badges for a nav item (0, 1, or 2). Green = action the viewer must take, or
- * the viewer's own household; gray = live informational count (others'
- * occupancy, running programs). Attendance shows two: my household vs everyone
- * else currently in the building.
- */
-function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[] {
-  if (!counts) return [];
-  const green = (n: number, label: string): NavBadge[] =>
-    n > 0 ? [{ count: n, color: 'treehouseGreen', label }] : [];
-  const gray = (n: number, label: string): NavBadge[] =>
-    n > 0 ? [{ count: n, color: 'gray', label }] : [];
-  switch (href) {
-    case '/my-household':
-      return green(counts.member.household.length, `${counts.member.household.length} items need attention`);
-    case '/attendance': {
-      const mine = counts.buildingHousehold;
-      return [
-        ...green(mine, `${mine} from your household currently in the building`),
-        ...gray(counts.building, `${counts.building} people currently in the building`),
-      ];
-    }
-    case '/programs':
-      return gray(counts.activePrograms, `${counts.activePrograms} active programs`);
-    case '/membership-ops':
-      // Pending membership applications awaiting board review, plus households
-      // with no lead that the board needs to fix.
-      return green(counts.admin ? counts.admin.membership + counts.admin.brokenHouseholds : 0, 'Pending membership reviews and leadless households');
-    case '/membership-audit': {
-      // Gray: gaps the household must close, not the board — missing emergency
-      // contacts plus accounts created at registration but never claimed.
-      const total = counts.admin ? counts.admin.householdsMissingContact + counts.admin.unclaimedHouseholds : 0;
-      return gray(total, 'Households missing an emergency contact or with an unclaimed account');
-    }
-    case '/finance-ops':
-      // Pending participants awaiting payment-plan approval.
-      return green(counts.admin ? counts.admin.programsPending : 0, 'Pending payment-plan approvals');
-    case '/safety':
-      // Trusted-adult disclosures awaiting board review.
-      return green(counts.admin ? counts.admin.trustedAdults : 0, 'Trusted-adult disclosures to review');
-    // System Status has no badge: every count it could show (membership,
-    // payment-plan, trusted-adult) belongs to another nav item that already
-    // badges it. A roll-up here just duplicates those numbers under an
-    // unrelated label.
-    default:
-      return [];
-  }
-}
-
 function ColorSchemeToggle() {
-  const { setColorScheme } = useMantineColorScheme();
-  const computed = useComputedColorScheme('light', { getInitialValueInEffect: true });
-  const isDark = computed === 'dark';
+  const { toggleColorScheme } = useMantineColorScheme();
+  // ponytail: render both icons, let Mantine's light/darkHidden CSS pick.
+  // Branching on the scheme in JS causes an SSR hydration mismatch.
   return (
-    <Tooltip label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+    <Tooltip label="Toggle color scheme">
       <ActionIcon
         variant="subtle"
         color="gray"
         size="lg"
         aria-label="Toggle color scheme"
-        onClick={() => setColorScheme(isDark ? 'light' : 'dark')}
+        onClick={toggleColorScheme}
       >
-        {isDark ? <IconSun size={18} /> : <IconMoon size={18} />}
+        <Box component={IconMoon} size={18} darkHidden />
+        <Box component={IconSun} size={18} lightHidden />
       </ActionIcon>
     </Tooltip>
   );
@@ -228,7 +192,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   // Faithful to the old NavBar: no navigation on the homepage when signed out.
   const showNav = !(!signedIn && pathname === '/');
 
-  const visibleItems = NAV_ITEMS.filter((item) => item.visible(user, signedIn));
+  const visibleItems = NAV_ITEMS.filter((item) => item.visible(user, signedIn, todoCounts));
 
   // A colored sidebar (brand.nav.sidebar set) ⇒ white nav text + filled active pills.
   const onColoredSidebar = !!brand.nav.sidebar;
@@ -238,7 +202,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
       {brand.logo ? (
         <Image src={brand.logo.src} alt={brand.logo.alt} width={brand.logo.width} height={brand.logo.height} priority />
       ) : (
-        <Title order={3} c={`${brand.nav.accent}.7`}>
+        <Title order={3} tt="lowercase" c={`${brand.nav.accent}.7`}>
           {brand.appName}
         </Title>
       )}
@@ -313,10 +277,18 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
           // `default-hover` token, which left white labels invisible (white-on-white, #284).
           // Scope that token to a translucent white so hovering just lightens the purple and the
           // white label stays readable — and it works in dark mode too, unlike a fixed color.
+          //
+          // overflowY:auto: when the nav list outgrows the viewport it scrolls instead of
+          // clipping. The <nav> element persists across route changes (only AppShell.Main's
+          // children swap), so the browser keeps its scrollTop — "back to X" leaves the
+          // sidebar scroll where it was rather than jumping to the top.
           style={
-            onColoredSidebar
-              ? ({ '--mantine-color-default-hover': 'rgba(255, 255, 255, 0.12)' } as React.CSSProperties)
-              : undefined
+            {
+              overflowY: 'auto',
+              ...(onColoredSidebar
+                ? { '--mantine-color-default-hover': 'rgba(255, 255, 255, 0.12)' }
+                : {}),
+            } as React.CSSProperties
           }
         >
           {visibleItems.map((item) => {
@@ -336,17 +308,24 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                 rightSection={
                   badges.length > 0 ? (
                     <Group gap={4} wrap="nowrap">
-                      {badges.map((badge) => (
-                        <Badge
-                          key={badge.color}
-                          size="md"
-                          color={badge.color}
-                          variant="filled"
-                          aria-label={badge.label}
-                        >
-                          {badge.count}
-                        </Badge>
-                      ))}
+                      {badges.map((badge) => {
+                        // Two badge shades, each with its own readable font (same convention as
+                        // the membership-ops tabs): green action badges are green fill + dark
+                        // text; gray informational badges are light-gray fill + dark text.
+                        const isGray = badge.color === 'gray';
+                        return (
+                          <Badge
+                            key={badge.color}
+                            size="md"
+                            color={badge.color}
+                            variant={isGray ? 'light' : 'filled'}
+                            c={isGray ? 'var(--mantine-color-gray-7)' : 'var(--mantine-color-black)'}
+                            aria-label={badge.label}
+                          >
+                            {badge.count}
+                          </Badge>
+                        );
+                      })}
                     </Group>
                   ) : undefined
                 }

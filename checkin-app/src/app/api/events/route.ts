@@ -1,36 +1,22 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { addDays, parseISO, isBefore, isEqual, getDay, setHours, setMinutes } from 'date-fns';
 import { fromZonedTime } from 'date-fns-tz';
 import { getAppSettings } from "@/lib/appSettings";
 
 // List standalone (one-time) events — those with no associated program.
-export async function GET() {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const user = session.user as unknown as { sysadmin?: boolean; boardMember?: boolean };
-    if (!user?.sysadmin && !user?.boardMember) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
+export const GET = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async () => {
     const events = await prisma.event.findMany({
         where: { programId: null },
-        orderBy: { start: "desc" },
-        select: { id: true, name: true, start: true, end: true, description: true },
+        orderBy: { startAt: "desc" },
+        select: { id: true, name: true, startAt: true, endAt: true, description: true },
     });
     return NextResponse.json(events);
-}
+});
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+export const POST = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     try {
         const body = await req.json();
@@ -40,8 +26,8 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
-        const isSysAdminOrBoard = user?.sysadmin || user?.boardMember;
+        const user = auth.user;
+        const isSysAdminOrBoard = user.isSysadmin || user.isBoardMember;
         let isLeadMentor = false;
 
         if (programId) {
@@ -67,6 +53,12 @@ export async function POST(req: Request) {
         const [startHr, startMin] = startTime.split(':').map(Number);
         const [endHr, endMin] = endTime.split(':').map(Number);
 
+        // Each event (single or recurring) spans one day's wall-clock window, so
+        // compare time-of-day once here rather than per-iteration. End must be after start.
+        if (endHr * 60 + endMin <= startHr * 60 + startMin) {
+            return NextResponse.json({ error: "Event end time must be after start time" }, { status: 400 });
+        }
+
         const eventsToCreate = [];
 
         if (!recurrence || !recurrence.daysOfWeek || recurrence.daysOfWeek.length === 0 || !recurrence.until) {
@@ -82,8 +74,8 @@ export async function POST(req: Request) {
                 name,
                 description: description || null,
                 programId: programId ? parseInt(programId, 10) : null,
-                start: startD,
-                end: endD
+                startAt: startD,
+                endAt: endD
             });
         } else {
             // Recurring events
@@ -106,8 +98,8 @@ export async function POST(req: Request) {
                         name,
                         description: description || null,
                         programId: programId ? parseInt(programId, 10) : null,
-                        start: startD,
-                        end: endD,
+                        startAt: startD,
+                        endAt: endD,
                         recurringGroupId
                     });
                 }
@@ -133,7 +125,7 @@ export async function POST(req: Request) {
                 action: 'CREATE',
                 tableName: 'Event',
                 affectedEntityId: programId ? parseInt(programId) : 0,
-                newData: JSON.stringify({ count: insertedEvents.count, sample: eventsToCreate[0] })
+                newData: { count: insertedEvents.count, sample: eventsToCreate[0] }
             }
         });
 
@@ -142,4 +134,4 @@ export async function POST(req: Request) {
         console.error("Event creation error:", error);
         return NextResponse.json({ error: "Failed to create event(s)" }, { status: 500 });
     }
-}
+});

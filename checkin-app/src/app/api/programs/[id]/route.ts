@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { isActiveMember } from "@/lib/membership";
@@ -31,9 +30,10 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
                     },
                 },
             },
-            events: { orderBy: { start: 'asc' } },
+            events: { orderBy: { startAt: 'asc' } },
             fees: true,
             leadMentor: true,
+            _count: { select: { participants: true, volunteers: true } },
         },
     });
 
@@ -41,7 +41,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
 
     const isSessionUser = auth.type === 'session';
     const sessionUser = isSessionUser ? auth.user : undefined;
-    const isSysAdminOrBoard = !!(sessionUser?.sysadmin || sessionUser?.boardMember);
+    const isSysAdminOrBoard = !!(sessionUser?.isSysadmin || sessionUser?.isBoardMember);
     const isLeadMentor = !!sessionUser && sessionUser.id === program.leadMentorId;
     const isCoreVolunteer = !!sessionUser && program.volunteers.some(v => v.participantId === sessionUser.id && v.isCore);
     const isPrivileged = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
@@ -52,16 +52,44 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
         if (!hasActiveMembership) throw forbidden('Forbidden: Member-Only Program');
     }
 
+    // ── Association gate (deliberate inline exception) ──────────────────────────
+    // The participant/volunteer ROSTER reveals who is enrolled in this program.
+    // Each ProgramParticipant/ProgramVolunteer row AND Participant.name are tier
+    // 'public', so the handler's per-field stripper CANNOT hide the association:
+    // the existence of the row + the public name = the enrollment fact (incl.
+    // minors). Only admission can hide it. The registry `authorize` grammar can't
+    // express "enrolled in THIS program" per-relation, so the gate lives here —
+    // mirrors events/[id] (#571); see docs/security/auth-consistency-analysis.md
+    // §4 (principled exception) and §5.1a. The route stays `authorize: 'public'`
+    // because the catalog metadata (name/price/dates/spots) drives the public
+    // registration page; only the roster is gated.
+    //
+    // Staff (admin/board/lead/core-vol) or a member of an enrolled household see
+    // the rows; everyone else (anonymous, plain authenticated non-enrolled) gets
+    // metadata + counts only. The public/register pages need spots-remaining
+    // (_count.participants), not names — a count is fine, the names are the leak.
+    // The registry orderedView tiers remain as defense-in-depth, stripping
+    // pii/personal on the rows for non-staff-but-enrolled callers.
+    const isEnrolled = !!sessionUser && program.participants.some(p =>
+        p.participantId === sessionUser.id ||
+        (sessionUser.householdId != null && p.participant?.householdId === sessionUser.householdId)
+    );
+    if (!isPrivileged && !isEnrolled) {
+        const metadata: Record<string, unknown> = { ...program };
+        delete metadata.volunteers;
+        delete metadata.participants;
+        return { Program: metadata };
+    }
+
     return { Program: program };
 });
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+// withAuth rejects unauthenticated AND denied households at admission (closes
+// GAP-1: this PATCH previously had no denied check), so a denied lead mentor can
+// no longer edit their program.
+export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id: string }> }) => {
+    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { id } = await ctx.params;
 
     try {
         const programId = parseInt(id, 10);
@@ -74,9 +102,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             return NextResponse.json({ error: "Program not found" }, { status: 404 });
         }
 
-        const user = session.user as unknown as { id: number; sysadmin?: boolean; boardMember?: boolean };
+        const user = auth.user;
         const isLeadMentor = currentProgram.leadMentorId === user.id;
-        const isSysAdminOrBoard = user.sysadmin || user.boardMember;
+        const isSysAdminOrBoard = user.isSysadmin || user.isBoardMember;
 
         if (!isLeadMentor && !isSysAdminOrBoard) {
             return NextResponse.json({ error: "Forbidden: Only Admin, Board Members, or Lead Mentors can edit" }, { status: 403 });
@@ -84,20 +112,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, begin, end, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice } = body;
+        const { name, startAt, endAt, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
                 return NextResponse.json({ error: "Lead Mentor is required" }, { status: 400 });
             }
             leadMentorId = parseInt(leadMentorId);
+            if (isNaN(leadMentorId)) {
+                return NextResponse.json({ error: "Invalid lead mentor" }, { status: 400 });
+            }
         }
 
         const updateData: Record<string, unknown> = {
             ...(name !== undefined && { name }),
             ...(leadMentorId !== undefined && { leadMentorId }),
-            ...(begin !== undefined && { begin: begin ? new Date(begin) : null }),
-            ...(end !== undefined && { end: end ? new Date(end) : null }),
+            ...(startAt !== undefined && { startAt: startAt ? new Date(startAt) : null }),
+            ...(endAt !== undefined && { endAt: endAt ? new Date(endAt) : null }),
             ...(memberOnly !== undefined && { memberOnly }),
             ...(phase !== undefined && { phase }),
             ...(enrollmentStatus !== undefined && { enrollmentStatus }),
@@ -116,12 +147,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
         await prisma.auditLog.create({
             data: {
-                actorId: (session.user as unknown as { id: number }).id,
+                actorId: auth.user.id,
                 action: 'EDIT',
                 tableName: 'Program',
                 affectedEntityId: updatedProgram.id,
-                oldData: JSON.stringify(currentProgram),
-                newData: JSON.stringify(updatedProgram)
+                oldData: currentProgram,
+                newData: updatedProgram
             }
         });
 
@@ -130,4 +161,4 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         console.error("Program update error:", error);
         return NextResponse.json({ error: "Failed to update program" }, { status: 500 });
     }
-}
+});

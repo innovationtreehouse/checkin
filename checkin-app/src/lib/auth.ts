@@ -57,12 +57,37 @@ export async function authenticateRequest(
 }
 
 /**
+ * Read the OPTIONAL web session for routes that legitimately serve anonymous
+ * callers (the public program catalog, kiosk-tolerant attendance reads) and so
+ * cannot use withAuth — which 401s anonymous.
+ *
+ * Built on authenticateRequest so there is ONE denied gate, not a parallel
+ * implementation that can drift (the exact hand-rolled-denied class GAP-1 came
+ * from): a denied household already resolves to `unauthenticated` in
+ * authenticateRequest, so it falls through to `undefined` here → sees the
+ * public-only view, same as anonymous. Kiosk requests also resolve to
+ * `undefined` (this returns only real session users); a kiosk-tolerant route
+ * keeps its own kiosk plumbing.
+ *
+ * Scope: this is for genuinely PUBLIC / optional-session reads only. It is NOT
+ * an escape hatch for routes that should require a session — those use withAuth
+ * (mandatory). Route files MUST source an optional session through this helper
+ * instead of calling getServerSession directly, so the Step 7 drift-guard can
+ * ban getServerSession in app/api/** outright. The session read lives here in
+ * the auth boundary, alongside authenticateRequest.
+ */
+export async function getOptionalSessionUser(req: Request): Promise<SessionUser | undefined> {
+    const auth = await authenticateRequest(req as NextRequest);
+    return auth.type === 'session' ? auth.user : undefined;
+}
+
+/**
  * Higher-order function for route handlers with auth.
  * `roles` uses the actual Prisma business role field names — no abstract groupings.
  *
  * Example usage:
  *   export const GET = withAuth(
- *       { roles: ['sysadmin', 'boardMember'] },
+ *       { roles: ['isSysadmin', 'isBoardMember'] },
  *       async (req, auth) => { ... }
  *   );
  */
@@ -76,8 +101,15 @@ export function withAuth<Ctx = unknown>(
     // Ctx is the Next.js route-handler context ({ params }). Forwarded so dynamic
     // routes can read their params; non-dynamic handlers (and unit tests that call
     // the route with just a request) simply omit it.
-    return async (req: NextRequest, ctx?: Ctx) => {
-        const auth = await authenticateRequest(req);
+    //
+    // The wrapper accepts the base `Request` (not `NextRequest`): the auth
+    // boundary only reads headers/url/method, all present on `Request`, and this
+    // lets tests (and any non-Next caller) invoke the route with a plain
+    // `new Request(...)` without casting. The Next runtime passes a NextRequest
+    // (a subtype) at runtime, and the inner handler keeps its NextRequest typing.
+    return async (req: Request, ctx?: Ctx) => {
+        const nreq = req as NextRequest;
+        const auth = await authenticateRequest(nreq);
 
         if (auth.type === 'unauthenticated') {
             return apiError('Unauthorized', 401);
@@ -95,6 +127,6 @@ export function withAuth<Ctx = unknown>(
             }
         }
 
-        return handler(req, auth, ctx as Ctx);
+        return handler(nreq, auth, ctx as Ctx);
     };
 }

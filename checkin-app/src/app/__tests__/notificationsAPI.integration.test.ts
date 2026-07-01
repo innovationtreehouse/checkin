@@ -14,8 +14,8 @@ jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 
 const TAG = 'notif-test';
 
-function as(id: number, roles: { backgroundCheckReviewer?: boolean; boardMember?: boolean; sysadmin?: boolean } = {}) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false, backgroundCheckReviewer: false, ...roles } });
+function as(id: number, roles: { isBackgroundCheckReviewer?: boolean; isBoardMember?: boolean; isSysadmin?: boolean } = {}) {
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false, isBackgroundCheckReviewer: false, ...roles } });
 }
 const req = () => new Request('http://localhost:4000/x') as never;
 
@@ -36,8 +36,8 @@ describe('Membership notifications API', () => {
 
     beforeAll(async () => {
         await wipe();
-        reviewerId = (await prisma.participant.create({ data: { email: `rev-${TAG}@example.com`, name: 'Rev', backgroundCheckReviewer: true, household: { create: { name: `Rev HH ${TAG}` } } } })).id;
-        boardId = (await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', boardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
+        reviewerId = (await prisma.participant.create({ data: { email: `rev-${TAG}@example.com`, name: 'Rev', isBackgroundCheckReviewer: true, household: { create: { name: `Rev HH ${TAG}` } } } })).id;
+        boardId = (await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
         plainId = (await prisma.participant.create({ data: { email: `plain-${TAG}@example.com`, name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
 
         // An application awaiting review (eligible for the reviewer — different household).
@@ -57,17 +57,17 @@ describe('Membership notifications API', () => {
     });
 
     it('a reviewer sees their pending review count', async () => {
-        as(reviewerId, { backgroundCheckReviewer: true });
+        as(reviewerId, { isBackgroundCheckReviewer: true });
         const data = await (await NOTIFS(req())).json();
         expect(data.membership.pendingReviews).toBeGreaterThanOrEqual(1);
         expect(data.membership.blocked).toBe(0); // not board
     });
 
-    it('a board member sees the blocked count', async () => {
-        as(boardId, { boardMember: true });
+    it('a board member sees the blocked count and (as an implicit reviewer) pending reviews', async () => {
+        as(boardId, { isBoardMember: true });
         const data = await (await NOTIFS(req())).json();
         expect(data.membership.blocked).toBeGreaterThanOrEqual(1);
-        expect(data.membership.pendingReviews).toBe(0); // not a reviewer
+        expect(data.membership.pendingReviews).toBeGreaterThanOrEqual(1); // board is an implicit reviewer
     });
 
     it('a plain user sees nothing', async () => {

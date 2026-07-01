@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const DEFAULTS = { id: 1, timezone: APP_TIMEZONE, locale: APP_LOCALE };
 
 /** GET /api/admin/settings/localization — app-wide localization singleton (created on first read). */
-export const GET = withAuth({ roles: ["sysadmin"] }, async () => {
+export const GET = withAuth({ roles: ["isSysadmin"] }, async () => {
     const settings = await prisma.appSettings.upsert({ where: { id: 1 }, create: DEFAULTS, update: {} });
     return NextResponse.json({ settings });
 });
@@ -20,7 +20,7 @@ export const GET = withAuth({ roles: ["sysadmin"] }, async () => {
  * runtime's Intl tables; an invalid value rejects the whole update (400) so the
  * previous value survives rather than being overwritten with garbage.
  */
-export const PUT = withAuth({ roles: ["sysadmin"] }, async (req, auth) => {
+export const PUT = withAuth({ roles: ["isSysadmin"] }, async (req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     let body: { timezone?: string; locale?: string };
     try {
@@ -29,7 +29,7 @@ export const PUT = withAuth({ roles: ["sysadmin"] }, async (req, auth) => {
         return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const data: Record<string, unknown> = {};
+    const data: Record<string, string> = {};
     if (body.timezone !== undefined) {
         const tz = body.timezone.trim();
         if (!Intl.supportedValuesOf("timeZone").includes(tz)) {
@@ -59,7 +59,7 @@ export const PUT = withAuth({ roles: ["sysadmin"] }, async (req, auth) => {
             action: "EDIT",
             tableName: "AppSettings",
             affectedEntityId: 1,
-            newData: JSON.stringify(data),
+            newData: data,
         },
     });
 

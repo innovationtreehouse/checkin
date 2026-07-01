@@ -63,8 +63,8 @@ const patchedAdapter = {
     },
 };
 
-// Bootstrap sysadmin emails — comma-separated list from env.
-// Any account matching these emails will be auto-promoted to sysadmin on login.
+// Bootstrap isSysadmin emails — comma-separated list from env.
+// Any account matching these emails will be auto-promoted to isSysadmin on login.
 const BOOTSTRAP_SYSADMINS = (process.env.BOOTSTRAP_SYSADMINS || "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
@@ -169,8 +169,11 @@ export const authOptions: NextAuthOptions = {
                     } else {
                         const personaId = parseInt(String(credentials?.personaId ?? ""), 10);
                         if (isNaN(personaId)) return null;
-                        dbParticipant = await prisma.participant.findUnique({
-                            where: { id: personaId },
+                        // Restrict the mintable target to seeded @example.com personas (matches the
+                        // dev-personas picker's filter) so a caller can never mint a real participant,
+                        // even if one exists in the dev DB.
+                        dbParticipant = await prisma.participant.findFirst({
+                            where: { id: personaId, email: { endsWith: "@example.com" } },
                         });
                     }
                     if (!dbParticipant) return null;
@@ -246,21 +249,23 @@ export const authOptions: NextAuthOptions = {
                         },
                         // One row is enough to mark this participant a household lead.
                         householdLeads: { take: 1, select: { participantId: true } },
+                        // Program ids led — drives the client program-ops row gate.
+                        programsLed: { select: { id: true } },
                         household: { include: { membership: true } }
                     }
                 }));
 
                 if (dbParticipant) {
                     if (
-                        !dbParticipant.sysadmin &&
+                        !dbParticipant.isSysadmin &&
                         dbParticipant.email &&
                         BOOTSTRAP_SYSADMINS.includes(dbParticipant.email.toLowerCase())
                     ) {
                         await prisma.participant.update({
                             where: { id: dbParticipant.id },
-                            data: { sysadmin: true },
+                            data: { isSysadmin: true },
                         });
-                        dbParticipant.sysadmin = true;
+                        dbParticipant.isSysadmin = true;
                     }
 
                     // Stamp authority claims, applying the household login gate (a board
@@ -271,7 +276,7 @@ export const authOptions: NextAuthOptions = {
                 // On every subsequent request (no `user` present), re-sync authority
                 // flags from the DB so role grants/revocations take effect without
                 // waiting for the token to expire. Previously these flags were only
-                // read at sign-in, which let a revoked sysadmin/keyholder keep their
+                // read at sign-in, which let a revoked isSysadmin/isKeyholder keep their
                 // privileges (including the /api/roles endpoint) until the JWT
                 // aged out — up to 30 days.
                 const dbParticipant = await withAuroraResumeRetry(() => prisma.participant.findUnique({
@@ -285,6 +290,8 @@ export const authOptions: NextAuthOptions = {
                         },
                         // One row is enough to mark this participant a household lead.
                         householdLeads: { take: 1, select: { participantId: true } },
+                        // Program ids led — drives the client program-ops row gate.
+                        programsLed: { select: { id: true } },
                         household: { include: { membership: true } }
                     }
                 }));
@@ -307,12 +314,13 @@ export const authOptions: NextAuthOptions = {
             if (session.user) {
                 session.user.id = token.id;
                 session.user.denied = token.denied ?? false;
-                session.user.sysadmin = token.sysadmin;
-                session.user.keyholder = token.keyholder;
-                session.user.boardMember = token.boardMember;
-                session.user.backgroundCheckReviewer = token.backgroundCheckReviewer;
+                session.user.isSysadmin = token.isSysadmin;
+                session.user.isKeyholder = token.isKeyholder;
+                session.user.isBoardMember = token.isBoardMember;
+                session.user.isBackgroundCheckReviewer = token.isBackgroundCheckReviewer;
                 session.user.householdId = token.householdId;
                 session.user.householdLead = token.householdLead ?? false;
+                session.user.programsLed = token.programsLed ?? [];
                 session.user.toolStatuses = token.toolStatuses || [];
                 session.user.impersonatedBy = token.impersonatedBy ?? null;
                 // Surface the org-gate claims so dev-only server actions (assertDevActor) can

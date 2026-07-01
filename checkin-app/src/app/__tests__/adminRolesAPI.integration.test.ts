@@ -36,15 +36,15 @@ describe('Admin Roles API Integration Tests', () => {
         });
 
         // Setup mock database records
-        const sysadmin = await prisma.participant.create({
-            data: { email: 'sysadmin-roles-api-test@example.com', name: 'Admin Roles Test', sysadmin: true, household: { create: {} } }
+        const isSysadmin = await prisma.participant.create({
+            data: { email: 'sysadmin-roles-api-test@example.com', name: 'Admin Roles Test', isSysadmin: true, household: { create: {} } }
         });
-        testSysAdminId = sysadmin.id;
+        testSysAdminId = isSysadmin.id;
 
-        const boardMember = await prisma.participant.create({
-            data: { email: 'board-roles-api-test@example.com', name: 'Board Roles Test', boardMember: true, household: { create: {} } }
+        const isBoardMember = await prisma.participant.create({
+            data: { email: 'board-roles-api-test@example.com', name: 'Board Roles Test', isBoardMember: true, household: { create: {} } }
         });
-        testBoardMemberId = boardMember.id;
+        testBoardMemberId = isBoardMember.id;
 
         const user = await prisma.participant.create({
             data: { email: 'user-roles-api-test@example.com', name: 'User Roles Test', household: { create: {} } }
@@ -52,7 +52,7 @@ describe('Admin Roles API Integration Tests', () => {
         testUserId = user.id;
 
         const targetUser = await prisma.participant.create({
-            data: { email: 'target-roles-api-test@example.com', name: 'Target Roles Test', dob: new Date('1990-01-01'), household: { create: {} } }
+            data: { email: 'target-roles-api-test@example.com', name: 'Target Roles Test', dateOfBirth: new Date('1990-01-01'), household: { create: {} } }
         });
         testTargetUserId = targetUser.id;
 
@@ -60,7 +60,7 @@ describe('Admin Roles API Integration Tests', () => {
         const tenYearsAgo = new Date(now.getFullYear() - 10, now.getMonth(), now.getDate());
         
         const student = await prisma.participant.create({
-            data: { email: 'student-roles-api-test@example.com', name: 'Student Roles Test', dob: tenYearsAgo, household: { create: {} } }
+            data: { email: 'student-roles-api-test@example.com', name: 'Student Roles Test', dateOfBirth: tenYearsAgo, household: { create: {} } }
         });
         testStudentId = student.id;
     });
@@ -101,9 +101,9 @@ describe('Admin Roles API Integration Tests', () => {
              expect(data.error).toContain('Forbidden');
         });
 
-        it('should return all participants (youth flagged, dob hidden) for a sysadmin', async () => {
+        it('should return all participants (youth flagged, dob hidden) for a isSysadmin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testSysAdminId, sysadmin: true }
+                user: { id: testSysAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/roles', { method: 'GET' });
@@ -123,8 +123,8 @@ describe('Admin Roles API Integration Tests', () => {
             const student = data.participants.find((p: { id?: number }) => p.id === testStudentId);
             expect(adult.isYouth).toBe(false);
             expect(student.isYouth).toBe(true);
-            expect(adult).not.toHaveProperty('dob');
-            expect(student).not.toHaveProperty('dob');
+            expect(adult).not.toHaveProperty('dateOfBirth');
+            expect(student).not.toHaveProperty('dateOfBirth');
         });
     });
 
@@ -134,7 +134,7 @@ describe('Admin Roles API Integration Tests', () => {
 
              const req = new Request('http://localhost:4000/api/roles', {
                  method: 'PATCH',
-                 body: JSON.stringify({ targetUserId: testTargetUserId, boardMember: true })
+                 body: JSON.stringify({ targetUserId: testTargetUserId, isBoardMember: true })
              });
 
              const res = await PATCH(req as unknown as import("next/server").NextRequest);
@@ -148,7 +148,7 @@ describe('Admin Roles API Integration Tests', () => {
 
              const req = new Request('http://localhost:4000/api/roles', {
                  method: 'PATCH',
-                 body: JSON.stringify({ targetUserId: testTargetUserId, boardMember: true })
+                 body: JSON.stringify({ targetUserId: testTargetUserId, isBoardMember: true })
              });
 
              const res = await PATCH(req as unknown as import("next/server").NextRequest);
@@ -157,12 +157,12 @@ describe('Admin Roles API Integration Tests', () => {
 
         it('should return 400 Bad Request if targetUserId is missing', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testSysAdminId, sysadmin: true }
+                user: { id: testSysAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/roles', {
                 method: 'PATCH',
-                body: JSON.stringify({ boardMember: true })
+                body: JSON.stringify({ isBoardMember: true })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
@@ -171,29 +171,29 @@ describe('Admin Roles API Integration Tests', () => {
 
         it('should return 403 Forbidden when Board Member tries to grant Sysadmin privileges', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testBoardMemberId, boardMember: true }
+                user: { id: testBoardMemberId, isBoardMember: true }
             });
 
             const req = new Request('http://localhost:4000/api/roles', {
                 method: 'PATCH',
-                body: JSON.stringify({ targetUserId: testTargetUserId, sysadmin: true })
+                body: JSON.stringify({ targetUserId: testTargetUserId, isSysadmin: true })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(403);
             
             const data = await res.json();
-            expect(data.error).toBe("Only Sysadmins can modify sysadmin privileges");
+            expect(data.error).toBe("Only Sysadmins can modify isSysadmin privileges");
         });
 
-        it('should successfully grant boardMember as a Board Member', async () => {
+        it('should successfully grant isBoardMember as a Board Member', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testBoardMemberId, boardMember: true }
+                user: { id: testBoardMemberId, isBoardMember: true }
             });
 
             const req = new Request('http://localhost:4000/api/roles', {
                 method: 'PATCH',
-                body: JSON.stringify({ targetUserId: testTargetUserId, boardMember: true })
+                body: JSON.stringify({ targetUserId: testTargetUserId, isBoardMember: true })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
@@ -201,30 +201,30 @@ describe('Admin Roles API Integration Tests', () => {
 
             const data = await res.json();
             expect(data.message).toBe("Roles updated successfully");
-            expect(data.user.boardMember).toBe(true);
+            expect(data.user.isBoardMember).toBe(true);
 
             const userRef = await prisma.participant.findUnique({ where: { id: testTargetUserId } });
-            expect(userRef?.boardMember).toBe(true);
+            expect(userRef?.isBoardMember).toBe(true);
         });
 
-        it('should successfully grant sysadmin as a Sysadmin', async () => {
+        it('should successfully grant isSysadmin as a Sysadmin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testSysAdminId, sysadmin: true }
+                user: { id: testSysAdminId, isSysadmin: true }
             });
 
             const req = new Request('http://localhost:4000/api/roles', {
                 method: 'PATCH',
-                body: JSON.stringify({ targetUserId: testTargetUserId, sysadmin: true })
+                body: JSON.stringify({ targetUserId: testTargetUserId, isSysadmin: true })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
 
             const data = await res.json();
-            expect(data.user.sysadmin).toBe(true);
+            expect(data.user.isSysadmin).toBe(true);
 
             const userRef = await prisma.participant.findUnique({ where: { id: testTargetUserId } });
-            expect(userRef?.sysadmin).toBe(true);
+            expect(userRef?.isSysadmin).toBe(true);
         });
     });
 });

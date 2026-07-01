@@ -21,6 +21,7 @@ function ctx(opts: Partial<CallerContext> = {}): CallerContext {
         programsCoreVolIn: new Set(),
         participantIdsInScopePrograms: new Set(),
         householdIdsInScopePrograms: new Set(),
+        eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
         ...opts,
     };
@@ -95,7 +96,7 @@ describe('scopesHeld', () => {
         expect(s.has('their_program_participants')).toBe(true);
     });
 
-    it('Participant.all_current_visitors requires keyholder AND row in active set', () => {
+    it('Participant.all_current_visitors requires isKeyholder AND row in active set', () => {
         const ctxWithKey = ctx({ isKeyholder: true, activeVisitorIds: new Set([9]) });
         expect(scopesHeld('Participant', { id: 9 }, ctxWithKey).has('all_current_visitors')).toBe(true);
         expect(scopesHeld('Participant', { id: 99 }, ctxWithKey).has('all_current_visitors')).toBe(false);
@@ -108,7 +109,7 @@ describe('scopesHeld', () => {
         expect(scopesHeld('Visit', { participantId: 5, departedAt: null }, ctx({ selfId: 5 })).has('their_own')).toBe(true);
     });
 
-    it('Visit.all_current_visitors requires keyholder AND departedAt === null', () => {
+    it('Visit.all_current_visitors requires isKeyholder AND departedAt === null', () => {
         const keyCtx = ctx({ isKeyholder: true });
         expect(scopesHeld('Visit', { participantId: 7, departedAt: null }, keyCtx).has('all_current_visitors')).toBe(true);
         expect(scopesHeld('Visit', { participantId: 7, departedAt: new Date() }, keyCtx).has('all_current_visitors')).toBe(false);
@@ -406,5 +407,92 @@ describe('stripBag', () => {
         );
         expect((out.Participant as Record<string, unknown>).email).toBe('me@x.com');
         expect((out.Household as Record<string, unknown>).line1).toBe('street');
+    });
+});
+
+// ─── Event roster (GET /api/events/[id] policy shape) ──────────────────────
+// The route is FAIL-CLOSED, staff-only (admission gated in the handler fn), so
+// the only views that reach the stripper are the staff tiers. These cover the
+// staff field-tiering (defense-in-depth) AND pin the reason admission must be
+// gated: per-field stripping CANNOT hide the "who attends" roster, because a
+// participant's name is tier 'public'. The route's view carries
+// their_program_participants tokens, granted per-row only on a program the
+// caller leads/core-vols (admin gets everyones:* via its own view).
+
+describe('Event roster strip (events/[id] view)', () => {
+    // The exact token grant the 'authenticated' role gets in registry.ts.
+    const EVENTS_VIEW = [
+        'their_program_participants:pii',
+        'their_program_participants:personal',
+        'their_program_participants:internal',
+        'their_own:pii',
+        'their_own:personal',
+        'member',
+        'public',
+    ] as const;
+
+    const PROGRAM_ID = 77;
+    const ROSTER_ID = 501; // a participant enrolled in the program
+
+    // Event bag shaped like the route's Prisma include.
+    const eventBag = () => ({
+        id: 9,
+        programId: PROGRAM_ID,
+        name: 'Build Night',
+        attendanceConfirmedAt: new Date('2026-01-01'), // internal tier
+        program: {
+            id: PROGRAM_ID,
+            name: 'Robotics',
+            participants: [
+                {
+                    programId: PROGRAM_ID,
+                    participantId: ROSTER_ID,
+                    participant: {
+                        id: ROSTER_ID,
+                        name: 'Minor Kid',     // public
+                        email: 'kid@x.com',    // pii
+                        phone: '555-0100',     // pii
+                        dateOfBirth: '2012-05-01', // pii
+                        allergies: 'peanuts',  // personal
+                    },
+                },
+            ],
+        },
+    });
+
+    function roster(out: unknown): Record<string, unknown> {
+        const program = (out as Record<string, unknown>).program as Record<string, unknown>;
+        const participants = program.participants as Array<Record<string, unknown>>;
+        return participants[0].participant as Record<string, unknown>;
+    }
+
+    it('lead mentor of the event\'s program sees roster pii/personal + internal', () => {
+        const leadCtx = ctx({
+            selfId: 1,
+            programsLed: new Set([PROGRAM_ID]),
+            participantIdsInScopePrograms: new Set([ROSTER_ID]),
+        });
+        const out = stripValue('Event', eventBag(), EVENTS_VIEW, leadCtx);
+        const kid = roster(out);
+        expect(kid.email).toBe('kid@x.com');
+        expect(kid.phone).toBe('555-0100');
+        expect(kid.dateOfBirth).toBe('2012-05-01');
+        expect(kid.allergies).toBe('peanuts');
+        // internal Event field reaches this event's staff (UI renders it).
+        expect((out as Record<string, unknown>).attendanceConfirmedAt).toBeInstanceOf(Date);
+    });
+
+    // WHY the route gates admission instead of relying on stripping: a non-staff
+    // scope strips email/phone/dob (pii) — but the participant's NAME is tier
+    // 'public', so it survives. Stripping alone would still leak the full
+    // attendee roster. This asserts that leak exists, documenting the reason the
+    // handler fn 403s non-staff before the roster is ever returned.
+    it('stripping alone leaves the roster name (tier public) — hence the fail-closed admission gate', () => {
+        const strangerCtx = ctx({ selfId: 999 }); // leads nothing, not on roster
+        const out = stripValue('Event', eventBag(), EVENTS_VIEW, strangerCtx);
+        const kid = roster(out);
+        expect(kid.email).toBeUndefined();      // pii stripped
+        expect(kid.dateOfBirth).toBeUndefined();
+        expect(kid.name).toBe('Minor Kid');     // but name (public) survives → the leak
     });
 });

@@ -7,6 +7,7 @@
  */
 
 import { POST } from '@/app/api/events/route';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -35,7 +36,7 @@ describe('Events API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.participant.create({
-            data: { email: 'admin-events-api-test@example.com', name: 'Admin Events Test', sysadmin: true, household: { create: {} } }
+            data: { email: 'admin-events-api-test@example.com', name: 'Admin Events Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
@@ -75,6 +76,9 @@ describe('Events API Integration Tests', () => {
             select: { householdId: true }
         })).map(p => p.householdId);
 
+        await prisma.auditLog.deleteMany({
+            where: { actorId: { in: [testAdminId, testUserId, testLeadMentorId] } }
+        });
         await prisma.participant.deleteMany({
             where: { id: { in: [testAdminId, testUserId, testLeadMentorId] } }
         });
@@ -98,7 +102,7 @@ describe('Events API Integration Tests', () => {
 
         it('should return 403 Forbidden for non-admin users who are not lead mentors', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false }
              });
 
              const req = new Request('http://localhost:4000/api/events', {
@@ -112,7 +116,7 @@ describe('Events API Integration Tests', () => {
 
         it('should return 400 Bad Request if required fields are missing', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/events', {
@@ -127,9 +131,35 @@ describe('Events API Integration Tests', () => {
             expect(data.error).toBe('Missing required fields');
         });
 
+        it('should return 400 if end time is not after start time', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
+            });
+
+            const req = new Request('http://localhost:4000/api/events', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: 'Test Event Bad Times',
+                    programId: testProgramId,
+                    startDate: '2026-10-01',
+                    startTime: '15:00',
+                    endTime: '15:00' // end == start
+                })
+            });
+
+            const res = await POST(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('Event end time must be after start time');
+
+            // Nothing created.
+            const events = await prisma.event.findMany({ where: { name: 'Test Event Bad Times' } });
+            expect(events.length).toBe(0);
+        });
+
         it('should successfully create a single event as admin', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const req = new Request('http://localhost:4000/api/events', {
@@ -154,13 +184,22 @@ describe('Events API Integration Tests', () => {
             const events = await prisma.event.findMany({ where: { name: 'Single Test Event' } });
             expect(events.length).toBe(1);
             expect(events[0].programId).toBe(testProgramId);
-            expect(formatInTimeZone(events[0].start, 'America/Chicago', 'HH:mm:ss')).toBe('13:00:00');
-            expect(formatInTimeZone(events[0].end, 'America/Chicago', 'HH:mm:ss')).toBe('15:00:00');
+            expect(formatInTimeZone(events[0].startAt, 'America/Chicago', 'HH:mm:ss')).toBe('13:00:00');
+            expect(formatInTimeZone(events[0].endAt, 'America/Chicago', 'HH:mm:ss')).toBe('15:00:00');
+
+            // Exactly one AuditLog row for this create, by the creating admin.
+            // Route logs a summary keyed to the program (affectedEntityId = programId), not per-event.
+            const logs = await prisma.auditLog.findMany({ where: { actorId: testAdminId, tableName: 'Event' } });
+            expect(logs.length).toBe(1);
+            expect(logs[0].action).toBe('CREATE');
+            expect(logs[0].affectedEntityId).toBe(testProgramId);
+            // newData is a JSON-stringified summary: { count, sample }.
+            expect(normalizeAuditData(logs[0].newData)).toMatchObject({ count: 1 });
         });
 
         it('should successfully create recurring events as a lead mentor', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testLeadMentorId, sysadmin: false, boardMember: false }
+                user: { id: testLeadMentorId, isSysadmin: false, isBoardMember: false }
             });
 
             // Recurrence: from Oct 1 to Oct 15, on Mon (1) and Wed (3).

@@ -6,7 +6,7 @@ import { logBackendError } from "@/lib/logger";
 export const dynamic = 'force-dynamic';
 
 export const POST = withAuth(
-    { roles: ['sysadmin', 'boardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async (req, auth) => {
         try {
             const body = await req.json();
@@ -57,7 +57,7 @@ export const POST = withAuth(
 
             await prisma.$transaction(async (tx) => {
                 const updates: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
-                const fields = ['googleId', 'email', 'phone', 'name', 'dob', 'image', 'lastWaiverSign', 'lastBackgroundCheck'];
+                const fields = ['googleId', 'email', 'phone', 'name', 'dateOfBirth', 'image', 'lastWaiverSign', 'lastBackgroundCheck'];
                 for (const field of fields) {
                     const keepVal = keepParticipant[field as keyof typeof keepParticipant];
                     const mergeVal = mergeParticipant[field as keyof typeof mergeParticipant];
@@ -151,13 +151,13 @@ export const POST = withAuth(
                 for (const tool of mergeParticipant.toolStatuses) {
                     if (!keepParticipant.toolStatuses.find(k => k.toolId === tool.toolId)) {
                         await tx.toolStatus.update({
-                            where: { userId_toolId: { toolId: tool.toolId, userId: mergeId } },
-                            data: { userId: keepId }
+                            where: { participantId_toolId: { toolId: tool.toolId, participantId: mergeId } },
+                            data: { participantId: keepId }
                         });
                         moved.toolStatuses.migrated++;
                     } else {
                         await tx.toolStatus.delete({
-                            where: { userId_toolId: { toolId: tool.toolId, userId: mergeId } }
+                            where: { participantId_toolId: { toolId: tool.toolId, participantId: mergeId } }
                         });
                         moved.toolStatuses.deleted++;
                     }

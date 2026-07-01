@@ -45,6 +45,8 @@ export default function ManualAttendance() {
   if (authLoading) return <Center mih="60vh"><Loader /></Center>;
   if (!ready) return null;
 
+  const departureError = error === "Departure time is required for past arrivals.";
+
   return (
     <PageContainer>
       <AttendanceTabs />
@@ -56,7 +58,7 @@ export default function ManualAttendance() {
           currently in the building, leave the departure time blank.
         </Text>
 
-        {error && <Alert color="red" mb="md">{error}</Alert>}
+        {error && !departureError && <Alert color="red" mb="md">{error}</Alert>}
         {success && <Alert color="green" mb="md">{success}</Alert>}
 
         <form onSubmit={handleSubmit}>
@@ -73,6 +75,7 @@ export default function ManualAttendance() {
               label="Departure Time (Optional)"
               value={departedAt}
               onChange={(e) => setDeparted(e.currentTarget.value)}
+              error={departureError ? error : undefined}
             />
             <Button type="submit" disabled={loading || !arrivedAt} loading={loading} mt="sm">
               Record Time Entry

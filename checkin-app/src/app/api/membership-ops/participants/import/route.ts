@@ -1,21 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { authenticateRequest } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 import * as xlsx from "xlsx";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { parseImportDob } from "@/lib/importDob";
 import { calculateAge } from "@/lib/time";
 
-export async function POST(req: NextRequest) {
+export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req: NextRequest, auth) => {
     try {
-        const auth = await authenticateRequest(req);
         if (auth.type !== 'session') {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        if (!auth.user.sysadmin && !auth.user.boardMember) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
         const formData = await req.formData();
@@ -76,7 +72,7 @@ export async function POST(req: NextRequest) {
                 data: {
                     ...(data.email && { email: data.email }),
                     name: data.name,
-                    dob: data.dob,
+                    dateOfBirth: data.dob,
                     household: {
                         create: {
                             name: `${data.name}'s Household`,
@@ -187,7 +183,7 @@ export async function POST(req: NextRequest) {
                                 where: { id: participant.id },
                                 data: {
                                     name: pr.fullName,
-                                    dob: pr.parsedDob ?? participant.dob,
+                                    dateOfBirth: pr.parsedDob ?? participant.dateOfBirth,
                                 }
                             });
                             await applyAddressToHousehold(participant.householdId, pr.address, tx);
@@ -222,14 +218,14 @@ export async function POST(req: NextRequest) {
                             participant = await tx.participant.update({
                                 where: { id: participant.id },
                                 data: {
-                                    dob: pr.parsedDob ?? participant.dob,
+                                    dateOfBirth: pr.parsedDob ?? participant.dateOfBirth,
                                 }
                             });
                         } else {
                             participant = await tx.participant.create({
                                 data: {
                                     name: pr.fullName,
-                                    dob: pr.parsedDob,
+                                    dateOfBirth: pr.parsedDob,
                                     householdId: parentHouseholdId
                                 }
                             });
@@ -241,8 +237,8 @@ export async function POST(req: NextRequest) {
                         await ensureHouseholdMembership(parentHouseholdId, tx);
                     } else {
                         // No email, no parent email — find by name/DOB
-                        const matchQuery: { name: string; dob?: Date } = { name: pr.fullName };
-                        if (pr.parsedDob) matchQuery.dob = pr.parsedDob;
+                        const matchQuery: { name: string; dateOfBirth?: Date } = { name: pr.fullName };
+                        if (pr.parsedDob) matchQuery.dateOfBirth = pr.parsedDob;
 
                         let participant = await tx.participant.findFirst({ where: matchQuery });
                         if (participant) {
@@ -418,4 +414,4 @@ export async function POST(req: NextRequest) {
         await logBackendError(error, "POST /api/membership-ops/participants/import");
         return NextResponse.json({ error: `Internal server error` }, { status: 500 });
     }
-}
+});

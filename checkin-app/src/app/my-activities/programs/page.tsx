@@ -14,8 +14,8 @@ type UserProgram = {
   program: {
     id: number;
     name: string;
-    begin: string | null;
-    end: string | null;
+    startAt: string | null;
+    endAt: string | null;
   };
 };
 
@@ -64,7 +64,9 @@ export default function MyProgramsDashboard() {
       <Title order={1} mb="md">My Programs</Title>
 
       <Text c="dimmed" mb="lg">
-        Manage the programs you are currently enrolled in.
+        {showMembers
+          ? 'Manage the programs you and your family are currently enrolled in.'
+          : 'Manage the programs you are currently enrolled in.'}
       </Text>
 
       {error && (
@@ -90,8 +92,8 @@ export default function MyProgramsDashboard() {
               )}
               <Title order={4} mb="sm">{program.name}</Title>
               <Text c="dimmed" style={{ flex: 1 }}>
-                {program.begin ? formatDate(program.begin) : 'Start Date TBD'}
-                {program.end ? ` - ${formatDate(program.end)}` : ' (Ongoing)'}
+                {program.startAt ? formatDate(program.startAt) : 'Start Date TBD'}
+                {program.endAt ? ` - ${formatDate(program.endAt)}` : ' (Ongoing)'}
               </Text>
               <Button component={Link} href={`/programs/${program.id}`} variant="light" fullWidth mt="md">
                 View Details

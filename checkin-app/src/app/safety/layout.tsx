@@ -14,9 +14,9 @@ export default function SafetyLayout({ children }: { children: React.ReactNode }
   const router = useRouter();
   const confirmNav = useConfirmNav();
   const { data: session } = useSession();
-  const sessionUser = session?.user as { sysadmin?: boolean; boardMember?: boolean } | undefined;
-  const isBoard = !!(sessionUser?.sysadmin || sessionUser?.boardMember);
-  const { loading, ready } = useRequireRole(["sysadmin", "boardMember", "keyholder"]);
+  const sessionUser = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
+  const isBoard = !!(sessionUser?.isSysadmin || sessionUser?.isBoardMember);
+  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember", "isKeyholder"]);
   // Trusted-adult disclosures awaiting board review — same count as the Safety nav badge.
   const counts = useTodoCounts(isBoard);
   const taCount = counts?.admin?.trustedAdults ?? 0;
@@ -57,7 +57,9 @@ export default function SafetyLayout({ children }: { children: React.ReactNode }
             <Tabs.Tab
               key={t.href}
               value={t.href}
-              rightSection={t.count ? <Badge size="xs" circle color="green">{t.count}</Badge> : undefined}
+              // Active tab recolors its content to the tabs color (green); pin dark text so the
+              // green count badge isn't rendered green-on-green on the active tab.
+              rightSection={t.count ? <Badge size="xs" circle color="green" c="var(--mantine-color-black)">{t.count}</Badge> : undefined}
             >
               {t.name}
             </Tabs.Tab>

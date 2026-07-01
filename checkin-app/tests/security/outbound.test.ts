@@ -73,7 +73,7 @@ describe('outboundCall — pii surface (email.admin-notify)', () => {
                 phone: '555',              // pii     → kept
                 notificationSettings: { x: 1 }, // personal → dropped
                 emailVerified: '2026-01-01',    // internal → dropped
-                sysadmin: true,                 // internal → dropped
+                isSysadmin: true,                 // internal → dropped
             },
         })) as { Participant: Record<string, unknown> };
         expect(out.Participant.id).toBe(5);
@@ -82,7 +82,7 @@ describe('outboundCall — pii surface (email.admin-notify)', () => {
         expect(out.Participant.phone).toBe('555');
         expect(out.Participant.notificationSettings).toBeUndefined();
         expect(out.Participant.emailVerified).toBeUndefined();
-        expect(out.Participant.sysadmin).toBeUndefined();
+        expect(out.Participant.isSysadmin).toBeUndefined();
     });
 });
 

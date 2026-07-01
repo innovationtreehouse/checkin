@@ -7,7 +7,7 @@ import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program
 import { createContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 import { rateLimit, rateLimitEmail } from "@/lib/rate-limit";
 import { calculateAge } from "@/lib/time";
-import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
+import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 
 interface ParentInput {
     name: string;
@@ -109,7 +109,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     }
                     // Judge age as of the program's start date; fall back to now
                     // for dateless ("TBD") programs.
-                    const age = calculateAge(p.dob, currentProgram.begin ?? undefined);
+                    const age = calculateAge(p.dob, currentProgram.startAt ?? undefined);
                     if (currentProgram.minAge !== null && age < currentProgram.minAge) {
                         return NextResponse.json({ error: `Participant ${p.name} must be at least ${currentProgram.minAge} years old.` }, { status: 400 });
                     }
@@ -144,7 +144,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     data: {
                         name: parent.name,
                         email: parent.email || null,
-                        phone: parent.phone || null,
+                        phone: parent.phone ? formatPhone(parent.phone) : null,
                         householdId: household.id,
                     }
                 });
@@ -168,7 +168,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     const newParticipant = await tx.participant.create({
                         data: {
                             name: p.name,
-                            dob: p.dob ? new Date(p.dob) : null,
+                            dateOfBirth: p.dob ? new Date(p.dob) : null,
                             householdId: household.id,
                         }
                     });
@@ -192,7 +192,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                         tableName: 'ProgramParticipant',
                         affectedEntityId: participantId,
                         secondaryAffectedEntity: programId,
-                        newData: JSON.stringify(enrollment)
+                        newData: enrollment
                     }
                 });
             }

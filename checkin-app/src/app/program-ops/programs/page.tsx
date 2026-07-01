@@ -10,9 +10,10 @@ type Program = {
   id: number;
   name: string;
   phase?: string;
+  enrollmentStatus?: "OPEN" | "CLOSED";
   memberOnly?: boolean;
-  begin?: string | null;
-  end?: string | null;
+  startAt?: string | null;
+  endAt?: string | null;
   _count?: { participants?: number; events?: number };
 };
 
@@ -33,8 +34,8 @@ const fmtDate = (d?: string | null) =>
   d ? new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
 
 const dateRange = (p: Program) => {
-  const b = fmtDate(p.begin);
-  const e = fmtDate(p.end);
+  const b = fmtDate(p.startAt);
+  const e = fmtDate(p.endAt);
   if (!b && !e) return "—";
   if (b && e) return `${b} – ${e}`;
   return b ?? e;
@@ -77,7 +78,7 @@ export default function AdminProgramsIndex() {
     {
       header: "Dates",
       render: (p) => dateRange(p),
-      sortBy: (p) => p.begin ?? "",
+      sortBy: (p) => p.startAt ?? "",
     },
     {
       header: "Phase",
@@ -87,6 +88,15 @@ export default function AdminProgramsIndex() {
         </Badge>
       ),
       sortBy: (p) => p.phase ?? "",
+    },
+    {
+      header: "Enrollment",
+      render: (p) => (
+        <Badge color={p.enrollmentStatus === "OPEN" ? "green" : "gray"} variant="light">
+          {p.enrollmentStatus === "OPEN" ? "Open" : "Closed"}
+        </Badge>
+      ),
+      sortBy: (p) => p.enrollmentStatus ?? "CLOSED",
     },
     {
       header: "Participants",
@@ -101,7 +111,7 @@ export default function AdminProgramsIndex() {
       sortBy: (p) => p._count?.events ?? 0,
     },
     {
-      header: "Visibility",
+      header: "Access",
       render: (p) => (
         <Badge color={p.memberOnly ? 'grape' : 'blue'} variant="light">
           {p.memberOnly ? 'Member Only' : 'Public'}
@@ -136,7 +146,7 @@ export default function AdminProgramsIndex() {
           onChange={(e) => setActiveOnly(e.currentTarget.checked)}
         />
         <Checkbox
-          label="Only show publicly visible"
+          label="Only show programs available to the public"
           checked={publicOnly}
           onChange={(e) => setPublicOnly(e.currentTarget.checked)}
         />

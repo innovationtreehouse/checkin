@@ -8,11 +8,11 @@ interface Persona {
   id: number;
   email: string;
   name: string | null;
-  sysadmin: boolean;
-  boardMember: boolean;
-  keyholder: boolean;
-  backgroundCheckReviewer: boolean;
-  dob: string | null;
+  isSysadmin: boolean;
+  isBoardMember: boolean;
+  isKeyholder: boolean;
+  isBackgroundCheckReviewer: boolean;
+  dateOfBirth: string | null;
   householdId: number | null;
   toolStatuses: { toolId: number; level: string }[];
 }
@@ -50,14 +50,14 @@ export default function DevLoginPicker() {
 
   const getRoleBadges = (p: Persona): { label: string; color: string }[] => {
     const badges: { label: string; color: string }[] = [];
-    if (p.sysadmin) badges.push({ label: "Sysadmin", color: "red" });
-    if (p.boardMember) badges.push({ label: "Board", color: "grape" });
-    if (p.keyholder) badges.push({ label: "Keyholder", color: "blue" });
-    if (p.backgroundCheckReviewer) badges.push({ label: "BG Reviewer", color: "teal" });
+    if (p.isSysadmin) badges.push({ label: "Sysadmin", color: "red" });
+    if (p.isBoardMember) badges.push({ label: "Board", color: "grape" });
+    if (p.isKeyholder) badges.push({ label: "Keyholder", color: "blue" });
+    if (p.isBackgroundCheckReviewer) badges.push({ label: "BG Reviewer", color: "teal" });
     if (p.toolStatuses?.length > 0) badges.push({ label: "Certified", color: "green" });
     if (p.householdId) badges.push({ label: "Household", color: "indigo" });
-    if (p.dob && now !== null) {
-      const age = Math.floor((now - new Date(p.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+    if (p.dateOfBirth && now !== null) {
+      const age = Math.floor((now - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
       if (age < 18) badges.push({ label: `Student (${age})`, color: "pink" });
     }
     return badges;

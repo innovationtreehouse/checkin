@@ -40,12 +40,12 @@ describe('treehouse brand theme', () => {
     expect(theme.radius).toEqual(baseTheme.radius);
   });
 
-  it('deep-merges components: base defaults AND the brand Title rule both survive', () => {
-    // The manual merge must keep baseTheme's component defaults (Button/Card/…) alongside
-    // the brand-only Title rule. A shallow overwrite of `components` would drop the base set.
+  it('inherits base component defaults (Button/Card/…) via the spread', () => {
+    // Component defaults come from baseTheme through the `...baseTheme` spread. The lowercase
+    // wordmark style is applied per-instance (tt="lowercase"), not as a global Title override.
     expect(theme.components?.Button).toEqual(baseTheme.components?.Button);
     expect(theme.components?.Card).toEqual(baseTheme.components?.Card);
-    expect(theme.components?.Title?.styles).toEqual({ root: { textTransform: 'lowercase' } });
+    expect(theme.components?.Title).toBeUndefined();
   });
 
   it('builds the theme without the client-only mergeThemeOverrides (server-component safe)', () => {

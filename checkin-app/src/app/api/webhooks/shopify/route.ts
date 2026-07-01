@@ -1,56 +1,55 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
-import { logger, logIntegrationError } from "@/lib/logger";
+import { logger } from "@/lib/logger";
 import { activateByProcessId } from "@/lib/membership/payment";
-import { rateLimit } from "@/lib/rate-limit";
+import { withWebhook } from "@/lib/webhookAuth";
+
+interface ShopifyOrder {
+    id?: number | string;
+    note_attributes?: { name: string; value: string }[];
+    line_items?: { variant_id?: number | string }[];
+}
+
+/**
+ * Verify the Shopify HMAC over the EXACT raw bytes. Config-not-set is a server
+ * error (500); missing/wrong signature is unauthorized (401). Must run on the raw
+ * body before it is parsed — re-serializing JSON would change the bytes.
+ */
+function verifyShopifyHmac(req: Request, rawBody: string): { ok: true } | { ok: false; status: number; error: string } {
+    const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    if (!secret) {
+        logger.error("Shopify webhook received but SHOPIFY_WEBHOOK_SECRET is not configured.");
+        return { ok: false, status: 500, error: "Configuration Error" };
+    }
+
+    const headerSignature = req.headers.get("x-shopify-hmac-sha256");
+    if (!headerSignature) {
+        return { ok: false, status: 401, error: "Missing signature" };
+    }
+
+    const generatedSignature = crypto
+        .createHmac("sha256", secret)
+        .update(rawBody, "utf8")
+        .digest("base64");
+
+    // Convert both signatures to Buffers to prevent timing attacks using crypto.timingSafeEqual.
+    // Since HMAC-SHA256 in base64 is a known fixed length, an early length check does not leak
+    // any secret information about the signature itself.
+    const generatedBuffer = Buffer.from(generatedSignature);
+    const headerBuffer = Buffer.from(headerSignature);
+
+    if (generatedBuffer.length !== headerBuffer.length || !crypto.timingSafeEqual(generatedBuffer, headerBuffer)) {
+        logger.error("Shopify webhook signature mismatch.");
+        return { ok: false, status: 401, error: "Invalid signature" };
+    }
+
+    return { ok: true };
+}
 
 // Shopify Webhook for `orders/paid` or `orders/create`
 // Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE
-export async function POST(req: Request) {
-    // Guard BEFORE the HMAC verify so a flood can't burn CPU on signature checks.
-    const limited = rateLimit(req, { name: "webhook-shopify", limit: 60, windowMs: 60_000 });
-    if (limited) return limited;
-
-    const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
-
-    if (!secret) {
-        logger.error("Shopify webhook received but SHOPIFY_WEBHOOK_SECRET is not configured.");
-        return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
-    }
-
-    try {
-        const rawBody = await req.text();
-        const headerSignature = req.headers.get("x-shopify-hmac-sha256");
-
-        if (!headerSignature) {
-            return NextResponse.json({ error: "Missing signature" }, { status: 401 });
-        }
-
-        const generatedSignature = crypto
-            .createHmac("sha256", secret)
-            .update(rawBody, "utf8")
-            .digest("base64");
-
-        // Convert both signatures to Buffers to prevent timing attacks using crypto.timingSafeEqual.
-        // Since HMAC-SHA256 in base64 is a known fixed length, an early length check does not leak
-        // any secret information about the signature itself.
-        const generatedBuffer = Buffer.from(generatedSignature);
-        const headerBuffer = Buffer.from(headerSignature);
-
-        if (generatedBuffer.length !== headerBuffer.length || !crypto.timingSafeEqual(generatedBuffer, headerBuffer)) {
-            logger.error("Shopify webhook signature mismatch.");
-            return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-        }
-
-        let order;
-        try {
-            order = JSON.parse(rawBody);
-        } catch (parseError) {
-            logger.error("Failed to parse Shopify webhook payload:", parseError);
-            return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
-        }
-
+export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac }, async (_req, order: ShopifyOrder) => {
         // Iterate through line items to find CheckMeIn_Account_ID and Program_ID
         // We set these custom attributes in the permalink URL:
         // https://[store].myshopify.com/cart/[VariantID]:1?attributes[CheckMeIn_Account_ID]=123&attributes[Program_ID]=456
@@ -70,23 +69,36 @@ export async function POST(req: Request) {
 
         // Membership payment → activate the household membership.
         //
-        // TODO(#278): we trust the Membership_Process_ID rather than
-        // validating the order. The volunteer discount is a self-serve code on a
-        // public cart link, so a non-volunteer could append ?discount=<code> and
-        // underpay — and this handler would still activate them. We do NOT check
-        // entitlement, amount, product, or discount code here.
+        // H2 (fixed): activateByProcessId now checks that the order actually
+        // CONTAINS the membership product (its Shopify variant id), not just that
+        // it totals enough — a total-price check drifts if BoardSettings dues fall
+        // out of sync with Shopify's real price, and an attacker could otherwise pay
+        // for unrelated items (e.g. a workshop) that happen to add up to the same
+        // amount. A variant id is stable and is the same id the checkout link is
+        // built from (buildMembershipCheckoutUrl), so it can't silently drift the
+        // way a price copy can. See the H2 note on activate() in payment.ts for how
+        // that's kept safe/idempotent. Issue #625 tracks the systemic fix for
+        // keeping BoardSettings dues/prices aligned with Shopify (which also covers
+        // the volunteer-discount-eligibility gap below).
         //
-        // Long-term fix: gate the volunteer coupon to an auto-managed Shopify
-        // customer segment (only volunteer households are members of it), so
-        // Shopify itself refuses the code for everyone else and no app-side check
-        // is needed. Until that exists, the order payload carries enough to
-        // validate manually if we want a stopgap: order.discount_codes[].code vs
-        // BoardSettings.volunteerDiscountCode + membership.isVolunteer, and
-        // order.total_price vs the expected tier dues.
+        // TODO(#278) still open: we still trust the customer-controlled
+        // Membership_Process_ID cart attribute for WHICH process to credit (no
+        // per-process checkout token yet), and the volunteer discount code is still
+        // a self-serve code on a public cart link rather than gated to a Shopify
+        // customer segment. Neither enables over-activation on its own now that the
+        // membership item is checked, but both remain honor-system until a real
+        // token / Shopify-side segment exists.
         if (membershipProcessIdStr) {
             const processId = parseInt(membershipProcessIdStr, 10);
             if (!isNaN(processId)) {
-                const proc = await activateByProcessId(processId, order.id ? String(order.id) : "");
+                const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+                const membershipVariantIds = new Set(
+                    [settings?.membershipVariantId, settings?.shopifyNormalVariantId, settings?.shopifyVolunteerVariantId].filter(
+                        (v): v is string => !!v,
+                    ),
+                );
+                const hasMembershipItem = (order.line_items ?? []).some((li) => membershipVariantIds.has(String(li.variant_id)));
+                const proc = await activateByProcessId(processId, order.id ? String(order.id) : "", hasMembershipItem);
                 if (proc?.status === "ACTIVE") {
                     logger.info(`[SHOPIFY WEBHOOK] Activated membership for process ${processId}`);
                 } else if (proc?.status === "BLOCKED") {
@@ -136,9 +148,4 @@ export async function POST(req: Request) {
 
         // Always return 200 OK to Shopify to acknowledge receipt, even if missing attributes.
         return NextResponse.json({ success: true });
-    } catch (error) {
-        logger.error("Shopify webhook error:", error);
-        await logIntegrationError("shopify-webhook", error, { operation: "POST /api/webhooks/shopify" });
-        return NextResponse.json({ error: "Webhook Error" }, { status: 500 });
-    }
-}
+});

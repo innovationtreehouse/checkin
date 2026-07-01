@@ -5,15 +5,18 @@ import { membershipStatusBlocksLogin } from "@/lib/membership";
 /** The participant fields the JWT carries, plus the household membership the login gate reads. */
 export type ClaimSourceParticipant = {
     id: number;
-    sysadmin: boolean;
-    keyholder: boolean;
-    boardMember: boolean;
-    backgroundCheckReviewer: boolean;
+    isSysadmin: boolean;
+    isKeyholder: boolean;
+    isBoardMember: boolean;
+    isBackgroundCheckReviewer: boolean;
     householdId: number;
     toolStatuses: { toolId: number; level: string }[];
     // Any row here means this participant leads a household (the relation is already
     // filtered to their own leads). Empty/absent → not a lead.
     householdLeads?: { participantId: number }[];
+    // Programs this participant is the lead mentor of (Program.leadMentorId === id).
+    // Drives the client-side program-ops row gate; mirrors access-resolvers' programsLed.
+    programsLed?: { id: number }[];
     household?: { membership?: { status: MembershipStatus } | null } | null;
 };
 
@@ -30,11 +33,12 @@ export function assignParticipantClaims(token: JWT, p: ClaimSourceParticipant): 
 
     token.id = p.id;
     token.denied = denied;
-    token.sysadmin = denied ? false : p.sysadmin;
-    token.keyholder = denied ? false : p.keyholder;
-    token.boardMember = denied ? false : p.boardMember;
-    token.backgroundCheckReviewer = denied ? false : p.backgroundCheckReviewer;
+    token.isSysadmin = denied ? false : p.isSysadmin;
+    token.isKeyholder = denied ? false : p.isKeyholder;
+    token.isBoardMember = denied ? false : p.isBoardMember;
+    token.isBackgroundCheckReviewer = denied ? false : p.isBackgroundCheckReviewer;
     token.householdId = p.householdId;
     token.householdLead = denied ? false : (p.householdLeads?.length ?? 0) > 0;
     token.toolStatuses = denied ? [] : p.toolStatuses;
+    token.programsLed = denied ? [] : (p.programsLed?.map((prog) => prog.id) ?? []);
 }

@@ -41,7 +41,7 @@ describe('POST /api/membership-ops/households — Deny Membership', () => {
 
         // Acting board member (in their own household).
         const board = await prisma.participant.create({
-            data: { email: `board-${TAG}@example.com`, name: 'Board Actor', boardMember: true, household: { create: {} } },
+            data: { email: `board-${TAG}@example.com`, name: 'Board Actor', isBoardMember: true, household: { create: {} } },
         });
         boardId = board.id;
 
@@ -54,7 +54,7 @@ describe('POST /api/membership-ops/households — Deny Membership', () => {
 
         // A household that contains a board member — must be undeniable.
         const protectedBoard = await prisma.participant.create({
-            data: { email: `protected-${TAG}@example.com`, name: 'Protected Board', boardMember: true, household: { create: {} } },
+            data: { email: `protected-${TAG}@example.com`, name: 'Protected Board', isBoardMember: true, household: { create: {} } },
         });
         boardHouseholdId = protectedBoard.householdId;
     });
@@ -87,7 +87,7 @@ describe('POST /api/membership-ops/households — Deny Membership', () => {
     });
 
     it('rejects denying a household that contains a board member (409)', async () => {
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
         const res = await post({ householdId: boardHouseholdId, deny: true });
         expect(res.status).toBe(409);
@@ -99,7 +99,7 @@ describe('POST /api/membership-ops/households — Deny Membership', () => {
     });
 
     it('denies a plain household, sets DENIED, and writes an audit row', async () => {
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
         const res = await post({ householdId: plainHouseholdId, deny: true });
         expect(res.status).toBe(200);
@@ -125,7 +125,7 @@ describe('POST /api/membership-ops/households — Deny Membership', () => {
     });
 
     it('restores a denied household back to NONE', async () => {
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, boardMember: true } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
         const res = await post({ householdId: plainHouseholdId, deny: false });
         expect(res.status).toBe(200);

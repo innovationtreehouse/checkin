@@ -196,7 +196,7 @@ describe('Household Member API Integration Tests', () => {
             expect(updatedProfile?.name).toBe('Updated Child');
             expect(updatedProfile?.email).toBe('updated-child@example.com');
             expect(updatedProfile?.phone).toBe('555-555-5555');
-            expect(updatedProfile?.dob?.toISOString().startsWith(newDob)).toBe(true);
+            expect(updatedProfile?.dateOfBirth?.toISOString().startsWith(newDob)).toBe(true);
 
             // Verify Audit Trail is populated
             const auditLogs = await prisma.auditLog.findMany({
@@ -223,7 +223,7 @@ describe('Household Member API Integration Tests', () => {
 
             const updatedProfile = await prisma.participant.findUnique({ where: { id: testMemberId } });
             expect(updatedProfile?.email).toBeNull();
-            expect(updatedProfile?.dob).toBeNull();
+            expect(updatedProfile?.dateOfBirth).toBeNull();
             expect(updatedProfile?.phone).toBeNull();
         });
 
