@@ -71,6 +71,11 @@ export interface BuiltMember {
     dob: Date | null;
     lastBackgroundCheck: Date | null;
     isPrimary: boolean;
+    /** No DoB in Zoho but treated as an adult — only the household primary contact
+     *  is inferred (they signed the Zoho membership as the responsible adult). Maps
+     *  to Participant.isDeclaredAdult so they show as "Adult", not "Age Unavailable",
+     *  under the new age model (#606). Members WITH a DoB derive age from it. */
+    isDeclaredAdult: boolean;
     /** Provenance / prior-system reference, surfaced into the AuditLog row. */
     source: {
         zohoId: string;
@@ -244,6 +249,10 @@ export function buildImport(files: ZohoFiles, now: Date): BuiltImport {
                 dob,
                 lastBackgroundCheck: bgDate,
                 isPrimary: idx === primaryIdx,
+                // Only the primary contact is inferred adult, and only when Zoho has
+                // no DoB for them (with a DoB, age is derived). Other no-DoB members
+                // stay unknown for board review.
+                isDeclaredAdult: idx === primaryIdx && !dob,
                 source: {
                     zohoId: p.ID,
                     rawEmail: p.Email.trim(),
@@ -299,6 +308,13 @@ export function buildImport(files: ZohoFiles, now: Date): BuiltImport {
     report.flags.push(
         "All households imported without an emergency contact (not present in Zoho) — members/board must fill this in.",
     );
+
+    const declaredAdults = households.reduce((n, h) => n + h.members.filter((m) => m.isDeclaredAdult).length, 0);
+    if (declaredAdults > 0) {
+        report.flags.push(
+            `${declaredAdults} household primary contact(s) had no date of birth in Zoho and were marked as declared adults (shown as "Adult") — board should confirm.`,
+        );
+    }
 
     return { households, report };
 }
@@ -434,6 +450,7 @@ export async function applyImport(
                 ...(m.email ? { email: m.email } : {}),
                 dateOfBirth: m.dob,
                 lastBackgroundCheck: m.lastBackgroundCheck,
+                isDeclaredAdult: m.isDeclaredAdult,
                 householdId,
             };
 
