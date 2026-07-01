@@ -36,26 +36,31 @@ export const GET = withAuth({}, async (req, auth) => {
 
         let targetUserId = session.user.id;
 
+        // Certifier standing = holds MAY_CERTIFY_OTHERS on any tool — same derivation as
+        // callerHoldsRole('certifier', ...) in src/security/access-resolvers.ts.
+        const isCertifier = (session.user.toolStatuses ?? []).some(ts => ts.level === 'MAY_CERTIFY_OTHERS');
+        const canReadOthers = session.user?.isSysadmin || session.user?.isBoardMember || isCertifier;
+
         if (participantIdParam) {
             targetUserId = parseInt(participantIdParam, 10);
 
-            // Looking up someone else's certifications requires admin/board or
-            // certifier standing — mirrors the ?all=true gate above and the same
-            // MAY_CERTIFY_OTHERS derivation used by callerHoldsRole('certifier', ...)
-            // in src/security/access-resolvers.ts. Self-lookups stay open to anyone.
-            if (targetUserId !== session.user.id) {
-                const isCertifier = (session.user.toolStatuses ?? []).some(ts => ts.level === 'MAY_CERTIFY_OTHERS');
-                const isAuthorized = session.user?.isSysadmin || session.user?.isBoardMember || isCertifier;
-                if (!isAuthorized) {
-                    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-                }
+            // Reading someone else's certifications requires admin/board or certifier
+            // standing — mirrors the ?all=true gate above. Self-lookups stay open to anyone.
+            if (targetUserId !== session.user.id && !canReadOthers) {
+                return NextResponse.json({ error: "Forbidden" }, { status: 403 });
             }
         }
 
         let whereClause: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
 
         if (toolIdParam) {
-            // If checking who is certified on a tool
+            // The by-tool roster lists every certified member on a tool — the same
+            // cross-member data the participant lookup protects, so gate it identically.
+            // (Its only consumer, shop-ops ToolManagementPanel, is already staff/certifier
+            // gated client-side; without this the roster was readable by any logged-in member.)
+            if (!canReadOthers) {
+                return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            }
             whereClause = { toolId: parseInt(toolIdParam, 10) };
         } else {
             // Looking up a specific person's certifications

@@ -240,8 +240,10 @@ describe('Shop API Integration Tests', () => {
     });
 
     describe('/api/shop/certifications', () => {
-        it('should allow anyone to GET certifications', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
+        it('gates the ?toolId roster to staff/certifier — certifier allowed (L1)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({
+                 user: { id: certifierId, toolStatuses: [{ toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' }] },
+             });
 
              const req = createReq('GET', { searchParams: `toolId=${mockToolId}` });
              const res = await getCerts(req) as Response;
@@ -252,6 +254,12 @@ describe('Shop API Integration Tests', () => {
 
              // The Certifier automatically has one on the mockToolId
              expect(data.length).toBeGreaterThanOrEqual(1);
+        });
+
+        it('forbids a plain member from reading the ?toolId roster (L1)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
+             const res = await getCerts(createReq('GET', { searchParams: `toolId=${mockToolId}` })) as Response;
+             expect(res.status).toBe(403);
         });
 
         it('enforces object-level authorization on ?participantId (L1 IDOR fix)', async () => {
