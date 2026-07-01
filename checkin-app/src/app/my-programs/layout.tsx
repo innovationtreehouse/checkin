@@ -59,13 +59,13 @@ export default function MyProgramsLayout({ children }: { children: React.ReactNo
         <ScrollableTabsList>
           <Tabs.Tab
             value="/my-programs"
-            rightSection={pending > 0 ? <Badge size="sm" circle color="treehouseGreen">{pending}</Badge> : undefined}
+            rightSection={pending > 0 ? <Badge size="sm" circle color="treehouseGreen" c="var(--mantine-color-black)">{pending}</Badge> : undefined}
           >
             Attendance
           </Tabs.Tab>
           <Tabs.Tab
             value="/my-programs/conflicts"
-            rightSection={conflictCount > 0 ? <Badge size="sm" circle color="red">{conflictCount}</Badge> : undefined}
+            rightSection={conflictCount > 0 ? <Badge size="sm" circle color="red" c="var(--mantine-color-white)">{conflictCount}</Badge> : undefined}
           >
             Conflicts
           </Tabs.Tab>

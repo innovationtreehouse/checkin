@@ -64,7 +64,10 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
                     <Badge
                       size="md"
                       color="gray"
-                      variant="filled"
+                      variant="light"
+                      // Light-gray informational count: light fill + dark text. Pinned so the
+                      // active tab's green recolor doesn't turn the number green.
+                      c="var(--mantine-color-gray-7)"
                       aria-label={label}
                     >
                       {count}
