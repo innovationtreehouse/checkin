@@ -24,9 +24,14 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
   const router = useRouter();
   const confirmNav = useConfirmNav();
   const { data: session } = useSession();
-  const sessionUser = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
+  const sessionUser = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean; isBackgroundCheckReviewer?: boolean } | undefined;
   const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
   const todoCounts = useTodoCounts(!!(sessionUser?.isSysadmin || sessionUser?.isBoardMember));
+
+  // Background-check Review tab is reviewer-only; the page itself 403s non-reviewers.
+  const navLinks = MEMBERSHIP_OPS_NAV_LINKS.filter(
+    (l) => l.href !== "/membership-ops/review" || sessionUser?.isBackgroundCheckReviewer,
+  );
 
   // Total member families, shown as a gray counter on the Manage Memberships tab.
   const memberFamilies = todoCounts?.admin?.memberFamilies ?? null;
@@ -46,7 +51,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
 
   // Longest-prefix match so sub-routes (e.g. /participants/123) keep their parent tab active.
   const activeTab =
-    [...MEMBERSHIP_OPS_NAV_LINKS]
+    [...navLinks]
       .sort((a, b) => b.href.length - a.href.length)
       .find((l) => pathname === l.href || pathname.startsWith(l.href + "/"))?.href ?? null;
 
@@ -55,7 +60,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
       <Stack>
       <Tabs value={activeTab} onChange={(value) => { if (value && confirmNav()) router.push(value); }}>
         <ScrollableTabsList>
-          {MEMBERSHIP_OPS_NAV_LINKS.map((link) => {
+          {navLinks.map((link) => {
             const todoCount = membershipTodoCountFor(link.href, todoCounts);
             const isBroken = link.href === "/membership-ops/broken";
             const showMemberFamilies =
