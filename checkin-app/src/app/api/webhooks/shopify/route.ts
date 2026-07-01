@@ -8,6 +8,16 @@ import { withWebhook } from "@/lib/webhookAuth";
 interface ShopifyOrder {
     id?: number | string;
     note_attributes?: { name: string; value: string }[];
+    // Decimal string in the shop's currency major units (e.g. "49.00" for $49.00),
+    // per Shopify's order payload — NOT cents. Converted below to match the cents
+    // BoardSettings.{normal,volunteer}DuesCents are stored in.
+    total_price?: string;
+}
+
+/** order.total_price ("49.00") → cents. Unparseable/missing → 0 (fail closed: don't activate). */
+function totalPriceCents(order: ShopifyOrder): number {
+    const n = Number(order.total_price);
+    return Number.isFinite(n) ? Math.round(n * 100) : 0;
 }
 
 /**
@@ -68,23 +78,22 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
 
         // Membership payment → activate the household membership.
         //
-        // TODO(#278): we trust the Membership_Process_ID rather than
-        // validating the order. The volunteer discount is a self-serve code on a
-        // public cart link, so a non-volunteer could append ?discount=<code> and
-        // underpay — and this handler would still activate them. We do NOT check
-        // entitlement, amount, product, or discount code here.
+        // H2 (fixed): activateByProcessId now checks order.total_price against the
+        // expected dues for that process's household/tier (computeDuesCents in
+        // payment.ts) and refuses to activate an underpaid order — see the H2 note
+        // on activate() in payment.ts for how that's kept safe/idempotent.
         //
-        // Long-term fix: gate the volunteer coupon to an auto-managed Shopify
-        // customer segment (only volunteer households are members of it), so
-        // Shopify itself refuses the code for everyone else and no app-side check
-        // is needed. Until that exists, the order payload carries enough to
-        // validate manually if we want a stopgap: order.discount_codes[].code vs
-        // BoardSettings.volunteerDiscountCode + membership.isVolunteer, and
-        // order.total_price vs the expected tier dues.
+        // TODO(#278) still open: we still trust the customer-controlled
+        // Membership_Process_ID cart attribute for WHICH process to credit (no
+        // per-process checkout token yet), and the volunteer discount code is still
+        // a self-serve code on a public cart link rather than gated to a Shopify
+        // customer segment. Neither enables over-activation on its own now that the
+        // amount is checked, but both remain honor-system until a real token /
+        // Shopify-side segment exists.
         if (membershipProcessIdStr) {
             const processId = parseInt(membershipProcessIdStr, 10);
             if (!isNaN(processId)) {
-                const proc = await activateByProcessId(processId, order.id ? String(order.id) : "");
+                const proc = await activateByProcessId(processId, order.id ? String(order.id) : "", totalPriceCents(order));
                 if (proc?.status === "ACTIVE") {
                     logger.info(`[SHOPIFY WEBHOOK] Activated membership for process ${processId}`);
                 } else if (proc?.status === "BLOCKED") {
