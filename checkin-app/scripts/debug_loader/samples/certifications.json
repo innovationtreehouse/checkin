@@ -1,0 +1,16 @@
+{
+  "type": "certifications",
+  "_note": "Reference participant and tool by name (participantName / toolName) or by id (participantId / toolId); id wins if both are present. Names must match exactly (case-insensitive) and uniquely — an ambiguous name errors, telling you to use the id. Load tools.json first so the tools exist. level is one of: BASIC, DOF, CERTIFIED, INSTRUCTOR, MAY_CERTIFY_OTHERS.",
+  "certifications": [
+    {
+      "participantName": "Alex Admin",
+      "toolName": "Table Saw",
+      "level": "CERTIFIED"
+    },
+    {
+      "participantName": "Alex Admin",
+      "toolName": "Drill Press",
+      "level": "BASIC"
+    }
+  ]
+}
