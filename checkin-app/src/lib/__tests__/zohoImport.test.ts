@@ -170,4 +170,29 @@ describe("buildImport", () => {
         expect(report.minorsAsPrimary).toHaveLength(1);
         expect(report.minorsAsPrimary[0].name).toBe("Ari Mizell");
     });
+
+    it("declares the primary an adult only when Zoho has no DoB (age model, #606)", () => {
+        // Primary WITH a DoB → age derived, not declared. Child (non-primary, no DoB) → unknown, not declared.
+        const withDob = build(
+            [
+                person({ Name: "Pat Lee", Email: "pat@lee.com", Primary_Contact_E_mail: "pat@lee.com", Date_Of_Birth: "05/24/1983", ID: "p1" }),
+                person({ Name: "Kid Lee", Email: "", Primary_Contact_E_mail: "pat@lee.com", ID: "p2" }),
+            ],
+            [family({ Primary_Contact_E_mail: "pat@lee.com", Primary_Contact_Name: "Pat Lee" })],
+            [input({ Primary_Contact_E_mail: "pat@lee.com" })],
+        );
+        const pat = withDob.households[0].members.find((m) => m.name === "Pat Lee")!;
+        const kid = withDob.households[0].members.find((m) => m.name === "Kid Lee")!;
+        expect(pat.isDeclaredAdult).toBe(false); // has a DoB
+        expect(kid.isDeclaredAdult).toBe(false); // non-primary, unknown age
+
+        // Primary with NO DoB → declared adult, and surfaced in the report.
+        const noDob = build(
+            [person({ Name: "Sam Roe", Email: "sam@roe.com", Primary_Contact_E_mail: "sam@roe.com", ID: "p1" })],
+            [family({ Primary_Contact_E_mail: "sam@roe.com", Primary_Contact_Name: "Sam Roe" })],
+            [input({ Primary_Contact_E_mail: "sam@roe.com" })],
+        );
+        expect(noDob.households[0].members[0].isDeclaredAdult).toBe(true);
+        expect(noDob.report.flags.some((f) => f.includes("declared adults"))).toBe(true);
+    });
 });
