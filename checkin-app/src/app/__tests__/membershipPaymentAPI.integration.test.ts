@@ -137,7 +137,8 @@ describe('Membership payment API', () => {
     });
 
     it('orders/paid webhook activates the membership (and is idempotent)', async () => {
-        const payload = { id: 555, note_attributes: [{ name: 'Membership_Process_ID', value: String(normalProc) }] };
+        // total_price must cover normalDuesCents (10000) or the H2 amount check rejects it as underpayment.
+        const payload = { id: 555, total_price: '100.00', note_attributes: [{ name: 'Membership_Process_ID', value: String(normalProc) }] };
         const res = await SHOPIFY_WEBHOOK(shopifyReq(payload, WEBHOOK_SECRET) as never);
         expect(res.status).toBe(200);
 

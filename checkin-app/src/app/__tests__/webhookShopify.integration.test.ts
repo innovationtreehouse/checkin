@@ -199,11 +199,13 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     it('routes a Membership_Process_ID payload to activateByProcessId and returns 200', async () => {
         const body = JSON.stringify({
             id: 98765,
+            total_price: '100.00',
             note_attributes: [{ name: 'Membership_Process_ID', value: '42' }],
         });
         const res = await POST(webhookReq(body, sign(body)));
         expect(res.status).toBe(200);
-        expect(activateByProcessId).toHaveBeenCalledWith(42, '98765');
+        // H2: the parsed order total (in cents) is forwarded so activate() can enforce dues.
+        expect(activateByProcessId).toHaveBeenCalledWith(42, '98765', 10000);
     });
 
     it('returns 500 and writes one IntegrationErrorLog row when a handler throws', async () => {
