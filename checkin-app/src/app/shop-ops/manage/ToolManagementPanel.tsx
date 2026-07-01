@@ -357,7 +357,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
 
 // ---- All Assignments tab ----
 
-function AllTab() {
+function AllTab({ tools }: { tools: Tool[] }) {
   const [certs, setCerts] = useState<Certification[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -377,6 +377,8 @@ function AllTab() {
   const memberMap = new Map<number, string>();
   const toolMap = new Map<number, string>();
   const cell = new Map<string, Certification>(); // `${participantId}-${toolId}` -> cert
+  // Seed all tools so columns show even with zero assignments.
+  for (const t of tools) toolMap.set(t.id, t.name);
   for (const c of certs) {
     if (c.participant) memberMap.set(c.participant.id, c.participant.name ?? 'Unnamed');
     if (c.tool) toolMap.set(c.tool.id, c.tool.name);
@@ -553,7 +555,7 @@ export function ToolManagementPanel() {
       </Tabs.Panel>
       {canSeeAll && (
         <Tabs.Panel value="all">
-          <AllTab />
+          <AllTab tools={tools} />
         </Tabs.Panel>
       )}
     </Tabs>
