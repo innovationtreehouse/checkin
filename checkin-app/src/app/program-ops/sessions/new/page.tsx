@@ -78,10 +78,26 @@ export function NewEventForm() {
     );
   };
 
+  // Event spans one day's wall-clock window (mirrors API): end must beat start on
+  // the same date. Build real Dates and guard bad/empty input so we never false-flag.
+  const timeError = (() => {
+    if (!startTime || !endTime) return false;
+    const base = startDate || '2000-01-01'; // date not picked yet → still compare times
+    const start = new Date(`${base}T${startTime}`);
+    const end = new Date(`${base}T${endTime}`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return false;
+    return end <= start;
+  })();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setMessage("");
+
+    if (timeError) {
+      setSaving(false);
+      return; // fields are already highlighted; skip the doomed server round-trip
+    }
 
     if (repeats && (daysOfWeek.length === 0 || !until)) {
       setMessage("Please select at least one day of the week and an end date for recurring events.");
@@ -121,7 +137,7 @@ export function NewEventForm() {
 
       if (res.ok) {
         setSubmitted(true); // clear unsaved-changes guard before redirect
-        router.push(programId ? `/program-ops/programs/${programId}` : '/programs');
+        router.push('/program-ops/events');
       } else {
         const err = await res.json();
         setMessage(err.error || "Failed to create event");
@@ -167,8 +183,8 @@ export function NewEventForm() {
 
           <SimpleGrid cols={{ base: 1, sm: 3 }}>
             <TextInput type="date" label={repeats ? 'Start Date' : 'Date'} required value={startDate} onChange={(e) => setStartDate(e.currentTarget.value)} />
-            <TextInput type="time" label="Start Time" required value={startTime} onChange={(e) => setStartTime(e.currentTarget.value)} />
-            <TextInput type="time" label="End Time" required value={endTime} onChange={(e) => setEndTime(e.currentTarget.value)} />
+            <TextInput type="time" label="Start Time" required value={startTime} onChange={(e) => setStartTime(e.currentTarget.value)} error={timeError} styles={timeError ? { input: { color: 'var(--mantine-color-red-6)' } } : undefined} />
+            <TextInput type="time" label="End Time" required value={endTime} onChange={(e) => setEndTime(e.currentTarget.value)} error={timeError ? 'End time must be after start time' : undefined} styles={timeError ? { input: { color: 'var(--mantine-color-red-6)' } } : undefined} />
           </SimpleGrid>
 
           <Card withBorder radius="md" padding="md">
