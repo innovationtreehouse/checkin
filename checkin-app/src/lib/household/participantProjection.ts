@@ -14,5 +14,8 @@ export const HOUSEHOLD_PEER_SELECT = {
     email: true,
     phone: true,
     dateOfBirth: true,
+    // Deliberate exception: isDeclaredAdult is @sensitivity:internal, but a household
+    // peer legitimately needs it to render each member's age badge / pre-fill the edit
+    // form (my-household). It's an age-status flag, not a role/audit/security flag.
     isDeclaredAdult: true,
 } satisfies Prisma.ParticipantSelect;
