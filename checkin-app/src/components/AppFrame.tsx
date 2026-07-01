@@ -5,6 +5,7 @@ import {
   ActionIcon,
   AppShell,
   Badge,
+  Box,
   Burger,
   Button,
   Group,
@@ -12,7 +13,6 @@ import {
   Title,
   Tooltip,
   useMantineColorScheme,
-  useComputedColorScheme,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
@@ -146,19 +146,20 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 function ColorSchemeToggle() {
-  const { setColorScheme } = useMantineColorScheme();
-  const computed = useComputedColorScheme('light', { getInitialValueInEffect: true });
-  const isDark = computed === 'dark';
+  const { toggleColorScheme } = useMantineColorScheme();
+  // ponytail: render both icons, let Mantine's light/darkHidden CSS pick.
+  // Branching on the scheme in JS causes an SSR hydration mismatch.
   return (
-    <Tooltip label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+    <Tooltip label="Toggle color scheme">
       <ActionIcon
         variant="subtle"
         color="gray"
         size="lg"
         aria-label="Toggle color scheme"
-        onClick={() => setColorScheme(isDark ? 'light' : 'dark')}
+        onClick={toggleColorScheme}
       >
-        {isDark ? <IconSun size={18} /> : <IconMoon size={18} />}
+        <Box component={IconMoon} size={18} darkHidden />
+        <Box component={IconSun} size={18} lightHidden />
       </ActionIcon>
     </Tooltip>
   );
