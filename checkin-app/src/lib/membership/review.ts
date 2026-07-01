@@ -28,6 +28,19 @@ type TxClient = Prisma.TransactionClient;
 const SYSTEM_ACTOR = 0;
 const REQUIRED_APPROVALS = 2;
 
+/**
+ * Board members are implicit background-check reviewers (small-org policy):
+ * anywhere an explicit reviewer is required — the queue, PII visibility, the
+ * attestation, and the reviewer notification — a board member qualifies too.
+ * Single source of truth so the API gate, the service, and the UI can't drift.
+ */
+export function canReviewBackgroundChecks(u: {
+    isBackgroundCheckReviewer?: boolean | null;
+    isBoardMember?: boolean | null;
+}): boolean {
+    return Boolean(u.isBackgroundCheckReviewer || u.isBoardMember);
+}
+
 export class ReviewError extends Error {
     constructor(
         public readonly code:
@@ -83,7 +96,7 @@ export function normalizeEmail(email: string): string {
 export async function notifyReviewers(): Promise<void> {
     try {
         const reviewers = await prisma.participant.findMany({
-            where: { isBackgroundCheckReviewer: true, email: { not: null } },
+            where: { email: { not: null }, OR: [{ isBackgroundCheckReviewer: true }, { isBoardMember: true }] },
             select: { email: true },
         });
         const base = process.env.NEXTAUTH_URL ?? "";
@@ -104,7 +117,7 @@ export async function notifyReviewers(): Promise<void> {
 }
 
 async function loadReviewer(reviewerId: number) {
-    return prisma.participant.findUnique({ where: { id: reviewerId }, select: { id: true, householdId: true, isBackgroundCheckReviewer: true } });
+    return prisma.participant.findUnique({ where: { id: reviewerId }, select: { id: true, householdId: true, isBackgroundCheckReviewer: true, isBoardMember: true } });
 }
 
 /**
@@ -117,7 +130,7 @@ async function loadReviewer(reviewerId: number) {
  */
 export async function eligibleReviewProcessIds(reviewerId: number): Promise<number[]> {
     const reviewer = await loadReviewer(reviewerId);
-    if (!reviewer?.isBackgroundCheckReviewer) return [];
+    if (!reviewer || !canReviewBackgroundChecks(reviewer)) return [];
 
     const processes = await prisma.membershipProcess.findMany({
         where: AWAITING_BG_WHERE,
@@ -150,7 +163,7 @@ export async function attest(
     input: { result: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean },
 ) {
     const reviewer = await loadReviewer(reviewerId);
-    if (!reviewer?.isBackgroundCheckReviewer) throw new ReviewError("not_reviewer", "You are not a background-check reviewer.");
+    if (!reviewer || !canReviewBackgroundChecks(reviewer)) throw new ReviewError("not_reviewer", "You are not a background-check reviewer.");
 
     // Re-check eligibility, create the attestation, recompute approvals, and converge
     // all inside one transaction. FOR UPDATE on the MembershipProcess row serializes
