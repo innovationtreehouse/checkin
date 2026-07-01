@@ -74,11 +74,15 @@ export default function Home() {
   }, [session]);
 
   useEffect(() => {
+    // Async fetch that syncs React state from the server; state is set in the
+    // promise continuation, not synchronously in this effect body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     checkAttendanceStatus();
   }, [checkAttendanceStatus]);
 
   useEffect(() => {
     if (!session?.user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsMember(null);
       return;
     }
