@@ -146,7 +146,7 @@ export default function AdminProgramsIndex() {
           onChange={(e) => setActiveOnly(e.currentTarget.checked)}
         />
         <Checkbox
-          label="Only show publicly visible"
+          label="Only show programs available to the public"
           checked={publicOnly}
           onChange={(e) => setPublicOnly(e.currentTarget.checked)}
         />
