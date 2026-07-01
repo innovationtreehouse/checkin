@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus } from "@/lib/membership/external";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
@@ -162,31 +163,46 @@ export async function startIntake(userId: number) {
         update: {},
     });
 
-    return prisma.$transaction(async (tx) => {
-        // Lock the membership row so overlapping starts serialize here, not at the INSERT.
-        await tx.$queryRaw`SELECT id FROM "Membership" WHERE id = ${membership.id} FOR UPDATE`;
-        const existing = await tx.membershipProcess.findFirst({
-            where: { membershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
-            orderBy: { id: "desc" },
-        });
-        if (existing) return existing;
+    try {
+        return await prisma.$transaction(async (tx) => {
+            // Lock the membership row so overlapping starts serialize here, not at the INSERT.
+            await tx.$queryRaw`SELECT id FROM "Membership" WHERE id = ${membership.id} FOR UPDATE`;
+            const existing = await tx.membershipProcess.findFirst({
+                where: { membershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+                orderBy: { id: "desc" },
+            });
+            if (existing) return existing;
 
-        const process = await tx.membershipProcess.create({
-            data: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
-        });
+            const process = await tx.membershipProcess.create({
+                data: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
+            });
 
-        await tx.auditLog.create({
-            data: {
-                actorId: userId,
-                action: "CREATE",
-                tableName: "MembershipProcess",
-                affectedEntityId: process.id,
-                newData: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
-            },
-        });
+            await tx.auditLog.create({
+                data: {
+                    actorId: userId,
+                    action: "CREATE",
+                    tableName: "MembershipProcess",
+                    affectedEntityId: process.id,
+                    newData: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
+                },
+            });
 
-        return process;
-    });
+            return process;
+        });
+    } catch (e) {
+        // The FOR UPDATE lock serializes same-version callers, but a rolling deploy can
+        // leave a pre-fix instance (no lock) inserting concurrently — the partial unique
+        // index membership_one_inflight_initial then rejects the duplicate with P2002.
+        // Return the winner instead of surfacing a 500 to the applicant (mirrors renewal).
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+            const winner = await prisma.membershipProcess.findFirst({
+                where: { membershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+                orderBy: { id: "desc" },
+            });
+            if (winner) return winner;
+        }
+        throw e;
+    }
 }
 
 /** Persist intake form data onto the caller's household + participants. Resumable; never deletes. */
