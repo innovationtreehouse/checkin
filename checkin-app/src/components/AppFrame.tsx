@@ -314,6 +314,8 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                           color={badge.color}
                           variant="filled"
                           aria-label={badge.label}
+                          // Gray fill is light; white text on it fails contrast. Force dark text.
+                          styles={badge.color === 'gray' ? { label: { color: 'var(--mantine-color-dark-9)' } } : undefined}
                         >
                           {badge.count}
                         </Badge>

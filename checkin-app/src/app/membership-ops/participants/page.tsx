@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Table, Text, TextInput, Title, UnstyledButton } from "@mantine/core";
+import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Table, Text, TextInput, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconChevronDown, IconChevronUp, IconSelector } from "@tabler/icons-react";
 import { EntityPicker } from "@/components/admin/EntityPicker";
@@ -259,7 +259,7 @@ export default function AdminParticipantsIndex() {
       </Card>
 
       {/* Assign household modal */}
-      <Modal opened={assignModalOpen} onClose={closeAssign} title={<Title order={4}>Assign Household to {selectedParticipant?.name}</Title>} size="lg">
+      <Modal opened={assignModalOpen} onClose={closeAssign} title={<Text span fw={700} fz="lg">Assign Household to {selectedParticipant?.name}</Text>} size="lg">
         {selectedParticipant?.household && (
           <Paper withBorder radius="md" p="md" mb="md">
             <Text size="sm" fw={600} c="dimmed" mb="xs">Current Household: {selectedParticipant.household.name}</Text>
@@ -318,7 +318,7 @@ export default function AdminParticipantsIndex() {
       </Modal>
 
       {/* Edit participant modal */}
-      <Modal opened={editModalOpen} onClose={() => { setEditModalOpen(false); setEditingParticipant(null); }} title={<Title order={4}>Edit Participant</Title>} size="lg">
+      <Modal opened={editModalOpen} onClose={() => { setEditModalOpen(false); setEditingParticipant(null); }} title={<Text span fw={700} fz="lg">Edit Participant</Text>} size="lg">
         <form onSubmit={handleEditParticipant}>
           <Stack>
             <TextInput label="Name" required value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.currentTarget.value }))} />
