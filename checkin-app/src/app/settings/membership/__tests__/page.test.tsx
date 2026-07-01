@@ -43,7 +43,7 @@ describe("MembershipSettingsPage", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/settings/membership", expect.objectContaining({ method: "PUT" }));
     });
     const [, putOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PUT")!;
-    expect(JSON.parse(putOpts.body as string)).toEqual(expect.objectContaining({ normalDuesCents: 20000 }));
+    expect(JSON.parse(putOpts!.body as string)).toEqual(expect.objectContaining({ normalDuesCents: 20000 }));
 
     expect(await screen.findByText("Settings saved.")).toBeInTheDocument();
   });

@@ -107,7 +107,10 @@ export function resetRtl() {
  * Returns the jest.fn so callers can assert on it.
  */
 export function mockFetchJson(routes: Record<string, unknown | (() => unknown)>) {
-    const fn = jest.fn(async (input: RequestInfo | URL) => {
+    // The unused `init` param types `.mock.calls[N][1]` as the RequestInit so tests
+    // can assert on the request's method/body.
+    const fn = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        void init;
         const url = typeof input === "string" ? input : input.toString();
         const key = Object.keys(routes).find((k) => url.includes(k));
         const raw = key !== undefined ? routes[key] : undefined;
