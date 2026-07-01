@@ -5,14 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useSession, signIn } from "next-auth/react";
 import {
   Alert,
-  Anchor,
   Button,
   Card,
   Container,
   Divider,
   Group,
-  Loader,
-  Modal,
   Paper,
   Stack,
   Text,
@@ -28,8 +25,7 @@ import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
 import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
 import Notifications from '@/components/Notifications';
 import { RoleBadge } from '@/components/ui/RoleBadge';
-import { formatPhone } from '@/lib/phone';
-import type { SessionUser, BoardMember } from '@/types/participant';
+import type { SessionUser } from '@/types/participant';
 
 export default function Home() {
   const router = useRouter();
@@ -43,10 +39,6 @@ export default function Home() {
   const [isLastKeyholder, setIsLastKeyholder] = useState(false);
   const [isTwoDeepViolation, setIsTwoDeepViolation] = useState(false);
   const [isMember, setIsMember] = useState<boolean | null>(null);
-
-  const [showBoardDirectory, setShowBoardDirectory] = useState(false);
-  const [boardMembers, setBoardMembers] = useState<BoardMember[]>([]);
-  const [loadingBoard, setLoadingBoard] = useState(false);
 
   const checkAttendanceStatus = useCallback(async () => {
     if (!session?.user) return;
@@ -124,24 +116,6 @@ export default function Home() {
     setLoading(false);
   };
 
-  const fetchBoardDirectory = async () => {
-    setShowBoardDirectory(true);
-    setLoadingBoard(true);
-    try {
-      const res = await fetch('/api/directory/board');
-      if (res.ok) {
-        const data = await res.json();
-        setBoardMembers(data.boardMembers);
-      } else {
-        setMessage("Failed to load board directory.");
-      }
-    } catch {
-      setMessage("Network error loading directory.");
-    } finally {
-      setLoadingBoard(false);
-    }
-  };
-
   const user = session?.user as SessionUser | undefined;
   const canSelfCheckin =
     !!user?.isSysadmin || !!user?.isBoardMember || !!user?.isKeyholder || isDevInstance;
@@ -217,7 +191,7 @@ export default function Home() {
                     variant="default"
                     fullWidth
                     leftSection={<IconAddressBook size={18} />}
-                    onClick={fetchBoardDirectory}
+                    onClick={() => router.push('/safety/board-contacts')}
                   >
                     View Board Directory
                   </Button>
@@ -268,38 +242,6 @@ export default function Home() {
           </Alert>
         )}
       </Card>
-
-      <Modal
-        opened={showBoardDirectory}
-        onClose={() => setShowBoardDirectory(false)}
-        title={<Text span fw={700} fz="lg">Board Directory</Text>}
-        centered
-      >
-        {loadingBoard ? (
-          <Group justify="center" py="md">
-            <Loader size="sm" />
-            <Text c="dimmed">Loading contacts...</Text>
-          </Group>
-        ) : boardMembers.length === 0 ? (
-          <Text c="dimmed">No board members found.</Text>
-        ) : (
-          <Stack>
-            {boardMembers.map((member) => (
-              <Paper key={member.id} withBorder radius="md" p="md">
-                <Text fw={600}>{member.name || 'Unnamed'}</Text>
-                <Text size="sm">
-                  ✉️ <Anchor href={`mailto:${member.email}`}>{member.email}</Anchor>
-                </Text>
-                {member.phone && (
-                  <Text size="sm">
-                    📞 <Anchor href={`tel:${member.phone.replace(/\D/g, '')}`}>{formatPhone(member.phone)}</Anchor>
-                  </Text>
-                )}
-              </Paper>
-            ))}
-          </Stack>
-        )}
-      </Modal>
     </Container>
   );
 }
