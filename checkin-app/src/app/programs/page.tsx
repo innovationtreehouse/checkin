@@ -91,12 +91,14 @@ export default function PublicProgramsDirectory() {
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
           {programs.map((program) => {
-            const canManage = session && (session.user?.isSysadmin || session.user?.isBoardMember || session.user?.id === program.leadMentorId);
+            const isOwner = session && session.user?.id === program.leadMentorId;
+            const canManage = session && (session.user?.isSysadmin || session.user?.isBoardMember || isOwner);
             return (
               <Card key={program.id} withBorder radius="md" padding="lg">
                 <Group justify="space-between" align="flex-start" mb="sm">
                   <Title order={4}>{program.name}</Title>
                   <Group gap={4}>
+                    {isOwner && <Badge color="green">Yours</Badge>}
                     {program.memberOnly && <Badge color="grape" variant="light">Member Only</Badge>}
                     {program.phase === 'PLANNING' && <Badge color="yellow" variant="light">Planning</Badge>}
                     {program.enrollmentStatus === 'CLOSED' && <Badge color="red" variant="light">Closed</Badge>}
