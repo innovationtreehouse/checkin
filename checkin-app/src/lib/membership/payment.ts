@@ -182,7 +182,12 @@ export async function activate(
         if (opts.via === "payment" && opts.paidAmountCents !== undefined) {
             const expectedDuesCents = await computeDuesCents(membership.isVolunteer);
             const paidCents = opts.paidAmountCents;
-            if (paidCents < expectedDuesCents) {
+            // expectedDuesCents <= 0 means dues aren't configured yet (BoardSettings dues
+            // columns default to 0). Treat that as "unpriced", NOT "free": without this
+            // guard the check degrades to `paidCents < 0` — always false — and ANY order
+            // (even a $0/garbage total) would activate for free, reopening H2. Fail closed;
+            // a genuinely free membership would be granted via the board certify path, not Shopify.
+            if (expectedDuesCents <= 0 || paidCents < expectedDuesCents) {
                 await tx.auditLog.create({
                     data: {
                         actorId: SYSTEM_ACTOR,

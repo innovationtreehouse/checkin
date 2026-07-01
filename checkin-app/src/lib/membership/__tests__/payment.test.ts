@@ -76,3 +76,18 @@ it('activates a PENDING_PAYMENT process when the order total meets dues', async 
     );
     expect(notifyBoardPaidReject).not.toHaveBeenCalled();
 });
+
+it('does NOT activate when dues are unconfigured (expectedDuesCents 0), even for a positive payment', async () => {
+    // BoardSettings dues default to 0 on a fresh/reset deploy; a 0 floor must NOT mean
+    // "any payment covers it" — that would free-activate. Fail closed instead.
+    prisma.boardSettings.findUnique.mockResolvedValue({ normalDuesCents: 0, volunteerDuesCents: 0 });
+    prisma.membershipProcess.findUnique.mockResolvedValue({
+        id: PROCESS_ID, status: 'PENDING_PAYMENT', paidAt: null, bgClearedAt: new Date(), membershipId: MEMBERSHIP_ID,
+    });
+
+    await activateByProcessId(PROCESS_ID, 'order-3', 5000);
+
+    expect(prisma.membershipProcess.update).not.toHaveBeenCalled();
+    expect(prisma.membership.update).not.toHaveBeenCalled();
+    expect(notifyBoardPaidReject).toHaveBeenCalledWith(PROCESS_ID);
+});
