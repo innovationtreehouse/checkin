@@ -125,3 +125,19 @@ export function mockFetchJson(routes: Record<string, unknown | (() => unknown)>)
     global.fetch = fn as unknown as typeof fetch;
     return fn;
 }
+
+/**
+ * Wrap a params/searchParams value as an ALREADY-fulfilled promise so React 19's
+ * `use(params)` returns synchronously under RTL. A bare `Promise.resolve(v)`
+ * suspends on the first read (its `.then` fires as a microtask, which RTL's sync
+ * `render()`/`act()` doesn't await), committing an empty tree. Pre-marking the
+ * promise with React's own thenable-cache shape (`status:"fulfilled"`, `value`)
+ * makes `use()` unwrap it immediately — no Suspense boundary needed.
+ * Usage: `renderWithProviders(<Page params={resolvedParams({ id: "1" })} />)`.
+ */
+export function resolvedParams<T>(value: T): Promise<T> {
+    const p = Promise.resolve(value) as Promise<T> & { status?: string; value?: T };
+    p.status = "fulfilled";
+    p.value = value;
+    return p;
+}
