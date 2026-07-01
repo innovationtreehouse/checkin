@@ -66,7 +66,10 @@ describe('Nav todo-counts API', () => {
         });
         membershipId = membership.id;
         await prisma.membershipProcess.create({ data: { membershipId, kind: 'INITIAL', status: 'PENDING_PAYMENT' } });
-        await prisma.membershipProcess.create({ data: { membershipId, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } });
+        // Reviewer-owned state, kind RENEWAL (not INITIAL) so it doesn't collide with
+        // the membership_one_inflight_initial partial unique index above — a
+        // membership can hold only one in-flight INITIAL process at a time.
+        await prisma.membershipProcess.create({ data: { membershipId, kind: 'RENEWAL', status: 'RENEWAL_PENDING_BG' } });
 
         // Trusted adults for the lead: one awaiting subject action, one approved and
         // expiring within the warn window.
@@ -167,7 +170,7 @@ describe('Nav todo-counts API', () => {
         expect(res.status).toBe(200);
         const data = await res.json();
         // emergency contact (1) + PENDING_PAYMENT (1) + PENDING_SUBJECT_ACTION (1)
-        // + expiring trusted adult (1) = 4. PENDING_BG_REVIEW is reviewer-owned → excluded.
+        // + expiring trusted adult (1) = 4. RENEWAL_PENDING_BG is reviewer-owned → excluded.
         expect(data.member.household).toHaveLength(4);
         expect(data.member.programs).toHaveLength(2);
         // Items carry a label + a deep link so the UI can show *what* is due.
@@ -243,10 +246,15 @@ describe('Nav todo-counts API', () => {
         const before = await boardMembershipCount();
 
         // Reviewer (RBAC) work — surfaced by the reviewer notifications badge, not the
-        // board badge. Adding these must NOT move the board count.
+        // board badge. Adding these must NOT move the board count. Anchored to a fresh
+        // membership (householdB's, previously membership-less) rather than the shared
+        // `membershipId` — that one already holds an in-flight INITIAL and an in-flight
+        // RENEWAL process from beforeAll, and membership_one_inflight_initial /
+        // membership_one_inflight_renewal each allow only one per membership.
+        const reviewerMembership = await prisma.membership.create({ data: { householdId: householdBId, status: 'ACTIVE' } });
         const reviewerProcs = await prisma.$transaction([
-            prisma.membershipProcess.create({ data: { membershipId, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } }),
-            prisma.membershipProcess.create({ data: { membershipId, kind: 'RENEWAL', status: 'RENEWAL_PENDING_BG' } }),
+            prisma.membershipProcess.create({ data: { membershipId: reviewerMembership.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } }),
+            prisma.membershipProcess.create({ data: { membershipId: reviewerMembership.id, kind: 'RENEWAL', status: 'RENEWAL_PENDING_BG' } }),
         ]);
         expect(await boardMembershipCount()).toBe(before);
 
@@ -255,6 +263,7 @@ describe('Nav todo-counts API', () => {
         expect(await boardMembershipCount()).toBe(before + 1);
 
         await prisma.membershipProcess.deleteMany({ where: { id: { in: [...reviewerProcs.map((p) => p.id), blocked.id] } } });
+        await prisma.membership.delete({ where: { id: reviewerMembership.id } });
     });
 
     it('counts member families but excludes org-email-only (staff) households', async () => {
