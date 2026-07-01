@@ -50,7 +50,7 @@ export default function MissingEmergencyContactsPage() {
   }
 
   return (
-    <Stack maw={1000} mx="auto">
+    <Stack>
       <Card withBorder radius="md" padding="lg">
         <Text c="dimmed">
           Active or in-intake households with no valid emergency contact. A contact is

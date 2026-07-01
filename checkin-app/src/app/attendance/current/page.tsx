@@ -319,7 +319,7 @@ function KioskDisplayInner() {
   const userId = (session?.user as SessionUser)?.id;
 
   return (
-    <Box style={isKioskMode ? { cursor: "none", marginTop: -25, paddingLeft: 8 } : { marginTop: -25, paddingLeft: 8 }}>
+    <Box style={isKioskMode ? { cursor: "none", marginTop: -25, paddingLeft: 8, display: "flow-root" } : { maxWidth: 1200, margin: "0 auto", marginTop: -25, paddingLeft: 8, display: "flow-root" }}>
       {!isKioskMode && (
         <Box style={{ maxWidth: 1200, margin: "0 auto" }}>
           <AttendanceTabs />

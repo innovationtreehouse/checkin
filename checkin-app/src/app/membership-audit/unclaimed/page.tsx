@@ -28,7 +28,7 @@ export default function UnclaimedHouseholdsIndex() {
   }, []);
 
   return (
-    <Stack maw={1000} mx="auto">
+    <Stack>
       <div>
         <Text c="dimmed">Households where no household lead has ever signed in with Google.</Text>
       </div>
