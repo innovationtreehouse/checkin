@@ -122,7 +122,7 @@ describe('Sensitive route authorization', () => {
             expect((await CertsGet(req(url))).status).toBe(401);
         });
 
-        it('403 for a plain member — the roster + minor PII must not leak', async () => {
+        it('403 for a plain member — the roster + youth PII must not leak', async () => {
             mockSession.mockResolvedValue({ user: { id: plainId } });
             expect((await CertsGet(req(url))).status).toBe(403);
         });

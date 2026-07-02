@@ -43,7 +43,7 @@ describe("dev seed-helpers (integration)", () => {
         expect(await prisma.participant.findUnique({ where: { email: "boardmember@example.com" } })).not.toBeNull();
     });
 
-    it("+ Family adds a household with a lead, a partner, and a minor", async () => {
+    it("+ Family adds a household with a lead, a partner, and a youth", async () => {
         const before = await prisma.participant.count();
         const summary = await createFamily(prisma);
         expect(summary).toMatch(/Test Family/);

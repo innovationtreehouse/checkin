@@ -3,7 +3,7 @@
  */
 /**
  * Integration Tests for Onboarding Status API
- * Tests GET /api/profile/onboarding-status — in particular that minors
+ * Tests GET /api/profile/onboarding-status — in particular that youth
  * are never asked for a phone number (issue #169)
  */
 
@@ -18,11 +18,11 @@ jest.mock('next-auth/next', () => ({
 
 describe('Onboarding Status API Integration Tests', () => {
     let adultId: number;
-    let minorId: number;
+    let youthId: number;
     let noDobId: number;
     const householdIds: number[] = [];
 
-    const minorDob = () => {
+    const youthDob = () => {
         const d = new Date();
         d.setFullYear(d.getFullYear() - 12);
         return d;
@@ -52,16 +52,16 @@ describe('Onboarding Status API Integration Tests', () => {
         adultId = adult.id;
         householdIds.push(adult.householdId);
 
-        const minor = await prisma.participant.create({
+        const youth = await prisma.participant.create({
             data: {
-                email: 'minor-onboarding-status-test@example.com',
-                name: 'Minor No Phone',
-                dateOfBirth: minorDob(),
+                email: 'youth-onboarding-status-test@example.com',
+                name: 'Youth No Phone',
+                dateOfBirth: youthDob(),
                 household: { create: {} }
             }
         });
-        minorId = minor.id;
-        householdIds.push(minor.householdId);
+        youthId = youth.id;
+        householdIds.push(youth.householdId);
 
         const noDob = await prisma.participant.create({
             data: {
@@ -77,7 +77,7 @@ describe('Onboarding Status API Integration Tests', () => {
     afterAll(async () => {
         // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
-            where: { id: { in: [adultId, minorId, noDobId] } }
+            where: { id: { in: [adultId, youthId, noDobId] } }
         });
         await prisma.household.deleteMany({
             where: { id: { in: householdIds } }
@@ -104,8 +104,8 @@ describe('Onboarding Status API Integration Tests', () => {
             expect(data.needsPhone).toBe(true);
         });
 
-        it('should NOT require a phone for a minor (issue #169)', async () => {
-            const res = await callRoute(minorId);
+        it('should NOT require a phone for a youth (issue #169)', async () => {
+            const res = await callRoute(youthId);
             expect(res.status).toBe(200);
 
             const data = await res.json();
