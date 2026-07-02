@@ -52,7 +52,7 @@ async function makeApplicant(data: Record<string, unknown> = {}): Promise<{ user
             ...data,
         },
     });
-    const user = await prisma.participant.create({
+    const user = await prisma.person.create({
         data: { email: `lead-${proc.id}-${TAG}@example.com`, name: 'Lead', householdId: hh.id },
     });
     return { userId: user.id, processId: proc.id };
@@ -76,10 +76,10 @@ async function wipe() {
     if (ids.length) {
         await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
         await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
-    await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+    await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
 }
 
 describe('syncContractStatus', () => {

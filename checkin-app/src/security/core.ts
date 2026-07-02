@@ -67,7 +67,7 @@ export type Role =
     | 'isBoardMember'
     | 'isKeyholder'
     | 'isBackgroundCheckReviewer'
-    // Holds a MAY_CERTIFY_OTHERS toolStatus (a shop certifier). Not a Participant
+    // Holds a MAY_CERTIFY_OTHERS toolStatus (a shop certifier). Not a Person
     // role boolean — derived from session.user.toolStatuses (see callerHoldsRole).
     | 'certifier'
     | 'householdLead'
@@ -124,7 +124,7 @@ export type Authorize =
     | { anyRole: BusinessRole[] }
     // Shop certifier (a MAY_CERTIFY_OTHERS toolStatus). Admits certifiers OR
     // admins (isSysadmin/isBoardMember) — see resolveAccess. Backed by a
-    // predicate because 'certifier' is not a Participant role boolean.
+    // predicate because 'certifier' is not a Person role boolean.
     | 'certifier'
     | 'program-lead-mentor'
     | 'program-core-volunteer'

@@ -47,14 +47,14 @@ const member = { id: 99, name: 'Other Member', email: 'other@x.test' };
 describe('shop/members field-stripping', () => {
     it('board sees name + email (pii)', () => {
         const tokens = tokensFor(ENDPOINT, 'isBoardMember');
-        const out = stripValue('Participant', member, tokens, ctx()) as Record<string, unknown>;
+        const out = stripValue('Person', member, tokens, ctx()) as Record<string, unknown>;
         expect(out.name).toBe('Other Member');
         expect(out.email).toBe('other@x.test');
     });
 
     it('certifier sees name only — email is stripped', () => {
         const tokens = tokensFor(ENDPOINT, 'certifier');
-        const out = stripValue('Participant', member, tokens, ctx()) as Record<string, unknown>;
+        const out = stripValue('Person', member, tokens, ctx()) as Record<string, unknown>;
         expect(out.name).toBe('Other Member');
         expect(out.email).toBeUndefined();
     });

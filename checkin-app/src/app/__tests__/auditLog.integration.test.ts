@@ -41,7 +41,7 @@ describe('AuditLog Integration Tests', () => {
     const createdVisitIds: number[] = [];
 
     async function makeParticipant(suffix: string) {
-        const p = await prisma.participant.create({
+        const p = await prisma.person.create({
             // 'audit-test' substring also matches the beforeAll backstop sweep.
             data: { email: `${TAG}-${suffix}-audit-test@example.com`, name: `${TAG} ${suffix}`, household: { create: {} } },
             select: { id: true, householdId: true },
@@ -60,17 +60,17 @@ describe('AuditLog Integration Tests', () => {
         await prisma.programVolunteer.deleteMany({});
         await prisma.event.deleteMany({});
         await prisma.program.deleteMany({});
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'audit-test' } }
         });
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-audit-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
-        const participant = await prisma.participant.create({
+        const participant = await prisma.person.create({
             data: { email: 'participant-audit-test@example.com', name: 'Participant Test', household: { create: {} } }
         });
         testParticipantId = participant.id;
@@ -84,7 +84,7 @@ describe('AuditLog Integration Tests', () => {
         }
         if (createdParticipantIds.length > 0) {
             await prisma.householdLead.deleteMany({ where: { personId: { in: createdParticipantIds } } });
-            await prisma.participant.deleteMany({ where: { id: { in: createdParticipantIds } } });
+            await prisma.person.deleteMany({ where: { id: { in: createdParticipantIds } } });
         }
         if (createdHouseholdIds.length > 0) {
             await prisma.household.deleteMany({ where: { id: { in: createdHouseholdIds } } });
@@ -109,12 +109,12 @@ describe('AuditLog Integration Tests', () => {
             });
 
             // RESTRICT: delete participants before their households.
-            const householdIds = (await prisma.participant.findMany({
+            const householdIds = (await prisma.person.findMany({
                 where: { id: { in: actorIds } },
                 select: { householdId: true }
             })).map(p => p.householdId);
 
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: actorIds } }
             });
             await prisma.household.deleteMany({

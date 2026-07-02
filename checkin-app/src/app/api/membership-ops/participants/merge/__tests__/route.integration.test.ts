@@ -22,7 +22,7 @@ describe("Merge Participants API", () => {
         householdId = hh.id;
 
         // The acting board member — audit rows record actorId from the session.
-        const actor = await prisma.participant.create({
+        const actor = await prisma.person.create({
             data: {
                 name: "Board Actor",
                 email: "actor@checkme.in",
@@ -38,7 +38,7 @@ describe("Merge Participants API", () => {
         });
 
         // Create two participants
-        const pKeep = await prisma.participant.create({
+        const pKeep = await prisma.person.create({
             data: {
                 name: "Keep User",
                 email: "keep@example.com",
@@ -47,7 +47,7 @@ describe("Merge Participants API", () => {
         });
         pKeepId = pKeep.id;
 
-        const pMerge = await prisma.participant.create({
+        const pMerge = await prisma.person.create({
             data: {
                 name: "Merge User",
                 email: "merge@example.com",
@@ -66,7 +66,7 @@ describe("Merge Participants API", () => {
         await prisma.programParticipant.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
         await prisma.householdLead.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
         await prisma.auditLog.deleteMany({ where: { actorId } });
-        await prisma.participant.deleteMany({ where: { id: { in: [pKeepId, pMergeId, actorId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [pKeepId, pMergeId, actorId] } } });
         if (createdFeeId) {
             await prisma.fee.deleteMany({ where: { id: createdFeeId } });
             createdFeeId = undefined;
@@ -105,11 +105,11 @@ describe("Merge Participants API", () => {
         expect(visits.length).toBe(1);
 
         // Verify kept user got merged user's phone
-        const kept = await prisma.participant.findUnique({ where: { id: pKeepId } });
+        const kept = await prisma.person.findUnique({ where: { id: pKeepId } });
         expect(kept?.phone).toBe("123-456-7890");
 
         // Verify merged user was tombstoned
-        const merged = await prisma.participant.findUnique({ where: { id: pMergeId } });
+        const merged = await prisma.person.findUnique({ where: { id: pMergeId } });
         expect(merged?.email).toContain("merged-");
         expect(merged?.email).toContain("@deleted.checkme.in");
         expect(merged?.phone).toBeNull();

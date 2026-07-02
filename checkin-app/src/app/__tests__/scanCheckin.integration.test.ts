@@ -47,7 +47,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
     beforeAll(async () => {
         (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'kiosk' });
 
-        const isKeyholder = await prisma.participant.create({
+        const isKeyholder = await prisma.person.create({
             data: {
                 name: 'Keyholder Scan',
                 email: `isKeyholder-${TAG}@example.com`,
@@ -58,7 +58,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
         keyholderId = isKeyholder.id;
         keyholderHouseholdId = isKeyholder.householdId;
 
-        const normal = await prisma.participant.create({
+        const normal = await prisma.person.create({
             data: {
                 name: 'Normal Scan',
                 email: `normal-${TAG}@example.com`,
@@ -78,7 +78,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
     afterAll(async () => {
         await prisma.visit.deleteMany({ where: { personId: { in: [keyholderId, normalId] } } });
         await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: [keyholderId, normalId] } } });
-        await prisma.participant.deleteMany({ where: { id: { in: [keyholderId, normalId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [keyholderId, normalId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [keyholderHouseholdId, normalHouseholdId] } } });
     });
 

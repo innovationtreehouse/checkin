@@ -50,7 +50,7 @@ export interface EmergencyContactWarning {
 type MemberLike = { id: number; name: string | null; email: string | null; phone: string | null };
 
 function loadMembers(db: Db, householdId: number): Promise<MemberLike[]> {
-    return db.participant.findMany({
+    return db.person.findMany({
         where: { householdId },
         select: { id: true, name: true, email: true, phone: true },
     });

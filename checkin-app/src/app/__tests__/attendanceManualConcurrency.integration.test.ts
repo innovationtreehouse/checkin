@@ -52,7 +52,7 @@ describe('POST /api/attendance/manual concurrency (advisory lock)', () => {
 
     beforeAll(async () => {
         // Clean any leaked state from a prior run.
-        const leaked = await prisma.participant.findMany({
+        const leaked = await prisma.person.findMany({
             where: { email: { contains: EMAIL_TAG } },
             select: { id: true, householdId: true },
         });
@@ -60,10 +60,10 @@ describe('POST /api/attendance/manual concurrency (advisory lock)', () => {
         const leakedHouseholdIds = leaked.map(p => p.householdId);
         await prisma.visit.deleteMany({ where: { personId: { in: leakedIds } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: leakedIds } } });
-        await prisma.participant.deleteMany({ where: { id: { in: leakedIds } } });
+        await prisma.person.deleteMany({ where: { id: { in: leakedIds } } });
         await prisma.household.deleteMany({ where: { id: { in: leakedHouseholdIds } } });
 
-        const subject = await prisma.participant.create({
+        const subject = await prisma.person.create({
             data: { email: `subject-${EMAIL_TAG}@example.com`, name: 'Manual Concurrency Subject', household: { create: {} } },
         });
         subjectId = subject.id;
@@ -73,7 +73,7 @@ describe('POST /api/attendance/manual concurrency (advisory lock)', () => {
     afterAll(async () => {
         await prisma.visit.deleteMany({ where: { personId: subjectId } });
         await prisma.auditLog.deleteMany({ where: { actorId: subjectId } });
-        await prisma.participant.deleteMany({ where: { id: subjectId } });
+        await prisma.person.deleteMany({ where: { id: subjectId } });
         await prisma.household.deleteMany({ where: { id: householdId } });
     });
 

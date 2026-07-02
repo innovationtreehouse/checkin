@@ -38,13 +38,13 @@ describe("PATCH /api/events/[id] cancel — attendee notification (characterizat
     let adminHouseholdId: number;
 
     beforeAll(async () => {
-        const a = await prisma.participant.create({
+        const a = await prisma.person.create({
             data: { name: 'Notify Attendee', email: `attendee-${TAG}@example.com`, household: { create: {} } },
         });
         attendeeId = a.id;
         attendeeHouseholdId = a.householdId;
 
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { name: 'Notify Admin', email: `admin-${TAG}@example.com`, household: { create: {} } },
         });
         adminId = admin.id;
@@ -64,7 +64,7 @@ describe("PATCH /api/events/[id] cancel — attendee notification (characterizat
     afterAll(async () => {
         await prisma.rSVP.deleteMany({ where: { personId: attendeeId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
-        await prisma.participant.deleteMany({ where: { id: { in: [attendeeId, adminId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [attendeeId, adminId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [attendeeHouseholdId, adminHouseholdId] } } });
     });
 

@@ -17,7 +17,7 @@ export const GET = withAuth(
             }
 
             const getParticipant = async (id: number) => {
-                const p = await prisma.participant.findUnique({
+                const p = await prisma.person.findUnique({
                     where: { id },
                     include: {
                         household: {

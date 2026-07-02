@@ -30,22 +30,22 @@ describe('Events API Integration Tests', () => {
         await prisma.program.deleteMany({
             where: { name: 'Events Test Program' }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'events-api-test' } }
         });
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-events-api-test@example.com', name: 'Admin Events Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-events-api-test@example.com', name: 'User Events Test', household: { create: {} } }
         });
         testUserId = user.id;
 
-        const mentor = await prisma.participant.create({
+        const mentor = await prisma.person.create({
             data: { email: 'mentor-events-api-test@example.com', name: 'Mentor Events Test', household: { create: {} } }
         });
         testLeadMentorId = mentor.id;
@@ -71,7 +71,7 @@ describe('Events API Integration Tests', () => {
             where: { id: testProgramId }
         });
         // RESTRICT: delete participants before their (auto-created) households.
-        const householdIds = (await prisma.participant.findMany({
+        const householdIds = (await prisma.person.findMany({
             where: { id: { in: [testAdminId, testUserId, testLeadMentorId] } },
             select: { householdId: true }
         })).map(p => p.householdId);
@@ -79,7 +79,7 @@ describe('Events API Integration Tests', () => {
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: [testAdminId, testUserId, testLeadMentorId] } }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [testAdminId, testUserId, testLeadMentorId] } }
         });
         await prisma.household.deleteMany({

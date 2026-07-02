@@ -17,7 +17,7 @@ export async function activityMembers(session: Session): Promise<ActivityMember[
     if (!session.user.householdLead || !session.user.householdId) {
         return [{ id: selfId, name: session.user.name ?? null }];
     }
-    return prisma.participant.findMany({
+    return prisma.person.findMany({
         where: { householdId: session.user.householdId },
         select: { id: true, name: true },
         orderBy: { id: "asc" },

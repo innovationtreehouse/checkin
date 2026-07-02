@@ -9,7 +9,7 @@ export const GET = withAuth(
             const eighteenYearsAgo = new Date();
             eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 
-            const rows = await prisma.participant.findMany({
+            const rows = await prisma.person.findMany({
                 select: {
                     id: true,
                     email: true,
@@ -66,7 +66,7 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: "No valid role fields provided" }, { status: 400 });
             }
 
-            const updated = await prisma.participant.update({
+            const updated = await prisma.person.update({
                 where: { id: targetUserId },
                 data: updateData,
                 select: {

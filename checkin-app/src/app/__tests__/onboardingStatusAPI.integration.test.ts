@@ -30,7 +30,7 @@ describe('Onboarding Status API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'onboarding-status-test' } },
             select: { id: true, householdId: true }
         });
@@ -38,10 +38,10 @@ describe('Onboarding Status API Integration Tests', () => {
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter((id): id is number => id !== null);
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({ where: { id: { in: existingUserIds } } });
+        await prisma.person.deleteMany({ where: { id: { in: existingUserIds } } });
         await prisma.household.deleteMany({ where: { id: { in: existingHouseholdIds } } });
 
-        const adult = await prisma.participant.create({
+        const adult = await prisma.person.create({
             data: {
                 email: 'adult-onboarding-status-test@example.com',
                 name: 'Adult No Phone',
@@ -52,7 +52,7 @@ describe('Onboarding Status API Integration Tests', () => {
         adultId = adult.id;
         householdIds.push(adult.householdId);
 
-        const youth = await prisma.participant.create({
+        const youth = await prisma.person.create({
             data: {
                 email: 'youth-onboarding-status-test@example.com',
                 name: 'Youth No Phone',
@@ -63,7 +63,7 @@ describe('Onboarding Status API Integration Tests', () => {
         youthId = youth.id;
         householdIds.push(youth.householdId);
 
-        const noDob = await prisma.participant.create({
+        const noDob = await prisma.person.create({
             data: {
                 email: 'nodob-onboarding-status-test@example.com',
                 name: 'No DOB No Phone',
@@ -76,7 +76,7 @@ describe('Onboarding Status API Integration Tests', () => {
 
     afterAll(async () => {
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [adultId, youthId, noDobId] } }
         });
         await prisma.household.deleteMany({
@@ -121,7 +121,7 @@ describe('Onboarding Status API Integration Tests', () => {
         });
 
         it('should not require a phone once one is set', async () => {
-            await prisma.participant.update({
+            await prisma.person.update({
                 where: { id: adultId },
                 data: { phone: '555-123-4567' }
             });

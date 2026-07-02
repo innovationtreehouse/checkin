@@ -37,37 +37,37 @@ describe('Membership Intake API', () => {
     let activeLeadId: number;
 
     async function wipe() {
-        const tagged = await prisma.participant.findMany({ where: { email: { contains: TAG } }, select: { householdId: true } });
+        const tagged = await prisma.person.findMany({ where: { email: { contains: TAG } }, select: { householdId: true } });
         const hhIds = tagged.map((u) => u.householdId).filter((x): x is number => x !== null);
         if (hhIds.length === 0) return;
         // Include participants created mid-flow (children/second parents lack the TAG email).
-        const inHh = await prisma.participant.findMany({ where: { householdId: { in: hhIds } }, select: { id: true } });
+        const inHh = await prisma.person.findMany({ where: { householdId: { in: hhIds } }, select: { id: true } });
         const allIds = inHh.map((p) => p.id);
         await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { householdId: { in: hhIds } } } } });
         await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: hhIds } } } });
         await prisma.membership.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.householdLead.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: allIds } } });
-        await prisma.participant.deleteMany({ where: { householdId: { in: hhIds } } });
+        await prisma.person.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
     }
 
     beforeAll(async () => {
         await wipe();
 
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: `lead-${TAG}@example.com`, name: 'Lead Parent', household: { create: { name: 'Intake Flow HH' } } },
         });
         leadId = lead.id;
         leadHouseholdId = lead.householdId!;
         await prisma.householdLead.create({ data: { householdId: leadHouseholdId, personId: leadId } });
 
-        const nonLead = await prisma.participant.create({
+        const nonLead = await prisma.person.create({
             data: { email: `nonlead-${TAG}@example.com`, name: 'Non Lead', householdId: leadHouseholdId },
         });
         nonLeadId = nonLead.id;
 
-        const activeLead = await prisma.participant.create({
+        const activeLead = await prisma.person.create({
             data: {
                 email: `active-${TAG}@example.com`,
                 name: 'Active Lead',
@@ -146,7 +146,7 @@ describe('Membership Intake API', () => {
         expect(state.prefill.children.some((c: { name: string }) => c.name === 'Kid One')).toBe(true);
 
         // Kid One was created as a non-lead (child).
-        const kid = await prisma.participant.findFirst({ where: { householdId: leadHouseholdId, name: 'Kid One' } });
+        const kid = await prisma.person.findFirst({ where: { householdId: leadHouseholdId, name: 'Kid One' } });
         expect(kid).not.toBeNull();
         const kidLead = await prisma.householdLead.findFirst({ where: { householdId: leadHouseholdId, personId: kid!.id } });
         expect(kidLead).toBeNull();
@@ -181,7 +181,7 @@ describe('Membership Intake API', () => {
     });
 
     it('intake start writes a CREATE audit and submit an EDIT audit, both bound to the lead', async () => {
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: `audit-lead-${TAG}@example.com`, name: 'Audit Lead', household: { create: { name: 'Audit Intake HH' } } },
         });
         await prisma.householdLead.create({ data: { householdId: lead.householdId!, personId: lead.id } });
@@ -214,7 +214,7 @@ describe('Membership Intake API', () => {
     });
 
     it('createRenewalProcess writes a SYSTEM_ACTOR CREATE; beginRenewal a SYSTEM_ACTOR EDIT', async () => {
-        const owner = await prisma.participant.create({
+        const owner = await prisma.person.create({
             data: {
                 email: `renew-lead-${TAG}@example.com`, name: 'Renew Lead',
                 household: { create: { name: 'Renew HH', membership: { create: { status: 'ACTIVE' } } } },

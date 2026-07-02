@@ -9,7 +9,7 @@ jest.mock('../email', () => ({
 jest.mock('../prisma', () => ({
     __esModule: true,
     default: {
-        participant: {
+        person: {
             findMany: jest.fn()
         }
     }
@@ -104,13 +104,13 @@ describe('createShopifyProgramVariants', () => {
             { email: 'board1@test.com' }
         ];
 
-        (prisma.participant.findMany as jest.Mock).mockResolvedValueOnce(mockAdmins);
+        (prisma.person.findMany as jest.Mock).mockResolvedValueOnce(mockAdmins);
 
         const result = await createShopifyProgramVariants('Test Error Program', 10, 20);
 
         expect(result).toBeNull();
 
-        expect(prisma.participant.findMany).toHaveBeenCalledWith({
+        expect(prisma.person.findMany).toHaveBeenCalledWith({
             where: {
                 OR: [{ isSysadmin: true }, { isBoardMember: true }],
                 email: { not: null }
@@ -137,7 +137,7 @@ describe('createShopifyProgramVariants', () => {
             { email: 'admin@test.com' }
         ];
 
-        (prisma.participant.findMany as jest.Mock).mockResolvedValueOnce(mockAdmins);
+        (prisma.person.findMany as jest.Mock).mockResolvedValueOnce(mockAdmins);
 
         const result = await createShopifyProgramVariants('Test Network Error', 10, 20);
 
@@ -178,7 +178,7 @@ describe('createShopifyProgramVariants', () => {
                 signal.addEventListener('abort', () => reject(signal.reason));
             }),
         );
-        (prisma.participant.findMany as jest.Mock).mockResolvedValueOnce([{ email: 'admin@test.com' }]);
+        (prisma.person.findMany as jest.Mock).mockResolvedValueOnce([{ email: 'admin@test.com' }]);
 
         const p = createShopifyProgramVariants('Test Hang', 10, 20);
         deadline.abort(new DOMException('The operation timed out', 'TimeoutError'));

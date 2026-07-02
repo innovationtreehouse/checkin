@@ -15,7 +15,7 @@ export const GET = withAuth(
             const eighteenYearsAgo = new Date();
             eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 
-            const participants = await prisma.participant.findMany({
+            const participants = await prisma.person.findMany({
                 where: q ? {
                     OR: [
                         { name: { contains: q, mode: 'insensitive' } },

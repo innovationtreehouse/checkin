@@ -35,20 +35,20 @@ describe('Localization settings API', () => {
         const existing = await prisma.appSettings.findUnique({ where: { id: 1 } });
         prevSettings = existing ? { timezone: existing.timezone, locale: existing.locale } : null;
 
-        adminId = (await prisma.participant.create({
+        adminId = (await prisma.person.create({
             data: { email: 'admin-loc-test@example.com', name: 'Loc Admin', isSysadmin: true, household: { create: {} } },
         })).id;
-        plainId = (await prisma.participant.create({
+        plainId = (await prisma.person.create({
             data: { email: 'plain-loc-test@example.com', name: 'Loc Plain', household: { create: {} } },
         })).id;
     });
 
     afterAll(async () => {
         await prisma.auditLog.deleteMany({ where: { actorId: { in: [adminId, plainId] } } });
-        const hhIds = (await prisma.participant.findMany({
+        const hhIds = (await prisma.person.findMany({
             where: { id: { in: [adminId, plainId] } }, select: { householdId: true },
         })).map((p) => p.householdId);
-        await prisma.participant.deleteMany({ where: { id: { in: [adminId, plainId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [adminId, plainId] } } });
         await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
         // Restore the singleton so other suites see the original values.
         if (prevSettings) await prisma.appSettings.update({ where: { id: 1 }, data: prevSettings });

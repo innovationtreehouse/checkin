@@ -40,7 +40,7 @@ async function wipe() {
     await prisma.emergencyContact.deleteMany({ where: { householdId: { in: ids } } });
     await prisma.auditLog.deleteMany({ where: { tableName: "EmergencyContact", secondaryAffectedEntity: { in: ids } } });
     await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-    await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+    await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
     await prisma.household.deleteMany({ where: { id: { in: ids } } });
 }
 
@@ -50,7 +50,7 @@ describe("Emergency Contacts API — removal prohibition", () => {
 
     beforeAll(async () => {
         await wipe();
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: `lead-${TAG}@example.com`, name: "Lead Person", household: { create: { name: `HH ${TAG}` } } },
         });
         leadId = lead.id;
@@ -95,10 +95,10 @@ describe("Emergency Contacts API — removal prohibition", () => {
         asUser(leadId);
         // Fresh household to isolate state.
         const hh = await prisma.household.create({ data: { name: `HH2 ${TAG}` } });
-        const p = await prisma.participant.create({ data: { email: `lead2-${TAG}@example.com`, name: "Lead Two", householdId: hh.id } });
+        const p = await prisma.person.create({ data: { email: `lead2-${TAG}@example.com`, name: "Lead Two", householdId: hh.id } });
         await prisma.householdLead.create({ data: { householdId: hh.id, personId: p.id } });
         // A contact that is flagged invalid (simulate a direction-B conflict).
-        const member = await prisma.participant.create({ data: { name: "Clashy", householdId: hh.id } });
+        const member = await prisma.person.create({ data: { name: "Clashy", householdId: hh.id } });
         const invalid = await prisma.emergencyContact.create({
             data: { householdId: hh.id, name: "Clashy", phone: "555-9000", phoneDigits: "5559000", conflictParticipantId: member.id, conflictedAt: new Date() },
         });
@@ -109,7 +109,7 @@ describe("Emergency Contacts API — removal prohibition", () => {
 
     async function makeHouseholdWithLead(label: string) {
         const hh = await prisma.household.create({ data: { name: `HH ${label} ${TAG}` } });
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: `lead-${label}-${TAG}@example.com`, name: `Lead ${label}`, householdId: hh.id },
         });
         await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });

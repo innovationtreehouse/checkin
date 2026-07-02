@@ -18,7 +18,7 @@ const mockRsvpUpsert = jest.fn();
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        participant: { findMany: (...a: unknown[]) => mockParticipantFindMany(...a) },
+        person: { findMany: (...a: unknown[]) => mockParticipantFindMany(...a) },
         event: { findUnique: (...a: unknown[]) => mockEventFindUnique(...a) },
         programParticipant: { findUnique: jest.fn() },
         programVolunteer: { findUnique: jest.fn() },

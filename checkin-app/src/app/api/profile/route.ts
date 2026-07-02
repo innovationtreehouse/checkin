@@ -7,7 +7,7 @@ import { isYouth } from "@/lib/time";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
     if (auth.type !== 'session') throw unauthorized();
-    const profile = await prisma.participant.findUnique({
+    const profile = await prisma.person.findUnique({
         where: { id: auth.user.id },
         include: {
             visits: {
@@ -18,7 +18,7 @@ export const GET = handler('GET /api/profile', async ({ auth }) => {
         },
     });
     if (!profile) throw notFound('Profile not found');
-    return { Participant: profile };
+    return { Person: profile };
 });
 
 export const PATCH = withAuth(
@@ -28,7 +28,7 @@ export const PATCH = withAuth(
             if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
             const userId = auth.user.id;
 
-            const me = await prisma.participant.findUnique({
+            const me = await prisma.person.findUnique({
                 where: { id: userId },
                 select: { dateOfBirth: true },
             });
@@ -43,7 +43,7 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
             }
 
-            const updatedProfile = await prisma.participant.update({
+            const updatedProfile = await prisma.person.update({
                 where: { id: userId },
                 data: {
                     name: name !== undefined ? name : undefined,

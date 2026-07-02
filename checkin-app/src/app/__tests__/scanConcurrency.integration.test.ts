@@ -67,7 +67,7 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
         (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'kiosk' });
 
         // Clean any leaked state from a prior run.
-        const leaked = await prisma.participant.findMany({
+        const leaked = await prisma.person.findMany({
             where: { email: { contains: EMAIL_TAG } },
             select: { id: true, householdId: true },
         });
@@ -75,10 +75,10 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
         const leakedHouseholdIds = leaked.map(p => p.householdId);
         await prisma.visit.deleteMany({ where: { personId: { in: leakedIds } } });
         await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: leakedIds } } });
-        await prisma.participant.deleteMany({ where: { id: { in: leakedIds } } });
+        await prisma.person.deleteMany({ where: { id: { in: leakedIds } } });
         await prisma.household.deleteMany({ where: { id: { in: leakedHouseholdIds } } });
 
-        const keeper = await prisma.participant.create({
+        const keeper = await prisma.person.create({
             data: { email: `keeper-${EMAIL_TAG}@example.com`, name: 'Keeper', isKeyholder: true, household: { create: {} } },
         });
         keeperId = keeper.id;
@@ -86,12 +86,12 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
         // and non-isKeyholder check-outs skip the last-isKeyholder force-close path.
         await prisma.visit.create({ data: { personId: keeperId, arrivedAt: new Date() } });
 
-        const checkinSubject = await prisma.participant.create({
+        const checkinSubject = await prisma.person.create({
             data: { email: `checkin-${EMAIL_TAG}@example.com`, name: 'Checkin Subject', household: { create: {} } },
         });
         checkinSubjectId = checkinSubject.id;
 
-        const checkoutSubject = await prisma.participant.create({
+        const checkoutSubject = await prisma.person.create({
             data: { email: `checkout-${EMAIL_TAG}@example.com`, name: 'Checkout Subject', household: { create: {} } },
         });
         checkoutSubjectId = checkoutSubject.id;
@@ -99,13 +99,13 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
 
     afterAll(async () => {
         const ids = [keeperId, checkinSubjectId, checkoutSubjectId].filter(id => id !== undefined);
-        const households = (await prisma.participant.findMany({
+        const households = (await prisma.person.findMany({
             where: { id: { in: ids } },
             select: { householdId: true },
         })).map(p => p.householdId);
         await prisma.visit.deleteMany({ where: { personId: { in: ids } } });
         await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: ids } } });
-        await prisma.participant.deleteMany({ where: { id: { in: ids } } });
+        await prisma.person.deleteMany({ where: { id: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: households } } });
     });
 

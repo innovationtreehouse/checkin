@@ -34,23 +34,23 @@ describe('My-programs conflicts resolve API', () => {
     const hoursAgo = (h: number) => new Date(Date.now() - h * 60 * 60 * 1000);
 
     beforeAll(async () => {
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: `lead-${TAG}@example.com`, name: 'Lead', household: { create: {} } },
         });
         leadId = lead.id;
         householdId = lead.householdId;
 
-        const otherLead = await prisma.participant.create({
+        const otherLead = await prisma.person.create({
             data: { email: `other-lead-${TAG}@example.com`, name: 'Other Lead', householdId },
         });
         otherLeadId = otherLead.id;
 
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: `admin-${TAG}@example.com`, name: 'Admin', isSysadmin: true, householdId },
         });
         adminId = admin.id;
 
-        const participant = await prisma.participant.create({
+        const participant = await prisma.person.create({
             data: { email: `participant-${TAG}@example.com`, name: 'Participant', householdId },
         });
         participantId = participant.id;
@@ -68,7 +68,7 @@ describe('My-programs conflicts resolve API', () => {
         await prisma.visit.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { id: eventId } });
         await prisma.program.deleteMany({ where: { id: programId } });
-        await prisma.participant.deleteMany({ where: { id: { in: [leadId, otherLeadId, adminId, participantId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [leadId, otherLeadId, adminId, participantId] } } });
         await prisma.household.deleteMany({ where: { id: householdId } });
     });
 

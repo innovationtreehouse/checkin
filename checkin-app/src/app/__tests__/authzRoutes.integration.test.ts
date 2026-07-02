@@ -35,19 +35,19 @@ describe('Sensitive route authorization', () => {
     const ENV_BEFORE = process.env.CHECKIN_ENV;
 
     beforeAll(async () => {
-        const plain = await prisma.participant.create({
+        const plain = await prisma.person.create({
             data: { name: 'Authz Plain', email: `plain-${TAG}@example.com`, household: { create: {} } },
         });
         plainId = plain.id;
         householdIds.push(plain.householdId);
 
-        const target = await prisma.participant.create({
+        const target = await prisma.person.create({
             data: { name: `ZZTarget ${TAG}`, email: `target-${TAG}@example.com`, phone: '555-0101', household: { create: {} } },
         });
         searchTargetId = target.id;
         householdIds.push(target.householdId);
 
-        const persona = await prisma.participant.create({
+        const persona = await prisma.person.create({
             data: { name: 'Persona One', email: `persona-${TAG}@example.com`, isSysadmin: true, household: { create: {} } },
         });
         personaId = persona.id;
@@ -61,7 +61,7 @@ describe('Sensitive route authorization', () => {
 
     afterAll(async () => {
         process.env.CHECKIN_ENV = ENV_BEFORE;
-        await prisma.participant.deleteMany({ where: { id: { in: [plainId, searchTargetId, personaId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [plainId, searchTargetId, personaId] } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 

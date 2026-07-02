@@ -59,12 +59,12 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         });
         programId = program.id;
 
-        const a = await prisma.participant.create({
+        const a = await prisma.person.create({
             data: { name: 'Hook P1', email: `p1-${TAG}@example.com`, household: { create: {} } },
         });
         p1 = a.id;
         h1 = a.householdId;
-        const b = await prisma.participant.create({
+        const b = await prisma.person.create({
             data: { name: 'Hook P2', email: `p2-${TAG}@example.com`, household: { create: {} } },
         });
         p2 = b.id;
@@ -92,7 +92,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         await prisma.integrationErrorLog.deleteMany({ where: { source: 'shopify-webhook' } });
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.delete({ where: { id: programId } });
-        await prisma.participant.deleteMany({ where: { id: { in: [p1, p2] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [p1, p2] } } });
         await prisma.household.deleteMany({ where: { id: { in: [h1, h2] } } });
     });
 

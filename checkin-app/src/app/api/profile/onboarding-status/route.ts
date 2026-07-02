@@ -10,7 +10,7 @@ export const GET = withAuth(
         const userId = auth.user.id;
 
         try {
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
                 include: {
                     householdLeads: true,

@@ -6,7 +6,7 @@ jest.mock("@/lib/email", () => ({
 }));
 
 jest.mock("@/lib/prisma", () => ({
-    participant: {
+    person: {
         findUnique: jest.fn().mockResolvedValue({
             id: 1,
             name: "Test Participant",

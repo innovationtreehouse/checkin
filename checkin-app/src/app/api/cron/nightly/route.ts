@@ -38,7 +38,7 @@ export const GET = withCron(async () => {
             const abandonedKeyholders = abandonedVisits.filter(v => v.person.isKeyholder);
             
             if (abandonedKeyholders.length > 0) {
-                const boardMembers = await prisma.participant.findMany({
+                const boardMembers = await prisma.person.findMany({
                     where: { isBoardMember: true },
                     select: { email: true }
                 });

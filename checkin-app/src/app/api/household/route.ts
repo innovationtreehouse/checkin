@@ -13,7 +13,7 @@ export const GET = withAuth(
             if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
             const userId = auth.user.id;
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
                 include: {
                     household: {
@@ -56,7 +56,7 @@ export const PATCH = withAuth(
             const body = await req.json();
             const { memberName, memberEmail, memberDob, memberOver25 } = body;
 
-            const user = await prisma.participant.findUnique({ where: { id: userId }, include: { householdLeads: true } });
+            const user = await prisma.person.findUnique({ where: { id: userId }, include: { householdLeads: true } });
 
             if (!user?.householdId) {
                 return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
@@ -71,10 +71,10 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
             }
 
-            let targetMember: Awaited<ReturnType<typeof prisma.participant.findUnique>> = null;
+            let targetMember: Awaited<ReturnType<typeof prisma.person.findUnique>> = null;
 
             if (memberEmail) {
-                targetMember = await prisma.participant.findUnique({ where: { email: memberEmail.toLowerCase() } });
+                targetMember = await prisma.person.findUnique({ where: { email: memberEmail.toLowerCase() } });
 
                 if (targetMember && targetMember.householdId) {
                     return NextResponse.json({ error: "A user with this email already belongs to a household." }, { status: 400 });
@@ -91,12 +91,12 @@ export const PATCH = withAuth(
 
             const { member, warning } = await prisma.$transaction(async (tx) => {
                 const member = targetMember
-                    ? await tx.participant.update({
+                    ? await tx.person.update({
                         where: { id: targetMember.id },
                         data: { householdId },
                         select: HOUSEHOLD_PEER_SELECT,
                     })
-                    : await tx.participant.create({
+                    : await tx.person.create({
                         data: {
                             name: memberName,
                             ...(memberEmail && { email: memberEmail.toLowerCase() }),

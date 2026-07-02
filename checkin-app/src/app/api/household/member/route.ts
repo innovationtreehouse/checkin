@@ -25,7 +25,7 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
             }
 
-            const user = await prisma.participant.findUnique({ where: { id: userId }, include: { householdLeads: true } });
+            const user = await prisma.person.findUnique({ where: { id: userId }, include: { householdLeads: true } });
 
             if (!user?.householdId) {
                 return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
@@ -37,13 +37,13 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: "Only household leads can edit household members" }, { status: 403 });
             }
 
-            const targetHouseholdMember = await prisma.participant.findUnique({ where: { id: participantId } });
+            const targetHouseholdMember = await prisma.person.findUnique({ where: { id: participantId } });
             if (!targetHouseholdMember || targetHouseholdMember.householdId !== user.householdId) {
                 return NextResponse.json({ error: "That household member was not found" }, { status: 404 });
             }
 
             const { updatedHouseholdMember, leadRejection, warning } = await prisma.$transaction(async (tx) => {
-                const updatedHouseholdMember = await tx.participant.update({
+                const updatedHouseholdMember = await tx.person.update({
                     where: { id: participantId },
                     data: {
                         name: name !== undefined ? name : undefined,

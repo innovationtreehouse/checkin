@@ -38,7 +38,7 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
 
     beforeAll(async () => {
         await prisma.programParticipant.deleteMany({ where: { person: { email: { contains: 'age-startdate-test' } } } });
-        await prisma.participant.deleteMany({ where: { email: { contains: 'age-startdate-test' } } });
+        await prisma.person.deleteMany({ where: { email: { contains: 'age-startdate-test' } } });
         await prisma.program.deleteMany({ where: { name: { contains: 'Age StartDate Test' } } });
 
         // minAge 14, begins 2026-09-01. Free (no prices) so enrollment is allowed.
@@ -55,7 +55,7 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
 
         // Born 2012-04-01: age 13 as of 2026-01-01 (frozen now), turns 14 on
         // 2026-04-01 — BEFORE the 2026-09-01 start. Eligible as of startAt only.
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'turns14-age-startdate-test@example.com', name: 'Turns 14 Before Start', dateOfBirth: new Date('2012-04-01T00:00:00.000Z'), household: { create: {} } }
         });
         userId = user.id;
@@ -64,7 +64,7 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
     afterAll(async () => {
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.deleteMany({ where: { id: programId } });
-        await prisma.participant.deleteMany({ where: { id: userId } });
+        await prisma.person.deleteMany({ where: { id: userId } });
     });
 
     afterEach(async () => {

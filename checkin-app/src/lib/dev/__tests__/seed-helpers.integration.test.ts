@@ -37,17 +37,17 @@ describe("dev seed-helpers (integration)", () => {
     });
 
     it("seedBaseline creates the standard personas + sample program", async () => {
-        const personas = await prisma.participant.count();
+        const personas = await prisma.person.count();
         expect(personas).toBeGreaterThanOrEqual(9);
         expect(await prisma.program.count()).toBeGreaterThanOrEqual(1);
-        expect(await prisma.participant.findUnique({ where: { email: "boardmember@example.com" } })).not.toBeNull();
+        expect(await prisma.person.findUnique({ where: { email: "boardmember@example.com" } })).not.toBeNull();
     });
 
     it("+ Family adds a household with a lead, a partner, and a youth", async () => {
-        const before = await prisma.participant.count();
+        const before = await prisma.person.count();
         const summary = await createFamily(prisma);
         expect(summary).toMatch(/Test Family/);
-        expect(await prisma.participant.count()).toBe(before + 3);
+        expect(await prisma.person.count()).toBe(before + 3);
         // The created household has exactly one lead.
         const household = await prisma.household.findFirst({
             where: { name: { startsWith: "Test Family" } },
@@ -103,7 +103,7 @@ describe("dev seed-helpers (integration)", () => {
         expect(await prisma.program.findFirst({ where: { name: { startsWith: "Test Program" } } })).toBeNull();
         expect(await prisma.household.findFirst({ where: { name: { startsWith: "Test Family" } } })).toBeNull();
         // …baseline is back…
-        expect(await prisma.participant.findUnique({ where: { email: "boardmember@example.com" } })).not.toBeNull();
+        expect(await prisma.person.findUnique({ where: { email: "boardmember@example.com" } })).not.toBeNull();
         // …and the ledger survived the truncation.
         expect(await prisma.devLedger.count()).toBe(ledgerBefore);
 

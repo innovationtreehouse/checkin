@@ -14,7 +14,7 @@ export const POST = withAuth(
             const body = await req.json();
             const { phone, emergencyContactName, emergencyContactPhone, emergencyContactEmail } = body;
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
                 include: { householdLeads: true }
             });
@@ -27,7 +27,7 @@ export const POST = withAuth(
                 if (phone !== "" && !isValidPhone(phone)) {
                     return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
                 }
-                await prisma.participant.update({
+                await prisma.person.update({
                     where: { id: userId },
                     data: { phone: phone === "" ? null : formatPhone(phone) }
                 });

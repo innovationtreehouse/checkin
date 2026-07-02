@@ -35,7 +35,7 @@ export const GET = withAuth(
             });
             participantsData = activeVisits.map(v => v.person);
         } else {
-            participantsData = await prisma.participant.findMany({
+            participantsData = await prisma.person.findMany({
                 select: {
                     id: true,
                     email: true,

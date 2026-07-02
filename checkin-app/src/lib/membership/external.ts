@@ -179,7 +179,7 @@ export async function findProcessByEnvelope(requestId: string) {
  * in-flight signing process.
  */
 export async function syncContractStatus(userId: number): Promise<ExternalStatus | null> {
-    const user = await prisma.participant.findUnique({
+    const user = await prisma.person.findUnique({
         where: { id: userId },
         include: { household: { include: { membership: { include: { processes: true } } } } },
     });
@@ -219,7 +219,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
         throw new ExternalError("not_configured", "Agreement signing isn't available yet. Please check back soon.");
     }
 
-    const user = await prisma.participant.findUnique({
+    const user = await prisma.person.findUnique({
         where: { id: userId },
         include: {
             householdLeads: true,

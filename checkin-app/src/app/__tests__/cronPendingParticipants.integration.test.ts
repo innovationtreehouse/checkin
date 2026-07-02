@@ -26,7 +26,7 @@ describe('Cron Pending-Participants API Integration Tests', () => {
     const ids: Record<string, number> = {};
 
     const mkParticipant = async (key: string) => {
-        const p = await prisma.participant.create({
+        const p = await prisma.person.create({
             data: { email: `${key}-pending-cron-test@example.com`, name: `${key} Pending Cron`, household: { create: {} } }
         });
         ids[key] = p.id;
@@ -35,13 +35,13 @@ describe('Cron Pending-Participants API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const leaked = await prisma.participant.findMany({
+        const leaked = await prisma.person.findMany({
             where: { email: { contains: 'pending-cron-test' } },
             select: { id: true }
         });
         const leakedIds = leaked.map(u => u.id);
         await prisma.programParticipant.deleteMany({ where: { personId: { in: leakedIds } } });
-        await prisma.participant.deleteMany({ where: { id: { in: leakedIds } } });
+        await prisma.person.deleteMany({ where: { id: { in: leakedIds } } });
         await prisma.program.deleteMany({ where: { name: { contains: 'Pending Cron Test' } } });
 
         const program = await prisma.program.create({
@@ -70,7 +70,7 @@ describe('Cron Pending-Participants API Integration Tests', () => {
     afterAll(async () => {
         const idList = Object.values(ids);
         await prisma.programParticipant.deleteMany({ where: { programId } });
-        await prisma.participant.deleteMany({ where: { id: { in: idList } } });
+        await prisma.person.deleteMany({ where: { id: { in: idList } } });
         await prisma.program.deleteMany({ where: { id: programId } });
     });
 

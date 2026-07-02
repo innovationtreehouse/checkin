@@ -21,9 +21,9 @@ async function ensure(
     }>,
 ) {
     const email = `policy-persona-${emailSuffix}@example.test`;
-    let p = await prisma.participant.findUnique({ where: { email } });
+    let p = await prisma.person.findUnique({ where: { email } });
     if (!p) {
-        p = await prisma.participant.create({
+        p = await prisma.person.create({
             data: {
                 email,
                 name: mutate.name ?? emailSuffix,
@@ -32,7 +32,7 @@ async function ensure(
             },
         });
     } else {
-        p = await prisma.participant.update({ where: { id: p.id }, data: mutate });
+        p = await prisma.person.update({ where: { id: p.id }, data: mutate });
     }
     return p;
 }

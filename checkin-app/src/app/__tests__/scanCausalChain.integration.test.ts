@@ -12,7 +12,7 @@ import { processCheckout } from '@/lib/scan-service';
 import prisma from '@/lib/prisma';
 import { authenticateRequest } from '@/lib/auth';
 import { processPostEventEmails } from '@/lib/postEventEmails';
-import type { Participant } from '@/generated/prisma/client';
+import type { Person } from '@/generated/prisma/client';
 
 jest.mock('@/lib/auth', () => ({ authenticateRequest: jest.fn() }));
 jest.mock('@/lib/notifications', () => ({
@@ -38,17 +38,17 @@ function scanReq(participantId: number) {
 }
 
 describe('Scan causal chain — last isKeyholder closes facility', () => {
-    let isKeyholder: Participant;
-    let normal: Participant;
+    let isKeyholder: Person;
+    let normal: Person;
     const householdIds: number[] = [];
 
     beforeAll(async () => {
         (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'kiosk' });
-        isKeyholder = await prisma.participant.create({
+        isKeyholder = await prisma.person.create({
             data: { name: 'Causal Key', email: `key-${TAG}@example.com`, isKeyholder: true, household: { create: {} } },
         });
         householdIds.push(isKeyholder.householdId);
-        normal = await prisma.participant.create({
+        normal = await prisma.person.create({
             data: { name: 'Causal Normal', email: `normal-${TAG}@example.com`, household: { create: {} } },
         });
         householdIds.push(normal.householdId);
@@ -65,7 +65,7 @@ describe('Scan causal chain — last isKeyholder closes facility', () => {
     });
 
     afterAll(async () => {
-        await prisma.participant.deleteMany({ where: { id: { in: [isKeyholder.id, normal.id] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [isKeyholder.id, normal.id] } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 

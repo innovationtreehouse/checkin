@@ -39,7 +39,7 @@ describe('GET /api/cron/reminders — auth & window edges', () => {
     let householdId: number;
 
     beforeAll(async () => {
-        const p = await prisma.participant.create({
+        const p = await prisma.person.create({
             data: { name: 'Reminders Edge', email: `p-${TAG}@example.com`, household: { create: {} } },
         });
         participantId = p.id;
@@ -59,7 +59,7 @@ describe('GET /api/cron/reminders — auth & window edges', () => {
     afterAll(async () => {
         await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
-        await prisma.participant.deleteMany({ where: { id: participantId } });
+        await prisma.person.deleteMany({ where: { id: participantId } });
         await prisma.household.deleteMany({ where: { id: householdId } });
     });
 

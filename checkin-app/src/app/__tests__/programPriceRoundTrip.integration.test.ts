@@ -35,7 +35,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
     let leadId: number;
 
     beforeAll(async () => {
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'price-roundtrip-test' } },
             select: { id: true },
         });
@@ -43,14 +43,14 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
 
         await prisma.program.deleteMany({ where: { name: { contains: PROGRAM_NAME_TAG } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: existingUserIds } } });
-        await prisma.participant.deleteMany({ where: { id: { in: existingUserIds } } });
+        await prisma.person.deleteMany({ where: { id: { in: existingUserIds } } });
 
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-price-roundtrip-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } },
         });
         adminId = admin.id;
 
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: 'lead-price-roundtrip-test@example.com', name: 'Lead', household: { create: {} } },
         });
         leadId = lead.id;
@@ -60,7 +60,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
         const ids = [adminId, leadId];
         await prisma.program.deleteMany({ where: { name: { contains: PROGRAM_NAME_TAG } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
-        await prisma.participant.deleteMany({ where: { id: { in: ids } } });
+        await prisma.person.deleteMany({ where: { id: { in: ids } } });
     });
 
     describe('CREATE: POST /api/programs', () => {

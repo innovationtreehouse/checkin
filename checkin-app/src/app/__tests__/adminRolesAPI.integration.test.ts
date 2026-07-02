@@ -24,34 +24,34 @@ describe('Admin Roles API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'roles-api-test' } },
             select: { id: true }
         });
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: existingUsers.map(u => u.id) } }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'roles-api-test' } }
         });
 
         // Setup mock database records
-        const isSysadmin = await prisma.participant.create({
+        const isSysadmin = await prisma.person.create({
             data: { email: 'sysadmin-roles-api-test@example.com', name: 'Admin Roles Test', isSysadmin: true, household: { create: {} } }
         });
         testSysAdminId = isSysadmin.id;
 
-        const isBoardMember = await prisma.participant.create({
+        const isBoardMember = await prisma.person.create({
             data: { email: 'board-roles-api-test@example.com', name: 'Board Roles Test', isBoardMember: true, household: { create: {} } }
         });
         testBoardMemberId = isBoardMember.id;
 
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-roles-api-test@example.com', name: 'User Roles Test', household: { create: {} } }
         });
         testUserId = user.id;
 
-        const targetUser = await prisma.participant.create({
+        const targetUser = await prisma.person.create({
             data: { email: 'target-roles-api-test@example.com', name: 'Target Roles Test', dateOfBirth: new Date('1990-01-01'), household: { create: {} } }
         });
         testTargetUserId = targetUser.id;
@@ -59,7 +59,7 @@ describe('Admin Roles API Integration Tests', () => {
         const now = new Date();
         const tenYearsAgo = new Date(now.getFullYear() - 10, now.getMonth(), now.getDate());
         
-        const student = await prisma.participant.create({
+        const student = await prisma.person.create({
             data: { email: 'student-roles-api-test@example.com', name: 'Student Roles Test', dateOfBirth: tenYearsAgo, household: { create: {} } }
         });
         testStudentId = student.id;
@@ -72,7 +72,7 @@ describe('Admin Roles API Integration Tests', () => {
                 where: { actorId: { in: [testSysAdminId, testBoardMemberId] } }
             });
         }
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [testSysAdminId, testBoardMemberId, testUserId, testTargetUserId, testStudentId] } }
         });
     });
@@ -203,7 +203,7 @@ describe('Admin Roles API Integration Tests', () => {
             expect(data.message).toBe("Roles updated successfully");
             expect(data.user.isBoardMember).toBe(true);
 
-            const userRef = await prisma.participant.findUnique({ where: { id: testTargetUserId } });
+            const userRef = await prisma.person.findUnique({ where: { id: testTargetUserId } });
             expect(userRef?.isBoardMember).toBe(true);
         });
 
@@ -223,7 +223,7 @@ describe('Admin Roles API Integration Tests', () => {
             const data = await res.json();
             expect(data.user.isSysadmin).toBe(true);
 
-            const userRef = await prisma.participant.findUnique({ where: { id: testTargetUserId } });
+            const userRef = await prisma.person.findUnique({ where: { id: testTargetUserId } });
             expect(userRef?.isSysadmin).toBe(true);
         });
     });

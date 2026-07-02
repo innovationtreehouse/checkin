@@ -12,7 +12,7 @@ import { householdBgIsFresh, beginRenewal, RenewalError } from '@/lib/membership
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        participant: { findFirst: jest.fn() },
+        person: { findFirst: jest.fn() },
         membershipProcess: { findUnique: jest.fn() },
         membership: { findUnique: jest.fn() },
         boardSettings: { findUnique: jest.fn() },
@@ -36,22 +36,22 @@ describe('householdBgIsFresh', () => {
 
     it('recheckMonths = 0 → not fresh, and never queries (policy unset)', async () => {
         // Even a recent check on file must not count when the board hasn't set the policy.
-        prisma.participant.findFirst.mockResolvedValue({ id: 1 });
+        prisma.person.findFirst.mockResolvedValue({ id: 1 });
 
         const result = await householdBgIsFresh(42, boundary, 0);
 
         expect(result).toBe(false);
-        expect(prisma.participant.findFirst).not.toHaveBeenCalled();
+        expect(prisma.person.findFirst).not.toHaveBeenCalled();
     });
 
     it('a lead with a check at exactly the threshold → fresh (gte boundary)', async () => {
-        prisma.participant.findFirst.mockResolvedValue({ id: 1 });
+        prisma.person.findFirst.mockResolvedValue({ id: 1 });
 
         const result = await householdBgIsFresh(42, boundary, 12);
 
         expect(result).toBe(true);
         // The boundary is inclusive (gte), and the threshold is boundary - recheckMonths.
-        expect(prisma.participant.findFirst).toHaveBeenCalledWith(
+        expect(prisma.person.findFirst).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: expect.objectContaining({
                     householdId: 42,
@@ -62,7 +62,7 @@ describe('householdBgIsFresh', () => {
     });
 
     it('no lead with a fresh-enough check → not fresh', async () => {
-        prisma.participant.findFirst.mockResolvedValue(null);
+        prisma.person.findFirst.mockResolvedValue(null);
         expect(await householdBgIsFresh(42, boundary, 12)).toBe(false);
     });
 });

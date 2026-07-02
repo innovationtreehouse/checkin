@@ -56,7 +56,7 @@ export const GET = withAuth(
 
             // Resolve actor ids to names (one batched lookup). id 0 / missing => System.
             const actorIds = [...new Set(rows.map((r) => r.actorId))];
-            const actors = await prisma.participant.findMany({
+            const actors = await prisma.person.findMany({
                 where: { id: { in: actorIds } },
                 select: { id: true, name: true },
             });

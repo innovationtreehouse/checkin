@@ -50,7 +50,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
     }
 
     // 2. The 9 debug personas (solo personas get a single-person household of their own)
-    const isBoardMember = await prisma.participant.upsert({
+    const isBoardMember = await prisma.person.upsert({
         where: { email: "boardmember@example.com" },
         update: { name: "Board Member", phone: "555-555-0001", isSysadmin: true, isBoardMember: true },
         create: {
@@ -63,7 +63,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         },
     });
 
-    const parentFamily = await prisma.participant.upsert({
+    const parentFamily = await prisma.person.upsert({
         where: { email: "parent.family@example.com" },
         update: { name: "Parent Family", phone: "555-555-0002" },
         create: {
@@ -74,7 +74,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         },
     });
 
-    const parent2Family = await prisma.participant.upsert({
+    const parent2Family = await prisma.person.upsert({
         where: { email: "parent2.family@example.com" },
         update: { name: "Parent2 Family", phone: "555-555-0003" },
         create: {
@@ -85,7 +85,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         },
     });
 
-    const childFamily = await prisma.participant.upsert({
+    const childFamily = await prisma.person.upsert({
         where: { email: "child.family@example.com" },
         update: { name: "Child Family", dateOfBirth: yearsAgo(10) },
         create: {
@@ -96,7 +96,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         },
     });
 
-    const parentFamily2 = await prisma.participant.upsert({
+    const parentFamily2 = await prisma.person.upsert({
         where: { email: "parent.family2@example.com" },
         update: { name: "Parent Family2", phone: "555-555-0004" },
         create: {
@@ -107,7 +107,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         },
     });
 
-    await prisma.participant.upsert({
+    await prisma.person.upsert({
         where: { email: "keyholder1@example.com" },
         update: { name: "Keyholder One", phone: "555-555-0005", isKeyholder: true },
         create: {
@@ -119,7 +119,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         },
     });
 
-    await prisma.participant.upsert({
+    await prisma.person.upsert({
         where: { email: "keyholder2@example.com" },
         update: { name: "Keyholder Two", phone: "555-555-0006", isKeyholder: true },
         create: {
@@ -131,7 +131,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         },
     });
 
-    const certifiedAdult = await prisma.participant.upsert({
+    const certifiedAdult = await prisma.person.upsert({
         where: { email: "certified.adult@example.com" },
         update: { name: "Certified Adult", phone: "555-555-0007" },
         create: {
@@ -145,7 +145,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
     // No carte-blanche "may certify others" role exists. This persona is a plain
     // member who holds the MAY_CERTIFY_OTHERS certification on a single tool (granted
     // below), exercising the per-tool certifier path.
-    const toolCertifier = await prisma.participant.upsert({
+    const toolCertifier = await prisma.person.upsert({
         where: { email: "tool.certifier@example.com" },
         update: { name: "Tool Certifier", phone: "555-555-0008" },
         create: {
@@ -156,7 +156,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         },
     });
 
-    await prisma.participant.upsert({
+    await prisma.person.upsert({
         where: { email: "bg.reviewer@example.com" },
         update: { name: "BG Reviewer", phone: "555-555-0009", isBackgroundCheckReviewer: true },
         create: {
@@ -169,13 +169,13 @@ export async function seedBaseline(prisma: Db): Promise<void> {
     });
 
     // 3. Household assignments & leads
-    await prisma.participant.update({ where: { id: parentFamily.id }, data: { householdId: household1.id } });
-    await prisma.participant.update({ where: { id: parent2Family.id }, data: { householdId: household1.id } });
-    await prisma.participant.update({ where: { id: childFamily.id }, data: { householdId: household1.id } });
+    await prisma.person.update({ where: { id: parentFamily.id }, data: { householdId: household1.id } });
+    await prisma.person.update({ where: { id: parent2Family.id }, data: { householdId: household1.id } });
+    await prisma.person.update({ where: { id: childFamily.id }, data: { householdId: household1.id } });
 
     await addHouseholdLead(prisma, household1.id, parentFamily.id);
 
-    await prisma.participant.update({ where: { id: parentFamily2.id }, data: { householdId: household2.id } });
+    await prisma.person.update({ where: { id: parentFamily2.id }, data: { householdId: household2.id } });
     await addHouseholdLead(prisma, household2.id, parentFamily2.id);
 
     // 4. Tools & certifications
@@ -239,7 +239,7 @@ export async function createFamily(prisma: Db): Promise<string> {
     await prisma.membership.create({
         data: { householdId: household.id, status: "ACTIVE" },
     });
-    const lead = await prisma.participant.create({
+    const lead = await prisma.person.create({
         data: {
             name: `Lead ${tag}`,
             email: `lead.${tag}@example.com`,
@@ -249,7 +249,7 @@ export async function createFamily(prisma: Db): Promise<string> {
         },
     });
     await addHouseholdLead(prisma, household.id, lead.id);
-    await prisma.participant.create({
+    await prisma.person.create({
         data: {
             name: `Partner ${tag}`,
             email: `partner.${tag}@example.com`,
@@ -257,7 +257,7 @@ export async function createFamily(prisma: Db): Promise<string> {
             householdId: household.id,
         },
     });
-    await prisma.participant.create({
+    await prisma.person.create({
         data: { name: `Kid ${tag}`, dateOfBirth: yearsAgo(9), householdId: household.id },
     });
     return `Created household "Test Family ${tag}" (lead + partner + 1 youth)`;
@@ -283,7 +283,7 @@ export async function createProgram(prisma: Db): Promise<string> {
         // Integer cents: $25.00 member / $40.00 non-member.
         data: { programId: program.id, name: "Materials", memberPriceCents: 2500, nonMemberPriceCents: 4000 },
     });
-    const enrollees = await prisma.participant.findMany({ take: 2, orderBy: { id: "asc" } });
+    const enrollees = await prisma.person.findMany({ take: 2, orderBy: { id: "asc" } });
     for (const p of enrollees) {
         await prisma.programParticipant.create({
             data: { programId: program.id, personId: p.id, status: "ACTIVE" },
@@ -307,7 +307,7 @@ export async function createEvent(prisma: Db): Promise<string> {
             description: "Auto-generated dev event",
         },
     });
-    const attendees = await prisma.participant.findMany({ take: 3, orderBy: { id: "asc" } });
+    const attendees = await prisma.person.findMany({ take: 3, orderBy: { id: "asc" } });
     for (const p of attendees) {
         await prisma.rSVP.create({
             data: { eventId: event.id, personId: p.id, status: "ATTENDING" },
@@ -319,7 +319,7 @@ export async function createEvent(prisma: Db): Promise<string> {
 
 /** + Check-ins — recent visits + badge events so attendance screens have data. */
 export async function createCheckins(prisma: Db): Promise<string> {
-    const people = await prisma.participant.findMany({ take: 5, orderBy: { id: "asc" } });
+    const people = await prisma.person.findMany({ take: 5, orderBy: { id: "asc" } });
     let count = 0;
     for (const [i, p] of people.entries()) {
         const arrived = new Date(Date.now() - (i + 1) * 45 * 60 * 1000); // staggered into the past

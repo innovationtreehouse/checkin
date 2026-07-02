@@ -30,7 +30,7 @@ async function wipe() {
     await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: hhIds } } } });
     await prisma.membership.deleteMany({ where: { householdId: { in: hhIds } } });
     await prisma.householdLead.deleteMany({ where: { householdId: { in: hhIds } } });
-    await prisma.participant.deleteMany({ where: { householdId: { in: hhIds } } });
+    await prisma.person.deleteMany({ where: { householdId: { in: hhIds } } });
     await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
 }
 
@@ -40,7 +40,7 @@ async function makeHousehold(suffix: string) {
 }
 
 async function addMember(householdId: number, data: { name?: string; email?: string; phone?: string }) {
-    return prisma.participant.create({ data: { householdId, ...data } });
+    return prisma.person.create({ data: { householdId, ...data } });
 }
 
 beforeAll(wipe);

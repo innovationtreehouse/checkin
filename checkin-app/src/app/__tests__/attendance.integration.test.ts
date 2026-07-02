@@ -30,7 +30,7 @@ describe('Attendance API Integration Tests', () => {
         // Clean up any leaked state
         await prisma.visit.deleteMany({});
         await prisma.householdLead.deleteMany({});
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'attendance-test' } }
         });
         await prisma.household.deleteMany({
@@ -43,13 +43,13 @@ describe('Attendance API Integration Tests', () => {
         });
         testHouseholdId = household.id;
 
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-attendance-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
         testAdminHouseholdId = admin.householdId;
 
-        const participant = await prisma.participant.create({
+        const participant = await prisma.person.create({
             data: { 
                 email: 'participant-attendance-test@example.com', 
                 name: 'Participant Test',
@@ -63,7 +63,7 @@ describe('Attendance API Integration Tests', () => {
             data: { householdId: testHouseholdId, personId: testParticipantId }
         });
 
-        const householdMember = await prisma.participant.create({
+        const householdMember = await prisma.person.create({
             data: { 
                 email: 'member-attendance-test@example.com', 
                 name: 'Household Member Test',
@@ -84,7 +84,7 @@ describe('Attendance API Integration Tests', () => {
         await prisma.householdLead.deleteMany({
             where: { householdId: testHouseholdId }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [testAdminId, testParticipantId, testHouseholdMemberId] } }
         });
         await prisma.household.deleteMany({

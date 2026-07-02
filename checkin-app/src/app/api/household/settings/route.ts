@@ -19,7 +19,7 @@ export const PATCH = withAuth(
             // whole address must be complete + valid.
             if (Object.keys(addressData).length > 0) assertValidAddress(addressData);
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
                 include: { householdLeads: true }
             });

@@ -17,12 +17,12 @@ export const POST = withAuth(
                 return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
             }
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
                 include: { householdLeads: true }
             });
 
-            const targetMember = await prisma.participant.findUnique({ where: { id: participantId } });
+            const targetMember = await prisma.person.findUnique({ where: { id: participantId } });
             if (!targetMember) {
                 return NextResponse.json({ error: "Participant not found" }, { status: 404 });
             }
@@ -81,12 +81,12 @@ export const DELETE = withAuth(
                 return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
             }
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
                 include: { householdLeads: true }
             });
 
-            const targetMember = await prisma.participant.findUnique({ where: { id: participantId } });
+            const targetMember = await prisma.person.findUnique({ where: { id: participantId } });
             if (!targetMember) {
                 return NextResponse.json({ error: "Participant not found" }, { status: 404 });
             }
