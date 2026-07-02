@@ -15,6 +15,7 @@
     "test": "npm -w checkin-app run test",
     "test:ci": "npm -w checkin-app run test:ci",
     "test:integration": "npm -w checkin-app run test:integration",
+    "test:coverage": "npm -w checkin-app run test:coverage",
     "check-route-coverage": "npm -w checkin-app run check-route-coverage",
     "prepare": "husky"
   },

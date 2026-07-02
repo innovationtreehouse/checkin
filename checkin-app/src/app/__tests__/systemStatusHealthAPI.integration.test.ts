@@ -35,6 +35,14 @@ describe('System status health API', () => {
         keyholderId = keyholder.id;
         householdId = keyholder.householdId;
 
+        // The real POST /api/scan handler writes its OWN scan_response_time rows on
+        // every call (route.ts) as a side effect of normal operation — any sibling
+        // integration test that exercises the real scan route (e.g. scanAuth,
+        // scanConcurrency) sharing this worker's DB leaves real rows behind. This
+        // test is the only one asserting on SystemMetricLog counts, so it's safe (and
+        // necessary, for the exact-count assertions below) to start from a clean slate.
+        await prisma.systemMetricLog.deleteMany({ where: { metric: 'scan_response_time' } });
+
         // Three samples today: 100, 200, 300ms -> median 200, p90/p99 near 300.
         const today = new Date();
         for (const value of [100, 200, 300]) {

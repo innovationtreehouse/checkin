@@ -21,16 +21,46 @@ describe('Admin Participants API Integration Tests', () => {
     let testAdminId: number;
     let testUserId: number;
 
+    // Scoping membership/householdLead deletes to exactly the households these
+    // filters own (not a blanket deleteMany({})) matters: this suite runs
+    // alongside ~285 other integration files sharing one DB per jest worker, and
+    // an unscoped wipe of every Membership/HouseholdLead row would silently
+    // corrupt their fixtures.
+    //
+    // Two scopes, matching the two lifetimes in this file: the admin/user
+    // fixtures below are created once in beforeAll and must survive every
+    // individual test, torn down only by afterAll; PER_TEST_EMAIL_FILTERS is
+    // what individual tests create and afterEach must clean between tests
+    // WITHOUT touching the persistent admin/user fixtures.
+    const PERSISTENT_EMAIL_FILTERS = [{ email: { contains: 'participants-test' } }];
+    const PER_TEST_EMAIL_FILTERS = [
+        { email: { contains: 'new-child-participants-test' } },
+        { email: { contains: 'new-lone-participants-test' } },
+        { email: { contains: 'new-parent-participants-test' } },
+        { email: { contains: 'edit-test-user' } },
+        { email: 'updated-email@example.com' },
+    ];
+
+    /** Delete participants matching `filters`, their memberships/leads, then sweep any household left empty. */
+    async function wipe(filters: Array<Record<string, unknown>>) {
+        const rows = await prisma.participant.findMany({ where: { OR: filters }, select: { householdId: true } });
+        const householdIds = [...new Set(rows.map((r) => r.householdId).filter((id): id is number => id != null))];
+        if (householdIds.length) {
+            await prisma.membership.deleteMany({ where: { householdId: { in: householdIds } } });
+            await prisma.householdLead.deleteMany({ where: { householdId: { in: householdIds } } });
+        }
+        await prisma.participant.deleteMany({ where: { OR: filters } });
+        // Only sweep households the deletion above emptied — a household this file
+        // doesn't own could share a similar name (e.g. "Test Household"), and the
+        // Participant->Household FK is RESTRICT.
+        if (householdIds.length) {
+            await prisma.household.deleteMany({ where: { id: { in: householdIds }, participants: { none: {} } } });
+        }
+    }
+
     beforeAll(async () => {
-        // Clean up any leaked state
-        await prisma.membership.deleteMany({});
-        await prisma.householdLead.deleteMany({});
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'participants-test' } }
-        });
-        await prisma.household.deleteMany({
-            where: { name: { contains: 'Test Household' } }
-        });
+        // Clean up any leaked state from a prior failed run.
+        await wipe(PERSISTENT_EMAIL_FILTERS);
 
         // Setup mock database records
         const admin = await prisma.participant.create({
@@ -44,43 +74,9 @@ describe('Admin Participants API Integration Tests', () => {
         testUserId = user.id;
     });
 
-    afterAll(async () => {
-        // Clean up
-        await prisma.membership.deleteMany({});
-        await prisma.householdLead.deleteMany({});
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'participants-test' } }
-        });
-        await prisma.household.deleteMany({
-            where: { name: { contains: 'Test Household' } }
-        });
-    });
+    afterAll(() => wipe(PERSISTENT_EMAIL_FILTERS));
 
-    afterEach(async () => {
-        // Clean up participants created during tests
-        await prisma.membership.deleteMany({});
-        await prisma.householdLead.deleteMany({});
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'new-child-participants-test' } }
-        });
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'new-lone-participants-test' } }
-        });
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'new-parent-participants-test' } }
-        });
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'edit-test-user' } }
-        });
-        await prisma.participant.deleteMany({
-            where: { email: 'updated-email@example.com' }
-        });
-        // Only sweep households the deletions above emptied — the name filter
-        // alone also matches other data's households, and the FK is RESTRICT.
-        await prisma.household.deleteMany({
-            where: { name: { contains: 'Household' }, participants: { none: {} } }
-        });
-    });
+    afterEach(() => wipe(PER_TEST_EMAIL_FILTERS));
 
     describe('POST /api/membership-ops/participants', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
@@ -279,12 +275,13 @@ describe('Admin Participants API Integration Tests', () => {
             const data = await res.json();
             expect(data.participant.name).toBe('Updated Name');
             expect(data.participant.email).toBe('updated-email@example.com');
-            expect(data.participant.phone).toBe('5551234567');
+            // The route formats via formatPhone() before saving (dashed, not raw digits).
+            expect(data.participant.phone).toBe('555-123-4567');
 
             // Verify the DB actually saved it
             const dbCheck = await prisma.participant.findUnique({ where: { id: editUser.id } });
             expect(dbCheck?.name).toBe('Updated Name');
-            expect(dbCheck?.phone).toBe('5551234567');
+            expect(dbCheck?.phone).toBe('555-123-4567');
 
             // PII edits MUST leave an audit trail naming the acting admin and the
             // before/after of the field — a regression dropping the actor or the

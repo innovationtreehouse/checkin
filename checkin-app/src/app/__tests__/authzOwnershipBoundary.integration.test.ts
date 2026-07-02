@@ -176,7 +176,9 @@ describe('Ownership-boundary authorization', () => {
 
     // ---- household/settings (PATCH) — lead-only --------------------------------
     describe('PATCH /api/household/settings', () => {
-        const body = { line1: '1 New St' };
+        // A complete address: assertValidAddress (structured addresses, #513) rejects
+        // a partial address (400) before this route's lead-only authz check even runs.
+        const body = { line1: '1 New St', city: 'Anytown', state: 'CA', postalCode: '90210' };
         it('401 unauthenticated', async () => {
             anon();
             expect((await SETTINGS_PATCH(jsonReq(body))).status).toBe(401);
