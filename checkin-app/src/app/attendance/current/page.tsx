@@ -7,7 +7,7 @@ import {
   Alert, Anchor, Badge, Box, Button, Card, Center, Group, Loader, Modal, Paper,
   SimpleGrid, Stack, Text, TextInput, Title,
 } from "@mantine/core";
-import { formatTime } from "@/lib/time";
+import { formatTime, isMinor } from "@/lib/time";
 import { formatPhone } from "@/lib/phone";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { AttendanceTabs } from "../AttendanceTabs";
@@ -37,15 +37,7 @@ type FullResponse = { access: "full"; attendance: Visit[]; counts: Counts; safet
 type LimitedResponse = { access: "limited"; counts: Counts; safety: SafetyFlags; self: Visit | null; household: Visit[] };
 type AttendanceResponse = FullResponse | LimitedResponse;
 
-const isStudent = (dob: string | undefined | null) => {
-  if (!dob) return false;
-  const birthDate = new Date(dob);
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const m = today.getMonth() - birthDate.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-  return age < 18;
-};
+const isStudent = (dob: string | undefined | null) => isMinor(dob);
 
 type SessionUser = { id: number; isSysadmin?: boolean; isKeyholder?: boolean; isBoardMember?: boolean; householdId?: number | null };
 
