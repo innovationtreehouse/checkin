@@ -1,5 +1,4 @@
-import { Prisma } from "@/generated/prisma/client";
-import type { PrismaClient } from "@/generated/prisma/client";
+import { type DbClient, type TxClient, withTx } from "@/lib/db-client";
 
 /**
  * Maximum number of leads a single household may have (issue #269).
@@ -13,16 +12,6 @@ export class HouseholdLeadLimitError extends Error {
         super(`A household can have at most ${MAX_HOUSEHOLD_LEADS} leads.`);
         this.name = "HouseholdLeadLimitError";
     }
-}
-
-// Accepts either the prisma singleton or a $transaction client. The singleton
-// has `$transaction`; a transaction client does not (it's in the ITX deny list),
-// which is how we tell them apart at runtime.
-type TxClient = Prisma.TransactionClient;
-type DbClient = PrismaClient | TxClient;
-
-function isRootClient(db: DbClient): db is PrismaClient {
-    return "$transaction" in db;
 }
 
 /**
@@ -78,9 +67,5 @@ export async function addHouseholdLead(
     householdId: number,
     participantId: number,
 ): Promise<{ created: boolean }> {
-    if (isRootClient(db)) {
-        return db.$transaction((tx) => addHouseholdLeadTx(tx, householdId, participantId));
-    }
-    // Already inside a transaction — the caller owns atomicity; just join it.
-    return addHouseholdLeadTx(db, householdId, participantId);
+    return withTx(db, (tx) => addHouseholdLeadTx(tx, householdId, participantId));
 }

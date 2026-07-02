@@ -6,8 +6,7 @@ import { sendCongrats } from "@/lib/membership/payment";
 import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
 import { config } from "@/lib/config";
 import { canonicalizeEmail } from "@/lib/emailNormalize";
-
-type TxClient = Prisma.TransactionClient;
+import { type DbClient, type TxClient } from "@/lib/db-client";
 
 /**
  * Background-check review — now a PARALLEL track, not a blocking phase.
@@ -257,7 +256,7 @@ export function matchesVolunteerDesignation(parentEmails: string[], designationE
  * reviewer marked the family volunteer-only OR a household parent's email is pre-
  * designated. Never clears it here.
  */
-export async function applyVolunteerStatus(db: TxClient | typeof prisma, membershipId: number, householdId: number, markedByReviewer: boolean) {
+export async function applyVolunteerStatus(db: DbClient, membershipId: number, householdId: number, markedByReviewer: boolean) {
     let isVolunteer = markedByReviewer;
     if (!isVolunteer) {
         const parents = await db.person.findMany({ where: { householdId, householdLeads: { some: { householdId } }, email: { not: null } }, select: { email: true } });
@@ -300,7 +299,7 @@ export async function overrideBlocked(processId: number, actorId: number, action
     return { status };
 }
 
-function audit(db: TxClient | typeof prisma, actorId: number, processId: number, oldData: object, newData: object) {
+function audit(db: DbClient, actorId: number, processId: number, oldData: object, newData: object) {
     return db.auditLog.create({
         data: {
             actorId: actorId || SYSTEM_ACTOR,

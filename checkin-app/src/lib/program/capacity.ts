@@ -1,4 +1,4 @@
-import { Prisma } from "@/generated/prisma/client";
+import type { TxClient } from "@/lib/db-client";
 
 /** Thrown by {@link lockProgramAndCheckCapacity} when a program is full. */
 export class ProgramCapacityError extends Error {
@@ -22,7 +22,7 @@ export class ProgramCapacityError extends Error {
  * auto-releases on commit/rollback.
  */
 export async function lockProgramAndCheckCapacity(
-    tx: Prisma.TransactionClient,
+    tx: TxClient,
     programId: number,
     seats: number,
     maxParticipants: number | null,

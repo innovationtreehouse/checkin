@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { Prisma } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import * as xlsx from "xlsx";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { parseImportDob } from "@/lib/importDob";
 import { calculateAge } from "@/lib/time";
+import type { DbClient } from "@/lib/db-client";
 
 export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req: NextRequest, auth) => {
     try {
@@ -53,7 +53,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
         // Helper: look up a participant's household. Every participant has one
         // (householdId is a required FK).
-        const ensureHousehold = async (participantId: number, db: Prisma.TransactionClient = prisma): Promise<number> => {
+        const ensureHousehold = async (participantId: number, db: DbClient = prisma): Promise<number> => {
             const participant = await db.person.findUnique({ where: { id: participantId } });
             if (!participant) throw new Error(`Participant ${participantId} not found`);
             return participant.householdId;
@@ -66,7 +66,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             name: string;
             dob?: Date;
             address?: string;
-        }, db: Prisma.TransactionClient = prisma) => {
+        }, db: DbClient = prisma) => {
             const isAdult = !data.dob || calculateAge(data.dob) >= 18;
             const participant = await db.person.create({
                 data: {
@@ -91,7 +91,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         // A CSV address overwrites the row's household address when provided.
         // ponytail: legacy CSV has one free-text address column → goes to line1
         // verbatim. Bulk import is being redone; structured columns land then.
-        const applyAddressToHousehold = async (householdId: number, address: string, db: Prisma.TransactionClient = prisma) => {
+        const applyAddressToHousehold = async (householdId: number, address: string, db: DbClient = prisma) => {
             if (!address) return;
             await db.household.update({
                 where: { id: householdId },
@@ -102,7 +102,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         // Helper: ensure an active household membership exists for a household
         const ensureHouseholdMembership = async (
             householdId: number,
-            db: Prisma.TransactionClient = prisma,
+            db: DbClient = prisma,
         ) => {
             await db.membership.upsert({
                 where: { householdId },
