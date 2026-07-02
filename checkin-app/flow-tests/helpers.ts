@@ -25,7 +25,15 @@ export async function loginAs(email: string): Promise<Session> {
     const jar: Jar = new Map();
 
     // Persona ids are autoincrement (vary per seed) — resolve by stable email.
-    const list = await (await fetch(`${BASE}/api/auth/dev-personas`)).json();
+    const res = await fetch(`${BASE}/api/auth/dev-personas`).catch(() => null);
+    if (!res) {
+        throw new Error(
+            `no server reachable at ${BASE}. Flow tests don't start one — run ` +
+            `'npm run test:flow:standalone' (spins Postgres + a seeded dev server via ` +
+            `docker), or start 'npm run dev' yourself first and rerun 'npm run test:flow'.`,
+        );
+    }
+    const list = await res.json();
     const persona = (list.personas ?? []).find((p: { email: string }) => p.email === email);
     if (!persona) throw new Error(`dev persona not found: ${email} (need CHECKIN_ENV=local + a seeded DB)`);
 
