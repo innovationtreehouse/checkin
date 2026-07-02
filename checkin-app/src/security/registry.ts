@@ -234,6 +234,29 @@ defineRoute({
     ],
 });
 
+// Shop tool certifications. PUBLIC BY DESIGN — cert status is physically posted
+// in the shop, so any authenticated member may read who is certified on what
+// (participantId/toolId/name = public, level = member tier). Admission is
+// 'authenticated' (a logged-in member; denied households fail closed at
+// authenticateRequest). The route selects only {id, name} (no client needs
+// email), but this policy declares participant email as staff-only: if email is
+// ever added to the select, only the staff view (everyones:pii) receives it;
+// certifiers and members match 'authenticated' and see name + level only. This
+// makes the endpoint's public intent machine-readable, so the recurring
+// IDOR-shaped audit false-positive resolves to declared policy.
+defineRoute({
+    endpoint: 'GET /api/shop/certifications',
+    authorize: 'authenticated',
+    envelope: null,
+    // Bag: { ToolStatus } with tool (Tool) and participant (Participant).
+    returns: ['ToolStatus', 'Tool', 'Participant'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['authenticated', ['member', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
