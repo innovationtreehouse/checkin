@@ -42,9 +42,9 @@ const customJestConfig = {
     // --coverage; unit-only test:ci is unaffected.
     coverageThreshold: {
         global: {
-            lines: 80,
-            branches: 70,
-            functions: 68,
+            lines: 85,
+            branches: 75,
+            functions: 75,
         },
     },
     // Count every source file, so untested files show as 0% rather than vanishing.
