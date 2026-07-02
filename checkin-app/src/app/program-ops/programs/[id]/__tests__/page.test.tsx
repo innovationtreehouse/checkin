@@ -4,8 +4,33 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
-import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import ProgramDetailsPage from "../page";
+
+// `mockFetchJson` always answers a matched URL with 200; several branches below
+// need a specific HTTP method and/or a non-2xx status (404/500/network error) on
+// the SAME url other requests hit successfully, which its url-only routing can't
+// express. This routes by url substring + method, letting `result` vary per rule
+// (or be a function for a stateful sequence of responses).
+type RouteResult = { ok?: boolean; status?: number; body?: unknown; throws?: boolean };
+function routedFetch(rules: { url: string; method?: string; result: RouteResult | (() => RouteResult) }[]) {
+  const fn = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const method = (init?.method || "GET").toUpperCase();
+    const rule = rules.find((r) => url.includes(r.url) && (!r.method || r.method === method));
+    const res = rule ? (typeof rule.result === "function" ? rule.result() : rule.result) : { ok: false, status: 404, body: {} };
+    if (res.throws) throw new Error("network error");
+    const body = res.body ?? {};
+    return {
+      ok: res.ok !== false,
+      status: res.status ?? (res.ok !== false ? 200 : 500),
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    } as Response;
+  });
+  global.fetch = fn as unknown as typeof fetch;
+  return fn;
+}
 
 // React's `use()` suspends on a bare Promise until its microtask settles, which
 // needs an async act() the RTL render() doesn't provide. Pre-tagging the promise
@@ -120,5 +145,361 @@ describe("ProgramDetailsPage", () => {
     expect(await screen.findByText("Session 1")).toBeInTheDocument();
     // Event ended in the past with no attendanceConfirmedAt -> needs confirmation.
     expect(screen.getByRole("link", { name: "Confirm Attendance" })).toBeInTheDocument();
+  });
+
+  it("shows a not-found message and navigates back", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({}); // no route matches -> 404
+    renderPage();
+
+    expect(await screen.findByText("Program not found.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(router.push).toHaveBeenCalledWith("/program-ops/programs");
+  });
+
+  it("shows a generic failure message on a non-404 load error", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    routedFetch([{ url: "/api/programs/1", method: "GET", result: { ok: false, status: 500 } }]);
+    renderPage();
+
+    expect(await screen.findByText("Failed to load program.")).toBeInTheDocument();
+  });
+
+  it("shows a network error message when loading throws", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    routedFetch([{ url: "/api/programs/1", method: "GET", result: { throws: true } }]);
+    renderPage();
+
+    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+  });
+
+  it("shows a forbidden message for a user without authorization", async () => {
+    setSession({ id: 42, isSysadmin: false, isBoardMember: false });
+    mockFetchJson({ "/api/programs/1": programData }); // leadMentorId is 5, not 42
+    renderPage();
+
+    expect(await screen.findByText("Forbidden: Not authorized to manage this program.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(router.push).toHaveBeenCalledWith("/program-ops/programs");
+  });
+
+  it("edits general-tab fields and saves settings successfully", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = routedFetch([
+      { url: "/api/programs/1", method: "GET", result: { ok: true, body: programData } },
+      { url: "/api/programs/1", method: "PATCH", result: { ok: true, body: {} } },
+    ]);
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+
+    fireEvent.change(screen.getByLabelText("Start Date"), { target: { value: "2026-02-01" } });
+    fireEvent.change(screen.getByLabelText("End Date"), { target: { value: "2026-06-01" } });
+    fireEvent.change(screen.getByLabelText("Minimum Age (Optional)"), { target: { value: "12" } });
+    fireEvent.change(screen.getByLabelText("Maximum Age (Optional)"), { target: { value: "16" } });
+    fireEvent.change(screen.getByLabelText("Max Participants (Optional)"), { target: { value: "30" } });
+    fireEvent.click(screen.getByLabelText("Member-Only Program"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Settings" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/programs/1", expect.objectContaining({ method: "PATCH" })),
+    );
+    expect(await screen.findByText("✓ Saved")).toBeInTheDocument();
+  });
+
+  it("shows the server error message when saving general settings fails", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    routedFetch([
+      { url: "/api/programs/1", method: "GET", result: { ok: true, body: programData } },
+      { url: "/api/programs/1", method: "PATCH", result: { ok: false, status: 400, body: { error: "Invalid dates." } } },
+    ]);
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Settings" }));
+    expect(await screen.findByText("Invalid dates.")).toBeInTheDocument();
+  });
+
+  it("shows a network error message when saving general settings throws", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    routedFetch([
+      { url: "/api/programs/1", method: "GET", result: { ok: true, body: programData } },
+      { url: "/api/programs/1", method: "PATCH", result: { throws: true } },
+    ]);
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Settings" }));
+    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+  });
+
+  it("switches to editing the lead mentor, selects a new one, then cancels back", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/programs/1/eligible-participants": {},
+      "/api/participants/search": { participants: [{ id: 9, name: "Andy Adult", email: "andy@example.com" }] },
+      "/api/programs/1": programData,
+    });
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    expect(screen.getByText("Mandy Mentor (mandy@example.com)")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(screen.getByRole("button", { name: "Save Settings" })).toBeDisabled();
+
+    const mentorSearchInput = screen.getByPlaceholderText("Search Adult Members...");
+    fireEvent.change(mentorSearchInput, { target: { value: "Andy" } });
+    fireEvent.click(await screen.findByText("Andy Adult"));
+    expect(screen.getByRole("button", { name: "Save Settings" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(await screen.findByText("Mandy Mentor (mandy@example.com)")).toBeInTheDocument();
+  });
+
+  it("shows read-only mentor text and the no-mentor state for a non-admin lead", async () => {
+    const soloProgram = { ...programData, leadMentorId: 8, leadMentor: null };
+    setSession({ id: 8, isSysadmin: false, isBoardMember: false });
+    mockFetchJson({ "/api/programs/1": soloProgram });
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+
+    expect(screen.getByText("No Lead Mentor Assigned")).toBeInTheDocument();
+    expect(screen.getByText("*Only Administrators/Board Members can change the Lead Mentor.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+    expect(await screen.findByText(/Program Leads cannot manually enroll participants/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enroll" })).not.toBeInTheDocument();
+  });
+
+  it("shows disabled price inputs and warns when no max participants is set for a priced program", async () => {
+    const paidProgram = { ...programData, memberPriceCents: 1500, nonMemberPriceCents: 750, maxParticipants: null };
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/programs/1": paidProgram });
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+
+    expect(screen.getByLabelText("Member Price ($)")).toBeDisabled();
+    expect(screen.getByLabelText("Member Price ($)")).toHaveValue("15");
+    expect(screen.getByLabelText("Non-Member Price ($)")).toHaveValue("7.5");
+    expect(screen.getByText(/No max participants set/)).toBeInTheDocument();
+  });
+
+  it("toggles a volunteer's core status", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({ "/api/programs/1/volunteers": {}, "/api/programs/1": programData });
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+
+    const coreCheckbox = await screen.findByLabelText("Core Volunteer");
+    fireEvent.click(coreCheckbox);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/programs/1/volunteers",
+        expect.objectContaining({ method: "PATCH", body: JSON.stringify({ participantId: 201, isCore: false }) }),
+      ),
+    );
+  });
+
+  it("removes a volunteer only when the confirm dialog is accepted", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({ "/api/programs/1/volunteers": {}, "/api/programs/1": programData });
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+    await screen.findByText(/Vera Volunteer/);
+
+    window.confirm = jest.fn(() => false);
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/programs/1/volunteers",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+
+    window.confirm = jest.fn(() => true);
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/programs/1/volunteers",
+        expect.objectContaining({ method: "DELETE", body: JSON.stringify({ participantId: 201 }) }),
+      ),
+    );
+  });
+
+  it("keeps the volunteer selection when the add request fails", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = routedFetch([
+      { url: "/api/programs/1/eligible-participants", method: "GET", result: { ok: true, body: { members: [{ id: 555, name: "Wendy West", email: "wendy@example.com" }] } } },
+      { url: "/api/programs/1/volunteers", method: "POST", result: { ok: false, status: 400, body: {} } },
+      { url: "/api/programs/1", method: "GET", result: { ok: true, body: programData } },
+    ]);
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+
+    const volunteerSearch = (await screen.findAllByPlaceholderText("Start typing to search..."))[0];
+    fireEvent.change(volunteerSearch, { target: { value: "Wendy" } });
+    fireEvent.click(await screen.findByText("Wendy West"));
+    fireEvent.click(screen.getAllByRole("button", { name: "Add" })[0]);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/programs/1/volunteers", expect.objectContaining({ method: "POST" })),
+    );
+    expect(screen.getByDisplayValue("Wendy West (wendy@example.com)")).toBeInTheDocument();
+  });
+
+  it("shows empty states when there are no volunteers, participants, or events", async () => {
+    const emptyProgram = { ...programData, participants: [], volunteers: [], events: [] };
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/programs/1": emptyProgram });
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+    expect(await screen.findByText("No volunteers assigned.")).toBeInTheDocument();
+    expect(screen.getByText("No active participants yet.")).toBeInTheDocument();
+    expect(screen.getByText("No pending participants.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Events" }));
+    expect(await screen.findByText("No events scheduled.")).toBeInTheDocument();
+  });
+
+  it("enrolls a participant after the sysadmin confirms, warns on age, and shows a server error otherwise", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const eligible = {
+      members: [
+        { id: 777, name: "Gerry Grownup", email: "gerry@example.com", dateOfBirth: "1990-01-01" },
+        { id: 778, name: "Kiki Kid", email: "kiki@example.com", dateOfBirth: "2022-01-01" }, // too young
+        { id: 779, name: "Oldman Owen", email: "owen@example.com", dateOfBirth: "1970-01-01" }, // too old
+      ],
+    };
+    let attempt = 0;
+    const fetchMock = routedFetch([
+      { url: "/api/programs/1/eligible-participants", method: "GET", result: { ok: true, body: eligible } },
+      {
+        url: "/api/programs/1/participants", method: "POST",
+        result: () => (attempt++ === 0 ? { ok: false, status: 400, body: { error: "Program is full." } } : { ok: true, body: {} }),
+      },
+      { url: "/api/programs/1", method: "GET", result: { ok: true, body: programData } },
+    ]);
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+
+    const participantSearch = (await screen.findAllByPlaceholderText("Start typing to search..."))[1];
+    fireEvent.change(participantSearch, { target: { value: "e" } });
+    await screen.findByText("Kiki Kid");
+    expect(screen.getByText(/Too Young/)).toBeInTheDocument();
+    // Both Gerry (36) and Owen (56) exceed maxAge 18 -> two "Too Old" badges.
+    expect(screen.getAllByText(/Too Old/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText("Gerry Grownup"));
+
+    window.confirm = jest.fn(() => false);
+    fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/programs/1/participants", expect.anything());
+
+    window.confirm = jest.fn(() => true);
+    fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+    expect(await screen.findByText("Program is full.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/programs/1/participants",
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ participantId: 777, override: true }) }),
+      ),
+    );
+  });
+
+  it("renders participant phone/household/pending-since edge cases and removes on confirm", async () => {
+    const detailedProgram = {
+      ...programData,
+      participants: [
+        {
+          participantId: 401, status: "ACTIVE", joinedAt: null, pendingSince: null,
+          participant: { name: "No Phone Kid", email: "nophone@example.com", phone: null, household: { emergencyContacts: [] } },
+        },
+        {
+          participantId: 402, status: "ACTIVE", joinedAt: "2026-01-02T00:00:00.000Z", pendingSince: null,
+          participant: {
+            name: "Two Contacts Kid", email: "two@example.com", phone: "5125550000",
+            household: { emergencyContacts: [
+              { id: 1, name: "Mom", phone: "5125551111", relationship: "Mother" },
+              { id: 2, name: "Dad", phone: "5125552222", relationship: "Father" },
+            ] },
+          },
+        },
+        {
+          participantId: 403, status: "PENDING", joinedAt: null, pendingSince: null,
+          participant: { name: "Unknown Pending", email: "pend@example.com", phone: null },
+        },
+      ],
+    };
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({ "/api/programs/1": detailedProgram });
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+
+    expect(await screen.findByText("Emergency Contact:")).toBeInTheDocument(); // singular, N/A
+    expect(screen.getByText("Emergency Contacts:")).toBeInTheDocument(); // plural
+    expect(screen.getByText(/Mom - 512-555-1111; Dad - 512-555-2222/)).toBeInTheDocument();
+    expect(screen.getByText("Unknown")).toBeInTheDocument(); // pendingSince null
+
+    window.confirm = jest.fn(() => true);
+    const removeButtons = screen.getAllByRole("button", { name: "Remove" });
+    // Volunteers card renders first (1 volunteer), then active participants (401, 402), then pending (403).
+    fireEvent.click(removeButtons[1]);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/programs/1/participants",
+        expect.objectContaining({ method: "DELETE", body: JSON.stringify({ participantId: 401 }) }),
+      ),
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[3]);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/programs/1/participants",
+        expect.objectContaining({ method: "DELETE", body: JSON.stringify({ participantId: 403 }) }),
+      ),
+    );
+  });
+
+  it("shows past-confirmed and future events distinctly, and can schedule a new session", async () => {
+    const eventsProgram = {
+      ...programData,
+      events: [
+        { id: 301, name: "Old Confirmed", startAt: "2026-01-01T18:00:00.000Z", endAt: "2026-01-01T20:00:00.000Z", attendanceConfirmedAt: "2026-01-02T00:00:00.000Z" },
+        { id: 302, name: "Future Session", startAt: "2027-01-01T18:00:00.000Z", endAt: "2027-01-01T20:00:00.000Z", attendanceConfirmedAt: null },
+      ],
+    };
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/programs/1": eventsProgram });
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Events" }));
+
+    expect(await screen.findByRole("link", { name: "Attendance →" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Edit Event →" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Schedule Session(s)" }));
+    expect(router.push).toHaveBeenCalledWith("/program-ops/sessions/new?programId=1");
+  });
+
+  it("runs the QR download and external-link actions, and the header back button navigates", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/programs/1": programData });
+    window.open = jest.fn();
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+
+    fireEvent.click(screen.getByRole("button", { name: /Download QR Code/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Public Registration Page/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Public Details Page/ }));
+    expect(window.open).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "← Back to Programs" }));
+    expect(router.push).toHaveBeenCalledWith("/program-ops/programs");
   });
 });
