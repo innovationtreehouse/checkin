@@ -133,8 +133,8 @@ function referenceScopesHeld(
             break;
         }
         case 'Visit': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
+            const personId = num(row.personId);
+            if (personId !== undefined && personId === ctx.selfId) scopes.add('their_own');
             if (ctx.isKeyholder && row.departedAt == null) scopes.add('all_current_visitors');
             break;
         }

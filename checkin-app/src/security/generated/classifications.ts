@@ -239,7 +239,7 @@ export const classifications = {
     },
     Visit: {
         id: 'public',
-        participantId: 'public',
+        personId: 'public',
         arrivedAt: 'personal',
         departedAt: 'personal',
         arrivedVia: 'public',
@@ -441,7 +441,7 @@ export const relations = {
         person: { model: 'Participant', isList: false },
     },
     Visit: {
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
         event: { model: 'Event', isList: false },
     },
     AuditLog: {

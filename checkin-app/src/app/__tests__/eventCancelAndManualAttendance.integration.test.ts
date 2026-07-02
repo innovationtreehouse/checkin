@@ -77,13 +77,13 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
     });
 
     afterEach(async () => {
-        await prisma.visit.deleteMany({ where: { participantId } });
+        await prisma.visit.deleteMany({ where: { personId: participantId } });
         await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
     });
 
     afterAll(async () => {
-        await prisma.visit.deleteMany({ where: { participantId } });
+        await prisma.visit.deleteMany({ where: { personId: participantId } });
         await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
         await prisma.participant.deleteMany({ where: { id: { in: [adminId, participantId] } } });
@@ -110,7 +110,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             const event = await makeEvent('single-cancel', 2 * HOUR);
             await prisma.rSVP.create({ data: { eventId: event.id, personId: participantId, status: 'ATTENDING' } });
             const visit = await prisma.visit.create({
-                data: { participantId, arrivedAt: new Date(), associatedEventId: event.id },
+                data: { personId: participantId, arrivedAt: new Date(), associatedEventId: event.id },
             });
 
             const res = await patch(event.id, { action: 'cancel' });
@@ -158,7 +158,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             const event = await makeEvent('manual-present', -1 * HOUR);
             const openArrival = new Date(Date.now() - 90 * MIN);
             const openVisit = await prisma.visit.create({
-                data: { participantId, arrivedAt: openArrival, departedAt: null, associatedEventId: event.id },
+                data: { personId: participantId, arrivedAt: openArrival, departedAt: null, associatedEventId: event.id },
             });
 
             const newArrival = new Date(Date.now() - 80 * MIN);
@@ -170,7 +170,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             });
             expect(res.status).toBe(200);
 
-            const visits = await prisma.visit.findMany({ where: { participantId, associatedEventId: event.id } });
+            const visits = await prisma.visit.findMany({ where: { personId: participantId, associatedEventId: event.id } });
             expect(visits.length).toBe(1);               // not a second visit
             expect(visits[0].id).toBe(openVisit.id);     // same row, updated in place
             expect(visits[0].arrivedAt.getTime()).toBe(newArrival.getTime());
@@ -183,13 +183,13 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
         it('rejects Absent on a live (open) check-in and keeps the visit', async () => {
             const event = await makeEvent('manual-absent-open', -1 * HOUR);
             await prisma.visit.create({
-                data: { participantId, arrivedAt: new Date(Date.now() - 30 * MIN), departedAt: null, associatedEventId: event.id },
+                data: { personId: participantId, arrivedAt: new Date(Date.now() - 30 * MIN), departedAt: null, associatedEventId: event.id },
             });
 
             const res = await patch(event.id, { action: 'manualEditAttendance', participantId, status: 'Absent' });
             expect(res.status).toBe(400);
 
-            const visits = await prisma.visit.findMany({ where: { participantId, associatedEventId: event.id } });
+            const visits = await prisma.visit.findMany({ where: { personId: participantId, associatedEventId: event.id } });
             expect(visits.length).toBe(1); // open visit survives
         });
 
@@ -197,7 +197,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             const event = await makeEvent('manual-absent-closed', -2 * HOUR);
             await prisma.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: new Date(Date.now() - 90 * MIN),
                     departedAt: new Date(Date.now() - 60 * MIN),
                     associatedEventId: event.id,
@@ -207,7 +207,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             const res = await patch(event.id, { action: 'manualEditAttendance', participantId, status: 'Absent' });
             expect(res.status).toBe(200);
 
-            const visits = await prisma.visit.findMany({ where: { participantId, associatedEventId: event.id } });
+            const visits = await prisma.visit.findMany({ where: { personId: participantId, associatedEventId: event.id } });
             expect(visits.length).toBe(0); // closed visit removed
         });
 
@@ -215,21 +215,21 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             const event = await makeEvent('manual-absent-mix', -2 * HOUR);
             await prisma.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: new Date(Date.now() - 110 * MIN),
                     departedAt: new Date(Date.now() - 80 * MIN),
                     associatedEventId: event.id,
                 },
             });
             await prisma.visit.create({
-                data: { participantId, arrivedAt: new Date(Date.now() - 30 * MIN), departedAt: null, associatedEventId: event.id },
+                data: { personId: participantId, arrivedAt: new Date(Date.now() - 30 * MIN), departedAt: null, associatedEventId: event.id },
             });
 
             const res = await patch(event.id, { action: 'manualEditAttendance', participantId, status: 'Absent' });
             expect(res.status).toBe(400);
 
             // All-or-nothing: the open visit blocks the edit, so the closed one stays too.
-            const visits = await prisma.visit.findMany({ where: { participantId, associatedEventId: event.id } });
+            const visits = await prisma.visit.findMany({ where: { personId: participantId, associatedEventId: event.id } });
             expect(visits.length).toBe(2);
         });
     });

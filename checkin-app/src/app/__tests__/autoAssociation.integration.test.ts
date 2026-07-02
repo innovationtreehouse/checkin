@@ -154,7 +154,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
         it('should not split a visit that falls completely within one event', async () => {
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: new Date(`${baseDateString}10:15:00Z`),
                     associatedEventId: eventAId
                 }
@@ -173,7 +173,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             const arrivalTime = new Date(`${baseDateString}09:30:00Z`);
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: arrivalTime,
                     associatedEventId: null // We'll say it wasn't associated on entry for testing the chunker
                 }
@@ -212,7 +212,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             const arrivalTime = new Date(`${baseDateString}10:30:00Z`);
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: arrivalTime,
                     associatedEventId: eventAId
                 }
@@ -236,7 +236,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             const arrivalTime = new Date(`${baseDateString}13:30:00Z`);
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: arrivalTime
                 }
             });

@@ -328,7 +328,7 @@ export async function createCheckins(prisma: Db): Promise<string> {
         });
         await prisma.visit.create({
             data: {
-                participantId: p.id,
+                personId: p.id,
                 arrivedAt: arrived,
                 // Leave the most recent two still "here" (no departure) for active-visit screens.
                 departedAt: i < 2 ? null : new Date(arrived.getTime() + 90 * 60 * 1000),

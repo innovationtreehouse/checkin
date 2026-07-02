@@ -29,7 +29,7 @@ describe('Event Attendance API Integration Tests', () => {
     beforeAll(async () => {
         // Clean up any leaked state
         await prisma.visit.deleteMany({
-            where: { participant: { email: { contains: 'event-attendance-test' } } }
+            where: { person: { email: { contains: 'event-attendance-test' } } }
         });
         await prisma.event.deleteMany({
             where: { name: 'Attendance Test Event' }
@@ -107,7 +107,7 @@ describe('Event Attendance API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.visit.deleteMany({
-            where: { participantId: { in: [testParticipant1Id, testParticipant2Id] } }
+            where: { personId: { in: [testParticipant1Id, testParticipant2Id] } }
         });
         await prisma.event.deleteMany({
             where: { id: testEventId }
@@ -134,7 +134,7 @@ describe('Event Attendance API Integration Tests', () => {
     afterEach(async () => {
         // Clear visits created during tests
         await prisma.visit.deleteMany({
-            where: { participantId: { in: [testParticipant1Id, testParticipant2Id] } }
+            where: { personId: { in: [testParticipant1Id, testParticipant2Id] } }
         });
         // Clear audit rows so each test asserts exactly its own write.
         // Per-Visit audit rows carry the event in secondaryAffectedEntity;
@@ -178,7 +178,7 @@ describe('Event Attendance API Integration Tests', () => {
         // Mirrors fd192fc (trusted-adults "assert no mutation after IDOR 403").
         async function attendanceWriteCount() {
             const visits = await prisma.visit.count({
-                where: { participantId: { in: [testParticipant1Id, testParticipant2Id] }, associatedEventId: testEventId }
+                where: { personId: { in: [testParticipant1Id, testParticipant2Id] }, associatedEventId: testEventId }
             });
             const audits = await prisma.auditLog.count({
                 where: { tableName: 'Visit', secondaryAffectedEntity: testEventId }
@@ -250,7 +250,7 @@ describe('Event Attendance API Integration Tests', () => {
             expect(data.processed).toBe(1);
 
             const visits = await prisma.visit.findMany({
-                where: { participantId: testParticipant1Id, associatedEventId: testEventId }
+                where: { personId: testParticipant1Id, associatedEventId: testEventId }
             });
             expect(visits.length).toBe(1);
             expect(visits[0].arrivedAt).not.toBeNull();
@@ -283,7 +283,7 @@ describe('Event Attendance API Integration Tests', () => {
             
             await prisma.visit.create({
                 data: {
-                    participantId: testParticipant2Id,
+                    personId: testParticipant2Id,
                     arrivedAt: earlyArrival,
                     departedAt: null, // Still active
                 }
@@ -302,7 +302,7 @@ describe('Event Attendance API Integration Tests', () => {
             expect(data.processed).toBe(1);
 
             const visits = await prisma.visit.findMany({
-                where: { participantId: testParticipant2Id }
+                where: { personId: testParticipant2Id }
             });
             expect(visits.length).toBe(1); // Should only be the one we created
             expect(visits[0].associatedEventId).toBe(testEventId); // It was successfully linked

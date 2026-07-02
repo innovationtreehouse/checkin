@@ -204,7 +204,7 @@ export const GET = withAuth({}, async (_req, auth) => {
     const [building, buildingHousehold, activePrograms] = await Promise.all([
         prisma.visit.count({ where: { departedAt: null } }),
         user.householdId
-            ? prisma.visit.count({ where: { departedAt: null, participant: { householdId: user.householdId } } })
+            ? prisma.visit.count({ where: { departedAt: null, person: { householdId: user.householdId } } })
             : Promise.resolve(0),
         prisma.program.count({ where: { phase: "RUNNING" } }),
     ]);

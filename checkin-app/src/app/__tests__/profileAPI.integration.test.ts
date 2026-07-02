@@ -29,7 +29,7 @@ describe('Profile API Integration Tests', () => {
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter((id): id is number => id !== null);
 
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.auditLog.deleteMany({
@@ -62,15 +62,15 @@ describe('Profile API Integration Tests', () => {
             data: [
                 // Closed (departedAt set): a participant may have only one OPEN visit
                 // (Visit_one_open_per_participant partial unique index); these are history.
-                { participantId: testUserId, arrivedAt: new Date(Date.now() - 3600000), departedAt: new Date(Date.now() - 3000000) },
-                { participantId: testUserId, arrivedAt: new Date(Date.now() - 7200000), departedAt: new Date(Date.now() - 6600000) }
+                { personId: testUserId, arrivedAt: new Date(Date.now() - 3600000), departedAt: new Date(Date.now() - 3000000) },
+                { personId: testUserId, arrivedAt: new Date(Date.now() - 7200000), departedAt: new Date(Date.now() - 6600000) }
             ]
         });
     });
 
     afterAll(async () => {
         await prisma.visit.deleteMany({
-            where: { participantId: testUserId }
+            where: { personId: testUserId }
         });
 
         await prisma.auditLog.deleteMany({

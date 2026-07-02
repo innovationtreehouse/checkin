@@ -40,7 +40,7 @@ describe('Shop API Integration Tests', () => {
             where: { personId: { in: existingUserIds } }
         });
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         // RESTRICT: delete participants before their households
         await prisma.participant.deleteMany({
@@ -120,7 +120,7 @@ describe('Shop API Integration Tests', () => {
                 where: { personId: { in: existingUserIds } }
             });
             await prisma.visit.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
             // RESTRICT: delete participants before their households
             await prisma.participant.deleteMany({

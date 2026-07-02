@@ -105,9 +105,9 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
     if (ctx.isKeyholder) {
         const visits = await prisma.visit.findMany({
             where: { departedAt: null },
-            select: { participantId: true },
+            select: { personId: true },
         });
-        for (const v of visits) ctx.activeVisitorIds.add(v.participantId);
+        for (const v of visits) ctx.activeVisitorIds.add(v.personId);
     }
 
     return ctx;

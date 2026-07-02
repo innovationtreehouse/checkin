@@ -108,7 +108,7 @@ export const POST = withKiosk(
             // 6. Check-in or check-out
             const activeVisit = await tx.visit.findFirst({
                 where: {
-                    participantId: participant.id,
+                    personId: participant.id,
                     departedAt: null,
                 },
                 orderBy: { arrivedAt: "desc" },
