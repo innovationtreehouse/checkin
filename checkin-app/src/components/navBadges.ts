@@ -62,7 +62,7 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
     }
     case '/finance-ops':
       // Pending participants awaiting payment-plan approval.
-      return green(counts.admin ? counts.admin.programsPending : 0, 'Pending payment-plan approvals');
+      return green(counts.admin ? counts.admin.paymentPlanPending : 0, 'Pending payment-plan approvals');
     case '/safety':
       // Trusted-adult disclosures awaiting board review.
       return green(counts.admin ? counts.admin.trustedAdults : 0, 'Trusted-adult disclosures to review');

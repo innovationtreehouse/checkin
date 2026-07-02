@@ -232,7 +232,7 @@ describe('Nav todo-counts API', () => {
         // membership = BLOCKED only (see delta test below); the seeded PENDING_BG_REVIEW
         // is reviewer work and no longer counts, so just assert it's a number.
         expect(typeof data.admin.membership).toBe('number');
-        expect(data.admin.programsPending).toBeGreaterThanOrEqual(1); // payment-plan requested
+        expect(data.admin.paymentPlanPending).toBeGreaterThanOrEqual(1); // payment-plan requested
         expect(data.admin.trustedAdults).toBeGreaterThanOrEqual(1); // the PENDING_BOARD_REVIEW review
         expect(typeof data.admin.unclaimedHouseholds).toBe('number'); // households with an unclaimed account
     });
