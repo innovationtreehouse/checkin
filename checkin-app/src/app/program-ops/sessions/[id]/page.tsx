@@ -3,12 +3,13 @@
 import { useState, useEffect, use, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Checkbox, Container, Group, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 import type { RSVPStatus } from '@/types/rsvp';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type ParticipantDetail = {
   participantId: number;
   participant: {
@@ -211,7 +212,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   };
 
   if (loading || authLoading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) return null;

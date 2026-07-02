@@ -7,6 +7,7 @@ import { AlertBanner } from "@/components/admin/AlertBanner";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 interface Settings {
   timezone: string;
   locale: string;
@@ -84,7 +85,7 @@ export default function LocalizationSettingsPage() {
   const isDirty = !!initial && !shallowEqual(initial, { timezone, locale });
   useUnsavedGuard(isDirty);
 
-  if (authLoading) return <Center mih="60vh"><Loader /></Center>;
+  if (authLoading) return <PageLoader />;
   if (!ready) return null; // redirect in flight
 
   return (

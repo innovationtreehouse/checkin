@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { Button, Card, Center, Checkbox, Container, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { Button, Card, Checkbox, Container, Group, Stack, Text, Title } from "@mantine/core";
 import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 interface Person {
     id: number;
     name: string | null;
@@ -78,7 +79,7 @@ export default function MembershipReviewPage() {
   };
 
   if (sessionStatus === "loading" || loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (forbidden || sessionStatus === "unauthenticated") {

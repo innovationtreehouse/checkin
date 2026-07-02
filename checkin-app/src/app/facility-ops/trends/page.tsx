@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Center, Group, Loader, SegmentedControl, Select, SimpleGrid, Stack, Table, Text } from "@mantine/core";
+import { Card, Group, SegmentedControl, Select, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type PeriodType = "week" | "month" | "quarter" | "year";
 
 interface TrendBucket {
@@ -62,13 +63,13 @@ export default function ParticipationTrendsPage() {
   }, [period, programId, ready]);
 
   if (authLoading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) return null;
 
   if (loading && buckets.length === 0) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   const fmtHours = (h: number) => {

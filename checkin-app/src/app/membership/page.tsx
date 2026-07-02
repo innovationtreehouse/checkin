@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import type { MembershipProcessStatus, MembershipStatus } from "@/generated/prisma/client";
 import {
-  Alert, Anchor, Box, Button, Card, Center, Checkbox, Container, Group, Loader,
+  Alert, Anchor, Box, Button, Card, Checkbox, Container, Group,
   SimpleGrid, Stack, Text, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
@@ -18,6 +18,7 @@ import AddressForm from "@/components/membership/AddressForm";
 import EmergencyContactForm from "@/components/membership/EmergencyContactForm";
 import ChildrenListForm from "@/components/membership/ChildrenListForm";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
 interface PersonPrefill {
@@ -433,7 +434,7 @@ export default function MembershipPage() {
   const confirmNav = useConfirmNav();
 
   if (sessionStatus === "loading" || loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!session?.user) {

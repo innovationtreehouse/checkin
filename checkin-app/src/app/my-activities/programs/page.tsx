@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Badge, Button, Card, Center, Container, Loader, SimpleGrid, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Container, SimpleGrid, Text, Title } from '@mantine/core';
 import { formatDate } from '@/lib/time';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type UserProgram = {
   programId: number;
   personId: number;
@@ -47,9 +48,7 @@ export default function MyProgramsDashboard() {
 
   if (status === "loading") {
     return (
-      <Center mih="60vh">
-        <Loader />
-      </Center>
+      <PageLoader />
     );
   }
 
@@ -76,9 +75,7 @@ export default function MyProgramsDashboard() {
       )}
 
       {loading ? (
-        <Center mih="30vh">
-          <Loader />
-        </Center>
+        <PageLoader minHeight="30vh" />
       ) : enrollments.length === 0 ? (
         <Card withBorder radius="md" padding="xl" ta="center">
           <Text c="dimmed">You are not enrolled in any programs yet.</Text>

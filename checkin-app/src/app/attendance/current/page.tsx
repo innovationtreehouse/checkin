@@ -13,6 +13,7 @@ import { formatPhone } from "@/lib/phone";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { AttendanceTabs } from "../AttendanceTabs";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type Person = {
   id: number;
   email: string;
@@ -544,7 +545,7 @@ function KioskDisplayInner() {
 
 export default function KioskDisplay() {
   return (
-    <Suspense fallback={<Center mih="100vh"><Loader /></Center>}>
+    <Suspense fallback={<PageLoader minHeight="100vh" />}>
       <KioskDisplayInner />
     </Suspense>
   );

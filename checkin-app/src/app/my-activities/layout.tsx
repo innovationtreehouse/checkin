@@ -3,11 +3,12 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Box, Center, Loader } from "@mantine/core";
+import { Box } from "@mantine/core";
 import { SectionTabs } from "@/components/ui/SectionTabs";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { MY_ACTIVITIES_NAV_LINKS } from "@/lib/myActivitiesNav";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 export default function MyActivitiesLayout({ children }: { children: React.ReactNode }) {
   const { status } = useSession();
   const router = useRouter();
@@ -18,9 +19,7 @@ export default function MyActivitiesLayout({ children }: { children: React.React
 
   if (status === "loading") {
     return (
-      <Center mih="60vh">
-        <Loader />
-      </Center>
+      <PageLoader />
     );
   }
 

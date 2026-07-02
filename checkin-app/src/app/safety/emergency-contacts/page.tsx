@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Badge, Card, Center, Group, List, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Badge, Card, Center, Group, List, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { formatPhone } from "@/lib/phone";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type ParticipantInfo = {
   id: number;
   name: string | null;
@@ -85,7 +86,7 @@ export default function EmergencyContactsPage() {
   });
 
   if (authLoading || loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) return null;

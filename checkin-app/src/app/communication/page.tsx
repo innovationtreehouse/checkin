@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Card, Center, Checkbox, Loader, Stack, Text, Title, Tooltip } from '@mantine/core';
+import { Alert, Card, Checkbox, Stack, Text, Title, Tooltip } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 const OPTIONS = [
   { key: 'emailCheckinReceipts', label: 'Email me when I check in or out' },
   { key: 'emailDependentCheckins', label: 'Email me realtime receipts when my dependents check in/out' },
@@ -82,7 +83,7 @@ export default function CommunicationPage() {
   };
 
   if (loading || status === "loading") {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!session) return null; // Fallback while router redirects

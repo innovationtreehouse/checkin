@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Box, Button, Card, Center, Checkbox, Group, Loader, NumberInput, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
+import { Alert, Box, Button, Card, Checkbox, Group, NumberInput, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
 import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type ParticipantOption = {
   id: number;
   name: string | null;
@@ -93,7 +94,7 @@ export default function CreateProgramPage() {
   useUnsavedGuard(isDirty);
 
   if (authLoading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) return null;

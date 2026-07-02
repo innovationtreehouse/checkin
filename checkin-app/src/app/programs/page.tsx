@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { Alert, Badge, Button, Card, Center, Checkbox, Divider, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Checkbox, Divider, Group, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { formatDate } from '@/lib/time';
 import { PageContainer } from '@/components/ui/PageContainer';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type ProgramSummary = {
   id: number;
   name: string;
@@ -55,7 +56,7 @@ export default function PublicProgramsDirectory() {
   }, [activeOnly, isAuthorized]);
 
   if (loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   return (

@@ -3,16 +3,14 @@
 import { use, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import {
-  Alert, Badge, Box, Button, Card, Center, Checkbox, Container, Divider, Group,
-  Loader, NumberInput, Select, SimpleGrid, Stack, Tabs, Text, TextInput, Title,
-} from '@mantine/core';
+import { Alert, Badge, Box, Button, Card, Checkbox, Container, Divider, Group, NumberInput, Select, SimpleGrid, Stack, Tabs, Text, TextInput, Title } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { EntityPicker } from '@/components/admin/EntityPicker';
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 import { ProgramRosterTab } from './ProgramRosterTab';
 import { ProgramEventsTab } from './ProgramEventsTab';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 export type ProgramDetail = {
   id: number;
   name: string;
@@ -162,7 +160,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   };
 
   if (loading || authLoading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) return null;

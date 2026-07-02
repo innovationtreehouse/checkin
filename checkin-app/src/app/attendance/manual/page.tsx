@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Button, Card, Center, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Card, Stack, Text, TextInput, Title } from "@mantine/core";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { AttendanceTabs } from "../AttendanceTabs";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 export default function ManualAttendance() {
   const { ready, loading: authLoading } = useRequireRole([]);
   const [arrivedAt, setArrived] = useState("");
@@ -42,7 +43,7 @@ export default function ManualAttendance() {
     }
   };
 
-  if (authLoading) return <Center mih="60vh"><Loader /></Center>;
+  if (authLoading) return <PageLoader />;
   if (!ready) return null;
 
   const departureError = error === "Departure time is required for past arrivals.";

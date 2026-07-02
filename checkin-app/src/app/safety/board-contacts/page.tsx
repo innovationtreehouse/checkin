@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, Center, Loader, Stack, Table, Text, Title } from "@mantine/core";
+import { Card, Center, Stack, Table, Text, Title } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { formatPhone } from "@/lib/phone";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type BoardMember = {
   id: number;
   name: string | null;
@@ -41,7 +42,7 @@ export default function BoardContactInfoPage() {
   }, [ready, fetchMembers]);
 
   if (authLoading || loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) return null;
