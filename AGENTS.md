@@ -27,8 +27,14 @@ routes, auth, and DB together.
 
 - **Config:** `jest.flow.config.js` (node env, **skips `jest.setup.js`** so it
   uses native `fetch` with `getSetCookie` and no prisma/next-auth mocks).
-- **Run locally:** start the app (`npm run dev`, serves `:4000`) against a seeded
-  local DB, then `npm run test:flow`. Override the target with
+- **Run locally, no setup:** `npm run test:flow:standalone` (from `checkin-app/`)
+  — brings up `deploy/docker-compose.flow.yml` (Postgres + seeded dev server),
+  runs the suite inside that container, tears down. This is what CI does; use
+  it unless you already have a dev server running.
+- **Run against a server you already have up:** start the app (`npm run dev`,
+  serves `:4000`) against a seeded local DB, then `npm run test:flow`. Bare
+  `test:flow` does NOT start anything — it assumes `:4000` is already live and
+  fails with a connection error otherwise. Override the target with
   `FLOW_BASE_URL=http://host:port`.
 - **Auth:** `flow-tests/helpers.ts` → `loginAs(email)` signs in via the local
   **persona-mint** flow (resolves the seeded persona by its stable email, since
