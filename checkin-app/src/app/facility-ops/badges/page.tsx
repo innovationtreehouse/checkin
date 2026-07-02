@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Center, Loader, Stack } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { AlertBanner } from '@/components/admin/AlertBanner';
+import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { formatDateTime } from '@/lib/time';
 
@@ -27,7 +27,7 @@ export default function AdminBadgesPage() {
 
   const [loading, setLoading] = useState(true);
   const [badges, setBadges] = useState<BadgeEvent[]>([]);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; tone: AlertTone } | null>(null);
 
   const fetchBadges = useCallback(async () => {
     try {
@@ -36,10 +36,10 @@ export default function AdminBadgesPage() {
         const data = await res.json();
         setBadges(data.badges);
       } else {
-        setMessage("Failed to load badge events.");
+        setMessage({ text: "Failed to load badge events.", tone: "error" });
       }
     } catch {
-      setMessage("Network error loading badges.");
+      setMessage({ text: "Network error loading badges.", tone: "error" });
     } finally {
       setLoading(false);
     }
@@ -57,7 +57,7 @@ export default function AdminBadgesPage() {
 
   return (
     <Stack>
-      <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
+      <AlertBanner message={message?.text} tone={message?.tone} />
 
       <DataTable columns={COLUMNS} rows={badges} getRowKey={(b) => b.id} emptyMessage="No badge events." />
     </Stack>
