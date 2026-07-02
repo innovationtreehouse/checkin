@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Center, Group, Loader, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
 import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconRobot, IconScan, IconSelector } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { AlertBanner } from '@/components/admin/AlertBanner';
+import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
 type VisitSource = 'SCANNER' | 'WEB' | 'SYSTEM';
@@ -52,7 +52,7 @@ export default function AdminVisitsPage() {
 
   const [loading, setLoading] = useState(true);
   const [visits, setVisits] = useState<Visit[]>([]);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; tone: AlertTone } | null>(null);
 
   const [editingVisitId, setEditingVisitId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ arrivedAt: "", departedAt: "" });
@@ -93,10 +93,10 @@ export default function AdminVisitsPage() {
         const data = await res.json();
         setVisits(data.visits);
       } else {
-        setMessage("Failed to load visits.");
+        setMessage({ text: "Failed to load visits.", tone: "error" });
       }
     } catch {
-      setMessage("Network error loading visits.");
+      setMessage({ text: "Network error loading visits.", tone: "error" });
     } finally {
       setLoading(false);
     }
@@ -129,14 +129,14 @@ export default function AdminVisitsPage() {
         })
       });
       if (res.ok) {
-        setMessage("Visit updated successfully.");
+        setMessage({ text: "Visit updated successfully.", tone: "success" });
         setEditingVisitId(null);
         fetchVisits();
       } else {
-        setMessage("Failed to update visit.");
+        setMessage({ text: "Failed to update visit.", tone: "error" });
       }
     } catch {
-      setMessage("Network error saving visit.");
+      setMessage({ text: "Network error saving visit.", tone: "error" });
     }
   };
 
@@ -148,7 +148,7 @@ export default function AdminVisitsPage() {
 
   return (
     <Stack>
-      <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
+      <AlertBanner message={message?.text} tone={message?.tone} />
 
       <Table.ScrollContainer minWidth={800}>
         <Table verticalSpacing="sm" highlightOnHover>
