@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports */
-import { screen, waitFor, fireEvent } from "@testing-library/react";
+import { screen, waitFor, fireEvent, within } from "@testing-library/react";
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 import { renderWithProviders, mockFetchJson, setSession, router, resetRtl } from "@/test-helpers/rtl";
@@ -105,8 +105,10 @@ describe("EventAdminPage", () => {
         expect(await screen.findByText("Event time updated successfully!")).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Edit Date / Time" }));
-        window.confirm = jest.fn(() => true);
         fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
+
+        const confirmModal = await screen.findByRole("dialog", { name: "Cancel Event" });
+        fireEvent.click(within(confirmModal).getByRole("button", { name: "Cancel Event(s)" }));
         await waitFor(() => expect(router.push).toHaveBeenCalledWith("/program-ops/programs/10"));
     });
 });

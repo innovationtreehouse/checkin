@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Alert, Button, Card, Center, Checkbox, Group, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Card, Center, Checkbox, Group, Loader, Modal, Stack, Text, TextInput, Title } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
@@ -44,6 +45,7 @@ export default function MembershipSettingsPage() {
   const [initial, setInitial] = useState<Record<string, string> | null>(null);
 
   const [bulkReminders, setBulkReminders] = useState(false);
+  const [confirmOpenRenewalsOpened, { open: openConfirmOpenRenewals, close: closeConfirmOpenRenewals }] = useDisclosure(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -104,7 +106,7 @@ export default function MembershipSettingsPage() {
   };
 
   const bulkOpenRenewals = async () => {
-    if (!confirm("Open a renewal cycle for ALL active members now? This is a one-time go-live action.")) return;
+    closeConfirmOpenRenewals();
     setSaving(true);
     flash("");
     try {
@@ -242,12 +244,27 @@ export default function MembershipSettingsPage() {
               onChange={(e) => setBulkReminders(e.currentTarget.checked)}
               label="Also email each household a renewal reminder"
             />
-            <Button color="yellow" disabled={saving} loading={saving} onClick={bulkOpenRenewals}>
+            <Button color="yellow" disabled={saving} loading={saving} onClick={openConfirmOpenRenewals}>
               Open renewals for all active members
             </Button>
           </Card>
         </>
       )}
+
+      <Modal
+        opened={confirmOpenRenewalsOpened}
+        onClose={closeConfirmOpenRenewals}
+        title={<Text span fw={700} fz="lg">Open Renewals For All Active Members</Text>}
+        centered
+      >
+        <Text mb="lg">
+          Open a renewal cycle for ALL active members now? This is a one-time go-live action.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmOpenRenewals}>Cancel</Button>
+          <Button color="yellow" onClick={bulkOpenRenewals}>Open Renewals</Button>
+        </Group>
+      </Modal>
     </Stack>
   );
 }

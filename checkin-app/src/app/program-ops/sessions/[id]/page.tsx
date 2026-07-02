@@ -4,6 +4,7 @@ import { useState, useEffect, use, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 import type { RSVPStatus } from '@/types/rsvp';
@@ -69,6 +70,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   const [newStart, setNewStart] = useState("");
   const [newEnd, setNewEnd] = useState("");
   const [applyToFuture, setApplyToFuture] = useState(false);
+  const [confirmCancelOpened, { open: openConfirmCancel, close: closeConfirmCancel }] = useDisclosure(false);
 
   // Manual Edit States
   const [editingAttendance, setEditingAttendance] = useState<(ParticipantDetail & { role: string }) | null>(null);
@@ -187,8 +189,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   };
 
   const handleCancelEvent = async () => {
-    if (!confirm("Are you sure you want to cancel this event? This action cannot be undone.")) return;
-
+    closeConfirmCancel();
     setActionLoading(true);
     try {
       const res = await fetch(`/api/events/${id}`, {
@@ -453,7 +454,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
 
                 <Group>
                   <Button color="green" onClick={handleEditTime} disabled={actionLoading} loading={actionLoading}>Save Time Changes</Button>
-                  <Button color="red" variant="light" onClick={handleCancelEvent} disabled={actionLoading} loading={actionLoading}>Cancel Event(s)</Button>
+                  <Button color="red" variant="light" onClick={openConfirmCancel} disabled={actionLoading} loading={actionLoading}>Cancel Event(s)</Button>
                   <Button variant="default" onClick={() => setEditMode(false)} disabled={actionLoading} ml="auto">Nevermind</Button>
                 </Group>
               </Stack>
@@ -502,6 +503,19 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
             <Button onClick={handleSaveManualAttendance} disabled={actionLoading} loading={actionLoading}>Save</Button>
           </Group>
         </Stack>
+      </Modal>
+
+      <Modal
+        opened={confirmCancelOpened}
+        onClose={closeConfirmCancel}
+        title={<Text span fw={700} fz="lg">Cancel Event</Text>}
+        centered
+      >
+        <Text mb="lg">Are you sure you want to cancel this event? This action cannot be undone.</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmCancel}>Nevermind</Button>
+          <Button color="red" onClick={handleCancelEvent} disabled={actionLoading} loading={actionLoading}>Cancel Event(s)</Button>
+        </Group>
       </Modal>
     </Container>
   );

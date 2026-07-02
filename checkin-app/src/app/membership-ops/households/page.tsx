@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Button, Center, Group, List, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
+import { Button, Center, Group, List, Loader, Modal, Stack, Table, Text, TextInput } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { AdminEditHouseholdModal } from '@/components/admin/AdminEditHouseholdModal';
@@ -24,6 +25,8 @@ export default function AdminHouseholdsPage() {
   const [error, setError] = useState("");
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
   const [filter, setFilter] = useState("");
+  const [confirmDenyOpened, { open: openConfirmDeny, close: closeConfirmDeny }] = useDisclosure(false);
+  const [pendingDenyHouseholdId, setPendingDenyHouseholdId] = useState<number | null>(null);
 
   const fetchHouseholds = useCallback(async () => {
     try {
@@ -66,11 +69,15 @@ export default function AdminHouseholdsPage() {
   // Deny blocks login for every member of the household; restore (deny=false) returns it
   // to NONE so they can log in again with no privileges. Separate from grant/revoke.
   const setDenied = async (householdId: number, deny: boolean) => {
-    if (deny && !window.confirm(
-      'Deny membership for this household? Every member will be unable to log in.'
-    )) {
+    if (deny) {
+      setPendingDenyHouseholdId(householdId);
+      openConfirmDeny();
       return;
     }
+    await doSetDenied(householdId, false);
+  };
+
+  const doSetDenied = async (householdId: number, deny: boolean) => {
     try {
       const res = await fetch('/api/membership-ops/households', {
         method: 'POST',
@@ -87,6 +94,14 @@ export default function AdminHouseholdsPage() {
     } catch {
       notifications.show({ color: 'red', message: 'Network error.' });
     }
+  };
+
+  const confirmDeny = async () => {
+    if (pendingDenyHouseholdId === null) return;
+    closeConfirmDeny();
+    const householdId = pendingDenyHouseholdId;
+    setPendingDenyHouseholdId(null);
+    await doSetDenied(householdId, true);
   };
 
   if (authLoading || loading) {
@@ -237,6 +252,19 @@ export default function AdminHouseholdsPage() {
         onClose={() => setEditHouseholdId(null)}
         onSaved={() => fetchHouseholds()}
       />
+
+      <Modal
+        opened={confirmDenyOpened}
+        onClose={closeConfirmDeny}
+        title={<Text span fw={700} fz="lg">Deny Membership</Text>}
+        centered
+      >
+        <Text mb="lg">Deny membership for this household? Every member will be unable to log in.</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmDeny}>Cancel</Button>
+          <Button color="red" onClick={confirmDeny}>Deny Membership</Button>
+        </Group>
+      </Modal>
     </Stack>
   );
 }

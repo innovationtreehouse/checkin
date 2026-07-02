@@ -119,18 +119,20 @@ describe("attendance/current page", () => {
   });
 
   it("force-checks-out a user via the sign-out modal", async () => {
-    window.confirm = jest.fn(() => true);
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
     await screen.findByText("3 People Present");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out a user" }));
-    const modal = await screen.findByRole("dialog");
+    const modal = await screen.findByRole("dialog", { name: "Sign Out A User" });
     expect(within(modal).getByText("Val Volunteer")).toBeInTheDocument();
     // Rows are sorted alphabetically: Karen, Stu, Val -> Val is the 3rd "Sign Out" button.
     const signOutButtons = within(modal).getAllByRole("button", { name: "Sign Out" });
     fireEvent.click(signOutButtons[2]);
+
+    const confirmModal = await screen.findByRole("dialog", { name: "Force Checkout" });
+    fireEvent.click(within(confirmModal).getByRole("button", { name: "Force Checkout" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
