@@ -31,7 +31,7 @@ export const GET = withAuth(
                         householdMembers: {
                             select: { id: true, name: true, email: true }
                         },
-                        householdLeads: { select: { personId: true } },
+                        leads: { select: { personId: true } },
                         membership: true,
                         emergencyContacts: {
                             where: PRIMARY_CONTACT_WHERE,
@@ -41,7 +41,9 @@ export const GET = withAuth(
                         },
                     }
                 });
-                return NextResponse.json({ household: household ? withFlatContact(household) : null });
+                if (!household) return NextResponse.json({ household: null });
+                const { leads: householdLeads, ...rest } = household;
+                return NextResponse.json({ household: { ...withFlatContact(rest), householdLeads } });
             }
 
             const whereClause = q ? {

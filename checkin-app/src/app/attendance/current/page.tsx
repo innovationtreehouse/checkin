@@ -202,7 +202,7 @@ function KioskDisplayInner() {
       openConfirmCheckout();
       return;
     }
-    await doForceCheckout(visitId);
+    await doForceCheckout(visitId, true);
   };
 
   const doForceCheckout = async (visitId: number, isSelf: boolean = false) => {

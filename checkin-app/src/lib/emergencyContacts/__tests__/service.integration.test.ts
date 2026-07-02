@@ -16,7 +16,9 @@ import {
     reconcileAndWarn,
     householdHasValidContact,
     listValidContacts,
+    getPrimaryValidContact,
     countHouseholdsMissingValidContact,
+    findHouseholdsMissingValidContact,
     EmergencyContactError,
 } from "@/lib/emergencyContacts/service";
 
@@ -86,6 +88,17 @@ describe("createContact — direction A (hard)", () => {
         const c = await createContact(prisma, b, { name: "Neighbor", phone: "555-555-7777" });
         expect(c.id).toBeGreaterThan(0);
     });
+
+    it("rejects a blank name or blank phone as incomplete", async () => {
+        const hh = await makeHousehold("blank");
+        await expect(createContact(prisma, hh, { name: "  ", phone: "555-555-2000" })).rejects.toMatchObject({ code: "incomplete" });
+        await expect(createContact(prisma, hh, { name: "Aunt May", phone: "  " })).rejects.toMatchObject({ code: "incomplete" });
+    });
+
+    it("rejects a malformed phone number as incomplete", async () => {
+        const hh = await makeHousehold("badphone");
+        await expect(createContact(prisma, hh, { name: "Aunt May", phone: "123" })).rejects.toMatchObject({ code: "incomplete" });
+    });
 });
 
 describe("upsertPrimaryContact — partial tolerance + member rejection", () => {
@@ -118,6 +131,28 @@ describe("upsertPrimaryContact — partial tolerance + member rejection", () => 
         const all = await prisma.emergencyContact.findMany({ where: { householdId: hh } });
         expect(all).toHaveLength(1);
         expect(all[0].phone).toBe("555-555-3000");
+    });
+
+    it("rejects a malformed phone even when the name is blank", async () => {
+        const hh = await makeHousehold("upsert-badphone");
+        await expect(upsertPrimaryContact(prisma, hh, { name: "", phone: "123" })).rejects.toMatchObject({ code: "incomplete" });
+    });
+});
+
+describe("getPrimaryValidContact", () => {
+    it("returns the valid contact, skipping a flagged one, ordered by priority", async () => {
+        const hh = await makeHousehold("primary-valid");
+        await createContact(prisma, hh, { name: "Aunt May", phone: "555-555-2000" });
+        await addMember(hh, { name: "Aunt May", phone: "555-555-2000" }); // flags May via reconcile below
+        await reconcileHouseholdConflicts(prisma, hh);
+        const good = await createContact(prisma, hh, { name: "Neighbor Bob", phone: "555-555-4000" });
+        const primary = await getPrimaryValidContact(prisma, hh);
+        expect(primary?.id).toBe(good.id);
+    });
+
+    it("returns null when the household has no valid contact", async () => {
+        const hh = await makeHousehold("primary-none");
+        expect(await getPrimaryValidContact(prisma, hh)).toBeNull();
     });
 });
 
@@ -157,6 +192,44 @@ describe("reconcileHouseholdConflicts — direction B (soft)", () => {
         await createContact(prisma, hh, { name: "Aunt May", phone: "555-555-2000" });
         await addMember(hh, { name: "Unrelated Kid", phone: "555-555-8888" });
         expect(await reconcileAndWarn(prisma, hh)).toBeNull();
+    });
+
+    it("clears a stale flag once the colliding member is gone", async () => {
+        const hh = await makeHousehold("stale-clear");
+        const contact = await createContact(prisma, hh, { name: "Aunt May", phone: "555-555-2000" });
+        const member = await addMember(hh, { name: "Aunt May", phone: "555-555-2000" });
+        await reconcileHouseholdConflicts(prisma, hh);
+        expect((await prisma.emergencyContact.findUnique({ where: { id: contact.id } }))?.conflictParticipantId).toBe(member.id);
+
+        // The colliding member leaves the household — the flag is now stale.
+        await prisma.person.delete({ where: { id: member.id } });
+        await reconcileHouseholdConflicts(prisma, hh);
+        expect((await prisma.emergencyContact.findUnique({ where: { id: contact.id } }))?.conflictParticipantId).toBeNull();
+    });
+
+    it("re-points a flag to a new colliding member when the original member is gone", async () => {
+        const hh = await makeHousehold("repoint");
+        const contact = await createContact(prisma, hh, { name: "Aunt May", phone: "555-555-2000" });
+        const memberA = await addMember(hh, { name: "Aunt May", phone: "555-555-2000" });
+        await reconcileHouseholdConflicts(prisma, hh);
+        expect((await prisma.emergencyContact.findUnique({ where: { id: contact.id } }))?.conflictParticipantId).toBe(memberA.id);
+
+        // Member A leaves, a different member with the SAME identity arrives.
+        await prisma.person.delete({ where: { id: memberA.id } });
+        const memberB = await addMember(hh, { name: "Aunt May", phone: "555-555-2000" });
+        await reconcileHouseholdConflicts(prisma, hh);
+        const after = await prisma.emergencyContact.findUnique({ where: { id: contact.id } });
+        expect(after?.conflictParticipantId).toBe(memberB.id);
+    });
+
+    it("reconcileAndWarn reports hasValidContact=true when another valid contact remains", async () => {
+        const hh = await makeHousehold("warn-still-valid");
+        await createContact(prisma, hh, { name: "Aunt May", phone: "555-555-2000" });
+        await createContact(prisma, hh, { name: "Neighbor Bob", phone: "555-555-4000" });
+        await addMember(hh, { name: "Aunt May", phone: "555-555-2000" });
+        const warning = await reconcileAndWarn(prisma, hh);
+        expect(warning?.hasValidContact).toBe(true);
+        expect(warning?.message).toContain("marked invalid");
     });
 });
 
@@ -200,5 +273,14 @@ describe("countHouseholdsMissingValidContact — admin alarm", () => {
         // Remediate -> count returns to baseline.
         await createContact(prisma, hh, { name: "Neighbor Bob", phone: "555-555-4000" });
         expect(await countHouseholdsMissingValidContact(prisma)).toBe(baseline);
+    });
+
+    it("also scopes an ACTIVE membership with no in-flight process", async () => {
+        const before = await findHouseholdsMissingValidContact(prisma);
+        const hh = await makeHousehold("alarm-active");
+        await prisma.membership.create({ data: { householdId: hh, status: "ACTIVE" } });
+        const after = await findHouseholdsMissingValidContact(prisma);
+        expect(after.length).toBe(before.length + 1);
+        expect(after).toContain(hh);
     });
 });

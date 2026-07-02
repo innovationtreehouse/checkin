@@ -11,7 +11,7 @@ export type AdminHousehold = {
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   householdMembers?: Array<{ id: number; name: string | null; email: string | null }>;
-  householdLeads?: Array<{ participantId: number }>;
+  householdLeads?: Array<{ personId: number }>;
 } & Partial<StructuredAddress>;
 
 type FormState = {
@@ -80,7 +80,7 @@ export function AdminEditHouseholdModal({
         setInitial(loaded);
         setDisplayName(h.name || `Household #${h.id}`);
         setMembers(h.householdMembers ?? []);
-        setLeadIds((h.householdLeads ?? []).map((l) => l.participantId));
+        setLeadIds((h.householdLeads ?? []).map((l) => l.personId));
       }
     } catch {
       notifications.show({ color: "red", message: "Failed to load household." });

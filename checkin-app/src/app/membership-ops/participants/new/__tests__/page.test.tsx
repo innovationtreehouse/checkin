@@ -4,10 +4,13 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
-import { renderWithProviders, mockFetchJson, setSession, setSearchParams, resetRtl } from "@/test-helpers/rtl";
+import { renderWithProviders, mockFetchJson, setSession, setSearchParams, resetRtl, router } from "@/test-helpers/rtl";
 import NewParticipantPage from "../page";
 
 beforeEach(() => resetRtl());
+
+const household = { id: 9, name: "The Does", householdMembers: [{ id: 1, name: "Jane Doe", email: null }, { id: 2, name: null, email: "john@example.com" }] };
+const emptyHousehold = { id: 8, name: "", householdMembers: [] };
 
 describe("membership-ops/participants/new page", () => {
   it("renders the registration form", async () => {
@@ -74,5 +77,142 @@ describe("membership-ops/participants/new page", () => {
     renderWithProviders(<NewParticipantPage />);
 
     expect(await screen.findByDisplayValue("The Smiths")).toBeInTheDocument();
+  });
+
+  it("redirects a caller without sysadmin/board-member role, and shows a loader while resolving", () => {
+    setSession(null, "loading");
+    renderWithProviders(<NewParticipantPage />);
+    expect(screen.queryByText("Register New User")).not.toBeInTheDocument();
+
+    setSession({ id: 1 });
+    renderWithProviders(<NewParticipantPage />);
+    expect(router.push).toHaveBeenCalledWith("/");
+  });
+
+  it("falls back to a numbered household label when the deep-linked household has no name", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    setSearchParams("householdId=8");
+    mockFetchJson({ "/api/membership-ops/households?id=8": { household: emptyHousehold } });
+    renderWithProviders(<NewParticipantPage />);
+
+    expect(await screen.findByDisplayValue("Household #8")).toBeInTheDocument();
+  });
+
+  it("leaves the household unset when the deep-link lookup fails", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    setSearchParams("householdId=404");
+    mockFetchJson({}); // unmatched -> 404, res.ok false
+    renderWithProviders(<NewParticipantPage />);
+    await screen.findByText("Register New User");
+    expect(screen.getByPlaceholderText("Search households...")).toHaveValue("");
+  });
+
+  it("leaves the household unset when the deep-link lookup returns no household", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    setSearchParams("householdId=204");
+    mockFetchJson({ "/api/membership-ops/households?id=204": {} }); // ok, but no `household`
+    renderWithProviders(<NewParticipantPage />);
+    await screen.findByText("Register New User");
+    expect(screen.getByPlaceholderText("Search households...")).toHaveValue("");
+  });
+
+  it("logs and recovers when the deep-link lookup throws", async () => {
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
+    setSession({ id: 1, isSysadmin: true });
+    setSearchParams("householdId=9");
+    global.fetch = jest.fn(() => Promise.reject(new Error("net"))) as unknown as typeof fetch;
+    renderWithProviders(<NewParticipantPage />);
+    await screen.findByText("Register New User");
+
+    await waitFor(() => expect(consoleError).toHaveBeenCalledWith("Failed to fetch deep linked household:", expect.any(Error)));
+    consoleError.mockRestore();
+  });
+
+  it("searches, selects, and clears a household, hiding the already-member checkbox while one is set", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/membership-ops/households": { households: [household] } });
+    renderWithProviders(<NewParticipantPage />);
+    await screen.findByText("Register New User");
+
+    fireEvent.change(screen.getByPlaceholderText("Search households..."), { target: { value: "Does" } });
+    fireEvent.click(await screen.findByText("The Does", { exact: false }));
+    expect(screen.getByDisplayValue("The Does")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Confirm this household is already a paid member")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.queryByDisplayValue("The Does")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Confirm this household is already a paid member")).toBeInTheDocument();
+  });
+
+  it("submits an adult assigned to a household, with alreadyMember forced false", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({
+      "/api/membership-ops/households": { households: [household] },
+      "/api/membership-ops/participants": { participant: { email: "member@example.com" } },
+    });
+    renderWithProviders(<NewParticipantPage />);
+    await screen.findByText("Register New User");
+
+    fireEvent.change(screen.getByPlaceholderText("Search households..."), { target: { value: "Does" } });
+    fireEvent.click(await screen.findByText("The Does", { exact: false }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Participant" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/membership-ops/participants",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            name: "", email: null, parentEmail: null, dob: null, householdId: 9, alreadyMember: false,
+          }),
+        }),
+      ),
+    );
+    expect(await screen.findByText("Participant member@example.com successfully!")).toBeInTheDocument();
+  });
+
+  it("submits a student with a parent email and no household", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({
+      "/api/membership-ops/participants": { participant: { email: "kid@example.com" } },
+    });
+    renderWithProviders(<NewParticipantPage />);
+    await screen.findByText("Register New User");
+
+    fireEvent.change(screen.getByLabelText("Date of Birth"), { target: { value: "2015-01-01" } });
+    await screen.findByText("Student Detected");
+    fireEvent.change(screen.getByLabelText(/Parent \/ Guardian Google Email/), { target: { value: "parent@example.com" } });
+    fireEvent.click(screen.getByLabelText("Confirm this household is already a paid member"));
+
+    const submitBtn = screen.getByRole("button", { name: "Create Participant" });
+    expect(submitBtn).toBeEnabled();
+    fireEvent.click(submitBtn);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/membership-ops/participants",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            name: "", email: null, parentEmail: "parent@example.com", dob: "2015-01-01", householdId: null, alreadyMember: true,
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("shows a server error message, then a network-error message, on submit failure", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    renderWithProviders(<NewParticipantPage />);
+    await screen.findByText("Register New User");
+    fireEvent.change(screen.getByPlaceholderText("jane.doe@example.com"), { target: { value: "jane@example.com" } });
+
+    global.fetch = jest.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: "Email taken." }) })) as unknown as typeof fetch;
+    fireEvent.click(screen.getByRole("button", { name: "Create Participant" }));
+    expect(await screen.findByText("Email taken.")).toBeInTheDocument();
+
+    global.fetch = jest.fn(() => Promise.reject(new Error("net"))) as unknown as typeof fetch;
+    fireEvent.click(screen.getByRole("button", { name: "Create Participant" }));
+    expect(await screen.findByText("Network error")).toBeInTheDocument();
   });
 });

@@ -49,7 +49,7 @@ type EmergencyContact = { id: number; name: string; phone: string; email?: strin
 type HouseholdData = {
   id?: number;
   name?: string;
-  leads?: Array<{ participantId: number }>;
+  leads?: Array<{ personId: number }>;
   householdMembers?: HouseholdMember[];
   membership?: { status?: string; memberSince?: string; isVolunteer?: boolean } | null;
 } & Partial<StructuredAddress> | null;
@@ -329,7 +329,7 @@ export default function HouseholdPage() {
   // Staff (@innovationtreehouse.org) accounts aren't real member families; the add-member
   // control is hidden for them (server also enforces this — see /api/household PATCH).
   const isStaffAccount = isOrgAccount(sessionUser as { hd?: string | null; email?: string | null });
-  const isLead = (pid: number) => household?.leads?.some((l) => l.participantId === pid) ?? false;
+  const isLead = (pid: number) => household?.leads?.some((l) => l.personId === pid) ?? false;
   const viewerIsLead = isLead(userId);
 
   const sortedHouseholdMembers = (household?.householdMembers || []).slice().sort((a, b) => {
