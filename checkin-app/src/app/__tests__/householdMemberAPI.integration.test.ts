@@ -33,7 +33,7 @@ describe('Household Member API Integration Tests', () => {
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter(id => id !== null) as number[];
         
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         
         await prisma.membership.deleteMany({
@@ -65,7 +65,7 @@ describe('Household Member API Integration Tests', () => {
         testLeadId = leadUser.id;
 
         await prisma.householdLead.create({
-            data: { householdId: household.id, participantId: leadUser.id }
+            data: { householdId: household.id, personId: leadUser.id }
         });
 
         const memberUser = await prisma.participant.create({
@@ -94,7 +94,7 @@ describe('Household Member API Integration Tests', () => {
         const validHouseholdIds = [householdId, otherHouseholdId];
 
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: currentIds } }
+            where: { personId: { in: currentIds } }
         });
         
         await prisma.membership.deleteMany({
@@ -243,7 +243,7 @@ describe('Household Member API Integration Tests', () => {
 
              // Verify they are now a lead
              const leadRecord = await prisma.householdLead.findUnique({
-                 where: { householdId_participantId: { householdId: householdId, participantId: testNonLeadId } }
+                 where: { householdId_personId: { householdId: householdId, personId: testNonLeadId } }
              });
              expect(leadRecord).not.toBeNull();
         });
@@ -264,7 +264,7 @@ describe('Household Member API Integration Tests', () => {
 
              // Verify they are no longer a lead
              const leadRecord = await prisma.householdLead.findUnique({
-                 where: { householdId_participantId: { householdId: householdId, participantId: testNonLeadId } }
+                 where: { householdId_personId: { householdId: householdId, personId: testNonLeadId } }
              });
              expect(leadRecord).toBeNull();
         });
@@ -285,7 +285,7 @@ describe('Household Member API Integration Tests', () => {
 
              // Verify they are STILL a lead
              const leadRecord = await prisma.householdLead.findUnique({
-                 where: { householdId_participantId: { householdId: householdId, participantId: testLeadId } }
+                 where: { householdId_personId: { householdId: householdId, personId: testLeadId } }
              });
              expect(leadRecord).not.toBeNull();
         });

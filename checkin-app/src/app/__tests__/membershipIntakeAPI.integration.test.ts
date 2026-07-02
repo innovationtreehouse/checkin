@@ -60,7 +60,7 @@ describe('Membership Intake API', () => {
         });
         leadId = lead.id;
         leadHouseholdId = lead.householdId!;
-        await prisma.householdLead.create({ data: { householdId: leadHouseholdId, participantId: leadId } });
+        await prisma.householdLead.create({ data: { householdId: leadHouseholdId, personId: leadId } });
 
         const nonLead = await prisma.participant.create({
             data: { email: `nonlead-${TAG}@example.com`, name: 'Non Lead', householdId: leadHouseholdId },
@@ -75,7 +75,7 @@ describe('Membership Intake API', () => {
             },
         });
         activeLeadId = activeLead.id;
-        await prisma.householdLead.create({ data: { householdId: activeLead.householdId!, participantId: activeLeadId } });
+        await prisma.householdLead.create({ data: { householdId: activeLead.householdId!, personId: activeLeadId } });
     });
 
     afterAll(async () => {
@@ -148,7 +148,7 @@ describe('Membership Intake API', () => {
         // Kid One was created as a non-lead (child).
         const kid = await prisma.participant.findFirst({ where: { householdId: leadHouseholdId, name: 'Kid One' } });
         expect(kid).not.toBeNull();
-        const kidLead = await prisma.householdLead.findFirst({ where: { householdId: leadHouseholdId, participantId: kid!.id } });
+        const kidLead = await prisma.householdLead.findFirst({ where: { householdId: leadHouseholdId, personId: kid!.id } });
         expect(kidLead).toBeNull();
     });
 
@@ -184,7 +184,7 @@ describe('Membership Intake API', () => {
         const lead = await prisma.participant.create({
             data: { email: `audit-lead-${TAG}@example.com`, name: 'Audit Lead', household: { create: { name: 'Audit Intake HH' } } },
         });
-        await prisma.householdLead.create({ data: { householdId: lead.householdId!, participantId: lead.id } });
+        await prisma.householdLead.create({ data: { householdId: lead.householdId!, personId: lead.id } });
         asUser(lead.id);
 
         const startRes = await POST(req() as never);

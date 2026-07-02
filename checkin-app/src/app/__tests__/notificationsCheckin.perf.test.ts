@@ -20,7 +20,7 @@ jest.mock("@/lib/prisma", () => ({
     householdLead: {
         findMany: jest.fn().mockResolvedValue(
             Array.from({ length: 10 }).map((_, i) => ({
-                participant: {
+                person: {
                     id: 2 + i,
                     name: `Lead ${i}`,
                     email: `lead${i}@example.com`,

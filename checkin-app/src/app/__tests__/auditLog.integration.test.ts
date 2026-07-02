@@ -83,7 +83,7 @@ describe('AuditLog Integration Tests', () => {
             await prisma.visit.deleteMany({ where: { id: { in: createdVisitIds } } });
         }
         if (createdParticipantIds.length > 0) {
-            await prisma.householdLead.deleteMany({ where: { participantId: { in: createdParticipantIds } } });
+            await prisma.householdLead.deleteMany({ where: { personId: { in: createdParticipantIds } } });
             await prisma.participant.deleteMany({ where: { id: { in: createdParticipantIds } } });
         }
         if (createdHouseholdIds.length > 0) {

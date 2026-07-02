@@ -71,7 +71,7 @@ describe('POST /api/membership/contract/sign', () => {
         const hh = await prisma.household.create({ data: { name: `HH ${TAG}` } });
         const lead = await prisma.participant.create({ data: { email: `lead-${TAG}@example.com`, name: 'Lead Parent', householdId: hh.id } });
         const nonLead = await prisma.participant.create({ data: { email: `member-${TAG}@example.com`, name: 'Member', householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
         const proc = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
         leadId = lead.id;
@@ -122,7 +122,7 @@ describe('POST /api/membership/contract/sign', () => {
     it('lets a RENEWAL process in the EXTERNAL phase sign (renewals re-sign fresh)', async () => {
         const hh = await prisma.household.create({ data: { name: `HH renewal ${TAG}` } });
         const rLead = await prisma.participant.create({ data: { email: `rlead-${TAG}@example.com`, name: 'Renewing Lead', householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: rLead.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: rLead.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
         await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'RENEWAL', status: 'PENDING_EXTERNAL_ACTION' } });
 
@@ -179,7 +179,7 @@ describe('POST /api/membership/contract/sign', () => {
         // Household whose lead is someone else; the signer is a isSysadmin member, not a lead.
         const hh = await prisma.household.create({ data: { name: `HH isSysadmin ${TAG}` } });
         const otherLead = await prisma.participant.create({ data: { email: `otherlead-${TAG}@example.com`, name: 'Other Lead', householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: otherLead.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: otherLead.id } });
         const isSysadmin = await prisma.participant.create({ data: { email: `isSysadmin-${TAG}@example.com`, name: 'Sys Admin', householdId: hh.id, isSysadmin: true } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
         await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
@@ -195,7 +195,7 @@ describe('POST /api/membership/contract/sign', () => {
         // which loads the agreement PDF; make that throw AgreementUnavailableError.
         const hh = await prisma.household.create({ data: { name: `HH noagreement ${TAG}` } });
         const lead = await prisma.participant.create({ data: { email: `noagr-lead-${TAG}@example.com`, name: 'NoAgr Lead', householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
         await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
 

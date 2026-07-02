@@ -248,7 +248,7 @@ export const authOptions: NextAuthOptions = {
                             }
                         },
                         // One row is enough to mark this participant a household lead.
-                        householdLeads: { take: 1, select: { participantId: true } },
+                        householdLeads: { take: 1, select: { personId: true } },
                         // Program ids led — drives the client program-ops row gate.
                         programsLed: { select: { id: true } },
                         household: { include: { membership: true } }
@@ -289,7 +289,7 @@ export const authOptions: NextAuthOptions = {
                             }
                         },
                         // One row is enough to mark this participant a household lead.
-                        householdLeads: { take: 1, select: { participantId: true } },
+                        householdLeads: { take: 1, select: { personId: true } },
                         // Program ids led — drives the client program-ops row gate.
                         programsLed: { select: { id: true } },
                         household: { include: { membership: true } }

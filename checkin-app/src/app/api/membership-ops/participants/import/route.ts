@@ -344,10 +344,10 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         const projectedLeadIds = new Set(
                             (await prisma.householdLead.findMany({
                                 where: { householdId: targetHouseholdId },
-                                select: { participantId: true }
-                            })).map((l) => l.participantId)
+                                select: { personId: true }
+                            })).map((l) => l.personId)
                         );
-                        for (const l of sourceLeads) projectedLeadIds.add(l.participantId);
+                        for (const l of sourceLeads) projectedLeadIds.add(l.personId);
                         if (pr.email) projectedLeadIds.add(participantId);
                         if (projectedLeadIds.size > MAX_HOUSEHOLD_LEADS) {
                             throw new HouseholdLeadLimitError(targetHouseholdId);
@@ -364,7 +364,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
                             // Move all leads from source to target
                             for (const lead of sourceLeads) {
-                                await addHouseholdLead(tx, targetHouseholdId, lead.participantId);
+                                await addHouseholdLead(tx, targetHouseholdId, lead.personId);
                             }
 
                             // Delete memberships and leads from the old source household

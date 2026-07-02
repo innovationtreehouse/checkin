@@ -48,7 +48,7 @@ describe("sendCheckinNotifications()", () => {
         leadId = lead.id;
 
         await prisma.householdLead.create({
-            data: { householdId, participantId: leadId }
+            data: { householdId, personId: leadId }
         });
 
         // Create Dependent

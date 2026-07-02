@@ -64,7 +64,7 @@ export const PATCH = withAuth(
             if (isLead !== undefined && participantId !== userId) {
                 const currentLead = await prisma.householdLead.findUnique({
                     where: {
-                        householdId_participantId: { householdId: user.householdId, participantId }
+                        householdId_personId: { householdId: user.householdId, personId: participantId }
                     }
                 });
 
@@ -92,7 +92,7 @@ export const PATCH = withAuth(
                     if (leadCount > 1) {
                         await prisma.householdLead.delete({
                              where: {
-                                 householdId_participantId: { householdId: user.householdId, participantId }
+                                 householdId_personId: { householdId: user.householdId, personId: participantId }
                              }
                         });
                         

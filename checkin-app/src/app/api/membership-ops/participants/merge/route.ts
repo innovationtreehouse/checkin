@@ -151,20 +151,20 @@ export const POST = withAuth(
                 for (const tool of mergeParticipant.toolStatuses) {
                     if (!keepParticipant.toolStatuses.find(k => k.toolId === tool.toolId)) {
                         await tx.toolStatus.update({
-                            where: { participantId_toolId: { toolId: tool.toolId, participantId: mergeId } },
-                            data: { participantId: keepId }
+                            where: { personId_toolId: { toolId: tool.toolId, personId: mergeId } },
+                            data: { personId: keepId }
                         });
                         moved.toolStatuses.migrated++;
                     } else {
                         await tx.toolStatus.delete({
-                            where: { participantId_toolId: { toolId: tool.toolId, participantId: mergeId } }
+                            where: { personId_toolId: { toolId: tool.toolId, personId: mergeId } }
                         });
                         moved.toolStatuses.deleted++;
                     }
                 }
 
                 await tx.householdLead.deleteMany({
-                    where: { participantId: mergeId }
+                    where: { personId: mergeId }
                 });
 
                 // householdId stays pointing at the old household: every

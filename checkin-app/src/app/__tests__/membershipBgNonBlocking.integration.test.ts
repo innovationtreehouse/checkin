@@ -50,7 +50,7 @@ async function makeFreshRenewal() {
     const lead = await prisma.participant.create({
         data: { email: `rlead-${Math.random()}-${TAG}@example.com`, name: 'R Lead', householdId: hh.id, lastBackgroundCheck: new Date() },
     });
-    await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+    await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
     const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
     const proc = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
     return { membershipId: m.id, processId: proc.id };
@@ -62,7 +62,7 @@ async function makeApplicant(status: 'PENDING_EXTERNAL_ACTION', extra: { lastBac
     const lead = await prisma.participant.create({
         data: { email: `lead-${Math.random()}-${TAG}@example.com`, name: 'Lead Parent', householdId: hh.id, lastBackgroundCheck: extra.lastBackgroundCheck ?? null },
     });
-    await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+    await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
     const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
     const proc = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status } });
     return { householdId: hh.id, membershipId: m.id, processId: proc.id, leadId: lead.id };

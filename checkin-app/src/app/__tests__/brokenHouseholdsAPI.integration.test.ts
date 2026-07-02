@@ -68,7 +68,7 @@ describe('Broken Households API Integration Tests', () => {
             data: { email: 'lead-broken-api-test@example.com', name: 'Existing Lead', householdId: ledHouseholdId, dateOfBirth: new Date('1985-01-01') }
         });
         await prisma.householdLead.create({
-            data: { householdId: ledHouseholdId, participantId: leadMember.id }
+            data: { householdId: ledHouseholdId, personId: leadMember.id }
         });
     });
 
@@ -107,7 +107,7 @@ describe('Broken Households API Integration Tests', () => {
         expect(res.status).toBe(200);
 
         const lead = await prisma.householdLead.findUnique({
-            where: { householdId_participantId: { householdId: brokenHouseholdId, participantId: brokenAdultId } }
+            where: { householdId_personId: { householdId: brokenHouseholdId, personId: brokenAdultId } }
         });
         expect(lead).not.toBeNull();
 

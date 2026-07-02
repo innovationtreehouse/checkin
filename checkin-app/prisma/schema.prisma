@@ -138,16 +138,16 @@ model Tool {
 
 model ToolStatus {
   /// @sensitivity:public
-  participantId Int
+  personId Int
   /// @sensitivity:public
   toolId Int
   /// @sensitivity:member
   level  ToolLevel
 
-  participant Participant @relation(fields: [participantId], references: [id])
+  person Participant @relation(fields: [personId], references: [id])
   tool Tool        @relation(fields: [toolId], references: [id])
 
-  @@id([participantId, toolId])
+  @@id([personId, toolId])
 }
 
 model Household {
@@ -223,12 +223,12 @@ model HouseholdLead {
   /// @sensitivity:public
   householdId   Int
   /// @sensitivity:public
-  participantId Int
+  personId Int
 
   household   Household   @relation(fields: [householdId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person Participant @relation(fields: [personId], references: [id])
 
-  @@id([householdId, participantId])
+  @@id([householdId, personId])
 }
 
 enum MembershipStatus {

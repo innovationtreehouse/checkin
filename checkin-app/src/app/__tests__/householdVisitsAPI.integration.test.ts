@@ -35,7 +35,7 @@ describe('Household Visits API Integration Tests', () => {
         });
 
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         
         await prisma.membership.deleteMany({
@@ -66,7 +66,7 @@ describe('Household Visits API Integration Tests', () => {
         testUserId = leadUser.id;
 
         await prisma.householdLead.create({
-            data: { householdId: household.id, participantId: leadUser.id }
+            data: { householdId: household.id, personId: leadUser.id }
         });
 
         const memberUser = await prisma.participant.create({
@@ -123,7 +123,7 @@ describe('Household Visits API Integration Tests', () => {
         });
 
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: currentIds } }
+            where: { personId: { in: currentIds } }
         });
         
         await prisma.membership.deleteMany({
