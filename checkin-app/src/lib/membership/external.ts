@@ -3,13 +3,7 @@ import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
 import { backgroundCheckProvider } from "@/lib/membership/background-check/manual-adapter";
 import { notifyReviewers } from "@/lib/membership/review";
-import {
-    createRequest,
-    submitRequest,
-    getAccessToken,
-    getEmbeddedSignUrl,
-    getRequestStatus,
-} from "@/lib/membership/contract/zohoClient";
+import { zohoSign } from "@/lib/membership/contract/zohoProvider";
 import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
 import { latestPendingExternal } from "@/lib/membership/phases";
 
@@ -193,10 +187,10 @@ export async function syncContractStatus(userId: number): Promise<ExternalStatus
     const process = latestPendingExternal(user?.household?.membership?.processes);
     if (!process) return null;
 
-    if (!process.contractSignedAt && process.zohoEnvelopeId && config.zohoConfigured()) {
+    if (!process.contractSignedAt && process.zohoEnvelopeId && config.zohoAvailable()) {
         try {
-            const token = await getAccessToken();
-            if (await getRequestStatus(token, process.zohoEnvelopeId)) {
+            const token = await zohoSign.getAccessToken();
+            if (await zohoSign.getRequestStatus(token, process.zohoEnvelopeId)) {
                 await markContractSigned(process.id, userId);
             }
         } catch (e) {
@@ -221,7 +215,7 @@ const CONTRACT_EXPIRATION_DAYS = 15;
  * Returns the embedded sign URL. Throws ExternalError for the caller to map to HTTP.
  */
 export async function getOrCreateContractSigningUrl(userId: number): Promise<string> {
-    if (!config.zohoConfigured()) {
+    if (!config.zohoAvailable()) {
         throw new ExternalError("not_configured", "Agreement signing isn't available yet. Please check back soon.");
     }
 
@@ -250,35 +244,43 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
     const recipientName = user.name?.trim() || user.email || "Applicant";
     if (!recipientEmail) throw new ExternalError("not_found", "Your account has no email on file to sign with.");
 
-    const token = await getAccessToken();
+    const token = await zohoSign.getAccessToken();
 
     // Create the request once; reuse the stored ids on every later click so the
     // document is never re-generated (only the embed session below is ephemeral).
     let requestId = process.zohoEnvelopeId;
     let actionId = process.zohoActionId;
     if (!requestId || !actionId) {
+        // Mock mode never uploads the PDF (its createRequest ignores the bytes), so
+        // skip the S3 load that also 503s in dev — an empty placeholder keeps the
+        // create/submit calls type-identical. See ZOHO_SIGN_DEV_MOCK.md §5.
         let agreement;
-        try {
-            agreement = await loadAgreementPdf();
-        } catch (e) {
-            if (e instanceof AgreementUnavailableError) {
-                throw new ExternalError("agreement_unavailable", "The membership agreement isn't ready yet. Please check back soon.");
+        if (config.zohoMockActive()) {
+            agreement = { pdf: Buffer.alloc(0), lastPageNo: 0, pageWidth: 0, pageHeight: 0 };
+        } else {
+            try {
+                agreement = await loadAgreementPdf();
+            } catch (e) {
+                if (e instanceof AgreementUnavailableError) {
+                    throw new ExternalError("agreement_unavailable", "The membership agreement isn't ready yet. Please check back soon.");
+                }
+                throw e;
             }
-            throw e;
         }
 
         // On non-prod instances, mark the request + document as a DEV test so a
         // signature can never be mistaken for a binding one — baked in server-side
         // (CHECKIN_ENV), not editable by the applicant. Prod stays clean. The
-        // create/submit/embed flow is otherwise identical across envs.
+        // create/submit/embed flow is otherwise identical across envs. (Mock mode
+        // skips the watermark — the empty placeholder PDF is never rendered.)
         const isProd = config.isProd();
-        const pdf = isProd ? agreement.pdf : await stampWatermark(agreement.pdf, "DEV TEST — NOT A LEGAL AGREEMENT");
+        const pdf = isProd || config.zohoMockActive() ? agreement.pdf : await stampWatermark(agreement.pdf, "DEV TEST — NOT A LEGAL AGREEMENT");
         const requestName = `${isProd ? "" : "[DEV TEST — NOT BINDING] "}Membership Agreement — ${recipientName}`;
 
         // Return the embedded signer to checkin when they finish (Zoho navigates
         // the window to these). signed=1 lets the membership page confirm + refresh.
         const membershipUrl = `${config.baseUrl()}/membership`;
-        const created = await createRequest({
+        const created = await zohoSign.createRequest({
             token,
             pdf,
             filename: AGREEMENT_FILENAME,
@@ -293,7 +295,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
                 sign_later: membershipUrl,
             },
         });
-        await submitRequest({
+        await zohoSign.submitRequest({
             token,
             requestId: created.requestId,
             actionId: created.actionId,
@@ -348,5 +350,5 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
         }
     }
 
-    return getEmbeddedSignUrl({ token, requestId, actionId, host: config.baseUrl() });
+    return zohoSign.getEmbeddedSignUrl({ token, requestId, actionId, host: config.baseUrl() });
 }

@@ -143,8 +143,9 @@ const NAV_ITEMS: NavItem[] = [
     visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   { href: '/index', label: 'Index', icon: <IconList size={18} />, visible: (_u, signedIn) => signedIn },
-  // Dev tools (captured email inbox, EMAIL_DEV_MOCK.md). Dev instances only.
-  { href: '/dev/sent-mail', label: 'Debug', icon: <IconBug size={18} />, visible: (_u, signedIn) => signedIn, devOnly: true },
+  // Dev tools (dev instances only) — a single entry into the /dev tab section:
+  // captured email inbox (EMAIL_DEV_MOCK.md) + Zoho Sign mock (ZOHO_SIGN_DEV_MOCK.md).
+  { href: '/dev', label: 'Debug', icon: <IconBug size={18} />, visible: (_u, signedIn) => signedIn, devOnly: true },
 ];
 
 function isActive(pathname: string, href: string): boolean {

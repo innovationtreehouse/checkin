@@ -33,7 +33,7 @@ export default async function DevSentMailPage() {
     const emails = await recentSentEmails();
 
     return (
-        <main style={{ maxWidth: 900, margin: "0 auto", padding: "1.5rem" }}>
+        <div style={{ maxWidth: 900 }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "1rem" }}>
                 <h1 style={{ fontSize: "1.5rem", fontWeight: 600, margin: 0 }}>
                     Sent Mail <span style={{ fontWeight: 400, opacity: 0.6 }}>({emails.length})</span>
@@ -74,6 +74,6 @@ export default async function DevSentMailPage() {
                     ))}
                 </ul>
             )}
-        </main>
+        </div>
     );
 }
