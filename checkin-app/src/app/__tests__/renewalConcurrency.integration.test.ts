@@ -44,7 +44,7 @@ describe('renewal opening concurrency', () => {
         const hh = await prisma.household.create({ data: { name: `Family ${TAG}` } });
         householdId = hh.id;
         const lead = await prisma.participant.create({ data: { name: 'Lead', email: `lead-${TAG}@ex.com`, householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
         membershipId = (await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } })).id;
     });
 

@@ -54,7 +54,7 @@ describe('Membership payment API', () => {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
         if (withLead) {
             const lead = await prisma.participant.create({ data: { email: `lead-${TAG}@example.com`, name: 'Lead', householdId: hh.id } });
-            await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+            await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
             leadId = lead.id;
         }
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer } });
@@ -202,7 +202,7 @@ describe('Membership payment API', () => {
         // Fresh proc with a lead so a congrats email would fire.
         const hh = await prisma.household.create({ data: { name: `Concurrent ${TAG}` } });
         const lead = await prisma.participant.create({ data: { email: `concurrent-${TAG}@example.com`, name: 'C Lead', householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer: false } });
         // bgClearedAt set so paying activates (and the one congrats email fires).
         const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT', bgClearedAt: new Date() } });

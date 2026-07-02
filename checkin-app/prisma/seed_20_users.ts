@@ -31,7 +31,7 @@ async function main() {
         await prisma.householdLead.create({
             data: {
                 householdId: household.id,
-                participantId: participant.id,
+                personId: participant.id,
             }
         });
 

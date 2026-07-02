@@ -29,7 +29,7 @@ export const classifications = {
         safetyGuide: 'public',
     },
     ToolStatus: {
-        participantId: 'public',
+        personId: 'public',
         toolId: 'public',
         level: 'member',
     },
@@ -59,7 +59,7 @@ export const classifications = {
     },
     HouseholdLead: {
         householdId: 'public',
-        participantId: 'public',
+        personId: 'public',
     },
     Membership: {
         id: 'public',
@@ -347,7 +347,7 @@ export const relations = {
         toolStatuses: { model: 'ToolStatus', isList: true },
     },
     ToolStatus: {
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
         tool: { model: 'Tool', isList: false },
     },
     Household: {
@@ -362,7 +362,7 @@ export const relations = {
     },
     HouseholdLead: {
         household: { model: 'Household', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     Membership: {
         household: { model: 'Household', isList: false },

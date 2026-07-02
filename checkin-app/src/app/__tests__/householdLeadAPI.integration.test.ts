@@ -34,7 +34,7 @@ describe('Household Lead API Integration Tests', () => {
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter(id => id !== null) as number[];
         
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         
         await prisma.membership.deleteMany({
@@ -66,7 +66,7 @@ describe('Household Lead API Integration Tests', () => {
         testLeadId = leadUser.id;
 
         await prisma.householdLead.create({
-            data: { householdId: household.id, participantId: leadUser.id }
+            data: { householdId: household.id, personId: leadUser.id }
         });
 
         const adultUser = await prisma.participant.create({
@@ -90,7 +90,7 @@ describe('Household Lead API Integration Tests', () => {
         testOtherLeadId = otherLead.id;
 
         await prisma.householdLead.create({
-            data: { householdId: otherHousehold.id, participantId: otherLead.id }
+            data: { householdId: otherHousehold.id, personId: otherLead.id }
         });
 
         const otherMember = await prisma.participant.create({
@@ -104,7 +104,7 @@ describe('Household Lead API Integration Tests', () => {
         const validHouseholdIds = [householdId, otherHouseholdId];
 
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: currentIds } }
+            where: { personId: { in: currentIds } }
         });
         
         await prisma.membership.deleteMany({
@@ -196,9 +196,9 @@ describe('Household Lead API Integration Tests', () => {
             // Validate the changes
             const newLead = await prisma.householdLead.findUnique({ 
                 where: { 
-                    householdId_participantId: {
+                    householdId_personId: {
                         householdId: householdId,
-                        participantId: testAdultId
+                        personId: testAdultId
                     }
                 } 
             });
@@ -228,7 +228,7 @@ describe('Household Lead API Integration Tests', () => {
 
             // No lead row should have been created for the third member.
             const noLead = await prisma.householdLead.findUnique({
-                where: { householdId_participantId: { householdId, participantId: testChildId } }
+                where: { householdId_personId: { householdId, personId: testChildId } }
             });
             expect(noLead).toBeNull();
         });
@@ -292,9 +292,9 @@ describe('Household Lead API Integration Tests', () => {
             // Validate the changes
             const demotedLead = await prisma.householdLead.findUnique({ 
                 where: { 
-                    householdId_participantId: {
+                    householdId_personId: {
                         householdId: householdId,
-                        participantId: testAdultId
+                        personId: testAdultId
                     }
                 } 
             });
@@ -312,7 +312,7 @@ describe('Household Lead API Integration Tests', () => {
                 data: { email: 'board-lead-api-test@example.com', name: 'Board User', isBoardMember: true, householdId: boardHousehold.id }
             });
             await prisma.householdLead.create({
-                data: { householdId: otherHouseholdId, participantId: testOtherMemberId }
+                data: { householdId: otherHouseholdId, personId: testOtherMemberId }
             });
 
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardUser.id } });
@@ -325,7 +325,7 @@ describe('Household Lead API Integration Tests', () => {
             expect(res.status).toBe(200);
 
             const removed = await prisma.householdLead.findUnique({
-                where: { householdId_participantId: { householdId: otherHouseholdId, participantId: testOtherLeadId } }
+                where: { householdId_personId: { householdId: otherHouseholdId, personId: testOtherLeadId } }
             });
             expect(removed).toBeNull();
         });

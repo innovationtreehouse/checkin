@@ -65,7 +65,7 @@ describe('Trusted Adults API', () => {
         const fhh = await prisma.household.create({ data: { name: `Family HH ${TAG}` } });
         familyHh = fhh.id;
         leadId = (await prisma.participant.create({ data: { name: 'Lead', householdId: familyHh } })).id;
-        await prisma.householdLead.create({ data: { householdId: familyHh, participantId: leadId } });
+        await prisma.householdLead.create({ data: { householdId: familyHh, personId: leadId } });
         childId = (await prisma.participant.create({ data: { name: 'Child', householdId: familyHh } })).id;
 
         boardHh = (await prisma.household.create({ data: { name: `Board HH ${TAG}` } })).id;

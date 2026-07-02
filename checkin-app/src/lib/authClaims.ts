@@ -13,7 +13,7 @@ export type ClaimSourceParticipant = {
     toolStatuses: { toolId: number; level: string }[];
     // Any row here means this participant leads a household (the relation is already
     // filtered to their own leads). Empty/absent → not a lead.
-    householdLeads?: { participantId: number }[];
+    householdLeads?: { personId: number }[];
     // Programs this participant is the lead mentor of (Program.leadMentorId === id).
     // Drives the client-side program-ops row gate; mirrors access-resolvers' programsLed.
     programsLed?: { id: number }[];

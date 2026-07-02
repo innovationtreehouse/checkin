@@ -19,9 +19,9 @@ export async function emailHouseholdLeads(householdId: number, subject: string, 
     try {
         const leads = await prisma.householdLead.findMany({
             where: { householdId },
-            select: { participant: { select: { email: true } } },
+            select: { person: { select: { email: true } } },
         });
-        const emails = leads.map((l) => l.participant?.email).filter((e): e is string => !!e);
+        const emails = leads.map((l) => l.person?.email).filter((e): e is string => !!e);
         await fanOutEmails(emails, subject, html, errorLabel);
     } catch (e) {
         logger.error(errorLabel, e);

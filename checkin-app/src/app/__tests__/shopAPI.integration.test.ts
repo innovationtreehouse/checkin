@@ -37,7 +37,7 @@ describe('Shop API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         await prisma.toolStatus.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         await prisma.visit.deleteMany({
             where: { participantId: { in: existingUserIds } }
@@ -117,7 +117,7 @@ describe('Shop API Integration Tests', () => {
                 where: { actorId: { in: existingUserIds } }
             });
             await prisma.toolStatus.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
             await prisma.visit.deleteMany({
                 where: { participantId: { in: existingUserIds } }
@@ -272,7 +272,7 @@ describe('Shop API Integration Tests', () => {
              const data = await res.json();
              expect(data.success).toBe(true);
              expect(data.certification.level).toBe('BASIC');
-             expect(data.certification.participantId).toBe(commonId);
+             expect(data.certification.personId).toBe(commonId);
 
              // Audit: first grant on this participant+tool → CREATE, no prior data.
              const auditRows = await prisma.auditLog.findMany({
@@ -297,7 +297,7 @@ describe('Shop API Integration Tests', () => {
 
              // No toolStatus row was written for this fresh (participant, tool) pair.
              const written = await prisma.toolStatus.findUnique({
-                 where: { participantId_toolId: { participantId: commonId, toolId: tool.id } }
+                 where: { personId_toolId: { personId: commonId, toolId: tool.id } }
              });
              expect(written).toBeNull();
         });

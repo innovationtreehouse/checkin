@@ -46,7 +46,7 @@ describe('Multi-select household enrollment (integration)', () => {
         });
         const ids = users.map(u => u.id);
         if (ids.length) {
-            await prisma.householdLead.deleteMany({ where: { participantId: { in: ids } } });
+            await prisma.householdLead.deleteMany({ where: { personId: { in: ids } } });
             await prisma.programParticipant.deleteMany({ where: { participantId: { in: ids } } });
             await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
         }
@@ -77,7 +77,7 @@ describe('Multi-select household enrollment (integration)', () => {
         depBId = await mkDep('b');
         depCId = await mkDep('c');
         await prisma.householdLead.create({
-            data: { householdId: household.id, participantId: leadId }
+            data: { householdId: household.id, personId: leadId }
         });
 
         const free = await prisma.program.create({

@@ -60,7 +60,7 @@ describe('Attendance API Integration Tests', () => {
 
         // Make participant the household lead
         await prisma.householdLead.create({
-            data: { householdId: testHouseholdId, participantId: testParticipantId }
+            data: { householdId: testHouseholdId, personId: testParticipantId }
         });
 
         const householdMember = await prisma.participant.create({

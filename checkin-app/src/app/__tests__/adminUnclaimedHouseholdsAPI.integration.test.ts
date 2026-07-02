@@ -57,7 +57,7 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
             data: { email: 'member1-unclaimed-api-test@example.com', name: 'Unclaimed Lead', householdId: testUnclaimedHouseholdId, googleId: null }
         });
         await prisma.householdLead.create({
-            data: { householdId: testUnclaimedHouseholdId, participantId: unclaimedLead.id }
+            data: { householdId: testUnclaimedHouseholdId, personId: unclaimedLead.id }
         });
 
         // 2. Lead HAS a googleId -> claimed, even though a student member never signs in.
@@ -68,7 +68,7 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
             data: { email: 'member2-unclaimed-api-test@example.com', name: 'Claimed Lead', householdId: testClaimedHouseholdId, googleId: 'unclaimed-test-google-id' }
         });
         await prisma.householdLead.create({
-            data: { householdId: testClaimedHouseholdId, participantId: claimedLead.id }
+            data: { householdId: testClaimedHouseholdId, personId: claimedLead.id }
         });
         // Student in the claimed household with an email but no googleId (never signs in).
         await prisma.participant.create({

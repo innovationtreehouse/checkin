@@ -40,7 +40,7 @@ describe('General Attendance API Integration Tests', () => {
         const existingUserIds = existingUsers.map(u => u.id);
         
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         await prisma.visit.deleteMany({
             where: { participantId: { in: existingUserIds } }
@@ -128,7 +128,7 @@ describe('General Attendance API Integration Tests', () => {
 
         if (existingUserIds.length > 0) {
             await prisma.householdLead.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
             await prisma.visit.deleteMany({
                 where: { participantId: { in: existingUserIds } }

@@ -184,7 +184,7 @@ export default function MergeParticipants() {
           <List size="sm">
             {(p.household.participants as { id: number, name: string | null }[]).map((hp) => (
               <List.Item key={hp.id}>
-                {hp.name} {hp.id === p.id && "(This)"} {((p.household!.leads as unknown) as { participantId: number }[]).find((l) => l.participantId === hp.id) && "[Lead]"}
+                {hp.name} {hp.id === p.id && "(This)"} {((p.household!.leads as unknown) as { personId: number }[]).find((l) => l.personId === hp.id) && "[Lead]"}
               </List.Item>
             ))}
           </List>
@@ -229,7 +229,7 @@ export default function MergeParticipants() {
 
   let isLeadWithOthers = false;
   if (mergeParticipant && !previewMode) {
-    const isLead = mergeParticipant.household?.leads.find((l: { participantId?: number;[key: string]: unknown }) => l.participantId === mergeParticipant.id);
+    const isLead = mergeParticipant.household?.leads.find((l: { personId?: number;[key: string]: unknown }) => l.personId === mergeParticipant.id);
     const othersCount = (mergeParticipant.household?.participants as { id: number }[] | undefined)?.filter((p) => p.id !== mergeParticipant.id).length || 0;
     isLeadWithOthers = !!isLead && othersCount > 0;
   }

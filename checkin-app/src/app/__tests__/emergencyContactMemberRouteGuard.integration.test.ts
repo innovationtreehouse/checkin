@@ -76,7 +76,7 @@ describe("PATCH /api/household/settings — Direction A: reject a member as prim
         });
         leadId = lead.id;
         householdId = lead.householdId!;
-        await prisma.householdLead.create({ data: { householdId, participantId: leadId } });
+        await prisma.householdLead.create({ data: { householdId, personId: leadId } });
         const member = await prisma.participant.create({
             data: {
                 email: `member-A-${TAG}@example.com`,
@@ -144,7 +144,7 @@ describe("PATCH /api/household — Direction B: adding a member that collides wi
         });
         leadId = lead.id;
         householdId = lead.householdId!;
-        await prisma.householdLead.create({ data: { householdId, participantId: leadId } });
+        await prisma.householdLead.create({ data: { householdId, personId: leadId } });
         // A pre-existing VALID emergency contact (not yet a member).
         const contact = await prisma.emergencyContact.create({
             data: { householdId, name: "Grandma Ext", phone: "555-1111", phoneDigits: "5551111", priority: 0 },

@@ -22,7 +22,7 @@ export const GET = withAuth(
                     },
                     leads: {
                         include: {
-                            participant: {
+                            person: {
                                 select: {
                                     id: true,
                                     name: true,
@@ -65,10 +65,10 @@ export const GET = withAuth(
                         isPresent: p.visits.length > 0
                     })),
                     leads: h.leads.map(l => ({
-                        id: l.participant.id,
-                        name: l.participant.name,
-                        phone: l.participant.phone,
-                        email: l.participant.email
+                        id: l.person.id,
+                        name: l.person.name,
+                        phone: l.person.phone,
+                        email: l.person.email
                     }))
                 };
             });

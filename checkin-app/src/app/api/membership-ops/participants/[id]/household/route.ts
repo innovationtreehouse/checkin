@@ -37,7 +37,7 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
                     name: `${participant.name || 'User'}'s Household`,
                     leads: {
                         create: {
-                            participantId: participant.id
+                            personId: participant.id
                         }
                     }
                 }
@@ -77,7 +77,7 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
         if (participant.householdId && participant.householdId !== targetHouseholdId) {
             await prisma.householdLead.deleteMany({
                 where: {
-                    participantId: participant.id,
+                    personId: participant.id,
                     householdId: participant.householdId
                 }
             });

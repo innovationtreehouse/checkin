@@ -144,7 +144,7 @@ describe('Bulk import: preview vs commit consistency', () => {
         const anchor = await prisma.participant.findUnique({ where: { email: ANCHOR_EMAIL }, select: { id: true, dateOfBirth: true } });
         expect(anchor?.dateOfBirth?.getUTCFullYear()).toBe(1991);
         // ...and commit therefore makes the adult a household lead.
-        const lead = await prisma.householdLead.findFirst({ where: { participantId: anchor!.id } });
+        const lead = await prisma.householdLead.findFirst({ where: { personId: anchor!.id } });
         expect(lead).not.toBeNull();
 
         // Preview must agree Anchor is an adult: NO "Student (under 18)" warning.

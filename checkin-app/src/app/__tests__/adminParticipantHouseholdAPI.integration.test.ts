@@ -137,7 +137,7 @@ describe('Admin Participant Household API Integration Tests', () => {
 
             // Check if they are a lead
             const lead = await prisma.householdLead.findFirst({
-                where: { participantId: testParticipantId, householdId: newHouseholdId }
+                where: { personId: testParticipantId, householdId: newHouseholdId }
             });
             expect(lead).not.toBeNull();
         });

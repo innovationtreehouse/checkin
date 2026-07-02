@@ -55,7 +55,7 @@ describe("Emergency Contacts API — removal prohibition", () => {
         });
         leadId = lead.id;
         householdId = lead.householdId!;
-        await prisma.householdLead.create({ data: { householdId, participantId: leadId } });
+        await prisma.householdLead.create({ data: { householdId, personId: leadId } });
     });
 
     afterAll(async () => {
@@ -96,7 +96,7 @@ describe("Emergency Contacts API — removal prohibition", () => {
         // Fresh household to isolate state.
         const hh = await prisma.household.create({ data: { name: `HH2 ${TAG}` } });
         const p = await prisma.participant.create({ data: { email: `lead2-${TAG}@example.com`, name: "Lead Two", householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: p.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: p.id } });
         // A contact that is flagged invalid (simulate a direction-B conflict).
         const member = await prisma.participant.create({ data: { name: "Clashy", householdId: hh.id } });
         const invalid = await prisma.emergencyContact.create({
@@ -112,7 +112,7 @@ describe("Emergency Contacts API — removal prohibition", () => {
         const lead = await prisma.participant.create({
             data: { email: `lead-${label}-${TAG}@example.com`, name: `Lead ${label}`, householdId: hh.id },
         });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
         return { hhId: hh.id, leadId: lead.id };
     }
 

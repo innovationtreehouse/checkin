@@ -45,7 +45,7 @@ describe('Public Program Registration API Integration Tests', () => {
         });
 
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         
         await prisma.participant.deleteMany({
@@ -141,7 +141,7 @@ describe('Public Program Registration API Integration Tests', () => {
             });
 
             await prisma.householdLead.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
 
             await prisma.participant.deleteMany({
@@ -388,7 +388,7 @@ describe('Public Program Registration API Integration Tests', () => {
             const p = await prisma.participant.findUnique({ where: { email: inBoundsEmail } });
             if (p) {
                 await prisma.programParticipant.deleteMany({ where: { participant: { householdId: p.householdId } } });
-                await prisma.householdLead.deleteMany({ where: { participant: { householdId: p.householdId } } });
+                await prisma.householdLead.deleteMany({ where: { person: { householdId: p.householdId } } });
                 await prisma.participant.deleteMany({ where: { householdId: p.householdId } });
                 await prisma.household.delete({ where: { id: p.householdId as number } });
             }
@@ -507,7 +507,7 @@ describe('Public Program Registration API Integration Tests', () => {
             const p = await prisma.participant.findUnique({ where: { email: uniqueEmail } });
             if (p) {
                 await prisma.programParticipant.deleteMany({ where: { programId: freeProgramId, participant: { householdId: p.householdId } }});
-                await prisma.householdLead.deleteMany({ where: { participant: { householdId: p.householdId } } });
+                await prisma.householdLead.deleteMany({ where: { person: { householdId: p.householdId } } });
                 await prisma.participant.deleteMany({ where: { householdId: p.householdId } });
                 await prisma.household.delete({ where: { id: p.householdId as number } });
             }

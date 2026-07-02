@@ -42,7 +42,7 @@ async function addHouseholdLeadTx(
     await tx.$queryRaw`SELECT id FROM "Household" WHERE id = ${householdId} FOR UPDATE`;
 
     const existing = await tx.householdLead.findUnique({
-        where: { householdId_participantId: { householdId, participantId } },
+        where: { householdId_personId: { householdId, personId: participantId } },
     });
     if (existing) return { created: false };
 
@@ -51,7 +51,7 @@ async function addHouseholdLeadTx(
         throw new HouseholdLeadLimitError(householdId);
     }
 
-    await tx.householdLead.create({ data: { householdId, participantId } });
+    await tx.householdLead.create({ data: { householdId, personId: participantId } });
     return { created: true };
 }
 

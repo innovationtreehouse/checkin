@@ -93,7 +93,7 @@ export async function getIntakeState(userId: number) {
         .sort((a, b) => b.id - a.id)[0] ?? null;
 
     // Parents/guardians are the household leads; children are non-lead members.
-    const leadIds = new Set((household?.leads ?? []).map((l) => l.participantId));
+    const leadIds = new Set((household?.leads ?? []).map((l) => l.personId));
     const parents = (household?.participants ?? []).filter((p) => leadIds.has(p.id));
     const children = (household?.participants ?? []).filter((p) => !leadIds.has(p.id));
     const primary = parents.find((p) => p.id === userId) ?? null;

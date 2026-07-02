@@ -13,7 +13,7 @@
  * (./generated/classifications.ts), not the §7.4 doc table. Discrepancies found
  * vs that table (see docs/security/auth-consistency-analysis.md §7.4/§7.5):
  *   - Visit:  field is `departedAt` (doc wrote `departed`).            [doc fixed]
- *   - ToolStatus: field is `participantId` (renamed from `userId`, #564).
+ *   - ToolStatus: field is `personId` (renamed userId→participantId #564, then participantId→personId).
  *   - RawBadgeLog: model is `RawBadgeLog` (doc table wrote `RawBadgeEvent`).
  *   - Fee / RSVP: the live switch grouped ProgramParticipant, ProgramVolunteer,
  *     Fee and RSVP under one `case` body that read BOTH `row.programId` and
@@ -50,7 +50,7 @@ export const SCOPE_BINDINGS = {
     },
     HouseholdLead: {
         their_households: { field: 'householdId', eqCtx: 'householdId' },
-        their_own: { field: 'participantId', eqCtx: 'selfId' },
+        their_own: { field: 'personId', eqCtx: 'selfId' },
     },
     Membership: { their_households: { field: 'householdId', eqCtx: 'householdId' } },
     Program: {
@@ -99,7 +99,7 @@ export const SCOPE_BINDINGS = {
         },
     },
     RawBadgeLog: { their_own: { field: 'personId', eqCtx: 'selfId' } },
-    ToolStatus: { their_own: { field: 'participantId', eqCtx: 'selfId' } },
+    ToolStatus: { their_own: { field: 'personId', eqCtx: 'selfId' } },
     Account: { their_own: { field: 'userId', eqCtx: 'selfId' } },
     Session: { their_own: { field: 'userId', eqCtx: 'selfId' } },
     // Bound for coverage; admin-only by tier-grant control (no route grants

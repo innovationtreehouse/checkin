@@ -55,7 +55,7 @@ describe('trusted-adult mutation concurrency', () => {
         householdId = hh.id;
         const lead = await prisma.participant.create({ data: { name: 'Lead', email: `lead-${TAG}@ex.com`, householdId: hh.id } });
         leadId = lead.id;
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
         const boardHh = await prisma.household.create({ data: { name: `Board HH ${TAG}` } });
         boardId = (await prisma.participant.create({ data: { name: 'Boardie', isBoardMember: true, householdId: boardHh.id } })).id;
     });
