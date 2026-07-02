@@ -129,10 +129,10 @@ export default function CreateProgramPage() {
               selectedId={leadMentorId || null}
               selectedLabel={mentorSearch}
               search={async (q) => {
-                const res = await fetch(`/api/participants/search?q=${encodeURIComponent(q)}&filter=adults`);
+                const res = await fetch(`/api/people/search?q=${encodeURIComponent(q)}&filter=adults`);
                 if (!res.ok) return [];
                 const data = await res.json();
-                return data.participants || [];
+                return data.people || [];
               }}
               getOptionLabel={(p) => p.name || 'Unnamed'}
               getOptionDescription={(p) => p.email}
