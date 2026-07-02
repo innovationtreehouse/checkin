@@ -1,8 +1,8 @@
 "use client";
 
 import { use, useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useRequireRole } from '@/hooks/useRequireRole';
 import Link from 'next/link';
 import {
   Alert, Anchor, Badge, Box, Button, Card, Center, Checkbox, Container, Divider, Group,
@@ -56,7 +56,7 @@ const PHASE_BADGE: Record<string, { label: string; color: string }> = {
 
 export default function ProgramDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: session, status } = useSession();
+  const { user: sessionUser, loading: authLoading, ready } = useRequireRole([]);
   const router = useRouter();
 
   const [program, setProgram] = useState<ProgramDetail | null>(null);
@@ -128,12 +128,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   }, [id]);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      fetchProgram();
-    }
-  }, [status, router, fetchProgram]);
+    if (ready) fetchProgram();
+  }, [ready, fetchProgram]);
 
   const searchParticipants = useCallback(async (
     query: string,
@@ -264,7 +260,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     e.preventDefault();
     if (!newPartId) return;
 
-    const u = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
+    const u = sessionUser as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
     if (u?.isSysadmin || u?.isBoardMember) {
       if (!confirm("Warning: Adding a participant manually bypasses all payment requirements. Are you sure you wish to proceed?")) return;
     }
@@ -294,11 +290,13 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     } catch { }
   };
 
-  if (loading || status === "loading") {
+  if (loading || authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session || !program) return (
+  if (!ready) return null;
+
+  if (!program) return (
     <Container size="sm" py="xl">
       <Card withBorder radius="md" padding="xl" ta="center">
         <Title order={3}>{message || "Not Found"}</Title>
@@ -307,7 +305,9 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     </Container>
   );
 
-  const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
+  // Ownership gate stays inline — it needs the loaded program (lead-mentor id)
+  // to decide, which useRequireRole (a static role gate) can't express.
+  const user = sessionUser as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
   const isAuthorized = program.leadMentorId === user?.id || user?.isSysadmin || user?.isBoardMember;
   const activeParticipants = program.participants.filter(p => p.status === 'ACTIVE');
   const pendingParticipants = program.participants.filter(p => p.status === 'PENDING');

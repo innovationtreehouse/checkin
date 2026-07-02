@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Badge, Button, Card, Center, Checkbox, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { formatDate, calculateAge } from '@/lib/time';
@@ -55,7 +55,7 @@ type HouseholdData = {
 const blankContactForm = { id: null as number | null, name: "", phone: "", email: "", relationship: "" };
 
 export default function HouseholdPage() {
-  const { data: session, status } = useSession();
+  const { user: sessionUser, loading: authLoading, ready } = useRequireRole([]);
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -119,13 +119,11 @@ export default function HouseholdPage() {
   }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
+    if (ready) {
       fetchHousehold();
       fetchContacts();
     }
-  }, [status, router, fetchHousehold, fetchContacts]);
+  }, [ready, fetchHousehold, fetchContacts]);
 
   const handleSaveSettings = async () => {
     const errors = validateAddress(address);
@@ -315,16 +313,16 @@ export default function HouseholdPage() {
   const isDirty = !shallowEqual({ ...initialAddress }, { ...address });
   useUnsavedGuard(isDirty);
 
-  if (loading || status === "loading") {
+  if (loading || authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session) return null;
+  if (!ready) return null;
 
-  const userId = (session.user as { id: number })?.id;
+  const userId = (sessionUser as { id: number })?.id;
   // Staff (@innovationtreehouse.org) accounts aren't real member families; the add-member
   // control is hidden for them (server also enforces this — see /api/household PATCH).
-  const isStaffAccount = isOrgAccount(session.user as { hd?: string | null; email?: string | null });
+  const isStaffAccount = isOrgAccount(sessionUser as { hd?: string | null; email?: string | null });
   const isLead = (pid: number) => household?.leads?.some((l) => l.participantId === pid) ?? false;
   const viewerIsLead = isLead(userId);
 

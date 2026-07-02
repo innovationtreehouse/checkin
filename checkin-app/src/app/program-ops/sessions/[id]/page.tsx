@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, use, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
@@ -52,7 +52,7 @@ const RSVP_BADGE: Record<RSVPStatus, { label: string; color: string }> = {
 
 export default function EventAdminPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: session, status } = useSession();
+  const { user: sessionUser, loading: authLoading, ready } = useRequireRole([]);
   const router = useRouter();
   // Leads reach this screen from their My Programs inbox (?from=my-programs).
   // When they do, "back" and post-confirm return there instead of the board's
@@ -100,12 +100,8 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   }, [id]);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      fetchEvent();
-    }
-  }, [status, router, id, fetchEvent]);
+    if (ready) fetchEvent();
+  }, [ready, fetchEvent]);
 
   const handleConfirmAttendance = async () => {
     setActionLoading(true);
@@ -214,11 +210,13 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
     }
   };
 
-  if (loading || status === "loading") {
+  if (loading || authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session || !eventData) {
+  if (!ready) return null;
+
+  if (!eventData) {
     return (
       <Container size="sm" py="xl">
         <Card withBorder radius="md" padding="xl" ta="center">
@@ -229,7 +227,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  const user = session?.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
+  const user = sessionUser as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
   const userId = user?.id;
   const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
   const isLeadMentor = eventData.program?.leadMentorId === userId;
