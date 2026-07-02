@@ -5,6 +5,7 @@ import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
+import { householdLeadship } from "@/lib/household/leads";
 
 export const PATCH = withAuth(
     {},
@@ -25,20 +26,20 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
             }
 
-            const user = await prisma.person.findUnique({ where: { id: userId }, include: { householdLeads: true } });
+            const hh = await householdLeadship(userId);
 
-            if (!user?.householdId) {
+            if (!hh) {
                 return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
             }
+            const householdId = hh.householdId;
 
             // Leads/sysadmins edit anyone; anyone may edit their own record.
-            const isCurrentUserLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isCurrentUserLead && !user.isSysadmin && participantId !== userId) {
+            if (!hh.canManage && participantId !== userId) {
                 return NextResponse.json({ error: "Only household leads can edit household members" }, { status: 403 });
             }
 
             const targetHouseholdMember = await prisma.person.findUnique({ where: { id: participantId } });
-            if (!targetHouseholdMember || targetHouseholdMember.householdId !== user.householdId) {
+            if (!targetHouseholdMember || targetHouseholdMember.householdId !== householdId) {
                 return NextResponse.json({ error: "That household member was not found" }, { status: 404 });
             }
 
@@ -65,19 +66,19 @@ export const PATCH = withAuth(
                 if (isLead !== undefined && participantId !== userId) {
                     const currentLead = await tx.householdLead.findUnique({
                         where: {
-                            householdId_personId: { householdId: user.householdId, personId: participantId }
+                            householdId_personId: { householdId: householdId, personId: participantId }
                         }
                     });
 
                     if (isLead && !currentLead) {
                         try {
-                            await addHouseholdLead(tx, user.householdId, participantId);
+                            await addHouseholdLead(tx, householdId, participantId);
                             await tx.auditLog.create({
                                 data: {
                                     actorId: userId,
                                     action: "CREATE",
                                     tableName: "HouseholdLead",
-                                    affectedEntityId: user.householdId,
+                                    affectedEntityId: householdId,
                                     secondaryAffectedEntity: participantId
                                 }
                             });
@@ -89,11 +90,11 @@ export const PATCH = withAuth(
                             }
                         }
                     } else if (!isLead && currentLead) {
-                        const leadCount = await tx.householdLead.count({ where: { householdId: user.householdId } });
+                        const leadCount = await tx.householdLead.count({ where: { householdId: householdId } });
                         if (leadCount > 1) {
                             await tx.householdLead.delete({
                                  where: {
-                                     householdId_personId: { householdId: user.householdId, personId: participantId }
+                                     householdId_personId: { householdId: householdId, personId: participantId }
                                  }
                             });
 
@@ -102,7 +103,7 @@ export const PATCH = withAuth(
                                     actorId: userId,
                                     action: "DELETE",
                                     tableName: "HouseholdLead",
-                                    affectedEntityId: user.householdId,
+                                    affectedEntityId: householdId,
                                     secondaryAffectedEntity: participantId
                                 }
                             });
@@ -122,7 +123,7 @@ export const PATCH = withAuth(
 
                 // Edits to a member's name/phone/email can make them match an
                 // emergency contact (direction B): re-evaluate and warn if so.
-                const warning = await reconcileAndWarn(tx, user.householdId);
+                const warning = await reconcileAndWarn(tx, householdId);
 
                 return { updatedHouseholdMember, leadRejection, warning };
             });
