@@ -25,6 +25,7 @@ import {
   IconCoin,
   IconHome,
   IconList,
+  IconBug,
   IconLogout,
   IconMail,
   IconMoon,
@@ -63,6 +64,9 @@ type NavItem = {
   // counts is passed so computed-role items (e.g. the staff "My Programs" home,
   // gated on leading ≥1 program) can decide visibility from the todo-counts payload.
   visible: (user: SessionUser | undefined, signedIn: boolean, counts: TodoCounts | null) => boolean;
+  // Dev-instance-only item (hidden in prod). The target route 404s off a dev instance anyway;
+  // this just keeps it out of the prod nav. Gated on useIsDevInstance() at render, not `visible`.
+  devOnly?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -139,6 +143,8 @@ const NAV_ITEMS: NavItem[] = [
     visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
   },
   { href: '/index', label: 'Index', icon: <IconList size={18} />, visible: (_u, signedIn) => signedIn },
+  // Dev tools (captured email inbox, EMAIL_DEV_MOCK.md). Dev instances only.
+  { href: '/dev/sent-mail', label: 'Debug', icon: <IconBug size={18} />, visible: (_u, signedIn) => signedIn, devOnly: true },
 ];
 
 function isActive(pathname: string, href: string): boolean {
@@ -192,7 +198,9 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   // Faithful to the old NavBar: no navigation on the homepage when signed out.
   const showNav = !(!signedIn && pathname === '/');
 
-  const visibleItems = NAV_ITEMS.filter((item) => item.visible(user, signedIn, todoCounts));
+  const visibleItems = NAV_ITEMS.filter(
+    (item) => item.visible(user, signedIn, todoCounts) && (!item.devOnly || isDevInstance),
+  );
 
   // A colored sidebar (brand.nav.sidebar set) ⇒ white nav text + filled active pills.
   const onColoredSidebar = !!brand.nav.sidebar;

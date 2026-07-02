@@ -311,6 +311,14 @@ export const classifications = {
         detail: 'internal',
         createdAt: 'internal',
     },
+    DevSentEmail: {
+        id: 'internal',
+        from: 'internal',
+        to: 'internal',
+        subject: 'internal',
+        html: 'internal',
+        createdAt: 'internal',
+    },
 } as const;
 
 export const relations = {
@@ -453,6 +461,8 @@ export const relations = {
     IntegrationErrorLog: {
     },
     DevLedger: {
+    },
+    DevSentEmail: {
     },
 } as const;
 

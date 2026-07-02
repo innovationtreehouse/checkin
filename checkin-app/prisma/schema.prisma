@@ -921,3 +921,25 @@ model DevLedger {
 
   @@index([createdAt])
 }
+
+/// Dev-instance sent-mail capture (EMAIL_DEV_MOCK.md). Lives only in checkin_dev / a local
+/// laptop; when there is no RESEND_API_KEY, sendEmail persists what it would have sent here
+/// (guarded on isDevInstance && NODE_ENV!=='production', so never written in prod) and reports
+/// success. Retrievable at /dev/sent-mail so link/token flows can be completed and verified
+/// without a real key. Not excluded from the reset truncation — this is throwaway test output.
+model DevSentEmail {
+  /// @sensitivity:internal
+  id        Int      @id @default(autoincrement())
+  /// @sensitivity:internal
+  from      String
+  /// @sensitivity:internal
+  to        String
+  /// @sensitivity:internal
+  subject   String
+  /// @sensitivity:internal
+  html      String
+  /// @sensitivity:internal
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
