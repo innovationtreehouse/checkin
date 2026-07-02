@@ -321,9 +321,14 @@ export default function AdminParticipantsIndex() {
       <Modal opened={editModalOpen} onClose={() => { setEditModalOpen(false); setEditingParticipant(null); }} title={<Text span fw={700} fz="lg">Edit Participant</Text>} size="lg">
         <form onSubmit={handleEditParticipant}>
           <Stack>
-            <TextInput label="Name" required value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.currentTarget.value }))} />
-            <TextInput type="email" label="Email Address" value={editForm.email} onChange={(e) => setEditForm(f => ({ ...f, email: e.currentTarget.value }))} />
-            <TextInput type="tel" label="Phone Number" value={editForm.phone} onChange={(e) => setEditForm(f => ({ ...f, phone: e.currentTarget.value }))} placeholder="(555) 123-4567" />
+            {/* Read e.currentTarget.value synchronously into a local before the setState
+                updater -- React nulls a synthetic event's currentTarget once its dispatch
+                cycle ends, and the updater callback runs later (next render phase), not at
+                call time. Reading it lazily inside the updater intermittently crashed with
+                "Cannot read properties of null (reading 'value')". */}
+            <TextInput label="Name" required value={editForm.name} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, name: value })); }} />
+            <TextInput type="email" label="Email Address" value={editForm.email} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, email: value })); }} />
+            <TextInput type="tel" label="Phone Number" value={editForm.phone} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, phone: value })); }} placeholder="(555) 123-4567" />
             {editingParticipant?.household && (
               <div>
                 <Text fw={500} size="sm" mb={4}>Household</Text>

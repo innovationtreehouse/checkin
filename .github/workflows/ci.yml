@@ -70,6 +70,13 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
 
+    # checks: write is required by dorny/test-reporter (publishes the JUnit
+    # results as a Check Run below); everything else defaults to the repo's
+    # standard read access.
+    permissions:
+      contents: read
+      checks: write
+
     services:
       postgres:
         image: postgres:15
@@ -170,8 +177,49 @@ jobs:
       - name: Run tests (unit + integration) with coverage
         if: needs.changes.outputs.app == 'true'
         env:
+          CI: true # jest.config.js only turns on the jest-junit reporter under CI
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
         run: npm run test:coverage
+
+      # Publishes checkin-app/test-results/junit.xml (jest-junit, enabled above)
+      # as a Check Run: pass/fail/skip counts plus inline annotations on the
+      # failing test. `if: always()` so it still runs (and shows what failed)
+      # even when the test step above fails the job.
+      - name: Publish test results
+        if: always() && needs.changes.outputs.app == 'true'
+        uses: dorny/test-reporter@v1
+        with:
+          name: Jest Tests
+          path: checkin-app/test-results/junit.xml
+          reporter: jest-junit
+          fail-on-error: false # the test step above already fails the job; don't fail it twice
+
+      # Coverage summary on the run's own Summary page — the json-summary
+      # reporter (jest.config.js) already writes this file regardless of
+      # pass/fail, so read it even if tests failed above.
+      - name: Coverage summary
+        if: always() && needs.changes.outputs.app == 'true'
+        working-directory: checkin-app
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = "coverage/coverage-summary.json";
+            if (!fs.existsSync(path)) { console.log("No coverage-summary.json — test run likely failed before coverage was written."); process.exit(0); }
+            const t = JSON.parse(fs.readFileSync(path, "utf8")).total;
+            const floor = { lines: 80, branches: 70, functions: 68 };
+            const mark = (k) => (floor[k] === undefined ? "" : t[k].pct >= floor[k] ? " ✅" : " ❌");
+            const lines = [
+              "### Coverage",
+              "| Metric | Covered / Total | % |",
+              "|---|---:|---:|",
+              ...["lines", "statements", "branches", "functions"].map(
+                (k) => `| ${k} | ${t[k].covered}/${t[k].total} | ${t[k].pct}%${mark(k)} |`
+              ),
+              "",
+              "Gate (jest.config.js coverageThreshold): lines ≥80%, branches ≥70%, functions ≥68%.",
+            ];
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
+          '
 
   # Build the exact production image the dev deploy uses (Dockerfile -> `npm run build`),
   # but never push or deploy it. The deploy flow's build was previously only exercised on
