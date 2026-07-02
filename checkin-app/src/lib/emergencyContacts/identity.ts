@@ -13,7 +13,7 @@ import { normalizePhone } from "@/lib/phone";
 export { normalizePhone };
 
 /** Lowercase + trim; empty -> null. */
-export function normalizeEmail(email: string | null | undefined): string | null {
+export function cleanEmail(email: string | null | undefined): string | null {
     const e = (email ?? "").trim().toLowerCase();
     return e || null;
 }
@@ -41,7 +41,7 @@ export interface IdentityKeys {
 export function identityKeys(person: { name?: string | null; phone?: string | null; email?: string | null }): IdentityKeys {
     return {
         phoneDigits: normalizePhone(person.phone),
-        emailNorm: normalizeEmail(person.email),
+        emailNorm: cleanEmail(person.email),
         nameNorm: normalizeName(person.name),
     };
 }
