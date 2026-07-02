@@ -9,7 +9,7 @@ import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 // existence of their enrollment/RSVP/Visit row are all tier 'public'. So the
 // handler's per-FIELD stripping (which protects email/phone/dob) CANNOT hide the
 // association "person <-> this event": stripping a non-staff caller to 'public'
-// still leaks the whole attendee name list (incl. minors). Field-tiering guards
+// still leaks the whole attendee name list (incl. youth). Field-tiering guards
 // fields; only admission guards the association. So we gate admission here.
 //
 // The gate can't live in the registry `authorize`: this route's [id] is an EVENT

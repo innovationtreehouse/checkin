@@ -230,7 +230,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
 // Macros — additive one-click scenario seeders (each returns a one-line summary for a toast).
 // ──────────────────────────────────────────────────────────────────────────
 
-/** + Family — a household with a lead adult, a partner, and a minor. */
+/** + Family — a household with a lead adult, a partner, and a youth. */
 export async function createFamily(prisma: Db): Promise<string> {
     const tag = uid();
     const household = await prisma.household.create({
@@ -260,7 +260,7 @@ export async function createFamily(prisma: Db): Promise<string> {
     await prisma.participant.create({
         data: { name: `Kid ${tag}`, dateOfBirth: yearsAgo(9), householdId: household.id },
     });
-    return `Created household "Test Family ${tag}" (lead + partner + 1 minor)`;
+    return `Created household "Test Family ${tag}" (lead + partner + 1 youth)`;
 }
 
 /** + Program — a program with a materials fee and a couple of active participants. */

@@ -3,7 +3,7 @@
  *
  * Shared by the import COMMIT and PREVIEW endpoints so the admin approves the
  * same date that gets imported. If these two ever parse differently again, the
- * preview classifies a person differently than the commit (e.g. minor vs adult).
+ * preview classifies a person differently than the commit (e.g. youth vs adult).
  *
  * xlsx may hand us an Excel serial number (days since 1899-12-30) as a digit
  * string when no bookType is provided, so handle that before falling back to
