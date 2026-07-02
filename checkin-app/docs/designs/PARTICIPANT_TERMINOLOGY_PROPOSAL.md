@@ -140,7 +140,7 @@ login. The 25yo fixture proves it is **not** age-based.
 
 | Concept | Relationship | UI word | Code identifier | Model / table | Path |
 |---|---|---|---|---|---|
-| **Person** | the human (any human) | name / "person" | `person` | **`Person`** (umbrella — rename from `Participant`, pending) | — |
+| **Person** | the human (any human) | name / "person" | `person` | **`Person`** — umbrella, name **DECIDED**. Code still `Participant`; rename not yet executed. | — |
 | **Org Membership (A)** | Person/household ↔ **Organization** | "Treehouse Member" | `isActiveOrgMember`, `orgMember…` | `OrgMembership` (rename from `Membership`) | `/api/shop/org-members` |
 | **Household** | grouping | "household" (warm: "family") | `household` | `Household` | `/api/household` |
 | **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `HouseholdLead` | `/api/household/member` |

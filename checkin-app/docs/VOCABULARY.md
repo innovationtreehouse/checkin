@@ -17,7 +17,7 @@ identifier that just says "member" is a bug against this dictionary.
 
 | Concept | Relationship | UI word | Code identifier | Model / table | Path |
 |---|---|---|---|---|---|
-| **Person** | the human (any human: staff, volunteer, youth, lead, enrollee) | name / "person" | `person` | **`Person`** (umbrella model — rename from `Participant`, pending; see migration status) | — |
+| **Person** | the human (any human: staff, volunteer, youth, lead, enrollee) | name / "person" | `person` | **`Person`** — the umbrella model. **Name DECIDED.** Code still says `Participant`; the rename is not yet executed (see migration status). | — |
 | **Org Membership (A)** | Person/household ↔ **Organization** | **"Treehouse Member"** | `isActiveOrgMember`, `orgMember…` | `OrgMembership` (rename from `Membership`) | `/api/shop/org-members` |
 | **Household** | grouping of people | "household" (warm: "family") | `household` | `Household` | `/api/household` |
 | **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `HouseholdLead` (lead variant) | `/api/household/member` |
@@ -63,7 +63,7 @@ The term-by-term migration plan lives in
 - **Phase 1 — youth** (`minor`/`isMinor` → `youth`/`isYouth`): shipped (#670) + a comment-scrub followup. `child` deliberately preserved.
 - **Phase 3 — householdMember** (sense-B bare `member` → `householdMember`, route kept at `/api/household/member`): shipped (#674, branch `claude/determined-bell-70bb18`). Program-enrollee `programParticipants` correctly stays. Prisma `participant`/`participantId` were left untouched by Phase 3 — **not because they're canonical** (they're the person model, which rule 2 no longer calls "participant") but because renaming them belongs to the Person-umbrella migration (→ `person`/`personId`), not the household phase.
 - **Phase 2 — student**, **Phase 4 — OrgMembership**, **Phase 5 — household/family**, **Phase 6 — dependent**: pending.
-- **Person umbrella** — rename `model Participant` → `Person` (and `participantId` FKs → `personId`, TBC), freeing "participant" to mean only the program enrollee; requalify every mixed-people "participant" label. Large schema migration — under investigation (report: [designs/PERSON_UMBRELLA_INVESTIGATION.md](designs/PERSON_UMBRELLA_INVESTIGATION.md), chip `task_e6b621d7`) before it's specced as a phase.
+- **Person umbrella** — the target name `Person` is **decided**; what's pending is *executing* the rename `model Participant` → `Person` (and `participantId` FKs → `personId`), freeing "participant" to mean only the program enrollee, plus requalifying every mixed-people "participant" label. Large schema migration — the investigation (report: [designs/PERSON_UMBRELLA_INVESTIGATION.md](designs/PERSON_UMBRELLA_INVESTIGATION.md), chip `task_e6b621d7`) maps the blast radius + sequencing, NOT the word choice. One edge case for the report: `ProgramParticipant.participantId` points at the person model — confirm it becomes `personId` there too.
 
 ## Known semantic bugs (see proposal §3)
 
