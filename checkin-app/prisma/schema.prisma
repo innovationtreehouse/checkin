@@ -399,8 +399,11 @@ model BoardSettings {
   /// @sensitivity:public
   membershipYearBoundary     DateTime?
   /// Shopify variant ID of the membership product everyone checks out through.
-  /// The "Pay with Shopify" link is built from it as
-  /// https://<SHOPIFY_STORE_DOMAIN>/cart/<membershipVariantId>:1.
+  /// The "Pay with Shopify" link is built from it SERVER-SIDE (ensurePaymentLink
+  /// in lib/membership/payment.ts) as
+  /// https://<SHOPIFY_STORE_DOMAIN>/cart/<membershipVariantId>:1; the client only
+  /// receives the derived checkoutUrl, never this raw field — hence internal, not
+  /// public (contrast Program.shopify*VariantId, which the browser builds from).
   /// @sensitivity:internal
   membershipVariantId        String?
   /// Discount code (created in Shopify by the board) appended to the checkout
