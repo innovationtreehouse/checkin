@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
@@ -29,7 +30,7 @@ export const GET = withAuth(
             }));
             return NextResponse.json({ people });
         } catch (error) {
-            console.error("Error fetching roles:", error);
+            logger.error("Error fetching roles:", error);
             return NextResponse.json({ error: "Internal server error" }, { status: 500 });
         }
     }
@@ -95,7 +96,7 @@ export const PATCH = withAuth(
 
             return NextResponse.json({ message: "Roles updated successfully", user: updated });
         } catch (error) {
-            console.error("Error updating role:", error);
+            logger.error("Error updating role:", error);
             return NextResponse.json({ error: "Internal server error" }, { status: 500 });
         }
     }

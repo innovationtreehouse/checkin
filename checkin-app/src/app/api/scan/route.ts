@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/scan-service";
 import { config } from "@/lib/config";
@@ -144,6 +145,6 @@ export const POST = withKiosk(
                 metric: "scan_response_time",
                 value: durationMs,
             }
-        }).catch((err: unknown) => console.error("Failed to log scan_response_time metric:", err));
+        }).catch((err: unknown) => logger.error("Failed to log scan_response_time metric:", err));
     }
 });

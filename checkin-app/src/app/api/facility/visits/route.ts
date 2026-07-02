@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
@@ -18,7 +19,7 @@ export const GET = withAuth(
 
             return NextResponse.json({ visits });
         } catch (error) {
-            console.error("Fetch visits error:", error);
+            logger.error("Fetch visits error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }
@@ -57,7 +58,7 @@ export const PATCH = withAuth(
 
             return NextResponse.json({ visit: updatedVisit });
         } catch (error) {
-            console.error("Update visit error:", error);
+            logger.error("Update visit error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }

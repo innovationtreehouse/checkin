@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
-import { logBackendError } from "@/lib/logger";
+import { logBackendError, logger } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
 import { createContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
@@ -210,7 +210,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         // 4. Send Notifications
         for (const participantId of result.enrolledParticipantIds) {
-            await sendNotification(participantId, 'PROGRAM_ENROLLMENT', { programName: currentProgram.name }).catch(e => console.error(e));
+            await sendNotification(participantId, 'PROGRAM_ENROLLMENT', { programName: currentProgram.name }).catch(e => logger.error(e));
         }
 
         // 5. Build Checkout URL if not free

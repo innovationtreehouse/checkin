@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
@@ -66,7 +67,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         if (isPrismaError(error, 'P2003')) {
             return NextResponse.json({ error: "Participant not found" }, { status: 400 });
         }
-        console.error("Volunteer assignment error:", error);
+        logger.error("Volunteer assignment error:", error);
         return NextResponse.json({ error: "Failed to assign volunteer" }, { status: 500 });
     }
 });
@@ -130,7 +131,7 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
 
         return NextResponse.json({ success: true, assignment });
     } catch (error) {
-        console.error("Volunteer removal error:", error);
+        logger.error("Volunteer removal error:", error);
         return NextResponse.json({ error: "Failed to remove volunteer" }, { status: 500 });
     }
 });
@@ -190,7 +191,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
 
         return NextResponse.json({ success: true, assignment });
     } catch (error) {
-        console.error("Volunteer toggle error:", error);
+        logger.error("Volunteer toggle error:", error);
         return NextResponse.json({ error: "Failed to toggle volunteer" }, { status: 500 });
     }
 });

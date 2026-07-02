@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
@@ -69,7 +70,7 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
 
         return NextResponse.json({ participant: formatted });
     } catch (error) {
-        console.error("Failed to update participant:", error);
+        logger.error("Failed to update participant:", error);
         return NextResponse.json({ error: "Failed to update participant" }, { status: 500 });
     }
 });

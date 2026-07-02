@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { logBackendError } from "@/lib/logger";
+import { logBackendError, logger } from "@/lib/logger";
 
 export const POST = withAuth<{ params: Promise<{ id: string }> }>(
     { roles: ['isSysadmin', 'isBoardMember'] },
@@ -14,7 +14,7 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
 
         const participantId = parseInt(id);
         if (isNaN(participantId)) {
-            console.error(`Invalid participant ID from params: ${id}`);
+            logger.error(`Invalid participant ID from params: ${id}`);
             return NextResponse.json({ error: `Invalid participant ID: ${id}` }, { status: 400 });
         }
 

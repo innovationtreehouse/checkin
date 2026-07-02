@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
@@ -112,7 +113,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
 
         return NextResponse.json({ success: true, program: updatedProgram });
     } catch (error) {
-        console.error("Program settings update error:", error);
+        logger.error("Program settings update error:", error);
         return NextResponse.json({ error: "Failed to update program settings" }, { status: 500 });
     }
 });

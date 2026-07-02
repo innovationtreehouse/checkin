@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import type { Session } from "next-auth";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
@@ -29,7 +30,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
         return NextResponse.json(enrollments);
     } catch (error) {
-        console.error("Failed to fetch user programs:", error);
+        logger.error("Failed to fetch user programs:", error);
         return NextResponse.json({ error: "Failed to fetch programs" }, { status: 500 });
     }
 });

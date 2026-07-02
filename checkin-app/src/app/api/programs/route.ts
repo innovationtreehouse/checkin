@@ -3,7 +3,7 @@ import { withAuth, getOptionalSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { createShopifyProgramVariants } from "@/lib/shopify";
-import { logBackendError } from "@/lib/logger";
+import { logBackendError, logger } from "@/lib/logger";
 import { isActiveMember } from "@/lib/membership";
 import { dollarsToCentsOrNull } from "@inventory/money";
 
@@ -159,7 +159,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         return NextResponse.json(responseObj);
     } catch (error: unknown) {
         if (shopifyData?.shopifyProductId) {
-            console.error("[Shopify] Orphaned product after program DB write failed, manual cleanup needed:", shopifyData.shopifyProductId);
+            logger.error("[Shopify] Orphaned product after program DB write failed, manual cleanup needed:", shopifyData.shopifyProductId);
         }
         await logBackendError(error, "POST /api/programs");
         return NextResponse.json({ error: "Failed to create program" }, { status: 500 });

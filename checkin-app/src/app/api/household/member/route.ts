@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
@@ -138,7 +139,7 @@ export const PATCH = withAuth(
             if (error instanceof HouseholdLeadLimitError) {
                 return NextResponse.json({ error: error.message }, { status: 400 });
             }
-            console.error("Household Member PATCH Error:", error);
+            logger.error("Household Member PATCH Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }

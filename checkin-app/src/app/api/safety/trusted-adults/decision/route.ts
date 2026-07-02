@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import { decideReview, TrustedAdultError } from "@/lib/trusted-adult/service";
 
@@ -41,7 +42,7 @@ export const POST = withAuth({ roles: ["isBoardMember", "isSysadmin"] }, async (
         if (error instanceof TrustedAdultError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: STATUS_FOR[error.code] });
         }
-        console.error("Trusted adult decision error:", error);
+        logger.error("Trusted adult decision error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });

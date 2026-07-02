@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
@@ -47,7 +48,7 @@ export const GET = withAuth(
 
             return NextResponse.json({ participants: [pA, pB] });
         } catch (error) {
-            console.error("Failed to analyze participants:", error);
+            logger.error("Failed to analyze participants:", error);
             return NextResponse.json({ error: "Server error" }, { status: 500 });
         }
     }
