@@ -159,12 +159,17 @@ describe('Membership EXTERNAL phase API', () => {
     it('rejects (500) a completed Zoho webhook when the secret is unset, with no mutation', async () => {
         const { processId } = await makeProcess(`C ${TAG}`, 'zoho-C');
         delete process.env.ZOHO_WEBHOOK_SECRET;
+        // On a dev/local instance the mock supplies a default webhook secret, so the
+        // unconfigured-500 path is prod-only. Pin CHECKIN_ENV=prod to assert it.
+        const prevEnv = process.env.CHECKIN_ENV;
+        process.env.CHECKIN_ENV = 'prod';
         try {
             const res = await ZOHO_WEBHOOK(zohoReq({ requests: { request_id: 'zoho-C', request_status: 'completed' } }, SECRET));
             // Route bails before token verify when the secret is unconfigured.
             expect(res.status).toBe(500);
         } finally {
             process.env.ZOHO_WEBHOOK_SECRET = SECRET;
+            process.env.CHECKIN_ENV = prevEnv;
         }
         const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
         expect(p?.contractSignedAt).toBeNull();

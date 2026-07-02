@@ -217,11 +217,16 @@ describe('POST /api/membership/contract/sign', () => {
         await prisma.membershipProcess.update({ where: { id: processId }, data: { status: 'PENDING_EXTERNAL_ACTION' } });
     });
 
-    it('503s when Zoho is not configured', async () => {
+    it('503s when Zoho is not configured (prod — the dev mock is dead here)', async () => {
         delete process.env.ZOHO_CLIENT_ID;
+        // The dev/local mock stands in when Zoho is unconfigured (→ 200), so the
+        // unconfigured-503 contract is prod-only. Pin CHECKIN_ENV=prod to assert it.
+        const prevEnv = process.env.CHECKIN_ENV;
+        process.env.CHECKIN_ENV = 'prod';
         asUser(leadId);
         const res = await SIGN(signReq());
         expect(res.status).toBe(503);
         process.env.ZOHO_CLIENT_ID = 'cid';
+        process.env.CHECKIN_ENV = prevEnv;
     });
 });

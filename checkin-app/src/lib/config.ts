@@ -30,6 +30,29 @@ function readCheckinEnv(): CheckinEnv {
     return value === 'dev' || value === 'local' ? value : 'prod';
 }
 
+/** True only when all three Zoho OAuth secrets are present. */
+function zohoConfiguredEnv(): boolean {
+    return !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN);
+}
+
+/**
+ * The dev/local Zoho Sign MOCK is active when the real integration is unconfigured
+ * AND we're on a non-prod instance (see docs/designs/ZOHO_SIGN_DEV_MOCK.md). Two
+ * server-only fuses — CHECKIN_ENV (fails safe to prod) and NODE_ENV — so no mock
+ * path is reachable in prod by construction. Setting real Zoho secrets in dev opts
+ * back into the real client (zohoConfigured wins).
+ */
+function zohoMockActiveEnv(): boolean {
+    return !zohoConfiguredEnv() && readCheckinEnv() !== 'prod' && process.env.NODE_ENV !== 'production';
+}
+
+/**
+ * Fixed shared secret the dev mock signs its self-fired webhook with (§4a of the
+ * design). It guards nothing real — the payload is generated locally — it exists
+ * only so verifyZohoToken's real timing-safe compare has a value in dev.
+ */
+const DEV_MOCK_WEBHOOK_SECRET = 'dev-zoho-mock-webhook-secret';
+
 export const config = {
     // Database
     databaseUrl: () => requireEnv('DATABASE_URL'),
@@ -52,7 +75,10 @@ export const config = {
     averityConsentUrl: (): string | null => process.env.AVERITY_CONSENT_URL || null,
 
     // Zoho Sign webhook shared secret (timing-safe compared in verifyZohoToken).
-    zohoWebhookSecret: (): string | null => process.env.ZOHO_WEBHOOK_SECRET || null,
+    // Falls back to a fixed dev secret only when the mock is active, so the mock's
+    // self-fired webhook (dev interstitial) verifies for real with zero env setup.
+    zohoWebhookSecret: (): string | null =>
+        process.env.ZOHO_WEBHOOK_SECRET || (zohoMockActiveEnv() ? DEV_MOCK_WEBHOOK_SECRET : null),
 
     // AWS — region for SDK clients. Set on the ECS task def (AWS_REGION); the
     // default covers local dev. Credentials come from the task role / local profile.
@@ -74,9 +100,16 @@ export const config = {
     zohoRefreshToken: (): string | null => process.env.ZOHO_REFRESH_TOKEN || null,
     zohoAccountsUrl: (): string => process.env.ZOHO_ACCOUNTS_URL || 'https://accounts.zoho.com',
     zohoSignApi: (): string => process.env.ZOHO_SIGN_API || 'https://sign.zoho.com/api/v1',
-    // True only when all three OAuth secrets are present — gates the sign endpoint.
-    zohoConfigured: (): boolean =>
-        !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN),
+    // True only when all three OAuth secrets are present — real integration wired.
+    zohoConfigured: (): boolean => zohoConfiguredEnv(),
+    // True when the dev/local mock provider stands in for real Zoho (secrets unset,
+    // non-prod). Selects the mock adapter, skips the S3 PDF load, enables the dev
+    // interstitial + its webhook endpoint. Always false in prod. See zohoMockActiveEnv.
+    zohoMockActive: (): boolean => zohoMockActiveEnv(),
+    // Sign flow is usable when real Zoho is configured OR the dev mock is active.
+    // Gates getOrCreateContractSigningUrl + syncContractStatus (replaces the bare
+    // zohoConfigured() checks so the mock can drive them in dev).
+    zohoAvailable: (): boolean => zohoConfiguredEnv() || zohoMockActiveEnv(),
 
     // App
     checkinEnv: (): CheckinEnv => readCheckinEnv(),
