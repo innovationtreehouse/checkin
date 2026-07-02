@@ -745,15 +745,15 @@ model RawBadgeLog {
   /// @sensitivity:internal
   id            Int      @id @default(autoincrement())
   /// @sensitivity:internal
-  participantId Int
+  personId Int
   /// @sensitivity:personal
   timestamp     DateTime @default(now())
   /// @sensitivity:personal
   location      String?
 
-  participant Participant @relation(fields: [participantId], references: [id])
+  person Participant @relation(fields: [personId], references: [id])
 
-  @@index([participantId, timestamp]) // Double-badge detection in /api/scan
+  @@index([personId, timestamp]) // Double-badge detection in /api/scan
 }
 
 model Visit {

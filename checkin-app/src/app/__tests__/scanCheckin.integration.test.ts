@@ -72,12 +72,12 @@ describe('POST /api/scan — real check-in/out logic', () => {
     afterEach(async () => {
         // Reset facility state between cases so each test controls who is present.
         await prisma.visit.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
-        await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: [keyholderId, normalId] } } });
     });
 
     afterAll(async () => {
         await prisma.visit.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
-        await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: [keyholderId, normalId] } } });
         await prisma.participant.deleteMany({ where: { id: { in: [keyholderId, normalId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [keyholderHouseholdId, normalHouseholdId] } } });
     });
@@ -121,7 +121,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
 
         // Backdate the badge event so the second scan is past the 3s debounce window.
         await prisma.rawBadgeLog.updateMany({
-            where: { participantId: normalId },
+            where: { personId: normalId },
             data: { timestamp: new Date(Date.now() - 5000) },
         });
 

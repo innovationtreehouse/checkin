@@ -14,7 +14,7 @@ describe("facility-ops/badges page", () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
       "/api/facility/badges": {
-        badges: [{ id: 1, timestamp: "2026-01-01T14:00:00.000Z", participant: { name: "Val Volunteer", email: "val@example.com" }, location: "Side Door" }],
+        badges: [{ id: 1, timestamp: "2026-01-01T14:00:00.000Z", person: { name: "Val Volunteer", email: "val@example.com" }, location: "Side Door" }],
       },
     });
     renderWithProviders(<AdminBadgesPage />);

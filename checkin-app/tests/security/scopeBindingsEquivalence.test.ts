@@ -139,8 +139,8 @@ function referenceScopesHeld(
             break;
         }
         case 'RawBadgeLog': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
+            const personId = num(row.personId);
+            if (personId !== undefined && personId === ctx.selfId) scopes.add('their_own');
             break;
         }
         case 'ToolStatus': {

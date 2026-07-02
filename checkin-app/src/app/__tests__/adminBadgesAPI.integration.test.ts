@@ -24,7 +24,7 @@ describe('Admin Badges API Integration Tests', () => {
         // Clean up any leaked state
         await prisma.rawBadgeLog.deleteMany({
             where: {
-                participant: { email: { contains: 'badges-api-test' } }
+                person: { email: { contains: 'badges-api-test' } }
             }
         });
         await prisma.participant.deleteMany({
@@ -44,7 +44,7 @@ describe('Admin Badges API Integration Tests', () => {
 
         const badgeEvent = await prisma.rawBadgeLog.create({
             data: {
-                participantId: testUserId,
+                personId: testUserId,
                 location: 'Front Door'
             }
         });
@@ -106,9 +106,9 @@ describe('Admin Badges API Integration Tests', () => {
             const foundEvent = data.badges.find((b: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => b.id === testBadgeEventId);
             expect(foundEvent).toBeDefined();
             expect(foundEvent.location).toBe('Front Door');
-            expect(foundEvent.participant).toBeDefined();
-            expect(foundEvent.participant.name).toBe('User Badges Test');
-            expect(foundEvent.participant.email).toBe('user-badges-api-test@example.com');
+            expect(foundEvent.person).toBeDefined();
+            expect(foundEvent.person.name).toBe('User Badges Test');
+            expect(foundEvent.person.email).toBe('user-badges-api-test@example.com');
         });
     });
 });

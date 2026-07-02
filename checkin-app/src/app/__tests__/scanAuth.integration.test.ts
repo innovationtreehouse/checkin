@@ -112,7 +112,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
 
         afterAll(async () => {
             await prisma.visit.deleteMany({ where: { participantId: kioskId } });
-            await prisma.rawBadgeLog.deleteMany({ where: { participantId: kioskId } });
+            await prisma.rawBadgeLog.deleteMany({ where: { personId: kioskId } });
             await prisma.participant.delete({ where: { id: kioskId } });
             await prisma.household.delete({ where: { id: kioskHouseholdId } });
         });
@@ -126,7 +126,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
 
         afterEach(async () => {
             await prisma.visit.deleteMany({ where: { participantId: kioskId } });
-            await prisma.rawBadgeLog.deleteMany({ where: { participantId: kioskId } });
+            await prisma.rawBadgeLog.deleteMany({ where: { personId: kioskId } });
         });
 
         it('valid signature → 200 and records the check-in', async () => {
@@ -148,7 +148,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
 
             const visit = await prisma.visit.findFirst({ where: { participantId: kioskId, departedAt: null } });
             expect(visit).not.toBeNull();
-            const events = await prisma.rawBadgeLog.count({ where: { participantId: kioskId } });
+            const events = await prisma.rawBadgeLog.count({ where: { personId: kioskId } });
             expect(events).toBe(1);
         });
 
@@ -212,7 +212,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
 
             expect(res2.status).toBe(401);
             // Only the first request checked in; the replay changed nothing.
-            const events = await prisma.rawBadgeLog.count({ where: { participantId: kioskId } });
+            const events = await prisma.rawBadgeLog.count({ where: { personId: kioskId } });
             expect(events).toBe(1);
         });
 
@@ -266,14 +266,14 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
         afterEach(async () => {
             const ids = [pSelf, pSameHH, pOtherHH, pStranger, pKeyholder];
             await prisma.visit.deleteMany({ where: { participantId: { in: ids } } });
-            await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: ids } } });
+            await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: ids } } });
         });
 
         afterAll(async () => {
             const ids = [pSelf, pSameHH, pOtherHH, pStranger, pKeyholder];
             const hs = [hSelf, hLead, hOther, hStranger, hKeyholder];
             await prisma.visit.deleteMany({ where: { participantId: { in: ids } } });
-            await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: ids } } });
+            await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: ids } } });
             await prisma.participant.deleteMany({ where: { id: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: hs } } });
         });
