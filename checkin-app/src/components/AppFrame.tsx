@@ -319,7 +319,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                     <Group gap={4} wrap="nowrap">
                       {badges.map((badge) => {
                         // Green action badges = green fill + dark text. Gray informational badges
-                        // = SOLID light-gray fill (gray.4) + dark text. The nav sits on a dark
+                        // = SOLID light-gray fill (gray.5) + dark text. The nav sits on a dark
                         // purple sidebar, so the 'light' variant (a translucent tint) reads dark
                         // there — a solid light shade keeps the circle actually light-gray. The
                         // NavLink also forces section text white on the colored sidebar, so pin
@@ -329,7 +329,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                           <Badge
                             key={badge.color}
                             size="md"
-                            color={isGray ? 'gray.4' : badge.color}
+                            color={isGray ? 'gray.5' : badge.color}
                             variant="filled"
                             c="var(--mantine-color-dark-9)"
                             aria-label={badge.label}
