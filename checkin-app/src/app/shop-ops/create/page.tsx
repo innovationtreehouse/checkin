@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Card, Flex, ScrollArea, Stack, Text, TextInput } from "@mantine/core";
+import { Button, Card, Flex, ScrollArea, Stack, Text, TextInput } from "@mantine/core";
+import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
 
 type ToolListItem = {
   id: number;
@@ -14,7 +15,7 @@ export default function CreateToolPage() {
   const [newToolName, setNewToolName] = useState("");
   const [newToolGuide, setNewToolGuide] = useState("");
   const [saving, setSaving] = useState(false);
-  const [createMessage, setCreateMessage] = useState("");
+  const [createMessage, setCreateMessage] = useState<{ text: string; tone: AlertTone } | null>(null);
   const [tools, setTools] = useState<ToolListItem[]>([]);
 
   const loadTools = useCallback(async () => {
@@ -29,7 +30,7 @@ export default function CreateToolPage() {
   const handleCreateTool = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setCreateMessage("");
+    setCreateMessage(null);
 
     try {
       const res = await fetch("/api/shop/tools", {
@@ -39,13 +40,13 @@ export default function CreateToolPage() {
       });
 
       if (res.ok) {
-        setCreateMessage("New tool added successfully!");
+        setCreateMessage({ text: "New tool added successfully!", tone: "success" });
         setNewToolName("");
         setNewToolGuide("");
         loadTools();
       } else {
         const data = await res.json();
-        setCreateMessage(data.error || "Failed to create tool.");
+        setCreateMessage({ text: data.error || "Failed to create tool.", tone: "error" });
       }
     } finally {
       setSaving(false);
@@ -60,9 +61,7 @@ export default function CreateToolPage() {
           authorizing Certifiers, and tracking usage.
         </Text>
 
-        {createMessage && (
-          <Alert color={createMessage.includes("success") ? "green" : "red"} mb="md">{createMessage}</Alert>
-        )}
+        <AlertBanner message={createMessage?.text} tone={createMessage?.tone} mb="md" />
 
         <form onSubmit={handleCreateTool}>
           <Stack>
