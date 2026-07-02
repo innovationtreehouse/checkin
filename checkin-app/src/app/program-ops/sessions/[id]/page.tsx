@@ -6,6 +6,7 @@ import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+import type { RSVPStatus } from '@/types/rsvp';
 
 type ParticipantDetail = {
   participantId: number;
@@ -16,8 +17,6 @@ type ParticipantDetail = {
   };
   isCore?: boolean;
 };
-
-type RSVPStatus = "ATTENDING" | "NOT_ATTENDING" | "NO_RESPONSE" | "MAYBE";
 
 type EventData = {
   id: number;
