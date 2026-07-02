@@ -31,13 +31,11 @@ type Visit = {
   event?: { program?: { id: number; name: string } };
 };
 
-type Counts = { keyholders: number; volunteers: number; students: number; total: number };
+type Counts = { keyholders: number; volunteers: number; youth: number; total: number };
 type SafetyFlags = { isLastKeyholder: boolean; isTwoDeepViolation: boolean };
 type FullResponse = { access: "full"; attendance: Visit[]; counts: Counts; safety: SafetyFlags };
 type LimitedResponse = { access: "limited"; counts: Counts; safety: SafetyFlags; self: Visit | null; household: Visit[] };
 type AttendanceResponse = FullResponse | LimitedResponse;
-
-const isStudent = (dob: string | undefined | null) => isYouth(dob);
 
 type SessionUser = { id: number; isSysadmin?: boolean; isKeyholder?: boolean; isBoardMember?: boolean; householdId?: number | null };
 
@@ -67,19 +65,19 @@ function KioskDisplayInner() {
   const canCheckInHousehold = Boolean(currentUserHouseholdId);
 
   const isFull = data?.access === "full";
-  const counts = data?.counts || { keyholders: 0, volunteers: 0, students: 0, total: 0 };
+  const counts = data?.counts || { keyholders: 0, volunteers: 0, youth: 0, total: 0 };
   const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
 
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
   const keyholderList = fullAttendance.filter(v => v.participant.isKeyholder);
-  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !isStudent(v.participant.dateOfBirth));
-  const studentList = fullAttendance.filter(v => isStudent(v.participant.dateOfBirth));
+  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !isYouth(v.participant.dateOfBirth));
+  const youthList = fullAttendance.filter(v => isYouth(v.participant.dateOfBirth));
 
   const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
   const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
   const householdKeyholders = limitedHousehold.filter(v => v.participant.isKeyholder);
-  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !isStudent(v.participant.dateOfBirth));
-  const householdStudents = limitedHousehold.filter(v => isStudent(v.participant.dateOfBirth));
+  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !isYouth(v.participant.dateOfBirth));
+  const householdYouth = limitedHousehold.filter(v => isYouth(v.participant.dateOfBirth));
 
   const isCheckedIn = isFull
     ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)
@@ -244,9 +242,9 @@ function KioskDisplayInner() {
 
   const kioskDisplayNames = useMemo(() => {
     if (!isKioskMode) return new Map<number, string>();
-    const allVisits = [...keyholderList, ...volunteerList, ...studentList];
+    const allVisits = [...keyholderList, ...volunteerList, ...youthList];
     return getKioskDisplayNames(allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, email: v.participant.email })));
-  }, [isKioskMode, keyholderList, volunteerList, studentList]);
+  }, [isKioskMode, keyholderList, volunteerList, youthList]);
 
   const canSeeNames = !isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin || currentUserIsBoardMember);
 
@@ -395,7 +393,7 @@ function KioskDisplayInner() {
         {/* Safety warnings */}
         {safety.isTwoDeepViolation && (
           <Alert color="red" icon="🚨" title="Critical Warning" mb="lg">
-            Two-Deep Compliance is failing! An unaccompanied student is present without sufficient
+            Two-Deep Compliance is failing! An unaccompanied youth is present without sufficient
             adult supervision.
           </Alert>
         )}
@@ -416,7 +414,7 @@ function KioskDisplayInner() {
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
             {renderColumn("🔑", counts.keyholders, "Keyholders", "blue", isFull ? keyholderList : householdKeyholders)}
             {renderColumn("🤝", counts.volunteers, "Volunteers/Adults", "teal", isFull ? volunteerList : householdVolunteers)}
-            {renderColumn("🎓", counts.students, "Students", "grape", isFull ? studentList : householdStudents)}
+            {renderColumn("🎓", counts.youth, "Students", "grape", isFull ? youthList : householdYouth)}
           </SimpleGrid>
         )}
 
