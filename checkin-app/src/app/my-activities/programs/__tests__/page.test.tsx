@@ -12,7 +12,7 @@ describe("MyProgramsDashboard", () => {
         setSession({ id: 1, householdLead: true });
         mockFetchJson({
             "/api/programs/mine": [
-                { programId: 5, participantId: 100, participant: { id: 100, name: "Kid One" }, program: { id: 5, name: "Robotics Club", startAt: "2026-06-01T00:00:00.000Z", endAt: null } },
+                { programId: 5, personId: 100, person: { id: 100, name: "Kid One" }, program: { id: 5, name: "Robotics Club", startAt: "2026-06-01T00:00:00.000Z", endAt: null } },
             ],
         });
         renderWithProviders(<MyProgramsDashboard />);

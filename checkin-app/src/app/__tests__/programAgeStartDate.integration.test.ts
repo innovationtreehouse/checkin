@@ -37,7 +37,7 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
     let userId: number;
 
     beforeAll(async () => {
-        await prisma.programParticipant.deleteMany({ where: { participant: { email: { contains: 'age-startdate-test' } } } });
+        await prisma.programParticipant.deleteMany({ where: { person: { email: { contains: 'age-startdate-test' } } } });
         await prisma.participant.deleteMany({ where: { email: { contains: 'age-startdate-test' } } });
         await prisma.program.deleteMany({ where: { name: { contains: 'Age StartDate Test' } } });
 

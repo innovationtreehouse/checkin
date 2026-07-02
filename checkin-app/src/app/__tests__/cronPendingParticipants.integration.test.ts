@@ -40,7 +40,7 @@ describe('Cron Pending-Participants API Integration Tests', () => {
             select: { id: true }
         });
         const leakedIds = leaked.map(u => u.id);
-        await prisma.programParticipant.deleteMany({ where: { participantId: { in: leakedIds } } });
+        await prisma.programParticipant.deleteMany({ where: { personId: { in: leakedIds } } });
         await prisma.participant.deleteMany({ where: { id: { in: leakedIds } } });
         await prisma.program.deleteMany({ where: { name: { contains: 'Pending Cron Test' } } });
 
@@ -58,11 +58,11 @@ describe('Cron Pending-Participants API Integration Tests', () => {
 
         await prisma.programParticipant.createMany({
             data: [
-                { programId, participantId: ids.day1, status: 'PENDING', pendingSince: daysAgo(now, 1) },
-                { programId, participantId: ids.day3, status: 'PENDING', pendingSince: daysAgo(now, 3) },
-                { programId, participantId: ids.day6, status: 'PENDING', pendingSince: daysAgo(now, 6) },
-                { programId, participantId: ids.day7, status: 'PENDING', pendingSince: daysAgo(now, 7) },
-                { programId, participantId: ids.plan, status: 'PENDING', pendingSince: daysAgo(now, 8), isPaymentPlanRequested: true },
+                { programId, personId: ids.day1, status: 'PENDING', pendingSince: daysAgo(now, 1) },
+                { programId, personId: ids.day3, status: 'PENDING', pendingSince: daysAgo(now, 3) },
+                { programId, personId: ids.day6, status: 'PENDING', pendingSince: daysAgo(now, 6) },
+                { programId, personId: ids.day7, status: 'PENDING', pendingSince: daysAgo(now, 7) },
+                { programId, personId: ids.plan, status: 'PENDING', pendingSince: daysAgo(now, 8), isPaymentPlanRequested: true },
             ]
         });
     });
@@ -109,11 +109,11 @@ describe('Cron Pending-Participants API Integration Tests', () => {
 
             // DB reality: only day7 deleted; the warned rows and the payment-plan row survive.
             const survivors = await prisma.programParticipant.findMany({ where: { programId } });
-            const survivorPids = survivors.map(s => s.participantId).sort((a, b) => a - b);
+            const survivorPids = survivors.map(s => s.personId).sort((a, b) => a - b);
             expect(survivorPids).toEqual([ids.day1, ids.day3, ids.day6, ids.plan].sort((a, b) => a - b));
 
             const day7 = await prisma.programParticipant.findUnique({
-                where: { programId_participantId: { programId, participantId: ids.day7 } }
+                where: { programId_personId: { programId, personId: ids.day7 } }
             });
             expect(day7).toBeNull();
         });

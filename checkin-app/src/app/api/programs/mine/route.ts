@@ -15,11 +15,11 @@ export const GET = withAuth({}, async (_req, auth) => {
         const householdMemberIds = householdMembers.map(m => m.id);
 
         const enrollments = await prisma.programParticipant.findMany({
-            where: { participantId: { in: householdMemberIds } },
+            where: { personId: { in: householdMemberIds } },
             select: {
                 programId: true,
-                participantId: true,
-                participant: { select: { id: true, name: true } },
+                personId: true,
+                person: { select: { id: true, name: true } },
                 program: {
                     select: { id: true, name: true, startAt: true, endAt: true }
                 }

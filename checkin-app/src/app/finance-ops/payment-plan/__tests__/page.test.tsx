@@ -13,9 +13,9 @@ beforeEach(() => resetRtl());
 const requests = [
   {
     programId: 10,
-    participantId: 20,
+    personId: 20,
     pendingSince: "2026-01-01T00:00:00.000Z",
-    participant: { id: 20, name: "Pat Participant", email: "pat@example.com" },
+    person: { id: 20, name: "Pat Participant", email: "pat@example.com" },
     program: { id: 10, name: "Robotics", memberPriceCents: 5000, nonMemberPriceCents: 7500 },
   },
 ];

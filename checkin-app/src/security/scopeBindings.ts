@@ -61,14 +61,14 @@ export const SCOPE_BINDINGS = {
             field: 'programId',
             inCtx: ['programsLed', 'programsCoreVolIn'],
         },
-        their_own: { field: 'participantId', eqCtx: 'selfId' },
+        their_own: { field: 'personId', eqCtx: 'selfId' },
     },
     ProgramVolunteer: {
         their_program_participants: {
             field: 'programId',
             inCtx: ['programsLed', 'programsCoreVolIn'],
         },
-        their_own: { field: 'participantId', eqCtx: 'selfId' },
+        their_own: { field: 'personId', eqCtx: 'selfId' },
     },
     // Fee + RSVP shared the grouped switch case with ProgramParticipant/
     // ProgramVolunteer, reading BOTH programId and participantId. `Fee` has no

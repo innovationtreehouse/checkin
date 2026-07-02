@@ -286,7 +286,7 @@ export async function createProgram(prisma: Db): Promise<string> {
     const enrollees = await prisma.participant.findMany({ take: 2, orderBy: { id: "asc" } });
     for (const p of enrollees) {
         await prisma.programParticipant.create({
-            data: { programId: program.id, participantId: p.id, status: "ACTIVE" },
+            data: { programId: program.id, personId: p.id, status: "ACTIVE" },
         });
     }
     return `Created program "Test Program ${tag}" with a fee and ${enrollees.length} participants`;

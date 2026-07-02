@@ -22,12 +22,12 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         const participant = await prisma.programParticipant.findUnique({
             where: {
-                programId_participantId: {
+                programId_personId: {
                     programId,
-                    participantId
+                    personId: participantId
                 }
             },
-            include: { participant: true, program: true }
+            include: { person: true, program: true }
         });
 
         if (!participant) {
@@ -44,11 +44,11 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         const isLeadMentor = participant.program?.leadMentorId === currentUserId;
 
         let isHouseholdLead = false;
-        if (!isSelf && !isSysAdminOrBoard && !isLeadMentor && participant.participant?.householdId) {
+        if (!isSelf && !isSysAdminOrBoard && !isLeadMentor && participant.person?.householdId) {
             const leadRecord = await prisma.householdLead.findUnique({
                 where: {
                     householdId_personId: {
-                        householdId: participant.participant.householdId,
+                        householdId: participant.person.householdId,
                         personId: currentUserId
                     }
                 }
@@ -62,7 +62,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         const updatedParticipant = await prisma.programParticipant.update({
             where: {
-                programId_participantId: { programId, participantId }
+                programId_personId: { programId, personId: participantId }
             },
             data: {
                 isPaymentPlanRequested: true
@@ -71,7 +71,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         // Send email to finances
         // In a real implementation this would trigger an actual email via SendGrid, NodeMailer, etc.
-        console.log(`[EMAIL DISPATCH] To: finances@innovationtreehouse.org, Subject: Payment Plan Request for ${participant.participant?.name || 'User'} in ${participant.program?.name || 'Program'}`);
+        console.log(`[EMAIL DISPATCH] To: finances@innovationtreehouse.org, Subject: Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
 
         return NextResponse.json({ success: true, participant: updatedParticipant });
     } catch (error) {

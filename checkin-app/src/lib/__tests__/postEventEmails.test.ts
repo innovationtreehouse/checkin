@@ -190,7 +190,7 @@ describe("processPostEventEmails", () => {
                 program: {
                     leadMentorId: null,
                     volunteers: [
-                        { participant: { email: "core@example.com" } }
+                        { person: { email: "core@example.com" } }
                     ]
                 },
                 rsvps: [],

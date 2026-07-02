@@ -47,7 +47,7 @@ describe('Multi-select household enrollment (integration)', () => {
         const ids = users.map(u => u.id);
         if (ids.length) {
             await prisma.householdLead.deleteMany({ where: { personId: { in: ids } } });
-            await prisma.programParticipant.deleteMany({ where: { participantId: { in: ids } } });
+            await prisma.programParticipant.deleteMany({ where: { personId: { in: ids } } });
             await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
         }
         await prisma.program.deleteMany({ where: { name: { contains: 'Household Enroll Test' } } });
@@ -117,9 +117,9 @@ describe('Multi-select household enrollment (integration)', () => {
 
         const rows = await prisma.programParticipant.findMany({
             where: { programId: freeProgramId },
-            select: { participantId: true }
+            select: { personId: true }
         });
-        expect(rows.map(r => r.participantId).sort((x, y) => x - y))
+        expect(rows.map(r => r.personId).sort((x, y) => x - y))
             .toEqual([leadId, depAId, depBId, depCId].sort((x, y) => x - y));
     });
 
@@ -136,17 +136,17 @@ describe('Multi-select household enrollment (integration)', () => {
         // were all enrolled in (a); use the lead's re-pass shape: drop depB then
         // re-add to prove the new-row path coexists with the 409.)
         await prisma.programParticipant.delete({
-            where: { programId_participantId: { programId: freeProgramId, participantId: depBId } }
+            where: { programId_personId: { programId: freeProgramId, personId: depBId } }
         });
         const fresh = await enroll(freeProgramId, depBId);
         expect(fresh.status).toBe(200);
 
         // Exactly one row for depA (no duplicate) and depB is back.
         expect(await prisma.programParticipant.count({
-            where: { programId: freeProgramId, participantId: depAId }
+            where: { programId: freeProgramId, personId: depAId }
         })).toBe(1);
         expect(await prisma.programParticipant.count({
-            where: { programId: freeProgramId, participantId: depBId }
+            where: { programId: freeProgramId, personId: depBId }
         })).toBe(1);
     });
 
@@ -169,10 +169,10 @@ describe('Multi-select household enrollment (integration)', () => {
 
         const enrolled = await prisma.programParticipant.findMany({
             where: { programId: cappedProgramId },
-            select: { participantId: true }
+            select: { personId: true }
         });
         expect(enrolled).toHaveLength(2);
-        expect(enrolled.map(r => r.participantId).sort((x, y) => x - y))
+        expect(enrolled.map(r => r.personId).sort((x, y) => x - y))
             .toEqual([leadId, depAId].sort((x, y) => x - y));
     });
 });

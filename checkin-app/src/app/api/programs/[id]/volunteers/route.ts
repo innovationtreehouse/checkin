@@ -38,7 +38,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         const assignment = await prisma.programVolunteer.create({
             data: {
                 programId,
-                participantId,
+                personId: participantId,
                 isCore: false
             }
         });
@@ -110,9 +110,9 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
 
         const assignment = await prisma.programVolunteer.delete({
             where: {
-                programId_participantId: {
+                programId_personId: {
                     programId,
-                    participantId
+                    personId: participantId
                 }
             }
         });
@@ -167,9 +167,9 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
 
         const assignment = await prisma.programVolunteer.update({
             where: {
-                programId_participantId: {
+                programId_personId: {
                     programId,
-                    participantId
+                    personId: participantId
                 }
             },
             data: {

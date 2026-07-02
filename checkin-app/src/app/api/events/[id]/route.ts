@@ -29,10 +29,10 @@ export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth
             program: {
                 include: {
                     volunteers: {
-                        include: { participant: true }
+                        include: { person: true }
                     },
                     participants: {
-                        include: { participant: true }
+                        include: { person: true }
                     }
                 }
             },
@@ -54,7 +54,7 @@ export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth
         auth.user.isSysadmin ||
         auth.user.isBoardMember ||
         event.program?.leadMentorId === auth.user.id ||
-        (event.program?.volunteers?.some(v => v.participantId === auth.user.id && v.isCore) ?? false)
+        (event.program?.volunteers?.some(v => v.personId === auth.user.id && v.isCore) ?? false)
     );
     if (!isStaff) throw forbidden('Forbidden: Not authorized to view this event');
 
@@ -80,7 +80,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
         const userId = auth.user.id;
         const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
         const isLeadMentor = event.program?.leadMentorId === userId;
-        const isCoreVolunteer = event.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
+        const isCoreVolunteer = event.program?.volunteers?.some(v => v.personId === userId && v.isCore) || false;
 
         // Action: Confirm Attendance
         if (body.action === 'confirmAttendance') {

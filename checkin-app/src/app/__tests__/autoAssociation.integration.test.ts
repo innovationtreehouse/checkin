@@ -95,10 +95,10 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
 
         // Enroll User in A and B
         await prisma.programParticipant.create({
-            data: { programId: programAId, participantId }
+            data: { programId: programAId, personId: participantId }
         });
         await prisma.programParticipant.create({
-            data: { programId: programBId, participantId }
+            data: { programId: programBId, personId: participantId }
         });
     });
 
@@ -205,7 +205,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
         it('should continue to chunk into the first event if the user is not enrolled in subsequent events', async () => {
             // Un-enroll user from B so they are ONLY enrolled in A.
             await prisma.programParticipant.deleteMany({
-                where: { participantId, programId: programBId }
+                where: { personId: participantId, programId: programBId }
             });
 
             // Arrives during A, leaves during B time

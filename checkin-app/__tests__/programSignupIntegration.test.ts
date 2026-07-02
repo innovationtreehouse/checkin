@@ -182,7 +182,7 @@ describe('Full Program Signup Integration Flow', () => {
         });
         (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dateOfBirth: new Date('2015-01-01') });
         (prisma.householdLead.findUnique as jest.Mock).mockResolvedValue({ householdId, participantId: leadUserId });
-        (prisma.programParticipant.create as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'PENDING' });
+        (prisma.programParticipant.create as jest.Mock).mockResolvedValue({ programId, personId: childParticipantId, status: 'PENDING' });
 
         const enrollReq = new Request(`http://localhost/api/programs/${programId}/participants`, {
             method: 'POST',
@@ -192,15 +192,15 @@ describe('Full Program Signup Integration Flow', () => {
         expect(enrollRes.status).toBe(200);
 
         // 7. Verify PENDING status
-        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'PENDING' });
+        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, personId: childParticipantId, status: 'PENDING' });
         const participantRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId, participantId: childParticipantId } },
+            where: { programId_personId: { programId, personId: childParticipantId } },
         });
         expect(participantRecord?.status).toBe('PENDING');
 
         // 8. Shopify Webhook call
-        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'PENDING' });
-        (prisma.programParticipant.update as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'ACTIVE' });
+        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, personId: childParticipantId, status: 'PENDING' });
+        (prisma.programParticipant.update as jest.Mock).mockResolvedValue({ programId, personId: childParticipantId, status: 'ACTIVE' });
 
         const webhookPayload = JSON.stringify({
             note_attributes: [
@@ -220,9 +220,9 @@ describe('Full Program Signup Integration Flow', () => {
         expect(webhookRes.status).toBe(200);
 
         // 9. Final Verification - ACTIVE status
-        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'ACTIVE' });
+        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, personId: childParticipantId, status: 'ACTIVE' });
         const finalParticipantRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId, participantId: childParticipantId } },
+            where: { programId_personId: { programId, personId: childParticipantId } },
         });
         expect(finalParticipantRecord?.status).toBe('ACTIVE');
     });

@@ -63,7 +63,7 @@ describe("Merge Participants API", () => {
         // they must go before the participants.
         await prisma.feePayment.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
         await prisma.visit.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
-        await prisma.programParticipant.deleteMany({ where: { participantId: { in: [pKeepId, pMergeId] } } });
+        await prisma.programParticipant.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
         await prisma.householdLead.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
         await prisma.auditLog.deleteMany({ where: { actorId } });
         await prisma.participant.deleteMany({ where: { id: { in: [pKeepId, pMergeId, actorId] } } });
@@ -150,8 +150,8 @@ describe("Merge Participants API", () => {
         createdFeeId = fee.id;
 
         // SAME programId for both → programParticipant conflict.
-        await prisma.programParticipant.create({ data: { programId: program.id, participantId: pKeepId } });
-        await prisma.programParticipant.create({ data: { programId: program.id, participantId: pMergeId } });
+        await prisma.programParticipant.create({ data: { programId: program.id, personId: pKeepId } });
+        await prisma.programParticipant.create({ data: { programId: program.id, personId: pMergeId } });
         // SAME feeId for both → feePayment conflict.
         await prisma.feePayment.create({ data: { feeId: fee.id, personId: pKeepId } });
         await prisma.feePayment.create({ data: { feeId: fee.id, personId: pMergeId } });
@@ -165,13 +165,13 @@ describe("Merge Participants API", () => {
         expect(res.status).toBe(200);
 
         // Keep retains exactly one of each — no duplicate, no double-count.
-        const keepPPs = await prisma.programParticipant.findMany({ where: { participantId: pKeepId, programId: program.id } });
+        const keepPPs = await prisma.programParticipant.findMany({ where: { personId: pKeepId, programId: program.id } });
         expect(keepPPs.length).toBe(1);
         const keepFPs = await prisma.feePayment.findMany({ where: { personId: pKeepId, feeId: fee.id } });
         expect(keepFPs.length).toBe(1);
 
         // The loser's rows were deleted (relink would have violated the composite PK).
-        const mergePPCount = await prisma.programParticipant.count({ where: { participantId: pMergeId } });
+        const mergePPCount = await prisma.programParticipant.count({ where: { personId: pMergeId } });
         expect(mergePPCount).toBe(0);
         const mergeFPCount = await prisma.feePayment.count({ where: { personId: pMergeId } });
         expect(mergeFPCount).toBe(0);

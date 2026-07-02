@@ -109,7 +109,7 @@ describe('Individual Program API Integration Tests', () => {
         });
         enrolledId = enrolled.id;
         await prisma.programParticipant.create({
-            data: { programId: publicProgramId, participantId: enrolledId, status: 'ACTIVE' }
+            data: { programId: publicProgramId, personId: enrolledId, status: 'ACTIVE' }
         });
     });
 
@@ -256,7 +256,7 @@ describe('Individual Program API Integration Tests', () => {
 
              const data = await res.json();
              expect(Array.isArray(data.participants)).toBe(true);
-             expect(data.participants.some((p: { participantId: number }) => p.participantId === enrolledId)).toBe(true);
+             expect(data.participants.some((p: { personId: number }) => p.personId === enrolledId)).toBe(true);
              expect(JSON.stringify(data)).toContain(ENROLLED_NAME);
         });
 
@@ -269,7 +269,7 @@ describe('Individual Program API Integration Tests', () => {
 
              const data = await res.json();
              expect(Array.isArray(data.participants)).toBe(true);
-             expect(data.participants.some((p: { participantId: number }) => p.participantId === enrolledId)).toBe(true);
+             expect(data.participants.some((p: { personId: number }) => p.personId === enrolledId)).toBe(true);
         });
     });
 

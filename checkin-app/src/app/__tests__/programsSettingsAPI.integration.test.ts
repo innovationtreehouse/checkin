@@ -195,8 +195,8 @@ describe('Program Settings API Integration Tests', () => {
              // Enroll 2 participants.
              await prisma.programParticipant.createMany({
                  data: [
-                     { programId: targetProgramId, participantId: commonId, status: 'ACTIVE' },
-                     { programId: targetProgramId, participantId: leadId, status: 'PENDING' },
+                     { programId: targetProgramId, personId: commonId, status: 'ACTIVE' },
+                     { programId: targetProgramId, personId: leadId, status: 'PENDING' },
                  ]
              });
 

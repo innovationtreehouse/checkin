@@ -446,8 +446,8 @@ describe('Event roster strip (events/[id] view)', () => {
             participants: [
                 {
                     programId: PROGRAM_ID,
-                    participantId: ROSTER_ID,
-                    participant: {
+                    personId: ROSTER_ID,
+                    person: {
                         id: ROSTER_ID,
                         name: 'Youth Kid',     // public
                         email: 'kid@x.com',    // pii
@@ -463,7 +463,7 @@ describe('Event roster strip (events/[id] view)', () => {
     function roster(out: unknown): Record<string, unknown> {
         const program = (out as Record<string, unknown>).program as Record<string, unknown>;
         const participants = program.participants as Array<Record<string, unknown>>;
-        return participants[0].participant as Record<string, unknown>;
+        return participants[0].person as Record<string, unknown>;
     }
 
     it('lead mentor of the event\'s program sees roster pii/personal + internal', () => {

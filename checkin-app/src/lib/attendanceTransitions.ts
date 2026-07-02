@@ -18,11 +18,11 @@ type DbClient = PrismaClient | Prisma.TransactionClient;
 async function getRelevantProgramIds(participantId: number, db: DbClient = prisma): Promise<number[]> {
     const [participantPrograms, volunteerPrograms, leadPrograms] = await Promise.all([
         db.programParticipant.findMany({
-            where: { participantId },
+            where: { personId: participantId },
             select: { programId: true }
         }),
         db.programVolunteer.findMany({
-            where: { participantId },
+            where: { personId: participantId },
             select: { programId: true }
         }),
         db.program.findMany({

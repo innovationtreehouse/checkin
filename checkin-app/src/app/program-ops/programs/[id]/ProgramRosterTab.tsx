@@ -127,13 +127,13 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMes
         {program.volunteers.length === 0 ? <Text c="dimmed">No volunteers assigned.</Text> : (
           <Stack gap="xs">
             {sortedVolunteers.map(v => (
-              <Group key={v.participantId} justify="space-between" p="sm" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
+              <Group key={v.personId} justify="space-between" p="sm" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
                 <Group gap="md" wrap="wrap">
-                  <Text fw={500}>{v.participant.name || 'Unnamed'} <Text component="span" c="dimmed" size="sm">({v.participant.email})</Text></Text>
-                  <Checkbox size="xs" checked={v.isCore} disabled={saving} onChange={e => handleToggleCore(v.participantId, e.currentTarget.checked)}
+                  <Text fw={500}>{v.person.name || 'Unnamed'} <Text component="span" c="dimmed" size="sm">({v.person.email})</Text></Text>
+                  <Checkbox size="xs" checked={v.isCore} disabled={saving} onChange={e => handleToggleCore(v.personId, e.currentTarget.checked)}
                     label={<Text size="sm" c={v.isCore ? 'yellow' : undefined}>Core Volunteer</Text>} />
                 </Group>
-                <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveVolunteer(v.participantId)}>Remove</Button>
+                <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveVolunteer(v.personId)}>Remove</Button>
               </Group>
             ))}
           </Stack>
@@ -184,19 +184,19 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMes
         {activeParticipants.length === 0 ? <Text c="dimmed">No active participants yet.</Text> : (
           <Stack gap="xs">
             {activeParticipants.map(p => (
-              <Card key={p.participantId} withBorder radius="sm" padding="sm">
+              <Card key={p.personId} withBorder radius="sm" padding="sm">
                 <Group justify="space-between">
-                  <Text fw={700} c="blue">{p.participant.name || 'Unnamed'}</Text>
-                  <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveParticipant(p.participantId)}>Remove</Button>
+                  <Text fw={700} c="blue">{p.person.name || 'Unnamed'}</Text>
+                  <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveParticipant(p.personId)}>Remove</Button>
                 </Group>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs" spacing="xs">
-                  <Text size="sm" c="dimmed"><strong>Email:</strong> {p.participant.email}</Text>
-                  <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone ? formatPhone(p.participant.phone) : 'N/A'}</Text>
-                  {p.participant.household && (
+                  <Text size="sm" c="dimmed"><strong>Email:</strong> {p.person.email}</Text>
+                  <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.person.phone ? formatPhone(p.person.phone) : 'N/A'}</Text>
+                  {p.person.household && (
                     <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
-                      <strong>Emergency Contact{(p.participant.household.emergencyContacts?.length ?? 0) > 1 ? 's' : ''}:</strong>{' '}
-                      {p.participant.household.emergencyContacts && p.participant.household.emergencyContacts.length > 0
-                        ? p.participant.household.emergencyContacts.map((c) => `${c.name} - ${formatPhone(c.phone)}`).join('; ')
+                      <strong>Emergency Contact{(p.person.household.emergencyContacts?.length ?? 0) > 1 ? 's' : ''}:</strong>{' '}
+                      {p.person.household.emergencyContacts && p.person.household.emergencyContacts.length > 0
+                        ? p.person.household.emergencyContacts.map((c) => `${c.name} - ${formatPhone(c.phone)}`).join('; ')
                         : 'N/A'}
                     </Text>
                   )}
@@ -213,14 +213,14 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMes
         {pendingParticipants.length === 0 ? <Text c="dimmed">No pending participants.</Text> : (
           <Stack gap="xs">
             {pendingParticipants.map(p => (
-              <Card key={p.participantId} withBorder radius="sm" padding="sm">
+              <Card key={p.personId} withBorder radius="sm" padding="sm">
                 <Group justify="space-between">
-                  <Text fw={700} c="yellow">{p.participant.name || 'Unnamed'}</Text>
-                  <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveParticipant(p.participantId)}>Remove</Button>
+                  <Text fw={700} c="yellow">{p.person.name || 'Unnamed'}</Text>
+                  <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveParticipant(p.personId)}>Remove</Button>
                 </Group>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs" spacing="xs">
-                  <Text size="sm" c="dimmed"><strong>Email:</strong> {p.participant.email}</Text>
-                  <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone ? formatPhone(p.participant.phone) : 'N/A'}</Text>
+                  <Text size="sm" c="dimmed"><strong>Email:</strong> {p.person.email}</Text>
+                  <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.person.phone ? formatPhone(p.person.phone) : 'N/A'}</Text>
                   <Text size="sm" c="dimmed"><strong>Pending Since:</strong> {p.pendingSince ? formatDateTime(p.pendingSince) : 'Unknown'}</Text>
                 </SimpleGrid>
               </Card>

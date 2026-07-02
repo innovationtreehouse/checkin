@@ -91,13 +91,13 @@ export const POST = withAuth(
                 for (const pp of mergeParticipant.programParticipants) {
                     if (!keepParticipant.programParticipants.find(k => k.programId === pp.programId)) {
                         await tx.programParticipant.update({
-                            where: { programId_participantId: { programId: pp.programId, participantId: mergeId } },
-                            data: { participantId: keepId }
+                            where: { programId_personId: { programId: pp.programId, personId: mergeId } },
+                            data: { personId: keepId }
                         });
                         moved.programParticipants.migrated++;
                     } else {
                         await tx.programParticipant.delete({
-                            where: { programId_participantId: { programId: pp.programId, participantId: mergeId } }
+                            where: { programId_personId: { programId: pp.programId, personId: mergeId } }
                         });
                         moved.programParticipants.deleted++;
                     }
@@ -106,13 +106,13 @@ export const POST = withAuth(
                 for (const pv of mergeParticipant.programVolunteers) {
                     if (!keepParticipant.programVolunteers.find(k => k.programId === pv.programId)) {
                         await tx.programVolunteer.update({
-                            where: { programId_participantId: { programId: pv.programId, participantId: mergeId } },
-                            data: { participantId: keepId }
+                            where: { programId_personId: { programId: pv.programId, personId: mergeId } },
+                            data: { personId: keepId }
                         });
                         moved.programVolunteers.migrated++;
                     } else {
                         await tx.programVolunteer.delete({
-                            where: { programId_participantId: { programId: pv.programId, participantId: mergeId } }
+                            where: { programId_personId: { programId: pv.programId, personId: mergeId } }
                         });
                         moved.programVolunteers.deleted++;
                     }

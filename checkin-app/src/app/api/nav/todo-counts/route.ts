@@ -164,7 +164,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 },
             }),
             prisma.programParticipant.findMany({
-                where: { participantId: { in: memberIds }, status: "PENDING" },
+                where: { personId: { in: memberIds }, status: "PENDING" },
                 select: { programId: true, program: { select: { name: true } } },
             }),
         ]);
@@ -238,7 +238,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             prisma.programParticipant.groupBy({
                 by: ["programId"],
                 where: { programId: { in: ledIds }, status: "ACTIVE" },
-                _count: { participantId: true },
+                _count: { personId: true },
             }),
             // All upcoming sessions, ascending; we keep the next 3 per program below.
             prisma.event.findMany({
@@ -249,11 +249,11 @@ export const GET = withAuth({}, async (_req, auth) => {
             // Volunteer roster per program — used to split RSVP tallies by role.
             prisma.programVolunteer.findMany({
                 where: { programId: { in: ledIds } },
-                select: { programId: true, participantId: true },
+                select: { programId: true, personId: true },
             }),
         ]);
-        // (programId, participantId) keys that belong to a volunteer; everyone else on a roster is a participant.
-        const volunteerKeys = new Set(volunteerRows.map((v) => `${v.programId}:${v.participantId}`));
+        // (programId, personId) keys that belong to a volunteer; everyone else on a roster is a participant.
+        const volunteerKeys = new Set(volunteerRows.map((v) => `${v.programId}:${v.personId}`));
 
         const pendingByProgram = new Map<number, TodoItem[]>();
         for (const e of pendingEvents) {
@@ -267,7 +267,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             pendingByProgram.set(e.programId, items);
         }
 
-        const enrolledByProgram = new Map(enrolledCounts.map((g) => [g.programId, g._count.participantId]));
+        const enrolledByProgram = new Map(enrolledCounts.map((g) => [g.programId, g._count.personId]));
 
         // Next 3 future sessions per program (futureEvents is already startAt-asc).
         const upcomingByProgram = new Map<number, { id: number; name: string; startAt: Date }[]>();

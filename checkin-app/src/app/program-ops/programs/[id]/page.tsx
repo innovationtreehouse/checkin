@@ -26,17 +26,17 @@ export type ProgramDetail = {
   maxParticipants: number | null;
   memberOnly: boolean;
   participants: {
-    participantId: number;
+    personId: number;
     status: string;
     pendingSince: string | null;
-    participant: {
+    person: {
       name: string | null;
       email: string;
       phone?: string | null;
       household?: { emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[] } | null;
     };
   }[];
-  volunteers: { participantId: number; isCore: boolean; participant: { name: string | null; email: string } }[];
+  volunteers: { personId: number; isCore: boolean; person: { name: string | null; email: string } }[];
   events: { id: number; name: string; startAt: string; endAt: string; attendanceConfirmedAt: string | null }[];
   leadMentor: { name: string | null; email: string } | null;
   memberPriceCents: number | null;

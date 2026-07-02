@@ -112,8 +112,8 @@ describe('Nav todo-counts API', () => {
         const program2 = await prisma.program.create({ data: { name: `Prog2 ${TAG}` } });
         program1Id = program1.id;
         program2Id = program2.id;
-        await prisma.programParticipant.create({ data: { programId: program1Id, participantId: leadId, status: 'PENDING' } });
-        await prisma.programParticipant.create({ data: { programId: program2Id, participantId: secondMemberId, status: 'PENDING', isPaymentPlanRequested: true } });
+        await prisma.programParticipant.create({ data: { programId: program1Id, personId: leadId, status: 'PENDING' } });
+        await prisma.programParticipant.create({ data: { programId: program2Id, personId: secondMemberId, status: 'PENDING', isPaymentPlanRequested: true } });
 
         // The lead also *runs* a program (leadMentorId). Three events: one ended
         // and unconfirmed (the inbox item), one ended but already confirmed, one

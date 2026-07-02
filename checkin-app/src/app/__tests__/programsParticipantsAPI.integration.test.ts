@@ -44,7 +44,7 @@ describe('Program Participants API Integration Tests', () => {
         });
 
         await prisma.programParticipant.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.program.deleteMany({
@@ -132,7 +132,7 @@ describe('Program Participants API Integration Tests', () => {
                 enrollmentStatus: 'OPEN',
                 maxParticipants: 1,
                 participants: {
-                    create: { participantId: otherId }
+                    create: { personId: otherId }
                 }
             }
         });
@@ -153,7 +153,7 @@ describe('Program Participants API Integration Tests', () => {
                 where: { personId: { in: existingUserIds } }
             });
             await prisma.programParticipant.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
         }
 
@@ -214,7 +214,7 @@ describe('Program Participants API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.enrollment.participantId).toBe(commonId);
+             expect(data.enrollment.personId).toBe(commonId);
              expect(data.enrollment.status).toBe('PENDING');
         });
 
@@ -230,7 +230,7 @@ describe('Program Participants API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.enrollment.participantId).toBe(commonId);
+             expect(data.enrollment.personId).toBe(commonId);
              expect(data.enrollment.status).toBe('ACTIVE');
         });
 
@@ -367,7 +367,7 @@ describe('Program Participants API Integration Tests', () => {
 
              // No duplicate row, no corruption: exactly one enrollment exists.
              const count = await prisma.programParticipant.count({
-                 where: { programId: freeProgramId, participantId: leadId }
+                 where: { programId: freeProgramId, personId: leadId }
              });
              expect(count).toBe(1);
         });
@@ -411,7 +411,7 @@ describe('Program Participants API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.enrollment.participantId).toBe(commonId);
+             expect(data.enrollment.personId).toBe(commonId);
         });
         
         it('should allow a common user to drop out of their own program', async () => {
