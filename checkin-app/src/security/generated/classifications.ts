@@ -161,11 +161,11 @@ export const classifications = {
     },
     CorporationLead: {
         corporationId: 'public',
-        participantId: 'public',
+        personId: 'public',
     },
     CorporationMember: {
         corporationId: 'public',
-        participantId: 'public',
+        personId: 'public',
     },
     Program: {
         id: 'public',
@@ -398,11 +398,11 @@ export const relations = {
     },
     CorporationLead: {
         corporation: { model: 'Corporation', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     CorporationMember: {
         corporation: { model: 'Corporation', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     Program: {
         leadMentor: { model: 'Participant', isList: false },
