@@ -73,9 +73,9 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
 
         const rsvp = await prisma.rSVP.upsert({
             where: {
-                eventId_participantId: {
+                eventId_personId: {
                     eventId,
-                    participantId: currentUserId
+                    personId: currentUserId
                 }
             },
             update: {
@@ -83,7 +83,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
             },
             create: {
                 eventId,
-                participantId: currentUserId,
+                personId: currentUserId,
                 status: status as RSVPStatus
             }
         });

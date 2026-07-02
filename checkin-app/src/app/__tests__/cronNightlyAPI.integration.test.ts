@@ -82,7 +82,7 @@ describe('Cron Nightly API Integration Tests', () => {
         eventId = event.id;
 
         await prisma.rSVP.create({
-            data: { eventId, participantId: normalUserId, status: 'ATTENDING' }
+            data: { eventId, personId: normalUserId, status: 'ATTENDING' }
         });
 
         // Setup Abandoned Visits
@@ -101,7 +101,7 @@ describe('Cron Nightly API Integration Tests', () => {
 
     async function cleanup() {
         // Broad cleanup for nightly tests
-        await prisma.rSVP.deleteMany({ where: { participant: { email: { contains: '-nightly@' } } } });
+        await prisma.rSVP.deleteMany({ where: { person: { email: { contains: '-nightly@' } } } });
         await prisma.visit.deleteMany({ where: { participant: { email: { contains: '-nightly@' } } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Test Event - Nightly' } } });
         await prisma.program.deleteMany({ where: { name: 'Nightly Test Program' } });

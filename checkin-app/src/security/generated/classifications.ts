@@ -207,7 +207,7 @@ export const classifications = {
     },
     FeePayment: {
         feeId: 'public',
-        participantId: 'public',
+        personId: 'public',
         paidAt: 'personal',
         shopifyLink: 'personal',
         quickBooksInvoice: 'personal',
@@ -227,7 +227,7 @@ export const classifications = {
     },
     RSVP: {
         eventId: 'public',
-        participantId: 'public',
+        personId: 'public',
         status: 'public',
         reminderSentAt: 'internal',
     },
@@ -425,7 +425,7 @@ export const relations = {
     },
     FeePayment: {
         fee: { model: 'Fee', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     Event: {
         attendanceConfirmedBy: { model: 'Participant', isList: false },
@@ -435,7 +435,7 @@ export const relations = {
     },
     RSVP: {
         event: { model: 'Event', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     RawBadgeLog: {
         person: { model: 'Participant', isList: false },

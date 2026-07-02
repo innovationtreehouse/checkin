@@ -93,7 +93,7 @@ describe('AuditLog Integration Tests', () => {
         // Clean up
         if (testParticipantId !== undefined) {
             await prisma.visit.deleteMany({ where: { participantId: testParticipantId } });
-            await prisma.rSVP.deleteMany({ where: { participantId: testParticipantId } });
+            await prisma.rSVP.deleteMany({ where: { personId: testParticipantId } });
         }
 
         if (testProgramId !== undefined) {

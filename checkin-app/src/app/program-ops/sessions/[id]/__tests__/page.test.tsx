@@ -43,7 +43,7 @@ function baseEvent(overrides: Record<string, unknown> = {}) {
             ],
         },
         visits: [{ id: 1, participantId: 3, arrivedAt: "2020-01-01T18:05:00.000Z", departedAt: null }],
-        rsvps: [{ participantId: 3, status: "ATTENDING" }],
+        rsvps: [{ personId: 3, status: "ATTENDING" }],
         ...overrides,
     };
 }

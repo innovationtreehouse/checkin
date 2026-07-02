@@ -57,12 +57,12 @@ describe("PATCH /api/events/[id] cancel — attendee notification (characterizat
     });
 
     afterEach(async () => {
-        await prisma.rSVP.deleteMany({ where: { participantId: attendeeId } });
+        await prisma.rSVP.deleteMany({ where: { personId: attendeeId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
     });
 
     afterAll(async () => {
-        await prisma.rSVP.deleteMany({ where: { participantId: attendeeId } });
+        await prisma.rSVP.deleteMany({ where: { personId: attendeeId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
         await prisma.participant.deleteMany({ where: { id: { in: [attendeeId, adminId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [attendeeHouseholdId, adminHouseholdId] } } });
@@ -73,7 +73,7 @@ describe("PATCH /api/events/[id] cancel — attendee notification (characterizat
         const event = await prisma.event.create({
             data: { name: `${TAG} future`, startAt: start, endAt: new Date(start.getTime() + HOUR), description: 'cancel' },
         });
-        await prisma.rSVP.create({ data: { eventId: event.id, participantId: attendeeId, status: 'ATTENDING' } });
+        await prisma.rSVP.create({ data: { eventId: event.id, personId: attendeeId, status: 'ATTENDING' } });
 
         const res = await patch(event.id, { action: 'cancel' });
         expect(res.status).toBe(200);

@@ -78,13 +78,13 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
 
     afterEach(async () => {
         await prisma.visit.deleteMany({ where: { participantId } });
-        await prisma.rSVP.deleteMany({ where: { participantId } });
+        await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
     });
 
     afterAll(async () => {
         await prisma.visit.deleteMany({ where: { participantId } });
-        await prisma.rSVP.deleteMany({ where: { participantId } });
+        await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
         await prisma.participant.deleteMany({ where: { id: { in: [adminId, participantId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [adminHouseholdId, householdId] } } });
@@ -108,7 +108,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
     describe('cancel — single event', () => {
         it('deletes RSVPs, NULLs visits (does not delete them), and deletes the event', async () => {
             const event = await makeEvent('single-cancel', 2 * HOUR);
-            await prisma.rSVP.create({ data: { eventId: event.id, participantId, status: 'ATTENDING' } });
+            await prisma.rSVP.create({ data: { eventId: event.id, personId: participantId, status: 'ATTENDING' } });
             const visit = await prisma.visit.create({
                 data: { participantId, arrivedAt: new Date(), associatedEventId: event.id },
             });
@@ -118,7 +118,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
 
             // RSVP gone.
             expect(await prisma.rSVP.findUnique({
-                where: { eventId_participantId: { eventId: event.id, participantId } },
+                where: { eventId_personId: { eventId: event.id, personId: participantId } },
             })).toBeNull();
 
             // Visit survives, but its event link is nulled (NOT deleted).
@@ -243,7 +243,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             const event = await makeEvent('past-edit', -2 * HOUR);
             const sentAt = new Date();
             await prisma.rSVP.create({
-                data: { eventId: event.id, participantId, status: 'ATTENDING', reminderSentAt: sentAt },
+                data: { eventId: event.id, personId: participantId, status: 'ATTENDING', reminderSentAt: sentAt },
             });
 
             const newStart = new Date(Date.now() - 90 * MIN);
@@ -252,7 +252,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
 
             // Guard fires before the clear → reminderSentAt preserved.
             const rsvp = await prisma.rSVP.findUnique({
-                where: { eventId_participantId: { eventId: event.id, participantId } },
+                where: { eventId_personId: { eventId: event.id, personId: participantId } },
             });
             expect(rsvp!.reminderSentAt).not.toBeNull();
 

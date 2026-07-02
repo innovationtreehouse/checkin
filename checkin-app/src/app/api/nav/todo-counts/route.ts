@@ -286,7 +286,7 @@ export const GET = withAuth({}, async (_req, auth) => {
         const rsvpRows = upcomingEventIds.length
             ? await prisma.rSVP.findMany({
                   where: { eventId: { in: upcomingEventIds } },
-                  select: { eventId: true, participantId: true, status: true },
+                  select: { eventId: true, personId: true, status: true },
               })
             : [];
         const emptyTally = (): { participants: RsvpTally; volunteers: RsvpTally } => ({
@@ -297,7 +297,7 @@ export const GET = withAuth({}, async (_req, auth) => {
         for (const r of rsvpRows) {
             const t = tallyByEvent.get(r.eventId) ?? emptyTally();
             const programId = eventProgram.get(r.eventId);
-            const bucket = programId !== undefined && volunteerKeys.has(`${programId}:${r.participantId}`) ? t.volunteers : t.participants;
+            const bucket = programId !== undefined && volunteerKeys.has(`${programId}:${r.personId}`) ? t.volunteers : t.participants;
             if (r.status === "ATTENDING") bucket.yes += 1;
             else if (r.status === "MAYBE") bucket.maybe += 1;
             else if (r.status === "NOT_ATTENDING") bucket.no += 1;

@@ -121,13 +121,13 @@ export const POST = withAuth(
                 for (const rsvp of mergeParticipant.rsvps) {
                     if (!keepParticipant.rsvps.find(k => k.eventId === rsvp.eventId)) {
                         await tx.rSVP.update({
-                            where: { eventId_participantId: { eventId: rsvp.eventId, participantId: mergeId } },
-                            data: { participantId: keepId }
+                            where: { eventId_personId: { eventId: rsvp.eventId, personId: mergeId } },
+                            data: { personId: keepId }
                         });
                         moved.rsvps.migrated++;
                     } else {
                         await tx.rSVP.delete({
-                            where: { eventId_participantId: { eventId: rsvp.eventId, participantId: mergeId } }
+                            where: { eventId_personId: { eventId: rsvp.eventId, personId: mergeId } }
                         });
                         moved.rsvps.deleted++;
                     }
@@ -136,13 +136,13 @@ export const POST = withAuth(
                 for (const fee of mergeParticipant.feePayments) {
                     if (!keepParticipant.feePayments.find(k => k.feeId === fee.feeId)) {
                         await tx.feePayment.update({
-                            where: { feeId_participantId: { feeId: fee.feeId, participantId: mergeId } },
-                            data: { participantId: keepId }
+                            where: { feeId_personId: { feeId: fee.feeId, personId: mergeId } },
+                            data: { personId: keepId }
                         });
                         moved.feePayments.migrated++;
                     } else {
                         await tx.feePayment.delete({
-                            where: { feeId_participantId: { feeId: fee.feeId, participantId: mergeId } }
+                            where: { feeId_personId: { feeId: fee.feeId, personId: mergeId } }
                         });
                         moved.feePayments.deleted++;
                     }
