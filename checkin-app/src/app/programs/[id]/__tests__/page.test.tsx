@@ -229,7 +229,7 @@ describe("ProgramEnrollmentPage", () => {
         global.fetch = jest.fn(async (input: RequestInfo | URL) => {
             const url = typeof input === "string" ? input : input.toString();
             if (url.includes("/api/programs/10/participants")) {
-                return { ok: false, status: 409, json: async () => { throw new Error("should not be parsed"); } } as Response;
+                return { ok: false, status: 409, json: async () => { throw new Error("should not be parsed"); } } as unknown as Response;
             }
             if (url.includes("/api/household")) return { ok: true, status: 200, json: async () => household } as Response;
             if (url.includes("/api/programs/10")) return { ok: true, status: 200, json: async () => baseProgram({ minAge: null, maxAge: null }) } as Response;

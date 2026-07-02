@@ -104,12 +104,12 @@ describe("membership-ops/participants/merge page", () => {
     await screen.findByText("Keep and augment");
     // Belle out-scores Zack (visits/badges/programs/email/google), so she's kept
     // even though she was the second one selected.
-    const belleCard = screen.getByText("Belle Best (ID: 31)").closest(".mantine-Card-root")!;
+    const belleCard = screen.getByText("Belle Best (ID: 31)").closest(".mantine-Card-root") as HTMLElement;
     expect(within(belleCard).getByText("Keep and augment")).toBeInTheDocument();
     expect(within(belleCard).getByText(/512-555-1234/)).toBeInTheDocument();
     expect(within(belleCard).getByText(/Google Auth: Yes/)).toBeInTheDocument();
 
-    const zackCard = screen.getByText("Zack Zero (ID: 30)").closest(".mantine-Card-root")!;
+    const zackCard = screen.getByText("Zack Zero (ID: 30)").closest(".mantine-Card-root") as HTMLElement;
     expect(within(zackCard).getByText("Merge and delete")).toBeInTheDocument();
     expect(within(zackCard).getByText(/Household: None/)).toBeInTheDocument();
     expect(within(zackCard).getByText(/Google Auth: No/)).toBeInTheDocument();

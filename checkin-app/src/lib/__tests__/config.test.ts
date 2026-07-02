@@ -99,7 +99,7 @@ describe("zohoMockActive / zohoAvailable / zohoWebhookSecret", () => {
     it("mock active when unconfigured, non-prod, non-production NODE_ENV", () => {
         clearZoho();
         process.env.CHECKIN_ENV = "local";
-        process.env.NODE_ENV = "test";
+        (process.env as Record<string, string>).NODE_ENV = "test";
         expect(config.zohoMockActive()).toBe(true);
         expect(config.zohoAvailable()).toBe(true);
         expect(config.zohoWebhookSecret()).toBe("dev-zoho-mock-webhook-secret");
@@ -109,21 +109,21 @@ describe("zohoMockActive / zohoAvailable / zohoWebhookSecret", () => {
         process.env.ZOHO_CLIENT_SECRET = "b";
         process.env.ZOHO_REFRESH_TOKEN = "c";
         process.env.CHECKIN_ENV = "local";
-        process.env.NODE_ENV = "test";
+        (process.env as Record<string, string>).NODE_ENV = "test";
         expect(config.zohoMockActive()).toBe(false);
         expect(config.zohoAvailable()).toBe(true); // still available via real config
     });
     it("mock inactive on prod checkinEnv", () => {
         clearZoho();
         process.env.CHECKIN_ENV = "prod";
-        process.env.NODE_ENV = "test";
+        (process.env as Record<string, string>).NODE_ENV = "test";
         expect(config.zohoMockActive()).toBe(false);
         expect(config.zohoAvailable()).toBe(false);
     });
     it("mock inactive when NODE_ENV is production", () => {
         clearZoho();
         process.env.CHECKIN_ENV = "local";
-        process.env.NODE_ENV = "production";
+        (process.env as Record<string, string>).NODE_ENV = "production";
         expect(config.zohoMockActive()).toBe(false);
     });
     it("ZOHO_WEBHOOK_SECRET env wins regardless of mock state", () => {
