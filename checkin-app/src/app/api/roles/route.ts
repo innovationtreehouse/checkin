@@ -23,11 +23,11 @@ export const GET = withAuth(
                 orderBy: { name: "asc" },
             });
             // Don't leak dob (PII); expose only a youth flag for filtering.
-            const participants = rows.map(({ dateOfBirth, ...p }: (typeof rows)[number]) => ({
+            const people = rows.map(({ dateOfBirth, ...p }: (typeof rows)[number]) => ({
                 ...p,
                 isYouth: dateOfBirth != null && dateOfBirth > eighteenYearsAgo,
             }));
-            return NextResponse.json({ participants });
+            return NextResponse.json({ people });
         } catch (error) {
             console.error("Error fetching roles:", error);
             return NextResponse.json({ error: "Internal server error" }, { status: 500 });

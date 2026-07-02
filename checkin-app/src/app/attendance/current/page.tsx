@@ -162,7 +162,7 @@ function KioskDisplayInner() {
         const res = await fetch(`/api/roles`);
         if (res.ok) {
           const data = await res.json();
-          const filtered = data.participants.filter(
+          const filtered = data.people.filter(
             (p: Person) =>
               (p.name || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
               (p.email || "").toLowerCase().includes((searchQuery || "").toLowerCase())

@@ -112,15 +112,15 @@ describe('Admin Roles API Integration Tests', () => {
             expect(res.status).toBe(200);
 
             const data = await res.json();
-            expect(data.participants).toBeDefined();
-            expect(Array.isArray(data.participants)).toBe(true);
+            expect(data.people).toBeDefined();
+            expect(Array.isArray(data.people)).toBe(true);
 
-            const ids = data.participants.map((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.id);
+            const ids = data.people.map((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.id);
             expect(ids).toContain(testTargetUserId);
             // Youth are returned (client filters via "Hide Youth"), flagged isYouth; dob is not leaked.
             expect(ids).toContain(testStudentId);
-            const adult = data.participants.find((p: { id?: number }) => p.id === testTargetUserId);
-            const student = data.participants.find((p: { id?: number }) => p.id === testStudentId);
+            const adult = data.people.find((p: { id?: number }) => p.id === testTargetUserId);
+            const student = data.people.find((p: { id?: number }) => p.id === testStudentId);
             expect(adult.isYouth).toBe(false);
             expect(student.isYouth).toBe(true);
             expect(adult).not.toHaveProperty('dateOfBirth');

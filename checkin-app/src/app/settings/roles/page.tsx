@@ -41,7 +41,7 @@ export default function RoleAssignmentPage() {
       const res = await fetch('/api/roles');
       if (res.ok) {
         const data = await res.json();
-        setUsers(data.participants);
+        setUsers(data.people);
       } else {
         setMessage("Failed to load user list.");
       }
