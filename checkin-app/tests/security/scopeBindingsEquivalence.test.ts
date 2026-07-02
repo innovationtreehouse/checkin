@@ -84,9 +84,9 @@ function referenceScopesHeld(
         }
         case 'HouseholdLead': {
             const householdId = num(row.householdId);
-            const participantId = num(row.participantId);
+            const personId = num(row.personId);
             if (householdId !== undefined && householdId === ctx.householdId) scopes.add('their_households');
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
+            if (personId !== undefined && personId === ctx.selfId) scopes.add('their_own');
             break;
         }
         case 'Membership': {
@@ -133,19 +133,19 @@ function referenceScopesHeld(
             break;
         }
         case 'Visit': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
+            const personId = num(row.personId);
+            if (personId !== undefined && personId === ctx.selfId) scopes.add('their_own');
             if (ctx.isKeyholder && row.departedAt == null) scopes.add('all_current_visitors');
             break;
         }
         case 'RawBadgeLog': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
+            const personId = num(row.personId);
+            if (personId !== undefined && personId === ctx.selfId) scopes.add('their_own');
             break;
         }
         case 'ToolStatus': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
+            const personId = num(row.personId);
+            if (personId !== undefined && personId === ctx.selfId) scopes.add('their_own');
             break;
         }
         case 'Account':
@@ -225,23 +225,23 @@ const ROWS: Array<{ label: string; row: unknown }> = [
     { label: 'present but no scope keys', row: { id: 1, name: 'X' } },
     {
         label: "caller-5 own / in-program / active",
-        row: { id: 5, householdId: 2, participantId: 5, programId: 100, eventId: 200, userId: 5, actorId: 5, departedAt: null },
+        row: { id: 5, householdId: 2, participantId: 5, personId: 5, programId: 100, eventId: 200, userId: 5, actorId: 5, departedAt: null },
     },
     {
         label: 'household co-member (hh 2)',
-        row: { id: 6, householdId: 2, participantId: 6, programId: 100, eventId: 200, userId: 6, actorId: 6, departedAt: null },
+        row: { id: 6, householdId: 2, participantId: 6, personId: 6, programId: 100, eventId: 200, userId: 6, actorId: 6, departedAt: null },
     },
     {
         label: 'program participant / coreVol prog / active visitor',
-        row: { id: 9, householdId: 2, participantId: 9, programId: 101, eventId: 201, userId: 9, actorId: 9, departedAt: null },
+        row: { id: 9, householdId: 2, participantId: 9, personId: 9, programId: 101, eventId: 201, userId: 9, actorId: 9, departedAt: null },
     },
     {
         label: "another's / out-of-program / departed",
-        row: { id: 7, householdId: 99, participantId: 7, programId: 88, eventId: 88, userId: 7, actorId: 7, departedAt: new Date() },
+        row: { id: 7, householdId: 99, participantId: 7, personId: 7, programId: 88, eventId: 88, userId: 7, actorId: 7, departedAt: new Date() },
     },
     {
         label: "lead's own program (Program row id 100)",
-        row: { id: 100, householdId: 4, participantId: 10, programId: 100, eventId: 200, userId: 10, actorId: 10, departedAt: null },
+        row: { id: 100, householdId: 4, participantId: 10, personId: 10, programId: 100, eventId: 200, userId: 10, actorId: 10, departedAt: null },
     },
 ];
 

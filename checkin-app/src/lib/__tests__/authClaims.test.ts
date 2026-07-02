@@ -57,7 +57,7 @@ describe('assignParticipantClaims — household login gate', () => {
 describe('assignParticipantClaims — householdLead claim', () => {
     it('stamps householdLead=true when a HouseholdLead row exists', () => {
         const token = {} as JWT;
-        assignParticipantClaims(token, participant({ householdLeads: [{ participantId: 7 }] }));
+        assignParticipantClaims(token, participant({ householdLeads: [{ personId: 7 }] }));
         expect(token.householdLead).toBe(true);
     });
 
@@ -70,7 +70,7 @@ describe('assignParticipantClaims — householdLead claim', () => {
     it('forces householdLead=false for a DENIED household even with a lead row', () => {
         const token = {} as JWT;
         assignParticipantClaims(token, participant({
-            householdLeads: [{ participantId: 7 }],
+            householdLeads: [{ personId: 7 }],
             household: { membership: { status: 'DENIED' } },
         }));
         expect(token.householdLead).toBe(false);

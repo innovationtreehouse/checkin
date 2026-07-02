@@ -4,10 +4,10 @@
 /**
  * Strip-assertion for GET /api/shop/certifications. Cert status is PUBLIC BY
  * DESIGN (posted in the shop), but the participant's email is not. A bag row is
- * a ToolStatus with nested tool (Tool) + participant (Participant):
+ * a ToolStatus with nested tool (Tool) + person (Participant):
  *
- *   - board/sysadmin (everyones:pii) → level + tool + participant name + email.
- *   - member/certifier (member+public) → level + tool + participant name;
+ *   - board/sysadmin (everyones:pii) → level + tool + person name + email.
+ *   - member/certifier (member+public) → level + tool + person name;
  *                                        email (pii) STRIPPED.
  *
  * `level` is @sensitivity:member, so it is visible to any authenticated member
@@ -49,25 +49,25 @@ function tokensFor(endpoint: string, role: Role): readonly Token[] {
 }
 
 const ENDPOINT = 'GET /api/shop/certifications';
-// The route currently selects participant {id, name} only — no client needs
+// The route currently selects person {id, name} only — no client needs
 // email. This fixture includes email to lock the DECLARED policy: if a future
 // edit adds email to the select, the stripper must still gate it to staff.
 // A cert row for some OTHER member (id !== selfId → only the 'everyones' scope applies).
 const row = () => ({
-    participantId: 99,
+    personId: 99,
     toolId: 7,
     level: 'CERTIFIED',
     tool: { id: 7, name: 'Lathe', safetyGuide: null },
-    participant: { id: 99, name: 'Other Member', email: 'other@x.test' },
+    person: { id: 99, name: 'Other Member', email: 'other@x.test' },
 });
 
 describe('shop/certifications field-stripping', () => {
-    it('board sees level + tool + participant name + email (pii)', () => {
+    it('board sees level + tool + person name + email (pii)', () => {
         const tokens = tokensFor(ENDPOINT, 'isBoardMember');
         const out = stripValue('ToolStatus', row(), tokens, ctx()) as Record<string, unknown>;
         expect(out.level).toBe('CERTIFIED');
         expect((out.tool as Record<string, unknown>).name).toBe('Lathe');
-        const p = out.participant as Record<string, unknown>;
+        const p = out.person as Record<string, unknown>;
         expect(p.name).toBe('Other Member');
         expect(p.email).toBe('other@x.test');
     });
@@ -78,9 +78,9 @@ describe('shop/certifications field-stripping', () => {
         // cert status stays public-by-design:
         expect(out.level).toBe('CERTIFIED');
         expect((out.tool as Record<string, unknown>).name).toBe('Lathe');
-        const p = out.participant as Record<string, unknown>;
+        const p = out.person as Record<string, unknown>;
         expect(p.name).toBe('Other Member');
-        // ...but the participant's email does not leak to non-staff:
+        // ...but the person's email does not leak to non-staff:
         expect(p.email).toBeUndefined();
     });
 

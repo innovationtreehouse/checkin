@@ -44,14 +44,14 @@ async function main() {
         // Household leads with an email — mirrors applyVolunteerStatus's parent query:
         // participant is a lead of the household AND householdId matches.
         const leads = await prisma.householdLead.findMany({
-            select: { householdId: true, participant: { select: { householdId: true, email: true } } },
+            select: { householdId: true, person: { select: { householdId: true, email: true } } },
         });
 
         // Group parent emails by household (lead-of-own-household, non-null email).
         const byHousehold = new Map<number, string[]>();
         for (const l of leads) {
-            if (l.participant.householdId !== l.householdId) continue;
-            const email = l.participant.email;
+            if (l.person.householdId !== l.householdId) continue;
+            const email = l.person.email;
             if (!email) continue;
             const list = byHousehold.get(l.householdId) ?? [];
             list.push(email);

@@ -20,7 +20,7 @@ export const GET = withAuth(
             const activeVisits = await prisma.visit.findMany({
                 where: { departedAt: null },
                 include: {
-                    participant: {
+                    person: {
                         select: {
                             id: true,
                             email: true,
@@ -33,7 +33,7 @@ export const GET = withAuth(
                 },
                 orderBy: { arrivedAt: "desc" }
             });
-            participantsData = activeVisits.map(v => v.participant);
+            participantsData = activeVisits.map(v => v.person);
         } else {
             participantsData = await prisma.participant.findMany({
                 select: {

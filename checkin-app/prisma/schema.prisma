@@ -138,16 +138,16 @@ model Tool {
 
 model ToolStatus {
   /// @sensitivity:public
-  participantId Int
+  personId Int
   /// @sensitivity:public
   toolId Int
   /// @sensitivity:member
   level  ToolLevel
 
-  participant Participant @relation(fields: [participantId], references: [id])
+  person Participant @relation(fields: [personId], references: [id])
   tool Tool        @relation(fields: [toolId], references: [id])
 
-  @@id([participantId, toolId])
+  @@id([personId, toolId])
 }
 
 model Household {
@@ -223,12 +223,12 @@ model HouseholdLead {
   /// @sensitivity:public
   householdId   Int
   /// @sensitivity:public
-  participantId Int
+  personId Int
 
   household   Household   @relation(fields: [householdId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person Participant @relation(fields: [personId], references: [id])
 
-  @@id([householdId, participantId])
+  @@id([householdId, personId])
 }
 
 enum MembershipStatus {
@@ -399,8 +399,11 @@ model BoardSettings {
   /// @sensitivity:public
   membershipYearBoundary     DateTime?
   /// Shopify variant ID of the membership product everyone checks out through.
-  /// The "Pay with Shopify" link is built from it as
-  /// https://<SHOPIFY_STORE_DOMAIN>/cart/<membershipVariantId>:1.
+  /// The "Pay with Shopify" link is built from it SERVER-SIDE (ensurePaymentLink
+  /// in lib/membership/payment.ts) as
+  /// https://<SHOPIFY_STORE_DOMAIN>/cart/<membershipVariantId>:1; the client only
+  /// receives the derived checkoutUrl, never this raw field — hence internal, not
+  /// public (contrast Program.shopify*VariantId, which the browser builds from).
   /// @sensitivity:internal
   membershipVariantId        String?
   /// Discount code (created in Shopify by the board) appended to the checkout
@@ -560,24 +563,24 @@ model CorporationLead {
   /// @sensitivity:public
   corporationId Int
   /// @sensitivity:public
-  participantId Int
+  personId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Participant @relation(fields: [personId], references: [id])
 
-  @@id([corporationId, participantId])
+  @@id([corporationId, personId])
 }
 
 model CorporationMember {
   /// @sensitivity:public
   corporationId Int
   /// @sensitivity:public
-  participantId Int
+  personId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Participant @relation(fields: [personId], references: [id])
 
-  @@id([corporationId, participantId])
+  @@id([corporationId, personId])
 }
 
 model Program {
@@ -680,7 +683,7 @@ model FeePayment {
   /// @sensitivity:public
   feeId             Int
   /// @sensitivity:public
-  participantId     Int
+  personId          Int
   /// @sensitivity:personal
   paidAt            DateTime? @default(now())
   /// @sensitivity:personal
@@ -691,9 +694,9 @@ model FeePayment {
   customNote        String?
 
   fee         Fee         @relation(fields: [feeId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Participant @relation(fields: [personId], references: [id])
 
-  @@id([feeId, participantId])
+  @@id([feeId, personId])
 }
 
 model Event {
@@ -729,38 +732,38 @@ model RSVP {
   /// @sensitivity:public
   eventId       Int
   /// @sensitivity:public
-  participantId Int
+  personId      Int
   /// @sensitivity:public
   status        RSVPStatus
   /// @sensitivity:internal
   reminderSentAt DateTime?
 
   event       Event       @relation(fields: [eventId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Participant @relation(fields: [personId], references: [id])
 
-  @@id([eventId, participantId])
+  @@id([eventId, personId])
 }
 
 model RawBadgeLog {
   /// @sensitivity:internal
   id            Int      @id @default(autoincrement())
   /// @sensitivity:internal
-  participantId Int
+  personId Int
   /// @sensitivity:personal
   timestamp     DateTime @default(now())
   /// @sensitivity:personal
   location      String?
 
-  participant Participant @relation(fields: [participantId], references: [id])
+  person Participant @relation(fields: [personId], references: [id])
 
-  @@index([participantId, timestamp]) // Double-badge detection in /api/scan
+  @@index([personId, timestamp]) // Double-badge detection in /api/scan
 }
 
 model Visit {
   /// @sensitivity:public
   id                Int       @id @default(autoincrement())
   /// @sensitivity:public
-  participantId     Int
+  personId          Int
   /// @sensitivity:personal
   arrivedAt         DateTime
   /// @sensitivity:personal
@@ -772,10 +775,10 @@ model Visit {
   /// @sensitivity:public
   associatedEventId Int?
 
-  participant Participant @relation(fields: [participantId], references: [id])
-  event       Event?      @relation(fields: [associatedEventId], references: [id])
+  person Participant @relation(fields: [personId], references: [id])
+  event  Event?      @relation(fields: [associatedEventId], references: [id])
 
-  @@index([participantId, departedAt]) // Active visits lookup in /api/scan
+  @@index([personId, departedAt]) // Active visits lookup in /api/scan
   // Partial unique index "Visit_one_open_per_participant" — at most one open visit
   // (departedAt IS NULL) per participant. Prisma's DSL can't express a partial
   // unique index, so it lives in the 20260629180000_visit_one_open_per_participant

@@ -16,8 +16,8 @@ const conflicts = [
     participantName: "Alice Kid",
     eventName: "Session 1",
     visits: [
-      { id: 100, arrivedAt: "2026-02-01T18:00:00.000Z", departedAt: "2026-02-01T19:00:00.000Z", arrivedVia: "kiosk", departedVia: "kiosk", associatedEventId: 10 },
-      { id: 101, arrivedAt: "2026-02-01T18:05:00.000Z", departedAt: null, arrivedVia: "manual", departedVia: null, associatedEventId: null },
+      { id: 100, arrivedAt: "2026-02-01T18:00:00.000Z", departedAt: "2026-02-01T19:00:00.000Z", arrivedVia: "SCANNER", departedVia: "SCANNER", associatedEventId: 10 },
+      { id: 101, arrivedAt: "2026-02-01T18:05:00.000Z", departedAt: null, arrivedVia: "WEB", departedVia: null, associatedEventId: null },
     ],
   },
 ];

@@ -10,8 +10,8 @@ import AdminVisitsPage from "../page";
 beforeEach(() => resetRtl());
 
 const visits = [
-  { id: 1, arrivedAt: "2026-01-01T14:00:00.000Z", departedAt: "2026-01-01T16:00:00.000Z", arrivedVia: "SCANNER", departedVia: "WEB", participant: { name: "Val Volunteer" }, event: { name: "Open Gym" } },
-  { id: 2, arrivedAt: "2026-01-02T14:00:00.000Z", departedAt: null, arrivedVia: "WEB", participant: { name: "Stu Student" }, event: null },
+  { id: 1, arrivedAt: "2026-01-01T14:00:00.000Z", departedAt: "2026-01-01T16:00:00.000Z", arrivedVia: "SCANNER", departedVia: "WEB", person: { name: "Val Volunteer" }, event: { name: "Open Gym" } },
+  { id: 2, arrivedAt: "2026-01-02T14:00:00.000Z", departedAt: null, arrivedVia: "WEB", person: { name: "Stu Student" }, event: null },
 ];
 
 describe("facility-ops/visits page", () => {

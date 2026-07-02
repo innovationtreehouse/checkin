@@ -25,7 +25,7 @@ describe('Event RSVP API Integration Tests', () => {
     beforeAll(async () => {
         // Clean up any leaked state
         await prisma.rSVP.deleteMany({
-            where: { participant: { email: { contains: 'rsvp-test' } } }
+            where: { person: { email: { contains: 'rsvp-test' } } }
         });
         await prisma.event.deleteMany({
             where: { name: 'RSVP Test Event' }
@@ -98,7 +98,7 @@ describe('Event RSVP API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.rSVP.deleteMany({
-            where: { participantId: { in: [testUserId, testUnenrolledUserId, foreignLeadId] } }
+            where: { personId: { in: [testUserId, testUnenrolledUserId, foreignLeadId] } }
         });
         await prisma.event.deleteMany({
             where: { id: testEventId }
@@ -191,7 +191,7 @@ describe('Event RSVP API Integration Tests', () => {
         // be the real bug. Re-query to pin it. Mirrors fd192fc.
         function rsvpFor(participantId: number) {
             return prisma.rSVP.findUnique({
-                where: { eventId_participantId: { eventId: testEventId, participantId } }
+                where: { eventId_personId: { eventId: testEventId, personId: participantId } }
             });
         }
 
@@ -240,9 +240,9 @@ describe('Event RSVP API Integration Tests', () => {
 
             const rsvpRecord = await prisma.rSVP.findUnique({
                 where: {
-                    eventId_participantId: {
+                    eventId_personId: {
                         eventId: testEventId,
-                        participantId: testUserId
+                        personId: testUserId
                     }
                 }
             });
@@ -258,15 +258,15 @@ describe('Event RSVP API Integration Tests', () => {
             // Make sure the record exists from the previous test or create it
             await prisma.rSVP.upsert({
                 where: {
-                    eventId_participantId: {
+                    eventId_personId: {
                         eventId: testEventId,
-                        participantId: testUserId
+                        personId: testUserId
                     }
                 },
                 update: { status: 'ATTENDING' },
                 create: {
                     eventId: testEventId,
-                    participantId: testUserId,
+                    personId: testUserId,
                     status: 'ATTENDING'
                 }
             });
@@ -285,9 +285,9 @@ describe('Event RSVP API Integration Tests', () => {
 
             const rsvpRecord = await prisma.rSVP.findUnique({
                 where: {
-                    eventId_participantId: {
+                    eventId_personId: {
                         eventId: testEventId,
-                        participantId: testUserId
+                        personId: testUserId
                     }
                 }
             });

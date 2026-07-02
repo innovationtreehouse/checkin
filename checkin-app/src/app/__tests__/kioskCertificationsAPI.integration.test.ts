@@ -38,11 +38,11 @@ describe('Kiosk Certifications API Integration Tests', () => {
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter((id): id is number => id !== null);
 
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.toolStatus.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.tool.deleteMany({
@@ -72,14 +72,14 @@ describe('Kiosk Certifications API Integration Tests', () => {
 
         await prisma.toolStatus.create({
             data: { 
-                participantId: testUserId,
+                personId: testUserId,
                 toolId: toolId,
                 level: 'CERTIFIED'
             }
         });
 
         await prisma.visit.create({
-            data: { participantId: testUserId, arrivedAt: new Date() }
+            data: { personId: testUserId, arrivedAt: new Date() }
         });
     });
 
@@ -90,10 +90,10 @@ describe('Kiosk Certifications API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.visit.deleteMany({
-            where: { participantId: testUserId }
+            where: { personId: testUserId }
         });
         await prisma.toolStatus.deleteMany({
-            where: { participantId: testUserId }
+            where: { personId: testUserId }
         });
         await prisma.participant.deleteMany({
             where: { id: testUserId }

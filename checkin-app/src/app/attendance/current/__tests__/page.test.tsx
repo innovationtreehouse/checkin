@@ -16,7 +16,7 @@ const attendanceData = {
     { id: 202, arrivedAt: "2026-07-01T14:05:00.000Z", participant: { id: 60, email: "val@example.com", name: "Val Volunteer", isKeyholder: false, isSysadmin: false, dateOfBirth: "1990-01-01", householdId: 7 } },
     { id: 203, arrivedAt: "2026-07-01T14:10:00.000Z", participant: { id: 70, email: "stu@example.com", name: "Stu Student", isKeyholder: false, isSysadmin: false, dateOfBirth: "2012-01-01", householdId: 8 } },
   ],
-  counts: { keyholders: 1, volunteers: 1, students: 1, total: 3 },
+  counts: { keyholders: 1, volunteers: 1, youth: 1, total: 3 },
   safety: { isLastKeyholder: false, isTwoDeepViolation: false },
 };
 

@@ -6,12 +6,12 @@
  */
 type Parent = { name: string; email: string; phone: string };
 type EmergencyContact = { name: string; phone: string };
-type Participant = { name: string; dob: string };
+type Person = { name: string; dob: string };
 
 export function isRegistrationDirty(
   parents: Parent[],
   emergencyContact: EmergencyContact,
-  participants: Participant[],
+  participants: Person[],
 ): boolean {
   const filled = (v: string) => v.trim() !== '';
   return (

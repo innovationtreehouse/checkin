@@ -131,7 +131,7 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
             const householdLeads = await prisma.householdLead.findMany({
                 where: { householdId: participant.householdId },
                 include: {
-                    participant: {
+                    person: {
                         select: {
                             id: true,
                             email: true,
@@ -144,19 +144,19 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
 
             for (const lead of householdLeads) {
                 // Don't double-notify if the lead IS the participant
-                if (lead.participant.id === participant.id) continue;
+                if (lead.person.id === participant.id) continue;
 
-                const leadSettings = lead.participant.notificationSettings as unknown as Record<string, boolean>;
-                if (leadSettings?.emailDependentCheckins && lead.participant.email) {
+                const leadSettings = lead.person.notificationSettings as unknown as Record<string, boolean>;
+                if (leadSettings?.emailDependentCheckins && lead.person.email) {
                     const subject = `${emoji} ${name} ${action} Innovation Treehouse`;
                     const html = householdMemberTemplate({
-                        leadName: lead.participant.name || 'there',
+                        leadName: lead.person.name || 'there',
                         memberName: name,
                         type,
                         date: dateStr,
                         time: timeStr
                     });
-                    emailPromises.push(sendEmail(lead.participant.email, subject, html));
+                    emailPromises.push(sendEmail(lead.person.email, subject, html));
                 }
             }
         }

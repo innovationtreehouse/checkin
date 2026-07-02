@@ -6,6 +6,7 @@ import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Badge, Button, Card, Center, Checkbox, Container, Group, Loader, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+import type { RSVPStatus } from '@/types/rsvp';
 
 type ParticipantDetail = {
   participantId: number;
@@ -16,8 +17,6 @@ type ParticipantDetail = {
   };
   isCore?: boolean;
 };
-
-type RSVPStatus = "ATTENDING" | "NOT_ATTENDING" | "NO_RESPONSE" | "MAYBE";
 
 type EventData = {
   id: number;
@@ -36,11 +35,11 @@ type EventData = {
   };
   visits: {
     id: number;
-    participantId: number;
+    personId: number;
     arrivedAt: string;
     departedAt: string | null;
   }[];
-  rsvps: { participantId: number; status: RSVPStatus }[];
+  rsvps: { personId: number; status: RSVPStatus }[];
 };
 
 const RSVP_BADGE: Record<RSVPStatus, { label: string; color: string }> = {
@@ -265,7 +264,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           </Table.Thead>
           <Table.Tbody>
             {allRoster.map((member) => {
-              const visit = eventData.visits.find(v => v.participantId === member.participantId);
+              const visit = eventData.visits.find(v => v.personId === member.participantId);
               let statusEl;
               if (visit) {
                 const arriveTime = new Date(visit.arrivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -320,7 +319,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   const renderRsvpList = () => {
     if (!eventData.program) return null;
 
-    const statusByParticipant = new Map(eventData.rsvps.map(r => [r.participantId, r.status]));
+    const statusByParticipant = new Map(eventData.rsvps.map(r => [r.personId, r.status]));
     const roster = [
       ...eventData.program.volunteers.map(v => ({ ...v, role: v.isCore ? 'Core Volunteer' : 'Volunteer' })),
       ...eventData.program.participants.map(p => ({ ...p, role: 'Participant' })),

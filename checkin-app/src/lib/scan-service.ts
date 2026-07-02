@@ -21,7 +21,7 @@ export async function processCheckin(participant: Participant, authType: string,
         const activeKeyholders = await db.visit.count({
             where: {
                 departedAt: null,
-                participant: { isKeyholder: true }
+                person: { isKeyholder: true }
             }
         });
 
@@ -35,7 +35,7 @@ export async function processCheckin(participant: Participant, authType: string,
 
     const newVisit = await db.visit.create({
         data: {
-            participantId: participant.id,
+            personId: participant.id,
             arrivedAt: arrivalTime,
             arrivedVia: "SCANNER",
             associatedEventId: eventId
@@ -75,7 +75,7 @@ export async function processCheckout(
         const remainingKeyholders = await db.visit.count({
             where: {
                 departedAt: null,
-                participant: { isKeyholder: true },
+                person: { isKeyholder: true },
                 id: { not: activeVisitId }
             }
         });
@@ -86,14 +86,14 @@ export async function processCheckout(
                     departedAt: null,
                     id: { not: activeVisitId }
                 },
-                include: { participant: true }
+                include: { person: true }
             });
 
             if (remainingUsers.length > 0) {
                 let confirmForceClose = false;
 
                 const recentEvents = await db.rawBadgeLog.findMany({
-                    where: { participantId: participant.id },
+                    where: { personId: participant.id },
                     orderBy: { timestamp: "desc" },
                     take: 2
                 });
@@ -106,7 +106,7 @@ export async function processCheckout(
                 }
 
                 if (!confirmForceClose) {
-                    const names = remainingUsers.map(u => u.participant.name || u.participant.email).join(", ");
+                    const names = remainingUsers.map(u => u.person.name || u.person.email).join(", ");
                     return apiJson({
                         error: `Warning! You are the last isKeyholder, but others are here:\n${names}\n\nBadge again within 10 seconds to confirm you've checked them and close the facility.`,
                         type: "warning" as const

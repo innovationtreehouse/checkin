@@ -29,7 +29,7 @@ export const classifications = {
         safetyGuide: 'public',
     },
     ToolStatus: {
-        participantId: 'public',
+        personId: 'public',
         toolId: 'public',
         level: 'member',
     },
@@ -59,7 +59,7 @@ export const classifications = {
     },
     HouseholdLead: {
         householdId: 'public',
-        participantId: 'public',
+        personId: 'public',
     },
     Membership: {
         id: 'public',
@@ -161,11 +161,11 @@ export const classifications = {
     },
     CorporationLead: {
         corporationId: 'public',
-        participantId: 'public',
+        personId: 'public',
     },
     CorporationMember: {
         corporationId: 'public',
-        participantId: 'public',
+        personId: 'public',
     },
     Program: {
         id: 'public',
@@ -207,7 +207,7 @@ export const classifications = {
     },
     FeePayment: {
         feeId: 'public',
-        participantId: 'public',
+        personId: 'public',
         paidAt: 'personal',
         shopifyLink: 'personal',
         quickBooksInvoice: 'personal',
@@ -227,19 +227,19 @@ export const classifications = {
     },
     RSVP: {
         eventId: 'public',
-        participantId: 'public',
+        personId: 'public',
         status: 'public',
         reminderSentAt: 'internal',
     },
     RawBadgeLog: {
         id: 'internal',
-        participantId: 'internal',
+        personId: 'internal',
         timestamp: 'personal',
         location: 'personal',
     },
     Visit: {
         id: 'public',
-        participantId: 'public',
+        personId: 'public',
         arrivedAt: 'personal',
         departedAt: 'personal',
         arrivedVia: 'public',
@@ -347,7 +347,7 @@ export const relations = {
         toolStatuses: { model: 'ToolStatus', isList: true },
     },
     ToolStatus: {
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
         tool: { model: 'Tool', isList: false },
     },
     Household: {
@@ -362,7 +362,7 @@ export const relations = {
     },
     HouseholdLead: {
         household: { model: 'Household', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     Membership: {
         household: { model: 'Household', isList: false },
@@ -398,11 +398,11 @@ export const relations = {
     },
     CorporationLead: {
         corporation: { model: 'Corporation', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     CorporationMember: {
         corporation: { model: 'Corporation', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     Program: {
         leadMentor: { model: 'Participant', isList: false },
@@ -425,7 +425,7 @@ export const relations = {
     },
     FeePayment: {
         fee: { model: 'Fee', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     Event: {
         attendanceConfirmedBy: { model: 'Participant', isList: false },
@@ -435,13 +435,13 @@ export const relations = {
     },
     RSVP: {
         event: { model: 'Event', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     RawBadgeLog: {
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     Visit: {
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
         event: { model: 'Event', isList: false },
     },
     AuditLog: {

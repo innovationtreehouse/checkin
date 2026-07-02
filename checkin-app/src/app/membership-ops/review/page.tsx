@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, Stack, Text, Title } from "@mantine/core";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
-interface Participant {
+interface Person {
     id: number;
     name: string | null;
     email: string | null;
@@ -15,7 +15,7 @@ interface Participant {
 // Only the household leads (parents) are returned — children are never sent.
 interface QueueItem {
   id: number;
-  membership: { household: { name: string | null; leads: { participant: Participant }[] } | null } | null;
+  membership: { household: { name: string | null; leads: { participant: Person }[] } | null } | null;
   _count: { attestations: number };
 }
 

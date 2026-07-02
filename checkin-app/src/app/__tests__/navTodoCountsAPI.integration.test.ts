@@ -52,7 +52,7 @@ describe('Nav todo-counts API', () => {
         });
         leadId = lead.id;
         householdAId = lead.householdId;
-        await prisma.householdLead.create({ data: { householdId: householdAId, participantId: leadId } });
+        await prisma.householdLead.create({ data: { householdId: householdAId, personId: leadId } });
 
         const second = await prisma.participant.create({
             data: { email: `member2-${TAG}@example.com`, name: 'Member A2', dateOfBirth: new Date('1987-01-01'), householdId: householdAId },

@@ -43,8 +43,8 @@ export const GET = withAuth({}, async (_req, auth) => {
             include: {
                 program: { select: { name: true } },
                 rsvps: {
-                    where: { participantId: { in: householdMemberIds } },
-                    select: { participantId: true, status: true }
+                    where: { personId: { in: householdMemberIds } },
+                    select: { personId: true, status: true }
                 }
             }
         });
@@ -64,7 +64,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                     endAt: ev.endAt,
                     program: ev.program,
                     participant: householdMemberById.get(pid),
-                    rsvp: ev.rsvps.find((r: typeof ev.rsvps[number]) => r.participantId === pid)?.status ?? null
+                    rsvp: ev.rsvps.find((r: typeof ev.rsvps[number]) => r.personId === pid)?.status ?? null
                 }));
         });
 

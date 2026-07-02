@@ -43,7 +43,7 @@ describe('attendanceTransitions', () => {
     });
 
     afterEach(async () => {
-        await prisma.visit.deleteMany({ where: { participantId: { in: [participantId, unenrolledId] } } });
+        await prisma.visit.deleteMany({ where: { personId: { in: [participantId, unenrolledId] } } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
     });
 
@@ -100,7 +100,7 @@ describe('attendanceTransitions', () => {
         it('closes a plain visit with no events into a single departedAt visit', async () => {
             const arrivedAt = new Date(Date.now() - 2 * HOUR);
             const checkout = new Date();
-            const visit = await prisma.visit.create({ data: { participantId, arrivedAt } });
+            const visit = await prisma.visit.create({ data: { personId: participantId, arrivedAt } });
 
             const result = await processVisitCheckout(visit.id, checkout);
             expect(result).toHaveLength(1);
@@ -114,7 +114,7 @@ describe('attendanceTransitions', () => {
             const eventEnd = new Date(t0.getTime() + 2 * HOUR);
             const checkout = new Date(t0.getTime() + 3 * HOUR);
             const ev = await makeEvent('mid', eventStart, eventEnd);
-            const visit = await prisma.visit.create({ data: { participantId, arrivedAt: t0 } });
+            const visit = await prisma.visit.create({ data: { personId: participantId, arrivedAt: t0 } });
 
             const result = await processVisitCheckout(visit.id, checkout);
 
@@ -142,7 +142,7 @@ describe('attendanceTransitions', () => {
             const checkout = new Date(t0.getTime() + 4 * HOUR);
             const e1 = await makeEvent('back1', e1Start, e1End);
             const e2 = await makeEvent('back2', e2Start, e2End);
-            const visit = await prisma.visit.create({ data: { participantId, arrivedAt: t0 } });
+            const visit = await prisma.visit.create({ data: { personId: participantId, arrivedAt: t0 } });
 
             const result = await processVisitCheckout(visit.id, checkout);
 
@@ -158,7 +158,7 @@ describe('attendanceTransitions', () => {
 
         it('returns [] for an already-departedAt visit (idempotent)', async () => {
             const visit = await prisma.visit.create({
-                data: { participantId, arrivedAt: new Date(Date.now() - HOUR), departedAt: new Date() },
+                data: { personId: participantId, arrivedAt: new Date(Date.now() - HOUR), departedAt: new Date() },
             });
             const result = await processVisitCheckout(visit.id, new Date());
             expect(result).toEqual([]);

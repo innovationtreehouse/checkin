@@ -82,7 +82,7 @@ export const POST = withKiosk(
             const threeSecondsAgo = new Date(Date.now() - 3000);
             const recentScan = await tx.rawBadgeLog.findFirst({
                 where: {
-                    participantId: participant.id,
+                    personId: participant.id,
                     timestamp: {
                         gte: threeSecondsAgo
                     }
@@ -100,7 +100,7 @@ export const POST = withKiosk(
             // 5. Record raw badge event
             await tx.rawBadgeLog.create({
                 data: {
-                    participantId: participant.id,
+                    personId: participant.id,
                     location: "Main Entrance",
                 },
             });
@@ -108,7 +108,7 @@ export const POST = withKiosk(
             // 6. Check-in or check-out
             const activeVisit = await tx.visit.findFirst({
                 where: {
-                    participantId: participant.id,
+                    personId: participant.id,
                     departedAt: null,
                 },
                 orderBy: { arrivedAt: "desc" },

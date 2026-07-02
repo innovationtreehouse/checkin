@@ -50,7 +50,7 @@ describe('Trusted Adults service', () => {
         householdId = hh.id;
         const lead = await prisma.participant.create({ data: { name: 'Lead', email: `lead-${TAG}@ex.com`, householdId: hh.id } });
         leadId = lead.id;
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
 
         // A board member who is also a lead of the disclosing household: overriding this
         // household's own review is a conflict of interest (force-approve Grandma for their kids).
@@ -58,7 +58,7 @@ describe('Trusted Adults service', () => {
             data: { name: 'BoardLead', email: `boardlead-${TAG}@ex.com`, isBoardMember: true, householdId: hh.id },
         });
         boardLeadId = boardLead.id;
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: boardLead.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: boardLead.id } });
 
         const outHh = await prisma.household.create({ data: { name: `Outsider HH ${TAG}` } });
         outsiderId = (await prisma.participant.create({ data: { name: 'Outsider', householdId: outHh.id } })).id;
@@ -422,7 +422,7 @@ describe('runExpirySweep edge cases', () => {
         householdId = hh.id;
         const lead = await prisma.participant.create({ data: { name: 'SweepLead', email: `sweeplead-${SWEEP_TAG}@ex.com`, householdId: hh.id } });
         leadId = lead.id;
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
     });
 
     afterAll(async () => {

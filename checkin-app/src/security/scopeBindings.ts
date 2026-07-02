@@ -13,7 +13,7 @@
  * (./generated/classifications.ts), not the §7.4 doc table. Discrepancies found
  * vs that table (see docs/security/auth-consistency-analysis.md §7.4/§7.5):
  *   - Visit:  field is `departedAt` (doc wrote `departed`).            [doc fixed]
- *   - ToolStatus: field is `participantId` (renamed from `userId`, #564).
+ *   - ToolStatus: field is `personId` (renamed userId→participantId #564, then participantId→personId).
  *   - RawBadgeLog: model is `RawBadgeLog` (doc table wrote `RawBadgeEvent`).
  *   - Fee / RSVP: the live switch grouped ProgramParticipant, ProgramVolunteer,
  *     Fee and RSVP under one `case` body that read BOTH `row.programId` and
@@ -50,7 +50,7 @@ export const SCOPE_BINDINGS = {
     },
     HouseholdLead: {
         their_households: { field: 'householdId', eqCtx: 'householdId' },
-        their_own: { field: 'participantId', eqCtx: 'selfId' },
+        their_own: { field: 'personId', eqCtx: 'selfId' },
     },
     Membership: { their_households: { field: 'householdId', eqCtx: 'householdId' } },
     Program: {
@@ -79,7 +79,7 @@ export const SCOPE_BINDINGS = {
     // (ctx.eventIdsInScopePrograms) — a deliberate behavior CHANGE, not the dead
     // switch read. See docs/security/auth-consistency-analysis.md §7.5 + §9 Step 3.
     RSVP: {
-        their_own: { field: 'participantId', eqCtx: 'selfId' },
+        their_own: { field: 'personId', eqCtx: 'selfId' },
         their_program_participants: { field: 'eventId', inCtx: 'eventIdsInScopePrograms' },
     },
     Event: {
@@ -89,17 +89,17 @@ export const SCOPE_BINDINGS = {
         },
     },
     FeePayment: {
-        their_own: { field: 'participantId', eqCtx: 'selfId' },
-        their_program_participants: { field: 'participantId', inCtx: 'participantIdsInScopePrograms' },
+        their_own: { field: 'personId', eqCtx: 'selfId' },
+        their_program_participants: { field: 'personId', inCtx: 'participantIdsInScopePrograms' },
     },
     Visit: {
-        their_own: { field: 'participantId', eqCtx: 'selfId' },
+        their_own: { field: 'personId', eqCtx: 'selfId' },
         all_current_visitors: {
             all: [{ flag: 'isKeyholder' }, { field: 'departedAt', isNull: true }],
         },
     },
-    RawBadgeLog: { their_own: { field: 'participantId', eqCtx: 'selfId' } },
-    ToolStatus: { their_own: { field: 'participantId', eqCtx: 'selfId' } },
+    RawBadgeLog: { their_own: { field: 'personId', eqCtx: 'selfId' } },
+    ToolStatus: { their_own: { field: 'personId', eqCtx: 'selfId' } },
     Account: { their_own: { field: 'userId', eqCtx: 'selfId' } },
     Session: { their_own: { field: 'userId', eqCtx: 'selfId' } },
     // Bound for coverage; admin-only by tier-grant control (no route grants

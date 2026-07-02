@@ -34,7 +34,7 @@ describe('Membership renewal', () => {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
         // The guardian is a household lead (drives the 3-yr BG-freshness check).
         const parent = await prisma.participant.create({ data: { name: `${label} Parent`, householdId: hh.id, lastBackgroundCheck: parentBg ?? undefined } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: parent.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: parent.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
         return { householdId: hh.id, membershipId: m.id };
     }

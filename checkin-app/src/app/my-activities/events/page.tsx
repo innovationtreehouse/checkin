@@ -6,8 +6,10 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Center, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { formatDateTime, formatTime } from '@/lib/time';
+import type { RSVPStatus } from '@/types/rsvp';
 
-type RsvpStatus = "ATTENDING" | "NOT_ATTENDING" | "MAYBE";
+// No NO_RESPONSE button — that's the absence of a choice, not a pickable one.
+type RsvpStatus = Exclude<RSVPStatus, "NO_RESPONSE">;
 
 // One row per (event, household member) — a lead sees a card per family member.
 type EventData = {

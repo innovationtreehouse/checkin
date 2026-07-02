@@ -190,19 +190,19 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         create: { name: "Drill Press", safetyGuide: "https://example.com/drill-press-safety" },
     });
     await prisma.toolStatus.upsert({
-        where: { participantId_toolId: { participantId: certifiedAdult.id, toolId: tableSaw.id } },
+        where: { personId_toolId: { personId: certifiedAdult.id, toolId: tableSaw.id } },
         update: { level: "CERTIFIED" },
-        create: { participantId: certifiedAdult.id, toolId: tableSaw.id, level: "CERTIFIED" },
+        create: { personId: certifiedAdult.id, toolId: tableSaw.id, level: "CERTIFIED" },
     });
     await prisma.toolStatus.upsert({
-        where: { participantId_toolId: { participantId: certifiedAdult.id, toolId: drillPress.id } },
+        where: { personId_toolId: { personId: certifiedAdult.id, toolId: drillPress.id } },
         update: { level: "CERTIFIED" },
-        create: { participantId: certifiedAdult.id, toolId: drillPress.id, level: "CERTIFIED" },
+        create: { personId: certifiedAdult.id, toolId: drillPress.id, level: "CERTIFIED" },
     });
     await prisma.toolStatus.upsert({
-        where: { participantId_toolId: { participantId: toolCertifier.id, toolId: tableSaw.id } },
+        where: { personId_toolId: { personId: toolCertifier.id, toolId: tableSaw.id } },
         update: { level: "MAY_CERTIFY_OTHERS" },
-        create: { participantId: toolCertifier.id, toolId: tableSaw.id, level: "MAY_CERTIFY_OTHERS" },
+        create: { personId: toolCertifier.id, toolId: tableSaw.id, level: "MAY_CERTIFY_OTHERS" },
     });
 
     // 5. Sample program
@@ -310,7 +310,7 @@ export async function createEvent(prisma: Db): Promise<string> {
     const attendees = await prisma.participant.findMany({ take: 3, orderBy: { id: "asc" } });
     for (const p of attendees) {
         await prisma.rSVP.create({
-            data: { eventId: event.id, participantId: p.id, status: "ATTENDING" },
+            data: { eventId: event.id, personId: p.id, status: "ATTENDING" },
         });
     }
     const where = latestProgram ? ` under program #${latestProgram.id}` : "";
@@ -324,11 +324,11 @@ export async function createCheckins(prisma: Db): Promise<string> {
     for (const [i, p] of people.entries()) {
         const arrived = new Date(Date.now() - (i + 1) * 45 * 60 * 1000); // staggered into the past
         await prisma.rawBadgeLog.create({
-            data: { participantId: p.id, timestamp: arrived, location: "Front Door" },
+            data: { personId: p.id, timestamp: arrived, location: "Front Door" },
         });
         await prisma.visit.create({
             data: {
-                participantId: p.id,
+                personId: p.id,
                 arrivedAt: arrived,
                 // Leave the most recent two still "here" (no departure) for active-visit screens.
                 departedAt: i < 2 ? null : new Date(arrived.getTime() + 90 * 60 * 1000),

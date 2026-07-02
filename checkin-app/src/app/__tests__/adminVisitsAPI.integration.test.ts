@@ -30,7 +30,7 @@ describe('Admin Visits API Integration Tests', () => {
         const existingUserIds = existingUsers.map(u => u.id);
         
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         
         await prisma.auditLog.deleteMany({
@@ -56,7 +56,7 @@ describe('Admin Visits API Integration Tests', () => {
 
         const visit = await prisma.visit.create({
             data: {
-                participantId: testUserId,
+                personId: testUserId,
                 arrivedAt: new Date(Date.now() - 3600000), // 1 hour ago
             }
         });
@@ -66,7 +66,7 @@ describe('Admin Visits API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.visit.deleteMany({
-            where: { participantId: { in: [testAdminId, testUserId] } }
+            where: { personId: { in: [testAdminId, testUserId] } }
         });
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: [testAdminId, testUserId] } }
@@ -116,9 +116,9 @@ describe('Admin Visits API Integration Tests', () => {
             expect(Array.isArray(data.visits)).toBe(true);
             expect(data.visits.length).toBeGreaterThanOrEqual(1);
 
-            const visitMatches = data.visits.filter((v: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => v.participantId === testUserId);
+            const visitMatches = data.visits.filter((v: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => v.personId === testUserId);
             expect(visitMatches.length).toBe(1);
-            expect(visitMatches[0].participant).toBeDefined();
+            expect(visitMatches[0].person).toBeDefined();
         });
     });
 

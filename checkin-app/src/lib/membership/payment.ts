@@ -64,7 +64,7 @@ export async function ensurePaymentLink(processId: number): Promise<{ amountCent
     const amountCents = membership.isVolunteer ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
 
     const variantId = settings?.membershipVariantId;
-    const storeDomain = process.env.SHOPIFY_STORE_DOMAIN;
+    const storeDomain = config.shopifyStoreDomain();
     if (!variantId || !storeDomain) return { amountCents, checkoutUrl: null };
 
     // TODO(#278): the code is appended to a public cart link, so entitlement is

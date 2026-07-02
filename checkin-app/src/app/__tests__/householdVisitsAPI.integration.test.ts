@@ -31,11 +31,11 @@ describe('Household Visits API Integration Tests', () => {
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter(id => id !== null) as number[];
         
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         
         await prisma.membership.deleteMany({
@@ -66,7 +66,7 @@ describe('Household Visits API Integration Tests', () => {
         testUserId = leadUser.id;
 
         await prisma.householdLead.create({
-            data: { householdId: household.id, participantId: leadUser.id }
+            data: { householdId: household.id, personId: leadUser.id }
         });
 
         const memberUser = await prisma.participant.create({
@@ -97,15 +97,15 @@ describe('Household Visits API Integration Tests', () => {
                 // Closed (departedAt set): leadUser appears twice, but a participant
                 // may have only one OPEN visit (Visit_one_open_per_participant). This
                 // window test filters by arrivedAt, so departure time is irrelevant.
-                { participantId: leadUser.id, arrivedAt: new Date(now.getTime() - 1000), departedAt: new Date(now.getTime() - 500) }, // Just now
-                { participantId: memberUser.id, arrivedAt: new Date(now.getTime() - 86400000), departedAt: new Date(now.getTime() - 86399000) }, // 1 day ago
-                { participantId: leadUser.id, arrivedAt: new Date(now.getTime() - 864000000), departedAt: new Date(now.getTime() - 863999000) }, // 10 days ago (outside 7 day window)
+                { personId: leadUser.id, arrivedAt: new Date(now.getTime() - 1000), departedAt: new Date(now.getTime() - 500) }, // Just now
+                { personId: memberUser.id, arrivedAt: new Date(now.getTime() - 86400000), departedAt: new Date(now.getTime() - 86399000) }, // 1 day ago
+                { personId: leadUser.id, arrivedAt: new Date(now.getTime() - 864000000), departedAt: new Date(now.getTime() - 863999000) }, // 10 days ago (outside 7 day window)
             ]
         });
 
         // Create visit for other household
         await prisma.visit.create({
-            data: { participantId: otherUser.id, arrivedAt: new Date(now.getTime() - 2000) }
+            data: { personId: otherUser.id, arrivedAt: new Date(now.getTime() - 2000) }
         });
     });
 
@@ -119,11 +119,11 @@ describe('Household Visits API Integration Tests', () => {
         const validHouseholdIds = existingUsers.map(u => u.householdId).filter(id => id !== null) as number[];
 
         await prisma.visit.deleteMany({
-            where: { participantId: { in: currentIds } }
+            where: { personId: { in: currentIds } }
         });
 
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: currentIds } }
+            where: { personId: { in: currentIds } }
         });
         
         await prisma.membership.deleteMany({
@@ -181,12 +181,12 @@ describe('Household Visits API Integration Tests', () => {
             expect(data.visits.length).toBe(2);
             
             // Verify no cross-pollution from other household
-            const hasOtherHouseholdVisits = data.visits.some((v: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => v.participantId === testOtherHouseUserId);
+            const hasOtherHouseholdVisits = data.visits.some((v: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => v.personId === testOtherHouseUserId);
             expect(hasOtherHouseholdVisits).toBe(false);
 
             // Verify ordered correctly (descending)
-            expect(data.visits[0].participantId).toBe(testUserId); // Just now
-            expect(data.visits[1].participantId).toBe(testMemberId); // 1 day ago
+            expect(data.visits[0].personId).toBe(testUserId); // Just now
+            expect(data.visits[1].personId).toBe(testMemberId); // 1 day ago
         });
 
         it('should shift the visit window correctly when filter date is provided', async () => {
@@ -204,7 +204,7 @@ describe('Household Visits API Integration Tests', () => {
             
             // It should only capture the 10-days-ago visit, missing the 1-day-ago and just-now visits
             expect(data.visits.length).toBe(1);
-            expect(data.visits[0].participantId).toBe(testUserId);
+            expect(data.visits[0].personId).toBe(testUserId);
             // Verify it was the 10-days-ago visit (can't easily verify the exact MS but logically it is the third visit record)
         });
     });

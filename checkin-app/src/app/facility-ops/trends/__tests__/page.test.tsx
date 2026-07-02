@@ -11,9 +11,9 @@ beforeEach(() => resetRtl());
 
 const trendsData = {
   buckets: [
-    { label: "Jan 2026", periodStart: "2026-01-01", uniqueVolunteers: 3, uniqueStudents: 5, totalVolunteerHours: 12.5, totalStudentHours: 0.5, structuredHours: 8, unstructuredHours: 4.5 },
+    { label: "Jan 2026", periodStart: "2026-01-01", uniqueVolunteers: 3, uniqueParticipants: 5, totalVolunteerHours: 12.5, totalParticipantHours: 0.5, structuredHours: 8, unstructuredHours: 4.5 },
   ],
-  totals: { label: "Total", periodStart: "", uniqueVolunteers: 3, uniqueStudents: 5, totalVolunteerHours: 12.5, totalStudentHours: 0.5, structuredHours: 8, unstructuredHours: 4.5 },
+  totals: { label: "Total", periodStart: "", uniqueVolunteers: 3, uniqueParticipants: 5, totalVolunteerHours: 12.5, totalParticipantHours: 0.5, structuredHours: 8, unstructuredHours: 4.5 },
 };
 
 function mockRoutes() {
@@ -32,7 +32,7 @@ describe("facility-ops/trends page", () => {
     expect(await screen.findByText("Jan 2026")).toBeInTheDocument();
     expect(screen.getByText("Unique Volunteers")).toBeInTheDocument();
     expect(screen.getAllByText("3").length).toBeGreaterThan(0); // uniqueVolunteers, in both the stat card and table
-    expect(screen.getAllByText("30m").length).toBeGreaterThan(0); // totalStudentHours 0.5h -> "30m"
+    expect(screen.getAllByText("30m").length).toBeGreaterThan(0); // totalParticipantHours 0.5h -> "30m"
   });
 
   it("re-fetches trends when the period changes", async () => {

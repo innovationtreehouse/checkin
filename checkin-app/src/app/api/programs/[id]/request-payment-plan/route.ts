@@ -47,9 +47,9 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         if (!isSelf && !isSysAdminOrBoard && !isLeadMentor && participant.participant?.householdId) {
             const leadRecord = await prisma.householdLead.findUnique({
                 where: {
-                    householdId_participantId: {
+                    householdId_personId: {
                         householdId: participant.participant.householdId,
-                        participantId: currentUserId
+                        personId: currentUserId
                     }
                 }
             });

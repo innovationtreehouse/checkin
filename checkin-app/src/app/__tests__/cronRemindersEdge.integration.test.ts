@@ -52,12 +52,12 @@ describe('GET /api/cron/reminders — auth & window edges', () => {
     });
 
     afterEach(async () => {
-        await prisma.rSVP.deleteMany({ where: { participantId } });
+        await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
     });
 
     afterAll(async () => {
-        await prisma.rSVP.deleteMany({ where: { participantId } });
+        await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
         await prisma.participant.deleteMany({ where: { id: participantId } });
         await prisma.household.deleteMany({ where: { id: householdId } });
@@ -74,7 +74,7 @@ describe('GET /api/cron/reminders — auth & window edges', () => {
             },
         });
         await prisma.rSVP.create({
-            data: { eventId: event.id, participantId, status: 'ATTENDING' },
+            data: { eventId: event.id, personId: participantId, status: 'ATTENDING' },
         });
         return event.id;
     }

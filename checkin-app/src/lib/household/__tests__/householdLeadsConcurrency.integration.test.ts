@@ -37,7 +37,7 @@ async function cleanup() {
     });
     const ids = users.map(u => u.id);
     const householdIds = [...new Set(users.map(u => u.householdId))];
-    await prisma.householdLead.deleteMany({ where: { participantId: { in: ids } } });
+    await prisma.householdLead.deleteMany({ where: { personId: { in: ids } } });
     await prisma.participant.deleteMany({ where: { id: { in: ids } } });
     await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
 }
@@ -53,7 +53,7 @@ async function makeHousehold(label: string, existingLeads: number, spares: numbe
         const p = await prisma.participant.create({
             data: { email: `lead-${i}-${label}-${TAG}@example.com`, name: `Lead ${i}`, householdId: household.id },
         });
-        await prisma.householdLead.create({ data: { householdId: household.id, participantId: p.id } });
+        await prisma.householdLead.create({ data: { householdId: household.id, personId: p.id } });
         leadIds.push(p.id);
     }
     const spareIds: number[] = [];

@@ -3,6 +3,7 @@ import type { Session } from "next-auth";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { canActFor } from "@/lib/household/activityMembers";
+import { RSVP_STATUSES, type RSVPStatus } from "@/types/rsvp";
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -19,8 +20,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         const body = await req.json();
         const { status } = body;
 
-        const validStatuses = ["ATTENDING", "NOT_ATTENDING", "NO_RESPONSE", "MAYBE"];
-        if (!status || !validStatuses.includes(status)) {
+        if (!status || !RSVP_STATUSES.includes(status)) {
             return NextResponse.json({ error: "Invalid RSVP status" }, { status: 400 });
         }
 
@@ -73,18 +73,18 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
 
         const rsvp = await prisma.rSVP.upsert({
             where: {
-                eventId_participantId: {
+                eventId_personId: {
                     eventId,
-                    participantId: currentUserId
+                    personId: currentUserId
                 }
             },
             update: {
-                status: status as 'ATTENDING' | 'NOT_ATTENDING' | 'NO_RESPONSE' | 'MAYBE'
+                status: status as RSVPStatus
             },
             create: {
                 eventId,
-                participantId: currentUserId,
-                status: status as 'ATTENDING' | 'NOT_ATTENDING' | 'NO_RESPONSE' | 'MAYBE'
+                personId: currentUserId,
+                status: status as RSVPStatus
             }
         });
 

@@ -44,9 +44,9 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         if (participantData?.householdId) {
             const leadRecord = await prisma.householdLead.findUnique({
                 where: {
-                    householdId_participantId: {
+                    householdId_personId: {
                         householdId: participantData.householdId,
-                        participantId: currentUserId
+                        personId: currentUserId
                     }
                 }
             });

@@ -40,10 +40,10 @@ describe('General Attendance API Integration Tests', () => {
         const existingUserIds = existingUsers.map(u => u.id);
         
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.auditLog.deleteMany({
@@ -113,12 +113,12 @@ describe('General Attendance API Integration Tests', () => {
 
         // Create initial active visits
         const commonVisit = await prisma.visit.create({
-            data: { participantId: commonId, arrivedAt: new Date() }
+            data: { personId: commonId, arrivedAt: new Date() }
         });
         activeVisitId = commonVisit.id;
 
         const childVisit = await prisma.visit.create({
-            data: { participantId: householdChildId, arrivedAt: new Date() }
+            data: { personId: householdChildId, arrivedAt: new Date() }
         });
         childActiveVisitId = childVisit.id;
     });
@@ -128,10 +128,10 @@ describe('General Attendance API Integration Tests', () => {
 
         if (existingUserIds.length > 0) {
             await prisma.householdLead.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
             await prisma.visit.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
             await prisma.auditLog.deleteMany({
                 where: { actorId: { in: existingUserIds } }
@@ -259,7 +259,7 @@ describe('General Attendance API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.visit.participantId).toBe(householdChildId);
+             expect(data.visit.personId).toBe(householdChildId);
         });
 
         it('should allow an admin to check in any user', async () => {
@@ -275,7 +275,7 @@ describe('General Attendance API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.visit.participantId).toBe(householdLeadId);
+             expect(data.visit.personId).toBe(householdLeadId);
         });
     });
 

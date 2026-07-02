@@ -83,7 +83,7 @@ describe('AuditLog Integration Tests', () => {
             await prisma.visit.deleteMany({ where: { id: { in: createdVisitIds } } });
         }
         if (createdParticipantIds.length > 0) {
-            await prisma.householdLead.deleteMany({ where: { participantId: { in: createdParticipantIds } } });
+            await prisma.householdLead.deleteMany({ where: { personId: { in: createdParticipantIds } } });
             await prisma.participant.deleteMany({ where: { id: { in: createdParticipantIds } } });
         }
         if (createdHouseholdIds.length > 0) {
@@ -92,8 +92,8 @@ describe('AuditLog Integration Tests', () => {
 
         // Clean up
         if (testParticipantId !== undefined) {
-            await prisma.visit.deleteMany({ where: { participantId: testParticipantId } });
-            await prisma.rSVP.deleteMany({ where: { participantId: testParticipantId } });
+            await prisma.visit.deleteMany({ where: { personId: testParticipantId } });
+            await prisma.rSVP.deleteMany({ where: { personId: testParticipantId } });
         }
 
         if (testProgramId !== undefined) {
@@ -221,7 +221,7 @@ describe('AuditLog Integration Tests', () => {
         testEventId = event.id;
 
         const visit = await prisma.visit.create({
-            data: { participantId: testParticipantId, arrivedAt: new Date(Date.now() - 100000), departedAt: new Date(Date.now() + 100000) }
+            data: { personId: testParticipantId, arrivedAt: new Date(Date.now() - 100000), departedAt: new Date(Date.now() + 100000) }
         });
         testVisitId = visit.id;
 
@@ -374,7 +374,7 @@ describe('AuditLog Integration Tests', () => {
     it('visit edit (PATCH /admin/visits) writes one AuditLog snapshotting the visit', async () => {
         const owner = await makeParticipant('visit-owner');
         const visit = await prisma.visit.create({
-            data: { participantId: owner.id, arrivedAt: new Date(), departedAt: new Date() },
+            data: { personId: owner.id, arrivedAt: new Date(), departedAt: new Date() },
             select: { id: true },
         });
         createdVisitIds.push(visit.id);
