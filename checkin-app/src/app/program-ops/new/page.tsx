@@ -181,7 +181,7 @@ export default function CreateProgramPage() {
             {!isFree && (
               <>
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                  <NumberInput label="Member Price ($)" value={memberPrice} onChange={(v) => setMemberPrice(String(v))} min={0} placeholder="0" />
+                  <NumberInput label="Treehouse Member Price ($)" value={memberPrice} onChange={(v) => setMemberPrice(String(v))} min={0} placeholder="0" />
                   <NumberInput label="Non-Member Price ($)" value={nonMemberPrice} onChange={(v) => setNonMemberPrice(String(v))} min={0} placeholder="0" />
                 </SimpleGrid>
                 <Text size="xs" c="dimmed">Setting a price automatically creates a checkout flow on Shopify.</Text>
@@ -210,7 +210,7 @@ export default function CreateProgramPage() {
             <Checkbox
               checked={memberOnly}
               onChange={(e) => setMemberOnly(e.currentTarget.checked)}
-              label="Member-Only Program"
+              label="Treehouse Members-Only Program"
               description="If checked, this program will only be visible to logged-in users with active memberships."
             />
 

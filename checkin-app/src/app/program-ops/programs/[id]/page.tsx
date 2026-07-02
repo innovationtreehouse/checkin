@@ -306,12 +306,12 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
 
                 {!isFree && (
                   <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                    <NumberInput label="Member Price ($)" value={memberPrice} disabled />
+                    <NumberInput label="Treehouse Member Price ($)" value={memberPrice} disabled />
                     <NumberInput label="Non-Member Price ($)" value={nonMemberPrice} disabled />
                   </SimpleGrid>
                 )}
 
-                <Checkbox checked={memberOnly} onChange={e => setMemberOnly(e.currentTarget.checked)} label="Member-Only Program" />
+                <Checkbox checked={memberOnly} onChange={e => setMemberOnly(e.currentTarget.checked)} label="Treehouse Members-Only Program" />
 
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
                   <Select label="Program Phase" value={phase} onChange={v => setPhase(v ?? 'PLANNING')} allowDeselect={false}

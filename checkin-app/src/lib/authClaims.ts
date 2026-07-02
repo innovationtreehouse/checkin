@@ -1,6 +1,6 @@
 import type { JWT } from "next-auth/jwt";
 import type { MembershipStatus } from "@/generated/prisma/client";
-import { membershipStatusBlocksLogin } from "@/lib/membership";
+import { orgMembershipStatusBlocksLogin } from "@/lib/orgMembership";
 
 /** The participant fields the JWT carries, plus the household membership the login gate reads. */
 export type ClaimSourceParticipant = {
@@ -29,7 +29,7 @@ export type ClaimSourceParticipant = {
  * authority flag is forced false and tool statuses are cleared, so nothing downstream honors it.
  */
 export function assignParticipantClaims(token: JWT, p: ClaimSourceParticipant): void {
-    const denied = membershipStatusBlocksLogin(p.household?.membership?.status);
+    const denied = orgMembershipStatusBlocksLogin(p.household?.membership?.status);
 
     token.id = p.id;
     token.denied = denied;

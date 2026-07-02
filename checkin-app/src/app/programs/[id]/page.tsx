@@ -288,7 +288,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             {(program.memberPriceCents !== null || program.nonMemberPriceCents !== null) && (
               <>
                 <Divider />
-                {program.memberPriceCents !== null && <Text><strong>Member Price:</strong> {formatCents(program.memberPriceCents)}</Text>}
+                {program.memberPriceCents !== null && <Text><strong>Treehouse Member Price:</strong> {formatCents(program.memberPriceCents)}</Text>}
                 {program.nonMemberPriceCents !== null && <Text><strong>Non-Member Price:</strong> {formatCents(program.nonMemberPriceCents)}</Text>}
                 {(!program.memberPriceCents && !program.nonMemberPriceCents) && <Text><strong>Cost:</strong> Free</Text>}
               </>

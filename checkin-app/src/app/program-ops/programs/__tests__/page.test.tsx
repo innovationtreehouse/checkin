@@ -30,7 +30,7 @@ describe("AdminProgramsIndex", () => {
     expect(await screen.findByText("Robotics Club")).toBeInTheDocument();
     expect(screen.getByText("Pottery (finished)")).toBeInTheDocument();
     expect(screen.getByText("Running")).toBeInTheDocument();
-    expect(screen.getByText("Member Only")).toBeInTheDocument();
+    expect(screen.getByText("Treehouse Members Only")).toBeInTheDocument();
   });
 
   it("hides finished programs when Only show active is checked", async () => {

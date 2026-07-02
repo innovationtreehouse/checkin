@@ -227,7 +227,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
                 <Card.Section withBorder p="md">
                   {loadingCerts ? <Center py="sm"><Loader size="sm" /></Center> : (
                     <>
-                      <Text fw={600} size="sm" c="dimmed" mb="sm">Certified members</Text>
+                      <Text fw={600} size="sm" c="dimmed" mb="sm">Certified Treehouse Members</Text>
                       {certs.length === 0 ? (
                         <Text c="dimmed" size="sm">No certifications yet.</Text>
                       ) : (

@@ -44,12 +44,12 @@ describe("CreateProgramPage", () => {
 
     // Unchecking "free" reveals the price inputs.
     fireEvent.click(screen.getByLabelText("This is a free program"));
-    expect(screen.getByLabelText("Member Price ($)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Treehouse Member Price ($)")).toBeInTheDocument();
 
     // Re-checking "free" clears out any entered prices (the `if (checked)` branch).
-    fireEvent.change(screen.getByLabelText("Member Price ($)"), { target: { value: "50" } });
+    fireEvent.change(screen.getByLabelText("Treehouse Member Price ($)"), { target: { value: "50" } });
     fireEvent.click(screen.getByLabelText("This is a free program"));
-    expect(screen.queryByLabelText("Member Price ($)")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Treehouse Member Price ($)")).not.toBeInTheDocument();
   });
 
   it("flags an invalid date range and disables submit", async () => {
@@ -71,7 +71,7 @@ describe("CreateProgramPage", () => {
     await screen.findByLabelText("Program Name", { exact: false });
 
     fireEvent.click(screen.getByLabelText("This is a free program"));
-    fireEvent.change(screen.getByLabelText("Member Price ($)"), { target: { value: "100" } });
+    fireEvent.change(screen.getByLabelText("Treehouse Member Price ($)"), { target: { value: "100" } });
     fireEvent.change(screen.getByLabelText("Non-Member Price ($)"), { target: { value: "20" } });
 
     expect(screen.getByText(/Member price is higher than non-member price/)).toBeInTheDocument();
@@ -119,7 +119,7 @@ describe("CreateProgramPage", () => {
 
     fireEvent.change(screen.getByLabelText("Min Age (Optional)"), { target: { value: "10" } });
     fireEvent.change(screen.getByLabelText("Max Age (Optional)"), { target: { value: "18" } });
-    fireEvent.click(screen.getByLabelText("Member-Only Program"));
+    fireEvent.click(screen.getByLabelText("Treehouse Members-Only Program"));
 
     const submitBtn = screen.getByRole("button", { name: "Create Program" });
     expect(submitBtn).toBeEnabled();
