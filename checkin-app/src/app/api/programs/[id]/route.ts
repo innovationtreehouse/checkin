@@ -22,7 +22,10 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
                                     emergencyContacts: {
                                         where: { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } },
                                         orderBy: [{ priority: "asc" }, { id: "asc" }],
-                                        select: { id: true, name: true, phone: true, relationship: true },
+                                        // householdId is the EmergencyContact ROW_SCOPE_KEY: without it
+                                        // scopesHeld() fails closed (empty scope set) and the stripper drops
+                                        // name/phone/relationship for EVERY viewer, incl. admin/board.
+                                        select: { id: true, householdId: true, name: true, phone: true, relationship: true },
                                     },
                                 },
                             },
