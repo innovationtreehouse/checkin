@@ -34,11 +34,11 @@ const programData = {
   memberOnly: false,
   participants: [
     {
-      participantId: 101, status: "ACTIVE", joinedAt: "2026-01-05T00:00:00.000Z", pendingSince: null,
+      participantId: 101, status: "ACTIVE", pendingSince: null,
       participant: { name: "Alice Kid", email: "alice@example.com", phone: "5125551234" },
     },
     {
-      participantId: 102, status: "PENDING", joinedAt: null, pendingSince: "2026-01-06T00:00:00.000Z",
+      participantId: 102, status: "PENDING", pendingSince: "2026-01-06T00:00:00.000Z",
       participant: { name: "Charlie Kid", email: "charlie@example.com" },
     },
   ],
