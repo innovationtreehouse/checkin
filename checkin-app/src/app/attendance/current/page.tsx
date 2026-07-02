@@ -12,7 +12,7 @@ import { formatPhone } from "@/lib/phone";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { AttendanceTabs } from "../AttendanceTabs";
 
-type Participant = {
+type Person = {
   id: number;
   email: string;
   name?: string | null;
@@ -27,7 +27,7 @@ type Participant = {
 type Visit = {
   id: number;
   arrivedAt: string;
-  participant: Participant;
+  participant: Person;
   event?: { program?: { id: number; name: string } };
 };
 
@@ -47,13 +47,13 @@ function KioskDisplayInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState<number | null>(null);
-  const [household, setHousehold] = useState<{ leads: { participantId: number }[], participants: Participant[] } | null>(null);
+  const [household, setHousehold] = useState<{ leads: { participantId: number }[], participants: Person[] } | null>(null);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [searchSignOutQuery, setSearchSignOutQuery] = useState("");
-  const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null);
+  const [selectedParticipant, setSelectedParticipant] = useState<Person | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Participant[]>([]);
+  const [searchResults, setSearchResults] = useState<Person[]>([]);
   const [checkingInId, setCheckingInId] = useState<number | null>(null);
 
   const currentUserIsSysadmin = (session?.user as SessionUser)?.isSysadmin || false;
@@ -160,7 +160,7 @@ function KioskDisplayInner() {
         if (res.ok) {
           const data = await res.json();
           const filtered = data.participants.filter(
-            (p: Participant) =>
+            (p: Person) =>
               (p.name || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
               (p.email || "").toLowerCase().includes((searchQuery || "").toLowerCase())
           );

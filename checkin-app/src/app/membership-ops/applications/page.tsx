@@ -5,7 +5,7 @@ import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text } from "
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
-interface Participant {
+interface Person {
   id: number;
   name: string | null;
   email: string | null;
@@ -29,7 +29,7 @@ interface ProcessRow {
   membership: {
     householdId: number;
     isVolunteer: boolean;
-    household: { name: string | null; participants: Participant[]; leads: { participantId: number }[] } | null;
+    household: { name: string | null; participants: Person[]; leads: { participantId: number }[] } | null;
   } | null;
 }
 
