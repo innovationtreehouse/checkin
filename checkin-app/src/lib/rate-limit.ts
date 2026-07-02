@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { canonicalizeEmail } from "@/lib/emailNormalize";
 
 // In-memory fixed-window rate limiter keyed by client IP and/or normalized email.
 //
@@ -79,35 +80,6 @@ export function clientIpKey(req: Request): string {
     return raw;
 }
 
-/**
- * Collapse an email to a stable key so address variants that deliver to the same
- * inbox land in one rate-limit bucket. Conservative on purpose — over-normalizing
- * would merge distinct real addresses.
- *
- *  - lowercase + trim
- *  - strip the plus-tag from the local part (broadly honored, safe everywhere)
- *  - Gmail only: drop all dots and treat googlemail.com as gmail.com
- *
- * `Foo.Bar+sale@GoogleMail.com` and `foobar@gmail.com` → same key;
- * `foo.bar@outlook.com` stays distinct from `foobar@outlook.com`.
- */
-export function normalizeEmail(email: string): string {
-    const trimmed = email.trim().toLowerCase();
-    const at = trimmed.lastIndexOf("@");
-    if (at < 0) return trimmed; // not an address shape — key as-is
-
-    let local = trimmed.slice(0, at);
-    let domain = trimmed.slice(at + 1);
-
-    const plus = local.indexOf("+");
-    if (plus >= 0) local = local.slice(0, plus);
-
-    if (domain === "googlemail.com") domain = "gmail.com";
-    if (domain === "gmail.com") local = local.replace(/\./g, "");
-
-    return `${local}@${domain}`;
-}
-
 function tooMany(retryAfterSec: number): NextResponse {
     return NextResponse.json(
         { error: "Too many requests. Please slow down and try again shortly." },
@@ -149,7 +121,7 @@ export function rateLimitEmail(
     const now = Date.now();
     sweep(now);
     const { ok, retryAfterSec } = checkRateLimit(
-        `${opts.name}:email:${normalizeEmail(email)}`,
+        `${opts.name}:email:${canonicalizeEmail(email)}`,
         opts.limit,
         opts.windowMs,
         now,

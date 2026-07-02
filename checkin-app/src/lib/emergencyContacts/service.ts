@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import type { Prisma, EmergencyContact } from "@/generated/prisma/client";
-import { identityKeys, sameIdentity, identityMatchReason, normalizeEmail, normalizePhone } from "./identity";
+import { identityKeys, sameIdentity, identityMatchReason, cleanEmail, normalizePhone } from "./identity";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 
 /**
@@ -72,7 +72,7 @@ function cleaned(input: ContactInput) {
         email: input.email?.trim() ? input.email.trim() : null,
         relationship: input.relationship?.trim() ? input.relationship.trim() : null,
         phoneDigits: normalizePhone(input.phone),
-        emailNorm: normalizeEmail(input.email),
+        emailNorm: cleanEmail(input.email),
     };
 }
 
@@ -186,7 +186,7 @@ export async function upsertPrimaryContact(
         phone: formatPhone(phone),
         email,
         phoneDigits: normalizePhone(phone),
-        emailNorm: normalizeEmail(email),
+        emailNorm: cleanEmail(email),
         ...(complete && { conflictParticipantId: null, conflictedAt: null }),
     };
 
