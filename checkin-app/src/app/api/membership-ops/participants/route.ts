@@ -4,10 +4,11 @@ import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
+import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req, auth) => {
     if (auth.type !== 'session') {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return apiError("Unauthorized", 401);
     }
 
     try {
@@ -17,15 +18,15 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         const { name, email, parentEmail, dob, householdId, alreadyMember = false } = body;
 
         if (!email && !parentEmail && !householdId) {
-            return NextResponse.json({ error: "Email, Parent Email, or Household assignment is required" }, { status: 400 });
+            return apiError("Email, Parent Email, or Household assignment is required", 400);
         }
 
         if (email && !isValidEmail(email)) {
-             return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+             return apiError("Invalid email format", 400);
         }
 
         if (parentEmail && !isValidEmail(parentEmail)) {
-             return NextResponse.json({ error: "Invalid parent email format" }, { status: 400 });
+             return apiError("Invalid parent email format", 400);
         }
 
         if (email) {
@@ -34,7 +35,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             });
 
             if (existingUser) {
-                return NextResponse.json({ error: "A participant with this email already exists" }, { status: 409 });
+                return apiError("A participant with this email already exists", 409);
             }
         }
 
@@ -111,9 +112,9 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         return NextResponse.json({ success: true, participant: newParticipant });
     } catch (error: unknown) {
         if (error instanceof HouseholdLeadLimitError) {
-            return NextResponse.json({ error: error.message }, { status: 400 });
+            return apiError(error.message, 400);
         }
         await logBackendError(error, "POST /api/membership-ops/participants");
-        return NextResponse.json({ error: `Failed to create participant` }, { status: 500 });
+        return apiError(`Failed to create participant`, 500);
     }
 });

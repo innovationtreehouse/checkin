@@ -6,6 +6,7 @@ import { getFullAttendance } from "@/lib/getFullAttendance";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { logBackendError, logger } from "@/lib/logger";
 import { config } from "@/lib/config";
+import { apiError } from "@/lib/api-response";
 
 // GET is kiosk-first with distinct signature-failure semantics (403 on bad signature,
 // not 401), so it keeps its own kiosk plumbing rather than moving to withAuth. The one
@@ -33,12 +34,12 @@ export async function GET(req: NextRequest) {
                 pubKeys
             );
             if (!result.ok) {
-                return NextResponse.json({ error: result.error }, { status: result.status });
+                return apiError(result.error, result.status);
             }
             isKiosk = true;
         } else if (!user && pubKeys.length > 0) {
             // No session and no kiosk headers — reject
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            return apiError("Unauthorized", 401);
         } else if (!user && pubKeys.length === 0 && config.isLocal()) {
             // Local dev only (CHECKIN_ENV=local): no pubKey configured, treat as kiosk.
             // Deliberately gated on isLocal() — on the cloud dev instance or prod an
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
             // anonymous callers. Mirrors the keyless-kiosk gating in src/lib/auth.ts.
             isKiosk = true;
         } else if (!user) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            return apiError("Unauthorized", 401);
         }
 
         const { attendance, counts, safety } = await getFullAttendance();
@@ -81,15 +82,12 @@ export async function GET(req: NextRequest) {
         });
     } catch (error) {
         await logBackendError(error, "GET /api/attendance");
-        return NextResponse.json(
-            { error: "Internal Server Error while fetching attendance." },
-            { status: 500 }
-        );
+        return apiError("Internal Server Error while fetching attendance.", 500);
     }
 }
 
 export const DELETE = withAuth({}, async (req, auth) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const user = auth.user;
 
     try {
@@ -97,7 +95,7 @@ export const DELETE = withAuth({}, async (req, auth) => {
         const { visitId } = body;
 
         if (!visitId) {
-            return NextResponse.json({ error: "visitId is required" }, { status: 400 });
+            return apiError("visitId is required", 400);
         }
 
         const visit = await prisma.visit.findUnique({
@@ -106,7 +104,7 @@ export const DELETE = withAuth({}, async (req, auth) => {
         });
 
         if (!visit) {
-            return NextResponse.json({ error: "Visit not found" }, { status: 404 });
+            return apiError("Visit not found", 404);
         }
 
         // Check permissions:
@@ -118,7 +116,7 @@ export const DELETE = withAuth({}, async (req, auth) => {
         const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
         if (!isSelf && !isHouseholdCheckOut && !isAdmin) {
-            return NextResponse.json({ error: "Forbidden: You are not authorized to check out this user." }, { status: 403 });
+            return apiError("Forbidden: You are not authorized to check out this user.", 403);
         }
 
         const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
@@ -127,12 +125,12 @@ export const DELETE = withAuth({}, async (req, auth) => {
         return NextResponse.json({ success: true, visit: updatedVisit });
     } catch (error) {
         await logBackendError(error, "DELETE /api/attendance");
-        return NextResponse.json({ error: "Failed to force checkout" }, { status: 500 });
+        return apiError("Failed to force checkout", 500);
     }
 });
 
 export const POST = withAuth({}, async (req, auth) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const user = auth.user;
     const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
@@ -143,7 +141,7 @@ export const POST = withAuth({}, async (req, auth) => {
         // Manual Check-in explicitly via the Dashboard
         if (type === 'MANUAL_CHECKIN') {
             if (!participantId) {
-                return NextResponse.json({ error: "participantId is required" }, { status: 400 });
+                return apiError("participantId is required", 400);
             }
 
             // Verify participant exists
@@ -152,14 +150,14 @@ export const POST = withAuth({}, async (req, auth) => {
             });
 
             if (!participant) {
-                return NextResponse.json({ error: "Participant not found" }, { status: 404 });
+                return apiError("Participant not found", 404);
             }
 
             // Check Permissions
             const isSelf = participant.id === Number(user.id);
             const isHouseholdCheckIn = Boolean(user.householdId && participant.householdId === user.householdId && user.householdLead);
             if (!isSelf && !isHouseholdCheckIn && !isAdmin) {
-                return NextResponse.json({ error: "Forbidden: You are not authorized to check in this user." }, { status: 403 });
+                return apiError("Forbidden: You are not authorized to check in this user.", 403);
             }
 
             const arrivalTime = new Date();
@@ -203,7 +201,7 @@ export const POST = withAuth({}, async (req, auth) => {
             });
 
             if (result.alreadyCheckedIn) {
-                return NextResponse.json({ error: "User is already checked in" }, { status: 400 });
+                return apiError("User is already checked in", 400);
             }
 
             return NextResponse.json({ success: true, visit: result.visit });
@@ -248,9 +246,9 @@ export const POST = withAuth({}, async (req, auth) => {
             return NextResponse.json({ success: true, notified: boardMembers.length });
         }
 
-        return NextResponse.json({ error: "Unknown notification type" }, { status: 400 });
+        return apiError("Unknown notification type", 400);
     } catch (error) {
         await logBackendError(error, "POST /api/attendance");
-        return NextResponse.json({ error: "Failed to process notification" }, { status: 500 });
+        return apiError("Failed to process notification", 500);
     }
 });

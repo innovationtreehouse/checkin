@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import { decideReview, TrustedAdultError } from "@/lib/trusted-adult/service";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -21,15 +22,15 @@ const DECISIONS = new Set(["APPROVE", "DENY", "REQUEST_INFO"]);
  * (the outward note keyholders & program leads see). Single entry, no quorum.
  */
 export const POST = withAuth({ roles: ["isBoardMember", "isSysadmin"] }, async (req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
     let body: { reviewId?: number; decision?: string; sharedNote?: string; note?: string };
     try {
         body = await req.json();
     } catch {
-        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+        return apiError("Invalid JSON", 400);
     }
     if (!body.reviewId || !body.decision || !DECISIONS.has(body.decision)) {
-        return NextResponse.json({ error: "reviewId and a valid decision are required" }, { status: 400 });
+        return apiError("reviewId and a valid decision are required", 400);
     }
     try {
         const outcome = await decideReview(body.reviewId, auth.user.id, {
@@ -43,6 +44,6 @@ export const POST = withAuth({ roles: ["isBoardMember", "isSysadmin"] }, async (
             return NextResponse.json({ error: error.message, code: error.code }, { status: STATUS_FOR[error.code] });
         }
         logger.error("Trusted adult decision error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiError("Internal Server Error", 500);
     }
 });

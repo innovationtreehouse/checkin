@@ -6,6 +6,7 @@ import { createShopifyProgramVariants } from "@/lib/shopify";
 import { logBackendError, logger } from "@/lib/logger";
 import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
+import { apiError } from "@/lib/api-response";
 
 // GET is the PUBLIC program catalog — anonymous callers legitimately get the
 // non-draft, non-orgMemberOnly list (asserted by programsAPI.integration.test.ts),
@@ -86,12 +87,12 @@ export async function GET(req: Request) {
         return NextResponse.json(programs);
     } catch (error) {
         await logBackendError(error, "GET /api/programs");
-        return NextResponse.json({ error: "Failed to fetch programs" }, { status: 500 });
+        return apiError("Failed to fetch programs", 500);
     }
 }
 
 export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req, auth) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
 
     // Hoisted so the catch can name an orphaned Shopify product (created, but DB write failed) for manual cleanup.
     let shopifyData: { shopifyProductId: string, shopifyOrgMemberVariantId: string | null, shopifyNonOrgMemberVariantId: string | null } | null = null;
@@ -101,11 +102,11 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         const { name, leadMentorId, startAt, endAt, orgMemberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
 
         if (!name) {
-            return NextResponse.json({ error: "Program name is required" }, { status: 400 });
+            return apiError("Program name is required", 400);
         }
 
         if (!leadMentorId) {
-            return NextResponse.json({ error: "Lead Mentor is required" }, { status: 400 });
+            return apiError("Lead Mentor is required", 400);
         }
 
         // Client sends a raw dollar string; tolerate a number too. Convert to cents here.
@@ -162,6 +163,6 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             logger.error("[Shopify] Orphaned product after program DB write failed, manual cleanup needed:", shopifyData.shopifyProductId);
         }
         await logBackendError(error, "POST /api/programs");
-        return NextResponse.json({ error: "Failed to create program" }, { status: 500 });
+        return apiError("Failed to create program", 500);
     }
 });

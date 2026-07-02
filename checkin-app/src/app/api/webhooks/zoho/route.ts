@@ -4,6 +4,7 @@ import { config } from "@/lib/config";
 import { verifyZohoToken, parseZohoWebhook, ZOHO_WEBHOOK_HEADER } from "@/lib/membership/contract/zoho";
 import { findProcessByEnvelope, markContractSigned } from "@/lib/membership/external";
 import { withWebhook } from "@/lib/webhookAuth";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export const POST = withWebhook({ provider: "zoho", verify: verifyZoho }, async 
     const { requestId, completed } = parseZohoWebhook(body);
     if (!requestId) {
         logger.error("Zoho webhook missing request id.");
-        return NextResponse.json({ error: "Missing request id" }, { status: 400 });
+        return apiError("Missing request id", 400);
     }
 
     // Only act on completed signings; acknowledge other events so Zoho stops retrying.

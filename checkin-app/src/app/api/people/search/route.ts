@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { personRecordIsActiveOrgMember } from "@/lib/orgMembership";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ export const GET = withAuth(
             return NextResponse.json({ people: formatted });
         } catch (error) {
             logger.error("Failed to fetch people:", error);
-            return NextResponse.json({ error: "Failed to fetch people" }, { status: 500 });
+            return apiError("Failed to fetch people", 500);
         }
     }
 );

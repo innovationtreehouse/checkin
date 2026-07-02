@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { apiError } from "@/lib/api-response";
 
 // Mark an integration error resolved / unresolved.
 export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
@@ -10,7 +11,7 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
         const { id } = await params;
         const errorId = parseInt(id, 10);
         if (isNaN(errorId)) {
-            return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+            return apiError("Invalid id", 400);
         }
 
         try {
@@ -22,10 +23,11 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
                 data: { resolvedAt: resolved ? new Date() : null },
             });
 
+            // eslint-disable-next-line no-restricted-syntax -- not an error response: `error` is the updated IntegrationErrorLog record (200). ponytail: rename key to `data` when a client touch is in scope.
             return NextResponse.json({ error: updated });
         } catch (error) {
             logger.error("Failed to update integration error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            return apiError("Internal Server Error", 500);
         }
     }
 );

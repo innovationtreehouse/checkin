@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { addDays, parseISO, isBefore, isEqual, getDay, setHours, setMinutes } from 'date-fns';
 import { fromZonedTime } from 'date-fns-tz';
 import { getAppSettings } from "@/lib/appSettings";
+import { apiError } from "@/lib/api-response";
 
 // List standalone (one-time) events — those with no associated program.
 export const GET = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async () => {
@@ -17,14 +18,14 @@ export const GET = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async ()
 });
 
 export const POST = withAuth({}, async (req, auth) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
 
     try {
         const body = await req.json();
         const { name, description, programId, startDate, startTime, endTime, recurrence } = body;
 
         if (!name || !startDate || !startTime || !endTime) {
-            return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+            return apiError("Missing required fields", 400);
         }
 
         const user = auth.user;
@@ -39,7 +40,7 @@ export const POST = withAuth({}, async (req, auth) => {
         }
 
         if (!isSysAdminOrBoard && !isLeadMentor) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to create events" }, { status: 403 });
+            return apiError("Forbidden: Not authorized to create events", 403);
         }
 
         // Wall-clock times are entered in the org's local timezone; convert to UTC against it.
@@ -57,7 +58,7 @@ export const POST = withAuth({}, async (req, auth) => {
         // Each event (single or recurring) spans one day's wall-clock window, so
         // compare time-of-day once here rather than per-iteration. End must be after start.
         if (endHr * 60 + endMin <= startHr * 60 + startMin) {
-            return NextResponse.json({ error: "Event end time must be after start time" }, { status: 400 });
+            return apiError("Event end time must be after start time", 400);
         }
 
         const eventsToCreate = [];
@@ -111,7 +112,7 @@ export const POST = withAuth({}, async (req, auth) => {
         }
 
         if (eventsToCreate.length === 0) {
-            return NextResponse.json({ error: "No events generated from constraints." }, { status: 400 });
+            return apiError("No events generated from constraints.", 400);
         }
 
         const insertedEvents = await prisma.event.createMany({
@@ -133,6 +134,6 @@ export const POST = withAuth({}, async (req, auth) => {
         return NextResponse.json({ success: true, count: insertedEvents.count });
     } catch (error: unknown) {
         logger.error("Event creation error:", error);
-        return NextResponse.json({ error: "Failed to create event(s)" }, { status: 500 });
+        return apiError("Failed to create event(s)", 500);
     }
 });

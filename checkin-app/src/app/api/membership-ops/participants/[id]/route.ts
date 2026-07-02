@@ -3,19 +3,20 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
+import { apiError } from "@/lib/api-response";
 
 export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
     { roles: ['isSysadmin', 'isBoardMember'] },
     async (request: NextRequest, auth, { params }) => {
     if (auth.type !== 'session') {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return apiError("Unauthorized", 401);
     }
 
     try {
         const resolvedParams = await params;
         const id = parseInt(resolvedParams.id, 10);
         if (isNaN(id)) {
-            return NextResponse.json({ error: "Invalid participant ID" }, { status: 400 });
+            return apiError("Invalid participant ID", 400);
         }
 
         const body = await request.json();
@@ -25,13 +26,13 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
         if (body.email !== undefined) updateData.email = body.email;
         if (body.phone !== undefined) {
             if (body.phone !== "" && body.phone !== null && !isValidPhone(body.phone)) {
-                return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
+                return apiError(PHONE_ERROR, 400);
             }
             updateData.phone = body.phone === "" || body.phone === null ? null : formatPhone(body.phone);
         }
 
         if (Object.keys(updateData).length === 0) {
-            return NextResponse.json({ error: "No fields to update provided" }, { status: 400 });
+            return apiError("No fields to update provided", 400);
         }
 
         const prior = await prisma.person.findUnique({
@@ -71,6 +72,6 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
         return NextResponse.json({ participant: formatted });
     } catch (error) {
         logger.error("Failed to update participant:", error);
-        return NextResponse.json({ error: "Failed to update participant" }, { status: 500 });
+        return apiError("Failed to update participant", 500);
     }
 });

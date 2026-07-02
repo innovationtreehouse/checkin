@@ -3,6 +3,7 @@ import { withAuth } from "@/lib/auth";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
 import { ZOHO_WEBHOOK_HEADER } from "@/lib/membership/contract/zoho";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -17,14 +18,14 @@ export const dynamic = "force-dynamic";
  * 404s whenever the mock isn't active — always in prod.
  */
 export const POST = withAuth({}, async (req, auth) => {
-    if (!config.zohoMockActive()) return NextResponse.json({ error: "Not available" }, { status: 404 });
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!config.zohoMockActive()) return apiError("Not available", 404);
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
 
     const { rid } = await req.json().catch(() => ({ rid: undefined }));
-    if (!rid || typeof rid !== "string") return NextResponse.json({ error: "Missing rid" }, { status: 400 });
+    if (!rid || typeof rid !== "string") return apiError("Missing rid", 400);
 
     const secret = config.zohoWebhookSecret();
-    if (!secret) return NextResponse.json({ error: "No webhook secret" }, { status: 500 });
+    if (!secret) return apiError("No webhook secret", 500);
 
     const res = await fetch(`${config.baseUrl()}/api/webhooks/zoho`, {
         method: "POST",

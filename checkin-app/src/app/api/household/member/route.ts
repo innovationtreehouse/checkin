@@ -7,41 +7,42 @@ import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 import { householdLeadship } from "@/lib/household/leads";
+import { apiError } from "@/lib/api-response";
 
 export const PATCH = withAuth(
     {},
     async (req, auth) => {
         try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            if (auth.type !== 'session') return apiError("Unauthorized", 401);
             const userId = auth.user.id;
 
             const body = await req.json();
             const { participantId, name, email, dob, phone, isLead, over25 } = body;
 
             if (!participantId) {
-                return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
+                return apiError("Participant ID is required", 400);
             }
 
             // Phone is optional for a member, but if supplied it must be valid.
             if (phone !== undefined && phone !== "" && !isValidPhone(phone)) {
-                return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
+                return apiError(PHONE_ERROR, 400);
             }
 
             const hh = await householdLeadship(userId);
 
             if (!hh) {
-                return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
+                return apiError("You must create a household first", 400);
             }
             const householdId = hh.householdId;
 
             // Leads/sysadmins edit anyone; anyone may edit their own record.
             if (!hh.canManage && participantId !== userId) {
-                return NextResponse.json({ error: "Only household leads can edit household members" }, { status: 403 });
+                return apiError("Only household leads can edit household members", 403);
             }
 
             const targetHouseholdMember = await prisma.person.findUnique({ where: { id: participantId } });
             if (!targetHouseholdMember || targetHouseholdMember.householdId !== householdId) {
-                return NextResponse.json({ error: "That household member was not found" }, { status: 404 });
+                return apiError("That household member was not found", 404);
             }
 
             const { updatedHouseholdMember, leadRejection, warning } = await prisma.$transaction(async (tx) => {
@@ -138,10 +139,10 @@ export const PATCH = withAuth(
 
         } catch (error: unknown) {
             if (error instanceof HouseholdLeadLimitError) {
-                return NextResponse.json({ error: error.message }, { status: 400 });
+                return apiError(error.message, 400);
             }
             logger.error("Household Member PATCH Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            return apiError("Internal Server Error", 500);
         }
     }
 );

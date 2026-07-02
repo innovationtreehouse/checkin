@@ -4,6 +4,7 @@ import { handler, forbidden, unauthorized } from "@/security/handler";
 import { Prisma } from '@/generated/prisma/client';
 import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
+import { apiError } from "@/lib/api-response";
 
 // Cert status is PUBLIC BY DESIGN — certifications are physically posted in the
 // shop. This route runs on the @/security handler() runtime so that intent is
@@ -63,7 +64,7 @@ export const GET = handler('GET /api/shop/certifications', async ({ req, auth })
 // certifier (MAY_CERTIFY_OTHERS) authorization runs as before.
 export const POST = withAuth({}, async (req, auth) => {
     if (auth.type !== 'session') {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return apiError("Unauthorized", 401);
     }
     const session = { user: auth.user };
 
@@ -72,12 +73,12 @@ export const POST = withAuth({}, async (req, auth) => {
         const { participantId, toolId, level } = body;
 
         if (!participantId || !toolId || !level) {
-            return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+            return apiError("Missing required fields", 400);
         }
 
         const validLevels = ["BASIC", "DOF", "CERTIFIED", "INSTRUCTOR", "MAY_CERTIFY_OTHERS"];
         if (!validLevels.includes(level)) {
-            return NextResponse.json({ error: "Invalid certification level" }, { status: 400 });
+            return apiError("Invalid certification level", 400);
         }
 
         const currentUserId = session.user.id;
@@ -102,14 +103,14 @@ export const POST = withAuth({}, async (req, auth) => {
         }
 
         if (!hasCertifierPermission) {
-            return NextResponse.json({ error: "Forbidden: You are not authorized to certify users on this tool" }, { status: 403 });
+            return apiError("Forbidden: You are not authorized to certify users on this tool", 403);
         }
 
         // Only sysadmins/board may promote a user to MAY_CERTIFY_OTHERS. A tool
         // certifier can change certification status up to (but not including)
         // MAY_CERTIFY_OTHERS — they cannot mint new certifiers.
         if (level === "MAY_CERTIFY_OTHERS" && !isSysAdminOrBoard) {
-            return NextResponse.json({ error: "Forbidden: Only admins and board members can grant the Certifier level" }, { status: 403 });
+            return apiError("Forbidden: Only admins and board members can grant the Certifier level", 403);
         }
 
         const tId = parseInt(toolId, 10);
@@ -151,6 +152,6 @@ export const POST = withAuth({}, async (req, auth) => {
         return NextResponse.json({ success: true, certification: upsertedCert });
     } catch (error: unknown) {
         await logBackendError(error, "POST /api/shop/certifications");
-        return NextResponse.json({ error: "Failed to upsert certification" }, { status: 500 });
+        return apiError("Failed to upsert certification", 500);
     }
 });

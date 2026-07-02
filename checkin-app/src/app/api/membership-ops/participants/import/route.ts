@@ -7,18 +7,19 @@ import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "
 import { parseImportDob } from "@/lib/importDob";
 import { calculateAge } from "@/lib/time";
 import type { DbClient } from "@/lib/db-client";
+import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req: NextRequest, auth) => {
     try {
         if (auth.type !== 'session') {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            return apiError("Unauthorized", 401);
         }
 
         const formData = await req.formData();
         const file = formData.get("file") as File;
 
         if (!file) {
-            return NextResponse.json({ error: "No file provided" }, { status: 400 });
+            return apiError("No file provided", 400);
         }
 
         const buffer = await file.arrayBuffer();
@@ -30,7 +31,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         const rawData = xlsx.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
 
         if (rawData.length < 2) {
-            return NextResponse.json({ error: "Empty spreadsheet or no data rows found" }, { status: 400 });
+            return apiError("Empty spreadsheet or no data rows found", 400);
         }
 
         const headers = rawData[0].map((h: unknown) => String(h).trim().toLowerCase());
@@ -45,7 +46,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         const sameHouseholdIndex = headers.findIndex(h => h.includes("same household as"));
 
         if (firstNameIndex === -1 || lastNameIndex === -1) {
-            return NextResponse.json({ error: "Missing required 'First Name' or 'Last Name' columns." }, { status: 400 });
+            return apiError("Missing required 'First Name' or 'Last Name' columns.", 400);
         }
 
         let insertedOrUpdatedCount = 0;
@@ -409,9 +410,9 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
     } catch (error: unknown) {
         if (error instanceof HouseholdLeadLimitError) {
-            return NextResponse.json({ error: error.message }, { status: 400 });
+            return apiError(error.message, 400);
         }
         await logBackendError(error, "POST /api/membership-ops/participants/import");
-        return NextResponse.json({ error: `Internal server error` }, { status: 500 });
+        return apiError(`Internal server error`, 500);
     }
 });

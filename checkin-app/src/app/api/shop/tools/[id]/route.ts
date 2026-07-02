@@ -2,16 +2,17 @@ import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
+import { apiError } from "@/lib/api-response";
 
 export const PATCH = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
     async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
 
     const { id } = await params;
     const toolId = parseInt(id, 10);
     if (isNaN(toolId)) {
-        return NextResponse.json({ error: "Invalid tool ID" }, { status: 400 });
+        return apiError("Invalid tool ID", 400);
     }
 
     try {
@@ -40,6 +41,6 @@ export const PATCH = withAuth(
         return NextResponse.json({ success: true, tool });
     } catch (error) {
         await logBackendError(error, "PATCH /api/shop/tools/[id]");
-        return NextResponse.json({ error: "Failed to update tool" }, { status: 500 });
+        return apiError("Failed to update tool", 500);
     }
 });

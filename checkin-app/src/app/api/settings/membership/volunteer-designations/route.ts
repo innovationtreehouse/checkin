@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -17,16 +18,16 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
  * Non-blocking warning if that email already has an ACTIVE, full-price membership.
  */
 export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
     let body: { email?: string };
     try {
         body = await req.json();
     } catch {
-        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+        return apiError("Invalid JSON", 400);
     }
     const email = body.email?.trim().toLowerCase();
     if (!email || !emailRegex.test(email)) {
-        return NextResponse.json({ error: "A valid email is required" }, { status: 400 });
+        return apiError("A valid email is required", 400);
     }
 
     const existing = await prisma.volunteerDesignation.findUnique({ where: { email } });
@@ -50,7 +51,7 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
 /** DELETE — remove a designation. Query: ?id=<n>. */
 export const DELETE = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req) => {
     const id = parseInt(new URL(req.url).searchParams.get("id") || "", 10);
-    if (isNaN(id)) return NextResponse.json({ error: "id is required" }, { status: 400 });
+    if (isNaN(id)) return apiError("id is required", 400);
     await prisma.volunteerDesignation.delete({ where: { id } }).catch(() => null);
     return NextResponse.json({ success: true });
 });

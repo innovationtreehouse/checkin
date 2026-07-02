@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/auth";
 import { handler, notFound, unauthorized } from "@/security/handler";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { isYouth } from "@/lib/time";
+import { apiError } from "@/lib/api-response";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
     if (auth.type !== 'session') throw unauthorized();
@@ -26,7 +27,7 @@ export const PATCH = withAuth(
     {},
     async (req, auth) => {
         try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            if (auth.type !== 'session') return apiError("Unauthorized", 401);
             const userId = auth.user.id;
 
             const me = await prisma.person.findUnique({
@@ -34,14 +35,14 @@ export const PATCH = withAuth(
                 select: { dateOfBirth: true },
             });
             if (isYouth(me?.dateOfBirth)) {
-                return NextResponse.json({ error: "Youth profiles are read-only." }, { status: 403 });
+                return apiError("Youth profiles are read-only.", 403);
             }
 
             const body = await req.json();
             const { name, phone, dob, notificationSettings } = body;
 
             if (phone !== undefined && phone !== "" && !isValidPhone(phone)) {
-                return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
+                return apiError(PHONE_ERROR, 400);
             }
 
             const updatedProfile = await prisma.person.update({
@@ -75,7 +76,7 @@ export const PATCH = withAuth(
 
         } catch (error) {
             logger.error("Profile PATCH Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            return apiError("Internal Server Error", 500);
         }
     }
 );

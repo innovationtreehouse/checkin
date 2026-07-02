@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -19,16 +20,16 @@ export const dynamic = "force-dynamic";
  * 404s whenever the mock isn't active — always in prod.
  */
 export const POST = withAuth({}, async (req, auth) => {
-    if (!config.shopifyMockActive()) return NextResponse.json({ error: "Not available" }, { status: 404 });
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!config.shopifyMockActive()) return apiError("Not available", 404);
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
 
     const { processId } = await req.json().catch(() => ({ processId: undefined }));
     if (typeof processId !== "number" || !Number.isInteger(processId)) {
-        return NextResponse.json({ error: "Missing or invalid processId" }, { status: 400 });
+        return apiError("Missing or invalid processId", 400);
     }
 
     const secret = config.shopifyWebhookSecret();
-    if (!secret) return NextResponse.json({ error: "No webhook secret" }, { status: 500 });
+    if (!secret) return apiError("No webhook secret", 500);
 
     // A real paid order carries the membership variant id in its line_items; the
     // inbound handler matches it against BoardSettings to confirm the order is for
@@ -37,10 +38,7 @@ export const POST = withAuth({}, async (req, auth) => {
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const variantId = settings?.membershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId;
     if (!variantId) {
-        return NextResponse.json(
-            { error: "No membership variant configured. Set one in Settings → Membership first (design §2, O4a)." },
-            { status: 409 },
-        );
+        return apiError("No membership variant configured. Set one in Settings → Membership first (design §2, O4a).", 409);
     }
 
     // Shape mirrors the subset the inbound handler reads: note_attributes (where

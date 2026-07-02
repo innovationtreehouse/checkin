@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, unauthorized } from "@/security/handler";
 import { eligibleReviewProcessIds, attest, ReviewError } from "@/lib/membership/review";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -55,15 +56,15 @@ export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
 // POST /api/membership/reviews — submit an attestation { processId, result, isMarkedVolunteer }.
 // Board members are implicit reviewers (see canReviewBackgroundChecks); attest() re-checks.
 export const POST = withAuth({ roles: ["isBackgroundCheckReviewer", "isBoardMember"] }, async (req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
     let body: { processId?: number; result?: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean };
     try {
         body = await req.json();
     } catch {
-        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+        return apiError("Invalid JSON", 400);
     }
     if (!body.processId || (body.result !== "APPROVE" && body.result !== "REJECT")) {
-        return NextResponse.json({ error: "processId and result (APPROVE|REJECT) are required" }, { status: 400 });
+        return apiError("processId and result (APPROVE|REJECT) are required", 400);
     }
     try {
         const outcome = await attest(auth.user.id, body.processId, { result: body.result, isMarkedVolunteer: body.isMarkedVolunteer });
@@ -73,6 +74,6 @@ export const POST = withAuth({ roles: ["isBackgroundCheckReviewer", "isBoardMemb
             return NextResponse.json({ error: error.message, code: error.code }, { status: STATUS_FOR[error.code] });
         }
         logger.error("Attestation error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiError("Internal Server Error", 500);
     }
 });

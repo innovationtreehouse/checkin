@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { handler } from "@/security/handler";
+import { apiError } from "@/lib/api-response";
 
 export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
     const requests = await prisma.programParticipant.findMany({
@@ -31,7 +32,7 @@ export const POST = withAuth(
             const participantId = parseInt(body.participantId, 10);
 
             if (Number.isNaN(programId) || Number.isNaN(participantId)) {
-                return NextResponse.json({ error: "programId and participantId are required" }, { status: 400 });
+                return apiError("programId and participantId are required", 400);
             }
 
             const data = {
@@ -48,7 +49,7 @@ export const POST = withAuth(
             });
 
             if (count === 0) {
-                return NextResponse.json({ error: "No pending payment-plan request" }, { status: 409 });
+                return apiError("No pending payment-plan request", 409);
             }
 
             if (auth.type === 'session') {
@@ -67,7 +68,7 @@ export const POST = withAuth(
             return NextResponse.json({ success: true });
         } catch (error) {
             logger.error("Failed to approve payment plan:", error);
-            return NextResponse.json({ error: "Failed to approve payment plan" }, { status: 500 });
+            return apiError("Failed to approve payment plan", 500);
         }
     }
 );

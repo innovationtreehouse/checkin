@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { apiError } from "@/lib/api-response";
 
 // Serves the participant roster for the tool-certification grid: id, a display name, and
 // tool certs. The raw email is read only to resolve the name fallback and never leaves the
@@ -69,9 +70,6 @@ export const GET = withAuth(
         return NextResponse.json({ participants, tools });
     } catch (error) {
         logger.error("Certifications fetch error:", error);
-        return NextResponse.json(
-            { error: "Internal Server Error while fetching certifications." },
-            { status: 500 }
-        );
+        return apiError("Internal Server Error while fetching certifications.", 500);
     }
 });

@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
+import { apiError } from "@/lib/api-response";
 
 export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
     const programId = parseInt(params.id, 10);
@@ -92,18 +93,18 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
 // GAP-1: this PATCH previously had no denied check), so a denied lead mentor can
 // no longer edit their program.
 export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const { id } = await ctx.params;
 
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
+            return apiError("Invalid program ID", 400);
         }
 
         const currentProgram = await prisma.program.findUnique({ where: { id: programId } });
         if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
+            return apiError("Program not found", 404);
         }
 
         const user = auth.user;
@@ -111,7 +112,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         const isSysAdminOrBoard = user.isSysadmin || user.isBoardMember;
 
         if (!isLeadMentor && !isSysAdminOrBoard) {
-            return NextResponse.json({ error: "Forbidden: Only Admin, Board Members, or Lead Mentors can edit" }, { status: 403 });
+            return apiError("Forbidden: Only Admin, Board Members, or Lead Mentors can edit", 403);
         }
 
         const body = await req.json();
@@ -120,11 +121,11 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
-                return NextResponse.json({ error: "Lead Mentor is required" }, { status: 400 });
+                return apiError("Lead Mentor is required", 400);
             }
             leadMentorId = parseInt(leadMentorId);
             if (isNaN(leadMentorId)) {
-                return NextResponse.json({ error: "Invalid lead mentor" }, { status: 400 });
+                return apiError("Invalid lead mentor", 400);
             }
         }
 
@@ -163,6 +164,6 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         return NextResponse.json({ success: true, program: updatedProgram });
     } catch (error) {
         logger.error("Program update error:", error);
-        return NextResponse.json({ error: "Failed to update program" }, { status: 500 });
+        return apiError("Failed to update program", 500);
     }
 });

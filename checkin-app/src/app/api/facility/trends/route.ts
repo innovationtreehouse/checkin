@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { getAppSettings } from "@/lib/appSettings";
+import { apiError } from "@/lib/api-response";
 
 type PeriodType = "week" | "month" | "quarter" | "year";
 
@@ -76,7 +77,7 @@ export const GET = withAuth(
             const programId = programIdParam ? parseInt(programIdParam, 10) : null;
 
             if (!["week", "month", "quarter", "year"].includes(period)) {
-                return NextResponse.json({ error: "Invalid period. Use week, month, quarter, or year." }, { status: 400 });
+                return apiError("Invalid period. Use week, month, quarter, or year.", 400);
             }
 
             const { locale } = await getAppSettings();
@@ -190,7 +191,7 @@ export const GET = withAuth(
             return NextResponse.json({ buckets, totals, period });
         } catch (error) {
             logger.error("Trends API error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            return apiError("Internal Server Error", 500);
         }
     }
 );
