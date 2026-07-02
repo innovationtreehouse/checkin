@@ -16,6 +16,8 @@
  */
 
 import prisma from '@/lib/prisma';
+import { config, ORG_DOMAIN } from '@/lib/config';
+import { addHouseholdLead } from '@/lib/household/leads';
 
 // Real ORG_DOMAIN/evaluateMint; settable env predicates so auth-options constructs cleanly
 // (GoogleProvider reads the client env at module load).
@@ -38,19 +40,34 @@ jest.mock('@/lib/config', () => {
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { participant: { findUnique: jest.fn(), update: jest.fn() } },
+    default: {
+        participant: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+        household: { create: jest.fn() },
+        $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prismaMockTx)),
+    },
 }));
+
+jest.mock('@/lib/household/leads', () => ({ addHouseholdLead: jest.fn() }));
 
 // jest.setup.js globally mocks @/lib/auth-options to `{}`; unmock to get the real callbacks.
 jest.unmock('@/lib/auth-options');
 
-import { authOptions } from '@/lib/auth-options';
+import { authOptions, PERSONA_MINT_PROVIDER_ID } from '@/lib/auth-options';
 
 const mockFindUnique = (prisma as unknown as { participant: { findUnique: jest.Mock } })
     .participant.findUnique;
+const mockUpdate = (prisma as unknown as { participant: { update: jest.Mock } })
+    .participant.update;
+const mockCheckinEnv = config.checkinEnv as jest.Mock;
+
+// The transaction client the `$transaction` mock above hands to its callback — same object as
+// `prisma` itself is fine here since createParticipantWithHousehold only touches household/participant.
+const prismaMockTx = prisma as unknown as { household: { create: jest.Mock }; participant: { create: jest.Mock } };
 
 type JwtCallback = NonNullable<NonNullable<typeof authOptions.callbacks>['jwt']>;
 const jwt: JwtCallback = authOptions.callbacks!.jwt!;
+type SessionCallback = NonNullable<NonNullable<typeof authOptions.callbacks>['session']>;
+const session: SessionCallback = authOptions.callbacks!.session!;
 
 // Minimal args the callback ignores on the refresh path (no google/persona provider).
 function callRefresh(token: Record<string, unknown>) {
@@ -166,5 +183,209 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
         expect(result.denied).toBe(false);
         // Google hosted-domain claims captured for the dev gate.
         expect(result.emailVerified).toBe(true);
+    });
+
+    it('promotes a BOOTSTRAP_SYSADMINS email to isSysadmin on sign-in', async () => {
+        const prevEnv = process.env.BOOTSTRAP_SYSADMINS;
+        process.env.BOOTSTRAP_SYSADMINS = 'Boss@Example.com';
+        let freshJwt!: JwtCallback;
+        let freshFindUnique!: jest.Mock;
+        let freshUpdate!: jest.Mock;
+        try {
+            jest.isolateModules(() => {
+                // Fresh module registry so BOOTSTRAP_SYSADMINS is re-read from the env just set above.
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
+                const freshPrisma = (require('@/lib/prisma') as { default: { participant: { findUnique: jest.Mock; update: jest.Mock } } }).default;
+                freshFindUnique = freshPrisma.participant.findUnique;
+                freshUpdate = freshPrisma.participant.update;
+                freshFindUnique.mockResolvedValue(dbParticipant({ isSysadmin: false, email: 'boss@example.com' }));
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
+                freshJwt = (require('@/lib/auth-options') as typeof import('@/lib/auth-options')).authOptions.callbacks!.jwt!;
+            });
+
+            const result = (await freshJwt({
+                token: {},
+                user: { email: 'boss@example.com' },
+                account: { provider: 'google' },
+                profile: { email_verified: true },
+            } as unknown as Parameters<JwtCallback>[0])) as Record<string, unknown>;
+
+            // Env comparison is case-insensitive (BOOTSTRAP_SYSADMINS is lowercased on parse).
+            expect(freshUpdate).toHaveBeenCalledWith({ where: { id: 7 }, data: { isSysadmin: true } });
+            expect(result.isSysadmin).toBe(true);
+        } finally {
+            process.env.BOOTSTRAP_SYSADMINS = prevEnv;
+        }
+    });
+
+    it('does not re-promote a participant already isSysadmin', async () => {
+        mockFindUnique.mockResolvedValue(dbParticipant({ isSysadmin: true }));
+
+        await jwt({
+            token: {},
+            user: { email: 'p@example.com' },
+            account: { provider: 'google' },
+            profile: { email_verified: true },
+        } as unknown as Parameters<JwtCallback>[0]);
+
+        expect(mockUpdate).not.toHaveBeenCalled();
+    });
+});
+
+describe('jwt() callback — persona-mint sign-in branch', () => {
+    it('stamps impersonatedBy + org gate claims when checkinEnv is dev, and skips the participant lookup for a guest mint (no user.email)', async () => {
+        const result = (await jwt({
+            token: {},
+            user: { impersonatedBy: 'real@innovationtreehouse.org' },
+            account: { provider: PERSONA_MINT_PROVIDER_ID },
+            profile: undefined,
+        } as unknown as Parameters<JwtCallback>[0])) as Record<string, unknown>;
+
+        expect(result.impersonatedBy).toBe('real@innovationtreehouse.org');
+        expect(result.hd).toBe(ORG_DOMAIN);
+        expect(result.emailVerified).toBe(true);
+        expect(mockFindUnique).not.toHaveBeenCalled();
+    });
+
+    it('does not carry the dev-instance gate claims when checkinEnv is not dev', async () => {
+        mockCheckinEnv.mockReturnValueOnce('local');
+
+        const result = (await jwt({
+            token: {},
+            user: { impersonatedBy: null },
+            account: { provider: PERSONA_MINT_PROVIDER_ID },
+            profile: undefined,
+        } as unknown as Parameters<JwtCallback>[0])) as Record<string, unknown>;
+
+        expect(result.impersonatedBy).toBeNull();
+        expect(result.hd).toBeUndefined();
+        expect(result.emailVerified).toBeUndefined();
+    });
+});
+
+describe('session() callback', () => {
+    it('copies token claims onto session.user, applying every `?? default` fallback', async () => {
+        const result = await session({
+            session: { user: {}, expires: '2099-01-01' },
+            token: { id: 7 },
+        } as unknown as Parameters<SessionCallback>[0]);
+
+        const user = (result as unknown as { user: Record<string, unknown> }).user;
+        expect(user.id).toBe(7);
+        expect(user.denied).toBe(false);
+        expect(user.householdLead).toBe(false);
+        expect(user.programsLed).toEqual([]);
+        expect(user.toolStatuses).toEqual([]);
+        expect(user.impersonatedBy).toBeNull();
+        expect(user.hd).toBeNull();
+        expect(user.emailVerified).toBe(false);
+    });
+
+    it('prefers explicit token values over the `??` defaults', async () => {
+        const result = await session({
+            session: { user: {}, expires: '2099-01-01' },
+            token: {
+                id: 7,
+                denied: true,
+                householdLead: true,
+                programsLed: [1, 2],
+                toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
+                impersonatedBy: 'real@x.org',
+                hd: ORG_DOMAIN,
+                emailVerified: true,
+            },
+        } as unknown as Parameters<SessionCallback>[0]);
+
+        const user = (result as unknown as { user: Record<string, unknown> }).user;
+        expect(user.denied).toBe(true);
+        expect(user.householdLead).toBe(true);
+        expect(user.programsLed).toEqual([1, 2]);
+        expect(user.impersonatedBy).toBe('real@x.org');
+        expect(user.hd).toBe(ORG_DOMAIN);
+    });
+
+    it('is a no-op when session.user is absent', async () => {
+        const bareSession = { expires: '2099-01-01' };
+        const result = await session({
+            session: bareSession,
+            token: { id: 7 },
+        } as unknown as Parameters<SessionCallback>[0]);
+
+        expect(result).toEqual(bareSession);
+    });
+});
+
+describe('Google provider profile() mapper', () => {
+    it('maps a Google profile onto the NextAuth user shape', () => {
+        // next-auth's GoogleProvider() factory returns its OWN default `.profile` at the top level
+        // and stashes our config (including the real custom `profile`) under `.options` — same
+        // wrapping auth-options-authorize.test.ts already relies on for the persona-mint provider.
+        const google = authOptions.providers.find(
+            (p) => (p as unknown as { id?: string }).id === 'google',
+        ) as unknown as { options: { profile: (p: Record<string, unknown>) => unknown } };
+
+        const mapped = google.options.profile({ sub: 'g-123', name: 'Ann', email: 'ann@x.org', picture: 'http://img/ann.png' });
+
+        expect(mapped).toEqual({
+            id: 'g-123',
+            name: 'Ann',
+            email: 'ann@x.org',
+            image: 'http://img/ann.png',
+            googleId: 'g-123',
+        });
+    });
+});
+
+describe('adapter — createUser / getUser (Participant.id is an Int, NextAuth IDs are strings)', () => {
+    it('getUser: parses a numeric string id and stringifies the result', async () => {
+        mockFindUnique.mockResolvedValue({ id: 7, email: 'p@example.com', name: 'P' });
+
+        const user = await (authOptions.adapter!.getUser as (id: string) => Promise<unknown>)('7');
+
+        expect(mockFindUnique).toHaveBeenCalledWith({ where: { id: 7 } });
+        expect(user).toEqual({ id: '7', email: 'p@example.com', name: 'P' });
+    });
+
+    it('getUser: returns null for a non-numeric id without querying the DB', async () => {
+        const user = await (authOptions.adapter!.getUser as (id: string) => Promise<unknown>)('not-a-number');
+
+        expect(mockFindUnique).not.toHaveBeenCalled();
+        expect(user).toBeNull();
+    });
+
+    it('getUser: returns null when no participant matches', async () => {
+        mockFindUnique.mockResolvedValue(null);
+
+        const user = await (authOptions.adapter!.getUser as (id: string) => Promise<unknown>)('7');
+
+        expect(user).toBeNull();
+    });
+
+    it('createUser: creates a Household + Participant in one transaction, adds the household lead, and stringifies the id', async () => {
+        (prismaMockTx.household.create as jest.Mock).mockResolvedValue({ id: 55 });
+        (prismaMockTx.participant.create as jest.Mock).mockResolvedValue({ id: 9, email: 'new@x.org', name: 'New Person' });
+
+        const created = await (authOptions.adapter!.createUser as (u: Record<string, unknown>) => Promise<unknown>)({
+            name: 'New Person',
+            email: 'new@x.org',
+        });
+
+        expect(prismaMockTx.household.create).toHaveBeenCalledWith({ data: { name: 'New Person' } });
+        expect(prismaMockTx.participant.create).toHaveBeenCalledWith({
+            data: { name: 'New Person', email: 'new@x.org', householdId: 55 },
+        });
+        expect(addHouseholdLead).toHaveBeenCalledWith(expect.anything(), 55, 9);
+        expect(created).toEqual({ id: '9', email: 'new@x.org', name: 'New Person' });
+    });
+
+    it('createUser: defaults email to "" when the participant has none', async () => {
+        (prismaMockTx.household.create as jest.Mock).mockResolvedValue({ id: 56 });
+        (prismaMockTx.participant.create as jest.Mock).mockResolvedValue({ id: 10, email: null, name: 'No Email' });
+
+        const created = await (authOptions.adapter!.createUser as (u: Record<string, unknown>) => Promise<unknown>)({
+            name: 'No Email',
+        });
+
+        expect((created as { email: string }).email).toBe('');
     });
 });

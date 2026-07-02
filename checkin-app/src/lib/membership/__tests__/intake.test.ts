@@ -9,7 +9,8 @@
  * renewal's createRenewalProcess / renewalConcurrency.integration.test.ts intent,
  * but as a mocked-prisma unit test since this worktree has no DB.
  */
-import { startIntake } from '@/lib/membership/intake';
+import { getIntakeState, startIntake, saveIntake, submitIntake, IntakeError } from '@/lib/membership/intake';
+import { Prisma } from '@/generated/prisma/client';
 
 const txMembershipProcess = { findFirst: jest.fn(), create: jest.fn() };
 const txAuditLog = { create: jest.fn() };
@@ -19,14 +20,40 @@ const tx = { $queryRaw: txQueryRaw, membershipProcess: txMembershipProcess, audi
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        participant: { findUnique: jest.fn() },
+        participant: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+        household: { update: jest.fn() },
         membership: { upsert: jest.fn() },
+        membershipProcess: { findFirst: jest.fn(), update: jest.fn() },
+        boardSettings: { findUnique: jest.fn() },
+        auditLog: { create: jest.fn() },
         $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
     },
 }));
 
+jest.mock('@/lib/membership/external', () => ({ getExternalStatus: jest.fn() }));
+jest.mock('@/lib/emergencyContacts/service', () => ({
+    upsertPrimaryContact: jest.fn(),
+    reconcileHouseholdConflicts: jest.fn(),
+}));
+jest.mock('@/lib/household/leads', () => {
+    const actual = jest.requireActual('@/lib/household/leads');
+    return { ...actual, addHouseholdLead: jest.fn() };
+});
+jest.mock('@/lib/membership/renewal', () => ({
+    householdBgIsFresh: jest.fn(),
+    nextBoundary: jest.fn(),
+}));
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const prisma = require('@/lib/prisma').default;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { getExternalStatus } = require('@/lib/membership/external');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { upsertPrimaryContact, reconcileHouseholdConflicts } = require('@/lib/emergencyContacts/service');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } = require('@/lib/household/leads');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { householdBgIsFresh } = require('@/lib/membership/renewal');
 
 const user = {
     id: 1,
@@ -69,5 +96,307 @@ describe('startIntake race guard', () => {
             data: { membershipId: 42, kind: 'INITIAL', status: 'INTAKE' },
         });
         expect(txAuditLog.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('not_lead: caller is not a household lead and not a sysadmin', async () => {
+        prisma.participant.findUnique.mockResolvedValue({ ...user, householdLeads: [] });
+
+        await expect(startIntake(1)).rejects.toMatchObject({ code: 'not_lead' });
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('already_member: household membership is already ACTIVE', async () => {
+        prisma.participant.findUnique.mockResolvedValue({
+            ...user,
+            household: { membership: { status: 'ACTIVE' } },
+        });
+
+        await expect(startIntake(1)).rejects.toMatchObject({ code: 'already_member' });
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('P2002 race loser: the FOR UPDATE lock lost to a pre-fix instance, winner found on re-query', async () => {
+        const winner = { id: 101, membershipId: 42, kind: 'INITIAL', status: 'INTAKE' };
+        const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '7.8.0' });
+        prisma.$transaction.mockRejectedValueOnce(p2002);
+        prisma.membershipProcess.findFirst.mockResolvedValue(winner);
+
+        const result = await startIntake(1);
+
+        expect(result).toBe(winner);
+    });
+
+    it('P2002 race loser: no winner found on re-query rethrows the original error', async () => {
+        const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '7.8.0' });
+        prisma.$transaction.mockRejectedValueOnce(p2002);
+        prisma.membershipProcess.findFirst.mockResolvedValue(null);
+
+        await expect(startIntake(1)).rejects.toBe(p2002);
+    });
+});
+
+describe('getIntakeState', () => {
+    it('no_household: participant not found at all', async () => {
+        prisma.participant.findUnique.mockResolvedValue(null);
+        await expect(getIntakeState(1)).rejects.toBeInstanceOf(IntakeError);
+    });
+
+    it('household missing (hasHousehold=false) → nothing prefilled, no external lookup', async () => {
+        prisma.participant.findUnique.mockResolvedValue({ id: 1, householdId: null, household: null });
+
+        const state = await getIntakeState(1);
+
+        expect(state.hasHousehold).toBe(false);
+        expect(state.membershipStatus).toBeNull();
+        expect(state.process).toBeNull();
+        expect(state.external).toBeNull();
+        expect(getExternalStatus).not.toHaveBeenCalled();
+        expect(state.prefill.household).toBeNull();
+        expect(state.prefill.primaryParent).toBeNull();
+        expect(state.prefill.secondaryParent).toBeNull();
+        expect(state.prefill.children).toEqual([]);
+    });
+
+    it('household with an in-flight process, primary/secondary parents and a child → full prefill + external lookup', async () => {
+        const dob = new Date('2000-01-01T00:00:00Z');
+        prisma.participant.findUnique.mockResolvedValue({
+            id: 1,
+            householdId: 7,
+            household: {
+                name: 'Test Household',
+                line1: '1 Main St', line2: null, city: 'Austin', state: 'TX', postalCode: '78701',
+                leads: [{ participantId: 1 }, { participantId: 2 }],
+                participants: [
+                    { id: 1, name: 'Primary', email: 'p@x.com', dateOfBirth: dob, allergies: null },
+                    { id: 2, name: 'Secondary', email: 's@x.com', dateOfBirth: null, allergies: 'peanuts' },
+                    { id: 3, name: 'Kid', email: null, dateOfBirth: null, allergies: null },
+                ],
+                membership: {
+                    status: 'NONE',
+                    processes: [
+                        { id: 10, kind: 'INITIAL', status: 'ACTIVE' },
+                        { id: 11, kind: 'INITIAL', status: 'INTAKE' },
+                    ],
+                },
+                emergencyContacts: [{ name: 'Aunt', phone: '555-555-2000', email: 'a@x.com' }],
+            },
+        });
+        getExternalStatus.mockResolvedValue({ contractSigned: false, contractStarted: false, bgConsented: false, bgCleared: false, deepLinkUrl: null });
+
+        const state = await getIntakeState(1);
+
+        expect(state.hasHousehold).toBe(true);
+        expect(state.membershipStatus).toBe('NONE');
+        // Highest-id non-ACTIVE process wins over the ACTIVE one.
+        expect(state.process).toEqual({ id: 11, kind: 'INITIAL', status: 'INTAKE' });
+        expect(getExternalStatus).toHaveBeenCalledWith(expect.objectContaining({ id: 11 }));
+        expect(state.prefill.primaryParent?.id).toBe(1);
+        expect(state.prefill.primaryParent?.dob).toBe('2000-01-01');
+        expect(state.prefill.secondaryParent?.id).toBe(2);
+        expect(state.prefill.children).toHaveLength(1);
+        expect(state.prefill.children[0].id).toBe(3);
+        expect(state.prefill.household?.emergencyContactName).toBe('Aunt');
+    });
+
+    it('every process ACTIVE → process is null, no external lookup', async () => {
+        prisma.participant.findUnique.mockResolvedValue({
+            id: 1,
+            householdId: 7,
+            household: {
+                name: 'H', line1: null, line2: null, city: null, state: null, postalCode: null,
+                leads: [{ participantId: 1 }],
+                participants: [{ id: 1, name: 'P', email: null, dateOfBirth: null, allergies: null }],
+                membership: { status: 'ACTIVE', processes: [{ id: 5, kind: 'INITIAL', status: 'ACTIVE' }] },
+                emergencyContacts: [],
+            },
+        });
+
+        const state = await getIntakeState(1);
+
+        expect(state.process).toBeNull();
+        expect(getExternalStatus).not.toHaveBeenCalled();
+    });
+});
+
+describe('saveIntake', () => {
+    const baseUser = {
+        id: 1,
+        householdId: 7,
+        isSysadmin: false,
+        householdLeads: [{ householdId: 7 }],
+        household: {
+            name: 'H',
+            line1: null, line2: null, city: null, state: null, postalCode: null,
+            leads: [{ participantId: 1 }],
+            participants: [{ id: 1 }, { id: 4 }],
+            membership: null,
+            emergencyContacts: [],
+        },
+    };
+
+    beforeEach(() => {
+        prisma.participant.findUnique.mockResolvedValue(baseUser);
+        getExternalStatus.mockResolvedValue(null);
+    });
+
+    it('no_household when the caller has no participant row', async () => {
+        prisma.participant.findUnique.mockResolvedValue(null);
+        await expect(saveIntake(1, {})).rejects.toBeInstanceOf(IntakeError);
+    });
+
+    it('not_lead when the caller is not a household lead', async () => {
+        prisma.participant.findUnique.mockResolvedValue({ ...baseUser, householdLeads: [] });
+        await expect(saveIntake(1, {})).rejects.toMatchObject({ code: 'not_lead' });
+    });
+
+    it('normalized address data updates the household; emergency-contact fields upsert the primary contact', async () => {
+        await saveIntake(1, {
+            household: { line1: ' 1 Main St ', emergencyContactName: 'Aunt May', emergencyContactPhone: '555-555-2000' },
+        });
+
+        expect(prisma.household.update).toHaveBeenCalledWith({ where: { id: 7 }, data: { line1: '1 Main St' } });
+        expect(upsertPrimaryContact).toHaveBeenCalledWith(prisma, 7, {
+            name: 'Aunt May',
+            phone: '555-555-2000',
+            email: undefined,
+        });
+        expect(reconcileHouseholdConflicts).toHaveBeenCalledWith(prisma, 7);
+    });
+
+    it('no address keys and no emergency-contact keys → neither household.update nor upsertPrimaryContact is called', async () => {
+        await saveIntake(1, { household: {} });
+
+        expect(prisma.household.update).not.toHaveBeenCalled();
+        expect(upsertPrimaryContact).not.toHaveBeenCalled();
+    });
+
+    it('updates the primary parent (the caller)', async () => {
+        await saveIntake(1, { primaryParent: { name: 'New Name' } });
+
+        expect(prisma.participant.update).toHaveBeenCalledWith({
+            where: { id: 1 },
+            data: { name: 'New Name' },
+        });
+    });
+
+    it('secondary parent already a household member → update + addLeadOrRecord', async () => {
+        await saveIntake(1, { secondaryParent: { id: 4, name: 'Existing Parent' } });
+
+        expect(prisma.participant.update).toHaveBeenCalledWith({
+            where: { id: 4 },
+            data: { name: 'Existing Parent' },
+        });
+        expect(addHouseholdLead).toHaveBeenCalledWith(prisma, 7, 4);
+    });
+
+    it('secondary parent is new → create + addLeadOrRecord', async () => {
+        prisma.participant.create.mockResolvedValue({ id: 55 });
+
+        await saveIntake(1, { secondaryParent: { name: 'New Parent', email: 'NEW@X.com' } });
+
+        expect(prisma.participant.create).toHaveBeenCalledWith({
+            data: { householdId: 7, name: 'New Parent', email: 'new@x.com', dateOfBirth: null, allergies: null },
+        });
+        expect(addHouseholdLead).toHaveBeenCalledWith(prisma, 7, 55);
+    });
+
+    it('addHouseholdLead hitting the per-household cap is recorded as a rejection, not thrown', async () => {
+        addHouseholdLead.mockRejectedValue(new HouseholdLeadLimitError(7));
+
+        const result = await saveIntake(1, { secondaryParent: { id: 4, name: 'Existing Parent' } });
+
+        expect(result.rejections).toEqual([
+            {
+                section: 'secondaryParent',
+                code: 'lead_limit',
+                message: expect.stringContaining(String(MAX_HOUSEHOLD_LEADS)),
+            },
+        ]);
+    });
+
+    it('child already a household member → update; a new named child → create', async () => {
+        prisma.participant.create.mockResolvedValue({ id: 56 });
+
+        await saveIntake(1, {
+            children: [
+                { id: 4, name: 'Existing Kid' },
+                { name: 'New Kid' },
+            ],
+        });
+
+        expect(prisma.participant.update).toHaveBeenCalledWith({
+            where: { id: 4 },
+            data: { name: 'Existing Kid' },
+        });
+        expect(prisma.participant.create).toHaveBeenCalledWith({
+            data: { householdId: 7, name: 'New Kid', dateOfBirth: null, allergies: null },
+        });
+    });
+});
+
+describe('submitIntake', () => {
+    const inFlightUser = {
+        id: 1,
+        householdId: 7,
+        isSysadmin: false,
+        householdLeads: [{ householdId: 7 }],
+        household: {
+            id: 7,
+            line1: '1 Main St',
+            emergencyContacts: [{ conflictParticipantId: null, name: 'Aunt May', phone: '555-555-2000' }],
+            participants: [{ id: 1, name: 'Primary' }],
+            membership: { processes: [{ id: 11, kind: 'INITIAL', status: 'INTAKE' }] },
+        },
+    };
+
+    beforeEach(() => {
+        prisma.participant.findUnique.mockResolvedValue(inFlightUser);
+        prisma.boardSettings.findUnique.mockResolvedValue(null);
+        prisma.membershipProcess.update.mockResolvedValue({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
+    });
+
+    it('no_process when there is no INTAKE-status INITIAL process', async () => {
+        prisma.participant.findUnique.mockResolvedValue({
+            ...inFlightUser,
+            household: { ...inFlightUser.household, membership: { processes: [] } },
+        });
+
+        await expect(submitIntake(1)).rejects.toMatchObject({ code: 'no_process' });
+    });
+
+    it('incomplete: missing address and missing valid emergency contact are both reported', async () => {
+        prisma.participant.findUnique.mockResolvedValue({
+            ...inFlightUser,
+            household: { ...inFlightUser.household, line1: null, emergencyContacts: [] },
+        });
+
+        await expect(submitIntake(1)).rejects.toMatchObject({
+            code: 'incomplete',
+            fields: expect.arrayContaining(['address', 'emergencyContact']),
+        });
+    });
+
+    it('complete + bgFresh=false → no bgClearedAt stamp', async () => {
+        householdBgIsFresh.mockResolvedValue(false);
+
+        await submitIntake(1);
+
+        expect(prisma.membershipProcess.update).toHaveBeenCalledWith({
+            where: { id: 11 },
+            data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
+        });
+    });
+
+    it('complete + bgFresh=true → stamps bgClearedAt and advances to PENDING_EXTERNAL_ACTION', async () => {
+        householdBgIsFresh.mockResolvedValue(true);
+
+        const result = await submitIntake(1);
+
+        expect(prisma.membershipProcess.update).toHaveBeenCalledWith({
+            where: { id: 11 },
+            data: expect.objectContaining({ status: 'PENDING_EXTERNAL_ACTION', bgClearedAt: expect.any(Date) }),
+        });
+        expect(prisma.auditLog.create).toHaveBeenCalled();
+        expect(result).toEqual({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
     });
 });
