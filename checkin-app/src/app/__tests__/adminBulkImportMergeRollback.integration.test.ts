@@ -32,7 +32,7 @@ describe('Bulk import merge rollback', () => {
 
     const cleanup = async () => {
         try {
-            await prisma.trustedAdult.deleteMany({ where: { counterpartyName: 'Grandma Mergeroll' } });
+            await prisma.trustedAdult.deleteMany({ where: { trustedAdultName: 'Grandma Mergeroll' } });
             await prisma.membership.deleteMany({});
             await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({ where: { email: { contains: 'mergeroll-test' } } });
@@ -66,8 +66,8 @@ describe('Bulk import merge rollback', () => {
         await prisma.trustedAdult.create({
             data: {
                 householdId: sourceHouseholdId,
-                counterpartyName: 'Grandma Mergeroll',
-                counterpartyPhone: '555-0100',
+                trustedAdultName: 'Grandma Mergeroll',
+                trustedAdultPhone: '555-0100',
                 familyContext: 'Can pick up the kids.',
                 disclosedById: testAdminId,
             }

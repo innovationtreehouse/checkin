@@ -175,7 +175,7 @@ defineRoute({
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: 'trustedAdults',
     // Bag: { TrustedAdult } with household (Household → leads HouseholdLead →
-    // participant Person), counterparty (Person), reviews (TrustedAdultReview).
+    // participant Person), trustedAdultPerson (Person), reviews (TrustedAdultReview).
     returns: ['TrustedAdult', 'Household', 'HouseholdLead', 'Person', 'TrustedAdultReview'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],

@@ -13,9 +13,9 @@ interface Review {
 interface TrustedAdult {
     id: number;
     householdId: number;
-    counterpartyName: string | null;
-    counterpartyPhone: string | null;
-    counterpartyEmail: string | null;
+    trustedAdultName: string | null;
+    trustedAdultPhone: string | null;
+    trustedAdultEmail: string | null;
     household: { id: number; name: string | null } | null;
     reviews: Review[];
 }
@@ -62,10 +62,10 @@ export default function TrustedAdultPickupPage() {
                 return (
                     <Card key={ta.id} withBorder radius="md" padding="sm">
                         <Group gap="xs">
-                            <Text fw={600} size="sm">{ta.counterpartyName || "Trusted adult"}</Text>
+                            <Text fw={600} size="sm">{ta.trustedAdultName || "Trusted adult"}</Text>
                             <Text c="dimmed" size="sm">for {ta.household?.name || `Household ${ta.householdId}`}</Text>
                         </Group>
-                        <TrustedAdultContact phone={ta.counterpartyPhone} email={ta.counterpartyEmail} />
+                        <TrustedAdultContact phone={ta.trustedAdultPhone} email={ta.trustedAdultEmail} />
                         {latest?.sharedNote && <Text size="sm" mt={4}>{latest.sharedNote}</Text>}
                         {latest?.reviewBy && (
                             <Text size="xs" c="dimmed" mt={2}>Approved through {latest.reviewBy.slice(0, 10)}</Text>

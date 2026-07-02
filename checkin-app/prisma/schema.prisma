@@ -121,7 +121,7 @@ model Person {
   visits              Visit[]
   eventsConfirmedBy   Event[]                      @relation("EventAttendanceConfirmer")
 
-  trustedAdultsAsCounterparty TrustedAdult[]       @relation("TrustedAdultCounterparty")
+  trustedAdultRecordsAsAdult TrustedAdult[]       @relation("TrustedAdultPerson")
   trustedAdultsDisclosed      TrustedAdult[]       @relation("TrustedAdultDiscloser")
   trustedAdultReviewsDecided  TrustedAdultReview[] @relation("TrustedAdultDecider")
 }
@@ -450,6 +450,25 @@ model AppSettings {
 /// the org. The durable relationship facts live here, entered once; each annual
 /// review cycle is a TrustedAdultReview row (like Membership/MembershipProcess), so
 /// a renewal reuses the facts without re-entry.
+///
+/// NAMING GLOSSARY (one entity, several names — read before renaming; audit P2-2).
+/// This model is the *authorization record*, NOT a person. It involves two people:
+///   - `disclosedBy`       — the SUBJECT: the Person who entered the disclosure.
+///   - `trustedAdult*`     — the ADULT being trusted: their name/phone/email
+///                           (`trustedAdultName/Phone/Email`) and their optional
+///                           Person link (`trustedAdultPerson` / `trustedAdultPersonId`).
+///                           Historically called the "counterparty" (the adult on the
+///                           other side of the disclosed relationship); that word now
+///                           survives only in explanatory prose, not as an identifier.
+/// Synonyms for the SAME concept across layers, so a reviewer isn't misled:
+///   - Model / DB / relations ............ `TrustedAdult` (this record)
+///   - Adult's fields on the record ...... `trustedAdult*` (P2-2 A1+A2, done)
+///   - Policy prose ...................... "dual relationship"
+///   - Member/board UI label ............. "Trusted Adult"
+///   - Operational (front-desk) UI label . "Pickup"
+/// NOT a synonym: "guardian"/"guardianship" here mean a household lead/parent or a
+/// relationship *type*, never this entity. `familyContext` (below) is a distinct
+/// attribute — the board-facing explanation — not another name for the record.
 model TrustedAdult {
   /// @sensitivity:public
   id                        Int                @id @default(autoincrement())
@@ -458,19 +477,19 @@ model TrustedAdult {
   /// @sensitivity:public
   householdId               Int
   household                 Household          @relation(fields: [householdId], references: [id])
-  /// The trusted adult, if they are also a participant in the system.
+  /// The trusted adult, if they are also a Person in the system.
   /// @sensitivity:public
-  counterpartyParticipantId Int?
-  counterparty              Person?       @relation("TrustedAdultCounterparty", fields: [counterpartyParticipantId], references: [id])
+  trustedAdultPersonId Int?
+  trustedAdultPerson        Person?       @relation("TrustedAdultPerson", fields: [trustedAdultPersonId], references: [id])
   /// @sensitivity:personal
-  counterpartyName          String
+  trustedAdultName          String
   /// The trusted adult's phone and/or email. At least one is required (enforced
   /// in the app, not the DB, since "at least one of two nullable columns" has no
   /// clean SQL constraint). Both may be present.
   /// @sensitivity:personal
-  counterpartyPhone         String?
+  trustedAdultPhone         String?
   /// @sensitivity:personal
-  counterpartyEmail         String?
+  trustedAdultEmail         String?
   /// The family's explanation for the BOARD — what this adult may or may not do,
   /// restrictions, safeguarding context. Board + the household's own leads only
   /// (pii tier is the board/family band here; program leads & keyholders never

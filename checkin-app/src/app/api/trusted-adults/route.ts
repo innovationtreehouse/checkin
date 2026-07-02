@@ -16,10 +16,10 @@ const STATUS_FOR: Record<TrustedAdultError["code"], number> = {
 
 interface Body {
     householdId?: number;
-    counterpartyParticipantId?: number | null;
-    counterpartyName?: string;
-    counterpartyPhone?: string;
-    counterpartyEmail?: string;
+    trustedAdultPersonId?: number | null;
+    trustedAdultName?: string;
+    trustedAdultPhone?: string;
+    trustedAdultEmail?: string;
     familyContext?: string;
 }
 
@@ -37,8 +37,8 @@ export const POST = withAuth({ allowKiosk: true }, async (req, auth) => {
     } catch {
         return apiError("Invalid JSON", 400);
     }
-    if (!body.counterpartyName || !body.familyContext) {
-        return apiError("counterpartyName and familyContext are required", 400);
+    if (!body.trustedAdultName || !body.familyContext) {
+        return apiError("trustedAdultName and familyContext are required", 400);
     }
 
     let householdId: number | undefined;
@@ -68,10 +68,10 @@ export const POST = withAuth({ allowKiosk: true }, async (req, auth) => {
     try {
         const ta = await createTrustedAdult({
             householdId: householdId!,
-            counterpartyParticipantId: body.counterpartyParticipantId ?? null,
-            counterpartyName: body.counterpartyName,
-            counterpartyPhone: body.counterpartyPhone,
-            counterpartyEmail: body.counterpartyEmail,
+            trustedAdultPersonId: body.trustedAdultPersonId ?? null,
+            trustedAdultName: body.trustedAdultName,
+            trustedAdultPhone: body.trustedAdultPhone,
+            trustedAdultEmail: body.trustedAdultEmail,
             familyContext: body.familyContext,
             origin,
             disclosedById,

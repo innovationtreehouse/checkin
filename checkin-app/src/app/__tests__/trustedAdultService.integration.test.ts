@@ -82,8 +82,8 @@ describe('Trusted Adults service', () => {
     async function discloseOne() {
         return createTrustedAdult({
             householdId,
-            counterpartyName: 'Jane External',
-            counterpartyEmail: 'jane@example.com',
+            trustedAdultName: 'Jane External',
+            trustedAdultEmail: 'jane@example.com',
             familyContext: 'Our nanny; may collect the kids on weekdays.',
             disclosedById: leadId,
         });
@@ -105,16 +105,16 @@ describe('Trusted Adults service', () => {
 
     it('rejects a disclosure missing name, contact, or family context', async () => {
         await expect(
-            createTrustedAdult({ householdId, counterpartyName: '', counterpartyEmail: 'x@y.com', familyContext: 'x', disclosedById: leadId }),
+            createTrustedAdult({ householdId, trustedAdultName: '', trustedAdultEmail: 'x@y.com', familyContext: 'x', disclosedById: leadId }),
         ).rejects.toMatchObject({ code: 'bad_input' });
         await expect( // neither phone nor email
-            createTrustedAdult({ householdId, counterpartyName: 'x', familyContext: 'x', disclosedById: leadId }),
+            createTrustedAdult({ householdId, trustedAdultName: 'x', familyContext: 'x', disclosedById: leadId }),
         ).rejects.toMatchObject({ code: 'bad_input' });
         await expect( // malformed email
-            createTrustedAdult({ householdId, counterpartyName: 'x', counterpartyEmail: 'nope', familyContext: 'x', disclosedById: leadId }),
+            createTrustedAdult({ householdId, trustedAdultName: 'x', trustedAdultEmail: 'nope', familyContext: 'x', disclosedById: leadId }),
         ).rejects.toMatchObject({ code: 'bad_input' });
         await expect(
-            createTrustedAdult({ householdId, counterpartyName: 'x', counterpartyEmail: 'x@y.com', familyContext: '', disclosedById: leadId }),
+            createTrustedAdult({ householdId, trustedAdultName: 'x', trustedAdultEmail: 'x@y.com', familyContext: '', disclosedById: leadId }),
         ).rejects.toMatchObject({ code: 'bad_input' });
     });
 
@@ -145,9 +145,9 @@ describe('Trusted Adults service', () => {
         // even though they live in a different household.
         const selfTa = await createTrustedAdult({
             householdId,
-            counterpartyParticipantId: boardId,
-            counterpartyName: 'Boardie',
-            counterpartyEmail: 'boardie@example.com',
+            trustedAdultPersonId: boardId,
+            trustedAdultName: 'Boardie',
+            trustedAdultEmail: 'boardie@example.com',
             familyContext: 'A board member who is also our trusted adult.',
             disclosedById: leadId,
         });
@@ -405,8 +405,8 @@ describe('runExpirySweep edge cases', () => {
         const ta = await prisma.trustedAdult.create({
             data: {
                 householdId,
-                counterpartyName: `Sweep ${SWEEP_TAG}`,
-                counterpartyEmail: 'sweep@example.com',
+                trustedAdultName: `Sweep ${SWEEP_TAG}`,
+                trustedAdultEmail: 'sweep@example.com',
                 familyContext: 'ctx',
                 disclosedById: leadId,
             },

@@ -42,9 +42,9 @@ export const GET = handler("GET /api/trusted-adults/operational", async ({ auth 
         select: {
             id: true,
             householdId: true,
-            counterpartyName: true,
-            counterpartyPhone: true,
-            counterpartyEmail: true,
+            trustedAdultName: true,
+            trustedAdultPhone: true,
+            trustedAdultEmail: true,
             household: { select: { id: true, name: true } },
             reviews: {
                 where: { status: "APPROVED" },

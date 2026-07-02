@@ -17,10 +17,10 @@ export const GET = handler("GET /api/trusted-adults/mine", async ({ auth }) => {
         select: {
             id: true,
             householdId: true,
-            counterpartyParticipantId: true,
-            counterpartyName: true,
-            counterpartyPhone: true,
-            counterpartyEmail: true,
+            trustedAdultPersonId: true,
+            trustedAdultName: true,
+            trustedAdultPhone: true,
+            trustedAdultEmail: true,
             familyContext: true,
             createdAt: true,
             reviews: {

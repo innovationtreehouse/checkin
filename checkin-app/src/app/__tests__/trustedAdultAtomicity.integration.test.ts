@@ -91,8 +91,8 @@ describe('Trusted Adults — mutation + audit are atomic', () => {
     async function discloseOne() {
         return createTrustedAdult({
             householdId,
-            counterpartyName: 'Jane External',
-            counterpartyEmail: 'jane@example.com',
+            trustedAdultName: 'Jane External',
+            trustedAdultEmail: 'jane@example.com',
             familyContext: 'Our nanny; may collect the kids on weekdays.',
             disclosedById: leadId,
         });

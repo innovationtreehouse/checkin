@@ -18,15 +18,15 @@ export const GET = handler("GET /api/safety/trusted-adults", async () => {
         select: {
             id: true,
             householdId: true,
-            counterpartyParticipantId: true,
-            counterpartyName: true,
-            counterpartyPhone: true,
-            counterpartyEmail: true,
+            trustedAdultPersonId: true,
+            trustedAdultName: true,
+            trustedAdultPhone: true,
+            trustedAdultEmail: true,
             familyContext: true,
             origin: true,
             createdAt: true,
             household: { select: { id: true, name: true, leads: { select: { person: { select: { id: true, name: true, email: true } } } } } },
-            counterparty: { select: { id: true, name: true, email: true } },
+            trustedAdultPerson: { select: { id: true, name: true, email: true } },
             reviews: {
                 orderBy: { id: "desc" },
                 select: {

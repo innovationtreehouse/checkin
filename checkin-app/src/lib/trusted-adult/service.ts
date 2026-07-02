@@ -66,10 +66,10 @@ function daysFromNow(base: Date, days: number): Date {
 
 export interface CreateInput {
     householdId: number;
-    counterpartyParticipantId?: number | null;
-    counterpartyName: string;
-    counterpartyPhone?: string | null;
-    counterpartyEmail?: string | null;
+    trustedAdultPersonId?: number | null;
+    trustedAdultName: string;
+    trustedAdultPhone?: string | null;
+    trustedAdultEmail?: string | null;
     /** The family's board-facing explanation of what the adult may/may not do. */
     familyContext: string;
     origin?: "SELF_DISCLOSED" | "STAFF_ENTERED";
@@ -82,10 +82,10 @@ export interface CreateInput {
  * family's board-facing context are all required.
  */
 export async function createTrustedAdult(input: CreateInput) {
-    if (!input.counterpartyName?.trim()) {
+    if (!input.trustedAdultName?.trim()) {
         throw new TrustedAdultError("bad_input", "The trusted adult's name is required.");
     }
-    const contact = validateContact({ phone: input.counterpartyPhone, email: input.counterpartyEmail });
+    const contact = validateContact({ phone: input.trustedAdultPhone, email: input.trustedAdultEmail });
     if ("error" in contact) {
         throw new TrustedAdultError("bad_input", contact.error);
     }
@@ -100,10 +100,10 @@ export async function createTrustedAdult(input: CreateInput) {
         const created = await tx.trustedAdult.create({
             data: {
                 householdId: input.householdId,
-                counterpartyParticipantId: input.counterpartyParticipantId ?? null,
-                counterpartyName: input.counterpartyName.trim(),
-                counterpartyPhone: contact.phone,
-                counterpartyEmail: contact.email,
+                trustedAdultPersonId: input.trustedAdultPersonId ?? null,
+                trustedAdultName: input.trustedAdultName.trim(),
+                trustedAdultPhone: contact.phone,
+                trustedAdultEmail: contact.email,
                 familyContext: input.familyContext.trim(),
                 origin: input.origin ?? "SELF_DISCLOSED",
                 disclosedById: input.disclosedById || SYSTEM_ACTOR,
@@ -197,7 +197,7 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
         where: { id: reviewId },
         select: {
             trustedAdultId: true,
-            trustedAdult: { select: { householdId: true, counterpartyParticipantId: true } },
+            trustedAdult: { select: { householdId: true, trustedAdultPersonId: true } },
         },
     });
     if (!head) throw new TrustedAdultError("not_found", "Review not found.");
@@ -211,7 +211,7 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
             actorParticipantId: boardMemberId,
             actorHouseholdId: me?.householdId,
             taHouseholdId: head.trustedAdult.householdId,
-            taCounterpartyParticipantId: head.trustedAdult.counterpartyParticipantId,
+            taTrustedAdultPersonId: head.trustedAdult.trustedAdultPersonId,
         })
     ) {
         throw new TrustedAdultError("forbidden", "You can't decide your own household's trusted-adult review — another board member must.");
@@ -279,7 +279,7 @@ export async function overrideReview(
 ) {
     const review = await prisma.trustedAdultReview.findUnique({
         where: { id: reviewId },
-        include: { trustedAdult: { select: { householdId: true, counterpartyParticipantId: true } } },
+        include: { trustedAdult: { select: { householdId: true, trustedAdultPersonId: true } } },
     });
     if (!review) throw new TrustedAdultError("not_found", "Review not found.");
 
@@ -290,7 +290,7 @@ export async function overrideReview(
                 actorParticipantId: actorId,
                 actorHouseholdId: me?.householdId,
                 taHouseholdId: review.trustedAdult.householdId,
-                taCounterpartyParticipantId: review.trustedAdult.counterpartyParticipantId,
+                taTrustedAdultPersonId: review.trustedAdult.trustedAdultPersonId,
             })
         ) {
             throw new TrustedAdultError("forbidden", "You can't override your own household's trusted-adult review — a sysadmin must.");
