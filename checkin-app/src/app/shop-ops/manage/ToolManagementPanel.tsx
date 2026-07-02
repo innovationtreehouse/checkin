@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRequireRole } from '@/hooks/useRequireRole';
 import {
   Alert, Anchor, Button, Card, Center, Collapse, Group, Loader,
   Modal, Select, Stack, Table, Tabs, Text, TextInput,
@@ -493,8 +492,7 @@ function AllTab({ tools }: { tools: Tool[] }) {
 // ---- Embeddable panel (no outer Container/header) ----
 
 export function ToolManagementPanel() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
+  const { user, loading: authLoading, ready } = useRequireRole([]);
   const hasFetched = useRef(false);
 
   const [tab, setTab] = useState<Tab>('tools');
@@ -503,8 +501,7 @@ export function ToolManagementPanel() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (status === "unauthenticated") router.push('/');
-    else if (status === "authenticated" && !hasFetched.current) {
+    if (ready && !hasFetched.current) {
       hasFetched.current = true;
       Promise.all([
         fetch('/api/shop/tools').then(r => r.ok ? r.json() : []),
@@ -514,18 +511,20 @@ export function ToolManagementPanel() {
         setMembers(memberData.members ?? []);
       }).finally(() => setLoading(false));
     }
-  }, [status, router]);
+  }, [ready]);
 
-  if (loading || status === "loading") {
+  if (loading || authLoading) {
     return <Center mih="40vh"><Loader /></Center>;
   }
 
-  const isSysadmin = session?.user?.isSysadmin;
-  const isBoardMember = session?.user?.isBoardMember;
+  // Role gate stays inline: this renders a Forbidden alert (not a redirect),
+  // so useRequireRole can only own the generic sign-in gate above.
+  const isSysadmin = user?.isSysadmin;
+  const isBoardMember = user?.isBoardMember;
   const isAdmin = isSysadmin || isBoardMember;
 
-  const isKeyholder = session?.user?.isKeyholder;
-  const hasCertifierAuth = (session?.user?.toolStatuses ?? []).some((ts: { level?: string }) => ts.level === 'MAY_CERTIFY_OTHERS');
+  const isKeyholder = user?.isKeyholder;
+  const hasCertifierAuth = (user?.toolStatuses ?? []).some((ts: { level?: string }) => ts.level === 'MAY_CERTIFY_OTHERS');
   const isCertifier = isSysadmin || isBoardMember || hasCertifierAuth;
   const canSeeAll = isCertifier || isKeyholder;
 

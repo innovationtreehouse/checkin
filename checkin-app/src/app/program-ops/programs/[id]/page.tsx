@@ -1,14 +1,15 @@
 "use client";
 
 import { use, useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useRequireRole } from '@/hooks/useRequireRole';
 import Link from 'next/link';
 import {
   Alert, Anchor, Badge, Box, Button, Card, Center, Checkbox, Container, Divider, Group,
-  Loader, NumberInput, Paper, Select, SimpleGrid, Stack, Table, Tabs, Text, TextInput, Title,
+  Loader, NumberInput, Select, SimpleGrid, Stack, Table, Tabs, Text, TextInput, Title,
 } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
+import { EntityPicker } from '@/components/admin/EntityPicker';
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 import { formatDateTime, calculateAge } from '@/lib/time';
 import { formatPhone } from '@/lib/phone';
@@ -56,7 +57,7 @@ const PHASE_BADGE: Record<string, { label: string; color: string }> = {
 
 export default function ProgramDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: session, status } = useSession();
+  const { user: sessionUser, loading: authLoading, ready } = useRequireRole([]);
   const router = useRouter();
 
   const [program, setProgram] = useState<ProgramDetail | null>(null);
@@ -77,18 +78,11 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   const [newVolId, setNewVolId] = useState("");
   const [newPartId, setNewPartId] = useState("");
 
-  const [volSearch, setVolSearch] = useState("");
-  const [volResults, setVolResults] = useState<ParticipantOption[]>([]);
-  const [volSearching, setVolSearching] = useState(false);
-
+  // EntityPicker owns the transient query/results/loading; we keep only the selected id + its display label.
+  const [volLabel, setVolLabel] = useState("");
   const [mentorSearch, setMentorSearch] = useState("");
-  const [mentorResults, setMentorResults] = useState<ParticipantOption[]>([]);
-  const [mentorSearching, setMentorSearching] = useState(false);
   const [isEditingMentor, setIsEditingMentor] = useState(false);
-
-  const [partSearch, setPartSearch] = useState("");
-  const [partResults, setPartResults] = useState<ParticipantOption[]>([]);
-  const [partSearching, setPartSearching] = useState(false);
+  const [partLabel, setPartLabel] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -128,69 +122,24 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   }, [id]);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
-      fetchProgram();
-    }
-  }, [status, router, fetchProgram]);
+    if (ready) fetchProgram();
+  }, [ready, fetchProgram]);
 
-  const searchParticipants = useCallback(async (
-    query: string,
-    setResults: React.Dispatch<React.SetStateAction<ParticipantOption[]>>,
-    setLocalLoading: React.Dispatch<React.SetStateAction<boolean>>
-  ) => {
-    if (!query.trim()) { setResults([]); return; }
-    setLocalLoading(true);
-    try {
-      const res = await fetch(`/api/programs/${id}/eligible-participants?q=${encodeURIComponent(query)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setResults(data.members || []);
-      }
-    } finally {
-      setLocalLoading(false);
-    }
+  // Volunteer + participant pickers both search this program's eligible members.
+  const searchEligible = useCallback(async (query: string): Promise<ParticipantOption[]> => {
+    const res = await fetch(`/api/programs/${id}/eligible-participants?q=${encodeURIComponent(query)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.members || [];
   }, [id]);
 
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (volSearch && !newVolId) searchParticipants(volSearch, setVolResults, setVolSearching);
-      else if (!volSearch) setVolResults([]);
-    }, 300);
-    return () => clearTimeout(timeoutId);
-  }, [volSearch, newVolId, searchParticipants]);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (mentorSearch && !leadMentorIdInput) {
-        const searchMentors = async () => {
-          setMentorSearching(true);
-          try {
-            const res = await fetch(`/api/participants/search?q=${encodeURIComponent(mentorSearch)}&filter=adults`);
-            if (res.ok) {
-              const data = await res.json();
-              setMentorResults(data.participants || []);
-            }
-          } finally {
-            setMentorSearching(false);
-          }
-        };
-        searchMentors();
-      } else if (!mentorSearch) {
-        setMentorResults([]);
-      }
-    }, 300);
-    return () => clearTimeout(timeoutId);
-  }, [mentorSearch, leadMentorIdInput]);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (partSearch && !newPartId) searchParticipants(partSearch, setPartResults, setPartSearching);
-      else if (!partSearch) setPartResults([]);
-    }, 300);
-    return () => clearTimeout(timeoutId);
-  }, [partSearch, newPartId, searchParticipants]);
+  // Lead-mentor picker searches adult members.
+  const searchAdults = useCallback(async (query: string): Promise<ParticipantOption[]> => {
+    const res = await fetch(`/api/participants/search?q=${encodeURIComponent(query)}&filter=adults`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.participants || [];
+  }, []);
 
   const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -236,7 +185,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participantId: parseInt(newVolId) })
       });
-      if (res.ok) { setNewVolId(""); setVolSearch(""); fetchProgram(); }
+      if (res.ok) { setNewVolId(""); setVolLabel(""); fetchProgram(); }
     } finally {
       setSaving(false);
     }
@@ -264,7 +213,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     e.preventDefault();
     if (!newPartId) return;
 
-    const u = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
+    const u = sessionUser as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
     if (u?.isSysadmin || u?.isBoardMember) {
       if (!confirm("Warning: Adding a participant manually bypasses all payment requirements. Are you sure you wish to proceed?")) return;
     }
@@ -276,7 +225,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participantId: parseInt(newPartId), override: true })
       });
-      if (res.ok) { setNewPartId(""); setPartResults([]); setPartSearch(""); fetchProgram(); }
+      if (res.ok) { setNewPartId(""); setPartLabel(""); fetchProgram(); }
       else {
         const data = await res.json();
         setMessage(data.error || "Failed to enroll participant.");
@@ -294,11 +243,13 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     } catch { }
   };
 
-  if (loading || status === "loading") {
+  if (loading || authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session || !program) return (
+  if (!ready) return null;
+
+  if (!program) return (
     <Container size="sm" py="xl">
       <Card withBorder radius="md" padding="xl" ta="center">
         <Title order={3}>{message || "Not Found"}</Title>
@@ -307,7 +258,9 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     </Container>
   );
 
-  const user = session.user as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
+  // Ownership gate stays inline — it needs the loaded program (lead-mentor id)
+  // to decide, which useRequireRole (a static role gate) can't express.
+  const user = sessionUser as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
   const isAuthorized = program.leadMentorId === user?.id || user?.isSysadmin || user?.isBoardMember;
   const activeParticipants = program.participants.filter(p => p.status === 'ACTIVE');
   const pendingParticipants = program.participants.filter(p => p.status === 'PENDING');
@@ -340,25 +293,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     link.click();
     document.body.removeChild(link);
   };
-
-  // Shared absolute-positioned results dropdown for the mentor/volunteer/participant search boxes.
-  const renderSearchResults = (
-    results: ParticipantOption[],
-    onPick: (p: ParticipantOption) => void,
-    renderRight?: (p: ParticipantOption) => React.ReactNode,
-  ) => (
-    <Paper withBorder shadow="md" radius="sm" pos="absolute" left={0} right={0} style={{ zIndex: 10, maxHeight: 200, overflowY: 'auto' }}>
-      {results.map((p) => (
-        <Group key={p.id} justify="space-between" wrap="nowrap" p="sm" style={{ cursor: 'pointer', borderBottom: '1px solid var(--mantine-color-default-border)' }} onClick={() => onPick(p)}>
-          <div>
-            <Text fw={500}>{p.name || 'Unnamed'}</Text>
-            <Text size="xs" c="dimmed">{p.email}</Text>
-          </div>
-          {renderRight?.(p)}
-        </Group>
-      ))}
-    </Paper>
-  );
 
   return (
     <Container size="lg" pb="md">
@@ -415,16 +349,23 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         <Button size="xs" fz={15} variant="default" type="button" onClick={() => { setIsEditingMentor(true); setMentorSearch(""); setLeadMentorIdInput(""); }}>Change</Button>
                       </Group>
                     ) : (
-                      <Box pos="relative">
-                        <Group gap="sm" align="center" wrap="nowrap">
-                          <TextInput style={{ flex: 1 }} value={mentorSearch} onChange={e => { setMentorSearch(e.currentTarget.value); setLeadMentorIdInput(""); }} placeholder="Search Adult Members..." />
-                          {program.leadMentor && (
-                            <Button size="xs" fz={15} variant="subtle" color="red" type="button" onClick={() => { setIsEditingMentor(false); setLeadMentorIdInput(String(program.leadMentorId)); setMentorSearch(`${program.leadMentor?.name || 'Unnamed'} (${program.leadMentor?.email})`); }}>Cancel</Button>
-                          )}
-                        </Group>
-                        {mentorSearching && <Text size="xs" c="dimmed" mt={4}>Loading...</Text>}
-                        {mentorResults.length > 0 && !leadMentorIdInput && renderSearchResults(mentorResults, (p) => { setLeadMentorIdInput(p.id.toString()); setMentorSearch(`${p.name || 'Unnamed'} (${p.email})`); setMentorResults([]); })}
-                      </Box>
+                      <Group gap="sm" align="flex-start" wrap="nowrap">
+                        <Box style={{ flex: 1 }}>
+                          <EntityPicker<ParticipantOption>
+                            placeholder="Search Adult Members..."
+                            selectedId={leadMentorIdInput || null}
+                            selectedLabel={mentorSearch}
+                            search={searchAdults}
+                            getOptionLabel={(p) => p.name || 'Unnamed'}
+                            getOptionDescription={(p) => p.email}
+                            onSelect={(p) => { setLeadMentorIdInput(p.id.toString()); setMentorSearch(`${p.name || 'Unnamed'} (${p.email})`); }}
+                            onClear={() => { setLeadMentorIdInput(""); setMentorSearch(""); }}
+                          />
+                        </Box>
+                        {program.leadMentor && (
+                          <Button size="xs" fz={15} variant="subtle" color="red" type="button" onClick={() => { setIsEditingMentor(false); setLeadMentorIdInput(String(program.leadMentorId)); setMentorSearch(`${program.leadMentor?.name || 'Unnamed'} (${program.leadMentor?.email})`); }}>Cancel</Button>
+                        )}
+                      </Group>
                     )
                   ) : (
                     program.leadMentor ? <Text c="green">{program.leadMentor.name || 'Unnamed'} ({program.leadMentor.email})</Text> : <Text c="dimmed">No Lead Mentor Assigned</Text>
@@ -492,10 +433,18 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                 <Title order={4} mb="md">Volunteers ({program.volunteers.length})</Title>
                 <form onSubmit={handleAddVolunteer}>
                   <Group align="flex-end" gap="md" mb="lg" wrap="wrap">
-                    <Box style={{ flex: 1, minWidth: 200, position: 'relative' }}>
-                      <TextInput label="Assign Volunteer (Name/Email)" value={volSearch} onChange={e => { setVolSearch(e.currentTarget.value); setNewVolId(""); }} placeholder="Start typing to search..." />
-                      {volSearching && <Text size="xs" c="dimmed" mt={4}>Loading...</Text>}
-                      {volResults.length > 0 && !newVolId && renderSearchResults(volResults, (p) => { setNewVolId(p.id.toString()); setVolSearch(`${p.name || 'Unnamed'} (${p.email})`); setVolResults([]); })}
+                    <Box style={{ flex: 1, minWidth: 200 }}>
+                      <EntityPicker<ParticipantOption>
+                        label="Assign Volunteer (Name/Email)"
+                        placeholder="Start typing to search..."
+                        selectedId={newVolId || null}
+                        selectedLabel={volLabel}
+                        search={searchEligible}
+                        getOptionLabel={(p) => p.name || 'Unnamed'}
+                        getOptionDescription={(p) => p.email}
+                        onSelect={(p) => { setNewVolId(p.id.toString()); setVolLabel(`${p.name || 'Unnamed'} (${p.email})`); }}
+                        onClear={() => { setNewVolId(""); setVolLabel(""); }}
+                      />
                     </Box>
                     <Button type="submit" disabled={saving || !newVolId}>Add</Button>
                   </Group>
@@ -522,21 +471,31 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                 <Title order={4} mb="md">Active Participants ({activeParticipants.length})</Title>
                 <form onSubmit={handleAddParticipant}>
                   <Group align="flex-end" gap="md" mb="lg" wrap="wrap">
-                    <Box style={{ flex: 1, minWidth: 200, position: 'relative' }}>
-                      <TextInput label="Assign Participant (Name/Email)" value={partSearch} onChange={e => { setPartSearch(e.currentTarget.value); setNewPartId(""); }} placeholder="Start typing to search..." />
-                      {partSearching && <Text size="xs" c="dimmed" mt={4}>Loading...</Text>}
-                      {partResults.length > 0 && !newPartId && renderSearchResults(
-                        partResults,
-                        (p) => { setNewPartId(p.id.toString()); setPartSearch(`${p.name || 'Unnamed'} (${p.email})`); setPartResults([]); },
-                        (p) => {
-                          if (!p.dateOfBirth) return null;
-                          const age = calculateAge(p.dateOfBirth, program.startAt ?? undefined);
+                    <Box style={{ flex: 1, minWidth: 200 }}>
+                      <EntityPicker<ParticipantOption>
+                        label="Assign Participant (Name/Email)"
+                        placeholder="Start typing to search..."
+                        selectedId={newPartId || null}
+                        selectedLabel={partLabel}
+                        search={searchEligible}
+                        getOptionLabel={(p) => p.name || 'Unnamed'}
+                        getOptionDescription={(p) => {
                           let warning: string | null = null;
-                          if (program.minAge !== null && age < program.minAge) warning = `⚠️ Too Young (${age})`;
-                          if (program.maxAge !== null && age > program.maxAge) warning = `⚠️ Too Old (${age})`;
-                          return warning ? <Badge color="yellow" variant="light">{warning}</Badge> : null;
-                        },
-                      )}
+                          if (p.dateOfBirth) {
+                            const age = calculateAge(p.dateOfBirth, program.startAt ?? undefined);
+                            if (program.minAge !== null && age < program.minAge) warning = `⚠️ Too Young (${age})`;
+                            if (program.maxAge !== null && age > program.maxAge) warning = `⚠️ Too Old (${age})`;
+                          }
+                          return (
+                            <Group gap="xs" justify="space-between" wrap="nowrap">
+                              <span>{p.email}</span>
+                              {warning && <Badge color="yellow" variant="light">{warning}</Badge>}
+                            </Group>
+                          );
+                        }}
+                        onSelect={(p) => { setNewPartId(p.id.toString()); setPartLabel(`${p.name || 'Unnamed'} (${p.email})`); }}
+                        onClear={() => { setNewPartId(""); setPartLabel(""); }}
+                      />
                     </Box>
                     {!isSysAdminOrBoard ? (
                       <Alert color="yellow" variant="light" style={{ flex: 1 }}>

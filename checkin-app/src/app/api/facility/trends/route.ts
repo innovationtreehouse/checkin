@@ -2,15 +2,12 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { getAppSettings } from "@/lib/appSettings";
+import { calculateAge } from "@/lib/time";
 
 type PeriodType = "week" | "month" | "quarter" | "year";
 
 function isStudentAtDate(dob: Date | null, refDate: Date): boolean {
-    if (!dob) return false;
-    let age = refDate.getFullYear() - dob.getFullYear();
-    const m = refDate.getMonth() - dob.getMonth();
-    if (m < 0 || (m === 0 && refDate.getDate() < dob.getDate())) age--;
-    return age < 18;
+    return dob ? calculateAge(dob, refDate) < 18 : false;
 }
 
 function getHoursBetween(arrived: Date, departed: Date | null): number {

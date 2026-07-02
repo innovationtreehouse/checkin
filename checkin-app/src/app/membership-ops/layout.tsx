@@ -62,7 +62,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
   return (
     <PageContainer>
       <Stack>
-      <Tabs value={activeTab} onChange={(value) => { if (value && confirmNav()) router.push(value); }}>
+      <Tabs value={activeTab} onChange={(value) => { if (value && value !== activeTab && confirmNav()) router.push(value); }}>
         <ScrollableTabsList>
           {navLinks.map((link) => {
             const todoCount = membershipTodoCountFor(link.href, todoCounts);

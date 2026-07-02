@@ -1,18 +1,26 @@
-import { sendEmail } from '../email';
+let mockIsDevInstance = false;
+const mockCapture = jest.fn();
+
 jest.mock('resend');
 jest.mock('../config.ts', () => ({
     config: {
         resendApiKey: () => null,
-        emailFrom: () => 'test@test.com'
-    }
+        emailFrom: () => 'test@test.com',
+        isDevInstance: () => mockIsDevInstance,
+    },
 }));
+jest.mock('../dev/sentMail', () => ({
+    captureSentEmail: (...args: unknown[]) => mockCapture(...args),
+}));
+
+import { sendEmail } from '../email';
 
 // process.env.NODE_ENV is typed read-only; tests need to vary it at runtime
 const setNodeEnv = (value: string | undefined) => {
     Object.defineProperty(process.env, 'NODE_ENV', { value, configurable: true });
 };
 
-describe('Email Logging Security', () => {
+describe('sendEmail no-key logging + capture', () => {
     let originalConsoleLog: (...data: unknown[]) => void;
     let originalEnv: string | undefined;
 
@@ -20,6 +28,8 @@ describe('Email Logging Security', () => {
         originalConsoleLog = console.log;
         console.log = jest.fn();
         originalEnv = process.env.NODE_ENV;
+        mockIsDevInstance = false;
+        mockCapture.mockReset();
     });
 
     afterEach(() => {
@@ -27,9 +37,11 @@ describe('Email Logging Security', () => {
         setNodeEnv(originalEnv);
     });
 
-    it('should not log email body in production', async () => {
-        setNodeEnv('production');
-        const html = 'Sensitive Information <a href="reset">Link</a>';
+    it('logs the To/Subject line but never the body (no body logging in any env)', async () => {
+        setNodeEnv('development');
+        mockIsDevInstance = true;
+        mockCapture.mockResolvedValue(true);
+        const html = 'Sensitive body <a href="reset">Link</a>';
 
         await sendEmail('test@test.com', 'Test Subject', html);
 
@@ -37,19 +49,51 @@ describe('Email Logging Security', () => {
         expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining(html));
     });
 
-    it('should log email body in development', async () => {
+    it('captures and returns true on a dev instance (gating callers get the happy-path)', async () => {
         setNodeEnv('development');
-        const html = 'Development Body';
+        mockIsDevInstance = true;
+        mockCapture.mockResolvedValue(true);
+        const html = '<p>Confirm <a href="/x">here</a></p>';
 
-        await sendEmail('test@test.com', 'Test Subject', html);
+        const result = await sendEmail('to@test.com', 'Subj', html);
 
-        expect(console.log).toHaveBeenCalledWith(expect.stringContaining('[Email (no RESEND_API_KEY)]'));
-        expect(console.log).toHaveBeenCalledWith(expect.stringContaining(html));
+        expect(result).toBe(true);
+        expect(mockCapture).toHaveBeenCalledWith('test@test.com', 'to@test.com', 'Subj', html);
+    });
+
+    it('returns false when the dev capture itself fails (does not mask a broken dev DB)', async () => {
+        setNodeEnv('development');
+        mockIsDevInstance = true;
+        mockCapture.mockResolvedValue(false);
+
+        const result = await sendEmail('to@test.com', 'Subj', '<p>hi</p>');
+
+        expect(result).toBe(false);
+    });
+
+    it('does NOT capture and returns false in production even without a key (fail loud)', async () => {
+        setNodeEnv('production');
+        mockIsDevInstance = true; // guard still fails on NODE_ENV === 'production'
+
+        const result = await sendEmail('to@test.com', 'Subj', '<p>hi</p>');
+
+        expect(result).toBe(false);
+        expect(mockCapture).not.toHaveBeenCalled();
+    });
+
+    it('does NOT capture and returns false when not a dev instance', async () => {
+        setNodeEnv('test');
+        mockIsDevInstance = false;
+
+        const result = await sendEmail('to@test.com', 'Subj', '<p>hi</p>');
+
+        expect(result).toBe(false);
+        expect(mockCapture).not.toHaveBeenCalled();
     });
 });
 
 // The describe above mocks resendApiKey to null, so `resend` is null and only the
-// no-key log branch runs. These tests give email.ts a configured key (so `resend`
+// no-key branch runs. These tests give email.ts a configured key (so `resend`
 // is a real client) and exercise the two send-failure paths, which the suite above
 // can't reach: Resend returning `{ error }`, and Resend throwing. Both must → false.
 describe('sendEmail send-failure contract (Resend configured)', () => {
@@ -62,8 +106,9 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         sendMock.mockReset();
         // Re-mock the module's deps for the fresh module instance loaded below.
         jest.doMock('../config.ts', () => ({
-            config: { resendApiKey: () => 'test-key', emailFrom: () => 'test@test.com' },
+            config: { resendApiKey: () => 'test-key', emailFrom: () => 'test@test.com', isDevInstance: () => false },
         }));
+        jest.doMock('../dev/sentMail', () => ({ captureSentEmail: jest.fn() }));
         jest.doMock('resend', () => ({
             Resend: jest.fn().mockImplementation(() => ({ emails: { send: sendMock } })),
         }));
@@ -76,6 +121,7 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         errorSpy.mockRestore();
         logSpy.mockRestore();
         jest.dontMock('../config.ts');
+        jest.dontMock('../dev/sentMail');
         jest.dontMock('resend');
     });
 

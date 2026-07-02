@@ -1,4 +1,4 @@
-import type { MembershipProcessStatus } from "@/generated/prisma/client";
+import type { MembershipProcess, MembershipProcessStatus } from "@/generated/prisma/client";
 
 /**
  * Applicant-facing phases of an INITIAL membership application, in order.
@@ -23,11 +23,6 @@ export const INITIAL_PHASES: IntakePhase[] = [
     { status: "PENDING_PAYMENT", label: "Payment", description: "Pay your annual membership dues." },
     { status: "ACTIVE", label: "Member", description: "Welcome to the Treehouse!" },
 ];
-
-/** Index of a status within the INITIAL flow, or -1 if it isn't a flow phase. */
-export function phaseIndex(status: MembershipProcessStatus): number {
-    return INITIAL_PHASES.findIndex((p) => p.status === status);
-}
 
 /**
  * Stepper position for a status: how many INITIAL_PHASES steps are complete.
@@ -59,3 +54,19 @@ export const IN_FLIGHT_INITIAL_STATUSES: MembershipProcessStatus[] = [
     "PENDING_PAYMENT",
     "PENDING_BG_CLEARANCE",
 ];
+
+/**
+ * The latest process awaiting applicant external action (contract signing).
+ * Kind-agnostic by design — INITIAL applications AND renewals both re-sign here,
+ * and gating on status alone keeps the sign button (getOrCreateContractSigningUrl)
+ * in step with the status sync (syncContractStatus); a kind filter would render
+ * the button then 409. Highest id == most recent (autoincrement). Returns
+ * undefined when nothing is awaiting action — callers guard for that.
+ */
+export function latestPendingExternal<T extends Pick<MembershipProcess, "id" | "status">>(
+    processes: T[] | null | undefined,
+): T | undefined {
+    return [...(processes ?? [])]
+        .filter((p) => p.status === "PENDING_EXTERNAL_ACTION")
+        .sort((a, b) => b.id - a.id)[0];
+}

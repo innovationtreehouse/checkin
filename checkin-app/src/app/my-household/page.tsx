@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Badge, Button, Card, Center, Checkbox, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { formatDate, calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
@@ -55,12 +56,17 @@ type HouseholdData = {
 const blankContactForm = { id: null as number | null, name: "", phone: "", email: "", relationship: "" };
 
 export default function HouseholdPage() {
-  const { data: session, status } = useSession();
+  const { user: sessionUser, loading: authLoading, ready } = useRequireRole([]);
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [household, setHousehold] = useState<HouseholdData>(null);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; tone: AlertTone } | null>(null);
+  // Explicit tone per outcome so a real error can never render green (was
+  // decided by `message.includes('success')`).
+  const ok = (text: string) => setMessage({ text, tone: "success" });
+  const err = (text: string) => setMessage({ text, tone: "error" });
+  const warn = (text: string) => setMessage({ text, tone: "warning" });
   const [addingMember, setAddingMember] = useState(false);
 
   const [memberForm, setMemberForm] = useState({ name: "", email: "", dob: "", over25: false });
@@ -112,20 +118,18 @@ export default function HouseholdPage() {
         setInitialAddress(loaded);
       }
     } catch {
-      setMessage("Network error loading household.");
+      err("Network error loading household.");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    } else if (status === "authenticated") {
+    if (ready) {
       fetchHousehold();
       fetchContacts();
     }
-  }, [status, router, fetchHousehold, fetchContacts]);
+  }, [ready, fetchHousehold, fetchContacts]);
 
   const handleSaveSettings = async () => {
     const errors = validateAddress(address);
@@ -140,16 +144,16 @@ export default function HouseholdPage() {
       });
 
       if (householdRes.ok) {
-        setMessage("Settings updated successfully!");
+        ok("Settings updated successfully!");
         setAddressSaved(true);
         setTimeout(() => setAddressSaved(false), 5000);
         fetchHousehold();
         notifyNavRefresh();
       } else {
-        setMessage("Failed to update some settings.");
+        err("Failed to update some settings.");
       }
     } catch {
-      setMessage("Network error saving settings.");
+      err("Network error saving settings.");
     } finally {
       setSavingSettings(false);
     }
@@ -175,7 +179,7 @@ export default function HouseholdPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setMessage(editing ? "Emergency contact updated." : "Emergency contact added.");
+        ok(editing ? "Emergency contact updated." : "Emergency contact added.");
         setContactForm(blankContactForm);
         setShowContactForm(false);
         fetchContacts();
@@ -196,7 +200,7 @@ export default function HouseholdPage() {
       const res = await fetch(`/api/household/emergency-contacts/${id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setMessage("Emergency contact removed.");
+        ok("Emergency contact removed.");
         fetchContacts();
         notifyNavRefresh();
       } else {
@@ -217,7 +221,7 @@ export default function HouseholdPage() {
   // warning and drop the lead straight into the add-contact form.
   const applyContactWarning = (warning?: { message: string } | null) => {
     if (!warning) return false;
-    setMessage(`⚠️ ${warning.message}`);
+    warn(`⚠️ ${warning.message}`);
     fetchContacts();
     startAddContact();
     return true;
@@ -231,7 +235,7 @@ export default function HouseholdPage() {
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage("");
+    setMessage(null);
     const errs = validateMemberFields(memberForm);
     setMemberErrors(errs);
     if (Object.keys(errs).length > 0) return;
@@ -247,18 +251,18 @@ export default function HouseholdPage() {
         setMemberErrors({});
         setAddingMember(false);
         fetchHousehold();
-        if (!applyContactWarning(data.warning)) setMessage(data.message || "Member added successfully!");
+        if (!applyContactWarning(data.warning)) ok(data.message || "Member added successfully!");
       } else {
-        setMessage(data.error || "Failed to add member.");
+        err(data.error || "Failed to add member.");
       }
     } catch {
-      setMessage("Network error adding member.");
+      err("Network error adding member.");
     }
   };
 
   const handleEditMember = async (e: React.FormEvent, participantId: number) => {
     e.preventDefault();
-    setMessage("");
+    setMessage(null);
     const errs: { name?: string; email?: string; dob?: string; phone?: string } = validateMemberFields(editForm);
     if (editForm.phone && !isValidPhone(editForm.phone)) errs.phone = PHONE_ERROR;
     setEditErrors(errs);
@@ -280,31 +284,30 @@ export default function HouseholdPage() {
         // promotion (leadRejection). Surface the contact warning first since
         // it's the more urgent, then the lead caveat, else a plain success.
         if (!applyContactWarning(data.warning)) {
-          setMessage(data.leadRejection
-            ? `Member updated, but not added as a lead — ${data.leadRejection}`
-            : (data.message || "Member updated successfully!"));
+          if (data.leadRejection) warn(`Member updated, but not added as a lead — ${data.leadRejection}`);
+          else ok(data.message || "Member updated successfully!");
         }
       } else {
-        setMessage(data.error || "Failed to update member.");
+        err(data.error || "Failed to update member.");
       }
     } catch {
-      setMessage("Network error updating member.");
+      err("Network error updating member.");
     }
   };
 
   const handleMakeLead = async (participantId: number) => {
-    setMessage("");
+    setMessage(null);
     try {
       const res = await fetch('/api/household/lead', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId }) });
       const data = await res.json();
       if (res.ok) {
-        setMessage("Member promoted to lead successfully!");
+        ok("Member promoted to lead successfully!");
         fetchHousehold();
       } else {
-        setMessage(data.error || "Failed to promote member.");
+        err(data.error || "Failed to promote member.");
       }
     } catch {
-      setMessage("Network error promoting member.");
+      err("Network error promoting member.");
     }
   };
 
@@ -315,16 +318,16 @@ export default function HouseholdPage() {
   const isDirty = !shallowEqual({ ...initialAddress }, { ...address });
   useUnsavedGuard(isDirty);
 
-  if (loading || status === "loading") {
+  if (loading || authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
 
-  if (!session) return null;
+  if (!ready) return null;
 
-  const userId = (session.user as { id: number })?.id;
+  const userId = (sessionUser as { id: number })?.id;
   // Staff (@innovationtreehouse.org) accounts aren't real member families; the add-member
   // control is hidden for them (server also enforces this — see /api/household PATCH).
-  const isStaffAccount = isOrgAccount(session.user as { hd?: string | null; email?: string | null });
+  const isStaffAccount = isOrgAccount(sessionUser as { hd?: string | null; email?: string | null });
   const isLead = (pid: number) => household?.leads?.some((l) => l.participantId === pid) ?? false;
   const viewerIsLead = isLead(userId);
 
@@ -363,7 +366,7 @@ export default function HouseholdPage() {
             )
           )}
 
-          {message && <Alert color={message.includes('success') ? 'green' : 'red'} mb="lg">{message}</Alert>}
+          <AlertBanner message={message?.text} tone={message?.tone} mb="lg" />
 
           {!household ? (
             <Stack align="center" py="md">

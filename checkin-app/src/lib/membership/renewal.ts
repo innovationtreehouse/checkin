@@ -1,7 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
-import { sendEmail } from "@/lib/email";
 import { logger } from "@/lib/logger";
+import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { notifyReviewers } from "@/lib/membership/review";
 
 /**
@@ -213,23 +213,12 @@ export async function householdBgIsFresh(householdId: number, boundary: Date, re
 }
 
 async function remindHousehold(householdId: number, boundary: Date) {
-    try {
-        const leads = await prisma.householdLead.findMany({ where: { householdId }, select: { participant: { select: { email: true } } } });
-        const base = process.env.NEXTAUTH_URL ?? "";
-        const due = boundary.toISOString().slice(0, 10);
-        await Promise.all(
-            leads
-                .map((l) => l.participant?.email)
-                .filter((e): e is string => !!e)
-                .map((email) =>
-                    sendEmail(
-                        email,
-                        "Time to renew your Treehouse membership",
-                        `<p>Your household membership is up for renewal by ${due}. Please sign in to renew: <a href="${base}/membership">${base}/membership</a></p>`,
-                    ).catch((e) => logger.error("Renewal reminder failed:", e)),
-                ),
-        );
-    } catch (e) {
-        logger.error("remindHousehold failed:", e);
-    }
+    const base = process.env.NEXTAUTH_URL ?? "";
+    const due = boundary.toISOString().slice(0, 10);
+    await emailHouseholdLeads(
+        householdId,
+        "Time to renew your Treehouse membership",
+        `<p>Your household membership is up for renewal by ${due}. Please sign in to renew: <a href="${base}/membership">${base}/membership</a></p>`,
+        "Renewal reminder failed:",
+    );
 }

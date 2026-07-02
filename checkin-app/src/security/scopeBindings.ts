@@ -41,7 +41,13 @@ export const SCOPE_BINDINGS = {
     },
     Household: { their_households: { field: 'id', eqCtx: 'householdId' } },
     // Row-scoped (see ROW_SCOPE_KEY): a key-less EmergencyContact row fails closed.
-    EmergencyContact: { their_households: { field: 'householdId', eqCtx: 'householdId' } },
+    // their_program_households mirrors TrustedAdult: a program lead/core-vol sees
+    // the emergency contacts of the households whose children they oversee
+    // (ctx.householdIdsInScopePrograms), granted to those views in registry.ts.
+    EmergencyContact: {
+        their_households: { field: 'householdId', eqCtx: 'householdId' },
+        their_program_households: { field: 'householdId', inCtx: 'householdIdsInScopePrograms' },
+    },
     HouseholdLead: {
         their_households: { field: 'householdId', eqCtx: 'householdId' },
         their_own: { field: 'participantId', eqCtx: 'selfId' },
