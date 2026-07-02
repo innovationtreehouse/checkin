@@ -13,6 +13,9 @@ import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
 import { useUnsavedGuard, useConfirmNav } from "@/components/UnsavedChangesProvider";
+import AddressForm from "@/components/membership/AddressForm";
+import EmergencyContactForm from "@/components/membership/EmergencyContactForm";
+import ChildrenListForm from "@/components/membership/ChildrenListForm";
 
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
@@ -523,20 +526,14 @@ export default function MembershipPage() {
                 <Stack gap="lg">
                   <section>
                     <Title order={2} mb="sm">Your household</Title>
-                    <Stack gap="xs">
-                      <TextInput label="Street address" value={address.line1 ?? ""} error={fieldErrors.address} onChange={(e) => { setAddress({ ...address, line1: e.currentTarget.value }); clearErr("address"); }} placeholder="123 Main St" />
-                      <TextInput label="Apt / Suite (optional)" value={address.line2 ?? ""} onChange={(e) => setAddress({ ...address, line2: e.currentTarget.value })} placeholder="Apt 4B" />
-                      <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                        <TextInput label="City" value={address.city ?? ""} onChange={(e) => setAddress({ ...address, city: e.currentTarget.value })} />
-                        <TextInput label="State" maxLength={2} value={address.state ?? ""} onChange={(e) => setAddress({ ...address, state: e.currentTarget.value })} placeholder="TX" />
-                        <TextInput label="ZIP" value={address.postalCode ?? ""} onChange={(e) => setAddress({ ...address, postalCode: e.currentTarget.value })} placeholder="78701" />
-                      </SimpleGrid>
-                    </Stack>
-                    <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md">
-                      <TextInput label="Emergency contact name" value={emName} error={fieldErrors.emName} onChange={(e) => { setEmName(e.currentTarget.value); clearErr("emName"); }} />
-                      <TextInput label="Emergency contact phone" value={emPhone} error={fieldErrors.emPhone} onChange={(e) => { setEmPhone(e.currentTarget.value); clearErr("emPhone"); }} />
-                      <TextInput type="email" label="Emergency contact email (optional)" value={emEmail} error={fieldErrors.emEmail} onChange={(e) => { setEmEmail(e.currentTarget.value); clearErr("emEmail"); }} />
-                    </SimpleGrid>
+                    <AddressForm address={address} onChange={setAddress} error={fieldErrors.address} onErrorClear={() => clearErr("address")} />
+                    <EmergencyContactForm
+                      emName={emName} setEmName={setEmName}
+                      emPhone={emPhone} setEmPhone={setEmPhone}
+                      emEmail={emEmail} setEmEmail={setEmEmail}
+                      errors={fieldErrors}
+                      clearErr={clearErr}
+                    />
                   </section>
 
                   <section>
@@ -566,29 +563,7 @@ export default function MembershipPage() {
                     )}
                   </section>
 
-                  <section>
-                    <Group justify="space-between" align="center" mb="sm">
-                      <Title order={2}>Children</Title>
-                      <Button variant="light" size="xs" fz={15} onClick={addChild}>+ Add child</Button>
-                    </Group>
-                    {children.length === 0 && <Text c="dimmed">No children added yet.</Text>}
-                    <Stack>
-                      {children.map((child, i) => (
-                        <Card key={child.id ?? `new-${i}`} withBorder radius="md" padding="md">
-                          <Group justify="space-between" align="center" mb="xs">
-                            <Text fw={600}>Child {i + 1}</Text>
-                            <Button variant="subtle" color="red" size="compact-sm" onClick={() => removeChild(i)}>Remove</Button>
-                          </Group>
-                          <TextInput label="Full name" value={child.name} onChange={(e) => updateChild(i, "name", e.currentTarget.value)} />
-                          <SimpleGrid cols={{ base: 1, sm: 2 }} mt="sm">
-                            <TextInput type="date" label="Date of birth" value={child.dob} onChange={(e) => updateChild(i, "dob", e.currentTarget.value)} />
-                            <TextInput type="email" label="Email (optional)" value={child.email} onChange={(e) => updateChild(i, "email", e.currentTarget.value)} />
-                          </SimpleGrid>
-                          <TextInput mt="sm" label="Allergies (optional)" value={child.allergies} onChange={(e) => updateChild(i, "allergies", e.currentTarget.value)} />
-                        </Card>
-                      ))}
-                    </Stack>
-                  </section>
+                  <ChildrenListForm items={children} onAdd={addChild} onUpdate={updateChild} onRemove={removeChild} />
 
                   <Group gap="md" wrap="wrap">
                     <Button variant="default" disabled={saving} loading={saving} onClick={save}>Save progress</Button>
