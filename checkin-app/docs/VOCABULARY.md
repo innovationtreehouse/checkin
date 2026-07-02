@@ -55,6 +55,31 @@ These describe *what kind of person*, independent of which relationship you're v
 - Age is always derived from `dateOfBirth` via `isYouth` — never re-implement an
   age check inline.
 
+## Named entities (not a person, but carry multi-layer names)
+
+### Trusted Adult
+
+`model TrustedAdult` is an **authorization record**, NOT a person. It involves two people:
+
+- **`disclosedBy`** — the **subject**: the Person who entered the disclosure.
+- **`trustedAdult*`** — the **adult being trusted**: `trustedAdultName` / `trustedAdultPhone` / `trustedAdultEmail`, plus an optional Person link `trustedAdultPerson` / `trustedAdultPersonId`. Historically called the **"counterparty"** (the adult on the other side of the disclosed relationship); that word now survives **only in explanatory prose**, never as an identifier.
+
+**Synonyms for the SAME concept across layers** (so a reader isn't misled):
+
+| Layer | Name |
+|---|---|
+| Model / DB / relations | `TrustedAdult` (the record) |
+| Adult's fields on the record | `trustedAdult*` |
+| Policy prose | "dual relationship" |
+| Member / board UI label | **"Trusted Adult"** |
+| Operational (front-desk) UI label | **"Pickup"** |
+
+**NOT synonyms:**
+- **"guardian" / "guardianship"** — a household lead/parent, or a relationship *type* — never this entity.
+- **`familyContext`** — a distinct *attribute* of the record (the board-facing explanation), not another name for it. (Its own fate is the household/family phase.)
+
+Source: `counterparty*` → `trustedAdult*` rename (audit P2-2, branch `claude/vigilant-blackburn-7f713d`; scalar fields + Person FK, RENAME migrations). The schema carries this same glossary inline above `model TrustedAdult`.
+
 ## Migration status
 
 The term-by-term migration plan lives in
@@ -74,6 +99,8 @@ the Person-umbrella detail in
 - **dependent** — `emailDependentCheckins` key + copy → household wording; plus BUG-2 (`intake.ts` `children` bucket = non-lead participants). Small.
 
 **Closed:** attendance "volunteer = adult non-keyholder" / "youth = minor" buckets — **won't-change** (intended supervision signal, safety-load-bearing two-deep). Trends age-proxy metric fixed separately. See [designs/AGE_PROXY_BUG_AUDIT.md](designs/AGE_PROXY_BUG_AUDIT.md).
+
+**Related track (sibling audit, not one of the phases above):** Trusted Adult entity naming `counterparty*` → `trustedAdult*` (audit P2-2, branch `claude/vigilant-blackburn-7f713d`). See the Trusted Adult entry above.
 
 ## Known semantic bugs (see proposal §3)
 
