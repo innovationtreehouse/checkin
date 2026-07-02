@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
-import { logBackendError } from "@/lib/logger";
+import { logBackendError, logger } from "@/lib/logger";
 import { config } from "@/lib/config";
 
 // GET is kiosk-first with distinct signature-failure semantics (403 on bad signature,
@@ -80,7 +80,6 @@ export async function GET(req: NextRequest) {
             signedRequest: isKiosk,
         });
     } catch (error) {
-        console.error("Attendance fetch error:", error);
         await logBackendError(error, "GET /api/attendance");
         return NextResponse.json(
             { error: "Internal Server Error while fetching attendance." },
@@ -127,7 +126,6 @@ export const DELETE = withAuth({}, async (req, auth) => {
 
         return NextResponse.json({ success: true, visit: updatedVisit });
     } catch (error) {
-        console.error("Force checkout error:", error);
         await logBackendError(error, "DELETE /api/attendance");
         return NextResponse.json({ error: "Failed to force checkout" }, { status: 500 });
     }
@@ -244,15 +242,14 @@ export const POST = withAuth({}, async (req, auth) => {
             });
 
             // In a real app, integrate Resend/SendGrid here using boardMembers.map(m => m.email)
-            console.log("CRITICAL NOTIFICATION TO BOARD MEMBERS:", boardMembers.map(m => m.email).join(', '));
-            console.log("Message:", message);
+            logger.info("CRITICAL NOTIFICATION TO BOARD MEMBERS:", boardMembers.map(m => m.email).join(', '));
+            logger.info("Message:", message);
 
             return NextResponse.json({ success: true, notified: boardMembers.length });
         }
 
         return NextResponse.json({ error: "Unknown notification type" }, { status: 400 });
     } catch (error) {
-        console.error("Notification error:", error);
         await logBackendError(error, "POST /api/attendance");
         return NextResponse.json({ error: "Failed to process notification" }, { status: 500 });
     }

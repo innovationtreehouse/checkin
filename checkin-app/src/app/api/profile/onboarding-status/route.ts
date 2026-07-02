@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logger } from "@/lib/logger";
 import prisma from '@/lib/prisma';
 import { withAuth } from "@/lib/auth";
 import { isYouth } from "@/lib/time";
@@ -44,7 +45,7 @@ export const GET = withAuth(
                 emergencyContactPhone: primaryContact?.phone || ""
             });
         } catch (error) {
-            console.error("Error checking onboarding status:", error);
+            logger.error("Error checking onboarding status:", error);
             return NextResponse.json({ error: "Failed to check status" }, { status: 500 });
         }
     }

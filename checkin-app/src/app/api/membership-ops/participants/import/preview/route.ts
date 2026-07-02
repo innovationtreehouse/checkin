@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import * as xlsx from "xlsx";
@@ -297,7 +298,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         });
 
     } catch (error) {
-        console.error("Error in participant import preview:", error);
+        logger.error("Error in participant import preview:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
 });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import { certifyPaymentPlan, PaymentError } from "@/lib/membership/payment";
 
@@ -25,7 +26,7 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
         if (error instanceof PaymentError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "not_found" ? 404 : 409 });
         }
-        console.error("Certify payment error:", error);
+        logger.error("Certify payment error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });

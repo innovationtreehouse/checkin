@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
@@ -32,7 +33,7 @@ export const GET = withAuth(
 
             return NextResponse.json({ households: result });
         } catch (error) {
-            console.error("Failed to fetch broken households:", error);
+            logger.error("Failed to fetch broken households:", error);
             return NextResponse.json({ error: "Failed to fetch broken households" }, { status: 500 });
         }
     }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import { renewTrustedAdult, TrustedAdultError } from "@/lib/trusted-adult/service";
 
@@ -27,7 +28,7 @@ export const POST = withAuth({}, async (req, auth) => {
         if (error instanceof TrustedAdultError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: STATUS_FOR[error.code] });
         }
-        console.error("Trusted adult renew error:", error);
+        logger.error("Trusted adult renew error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });

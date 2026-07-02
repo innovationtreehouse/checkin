@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import type { Session } from "next-auth";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
@@ -90,7 +91,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
 
         return NextResponse.json({ success: true, rsvp });
     } catch (error) {
-        console.error("RSVP update error:", error);
+        logger.error("RSVP update error:", error);
         return NextResponse.json({ error: "Failed to update RSVP" }, { status: 500 });
     }
 });

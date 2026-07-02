@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
@@ -286,7 +287,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 
     } catch (error: unknown) {
-        console.error("Failed to update event:", error);
+        logger.error("Failed to update event:", error);
         return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
     }
 });

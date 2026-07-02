@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import { beginRenewalForUser, RenewalError } from "@/lib/membership/renewal";
 
@@ -14,7 +15,7 @@ export const POST = withAuth({}, async (_req, auth) => {
         if (error instanceof RenewalError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "not_found" ? 404 : 409 });
         }
-        console.error("Renewal begin error:", error);
+        logger.error("Renewal begin error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });

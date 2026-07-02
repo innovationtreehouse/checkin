@@ -1,15 +1,9 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { updateContact, deleteContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
-
-async function leadHousehold(userId: number): Promise<number | { error: string; status: number }> {
-    const user = await prisma.person.findUnique({ where: { id: userId }, include: { householdLeads: true } });
-    if (!user?.householdId) return { error: "You must create a household first.", status: 400 };
-    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.isSysadmin) return { error: "Only household leads can manage emergency contacts.", status: 403 };
-    return user.householdId;
-}
+import { leadHousehold } from "@/lib/household/leads";
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ contactId: string }> }) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -36,7 +30,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         if (error instanceof EmergencyContactError) {
             return NextResponse.json({ error: error.message }, { status: error.code === "not_found" ? 404 : 400 });
         }
-        console.error("Emergency contact PATCH error:", error);
+        logger.error("Emergency contact PATCH error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });
@@ -83,7 +77,7 @@ export const DELETE = withAuth({}, async (_req, auth, { params }: { params: Prom
         if (error instanceof EmergencyContactError) {
             return NextResponse.json({ error: error.message }, { status: error.code === "not_found" ? 404 : 400 });
         }
-        console.error("Emergency contact DELETE error:", error);
+        logger.error("Emergency contact DELETE error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });

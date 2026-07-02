@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { getAppSettings } from "@/lib/appSettings";
@@ -188,7 +189,7 @@ export const GET = withAuth(
 
             return NextResponse.json({ buckets, totals, period });
         } catch (error) {
-            console.error("Trends API error:", error);
+            logger.error("Trends API error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }

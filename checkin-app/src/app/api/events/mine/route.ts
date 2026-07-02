@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import type { Session } from "next-auth";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
@@ -70,7 +71,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
         return NextResponse.json(rows);
     } catch (error) {
-        console.error("Failed to fetch user events:", error);
+        logger.error("Failed to fetch user events:", error);
         return NextResponse.json({ error: "Failed to fetch events" }, { status: 500 });
     }
 });

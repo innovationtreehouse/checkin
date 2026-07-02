@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import { overrideBlocked, ReviewError } from "@/lib/membership/review";
 
@@ -29,7 +30,7 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
         if (error instanceof ReviewError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "not_found" ? 404 : 409 });
         }
-        console.error("Review override error:", error);
+        logger.error("Review override error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });

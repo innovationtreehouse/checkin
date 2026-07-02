@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import { ensurePaymentLinkForUser, PaymentError } from "@/lib/membership/payment";
 
@@ -13,7 +14,7 @@ export const GET = withAuth({}, async (_req, auth) => {
         if (error instanceof PaymentError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "not_found" ? 404 : 409 });
         }
-        console.error("Payment link error:", error);
+        logger.error("Payment link error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });

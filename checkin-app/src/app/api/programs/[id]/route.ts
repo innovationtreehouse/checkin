@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
@@ -161,7 +162,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         return NextResponse.json({ success: true, program: updatedProgram });
     } catch (error) {
-        console.error("Program update error:", error);
+        logger.error("Program update error:", error);
         return NextResponse.json({ error: "Failed to update program" }, { status: 500 });
     }
 });

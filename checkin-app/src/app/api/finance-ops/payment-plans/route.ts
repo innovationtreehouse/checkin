@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { handler } from "@/security/handler";
@@ -65,7 +66,7 @@ export const POST = withAuth(
 
             return NextResponse.json({ success: true });
         } catch (error) {
-            console.error("Failed to approve payment plan:", error);
+            logger.error("Failed to approve payment plan:", error);
             return NextResponse.json({ error: "Failed to approve payment plan" }, { status: 500 });
         }
     }

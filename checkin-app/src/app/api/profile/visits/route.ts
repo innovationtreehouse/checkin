@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
@@ -46,7 +47,7 @@ export const GET = withAuth(
 
             return NextResponse.json({ visits }, { status: 200 });
         } catch (error) {
-            console.error("Profile Visits GET Error:", error);
+            logger.error("Profile Visits GET Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }

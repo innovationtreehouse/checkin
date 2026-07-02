@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
@@ -152,7 +153,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         if (isPrismaError(error, 'P2002')) {
             return NextResponse.json({ error: "Participant is already enrolled in this program." }, { status: 409 });
         }
-        console.error("Enrollment creation error:", error);
+        logger.error("Enrollment creation error:", error);
         return NextResponse.json({ error: "Failed to enroll participant" }, { status: 500 });
     }
 });
@@ -225,7 +226,7 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
         if (isPrismaError(error, 'P2025')) {
             return NextResponse.json({ success: true, idempotent: true });
         }
-        console.error("Enrollment deletion error:", error);
+        logger.error("Enrollment deletion error:", error);
         return NextResponse.json({ error: "Failed to remove participant" }, { status: 500 });
     }
 });

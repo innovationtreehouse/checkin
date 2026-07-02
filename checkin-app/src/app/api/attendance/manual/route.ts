@@ -106,7 +106,6 @@ export const POST = withAuth({}, async (req, auth) => {
 
         return NextResponse.json({ message: "Manual visit recorded successfully.", visit }, { status: 201 });
     } catch (error: unknown) {
-        console.error("Manual Attendance POST Error:", error);
         await logBackendError(error, "POST /api/attendance/manual");
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }

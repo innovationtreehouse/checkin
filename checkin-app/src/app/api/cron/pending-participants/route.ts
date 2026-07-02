@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 
@@ -38,20 +39,20 @@ export const GET = withCron(async () => {
 
                 kickedCount++;
 
-                console.log(`[CRON] Removed participant ${record.person.name} from ${record.program.name} after ${diffDays} days.`);
-                console.log(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Removed from ${record.program.name} due to non-payment`);
+                logger.info(`[CRON] Removed participant ${record.person.name} from ${record.program.name} after ${diffDays} days.`);
+                logger.info(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Removed from ${record.program.name} due to non-payment`);
             } else if (diffDays === 6) {
                 warnedCount++;
-                console.log(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: FINAL WARNING: 24 hours left to pay for ${record.program.name}`);
-                console.log(`[EMAIL DISPATCH] Body: ${warningText}`);
+                logger.info(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: FINAL WARNING: 24 hours left to pay for ${record.program.name}`);
+                logger.info(`[EMAIL DISPATCH] Body: ${warningText}`);
             } else if (diffDays === 3) {
                 warnedCount++;
-                console.log(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Please pay for ${record.program.name} within 4 days`);
-                console.log(`[EMAIL DISPATCH] Body: ${warningText}`);
+                logger.info(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Please pay for ${record.program.name} within 4 days`);
+                logger.info(`[EMAIL DISPATCH] Body: ${warningText}`);
             } else if (diffDays === 1) {
                 warnedCount++;
-                console.log(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Reminder: Payment required for ${record.program.name}`);
-                console.log(`[EMAIL DISPATCH] Body: ${warningText}`);
+                logger.info(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Reminder: Payment required for ${record.program.name}`);
+                logger.info(`[EMAIL DISPATCH] Body: ${warningText}`);
             }
         }
 

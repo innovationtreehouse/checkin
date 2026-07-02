@@ -2,8 +2,13 @@
 import { screen, waitFor, fireEvent, within } from "@testing-library/react";
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
-import { renderWithProviders, mockFetchJson, setSession, router, resetRtl } from "@/test-helpers/rtl";
+import { renderWithProviders, mockFetchJson, setSession, setSearchParams, router, resetRtl } from "@/test-helpers/rtl";
 import EventAdminPage from "../page";
+
+// jsdom lacks scrollIntoView, which Mantine's Select/Combobox calls on open.
+beforeAll(() => {
+    window.HTMLElement.prototype.scrollIntoView = jest.fn();
+});
 
 beforeEach(() => resetRtl());
 
@@ -49,6 +54,23 @@ function baseEvent(overrides: Record<string, unknown> = {}) {
 }
 
 const params = paramsFor("5");
+
+/**
+ * mockFetchJson answers every matched route ok:true, and GET/PATCH to
+ * `/api/events/5` share a URL, so an "action fails after a successful load"
+ * test needs a method-aware stub instead: GET returns `event`, PATCH runs
+ * `onPatch` (so each test controls success/failure/throw per click).
+ */
+function fetchEventThenPatchWith(event: unknown, onPatch: (body: Record<string, unknown>) => Response | Promise<Response>) {
+    const fn = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "PATCH") {
+            return onPatch(JSON.parse(init.body as string));
+        }
+        return { ok: true, json: async () => event } as Response;
+    });
+    global.fetch = fn as unknown as typeof fetch;
+    return fn;
+}
 
 describe("EventAdminPage", () => {
     it("redirects unauthenticated users without fetching", async () => {
@@ -110,5 +132,259 @@ describe("EventAdminPage", () => {
         const confirmModal = await screen.findByRole("dialog", { name: "Cancel Event" });
         fireEvent.click(within(confirmModal).getByRole("button", { name: "Cancel Event(s)" }));
         await waitFor(() => expect(router.push).toHaveBeenCalledWith("/program-ops/programs/10"));
+    });
+
+    it("fromMyPrograms: back button and confirm-attendance both return to My Programs", async () => {
+        setSession({ id: 1, isSysadmin: true });
+        setSearchParams("from=my-programs");
+        mockFetchJson({ "/api/events/5": baseEvent() });
+        renderPage(params);
+
+        expect(await screen.findByRole("button", { name: "← Back to My Programs" })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "← Back to My Programs" }));
+        expect(router.push).toHaveBeenCalledWith("/my-programs");
+
+        fireEvent.click(screen.getByRole("button", { name: "Confirm Attendance" }));
+        await waitFor(() => expect(router.push).toHaveBeenCalledWith("/my-programs"));
+        // The fromMyPrograms branch returns before setMessage/fetchEvent run.
+        expect(screen.queryByText("Attendance confirmed successfully!")).not.toBeInTheDocument();
+    });
+
+    it("already-confirmed attendance shows Re-confirm and falls back to 'Unknown', then re-confirms", async () => {
+        setSession({ id: 1, isSysadmin: true });
+        mockFetchJson({
+            "/api/events/5": baseEvent({ attendanceConfirmedAt: "2020-01-02T00:00:00.000Z", attendanceConfirmedBy: null }),
+        });
+        renderPage(params);
+
+        expect(await screen.findByText(/by Unknown/)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Re-confirm" }));
+        expect(await screen.findByText("Attendance confirmed successfully!")).toBeInTheDocument();
+    });
+
+    it("confirm attendance: shows the server error, then a network-error message", async () => {
+        setSession({ id: 1, isSysadmin: true });
+        mockFetchJson({ "/api/events/5": baseEvent() });
+        renderPage(params);
+        await screen.findByText("Robotics Session");
+
+        fetchEventThenPatchWith(baseEvent(), () => ({ ok: false, json: async () => ({ error: "Not ready to confirm." }) } as Response));
+        fireEvent.click(screen.getByRole("button", { name: "Confirm Attendance" }));
+        expect(await screen.findByText("Not ready to confirm.")).toBeInTheDocument();
+
+        fetchEventThenPatchWith(baseEvent(), () => { throw new Error("boom"); });
+        fireEvent.click(screen.getByRole("button", { name: "Confirm Attendance" }));
+        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    });
+
+    it("edit time: shows the server error, then a network-error message", async () => {
+        setSession({ id: 1, isSysadmin: true });
+        const future = baseEvent({ startAt: "2999-01-01T18:00:00.000Z", endAt: "2999-01-01T20:00:00.000Z" });
+        mockFetchJson({ "/api/events/5": future });
+        renderPage(params);
+        await screen.findByText("Robotics Session");
+        fireEvent.click(screen.getByRole("button", { name: "Edit Date / Time" }));
+
+        fetchEventThenPatchWith(future, () => ({ ok: false, json: async () => ({ error: "Time window closed." }) } as Response));
+        fireEvent.click(screen.getByRole("button", { name: "Save Time Changes" }));
+        expect(await screen.findByText("Time window closed.")).toBeInTheDocument();
+
+        fetchEventThenPatchWith(future, () => { throw new Error("boom"); });
+        fireEvent.click(screen.getByRole("button", { name: "Save Time Changes" }));
+        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    });
+
+    it("manual edit: a member with a visit defaults to Present with time fields; toggling to Absent hides them and saves null times", async () => {
+        setSession({ id: 1, isSysadmin: true });
+        const fetchMock = mockFetchJson({ "/api/events/5": baseEvent() });
+        renderPage(params);
+        await screen.findByText("Robotics Session");
+
+        // Roster sorts Core Volunteer (Val, no visit) before Participant (Pat, has a visit) —
+        // index [1] is Pat, whose existing visit drives the "Present" default branch.
+        fireEvent.click(screen.getAllByRole("button", { name: "Manual Edit" })[1]);
+        expect(await screen.findByText(/Manual Edit: Pat Participant/)).toBeInTheDocument();
+        // getByLabelText also matches the Select's aria-labelledby listbox div, and
+        // Present/Absent share the same value+label, so scope to the textbox role.
+        const statusInput = screen.getByRole("textbox", { name: "Status" });
+        expect(statusInput).toHaveValue("Present");
+        expect(screen.getByLabelText("Arrived Time")).toBeInTheDocument();
+        expect(screen.getByLabelText("Departed Time (Optional)")).toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText("Arrived Time"), { target: { value: "2020-01-01T18:10" } });
+        fireEvent.change(screen.getByLabelText("Departed Time (Optional)"), { target: { value: "2020-01-01T19:10" } });
+
+        fireEvent.click(statusInput);
+        fireEvent.click(screen.getByText("Absent", { selector: '[role="option"] span' }));
+        expect(screen.queryByLabelText("Arrived Time")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/events/5", expect.objectContaining({ method: "PATCH" })));
+        const call = fetchMock.mock.calls.find(([, init]) => (init as RequestInit)?.method === "PATCH");
+        const body = JSON.parse((call?.[1] as RequestInit).body as string);
+        expect(body).toMatchObject({ action: "manualEditAttendance", status: "Absent", arrivedAt: null, departedAt: null });
+    });
+
+    it("manual edit modal: Cancel button and the (X) close button both dismiss without saving", async () => {
+        setSession({ id: 1, isSysadmin: true });
+        const fetchMock = mockFetchJson({ "/api/events/5": baseEvent() });
+        renderPage(params);
+        await screen.findByText("Robotics Session");
+
+        fireEvent.click(screen.getAllByRole("button", { name: "Manual Edit" })[0]);
+        await screen.findByText(/Manual Edit:/);
+        fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+        await waitFor(() => expect(screen.queryByText(/Manual Edit:/)).not.toBeInTheDocument());
+
+        fireEvent.click(screen.getAllByRole("button", { name: "Manual Edit" })[0]);
+        await screen.findByText(/Manual Edit:/);
+        // Mantine's Modal close (X) button has no accessible name; select by its class.
+        fireEvent.click(document.querySelector(".mantine-Modal-close") as Element);
+        await waitFor(() => expect(screen.queryByText(/Manual Edit:/)).not.toBeInTheDocument());
+
+        expect(fetchMock).not.toHaveBeenCalledWith("/api/events/5", expect.objectContaining({ method: "PATCH" }));
+    });
+
+    it("manual edit: shows the server error, then a network-error message", async () => {
+        setSession({ id: 1, isSysadmin: true });
+        mockFetchJson({ "/api/events/5": baseEvent() });
+        renderPage(params);
+        await screen.findByText("Robotics Session");
+        fireEvent.click(screen.getAllByRole("button", { name: "Manual Edit" })[0]);
+        await screen.findByText(/Manual Edit:/);
+
+        fetchEventThenPatchWith(baseEvent(), () => ({ ok: false, json: async () => ({ error: "Locked." }) } as Response));
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+        expect(await screen.findByText("Locked.")).toBeInTheDocument();
+
+        fireEvent.click(screen.getAllByRole("button", { name: "Manual Edit" })[0]);
+        fetchEventThenPatchWith(baseEvent(), () => { throw new Error("boom"); });
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    });
+
+    it("cancel event: declining the confirm() dialog skips the request; accepting shows the server error", async () => {
+        setSession({ id: 1, isSysadmin: true });
+        const future = baseEvent({ startAt: "2999-01-01T18:00:00.000Z", endAt: "2999-01-01T20:00:00.000Z" });
+        const fetchMock = mockFetchJson({ "/api/events/5": future });
+        renderPage(params);
+        await screen.findByText("Robotics Session");
+        // The "Cancel Event" button opens the same edit form as "Edit Date / Time"
+        // (separate onClick instance) — used here so both handlers get exercised.
+        fireEvent.click(screen.getByRole("button", { name: "Cancel Event" }));
+
+        fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
+        let modal = await screen.findByRole("dialog", { name: "Cancel Event" });
+        fireEvent.click(within(modal).getByRole("button", { name: "Nevermind" }));
+        expect(fetchMock).not.toHaveBeenCalledWith("/api/events/5", expect.objectContaining({ method: "PATCH" }));
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Cancel Event" })).not.toBeInTheDocument());
+
+        fetchEventThenPatchWith(future, () => ({ ok: false, json: async () => ({ error: "Cannot cancel now." }) } as Response));
+        fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
+        modal = await screen.findByRole("dialog", { name: "Cancel Event" });
+        fireEvent.click(within(modal).getByRole("button", { name: "Cancel Event(s)" }));
+        expect(await screen.findByText("Cannot cancel now.")).toBeInTheDocument();
+    });
+
+    it("cancel event: network error, then a program-less event falls back to the programs list on success", async () => {
+        setSession({ id: 1, isSysadmin: true });
+        const future = baseEvent({ startAt: "2999-01-01T18:00:00.000Z", endAt: "2999-01-01T20:00:00.000Z", program: undefined });
+        mockFetchJson({ "/api/events/5": future });
+        renderPage(params);
+        await screen.findByText("Robotics Session");
+        fireEvent.click(screen.getByRole("button", { name: "Edit Date / Time" }));
+
+        fetchEventThenPatchWith(future, () => { throw new Error("boom"); });
+        fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
+        let modal = await screen.findByRole("dialog", { name: "Cancel Event" });
+        fireEvent.click(within(modal).getByRole("button", { name: "Cancel Event(s)" }));
+        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Cancel Event" })).not.toBeInTheDocument());
+
+        fetchEventThenPatchWith(future, () => ({ ok: true, json: async () => ({}) } as Response));
+        fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
+        modal = await screen.findByRole("dialog", { name: "Cancel Event" });
+        fireEvent.click(within(modal).getByRole("button", { name: "Cancel Event(s)" }));
+        await waitFor(() => expect(router.push).toHaveBeenCalledWith("/program-ops/programs"));
+    });
+
+    it("past event, no permission: shows the read-only past-event alert", async () => {
+        setSession({ id: 99 });
+        mockFetchJson({ "/api/events/5": baseEvent() });
+        renderPage(params);
+
+        expect(await screen.findByText(/This is a past event\. You do not have permission/)).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Confirm Attendance" })).not.toBeInTheDocument();
+    });
+
+    it("future event, core-volunteer only: shows the read-only future-event alert without edit controls", async () => {
+        setSession({ id: 2 }); // Val Volunteer: isCore true, not admin/lead
+        const future = baseEvent({ startAt: "2999-01-01T18:00:00.000Z", endAt: "2999-01-01T20:00:00.000Z" });
+        mockFetchJson({ "/api/events/5": future });
+        renderPage(params);
+
+        expect(await screen.findByText(/scheduled future event/)).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Edit Date / Time" })).not.toBeInTheDocument();
+    });
+
+    it("future event: lead mentor alone (no admin/board) can manage event info, edit the time fields, toggle apply-to-series, and back out", async () => {
+        setSession({ id: 1, isSysadmin: false, isBoardMember: false }); // matches baseEvent's leadMentorId
+        const future = baseEvent({
+            startAt: "2999-01-01T18:00:00.000Z", endAt: "2999-01-01T20:00:00.000Z", recurringGroupId: "series-1",
+        });
+        mockFetchJson({ "/api/events/5": future });
+        renderPage(params);
+
+        fireEvent.click(await screen.findByRole("button", { name: "Edit Date / Time" }));
+        fireEvent.change(screen.getByLabelText("Start Time"), { target: { value: "2999-01-01T17:00" } });
+        fireEvent.change(screen.getByLabelText("End Time"), { target: { value: "2999-01-01T21:00" } });
+        fireEvent.click(screen.getByLabelText(/Apply to Series/));
+
+        fireEvent.click(screen.getByRole("button", { name: "Nevermind" }));
+        expect(screen.queryByLabelText("Start Time")).not.toBeInTheDocument();
+    });
+
+    it("renders RSVP badge variants and a departed visit's Left: time", async () => {
+        setSession({ id: 1, isSysadmin: true });
+        const event = baseEvent({
+            program: {
+                id: 10, name: "Robotics", leadMentorId: 1,
+                volunteers: [
+                    { participantId: 2, participant: { id: 2, name: "Val Volunteer", email: "val@example.com" }, isCore: true },
+                ],
+                participants: [
+                    { participantId: 3, participant: { id: 3, name: "Pat Participant", email: "pat@example.com" } },
+                    { participantId: 4, participant: { id: 4, name: "Sam Sub", email: "sam@example.com" } },
+                    { participantId: 6, participant: { id: 6, name: "Robin Roster", email: "robin@example.com" } },
+                ],
+            },
+            visits: [{ id: 1, personId: 2, arrivedAt: "2020-01-01T18:05:00.000Z", departedAt: "2020-01-01T19:00:00.000Z" }],
+            rsvps: [
+                { personId: 2, status: "ATTENDING" },
+                { personId: 3, status: "MAYBE" },
+                { personId: 4, status: "NOT_ATTENDING" },
+            ],
+        });
+        mockFetchJson({ "/api/events/5": event });
+        renderPage(params);
+
+        expect(await screen.findByText("Maybe")).toBeInTheDocument();
+        expect(screen.getByText("Not attending")).toBeInTheDocument();
+        expect(screen.getByText("No response")).toBeInTheDocument(); // Robin Roster has no rsvp entry
+        expect(screen.getByText(/Left:/)).toBeInTheDocument();
+    });
+
+    it("program with no roster shows 'No roster found for this program' in both tables", async () => {
+        // Past event + canManageAttendance renders renderRosterGrid() too, alongside
+        // the always-rendered renderRsvpList() — both hit the empty-roster branch.
+        setSession({ id: 1, isSysadmin: true });
+        const past = baseEvent({
+            program: { id: 10, name: "Robotics", leadMentorId: 1, volunteers: [], participants: [] },
+            visits: [],
+            rsvps: [],
+        });
+        mockFetchJson({ "/api/events/5": past });
+        renderPage(params);
+
+        expect(await screen.findAllByText("No roster found for this program.")).toHaveLength(2);
     });
 });

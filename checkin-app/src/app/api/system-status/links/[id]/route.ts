@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
@@ -23,7 +24,7 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
 
             return NextResponse.json({ error: updated });
         } catch (error) {
-            console.error("Failed to update integration error:", error);
+            logger.error("Failed to update integration error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }

@@ -1,4 +1,37 @@
 import { type DbClient, type TxClient, withTx } from "@/lib/db-client";
+import prisma from "@/lib/prisma";
+
+/**
+ * Shared household-lead ownership check (audit P1-2). Loads the person and
+ * decides whether they may manage their household. `canManage` folds in the
+ * sysadmin override, matching every call site's `!isLead && !isSysadmin` guard.
+ * Returns null when the user has no household. Callers own the error strings
+ * (they differ per route), so this returns facts, not responses.
+ */
+export async function householdLeadship(
+    userId: number,
+): Promise<{ householdId: number; canManage: boolean } | null> {
+    const user = await prisma.person.findUnique({
+        where: { id: userId },
+        include: { householdLeads: true },
+    });
+    if (!user?.householdId) return null;
+    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
+    return { householdId: user.householdId, canManage: isLead || user.isSysadmin };
+}
+
+/**
+ * Emergency-contacts flavour of {@link householdLeadship}: the householdId on
+ * success, or an `{error,status}` the route can return directly.
+ */
+export async function leadHousehold(
+    userId: number,
+): Promise<number | { error: string; status: number }> {
+    const hh = await householdLeadship(userId);
+    if (!hh) return { error: "You must create a household first.", status: 400 };
+    if (!hh.canManage) return { error: "Only household leads can manage emergency contacts.", status: 403 };
+    return hh.householdId;
+}
 
 /**
  * Maximum number of leads a single household may have (issue #269).

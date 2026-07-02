@@ -75,7 +75,6 @@ export const GET = withAuth(
 
             return NextResponse.json({ households: formattedHouseholds });
         } catch (error) {
-            console.error("Emergency contacts API error:", error);
             await logBackendError(error, "GET /api/safety/emergency-contacts");
             return NextResponse.json(
                 { error: "Internal Server Error fetching emergency contacts." },

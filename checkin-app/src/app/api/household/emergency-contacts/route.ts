@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { createContact, listContacts, EmergencyContactError } from "@/lib/emergencyContacts/service";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
+import { leadHousehold } from "@/lib/household/leads";
 
 /** Shape a contact for the client, exposing the validity flag. */
 function present(c: { id: number; name: string; phone: string; email: string | null; relationship: string | null; priority: number; conflictParticipantId: number | null }) {
@@ -15,14 +17,6 @@ function present(c: { id: number; name: string; phone: string; email: string | n
         priority: c.priority,
         invalid: c.conflictParticipantId !== null || !c.name.trim() || !c.phone.trim(),
     };
-}
-
-async function leadHousehold(userId: number): Promise<number | { error: string; status: number }> {
-    const user = await prisma.person.findUnique({ where: { id: userId }, include: { householdLeads: true } });
-    if (!user?.householdId) return { error: "You must create a household first.", status: 400 };
-    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.isSysadmin) return { error: "Only household leads can manage emergency contacts.", status: 403 };
-    return user.householdId;
 }
 
 export const GET = withAuth({}, async (_req, auth) => {
@@ -57,7 +51,7 @@ export const POST = withAuth({}, async (req, auth) => {
         return NextResponse.json({ contact: present(contact) }, { status: 201 });
     } catch (error) {
         if (error instanceof EmergencyContactError) return NextResponse.json({ error: error.message }, { status: 400 });
-        console.error("Emergency contact POST error:", error);
+        logger.error("Emergency contact POST error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });
