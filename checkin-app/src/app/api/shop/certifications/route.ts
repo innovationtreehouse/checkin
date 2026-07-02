@@ -1,70 +1,61 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
+import { handler, forbidden, unauthorized } from "@/security/handler";
 import { Prisma } from '@/generated/prisma/client';
 import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
 
-export const GET = withAuth({}, async (req, auth) => {
-    // withAuth funnels the denied-household check (auth.ts) and rejects kiosk —
-    // a raw getServerSession would let a board-denied member keep reading shop data.
-    if (auth.type !== 'session') {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const session = { user: auth.user };
+// Cert status is PUBLIC BY DESIGN — certifications are physically posted in the
+// shop. This route runs on the @/security handler() runtime so that intent is
+// DECLARED in the registry, not hand-rolled: admission is 'authenticated' (a
+// logged-in member; denied households fail closed at authenticateRequest, which
+// closes the old hand-rolled denied bypass), and the registry view — not this
+// query — gates fields. We select only {id, name} (no client needs email), but
+// the registry declares participant email as staff-only (everyones:pii) so the
+// stripper would gate it if ever added. That converts the endpoint from an
+// IDOR-shaped hand-rolled select into declared policy, so the recurring audit
+// false-positive resolves.
+export const GET = handler('GET /api/shop/certifications', async ({ req, auth }) => {
+    if (auth.type !== 'session') throw unauthorized(); // unreachable: admission gates non-sessions
+    const user = auth.user;
 
-    try {
-        const { searchParams } = new URL(req.url);
-        const participantIdParam = searchParams.get('participantId');
-        const toolIdParam = searchParams.get('toolId');
-        const allParam = searchParams.get('all');
+    const { searchParams } = new URL(req.url);
+    const participantIdParam = searchParams.get('participantId');
+    const toolIdParam = searchParams.get('toolId');
+    const allParam = searchParams.get('all');
 
-        // ?all=true returns every assignment — visible to admins/board, any tool
-        // certifier (MAY_CERTIFY_OTHERS on some tool), and any keyholder.
-        if (allParam === 'true') {
-            const hasCertifierAuth = (session.user?.toolStatuses ?? []).some(ts => ts.level === 'MAY_CERTIFY_OTHERS');
-            const isAuthorized = session.user?.isSysadmin || session.user?.isBoardMember || session.user?.isKeyholder || hasCertifierAuth;
-            if (!isAuthorized) {
-                return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-            }
-            const certifications = await prisma.toolStatus.findMany({
-                orderBy: [{ tool: { name: 'asc' } }, { participant: { name: 'asc' } }],
-                include: {
-                    tool: true,
-                    participant: { select: { id: true, name: true } },
-                },
-            });
-            return NextResponse.json(certifications);
-        }
-
-        let targetUserId = session.user.id;
-
-        if (participantIdParam) {
-            targetUserId = parseInt(participantIdParam, 10);
-        }
-
-        let whereClause: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
-
-        if (toolIdParam) {
-            // If checking who is certified on a tool
-            whereClause = { toolId: parseInt(toolIdParam, 10) };
-        } else {
-            // Looking up a specific person's certifications
-            whereClause = { participantId: targetUserId };
-        }
-
+    // "All Assignments" ops grid — certifiers/keyholders/admins only. NOT a
+    // confidentiality boundary (the data is public-by-design); an ops-surface
+    // gate preserving pre-migration behavior. Stays inline because the registry
+    // authorize grammar can't express "holds a MAY_CERTIFY_OTHERS on any tool".
+    if (allParam === 'true') {
+        const hasCertifierAuth = (user.toolStatuses ?? []).some(ts => ts.level === 'MAY_CERTIFY_OTHERS');
+        const isAuthorized = user.isSysadmin || user.isBoardMember || user.isKeyholder || hasCertifierAuth;
+        if (!isAuthorized) throw forbidden();
         const certifications = await prisma.toolStatus.findMany({
-            where: whereClause,
+            orderBy: [{ tool: { name: 'asc' } }, { participant: { name: 'asc' } }],
             include: {
                 tool: true,
-                participant: toolIdParam ? { select: { id: true, name: true } } : false
-            }
+                participant: { select: { id: true, name: true } },
+            },
         });
-
-        return NextResponse.json(certifications);
-    } catch (error) {
-        await logBackendError(error, "GET /api/shop/certifications");
-        return NextResponse.json({ error: "Failed to fetch certifications" }, { status: 500 });
+        return { ToolStatus: certifications };
     }
+
+    const targetUserId = participantIdParam ? parseInt(participantIdParam, 10) : user.id;
+    const whereClause = toolIdParam
+        ? { toolId: parseInt(toolIdParam, 10) }
+        : { participantId: targetUserId };
+
+    const certifications = await prisma.toolStatus.findMany({
+        where: whereClause,
+        include: {
+            tool: true,
+            participant: toolIdParam ? { select: { id: true, name: true } } : false,
+        },
+    });
+
+    return { ToolStatus: certifications };
 });
 
 // withAuth funnels the denied-household check at admission (closes GAP-1: this
