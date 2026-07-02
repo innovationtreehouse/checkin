@@ -22,7 +22,7 @@ All line numbers below were re-verified against the tree at time of writing.
 
 | Concept | Where it lives | Note |
 |---|---|---|
-| A person | `model Participant` — `prisma/schema.prisma:62` | The ONLY person model. |
+| A person | `model Participant` — `prisma/schema.prisma:62` → **being renamed to `Person`** (umbrella; "participant" freed to mean only a program enrollee). | The ONLY person model. |
 | A group of people | `model Household` — `schema.prisma:153` | 1 household : N participants (`householdId` on Participant, `schema.prisma:95`). |
 | Org membership (A) | `model Membership` (1:1 household, `schema.prisma:296`) + `model MembershipProcess` (`schema.prisma:315`) → **renamed to `OrgMembership`/`OrgMembershipProcess` in Phase 4.** | The org-membership relationship + lifecycle. Bare "Membership" is banned — it's the **Org** relationship. |
 | Guardian / responsible adult | `model HouseholdLead` (`schema.prisma:222`) | A participant flagged as a lead. Being a **non-lead does not imply youth or student.** |
@@ -140,13 +140,13 @@ login. The 25yo fixture proves it is **not** age-based.
 
 | Concept | Relationship | UI word | Code identifier | Model / table | Path |
 |---|---|---|---|---|---|
-| **Person** | the human | name / "person" | `participant` | `Participant` (sole person model) | — |
+| **Person** | the human (any human) | name / "person" | `person` | **`Person`** (umbrella — rename from `Participant`, pending) | — |
 | **Org Membership (A)** | Person/household ↔ **Organization** | "Treehouse Member" | `isActiveOrgMember`, `orgMember…` | `OrgMembership` (rename from `Membership`) | `/api/shop/org-members` |
 | **Household** | grouping | "household" (warm: "family") | `household` | `Household` | `/api/household` |
 | **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `HouseholdLead` | `/api/household/member` |
 | **Program relationship** | Person ↔ **Program** | "participant" | `programParticipant` | `ProgramParticipant` | — |
 
-Key rules: **`participant` is reserved for the Person model/row and the Program relationship only** — never the household relationship (that's `householdMember`). The `/api/household/member` route **stays** (the `/household/` segment qualifies it). `participantProjection.ts` / `HOUSEHOLD_PEER_SELECT` project a Person row → keep `participant`.
+Key rules: **`participant` means ONLY a program enrollee** (the Program relationship). The umbrella person model is **`Person`**, never "participant"; **admin and volunteers are not participants.** Anything listing MIXED people (schema included) uses `Person`/"people"/role buckets, never "participant." The `/api/household/member` route **stays** (the `/household/` segment qualifies it). `participantProjection.ts` / `HOUSEHOLD_PEER_SELECT` project a Person row → they rename *with* the model (→ person projection). **This repositioning is a large schema migration under investigation** ([PERSON_UMBRELLA_INVESTIGATION.md](PERSON_UMBRELLA_INVESTIGATION.md), chip `task_e6b621d7`) before it becomes a phase.
 
 **Person sub-classifications (orthogonal to the relationships):**
 
@@ -225,10 +225,10 @@ definition of every people/household term, the code-vs-copy split, and the
 **Status: landed as #670 (`minor`→`youth`) + a followup for comment scrub.**
 - **Predicate:** `isMinor`→`isYouth` in `src/lib/time.ts:95` + the 7 consumers + tests. Body (`age < 18`) unchanged. ✅ (#670)
 - **Identifiers:** `minor*` var/map → `youth*` (e.g. `getFullAttendance.ts` `minorMap`→`youthMap`; `studentVisits` is Phase 2). ✅ (#670)
-- **Comments/prose:** the word "minor" → "youth" in comments + dev-seed strings (`api/programs/[id]/route.ts`, `api/events/[id]/route.ts`, `security/registry.ts`, `importDob.ts`, `seed-helpers.ts`, `participantProjection.ts`). ⏳ followup chip.
+- **Comments/prose + tests:** `#670` only renamed src *identifiers*. The word "minor" survived in src comments/dev-seed strings AND across ~14 test files (comments, `it(...)` descriptions, `minorId`/`const minor` vars, fixture names/emails). A followup scrub covers all of them → `youth`. ⏳ chip `task_6cedd79a`.
 - **`child` — leave entirely alone.** Do NOT touch the join-flow `ChildForm`/`children`/`addChild` identifiers, and do NOT touch "Children"/"Add child" copy. `child` = offspring, a valid term. (An over-eager first followup renamed these to `youth`; that branch is discarded.)
 - **Schema:** none — age derived from `dateOfBirth`; no `minor`/`child` column exists.
-- **Done-when:** grep `\bminors?\b` in `src` (non-test) returns 0; `child` identifiers and copy remain intact.
+- **Done-when:** grep `\bminors?\b` in `src` **and** `tests` returns 0 (docs excluded — they define the term); `child` identifiers and copy remain intact.
 
 ### Phase 2 — `student` (fixes BUG-1; reserves the word)
 **Goal:** age-based "student" becomes `youth`; `student` is freed to mean *program enrollee* only. Depends on Phase 1 (`youth` must exist).
@@ -251,7 +251,7 @@ definition of every people/household term, the code-vs-copy split, and the
 - **Note:** an earlier spec of this phase (move route → `/api/household/participant`, rename to `participant`) was **backwards** — `participant` is the Program/Person word, not the household word. Superseded by #674; the `/participant` chip branch is discarded.
 
 ### Phase 4 — `OrgMembership` (real rename + schema migration)
-**Goal:** the org-membership relationship gets its own qualified name everywhere; the bare word `member`/`Membership` for "belongs to the org" becomes **Org**-qualified. UI word: **"Treehouse Member"** (confirm — see §6 Q-Org). Not a mere audit — a schema migration with wide blast radius; **scope it before starting.**
+**Goal:** the org-membership relationship gets its own qualified name everywhere; the bare word `member`/`Membership` for "belongs to the org" becomes **Org**-qualified. UI word: **"Treehouse Member"** everywhere (locked — one term, no staff variant). Not a mere audit — a schema migration with wide blast radius; **scope it before starting.**
 
 - **Schema migration (DB wiped on deploy → no data care):** `model Membership` → `OrgMembership`; `MembershipProcess` → `OrgMembershipProcess` (confirm naming); then `npx prisma migrate dev`. Decide whether `membership-ops/*`, `boardAlerts`/renewal/review, and the `MembershipStatus` enum follow the `Org` prefix — big blast radius, list every table + call site first.
 - **Read-model identifiers:** `isActiveMember`→`isActiveOrgMember`; `ACTIVE_MEMBER_PARTICIPANT_WHERE`/`ACTIVE_MEMBER_INCLUDE`/`participantRecordIsActiveMember` → `…OrgMember…` (`lib/membership.ts`).
@@ -302,7 +302,7 @@ landed. Phase 4 is the heaviest (schema) — do it deliberately, not as a sweep.
 2. **[gates Phase 5 branch] Unify household/family, or bless the split?** Default: keep the split (Branch A, no migration) — `Household` in code, "family" in warm user copy. Say "unify" to trigger Branch B (schema migration of `familyContext`).
 3. **[gates Phase 2 reservation] Does a real, age-independent `student` (program enrollee) exist as a product concept to surface?** If yes, it gets its own `ProgramParticipant`-derived derivation *after* Phase 2 lands. If no, "student" is retired entirely in favor of "youth" + "enrolled participant".
 4. **[Phase 6] `emailDependentCheckins` key** — DB is wiped on deploy so there's no backfill cost; default is to rename it to `emailHouseholdCheckins` along with the copy. Say so if you'd rather leave the private key as-is.
-5. **[gates Phase 4 / Q-Org] Org-member UI term.** Locked to **"Treehouse Member"** everywhere, or context-dependent (e.g. "Org Member" for dense staff tables)? Confirm a single term or the split.
+5. **[RESOLVED] Org-member UI term = "Treehouse Member" everywhere** — one term, no staff variant.
 6. **[gates Phase 4 scope] OrgMembership blast radius.** Does the `Org` prefix propagate to `MembershipProcess`, `MembershipStatus`, all of `membership-ops/*`, and boardAlerts/renewal/review? Scope the full table + call-site list before starting.
 7. **[confirm] `participantProjection.ts` / `HOUSEHOLD_PEER_SELECT`** project a **Person row** (`participant` = Person), so they stay `participant` — confirming so no later sweep renames them.
 </content>

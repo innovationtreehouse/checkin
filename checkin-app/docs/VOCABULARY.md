@@ -17,19 +17,20 @@ identifier that just says "member" is a bug against this dictionary.
 
 | Concept | Relationship | UI word | Code identifier | Model / table | Path |
 |---|---|---|---|---|---|
-| **Person** | the human | name / "person" | `participant` | `Participant` (the sole person model) | — |
+| **Person** | the human (any human: staff, volunteer, youth, lead, enrollee) | name / "person" | `person` | **`Person`** (umbrella model — rename from `Participant`, pending; see migration status) | — |
 | **Org Membership (A)** | Person/household ↔ **Organization** | **"Treehouse Member"** | `isActiveOrgMember`, `orgMember…` | `OrgMembership` (rename from `Membership`) | `/api/shop/org-members` |
 | **Household** | grouping of people | "household" (warm: "family") | `household` | `Household` | `/api/household` |
 | **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `HouseholdLead` (lead variant) | `/api/household/member` |
-| **Program relationship** | Person ↔ **Program** | "participant" | `programParticipant` | `ProgramParticipant` | — |
+| **Program relationship** | Person ↔ **Program** | **"participant"** | `programParticipant` | `ProgramParticipant` | — |
 
 ## Rules stated explicitly
 
 1. **No bare member/Member/Membership.** Qualify with the target — **Org** or **Household** — every time, in code and UI.
-2. **`participant` is reserved for exactly two things:** (a) the `Participant` **Person** model/row, and (b) the **Program** relationship (`ProgramParticipant`). It must **NOT** name the household relationship — that is `householdMember`.
-3. **A person carries multiple relationship-names at once.** Same human, different relationship on different screens (household member here, participant there, Treehouse Member elsewhere). Do not "reconcile" these into one word.
-4. **The `/api/household/member` route stays put.** The `/household/` path segment already qualifies "member" as the household relationship — do NOT move it to `/participant`.
-5. **`participantProjection.ts` / `HOUSEHOLD_PEER_SELECT` stay `participant`.** They project a **Person row** (rule 2a), not the household relationship. Do not rename them in any later sweep.
+2. **`participant` means ONLY a program enrollee** (`ProgramParticipant` / the Program relationship). It is NOT the person model and NOT a generic word for "any person." The umbrella person model is **`Person`**. **Admin and volunteers are never "participants."**
+3. **Anything showing MIXED people uses the umbrella, not "participant."** A screen or API listing staff/volunteers/youth/leads together is `Person`/"person"/"people", or an explicit role bucket — never "participants".
+4. **A person carries multiple relationship-names at once.** Same human, different relationship on different screens (household member here, program participant there, Treehouse Member elsewhere). Do not "reconcile" these into one word.
+5. **The `/api/household/member` route stays put.** The `/household/` path segment already qualifies "member" as the household relationship — do NOT move it to `/participant`.
+6. **`participantProjection.ts` / `HOUSEHOLD_PEER_SELECT` project a Person row** — they rename *with* the model (→ person projection), they are NOT the enrollee sense.
 
 ## Person sub-classifications (orthogonal to the relationships above)
 
@@ -62,6 +63,7 @@ The term-by-term migration plan lives in
 - **Phase 1 — youth** (`minor`/`isMinor` → `youth`/`isYouth`): shipped (#670) + a comment-scrub followup. `child` deliberately preserved.
 - **Phase 3 — householdMember** (sense-B bare `member` → `householdMember`, route kept at `/api/household/member`): shipped (#674, branch `claude/determined-bell-70bb18`). `programParticipants` and Prisma `participant`/`participantId` kept intentionally (rule 2).
 - **Phase 2 — student**, **Phase 4 — OrgMembership**, **Phase 5 — household/family**, **Phase 6 — dependent**: pending.
+- **Person umbrella** — rename `model Participant` → `Person` (and `participantId` FKs → `personId`, TBC), freeing "participant" to mean only the program enrollee; requalify every mixed-people "participant" label. Large schema migration — under investigation (report: [designs/PERSON_UMBRELLA_INVESTIGATION.md](designs/PERSON_UMBRELLA_INVESTIGATION.md), chip `task_e6b621d7`) before it's specced as a phase.
 
 ## Known semantic bugs (see proposal §3)
 
