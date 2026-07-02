@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 /**
- * Strip-assertion for GET /api/shop/members. The route returns every active
+ * Strip-assertion for GET /api/shop/org-members. The route returns every active
  * member's {id, name, email}. The view decides who sees email (pii):
  *
  *   - board/sysadmin (everyones:pii) → name + email.
@@ -40,11 +40,11 @@ function tokensFor(endpoint: string, role: Role): readonly Token[] {
     return entry[1];
 }
 
-const ENDPOINT = 'GET /api/shop/members';
+const ENDPOINT = 'GET /api/shop/org-members';
 // Another member (not the caller) — id !== selfId, so only the 'everyones' scope applies.
 const member = { id: 99, name: 'Other Member', email: 'other@x.test' };
 
-describe('shop/members field-stripping', () => {
+describe('shop/org-members field-stripping', () => {
     it('board sees name + email (pii)', () => {
         const tokens = tokensFor(ENDPOINT, 'isBoardMember');
         const out = stripValue('Person', member, tokens, ctx()) as Record<string, unknown>;

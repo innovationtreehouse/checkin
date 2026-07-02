@@ -6,7 +6,7 @@
  * Tests members, tools, and certifications sub-routes
  */
 
-import { GET as getMembers } from '@/app/api/shop/members/route';
+import { GET as getMembers } from '@/app/api/shop/org-members/route';
 import { normalizeAuditData } from '@/lib/auditPayload';
 import { GET as getTools, POST as postTools } from '@/app/api/shop/tools/route';
 import { GET as getCerts, POST as postCerts } from '@/app/api/shop/certifications/route';
@@ -158,7 +158,7 @@ describe('Shop API Integration Tests', () => {
         } as unknown as never;
     };
 
-    describe('/api/shop/members', () => {
+    describe('/api/shop/org-members', () => {
         it('should return 403 for common users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
@@ -174,7 +174,7 @@ describe('Shop API Integration Tests', () => {
              const data = await res.json();
              
              // Our common user has an active membership so they should appear
-             const memberEmails = data.members.map((m: { email: string }) => m.email);
+             const memberEmails = data.orgMembers.map((m: { email: string }) => m.email);
              expect(memberEmails).toContain('common-shop-api-test@example.com');
         });
 
@@ -189,9 +189,9 @@ describe('Shop API Integration Tests', () => {
              const res = await getMembers(createReq('GET')) as Response;
              expect(res.status).toBe(200);
              const data = await res.json();
-             expect(data.members.length).toBeGreaterThan(0);
-             expect(data.members.every((m: { name?: string }) => typeof m.name === 'string')).toBe(true);
-             expect(data.members.every((m: { email?: string }) => m.email === undefined)).toBe(true);
+             expect(data.orgMembers.length).toBeGreaterThan(0);
+             expect(data.orgMembers.every((m: { name?: string }) => typeof m.name === 'string')).toBe(true);
+             expect(data.orgMembers.every((m: { email?: string }) => m.email === undefined)).toBe(true);
         });
     });
 
