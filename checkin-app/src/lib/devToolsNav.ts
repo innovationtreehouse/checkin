@@ -11,4 +11,5 @@ export interface DevToolsNavLink {
 export const DEV_TOOLS_NAV_LINKS: DevToolsNavLink[] = [
   { name: "Email", href: "/dev/sent-mail" },
   { name: "Sign", href: "/dev/zoho-sign" },
+  { name: "Shopify", href: "/dev/shopify" },
 ];
