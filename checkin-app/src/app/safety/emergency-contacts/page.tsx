@@ -108,7 +108,7 @@ export default function EmergencyContactsPage() {
         <TextInput
           mt="md"
           size="md"
-          placeholder="Search by Household Name, Parent Name, or Member Name..."
+          placeholder="Search by Household Name, Parent Name, or Household Member Name..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.currentTarget.value)}
         />
@@ -130,7 +130,7 @@ export default function EmergencyContactsPage() {
                   <Text fw={600} fz="lg">{h.name || `Household #${h.id}`}</Text>
                   {h.isPresent && <Badge color="cyan" variant="light">Present Now</Badge>}
                 </Group>
-                <Text size="sm" c="dimmed">Members:</Text>
+                <Text size="sm" c="dimmed">Household members:</Text>
                 {h.participants.length > 0 ? (
                   <List size="sm">
                     {h.participants.map((p) => (
@@ -141,7 +141,7 @@ export default function EmergencyContactsPage() {
                     ))}
                   </List>
                 ) : (
-                  <Text size="sm" c="dimmed" fs="italic">No enrolled members</Text>
+                  <Text size="sm" c="dimmed" fs="italic">No household members</Text>
                 )}
               </div>
 

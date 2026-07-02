@@ -34,15 +34,15 @@ export const PATCH = withAuth(
             // Leads/sysadmins edit anyone; anyone may edit their own record.
             const isCurrentUserLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
             if (!isCurrentUserLead && !user.isSysadmin && participantId !== userId) {
-                return NextResponse.json({ error: "Only household leads can edit members" }, { status: 403 });
+                return NextResponse.json({ error: "Only household leads can edit household members" }, { status: 403 });
             }
 
-            const targetMember = await prisma.participant.findUnique({ where: { id: participantId } });
-            if (!targetMember || targetMember.householdId !== user.householdId) {
-                return NextResponse.json({ error: "Member not found in your household" }, { status: 404 });
+            const targetHouseholdMember = await prisma.participant.findUnique({ where: { id: participantId } });
+            if (!targetHouseholdMember || targetHouseholdMember.householdId !== user.householdId) {
+                return NextResponse.json({ error: "That household member was not found" }, { status: 404 });
             }
 
-            const updatedMember = await prisma.participant.update({
+            const updatedHouseholdMember = await prisma.participant.update({
                 where: { id: participantId },
                 data: {
                     name: name !== undefined ? name : undefined,
@@ -114,8 +114,8 @@ export const PATCH = withAuth(
                     actorId: userId,
                     action: "EDIT",
                     tableName: "Participant",
-                    affectedEntityId: targetMember.id,
-                    newData: updatedMember
+                    affectedEntityId: targetHouseholdMember.id,
+                    newData: updatedHouseholdMember
                 }
             });
 
@@ -124,8 +124,8 @@ export const PATCH = withAuth(
             const warning = await reconcileAndWarn(prisma, user.householdId);
 
             return NextResponse.json({
-                member: updatedMember,
-                message: leadRejection ? "Member updated, but not added as a lead." : "Member updated successfully.",
+                householdMember: updatedHouseholdMember,
+                message: leadRejection ? "Household member updated, but not added as a lead." : "Household member updated successfully.",
                 leadRejection,
                 warning,
             }, { status: 200 });

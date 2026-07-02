@@ -11,11 +11,11 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     try {
         // Self, or every household member when the session is a household lead.
-        const members = await activityMembers(session);
-        const memberIds = members.map(m => m.id);
+        const householdMembers = await activityMembers(session);
+        const householdMemberIds = householdMembers.map(m => m.id);
 
         const enrollments = await prisma.programParticipant.findMany({
-            where: { participantId: { in: memberIds } },
+            where: { participantId: { in: householdMemberIds } },
             select: {
                 programId: true,
                 participantId: true,

@@ -11,50 +11,50 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     try {
         // Self, or every household member when the session is a household lead.
-        const members = await activityMembers(session);
-        const memberIds = members.map(m => m.id);
-        const memberById = new Map(members.map(m => [m.id, m]));
+        const householdMembers = await activityMembers(session);
+        const householdMemberIds = householdMembers.map(m => m.id);
+        const householdMemberById = new Map(householdMembers.map(m => [m.id, m]));
 
-        // Which members are tied to which programs (enrolled or volunteering).
+        // Which household members are tied to which programs (enrolled or volunteering).
         const [enrolled, volunteers] = await Promise.all([
             prisma.programParticipant.findMany({
-                where: { participantId: { in: memberIds } },
+                where: { participantId: { in: householdMemberIds } },
                 select: { participantId: true, programId: true }
             }),
             prisma.programVolunteer.findMany({
-                where: { participantId: { in: memberIds } },
+                where: { participantId: { in: householdMemberIds } },
                 select: { participantId: true, programId: true }
             })
         ]);
 
-        const programMembers = new Map<number, Set<number>>();
+        const programParticipants = new Map<number, Set<number>>();
         for (const { programId, participantId } of [...enrolled, ...volunteers]) {
-            let set = programMembers.get(programId);
-            if (!set) programMembers.set(programId, (set = new Set()));
+            let set = programParticipants.get(programId);
+            if (!set) programParticipants.set(programId, (set = new Set()));
             set.add(participantId);
         }
 
         const events = await prisma.event.findMany({
             where: {
-                programId: { in: [...programMembers.keys()] },
+                programId: { in: [...programParticipants.keys()] },
                 endAt: { gte: new Date() } // Only upcoming
             },
             orderBy: { startAt: "asc" },
             include: {
                 program: { select: { name: true } },
                 rsvps: {
-                    where: { participantId: { in: memberIds } },
+                    where: { participantId: { in: householdMemberIds } },
                     select: { participantId: true, status: true }
                 }
             }
         });
 
-        // One card per (event, member-in-that-program), each with that member's
-        // own RSVP — so a household lead can respond for each family member.
+        // One card per (event, participant-in-that-program), each with that
+        // participant's own RSVP — so a household lead can respond for each one.
         const rows = events.flatMap((ev: typeof events[number]) => {
-            const attendees = ev.programId ? programMembers.get(ev.programId) : undefined;
+            const attendees = ev.programId ? programParticipants.get(ev.programId) : undefined;
             if (!attendees) return [];
-            return memberIds
+            return householdMemberIds
                 .filter(id => attendees.has(id))
                 .map(pid => ({
                     id: ev.id,
@@ -63,7 +63,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                     startAt: ev.startAt,
                     endAt: ev.endAt,
                     program: ev.program,
-                    participant: memberById.get(pid),
+                    participant: householdMemberById.get(pid),
                     rsvp: ev.rsvps.find((r: typeof ev.rsvps[number]) => r.participantId === pid)?.status ?? null
                 }));
         });

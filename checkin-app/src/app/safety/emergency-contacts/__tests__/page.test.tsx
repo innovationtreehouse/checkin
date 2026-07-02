@@ -54,7 +54,7 @@ describe("safety/emergency-contacts page", () => {
     renderWithProviders(<EmergencyContactsPage />);
     await screen.findByText("Keyholder House");
 
-    fireEvent.change(screen.getByPlaceholderText("Search by Household Name, Parent Name, or Member Name..."), {
+    fireEvent.change(screen.getByPlaceholderText("Search by Household Name, Parent Name, or Household Member Name..."), {
       target: { value: "Away" },
     });
 

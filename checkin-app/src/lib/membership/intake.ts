@@ -211,7 +211,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     if (!user) throw new IntakeError("no_household", "User not found.");
     assertLead(user);
     const householdId = user.householdId!;
-    const householdParticipantIds = new Set((user.household?.participants ?? []).map((p) => p.id));
+    const householdMemberIds = new Set((user.household?.participants ?? []).map((p) => p.id));
 
     const toDate = (d?: string | null) => (d ? new Date(d) : null);
 
@@ -274,7 +274,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     // Secondary parent: update if it belongs to this household, else create.
     if (input.secondaryParent) {
         const sp = input.secondaryParent;
-        if (sp.id && householdParticipantIds.has(sp.id)) {
+        if (sp.id && householdMemberIds.has(sp.id)) {
             await prisma.participant.update({
                 where: { id: sp.id },
                 data: {
@@ -302,7 +302,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     // Children are non-lead household members. Update existing (own household
     // only), create the rest. Never delete; never add a HouseholdLead row.
     for (const child of input.children ?? []) {
-        if (child.id && householdParticipantIds.has(child.id)) {
+        if (child.id && householdMemberIds.has(child.id)) {
             await prisma.participant.update({
                 where: { id: child.id },
                 data: {
