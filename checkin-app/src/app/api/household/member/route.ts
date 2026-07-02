@@ -42,86 +42,90 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: "That household member was not found" }, { status: 404 });
             }
 
-            const updatedHouseholdMember = await prisma.participant.update({
-                where: { id: participantId },
-                data: {
-                    name: name !== undefined ? name : undefined,
-                    email: email !== undefined ? (email === "" ? null : email.toLowerCase()) : undefined,
-                    dateOfBirth: dob !== undefined ? (dob === "" ? null : new Date(dob + "T12:00:00Z")) : undefined,
-                    phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
-                    // A real DoB supersedes the 25+ flag; otherwise honor the checkbox.
-                    isDeclaredAdult: over25 !== undefined ? (dob ? false : !!over25) : undefined,
-                },
-                select: HOUSEHOLD_PEER_SELECT,
-            });
+            const { updatedHouseholdMember, leadRejection, warning } = await prisma.$transaction(async (tx) => {
+                const updatedHouseholdMember = await tx.participant.update({
+                    where: { id: participantId },
+                    data: {
+                        name: name !== undefined ? name : undefined,
+                        email: email !== undefined ? (email === "" ? null : email.toLowerCase()) : undefined,
+                        dateOfBirth: dob !== undefined ? (dob === "" ? null : new Date(dob + "T12:00:00Z")) : undefined,
+                        phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
+                        // A real DoB supersedes the 25+ flag; otherwise honor the checkbox.
+                        isDeclaredAdult: over25 !== undefined ? (dob ? false : !!over25) : undefined,
+                    },
+                    select: HOUSEHOLD_PEER_SELECT,
+                });
 
-            // Set when the field edits saved but the requested promotion to lead
-            // was declined by the per-household cap (#269). We report this back
-            // rather than 400 the whole edit, so the form can say the member's
-            // details were saved even though they weren't made a lead.
-            let leadRejection: string | null = null;
+                // Set when the field edits saved but the requested promotion to lead
+                // was declined by the per-household cap (#269). We report this back
+                // rather than 400 the whole edit, so the form can say the member's
+                // details were saved even though they weren't made a lead.
+                let leadRejection: string | null = null;
 
-            if (isLead !== undefined && participantId !== userId) {
-                const currentLead = await prisma.householdLead.findUnique({
-                    where: {
-                        householdId_personId: { householdId: user.householdId, personId: participantId }
+                if (isLead !== undefined && participantId !== userId) {
+                    const currentLead = await tx.householdLead.findUnique({
+                        where: {
+                            householdId_personId: { householdId: user.householdId, personId: participantId }
+                        }
+                    });
+
+                    if (isLead && !currentLead) {
+                        try {
+                            await addHouseholdLead(tx, user.householdId, participantId);
+                            await tx.auditLog.create({
+                                data: {
+                                    actorId: userId,
+                                    action: "CREATE",
+                                    tableName: "HouseholdLead",
+                                    affectedEntityId: user.householdId,
+                                    secondaryAffectedEntity: participantId
+                                }
+                            });
+                        } catch (e) {
+                            if (e instanceof HouseholdLeadLimitError) {
+                                leadRejection = e.message;
+                            } else {
+                                throw e;
+                            }
+                        }
+                    } else if (!isLead && currentLead) {
+                        const leadCount = await tx.householdLead.count({ where: { householdId: user.householdId } });
+                        if (leadCount > 1) {
+                            await tx.householdLead.delete({
+                                 where: {
+                                     householdId_personId: { householdId: user.householdId, personId: participantId }
+                                 }
+                            });
+
+                            await tx.auditLog.create({
+                                data: {
+                                    actorId: userId,
+                                    action: "DELETE",
+                                    tableName: "HouseholdLead",
+                                    affectedEntityId: user.householdId,
+                                    secondaryAffectedEntity: participantId
+                                }
+                            });
+                        }
+                    }
+                }
+
+                await tx.auditLog.create({
+                    data: {
+                        actorId: userId,
+                        action: "EDIT",
+                        tableName: "Participant",
+                        affectedEntityId: targetHouseholdMember.id,
+                        newData: updatedHouseholdMember
                     }
                 });
 
-                if (isLead && !currentLead) {
-                    try {
-                        await addHouseholdLead(prisma, user.householdId, participantId);
-                        await prisma.auditLog.create({
-                            data: {
-                                actorId: userId,
-                                action: "CREATE",
-                                tableName: "HouseholdLead",
-                                affectedEntityId: user.householdId,
-                                secondaryAffectedEntity: participantId
-                            }
-                        });
-                    } catch (e) {
-                        if (e instanceof HouseholdLeadLimitError) {
-                            leadRejection = e.message;
-                        } else {
-                            throw e;
-                        }
-                    }
-                } else if (!isLead && currentLead) {
-                    const leadCount = await prisma.householdLead.count({ where: { householdId: user.householdId } });
-                    if (leadCount > 1) {
-                        await prisma.householdLead.delete({
-                             where: {
-                                 householdId_personId: { householdId: user.householdId, personId: participantId }
-                             }
-                        });
-                        
-                        await prisma.auditLog.create({
-                            data: {
-                                actorId: userId,
-                                action: "DELETE",
-                                tableName: "HouseholdLead",
-                                affectedEntityId: user.householdId,
-                                secondaryAffectedEntity: participantId
-                            }
-                        });
-                    }
-                }
-            }
+                // Edits to a member's name/phone/email can make them match an
+                // emergency contact (direction B): re-evaluate and warn if so.
+                const warning = await reconcileAndWarn(tx, user.householdId);
 
-            await prisma.auditLog.create({
-                data: {
-                    actorId: userId,
-                    action: "EDIT",
-                    tableName: "Participant",
-                    affectedEntityId: targetHouseholdMember.id,
-                    newData: updatedHouseholdMember
-                }
+                return { updatedHouseholdMember, leadRejection, warning };
             });
-
-            // Edits to a member's name/phone/email can make them match an
-            // emergency contact (direction B): re-evaluate and warn if so.
-            const warning = await reconcileAndWarn(prisma, user.householdId);
 
             return NextResponse.json({
                 householdMember: updatedHouseholdMember,
