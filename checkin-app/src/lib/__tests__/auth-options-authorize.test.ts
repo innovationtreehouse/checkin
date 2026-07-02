@@ -263,4 +263,24 @@ describe('persona-mint authorize() glue', () => {
         expect(mockEvaluateMint.mock.calls[0][0].caller.email).toBe('caller@innovationtreehouse.org');
         expect(mockEvaluateMint.mock.calls[0][0].mode).toBe('impersonate');
     });
+
+    it('logout mode, dev org caller → mints a synthetic guest session (no participant lookup), audited under the real human', async () => {
+        mockGetToken.mockResolvedValue(ORG_CALLER);
+
+        const result = await getAuthorize()({ mode: 'logout' }, REQ);
+
+        // No target participant — the logged-out preview carries no id/roles downstream.
+        expect(result).toEqual({
+            id: 'guest',
+            email: null,
+            name: 'Logged out',
+            impersonatedBy: 'daniel@innovationtreehouse.org',
+        });
+        expect(mockFindUnique).not.toHaveBeenCalled();
+        expect(mockFindFirst).not.toHaveBeenCalled();
+        const [action, actor, detail] = mockRecordLedger.mock.calls[0];
+        expect(action).toBe('impersonate');
+        expect(actor).toBe('daniel@innovationtreehouse.org');
+        expect(detail).toBe('logged out');
+    });
 });
