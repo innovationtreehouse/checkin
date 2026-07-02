@@ -17,7 +17,7 @@ identifier that just says "member" is a bug against this dictionary.
 
 | Concept | Relationship | UI word | Code identifier | Model / table | Path |
 |---|---|---|---|---|---|
-| **Person** | the human (any human: staff, volunteer, youth, lead, enrollee) | name / "person" | `person` | **`Person`** — the umbrella model. **Name DECIDED.** Code still says `Participant`; the rename is not yet executed (see migration status). | — |
+| **Person** | the human (any human: staff, volunteer, youth, lead, enrollee) | name / "person" | `person` | **`Person`** — the umbrella model. **Shipped** (`model Person`; `prisma.person`; `personId` FKs). | — |
 | **Org Membership (A)** | Person/household ↔ **Organization** | **"Treehouse Member"** | `isActiveOrgMember`, `orgMember…` | `OrgMembership` (rename from `Membership`) | `/api/shop/org-members` |
 | **Household** | grouping of people | "household" (warm: "family") | `household` | `Household` | `/api/household` |
 | **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `HouseholdLead` (lead variant) | `/api/household/member` |
@@ -58,12 +58,22 @@ These describe *what kind of person*, independent of which relationship you're v
 ## Migration status
 
 The term-by-term migration plan lives in
-[designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md](designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md).
+[designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md](designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md);
+the Person-umbrella detail in
+[designs/PERSON_UMBRELLA_INVESTIGATION.md](designs/PERSON_UMBRELLA_INVESTIGATION.md).
 
-- **Phase 1 — youth** (`minor`/`isMinor` → `youth`/`isYouth`): shipped (#670) + a comment-scrub followup. `child` deliberately preserved.
-- **Phase 3 — householdMember** (sense-B bare `member` → `householdMember`, route kept at `/api/household/member`): shipped (#674, branch `claude/determined-bell-70bb18`). Program-enrollee `programParticipants` correctly stays. Prisma `participant`/`participantId` were left untouched by Phase 3 — **not because they're canonical** (they're the person model, which rule 2 no longer calls "participant") but because renaming them belongs to the Person-umbrella migration (→ `person`/`personId`), not the household phase.
-- **Phase 2 — student**, **Phase 4 — OrgMembership**, **Phase 5 — household/family**, **Phase 6 — dependent**: pending.
-- **Person umbrella** — the target name `Person` is **decided**; what's pending is *executing* the rename `model Participant` → `Person` (and `participantId` FKs → `personId`), freeing "participant" to mean only the program enrollee, plus requalifying every mixed-people "participant" label. Large schema migration — the investigation (report: [designs/PERSON_UMBRELLA_INVESTIGATION.md](designs/PERSON_UMBRELLA_INVESTIGATION.md), chip `task_e6b621d7`) maps the blast radius + sequencing, NOT the word choice. One edge case for the report: `ProgramParticipant.participantId` points at the person model — confirm it becomes `personId` there too.
+**✅ Shipped to `main`:**
+- **Youth** — `minor`/`isMinor` → `youth`/`isYouth`; `minor` fully scrubbed from src + tests. #670, #673, #676. (`child` deliberately preserved.)
+- **Student** — age-based `student` identifiers → `youth` (BUG-1). #679. `isStudent`/`studentVisits` = 0.
+- **householdMember** — sense-B bare `member` → `householdMember`; route kept at `/api/household/member`. #674.
+- **Person umbrella** — `model Participant` → `Person`, `participantId` FKs → `personId`, and every mixed-people "participant" requalified to `people`/`Person`. Landed as sliced PRs: A0 #680 → A1a–f (#692/#691/#686/#690/#681/#684) → A2 atomic flip #708; B1 roles envelope #711, B2 `/api/people/search` #710, B3 `Household.householdMembers` #712, B4 cert grid #709. `prisma.participant` = 0; `model Person` at `schema.prisma:62`. `ProgramParticipant.personId` is the accepted end-state (a program-participant row whose person is `personId`).
+
+**⬜ Remaining:**
+- **OrgMembership** — `model Membership` (`schema.prisma:296`) → `OrgMembership`; `isActiveMember`/`memberPriceCents`/`memberOnly`/`nonMemberPriceCents` → `orgMember…`; `/api/shop/members` → `/api/shop/org-members`; UI copy → "Treehouse Member". ~51 `member`-price/`isActiveMember` sites. Real schema migration — scope first (see proposal Phase 4).
+- **household / family** — Q2 default is *keep the split* (`Household` in code, "family" in warm copy). `familyContext` (`schema.prisma:479`) stays. Effectively a doc-note unless someone chooses "unify".
+- **dependent** — `emailDependentCheckins` key + copy → household wording; plus BUG-2 (`intake.ts` `children` bucket = non-lead participants). Small.
+
+**Closed:** attendance "volunteer = adult non-keyholder" / "youth = minor" buckets — **won't-change** (intended supervision signal, safety-load-bearing two-deep). Trends age-proxy metric fixed separately. See [designs/AGE_PROXY_BUG_AUDIT.md](designs/AGE_PROXY_BUG_AUDIT.md).
 
 ## Known semantic bugs (see proposal §3)
 

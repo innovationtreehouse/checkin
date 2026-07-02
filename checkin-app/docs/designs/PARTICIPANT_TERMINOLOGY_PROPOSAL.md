@@ -22,7 +22,7 @@ All line numbers below were re-verified against the tree at time of writing.
 
 | Concept | Where it lives | Note |
 |---|---|---|
-| A person | `model Participant` — `prisma/schema.prisma:62` → **being renamed to `Person`** (umbrella; "participant" freed to mean only a program enrollee). | The ONLY person model. |
+| A person | `model Person` — `prisma/schema.prisma:62` (**renamed from `Participant`, shipped**; "participant" now means only a program enrollee). | The ONLY person model. |
 | A group of people | `model Household` — `schema.prisma:153` | 1 household : N participants (`householdId` on Participant, `schema.prisma:95`). |
 | Org membership (A) | `model Membership` (1:1 household, `schema.prisma:296`) + `model MembershipProcess` (`schema.prisma:315`) → **renamed to `OrgMembership`/`OrgMembershipProcess` in Phase 4.** | The org-membership relationship + lifecycle. Bare "Membership" is banned — it's the **Org** relationship. |
 | Guardian / responsible adult | `model HouseholdLead` (`schema.prisma:222`) | A participant flagged as a lead. Being a **non-lead does not imply youth or student.** |
@@ -140,13 +140,13 @@ login. The 25yo fixture proves it is **not** age-based.
 
 | Concept | Relationship | UI word | Code identifier | Model / table | Path |
 |---|---|---|---|---|---|
-| **Person** | the human (any human) | name / "person" | `person` | **`Person`** — umbrella, name **DECIDED**. Code still `Participant`; rename not yet executed. | — |
+| **Person** | the human (any human) | name / "person" | `person` | **`Person`** — umbrella, **shipped** (renamed from `Participant`). | — |
 | **Org Membership (A)** | Person/household ↔ **Organization** | "Treehouse Member" | `isActiveOrgMember`, `orgMember…` | `OrgMembership` (rename from `Membership`) | `/api/shop/org-members` |
 | **Household** | grouping | "household" (warm: "family") | `household` | `Household` | `/api/household` |
 | **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `HouseholdLead` | `/api/household/member` |
 | **Program relationship** | Person ↔ **Program** | "participant" | `programParticipant` | `ProgramParticipant` | — |
 
-Key rules: **`participant` means ONLY a program enrollee** (the Program relationship). The umbrella person model is **`Person`**, never "participant"; **admin and volunteers are not participants.** Anything listing MIXED people (schema included) uses `Person`/"people"/role buckets, never "participant." The `/api/household/member` route **stays** (the `/household/` segment qualifies it). `participantProjection.ts` / `HOUSEHOLD_PEER_SELECT` project a Person row → they rename *with* the model (→ person projection). **This repositioning is a large schema migration under investigation** ([PERSON_UMBRELLA_INVESTIGATION.md](PERSON_UMBRELLA_INVESTIGATION.md), chip `task_e6b621d7`) before it becomes a phase.
+Key rules: **`participant` means ONLY a program enrollee** (the Program relationship). The umbrella person model is **`Person`**, never "participant"; **admin and volunteers are not participants.** Anything listing MIXED people (schema included) uses `Person`/"people"/role buckets, never "participant." The `/api/household/member` route **stays** (the `/household/` segment qualifies it). **This repositioning shipped** — model + FKs + mixed-people API/UI all renamed (see [PERSON_UMBRELLA_INVESTIGATION.md](PERSON_UMBRELLA_INVESTIGATION.md) for the executed plan; §4/§5 for per-phase PRs).
 
 **Person sub-classifications (orthogonal to the relationships):**
 
@@ -199,6 +199,8 @@ distinction today; BUG-1 is what would tempt a future violation.
 
 ## 4. Phases — one term, fully, then the next
 
+> **Overall status (against `main`):** Phase 1 (youth), Phase 2 (student), Phase 3 (householdMember), and the **Person umbrella** (model + FKs + mixed-people API/UI) are **✅ shipped**. Remaining: **Phase 4 (OrgMembership)**, **Phase 5 (family — trivial)**, **Phase 6 (dependent + BUG-2)**. Per-PR detail in each phase below and in VOCABULARY.md's migration-status.
+
 Each phase carries a single term across all four layers and leaves the tree with
 no half-renamed state. **Recommended order is top-to-bottom**; rationale in §5.
 Every phase ends with the existing test suites green (rename the fixtures/mocks
@@ -219,8 +221,8 @@ definition of every people/household term, the code-vs-copy split, and the
   coordination layer.
 - **Done-when:** file exists and matches §2 of this proposal. ✅
 
-### Phase 1 — `youth` (absorbs `minor` ONLY — `child` stays)
-**Goal:** one age word. `youth` is the age identifier; `isMinor`→`isYouth` the predicate; **`minor`** disappears from code and comments. **`child` is deliberately preserved** — it's a relationship term (offspring), not an age synonym (see §1b REVISED, §2).
+### Phase 1 — `youth` (absorbs `minor` ONLY — `child` stays) — SHIPPED (#670, #673, #676)
+**Goal:** one age word. `youth` is the age identifier; `isMinor`→`isYouth` the predicate; **`minor`** disappears from code and comments. **`child` is deliberately preserved** — it's a relationship term (offspring), not an age synonym (see §1b REVISED, §2). `minor` = 0 across src + tests; `child` intact.
 
 **Status: landed as #670 (`minor`→`youth`) + a followup for comment scrub.**
 - **Predicate:** `isMinor`→`isYouth` in `src/lib/time.ts:95` + the 7 consumers + tests. Body (`age < 18`) unchanged. ✅ (#670)
@@ -230,8 +232,8 @@ definition of every people/household term, the code-vs-copy split, and the
 - **Schema:** none — age derived from `dateOfBirth`; no `minor`/`child` column exists.
 - **Done-when:** grep `\bminors?\b` in `src` **and** `tests` returns 0 (docs excluded — they define the term); `child` identifiers and copy remain intact.
 
-### Phase 2 — `student` (fixes BUG-1; reserves the word)
-**Goal:** age-based "student" becomes `youth`; `student` is freed to mean *program enrollee* only. Depends on Phase 1 (`youth` must exist).
+### Phase 2 — `student` (fixes BUG-1; reserves the word) — SHIPPED (#679)
+**Goal:** age-based "student" becomes `youth`; `student` is freed to mean *program enrollee* only. Depends on Phase 1 (`youth` must exist). Dashboard column copy "Students" kept per §6; identifiers all `youth` (`isStudent`/`studentVisits` = 0). The `facility/trends` age-proxy *metric* was handled separately (see AGE_PROXY_BUG_AUDIT.md).
 
 - **Rename age→youth** everywhere `student` is `isMinor`-derived: `getFullAttendance.ts` (`studentVisits`→`youthVisits`, `unaccompaniedStudents`→`unaccompaniedYouth`, `counts.students`→`counts.youth`); `attendance/current/page.tsx` (`isStudent`→`isYouth`, `studentList`→`youthList`, "Students" column→"Youth", 🎓 label); `api/facility/trends/route.ts` (`isStudentAtDate`→`isYouthAtDate`, `uniqueStudents`→`uniqueYouth`, `studentHours`→`youthHours`); `facility-ops/trends/page.tsx:133` header; `types/attendance.ts:48` `students`→`youth`; `membership-ops/participants/new/page.tsx` (`studentSelected`→`isYouthSelected`, "Student Detected"→"Youth Detected", "Optional for Students"→"Optional for Youth"); `page.tsx:162` + `attendance/current:406` "unaccompanied student"→"unaccompanied youth".
 - **Contract:** `types/attendance.ts` and the `facility/trends` JSON shape (`uniqueStudents`/`totalStudentHours`) are internal to our own UIs — rename shape + consumers in the same commit. No external client.
@@ -284,15 +286,16 @@ definition of every people/household term, the code-vs-copy split, and the
 
 ## 5. Order & rationale
 
-1. **Youth** — establishes the age canon (`isYouth`); low risk, no schema. **Shipped (#670).**
-3. **householdMember** — biggest everyday confusion (sense-B "member"); no schema (person model already `Participant`). **Shipped (#674).**
-2. **Student** — **fixes BUG-1** (the only correctness trap). Must follow Youth. No schema. *Next.*
-4. **OrgMembership** — real schema migration (`Membership`→`OrgMembership`) + path + price fields + UI to "Treehouse Member". **Wide blast radius — scope before starting** (see §6 Q-Org).
-5. **Household/Family** — product decision + a trivial column rename (Branch B; DB wiped, no data care). §6 Q2.
-6. **Dependent** — lowest ROI; key/copy rename + the BUG-2 intake `children` bucket, no migration (DB reset).
+1. **Youth** — age canon (`isYouth`). ✅ **Shipped** (#670/#673/#676).
+2. **Student** — fixes BUG-1. ✅ **Shipped** (#679).
+3. **householdMember** — sense-B "member". ✅ **Shipped** (#674).
+- **Person umbrella** — `Participant`→`Person`, `participantId`→`personId`, mixed-people → `people`/`Person`. ✅ **Shipped** (A0 #680 · A1 #692/#691/#686/#690/#681/#684 · A2 #708 · B1–B4 #711/#710/#712/#709). The big one; the A0/A1/A2 slicing landed it green.
+4. **OrgMembership** — real schema migration (`Membership`→`OrgMembership`) + path + price fields + UI to "Treehouse Member". ⬜ **Remaining, heaviest.** Wide blast radius — scope first (like the Person umbrella did).
+5. **Household/Family** — Q2 default = keep the split; effectively a doc-note. ⬜ **Remaining (trivial).**
+6. **Dependent** — key/copy rename + BUG-2 intake `children` bucket, no migration. ⬜ **Remaining (small).**
 
-Correctness (Student/BUG-1) is the priority remaining item. Phases 1 & 3 already
-landed. Phase 4 is the heaviest (schema) — do it deliberately, not as a sweep.
+The scary work is done. Only OrgMembership carries real risk left — do it
+deliberately (scope pass first), not as a sweep. Family and Dependent are cleanup.
 
 ---
 
