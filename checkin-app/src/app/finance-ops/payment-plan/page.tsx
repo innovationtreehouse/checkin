@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Button, Center, Loader, Stack, Text } from '@mantine/core';
+import { Button, Center, Group, Loader, Modal, Stack, Text } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
@@ -33,6 +34,8 @@ export default function PendingParticipantsPage() {
   const [requests, setRequests] = useState<PaymentPlanRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [confirmApproveOpened, { open: openConfirmApprove, close: closeConfirmApprove }] = useDisclosure(false);
+  const [pendingApproval, setPendingApproval] = useState<{ programId: number; participantId: number } | null>(null);
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -54,9 +57,12 @@ export default function PendingParticipantsPage() {
     if (ready) fetchRequests();
   }, [ready, fetchRequests]);
 
-  const handleApprove = async (programId: number, participantId: number) => {
-    if (!confirm("Approve this payment plan? This sets the participant's status to ACTIVE and stops automated unpaid warning emails.")) return;
+  const handleApprove = (programId: number, participantId: number) => {
+    setPendingApproval({ programId, participantId });
+    openConfirmApprove();
+  };
 
+  const doApprove = async (programId: number, participantId: number) => {
     try {
       const res = await fetch('/api/finance-ops/payment-plans', {
         method: 'POST',
@@ -74,6 +80,14 @@ export default function PendingParticipantsPage() {
     } catch {
       notifications.show({ color: 'red', message: "Network error processing approval." });
     }
+  };
+
+  const confirmApprove = async () => {
+    if (!pendingApproval) return;
+    closeConfirmApprove();
+    const { programId, participantId } = pendingApproval;
+    setPendingApproval(null);
+    await doApprove(programId, participantId);
   };
 
   if (authLoading || loading) {
@@ -137,6 +151,22 @@ export default function PendingParticipantsPage() {
         getRowKey={(req) => `${req.programId}-${req.participantId}`}
         emptyMessage="No pending payment plan requests."
       />
+
+      <Modal
+        opened={confirmApproveOpened}
+        onClose={closeConfirmApprove}
+        title={<Text span fw={700} fz="lg">Approve Payment Plan</Text>}
+        centered
+      >
+        <Text mb="lg">
+          Approve this payment plan? This sets the participant&apos;s status to ACTIVE and stops
+          automated unpaid warning emails.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmApprove}>Cancel</Button>
+          <Button color="green" onClick={confirmApprove}>Approve &amp; Mark Active</Button>
+        </Group>
+      </Modal>
     </Stack>
   );
 }

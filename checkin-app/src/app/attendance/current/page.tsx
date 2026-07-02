@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useDisclosure } from "@mantine/hooks";
 import {
   Alert, Anchor, Badge, Box, Button, Card, Center, Group, Loader, Modal, Paper,
   SimpleGrid, Stack, Text, TextInput, Title,
@@ -51,6 +52,8 @@ function KioskDisplayInner() {
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [searchSignOutQuery, setSearchSignOutQuery] = useState("");
   const [selectedParticipant, setSelectedParticipant] = useState<Person | null>(null);
+  const [confirmCheckoutOpened, { open: openConfirmCheckout, close: closeConfirmCheckout }] = useDisclosure(false);
+  const [pendingCheckoutVisitId, setPendingCheckoutVisitId] = useState<number | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Person[]>([]);
@@ -193,7 +196,15 @@ function KioskDisplayInner() {
   };
 
   const handleForceCheckout = async (visitId: number, isSelf: boolean = false) => {
-    if (!isSelf && !confirm("Are you sure you want to force checkout this user?")) return;
+    if (!isSelf) {
+      setPendingCheckoutVisitId(visitId);
+      openConfirmCheckout();
+      return;
+    }
+    await doForceCheckout(visitId);
+  };
+
+  const doForceCheckout = async (visitId: number, isSelf: boolean = false) => {
     setCheckingOut(visitId);
     try {
       const res = await fetch("/api/attendance", {
@@ -209,6 +220,14 @@ function KioskDisplayInner() {
     } finally {
       setCheckingOut(null);
     }
+  };
+
+  const confirmForceCheckout = async () => {
+    if (pendingCheckoutVisitId === null) return;
+    closeConfirmCheckout();
+    const visitId = pendingCheckoutVisitId;
+    setPendingCheckoutVisitId(null);
+    await doForceCheckout(visitId);
   };
 
   const handleManualCheckIn = async (participantId: number) => {
@@ -504,6 +523,20 @@ function KioskDisplayInner() {
             </Group>
           </>
         )}
+      </Modal>
+
+      {/* Force Checkout Confirmation Modal */}
+      <Modal
+        opened={confirmCheckoutOpened}
+        onClose={closeConfirmCheckout}
+        title={<Text span fw={700} fz="lg">Force Checkout</Text>}
+        centered
+      >
+        <Text mb="lg">Are you sure you want to force checkout this user?</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmCheckout}>Cancel</Button>
+          <Button color="red" onClick={confirmForceCheckout}>Force Checkout</Button>
+        </Group>
       </Modal>
     </Box>
   );

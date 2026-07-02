@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Center, Group, Loader, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
+import { Button, Center, Group, Loader, Modal, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconRobot, IconScan, IconSelector } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner } from '@/components/admin/AlertBanner';
@@ -58,6 +59,8 @@ export default function AdminVisitsPage() {
   const [editForm, setEditForm] = useState({ arrivedAt: "", departedAt: "" });
 
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'arrivedAt', dir: 'desc' });
+  const [confirmEditOpened, { open: openConfirmEdit, close: closeConfirmEdit }] = useDisclosure(false);
+  const [pendingEditVisit, setPendingEditVisit] = useState<Visit | null>(null);
 
   const sortedVisits = useMemo(() => {
     return [...visits].sort((a, b) => {
@@ -107,14 +110,19 @@ export default function AdminVisitsPage() {
   }, [ready, fetchVisits]);
 
   const handleEditClick = (visit: Visit) => {
-    const confirmEdit = window.confirm("Warning: You are editing a past visit record using Admin overrides. This will be permanently logged.");
-    if (!confirmEdit) return;
+    setPendingEditVisit(visit);
+    openConfirmEdit();
+  };
 
-    setEditingVisitId(visit.id);
+  const confirmEditClick = () => {
+    if (!pendingEditVisit) return;
+    closeConfirmEdit();
+    setEditingVisitId(pendingEditVisit.id);
     setEditForm({
-      arrivedAt: toDatetimeLocal(visit.arrivedAt),
-      departedAt: toDatetimeLocal(visit.departedAt ?? null)
+      arrivedAt: toDatetimeLocal(pendingEditVisit.arrivedAt),
+      departedAt: toDatetimeLocal(pendingEditVisit.departedAt ?? null)
     });
+    setPendingEditVisit(null);
   };
 
   const handleSaveEdit = async (id: number) => {
@@ -220,6 +228,21 @@ export default function AdminVisitsPage() {
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
+
+      <Modal
+        opened={confirmEditOpened}
+        onClose={closeConfirmEdit}
+        title={<Text span fw={700} fz="lg">Edit Past Visit Record</Text>}
+        centered
+      >
+        <Text mb="lg">
+          Warning: You are editing a past visit record using Admin overrides. This will be permanently logged.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmEdit}>Cancel</Button>
+          <Button color="red" onClick={confirmEditClick}>Continue</Button>
+        </Group>
+      </Modal>
     </Stack>
   );
 }

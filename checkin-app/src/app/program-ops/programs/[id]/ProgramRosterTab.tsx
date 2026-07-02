@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useState } from 'react';
-import { Alert, Badge, Box, Button, Card, Checkbox, Group, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Alert, Badge, Box, Button, Card, Checkbox, Group, Modal, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { EntityPicker } from '@/components/admin/EntityPicker';
 import { calculateAge, formatDateTime } from '@/lib/time';
 import { formatPhone } from '@/lib/phone';
@@ -21,6 +22,11 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMes
   const [volLabel, setVolLabel] = useState("");
   const [newPartId, setNewPartId] = useState("");
   const [partLabel, setPartLabel] = useState("");
+  const [confirmRemoveVolOpened, { open: openConfirmRemoveVol, close: closeConfirmRemoveVol }] = useDisclosure(false);
+  const [pendingRemoveVolId, setPendingRemoveVolId] = useState<number | null>(null);
+  const [confirmAddPartOpened, { open: openConfirmAddPart, close: closeConfirmAddPart }] = useDisclosure(false);
+  const [confirmRemovePartOpened, { open: openConfirmRemovePart, close: closeConfirmRemovePart }] = useDisclosure(false);
+  const [pendingRemovePartId, setPendingRemovePartId] = useState<number | null>(null);
 
   const sortedVolunteers = program.volunteers ? [...program.volunteers].sort((a, b) => (b.isCore ? 1 : 0) - (a.isCore ? 1 : 0)) : [];
   const activeParticipants = program.participants.filter(p => p.status === 'ACTIVE');
@@ -49,8 +55,16 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMes
     }
   };
 
-  const handleRemoveVolunteer = async (participantId: number) => {
-    if (!confirm("Remove this volunteer?")) return;
+  const handleRemoveVolunteer = (participantId: number) => {
+    setPendingRemoveVolId(participantId);
+    openConfirmRemoveVol();
+  };
+
+  const confirmRemoveVolunteer = async () => {
+    if (pendingRemoveVolId === null) return;
+    closeConfirmRemoveVol();
+    const participantId = pendingRemoveVolId;
+    setPendingRemoveVolId(null);
     try {
       await fetch(`/api/programs/${programId}/volunteers`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId }) });
       fetchProgram();
@@ -67,14 +81,20 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMes
     }
   };
 
-  const handleAddParticipant = async (e: React.FormEvent) => {
+  const handleAddParticipant = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPartId) return;
 
     if (isSysAdminOrBoard) {
-      if (!confirm("Warning: Adding a participant manually bypasses all payment requirements. Are you sure you wish to proceed?")) return;
+      openConfirmAddPart();
+      return;
     }
 
+    doAddParticipant();
+  };
+
+  const doAddParticipant = async () => {
+    closeConfirmAddPart();
     setSaving(true);
     setMessage("");
     try {
@@ -92,8 +112,16 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMes
     }
   };
 
-  const handleRemoveParticipant = async (participantId: number) => {
-    if (!confirm("Remove this participant?")) return;
+  const handleRemoveParticipant = (participantId: number) => {
+    setPendingRemovePartId(participantId);
+    openConfirmRemovePart();
+  };
+
+  const confirmRemoveParticipant = async () => {
+    if (pendingRemovePartId === null) return;
+    closeConfirmRemovePart();
+    const participantId = pendingRemovePartId;
+    setPendingRemovePartId(null);
     try {
       await fetch(`/api/programs/${programId}/participants`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId }) });
       fetchProgram();
@@ -228,6 +256,30 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMes
           </Stack>
         )}
       </Card>
+
+      <Modal opened={confirmRemoveVolOpened} onClose={closeConfirmRemoveVol} title={<Text span fw={700} fz="lg">Remove Volunteer</Text>} centered>
+        <Text mb="lg">Remove this volunteer?</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmRemoveVol}>Cancel</Button>
+          <Button color="red" onClick={confirmRemoveVolunteer}>Remove</Button>
+        </Group>
+      </Modal>
+
+      <Modal opened={confirmAddPartOpened} onClose={closeConfirmAddPart} title={<Text span fw={700} fz="lg">Add Participant Manually</Text>} centered>
+        <Text mb="lg">Warning: Adding a participant manually bypasses all payment requirements. Are you sure you wish to proceed?</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmAddPart}>Cancel</Button>
+          <Button color="red" onClick={doAddParticipant} disabled={saving} loading={saving}>Add Participant</Button>
+        </Group>
+      </Modal>
+
+      <Modal opened={confirmRemovePartOpened} onClose={closeConfirmRemovePart} title={<Text span fw={700} fz="lg">Remove Participant</Text>} centered>
+        <Text mb="lg">Remove this participant?</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmRemovePart}>Cancel</Button>
+          <Button color="red" onClick={confirmRemoveParticipant}>Remove</Button>
+        </Group>
+      </Modal>
     </Stack>
   );
 }
