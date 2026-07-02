@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, NumberInput, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
+import { Alert, Box, Button, Card, Center, Checkbox, Group, Loader, NumberInput, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
@@ -99,7 +99,7 @@ export default function CreateProgramPage() {
   if (!ready) return null;
 
   return (
-    <Container size="md" pb="md">
+    <Box pb="md">
       <Card withBorder radius="md" padding="lg">
         <AdminPageHeader title="Create Program" mb="md" />
 
@@ -221,6 +221,6 @@ export default function CreateProgramPage() {
           </Stack>
         </form>
       </Card>
-    </Container>
+    </Box>
   );
 }

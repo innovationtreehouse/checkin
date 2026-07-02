@@ -20,6 +20,9 @@ type ProgramDetail = {
   // household's rows arrive when enrolled, which is all the "already enrolled"
   // check below needs.
   participants?: { participantId: number, status?: string }[];
+  _count?: { participants?: number };
+  phase: string;
+  maxParticipants: number | null;
   enrollmentStatus: string;
   memberPriceCents: number | null;
   nonMemberPriceCents: number | null;
@@ -240,6 +243,17 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.memberPriceCents || program.nonMemberPriceCents);
 
+  // Why is enrollment closed? Full wins over phase.
+  const enrolledCount = program._count?.participants ?? program.participants?.length ?? 0;
+  const isFull = program.maxParticipants != null && enrolledCount >= program.maxParticipants;
+  const closedReason = !isClosed ? null
+    : isFull ? 'Full'
+    : program.phase === 'RUNNING' ? 'Running'
+    : program.phase === 'UPCOMING' ? 'Upcoming'
+    : program.phase === 'FINISHED' ? 'Ended'
+    : null;
+  const closedSuffix = closedReason && <Text component="span" c="white"> ({closedReason})</Text>;
+
   return (
     <Container size="md" pb="md">
       <Card withBorder radius="md" padding="lg">
@@ -289,13 +303,13 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             <Group justify="center" wrap="wrap">
               {session ? (
                 <Button size="md" onClick={startEnrollmentProcess} disabled={isClosed}>
-                  {isClosed ? "Enrollment Closed" : "Enroll"}
+                  {isClosed ? <>Enrollment Closed{closedSuffix}</> : "Enroll"}
                 </Button>
               ) : (
                 <>
                   <Button size="md" onClick={() => router.push('/')}>Log In To Enroll</Button>
                   <Button size="md" color="green" onClick={() => router.push(`/programs/${program.id}/register`)} disabled={isClosed}>
-                    {isClosed ? "Registration Closed" : "Register (New User)"}
+                    {isClosed ? <>Registration Closed{closedSuffix}</> : "Register (New User)"}
                   </Button>
                 </>
               )}

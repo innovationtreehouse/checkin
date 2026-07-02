@@ -309,17 +309,20 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                   badges.length > 0 ? (
                     <Group gap={4} wrap="nowrap">
                       {badges.map((badge) => {
-                        // Two badge shades, each with its own readable font (same convention as
-                        // the membership-ops tabs): green action badges are green fill + dark
-                        // text; gray informational badges are light-gray fill + dark text.
+                        // Green action badges = green fill + dark text. Gray informational badges
+                        // = SOLID light-gray fill (gray.3) + dark text. The nav sits on a dark
+                        // purple sidebar, so the 'light' variant (a translucent tint) reads dark
+                        // there — a solid light shade keeps the circle actually light-gray. The
+                        // NavLink also forces section text white on the colored sidebar, so pin
+                        // the dark label explicitly.
                         const isGray = badge.color === 'gray';
                         return (
                           <Badge
                             key={badge.color}
                             size="md"
-                            color={badge.color}
-                            variant={isGray ? 'light' : 'filled'}
-                            c={isGray ? 'var(--mantine-color-gray-7)' : 'var(--mantine-color-black)'}
+                            color={isGray ? 'gray.3' : badge.color}
+                            variant="filled"
+                            c="var(--mantine-color-dark-9)"
                             aria-label={badge.label}
                           >
                             {badge.count}

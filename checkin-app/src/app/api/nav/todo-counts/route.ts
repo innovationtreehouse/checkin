@@ -336,9 +336,14 @@ export const GET = withAuth({}, async (_req, auth) => {
             }),
             countHouseholdsMissingValidContact(),
             // Households with an account created at registration that nobody has
-            // claimed via Google sign-in yet. Mirrors /api/membership-audit/unclaimed-households.
+            // claimed via Google sign-in yet. Mirrors /api/membership-audit/unclaimed-households:
+            // claiming hinges on leads only (kids/members may never log in), so count
+            // households with an email-having lead where no lead has signed in with Google.
             prisma.household.count({
-                where: { participants: { some: { email: { not: null }, googleId: null } } },
+                where: {
+                    leads: { some: { participant: { email: { not: null } } } },
+                    NOT: { leads: { some: { participant: { googleId: { not: null } } } } },
+                },
             }),
             // "Broken" households: no household lead at all. Mirrors
             // /api/admin/broken-households. Includes empty households.

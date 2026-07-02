@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect } from "react";
 import { Center, Loader, Stack, Text } from "@mantine/core";
+import { PageContainer } from "@/components/ui/PageContainer";
 
 type SettingsUser = { isSysadmin?: boolean; isBoardMember?: boolean };
 
@@ -38,5 +39,5 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     return null;
   }
 
-  return <>{children}</>;
+  return <PageContainer>{children}</PageContainer>;
 }

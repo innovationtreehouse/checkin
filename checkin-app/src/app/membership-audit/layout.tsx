@@ -11,6 +11,7 @@ import { PageContainer } from "@/components/ui/PageContainer";
 const NAV_LINKS = [
   { name: "Emergency Contacts", href: "/membership-audit/emergency-contacts", icon: "🚑" },
   { name: "Unclaimed Accounts", href: "/membership-audit/unclaimed", icon: "📨" },
+  { name: "Broken Households", href: "/membership-audit/broken", icon: "⚠️" },
 ];
 
 export default function MembershipAuditLayout({ children }: { children: React.ReactNode }) {
@@ -41,6 +42,17 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
 
   const missingContact = todoCounts?.admin?.householdsMissingContact ?? 0;
   const unclaimed = todoCounts?.admin?.unclaimedHouseholds ?? 0;
+  const broken = todoCounts?.admin?.brokenHouseholds ?? 0;
+
+  // Emergency/Unclaimed are gray: gaps on the household, not something the board can fix.
+  // Broken is green: the board must assign a lead. Returns [count, label].
+  const badgeFor = (href: string): [number, string] => {
+    if (href === "/membership-audit/emergency-contacts")
+      return [missingContact, `${missingContact} household${missingContact === 1 ? "" : "s"} missing an emergency contact`];
+    if (href === "/membership-audit/broken")
+      return [broken, `${broken} household${broken === 1 ? "" : "s"} without a lead`];
+    return [unclaimed, `${unclaimed} unclaimed account household${unclaimed === 1 ? "" : "s"}`];
+  };
 
   return (
     <PageContainer>
@@ -48,12 +60,8 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
       <Tabs value={activeTab} onChange={(value) => value && router.push(value)}>
         <ScrollableTabsList>
           {NAV_LINKS.map((link) => {
-            // Gray badges: these gaps are on the household, not something the board can fix.
-            const isEmergency = link.href === "/membership-audit/emergency-contacts";
-            const count = isEmergency ? missingContact : unclaimed;
-            const label = isEmergency
-              ? `${count} household${count === 1 ? "" : "s"} missing an emergency contact`
-              : `${count} unclaimed account household${count === 1 ? "" : "s"}`;
+            const [count, label] = badgeFor(link.href);
+            const isBroken = link.href === "/membership-audit/broken";
             return (
               <Tabs.Tab
                 key={link.href}
@@ -63,11 +71,11 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
                   count > 0 ? (
                     <Badge
                       size="md"
-                      color="gray"
-                      variant="light"
-                      // Light-gray informational count: light fill + dark text. Pinned so the
-                      // active tab's green recolor doesn't turn the number green.
-                      c="var(--mantine-color-gray-7)"
+                      color={isBroken ? "treehouseGreen" : "gray"}
+                      variant={isBroken ? "filled" : "light"}
+                      // Pinned label color so the active tab's green recolor doesn't render the
+                      // count green-on-green (gray informational fill, or black on the green fill).
+                      c={isBroken ? "var(--mantine-color-black)" : "var(--mantine-color-gray-7)"}
                       aria-label={label}
                     >
                       {count}

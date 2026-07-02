@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Badge, Center, Loader, Tabs, Text, Title } from "@mantine/core";
+import { Badge, Center, Loader, Tabs, Text } from "@mantine/core";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
@@ -41,24 +41,26 @@ export default function MyProgramsLayout({ children }: { children: React.ReactNo
   if (!leadsAnyProgram(counts)) return null; // redirect in flight
 
   const TABS = [
-    { value: "/my-programs", label: "Attendance" },
+    { value: "/my-programs/attendance", label: "Attendance" },
     { value: "/my-programs/conflicts", label: "Conflicts" },
   ];
   const active =
     TABS.filter((t) => pathname === t.value || pathname.startsWith(`${t.value}/`))
-      .sort((a, b) => b.value.length - a.value.length)[0]?.value ?? "/my-programs";
+      .sort((a, b) => b.value.length - a.value.length)[0]?.value ?? "/my-programs/attendance";
 
   const pending = leadPendingCount(counts);
   const conflictCount = conflicts?.length ?? 0;
+  const subtitle: Record<string, string> = {
+    "/my-programs/attendance": "Manage Attendance for Programs you lead",
+    "/my-programs/conflicts": "Resolve Duplicate or overlapping check-ins for your programs",
+  };
 
   return (
     <PageContainer>
-      <Title order={1} mb="xs">My Programs</Title>
-      <Text c="dimmed" mb="lg">Programs you lead, attendance waiting on you, and duplicate check-ins to resolve.</Text>
       <Tabs value={active} onChange={(v) => { if (v && v !== active) router.push(v); }} mb="md">
         <ScrollableTabsList>
           <Tabs.Tab
-            value="/my-programs"
+            value="/my-programs/attendance"
             rightSection={pending > 0 ? <Badge size="sm" circle color="treehouseGreen" c="var(--mantine-color-black)">{pending}</Badge> : undefined}
           >
             Attendance
@@ -71,6 +73,7 @@ export default function MyProgramsLayout({ children }: { children: React.ReactNo
           </Tabs.Tab>
         </ScrollableTabsList>
       </Tabs>
+      {subtitle[active] && <Text c="dimmed" mb="md">{subtitle[active]}</Text>}
       {children}
     </PageContainer>
   );

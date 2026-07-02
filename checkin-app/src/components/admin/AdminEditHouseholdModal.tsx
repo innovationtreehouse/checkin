@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Alert, Button, Group, Loader, Modal, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
+import { useCallback, useEffect, useState } from "react";
+import { Alert, Button, Divider, Group, Loader, Modal, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 
@@ -10,6 +10,8 @@ export type AdminHousehold = {
   name: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
+  participants?: Array<{ id: number; name: string | null; email: string | null }>;
+  householdLeads?: Array<{ participantId: number }>;
 } & Partial<StructuredAddress>;
 
 type FormState = {
@@ -55,40 +57,71 @@ export function AdminEditHouseholdModal({
   const [form, setForm] = useState<FormState>(EMPTY);
   const [initial, setInitial] = useState<FormState>(EMPTY);
   const [displayName, setDisplayName] = useState("");
+  const [members, setMembers] = useState<NonNullable<AdminHousehold["participants"]>>([]);
+  const [leadIds, setLeadIds] = useState<number[]>([]);
+  const [removingLead, setRemovingLead] = useState<number | null>(null);
+
+  const loadHousehold = useCallback(async (signal?: { cancelled: boolean }) => {
+    if (householdId == null) return;
+    try {
+      const res = await fetch(`/api/membership-ops/households?id=${householdId}`);
+      const data = await res.json();
+      const h: AdminHousehold | null = data.household;
+      if (signal?.cancelled) return;
+      if (h) {
+        const a = pickAddress(h);
+        const loaded: FormState = {
+          name: h.name || "",
+          line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "",
+          emergencyContactName: h.emergencyContactName || "",
+          emergencyContactPhone: h.emergencyContactPhone || "",
+        };
+        setForm(loaded);
+        setInitial(loaded);
+        setDisplayName(h.name || `Household #${h.id}`);
+        setMembers(h.participants ?? []);
+        setLeadIds((h.householdLeads ?? []).map((l) => l.participantId));
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Failed to load household." });
+    }
+  }, [householdId]);
 
   useEffect(() => {
     if (!opened || householdId == null) return;
-    let cancelled = false;
+    const signal = { cancelled: false };
     setLoading(true);
     setConfirming(false);
-    (async () => {
-      try {
-        const res = await fetch(`/api/membership-ops/households?id=${householdId}`);
-        const data = await res.json();
-        const h: AdminHousehold | null = data.household;
-        if (cancelled) return;
-        if (h) {
-          const a = pickAddress(h);
-          const loaded: FormState = {
-            name: h.name || "",
-            line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "",
-            emergencyContactName: h.emergencyContactName || "",
-            emergencyContactPhone: h.emergencyContactPhone || "",
-          };
-          setForm(loaded);
-          setInitial(loaded);
-          setDisplayName(h.name || `Household #${h.id}`);
-        }
-      } catch {
-        notifications.show({ color: "red", message: "Failed to load household." });
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    loadHousehold(signal).finally(() => {
+      if (!signal.cancelled) setLoading(false);
+    });
     return () => {
-      cancelled = true;
+      signal.cancelled = true;
     };
-  }, [opened, householdId]);
+  }, [opened, householdId, loadHousehold]);
+
+  const handleRemoveLead = async (participantId: number) => {
+    if (leadIds.length <= 1) return; // last-lead guard also enforced server-side
+    setRemovingLead(participantId);
+    try {
+      const res = await fetch(`/api/household/lead`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participantId }),
+      });
+      if (res.ok) {
+        notifications.show({ color: "green", message: "Lead removed." });
+        await loadHousehold();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: "red", message: data.error || "Failed to remove lead." });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error." });
+    } finally {
+      setRemovingLead(null);
+    }
+  };
 
   const update = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
 
@@ -181,6 +214,37 @@ export function AdminEditHouseholdModal({
                 placeholder="(555) 555-5555"
               />
             </SimpleGrid>
+            <Divider label="Household Leads" labelPosition="left" mt="sm" />
+            <Stack gap="xs">
+              {leadIds.length === 0 && (
+                <Text size="sm" c="dimmed">No leads on this household.</Text>
+              )}
+              {members
+                .filter((m) => leadIds.includes(m.id))
+                .map((m) => (
+                  <Group key={m.id} justify="space-between" wrap="nowrap">
+                    <div>
+                      <Text size="sm">{m.name || `#${m.id}`}</Text>
+                      {m.email && <Text size="xs" c="dimmed">{m.email}</Text>}
+                    </div>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      color="red"
+                      loading={removingLead === m.id}
+                      disabled={leadIds.length <= 1}
+                      title={leadIds.length <= 1 ? "Can't remove the last lead" : undefined}
+                      onClick={() => handleRemoveLead(m.id)}
+                    >
+                      Remove lead
+                    </Button>
+                  </Group>
+                ))}
+              {leadIds.length === 1 && (
+                <Text size="xs" c="dimmed">A household must keep at least one lead.</Text>
+              )}
+            </Stack>
+
             <Group justify="flex-end" mt="md">
               <Button variant="default" onClick={requestClose}>
                 Cancel

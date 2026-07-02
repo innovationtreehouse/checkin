@@ -57,8 +57,7 @@ export default function BoardContactInfoPage() {
   return (
     <Stack>
       <Card withBorder radius="md" padding="lg">
-        <Title order={1}>📞 Board Contact Info</Title>
-        <Text c="dimmed" mt="xs">
+        <Text c="dimmed">
           Directory of current board members and their contact details.
         </Text>
       </Card>
