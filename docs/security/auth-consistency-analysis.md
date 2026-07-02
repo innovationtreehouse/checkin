@@ -1371,6 +1371,20 @@ existence*. `fieldVisible('public', …)` ignores scopes (`core.ts:240`), so per
 *structurally incapable* of protecting these. Extra kicker: `stripValue` keeps rows and `.map`s arrays
 (`stripper.ts:46`), so even if tiered, the **array length (roster size) leaks**.
 
+**Which join models are in this class — and which aren't.** Not every association is edge-sensitive;
+the boundary is "are the *identifying* fields all `public`?" (from `classifications.ts`):
+
+| model | identifying fields | edge fully public? | why |
+|---|---|---|---|
+| `ProgramParticipant`, `ProgramVolunteer` | `programId`, `participantId` (`public`) | **yes** | enrollment/volunteer fact = two public FKs; only `isPaymentPlanRequested`/`isCore` etc. are tiered |
+| `RSVP` | `eventId`, `participantId`, `status` (`public`) | **yes** | RSVP fact fully public; only `reminderSentAt:internal` |
+| `Visit` | `participantId`, `associatedEventId` (`public`) | **yes** | presence = public FKs; only `arrivedAt`/`departedAt` are `personal` |
+| `TrustedAdult` / `TrustedAdultReview` | `householdId`, `counterpartyParticipantId` (`public`) | **no** | the *identity* (`counterpartyName:personal`, `familyContext:pii`) is already field-tiered — stripping handles it |
+| `FeePayment` | `feeId`, `participantId` (`public`) | partial | edge keys public, but `paidAt`/invoice fields are `personal` |
+
+So the primitive would apply to the **top four only**; `TrustedAdult`/`FeePayment` are protected by
+ordinary field tiers and need no new concept. This is why the concept can't be "flag every join model."
+
 **Read-side instances the primitive could target — only 3, all closed:** `programs/[id]` GET (inline
 query-shape, `:55-82`, leaked pre-#575), `events/[id]` GET (inline admission `forbidden()`, `:51-59`),
 `attendance` GET (hand-shaped self+household, `:68-81`). (`facility/visits` = admin-role admission, not
