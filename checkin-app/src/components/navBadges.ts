@@ -74,3 +74,46 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
       return [];
   }
 }
+
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
+/**
+ * Badge for a section *sub-tab*, off the same shared counts. Lives here beside
+ * navBadgeFor so the tab number and the section-nav number are derived from one
+ * file — a new admin badge is one edit, and nav vs tab can't silently slice
+ * different fields for the same thing (they used to). Returns null when the tab
+ * has nothing to show. Layouts own the <Badge> JSX (variant, active-tab color
+ * pins); this owns only count + intent-color + label.
+ *
+ * NOT covered here: informational *total* counters that show even at 0 (e.g. the
+ * Manage Memberships member-family total) — those have no section-nav twin to
+ * diverge from, so they stay local to their layout.
+ */
+export function tabBadgeFor(href: string, counts: TodoCounts | null): NavBadge | null {
+  const admin = counts?.admin;
+  if (!admin) return null;
+  const green = (n: number, label: string): NavBadge | null =>
+    n > 0 ? { count: n, color: 'treehouseGreen', label } : null;
+  const gray = (n: number, label: string): NavBadge | null =>
+    n > 0 ? { count: n, color: 'gray', label } : null;
+  switch (href) {
+    // Membership Ops. Gray, informational: every in-flight application the
+    // Applications page lists (status != ACTIVE). Distinct from the /membership-ops
+    // section badge, which is green board-actionable (BLOCKED) only.
+    case '/membership-ops/applications':
+      return gray(admin.applicationsTotal, `${admin.applicationsTotal} application${plural(admin.applicationsTotal, '', 's')}`);
+    // Membership Audit — mirrors the /membership-audit section badge: broken is
+    // green (board must assign a lead), the other two gray (household's own gaps).
+    case '/membership-audit/emergency-contacts':
+      return gray(admin.householdsMissingContact, `${admin.householdsMissingContact} household${plural(admin.householdsMissingContact, '', 's')} missing an emergency contact`);
+    case '/membership-audit/broken':
+      return green(admin.brokenHouseholds, `${admin.brokenHouseholds} household${plural(admin.brokenHouseholds, '', 's')} without a lead`);
+    case '/membership-audit/unclaimed':
+      return gray(admin.unclaimedHouseholds, `${admin.unclaimedHouseholds} unclaimed account household${plural(admin.unclaimedHouseholds, '', 's')}`);
+    // Safety — same count as the /safety section badge.
+    case '/safety/trusted-adults':
+      return green(admin.trustedAdults, `${admin.trustedAdults} trusted-adult disclosure${plural(admin.trustedAdults, '', 's')} to review`);
+    default:
+      return null;
+  }
+}
