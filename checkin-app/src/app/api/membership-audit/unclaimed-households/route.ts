@@ -8,25 +8,33 @@ export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
     async () => {
         try {
-            // A household is "claimed" once any of its household leads has signed in
-            // with Google. We can't expect every member (e.g. students) to ever log
-            // in, so claiming hinges on leads only. Unclaimed = no lead has signed in
-            // yet, but at least one lead has an email we can chase.
+            // Two kinds of household land here:
+            //   1. Unclaimed-with-lead: a lead has an email to chase, but no lead has
+            //      signed in with Google yet (a claimed lead covers the whole household,
+            //      even if a student member never signs in).
+            //   2. Broken: no household lead at all. These also show on
+            //      /membership-ops/broken and must show here too — no email requirement,
+            //      since a broken household may have no contactable member yet.
+            // Mirrors the unclaimedHouseholds nav count in /api/nav/todo-counts.
             const households = await prisma.household.findMany({
                 where: {
-                    leads: { some: { person: { email: { not: null } } } },
-                    NOT: { leads: { some: { person: { googleId: { not: null } } } } }
+                    OR: [
+                        {
+                            leads: { some: { person: { email: { not: null } } } },
+                            NOT: { leads: { some: { person: { googleId: { not: null } } } } }
+                        },
+                        { leads: { none: {} } }
+                    ]
                 },
-                include: { leads: { include: { person: true } } }
+                include: { householdMembers: true }
             });
 
             const result = households.map(h => ({
                 id: h.id,
                 name: h.name
-                    || h.leads.find(l => l.person.name)?.person.name
+                    || h.householdMembers.find(p => p.name)?.name
                     || `Household #${h.id}`,
-                members: h.leads
-                    .map(l => l.person)
+                members: h.householdMembers
                     .filter(p => p.email !== null)
                     .map(p => ({ id: p.id, name: p.name, email: p.email }))
             }));

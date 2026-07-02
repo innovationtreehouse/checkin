@@ -30,7 +30,7 @@ export default function UnclaimedHouseholdsIndex() {
   return (
     <Stack>
       <div>
-        <Text c="dimmed">Households where no household lead has ever signed in with Google.</Text>
+        <Text c="dimmed">Households nobody has claimed via Google sign-in yet — including households with no lead at all.</Text>
       </div>
 
       <Box>
