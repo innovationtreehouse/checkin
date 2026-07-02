@@ -36,32 +36,70 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             return NextResponse.json({ error: "participantIds array is required" }, { status: 400 });
         }
 
+        // Authz on the TARGETS: only participants enrolled or volunteering in
+        // this event's program may have attendance written. Without this a lead
+        // mentor of program A could fabricate presence records for anyone in the
+        // system (other households/programs). Enrollment/volunteer membership —
+        // not an existing overlapping Visit — is the authority; unknown ids are
+        // rejected (a genuine unenrolled walk-in needs a separate manual step).
+        // A program-less event is reachable only by admin/board (the lead/core-vol
+        // gate above requires a program), so there is no cross-program IDOR there
+        // and no enrollment set to check — skip the filter in that case.
+        const programId = event.programId;
+        if (programId != null) {
+            const [enrolled, volunteering] = await Promise.all([
+                prisma.programParticipant.findMany({ where: { programId }, select: { personId: true } }),
+                prisma.programVolunteer.findMany({ where: { programId }, select: { personId: true } }),
+            ]);
+            const allowedIds = new Set<number>([...enrolled, ...volunteering].map(r => r.personId));
+            const unknownIds = participantIds.filter(pId => !allowedIds.has(pId));
+            if (unknownIds.length > 0) {
+                return NextResponse.json({ error: `Participants not enrolled or volunteering in this program: ${unknownIds.join(", ")}` }, { status: 400 });
+            }
+        }
+
+        // Dedupe within the request so a repeated id can't double-write.
+        const uniqueParticipantIds = [...new Set<number>(participantIds)];
+
         const results = await prisma.$transaction(async (tx) => {
             const actions = [];
 
-            // Pre-fetch all overlapping unassociated visits for the participants
-            const overlappingVisits = await tx.visit.findMany({
+            // Pre-fetch, for these participants: visits already recorded for THIS
+            // event (skip — avoids duplicate synthetic rows on concurrent submits)
+            // and overlapping unassociated walk-in visits (adopt into the event).
+            const relevantVisits = await tx.visit.findMany({
                 where: {
-                    personId: { in: participantIds },
-                    associatedEventId: null,
-                    arrivedAt: { lte: event.endAt },
+                    personId: { in: uniqueParticipantIds },
                     OR: [
-                        { departedAt: null },
-                        { departedAt: { gte: event.startAt } }
+                        { associatedEventId: eventId },
+                        {
+                            associatedEventId: null,
+                            arrivedAt: { lte: event.endAt },
+                            OR: [
+                                { departedAt: null },
+                                { departedAt: { gte: event.startAt } }
+                            ]
+                        }
                     ]
                 }
             });
 
-            // Map them by participantId for O(1) lookups
+            // Map by participantId for O(1) lookups.
+            const alreadyRecorded = new Set<number>();
             const visitsByParticipant = new Map();
-            for (const visit of overlappingVisits) {
-                // We just need the first matching unassociated visit for each participant.
-                if (!visitsByParticipant.has(visit.personId)) {
+            for (const visit of relevantVisits) {
+                if (visit.associatedEventId === eventId) {
+                    alreadyRecorded.add(visit.personId);
+                } else if (!visitsByParticipant.has(visit.personId)) {
+                    // First matching unassociated visit for each participant.
                     visitsByParticipant.set(visit.personId, visit);
                 }
             }
 
-            for (const pId of participantIds) {
+            for (const pId of uniqueParticipantIds) {
+                // Already attributed to this event → nothing to do (no dup row).
+                if (alreadyRecorded.has(pId)) continue;
+
                 const visit = visitsByParticipant.get(pId);
 
                 if (visit) {
