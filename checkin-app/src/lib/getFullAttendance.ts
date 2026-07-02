@@ -46,24 +46,24 @@ export async function getFullAttendance() {
     }
 
     const keyholderVisits = activeVisits.filter(v => v.participant.isKeyholder);
-    const studentVisits = activeVisits.filter(v => youthMap.get(v.id)!);
+    const youthVisits = activeVisits.filter(v => youthMap.get(v.id)!);
     const volunteerVisits = activeVisits.filter(v => !v.participant.isKeyholder && !youthMap.get(v.id));
 
     const counts = {
         keyholders: keyholderVisits.length,
         volunteers: volunteerVisits.length,
-        students: studentVisits.length,
+        youth: youthVisits.length,
         total: activeVisits.length,
     };
 
     const adultVisits = activeVisits.filter(v => !youthMap.get(v.id));
-    const unaccompaniedStudents = studentVisits.filter(sv => {
+    const unaccompaniedYouth = youthVisits.filter(sv => {
         if (!sv.participant.householdId) return true;
         return !adultVisits.some(av => av.participant.householdId === sv.participant.householdId);
     });
     const safety = {
         isLastKeyholder: keyholderVisits.length === 1,
-        isTwoDeepViolation: unaccompaniedStudents.length > 0 && adultVisits.length < 2,
+        isTwoDeepViolation: unaccompaniedYouth.length > 0 && adultVisits.length < 2,
     };
 
     // Drop email/googleId from the wire (M1): resolve the same name-or-email-prefix
