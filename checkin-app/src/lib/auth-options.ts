@@ -71,7 +71,7 @@ const BOOTSTRAP_SYSADMINS = (process.env.BOOTSTRAP_SYSADMINS || "")
     .filter(Boolean);
 
 export const authOptions: NextAuthOptions = {
-    debug: true,
+    debug: config.isDevInstance(),
     adapter: patchedAdapter,
     providers: [
         GoogleProvider({
