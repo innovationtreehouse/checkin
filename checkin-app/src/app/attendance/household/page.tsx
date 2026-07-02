@@ -58,7 +58,7 @@ export default function HouseholdCheckins() {
         <Table striped highlightOnHover>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Member</Table.Th>
+              <Table.Th>Household Member</Table.Th>
               <Table.Th>Event</Table.Th>
               <Table.Th>Arrived</Table.Th>
               <Table.Th>Duration</Table.Th>
@@ -68,7 +68,7 @@ export default function HouseholdCheckins() {
           <Table.Tbody>
             {visits.map((v) => (
               <Table.Tr key={v.id}>
-                <Table.Td><Text fw={600} c="blue">{v.participant?.name || 'Unnamed Member'}</Text></Table.Td>
+                <Table.Td><Text fw={600} c="blue">{v.participant?.name || 'Unnamed household member'}</Text></Table.Td>
                 <Table.Td>{v.event?.name || 'General Facility Visit'}</Table.Td>
                 <Table.Td>{formatDateTime(v.arrivedAt, { dateStyle: 'short', timeStyle: 'short' })}</Table.Td>
                 <Table.Td>{formatVisitRange(v.arrivedAt, v.departedAt)}</Table.Td>

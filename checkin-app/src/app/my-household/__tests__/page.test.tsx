@@ -55,7 +55,7 @@ describe("HouseholdPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add Household Member" }));
     fireEvent.change(screen.getByLabelText("Full Name"), { target: { value: "Robin Smith" } });
     fireEvent.click(screen.getByLabelText("Individual is over 25"));
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(

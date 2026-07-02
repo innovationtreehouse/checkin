@@ -152,7 +152,7 @@ describe('Household Member API Integration Tests', () => {
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(403);
             const data = await res.json();
-            expect(data.error).toBe('Only household leads can edit members');
+            expect(data.error).toBe('Only household leads can edit household members');
         });
 
         it('should return 404 Not Found if trying to edit a member outside of your household', async () => {
@@ -166,7 +166,7 @@ describe('Household Member API Integration Tests', () => {
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(404);
             const data = await res.json();
-            expect(data.error).toBe('Member not found in your household');
+            expect(data.error).toBe('That household member was not found');
         });
 
         it('should successfully update a household member', async () => {
@@ -188,8 +188,8 @@ describe('Household Member API Integration Tests', () => {
             expect(res.status).toBe(200);
             
             const data = await res.json();
-            expect(data.member).toBeDefined();
-            expect(data.message).toBe('Member updated successfully.');
+            expect(data.householdMember).toBeDefined();
+            expect(data.message).toBe('Household member updated successfully.');
 
             // Validate the changes
             const updatedProfile = await prisma.participant.findUnique({ where: { id: testMemberId } });
