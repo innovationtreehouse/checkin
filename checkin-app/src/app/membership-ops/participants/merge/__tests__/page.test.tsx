@@ -91,8 +91,8 @@ describe("membership-ops/participants/merge page", () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
       "/api/membership-ops/participants/merge/analyze": { participants: [zack, belle] },
-      "/api/participants/search?q=Zack": { participants: [zack] },
-      "/api/participants/search?q=Belle": { participants: [belle] },
+      "/api/people/search?q=Zack": { people: [zack] },
+      "/api/people/search?q=Belle": { people: [belle] },
     });
     renderWithProviders(<MergeParticipants />);
 
@@ -139,8 +139,8 @@ describe("membership-ops/participants/merge page", () => {
     setSession({ id: 1, isSysadmin: true });
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("q=Alice")) return { ok: true, json: async () => ({ participants: [participantA] }) } as Response;
-      if (url.includes("q=Bob")) return { ok: true, json: async () => ({ participants: [participantB] }) } as Response;
+      if (url.includes("q=Alice")) return { ok: true, json: async () => ({ people: [participantA] }) } as Response;
+      if (url.includes("q=Bob")) return { ok: true, json: async () => ({ people: [participantB] }) } as Response;
       if (url.includes("merge/analyze")) throw new Error("boom");
       return { ok: false, json: async () => ({}) } as Response;
     }) as unknown as typeof fetch;
@@ -164,8 +164,8 @@ describe("membership-ops/participants/merge page", () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
       "/api/membership-ops/participants/merge/analyze": { participants: [leo, otto] },
-      "/api/participants/search?q=Leo": { participants: [leo] },
-      "/api/participants/search?q=Otto": { participants: [otto] },
+      "/api/people/search?q=Leo": { people: [leo] },
+      "/api/people/search?q=Otto": { people: [otto] },
     });
     renderWithProviders(<MergeParticipants />);
 
@@ -193,8 +193,8 @@ describe("membership-ops/participants/merge page", () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
       "/api/membership-ops/participants/merge/analyze": { participants: [mia, hank] },
-      "/api/participants/search?q=Mia": { participants: [mia] },
-      "/api/participants/search?q=Hank": { participants: [hank] },
+      "/api/people/search?q=Mia": { people: [mia] },
+      "/api/people/search?q=Hank": { people: [hank] },
     });
     renderWithProviders(<MergeParticipants />);
 
