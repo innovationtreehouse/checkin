@@ -161,7 +161,7 @@ describe("buildImport", () => {
         expect(members.find((m) => m.name === "Pending Two")!.lastBackgroundCheck).toBeNull();
     });
 
-    it("flags a minor listed as primary contact", () => {
+    it("flags a youth listed as primary contact", () => {
         const { report } = build(
             [person({ Name: "Ari Mizell", Email: "kailemizell@gmail.com", Primary_Contact_E_mail: "kailemizell@gmail.com", Date_Of_Birth: "03/04/2012", ID: "p1" })],
             [family({ Primary_Contact_E_mail: "kailemizell@gmail.com", Primary_Contact_Name: "Ari Mizell" })],

@@ -206,7 +206,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
             const formData = createMockCsvFormData([
                 ['First Name', 'Last Name', 'DOB'],
                 ['Adult', 'Import Test', '1990-01-01'],
-                ['Minor', 'Import Test', '2015-01-01'],
+                ['Youth', 'Import Test', '2015-01-01'],
                 ['Default', 'Import Test', ''], 
             ]);
 
@@ -229,11 +229,11 @@ describe('Admin Bulk Import API Integration Tests', () => {
             // But here it should be present.
             expect(adultLead).not.toBeNull();
 
-            const minor = await prisma.participant.findFirst({ where: { name: 'Minor Import Test' } });
-            expect(minor).not.toBeNull();
-            expect(minor!.householdId).not.toBeNull();
-            const minorLead = await prisma.householdLead.findFirst({ where: { participantId: minor!.id } });
-            expect(minorLead).toBeNull();
+            const youth = await prisma.participant.findFirst({ where: { name: 'Youth Import Test' } });
+            expect(youth).not.toBeNull();
+            expect(youth!.householdId).not.toBeNull();
+            const youthLead = await prisma.householdLead.findFirst({ where: { participantId: youth!.id } });
+            expect(youthLead).toBeNull();
 
             const defaultAdult = await prisma.participant.findFirst({ where: { name: 'Default Import Test' } });
             expect(defaultAdult?.householdId).not.toBeNull();

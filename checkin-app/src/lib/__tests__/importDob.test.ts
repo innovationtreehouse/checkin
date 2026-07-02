@@ -3,7 +3,7 @@ import { parseImportDob } from "@/lib/importDob";
 describe("parseImportDob", () => {
     // Pins the preview/commit drift: an all-digit DOB is an Excel serial, not a
     // year. "33239" must become 1991-01-01, NOT Jan 1 of year 33239 — otherwise
-    // preview classifies the person as a minor while commit imports an adult.
+    // preview classifies the person as a youth while commit imports an adult.
     it("parses an Excel-serial DOB to the same date as the commit path", () => {
         const d = parseImportDob("33239")!;
         expect(d.getUTCFullYear()).toBe(1991);

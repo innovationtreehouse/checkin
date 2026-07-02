@@ -26,7 +26,7 @@ describe('Facility trends API', () => {
     let adminId: number;
     let householdId: number;
     let volunteerId: number; // adult, dateOfBirth makes them 30+
-    let studentId: number; // dateOfBirth makes them a minor
+    let studentId: number; // dateOfBirth makes them a youth
     let programId: number;
     let otherProgramId: number;
     let eventId: number;
