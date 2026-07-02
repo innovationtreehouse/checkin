@@ -4,6 +4,7 @@ import { sendEmail } from "@/lib/email";
 import { logger } from "@/lib/logger";
 import { sendCongrats } from "@/lib/membership/payment";
 import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
+import { config } from "@/lib/config";
 
 type TxClient = Prisma.TransactionClient;
 
@@ -99,7 +100,7 @@ export async function notifyReviewers(): Promise<void> {
             where: { email: { not: null }, OR: [{ isBackgroundCheckReviewer: true }, { isBoardMember: true }] },
             select: { email: true },
         });
-        const base = process.env.NEXTAUTH_URL ?? "";
+        const base = config.baseUrl();
         await Promise.all(
             reviewers.map((r) =>
                 r.email

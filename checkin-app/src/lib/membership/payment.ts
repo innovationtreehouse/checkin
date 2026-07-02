@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
+import { config } from "@/lib/config";
 
 /**
  * Payment phase (PENDING_PAYMENT -> ACTIVE).
@@ -242,7 +243,7 @@ export async function activateByProcessId(processId: number, shopifyOrderId: str
 
 /** Send the one "welcome — your membership is active" email to a household's leads. */
 export async function sendCongrats(householdId: number) {
-    const base = process.env.NEXTAUTH_URL ?? "";
+    const base = config.baseUrl();
     await emailHouseholdLeads(
         householdId,
         "Welcome to the Treehouse — your membership is active!",
