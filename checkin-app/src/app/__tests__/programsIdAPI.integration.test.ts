@@ -21,7 +21,7 @@ describe('Individual Program API Integration Tests', () => {
     let memberHouseholdId: number;
     let enrolledId: number;
     let publicProgramId: number;
-    let memberOnlyProgramId: number;
+    let orgMemberOnlyProgramId: number;
 
     // Distinctive name we assert NEVER appears in an anonymous response — the
     // roster/association leak (#P0-5.1a) is closed iff this string is absent.
@@ -93,14 +93,14 @@ describe('Individual Program API Integration Tests', () => {
 
         // Create mock programs
         const publicProgram = await prisma.program.create({
-            data: { name: 'Public Prog ID API Test', phase: 'RUNNING', memberOnly: false, leadMentorId: leadId }
+            data: { name: 'Public Prog ID API Test', phase: 'RUNNING', orgMemberOnly: false, leadMentorId: leadId }
         });
         publicProgramId = publicProgram.id;
 
-        const memberOnlyProgram = await prisma.program.create({
-            data: { name: 'Member Only Prog ID API Test', phase: 'RUNNING', memberOnly: true, leadMentorId: leadId }
+        const orgMemberOnlyProgram = await prisma.program.create({
+            data: { name: 'Member Only Prog ID API Test', phase: 'RUNNING', orgMemberOnly: true, leadMentorId: leadId }
         });
-        memberOnlyProgramId = memberOnlyProgram.id;
+        orgMemberOnlyProgramId = orgMemberOnlyProgram.id;
 
         // Enroll a participant with a recognizable name into the public program so
         // the leak tests have a roster identity to look for.
@@ -122,7 +122,7 @@ describe('Individual Program API Integration Tests', () => {
             });
         }
 
-        const validProgramIds = [publicProgramId, memberOnlyProgramId].filter(id => id !== undefined);
+        const validProgramIds = [publicProgramId, orgMemberOnlyProgramId].filter(id => id !== undefined);
         if (validProgramIds.length > 0) {
             // ProgramParticipant has no cascade — clear enrollments before the program.
             await prisma.programParticipant.deleteMany({
@@ -180,8 +180,8 @@ describe('Individual Program API Integration Tests', () => {
         it('should block common users from viewing member-only programs', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}`, { method: 'GET' });
-             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
+             const req = new Request(`http://localhost:4000/api/programs/${orgMemberOnlyProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(orgMemberOnlyProgramId) as unknown as never);
              expect(res.status).toBe(403);
              
              const data = await res.json();
@@ -191,8 +191,8 @@ describe('Individual Program API Integration Tests', () => {
         it('should allow active members to view member-only programs', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: memberId } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}`, { method: 'GET' });
-             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
+             const req = new Request(`http://localhost:4000/api/programs/${orgMemberOnlyProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(orgMemberOnlyProgramId) as unknown as never);
              expect(res.status).toBe(200);
              
              const data = await res.json();
@@ -202,8 +202,8 @@ describe('Individual Program API Integration Tests', () => {
         it('should allow admins to view member-only programs without active membership', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}`, { method: 'GET' });
-             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
+             const req = new Request(`http://localhost:4000/api/programs/${orgMemberOnlyProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(orgMemberOnlyProgramId) as unknown as never);
              expect(res.status).toBe(200);
 
              const data = await res.json();

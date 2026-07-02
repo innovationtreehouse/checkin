@@ -120,7 +120,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             }
         }
 
-        const isFree = currentProgram.memberPriceCents === null && currentProgram.nonMemberPriceCents === null;
+        const isFree = currentProgram.orgMemberPriceCents === null && currentProgram.nonOrgMemberPriceCents === null;
         const initialStatus = isFree ? 'ACTIVE' : 'PENDING';
 
         // Transactionally create everything
@@ -215,11 +215,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         // 5. Build Checkout URL if not free
         let checkoutUrl = null;
-        if (!isFree && currentProgram.shopifyNonMemberVariantId) {
+        if (!isFree && currentProgram.shopifyNonOrgMemberVariantId) {
             const storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
             const accountIdsStr = result.enrolledParticipantIds.join(',');
             const quantity = result.enrolledParticipantIds.length;
-            checkoutUrl = `https://${storeDomain}/cart/${currentProgram.shopifyNonMemberVariantId}:${quantity}?attributes[CheckMeIn_Account_ID]=${accountIdsStr}&attributes[Program_ID]=${programId}`;
+            checkoutUrl = `https://${storeDomain}/cart/${currentProgram.shopifyNonOrgMemberVariantId}:${quantity}?attributes[CheckMeIn_Account_ID]=${accountIdsStr}&attributes[Program_ID]=${programId}`;
         }
 
         return NextResponse.json({ 

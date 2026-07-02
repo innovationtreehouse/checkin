@@ -26,14 +26,14 @@ describe('outboundCall — public-only surface (shopify.product.create)', () => 
             Program: {
                 id: 1,
                 name: 'Robotics',          // public
-                memberPriceCents: 5000,    // public
+                orgMemberPriceCents: 5000,    // public
                 maxParticipants: 12,       // public
                 leadMentorNotificationSettings: { email: true }, // personal
             },
         })) as { Program: Record<string, unknown> };
         expect(out.Program.id).toBe(1);
         expect(out.Program.name).toBe('Robotics');
-        expect(out.Program.memberPriceCents).toBe(5000);
+        expect(out.Program.orgMemberPriceCents).toBe(5000);
         expect(out.Program.maxParticipants).toBe(12);
         // personal field must not reach a public-only surface.
         expect(out.Program.leadMentorNotificationSettings).toBeUndefined();

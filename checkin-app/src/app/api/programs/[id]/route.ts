@@ -50,7 +50,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     const isCoreVolunteer = !!sessionUser && program.volunteers.some(v => v.personId === sessionUser.id && v.isCore);
     const isPrivileged = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
 
-    if (program.memberOnly && !isPrivileged) {
+    if (program.orgMemberOnly && !isPrivileged) {
         if (!sessionUser) throw notFound('Program not found');
         const hasActiveMembership = await isActiveOrgMember(sessionUser.id);
         if (!hasActiveMembership) throw forbidden('Forbidden: Member-Only Program');
@@ -116,7 +116,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, startAt, endAt, memberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice } = body;
+        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -133,15 +133,15 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             ...(leadMentorId !== undefined && { leadMentorId }),
             ...(startAt !== undefined && { startAt: startAt ? new Date(startAt) : null }),
             ...(endAt !== undefined && { endAt: endAt ? new Date(endAt) : null }),
-            ...(memberOnly !== undefined && { memberOnly }),
+            ...(orgMemberOnly !== undefined && { orgMemberOnly }),
             ...(phase !== undefined && { phase }),
             ...(enrollmentStatus !== undefined && { enrollmentStatus }),
             ...(minAge !== undefined && { minAge }),
             ...(maxAge !== undefined && { maxAge }),
             ...(maxParticipants !== undefined && { maxParticipants }),
             ...(leadMentorNotificationSettings !== undefined && { leadMentorNotificationSettings }),
-            ...(memberPrice !== undefined && { memberPriceCents: dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined) }),
-            ...(nonMemberPrice !== undefined && { nonMemberPriceCents: dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined) }),
+            ...(memberPrice !== undefined && { orgMemberPriceCents: dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined) }),
+            ...(nonMemberPrice !== undefined && { nonOrgMemberPriceCents: dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined) }),
         };
 
         const updatedProgram = await prisma.program.update({

@@ -12,7 +12,7 @@ beforeEach(() => resetRtl());
 const programs = [
   {
     id: 1, name: "Robotics Club", startAt: "2026-01-10T00:00:00.000Z", endAt: "2026-05-10T00:00:00.000Z",
-    memberOnly: false, phase: "RUNNING", enrollmentStatus: "OPEN", leadMentorId: 1,
+    orgMemberOnly: false, phase: "RUNNING", enrollmentStatus: "OPEN", leadMentorId: 1,
     _count: { participants: 4, volunteers: 1, events: 2 },
   },
 ];

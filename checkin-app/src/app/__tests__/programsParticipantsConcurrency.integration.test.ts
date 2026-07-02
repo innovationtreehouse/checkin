@@ -80,8 +80,8 @@ describe('POST /api/programs/[id]/participants concurrency (capacity lock)', () 
                 phase: 'RUNNING',
                 enrollmentStatus: 'OPEN',
                 maxParticipants: 1, // one seat
-                memberPriceCents: null,
-                nonMemberPriceCents: null, // free → no override needed, capacity still enforced
+                orgMemberPriceCents: null,
+                nonOrgMemberPriceCents: null, // free → no override needed, capacity still enforced
             },
         });
         programId = program.id;

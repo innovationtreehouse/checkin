@@ -106,7 +106,7 @@ describe('Registry route admission gates', () => {
             isBackgroundCheckReviewer: false,
         };
 
-        // For the public route's 2xx sanity (programs/[id]). memberOnly defaults
+        // For the public route's 2xx sanity (programs/[id]). orgMemberOnly defaults
         // false, so an anonymous caller is admitted and sees it.
         const program = await prisma.program.create({ data: { name: `Authz Program ${TAG}` } });
         programId = program.id;

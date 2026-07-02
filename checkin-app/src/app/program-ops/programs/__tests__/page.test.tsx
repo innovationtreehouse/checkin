@@ -11,12 +11,12 @@ beforeEach(() => resetRtl());
 
 const programs = [
   {
-    id: 1, name: "Robotics Club", phase: "RUNNING", enrollmentStatus: "OPEN", memberOnly: false,
+    id: 1, name: "Robotics Club", phase: "RUNNING", enrollmentStatus: "OPEN", orgMemberOnly: false,
     startAt: "2026-01-10T00:00:00.000Z", endAt: "2026-05-10T00:00:00.000Z",
     _count: { participants: 4, events: 2 },
   },
   {
-    id: 2, name: "Pottery (finished)", phase: "FINISHED", enrollmentStatus: "CLOSED", memberOnly: true,
+    id: 2, name: "Pottery (finished)", phase: "FINISHED", enrollmentStatus: "CLOSED", orgMemberOnly: true,
     startAt: null, endAt: null,
     _count: { participants: 1, events: 0 },
   },

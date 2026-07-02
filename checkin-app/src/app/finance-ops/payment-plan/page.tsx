@@ -24,8 +24,8 @@ type PaymentPlanRequest = {
   program: {
     id: number;
     name: string;
-    memberPriceCents: number | null;
-    nonMemberPriceCents: number | null;
+    orgMemberPriceCents: number | null;
+    nonOrgMemberPriceCents: number | null;
   };
 };
 
@@ -115,7 +115,7 @@ export default function PendingParticipantsPage() {
         <>
           <Text fw={500}>{req.program.name}</Text>
           <Text size="sm" c="dimmed">
-            Price: M {formatCents(req.program.memberPriceCents)} / NM {formatCents(req.program.nonMemberPriceCents)}
+            Price: M {formatCents(req.program.orgMemberPriceCents)} / NM {formatCents(req.program.nonOrgMemberPriceCents)}
           </Text>
         </>
       ),

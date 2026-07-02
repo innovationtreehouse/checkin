@@ -64,9 +64,9 @@ describe('Programs API Integration Tests', () => {
         // Create mock programs
         await prisma.program.createMany({
             data: [
-                { name: 'Public API Test Program', phase: 'RUNNING', memberOnly: false, minAge: 10, maxAge: 18 },
-                { name: 'Draft API Test Program', phase: 'PLANNING', memberOnly: false, leadMentorId: leadId },
-                { name: 'Member Only API Test Program', phase: 'RUNNING', memberOnly: true }
+                { name: 'Public API Test Program', phase: 'RUNNING', orgMemberOnly: false, minAge: 10, maxAge: 18 },
+                { name: 'Draft API Test Program', phase: 'PLANNING', orgMemberOnly: false, leadMentorId: leadId },
+                { name: 'Member Only API Test Program', phase: 'RUNNING', orgMemberOnly: true }
             ]
         });
     });
@@ -99,11 +99,11 @@ describe('Programs API Integration Tests', () => {
              
              const publicActive = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Public API Test Program');
              const draft = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Draft API Test Program');
-             const memberOnly = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Member Only API Test Program');
+             const orgMemberOnly = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Member Only API Test Program');
 
              expect(publicActive).toBeDefined();
              expect(draft).toBeUndefined(); // Filtered because it is in PLANNING
-             expect(memberOnly).toBeUndefined(); // Filtered because memberOnly is true
+             expect(orgMemberOnly).toBeUndefined(); // Filtered because orgMemberOnly is true
         });
 
         it('should return drafts if the authenticated user is the lead mentor', async () => {
@@ -128,10 +128,10 @@ describe('Programs API Integration Tests', () => {
 
              const programs = await res.json();
              const draft = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Draft API Test Program');
-             const memberOnly = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Member Only API Test Program');
+             const orgMemberOnly = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Member Only API Test Program');
 
              expect(draft).toBeDefined(); // Revealed because admin
-             expect(memberOnly).toBeDefined(); // Revealed because admin
+             expect(orgMemberOnly).toBeDefined(); // Revealed because admin
         });
     });
 
