@@ -11,6 +11,7 @@ import {
     getRequestStatus,
 } from "@/lib/membership/contract/zohoClient";
 import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
+import { latestPendingExternal } from "@/lib/membership/phases";
 
 /**
  * EXTERNAL-phase service — the actions an applicant completes after intake:
@@ -189,9 +190,7 @@ export async function syncContractStatus(userId: number): Promise<ExternalStatus
         include: { household: { include: { membership: { include: { processes: true } } } } },
     });
     // Same selection as the signing action: the latest process awaiting external action.
-    const process = (user?.household?.membership?.processes ?? [])
-        .filter((p) => p.status === "PENDING_EXTERNAL_ACTION")
-        .sort((a, b) => b.id - a.id)[0];
+    const process = latestPendingExternal(user?.household?.membership?.processes);
     if (!process) return null;
 
     if (!process.contractSignedAt && process.zohoEnvelopeId && config.zohoConfigured()) {
@@ -244,9 +243,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
     // re-sign the agreement fresh each cycle. Gating on status alone keeps this in
     // step with getIntakeState/getExternalStatus, which surface the button for any
     // non-ACTIVE process (a kind filter here would render the button then 409).
-    const process = (user.household?.membership?.processes ?? [])
-        .filter((p) => p.status === "PENDING_EXTERNAL_ACTION")
-        .sort((a, b) => b.id - a.id)[0];
+    const process = latestPendingExternal(user.household?.membership?.processes);
     if (!process) throw new ExternalError("wrong_phase", "No application is awaiting your signature.");
 
     const recipientEmail = user.email;
