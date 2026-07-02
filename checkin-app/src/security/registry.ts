@@ -50,7 +50,7 @@ defineRoute({
     ],
 });
 
-// Event roster — embeds participant PII (name/email/phone/dob, incl. minors) for
+// Event roster — embeds participant PII (name/email/phone/dob, incl. youth) for
 // everyone enrolled in / RSVP'd to the program. This route is FAIL-CLOSED,
 // staff-only: the handler fn (events/[id]/route.ts) does an inline event->program
 // lead/core-vol/admin gate and throws 403 for everyone else, so non-staff never

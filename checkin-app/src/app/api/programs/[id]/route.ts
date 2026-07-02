@@ -60,7 +60,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     // Each ProgramParticipant/ProgramVolunteer row AND Participant.name are tier
     // 'public', so the handler's per-field stripper CANNOT hide the association:
     // the existence of the row + the public name = the enrollment fact (incl.
-    // minors). Only admission can hide it. The registry `authorize` grammar can't
+    // youth). Only admission can hide it. The registry `authorize` grammar can't
     // express "enrolled in THIS program" per-relation, so the gate lives here —
     // mirrors events/[id] (#571); see docs/security/auth-consistency-analysis.md
     // §4 (principled exception) and §5.1a. The route stays `authorize: 'public'`
