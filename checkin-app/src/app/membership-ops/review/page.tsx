@@ -133,7 +133,7 @@ export default function MembershipReviewPage() {
               <Checkbox
                 my="md"
                 checked={!!volunteer[item.id]}
-                onChange={(e) => setVolunteer((v) => ({ ...v, [item.id]: e.currentTarget.checked }))}
+                onChange={(e) => { const checked = e.currentTarget.checked; setVolunteer((v) => ({ ...v, [item.id]: checked })); }}
                 label="This is a volunteer only family (no students)"
               />
 
