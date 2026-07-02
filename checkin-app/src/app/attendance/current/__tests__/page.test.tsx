@@ -30,7 +30,7 @@ const householdData = {
 function mockRoutes(overrides: Record<string, unknown | (() => unknown)> = {}) {
   return mockFetchJson({
     "/api/household": householdData,
-    "/api/roles": { participants: [{ id: 555, name: "Wendy West", email: "wendy@example.com", isKeyholder: false, isSysadmin: false }] },
+    "/api/roles": { people: [{ id: 555, name: "Wendy West", email: "wendy@example.com", isKeyholder: false, isSysadmin: false }] },
     "/api/attendance": attendanceData,
     ...overrides,
   });
