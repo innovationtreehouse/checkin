@@ -560,24 +560,24 @@ model CorporationLead {
   /// @sensitivity:public
   corporationId Int
   /// @sensitivity:public
-  participantId Int
+  personId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Participant @relation(fields: [personId], references: [id])
 
-  @@id([corporationId, participantId])
+  @@id([corporationId, personId])
 }
 
 model CorporationMember {
   /// @sensitivity:public
   corporationId Int
   /// @sensitivity:public
-  participantId Int
+  personId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Participant @relation(fields: [personId], references: [id])
 
-  @@id([corporationId, participantId])
+  @@id([corporationId, personId])
 }
 
 model Program {
