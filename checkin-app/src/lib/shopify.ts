@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { logIntegrationError } from "@/lib/logger";
+import { config } from "@/lib/config";
 
 let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
@@ -40,9 +41,9 @@ export function resetTokenCache() {
  * Caches the token and refreshes ~5 minutes before expiry.
  */
 async function getAccessToken(): Promise<string | null> {
-  const storeDomain = process.env.SHOPIFY_STORE_DOMAIN;
-  const clientId = process.env.SHOPIFY_CLIENT_ID;
-  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET;
+  const storeDomain = config.shopifyStoreDomain();
+  const clientId = config.shopifyClientId();
+  const clientSecret = config.shopifyClientSecret();
 
   if (!storeDomain || !clientId || !clientSecret) {
     console.warn("Shopify integration is disabled: Missing SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, or SHOPIFY_CLIENT_SECRET in .env");
@@ -90,7 +91,7 @@ async function getAccessToken(): Promise<string | null> {
 }
 
 export async function createShopifyProgramVariants(name: string, memberPriceCents: number | null, nonMemberPriceCents: number | null, maxParticipants: number | null = null) {
-  const storeDomain = process.env.SHOPIFY_STORE_DOMAIN;
+  const storeDomain = config.shopifyStoreDomain();
   const accessToken = await getAccessToken();
 
   if (!storeDomain || !accessToken) {

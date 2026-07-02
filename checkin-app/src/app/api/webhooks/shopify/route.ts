@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { withWebhook } from "@/lib/webhookAuth";
+import { config } from "@/lib/config";
 
 interface ShopifyOrder {
     id?: number | string;
@@ -17,7 +18,7 @@ interface ShopifyOrder {
  * body before it is parsed — re-serializing JSON would change the bytes.
  */
 function verifyShopifyHmac(req: Request, rawBody: string): { ok: true } | { ok: false; status: number; error: string } {
-    const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    const secret = config.shopifyWebhookSecret();
     if (!secret) {
         logger.error("Shopify webhook received but SHOPIFY_WEBHOOK_SECRET is not configured.");
         return { ok: false, status: 500, error: "Configuration Error" };
