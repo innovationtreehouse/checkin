@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { ACTIVE_MEMBER_PARTICIPANT_WHERE } from "@/lib/membership";
+import { ACTIVE_ORG_MEMBER_PERSON_WHERE } from "@/lib/orgMembership";
 import { handler, notFound, badRequest } from "@/security/handler";
 
 // Admission + field stripping declared in src/security/registry.ts under
@@ -42,7 +42,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]/eligible-part
     }
 
     if (currentProgram.memberOnly) {
-        andClauses.push(ACTIVE_MEMBER_PARTICIPANT_WHERE);
+        andClauses.push(ACTIVE_ORG_MEMBER_PERSON_WHERE);
     }
 
     const members = await prisma.person.findMany({

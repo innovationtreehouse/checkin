@@ -197,7 +197,7 @@ describe("ProgramDetailsPage", () => {
     fireEvent.change(screen.getByLabelText("Minimum Age (Optional)"), { target: { value: "12" } });
     fireEvent.change(screen.getByLabelText("Maximum Age (Optional)"), { target: { value: "16" } });
     fireEvent.change(screen.getByLabelText("Max Participants (Optional)"), { target: { value: "30" } });
-    fireEvent.click(screen.getByLabelText("Member-Only Program"));
+    fireEvent.click(screen.getByLabelText("Treehouse Members-Only Program"));
 
     fireEvent.click(screen.getByRole("button", { name: "Save Settings" }));
 
@@ -279,8 +279,8 @@ describe("ProgramDetailsPage", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
 
-    expect(screen.getByLabelText("Member Price ($)")).toBeDisabled();
-    expect(screen.getByLabelText("Member Price ($)")).toHaveValue("15");
+    expect(screen.getByLabelText("Treehouse Member Price ($)")).toBeDisabled();
+    expect(screen.getByLabelText("Treehouse Member Price ($)")).toHaveValue("15");
     expect(screen.getByLabelText("Non-Member Price ($)")).toHaveValue("7.5");
     expect(screen.getByText(/No max participants set/)).toBeInTheDocument();
   });

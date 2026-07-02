@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { createShopifyProgramVariants } from "@/lib/shopify";
 import { logBackendError, logger } from "@/lib/logger";
-import { isActiveMember } from "@/lib/membership";
+import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
 
 // GET is the PUBLIC program catalog — anonymous callers legitimately get the
@@ -12,7 +12,7 @@ import { dollarsToCentsOrNull } from "@inventory/money";
 // so it can't move to withAuth (which 401s anonymous). getOptionalSessionUser
 // applies the shared denied-household gate: a denied member is locked out of
 // the whole app, so it collapses to undefined (anonymous) — they see only the
-// public list and never the memberOnly programs isActiveMember would otherwise
+// public list and never the memberOnly programs isActiveOrgMember would otherwise
 // reveal (P0-C).
 export async function GET(req: Request) {
     const user = await getOptionalSessionUser(req);
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
             if (user.isSysadmin || user.isBoardMember) {
                 canSeeMemberOnly = true;
             } else {
-                canSeeMemberOnly = await isActiveMember(user.id);
+                canSeeMemberOnly = await isActiveOrgMember(user.id);
             }
         }
 

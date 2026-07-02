@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { participantRecordIsActiveMember } from "@/lib/membership";
+import { personRecordIsActiveOrgMember } from "@/lib/orgMembership";
 
 export const dynamic = 'force-dynamic';
 
@@ -40,7 +40,7 @@ export const GET = withAuth(
                 name: p.name,
                 email: p.email,
                 phone: p.phone,
-                isMember: participantRecordIsActiveMember(p),
+                isMember: personRecordIsActiveOrgMember(p),
                 isBoardMember: p.isBoardMember,
                 isKeyholder: p.isKeyholder,
                 household: p.household,

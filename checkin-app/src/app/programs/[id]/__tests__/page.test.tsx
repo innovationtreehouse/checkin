@@ -87,7 +87,7 @@ describe("ProgramEnrollmentPage", () => {
         renderPage();
 
         await screen.findByText("Robotics Club");
-        expect(screen.getByText("Member Price:")).toBeInTheDocument();
+        expect(screen.getByText("Treehouse Member Price:")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         await screen.findByText("Which of your household wants to enroll?");
 

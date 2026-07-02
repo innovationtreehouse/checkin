@@ -69,7 +69,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
           color="gray.8"
           variant="filled"
           c="white"
-          aria-label={`${memberFamilies} member famil${memberFamilies === 1 ? "y" : "ies"}`}
+          aria-label={`${memberFamilies} org member famil${memberFamilies === 1 ? "y" : "ies"}`}
         >
           {memberFamilies}
         </Badge>

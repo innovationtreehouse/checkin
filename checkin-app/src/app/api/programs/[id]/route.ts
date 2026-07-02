@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
-import { isActiveMember } from "@/lib/membership";
+import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
 
 export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
@@ -52,7 +52,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
 
     if (program.memberOnly && !isPrivileged) {
         if (!sessionUser) throw notFound('Program not found');
-        const hasActiveMembership = await isActiveMember(sessionUser.id);
+        const hasActiveMembership = await isActiveOrgMember(sessionUser.id);
         if (!hasActiveMembership) throw forbidden('Forbidden: Member-Only Program');
     }
 

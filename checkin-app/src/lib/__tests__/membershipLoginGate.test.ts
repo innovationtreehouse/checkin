@@ -1,15 +1,15 @@
-import { membershipStatusBlocksLogin } from '@/lib/membership';
+import { orgMembershipStatusBlocksLogin } from '@/lib/orgMembership';
 
-describe('membershipStatusBlocksLogin', () => {
+describe('orgMembershipStatusBlocksLogin', () => {
     it('blocks login only for DENIED households', () => {
-        expect(membershipStatusBlocksLogin('DENIED')).toBe(true);
+        expect(orgMembershipStatusBlocksLogin('DENIED')).toBe(true);
     });
 
     it('does not block login for ACTIVE, REVOKED, NONE, or missing membership', () => {
-        expect(membershipStatusBlocksLogin('ACTIVE')).toBe(false);
-        expect(membershipStatusBlocksLogin('REVOKED')).toBe(false);
-        expect(membershipStatusBlocksLogin('NONE')).toBe(false);
-        expect(membershipStatusBlocksLogin(null)).toBe(false);
-        expect(membershipStatusBlocksLogin(undefined)).toBe(false);
+        expect(orgMembershipStatusBlocksLogin('ACTIVE')).toBe(false);
+        expect(orgMembershipStatusBlocksLogin('REVOKED')).toBe(false);
+        expect(orgMembershipStatusBlocksLogin('NONE')).toBe(false);
+        expect(orgMembershipStatusBlocksLogin(null)).toBe(false);
+        expect(orgMembershipStatusBlocksLogin(undefined)).toBe(false);
     });
 });

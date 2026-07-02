@@ -114,10 +114,10 @@ export default function AdminProgramsIndex() {
       header: "Access",
       render: (p) => (
         <Badge color={p.memberOnly ? 'grape' : 'blue'} variant="light">
-          {p.memberOnly ? 'Member Only' : 'Public'}
+          {p.memberOnly ? 'Treehouse Members Only' : 'Public'}
         </Badge>
       ),
-      sortBy: (p) => (p.memberOnly ? 'Member Only' : 'Public'),
+      sortBy: (p) => (p.memberOnly ? 'Treehouse Members Only' : 'Public'),
     },
     {
       header: "",

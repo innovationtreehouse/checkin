@@ -100,7 +100,7 @@ export default function PublicProgramsDirectory() {
                   <Title order={4}>{program.name}</Title>
                   <Group gap={4}>
                     {isOwner && <Badge color="green">Yours</Badge>}
-                    {program.memberOnly && <Badge color="grape" variant="light">Member Only</Badge>}
+                    {program.memberOnly && <Badge color="grape" variant="light">Treehouse Members Only</Badge>}
                     {program.phase === 'PLANNING' && <Badge color="yellow" variant="light">Planning</Badge>}
                     {program.enrollmentStatus === 'CLOSED' && <Badge color="red" variant="light">Closed</Badge>}
                   </Group>
