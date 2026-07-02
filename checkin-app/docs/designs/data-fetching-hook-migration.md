@@ -2,6 +2,8 @@
 
 Investigation-only report. 41 `page.tsx` files under `src/app` hand-roll `useState`+`useEffect`+`fetch` for data loading, each with subtly different loading/error/race-condition handling. This doc records the audit findings and a phased migration plan to a shared pattern.
 
+> **Update (2026-07-02, post-rebase on main):** a parallel effort landed on main (#702, #703, #704) and already fixed the string-sniffing / hardcoded-tone AlertBanner bugs called out below on `facility-ops/visits`, `facility-ops/badges`, `profile`, `shop-ops/create`, `membership-ops/review`, `membership`, and `safety/trusted-adults` — converging each onto a typed `{ text, tone }` AlertBanner state instead of message-string sniffing. The findings below are left as originally audited (pre-fix) for the historical record; **Phase 1's `facility-ops/visits` string-sniff fix and Phase 4-adjacent `membership-ops/review` AlertBanner convergence are no longer needed** — treat those two files as already fixed when scoping Phase 1/7 work. Remaining string-sniff/tone bugs (`attendance/current/page.tsx:410`, `program-ops/programs/[id]/page.tsx:223`, `program-ops/sessions/[id]/page.tsx:398`) were not touched by this fix and still apply.
+
 ## Scope verification
 
 Query: `grep -rl 'useEffect' src/app --include="page.tsx" | xargs grep -l 'useState' | xargs grep -l 'fetch('`
