@@ -35,7 +35,7 @@ type EventData = {
   };
   visits: {
     id: number;
-    participantId: number;
+    personId: number;
     arrivedAt: string;
     departedAt: string | null;
   }[];
@@ -264,7 +264,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           </Table.Thead>
           <Table.Tbody>
             {allRoster.map((member) => {
-              const visit = eventData.visits.find(v => v.participantId === member.participantId);
+              const visit = eventData.visits.find(v => v.personId === member.participantId);
               let statusEl;
               if (visit) {
                 const arriveTime = new Date(visit.arrivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

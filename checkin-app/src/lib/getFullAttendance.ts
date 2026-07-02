@@ -5,7 +5,7 @@ export async function getFullAttendance() {
     const activeVisits = await prisma.visit.findMany({
         where: { departedAt: null },
         include: {
-            participant: {
+            person: {
                 select: {
                     id: true,
                     // email is read only to resolve the name fallback below and never
@@ -42,12 +42,12 @@ export async function getFullAttendance() {
     // Pre-compute isYouth once per visit to avoid repeated calculations
     const youthMap = new Map<number, boolean>();
     for (const v of activeVisits) {
-        youthMap.set(v.id, isYouth(v.participant.dateOfBirth));
+        youthMap.set(v.id, isYouth(v.person.dateOfBirth));
     }
 
-    const keyholderVisits = activeVisits.filter(v => v.participant.isKeyholder);
+    const keyholderVisits = activeVisits.filter(v => v.person.isKeyholder);
     const youthVisits = activeVisits.filter(v => youthMap.get(v.id)!);
-    const volunteerVisits = activeVisits.filter(v => !v.participant.isKeyholder && !youthMap.get(v.id));
+    const volunteerVisits = activeVisits.filter(v => !v.person.isKeyholder && !youthMap.get(v.id));
 
     const counts = {
         keyholders: keyholderVisits.length,
@@ -58,8 +58,8 @@ export async function getFullAttendance() {
 
     const adultVisits = activeVisits.filter(v => !youthMap.get(v.id));
     const unaccompaniedYouth = youthVisits.filter(sv => {
-        if (!sv.participant.householdId) return true;
-        return !adultVisits.some(av => av.participant.householdId === sv.participant.householdId);
+        if (!sv.person.householdId) return true;
+        return !adultVisits.some(av => av.person.householdId === sv.person.householdId);
     });
     const safety = {
         isLastKeyholder: keyholderVisits.length === 1,
@@ -69,16 +69,18 @@ export async function getFullAttendance() {
     // Drop email/googleId from the wire (M1): resolve the same name-or-email-prefix
     // fallback the UI already falls back to (`name || email.split("@")[0]`) here,
     // server-side, so `name` is always populated and the raw address never ships.
-    const attendance = activeVisits.map(v => ({
+    // Strip the raw included `person` (carries email) out of the spread and re-emit
+    // a sanitized DTO under the unchanged wire key `participant` (API contract).
+    const attendance = activeVisits.map(({ person, ...v }) => ({
         ...v,
         participant: {
-            id: v.participant.id,
-            name: v.participant.name?.trim() || v.participant.email?.split("@")[0] || null,
-            isKeyholder: v.participant.isKeyholder,
-            dateOfBirth: v.participant.dateOfBirth,
-            householdId: v.participant.householdId,
-            phone: v.participant.phone,
-            household: v.participant.household,
+            id: person.id,
+            name: person.name?.trim() || person.email?.split("@")[0] || null,
+            isKeyholder: person.isKeyholder,
+            dateOfBirth: person.dateOfBirth,
+            householdId: person.householdId,
+            phone: person.phone,
+            household: person.household,
         },
     }));
 

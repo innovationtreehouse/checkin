@@ -65,7 +65,7 @@ describe('My-programs conflicts resolve API', () => {
 
     afterAll(async () => {
         await prisma.auditLog.deleteMany({ where: { actorId: { in: [leadId, adminId] } } });
-        await prisma.visit.deleteMany({ where: { participantId } });
+        await prisma.visit.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { id: eventId } });
         await prisma.program.deleteMany({ where: { id: programId } });
         await prisma.participant.deleteMany({ where: { id: { in: [leadId, otherLeadId, adminId, participantId] } } });
@@ -100,7 +100,7 @@ describe('My-programs conflicts resolve API', () => {
 
     it('returns 409 when the visit has no genuine overlap (refuses to delete an isolated visit)', async () => {
         const isolated = await prisma.visit.create({
-            data: { participantId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(4), associatedEventId: eventId },
+            data: { personId: participantId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(4), associatedEventId: eventId },
         });
         try {
             const res = await callAs({ id: leadId }, { visitId: isolated.id });
@@ -112,8 +112,8 @@ describe('My-programs conflicts resolve API', () => {
 
     it('returns 403 for a caller who neither leads the program nor is a global admin', async () => {
         const [anchor, sibling] = await Promise.all([
-            prisma.visit.create({ data: { participantId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), associatedEventId: eventId } }),
-            prisma.visit.create({ data: { participantId, arrivedAt: hoursAgo(4), departedAt: hoursAgo(1) } }),
+            prisma.visit.create({ data: { personId: participantId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), associatedEventId: eventId } }),
+            prisma.visit.create({ data: { personId: participantId, arrivedAt: hoursAgo(4), departedAt: hoursAgo(1) } }),
         ]);
         try {
             const res = await callAs({ id: otherLeadId }, { visitId: anchor.id });
@@ -125,10 +125,10 @@ describe('My-programs conflicts resolve API', () => {
 
     it('lets the leading mentor delete an overlapping visit and writes an audit trail', async () => {
         const anchor = await prisma.visit.create({
-            data: { participantId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), arrivedVia: 'SYSTEM', associatedEventId: eventId },
+            data: { personId: participantId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), arrivedVia: 'SYSTEM', associatedEventId: eventId },
         });
         const sibling = await prisma.visit.create({
-            data: { participantId, arrivedAt: hoursAgo(4), departedAt: hoursAgo(1), arrivedVia: 'SCANNER' },
+            data: { personId: participantId, arrivedAt: hoursAgo(4), departedAt: hoursAgo(1), arrivedVia: 'SCANNER' },
         });
         try {
             const res = await callAs({ id: leadId }, { visitId: anchor.id });
@@ -146,7 +146,7 @@ describe('My-programs conflicts resolve API', () => {
             });
             expect(audit).toBeDefined();
             expect(audit?.secondaryAffectedEntity).toBe(eventId);
-            expect((audit?.oldData as { participantId: number })?.participantId).toBe(participantId);
+            expect((audit?.oldData as { personId: number })?.personId).toBe(participantId);
         } finally {
             await prisma.visit.deleteMany({ where: { id: { in: [anchor.id, sibling.id] } } });
         }
@@ -154,10 +154,10 @@ describe('My-programs conflicts resolve API', () => {
 
     it('lets a global admin delete an overlapping visit for a program they do not lead', async () => {
         const anchor = await prisma.visit.create({
-            data: { participantId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), associatedEventId: eventId },
+            data: { personId: participantId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), associatedEventId: eventId },
         });
         const sibling = await prisma.visit.create({
-            data: { participantId, arrivedAt: hoursAgo(4), departedAt: hoursAgo(1) },
+            data: { personId: participantId, arrivedAt: hoursAgo(4), departedAt: hoursAgo(1) },
         });
         try {
             const res = await callAs({ id: adminId, isSysadmin: true }, { visitId: anchor.id });

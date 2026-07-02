@@ -71,12 +71,12 @@ describe('POST /api/scan — real check-in/out logic', () => {
 
     afterEach(async () => {
         // Reset facility state between cases so each test controls who is present.
-        await prisma.visit.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
+        await prisma.visit.deleteMany({ where: { personId: { in: [keyholderId, normalId] } } });
         await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: [keyholderId, normalId] } } });
     });
 
     afterAll(async () => {
-        await prisma.visit.deleteMany({ where: { participantId: { in: [keyholderId, normalId] } } });
+        await prisma.visit.deleteMany({ where: { personId: { in: [keyholderId, normalId] } } });
         await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: [keyholderId, normalId] } } });
         await prisma.participant.deleteMany({ where: { id: { in: [keyholderId, normalId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [keyholderHouseholdId, normalHouseholdId] } } });
@@ -89,7 +89,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
         expect(json.error).toMatch(/Facility is closed/);
 
         // Negative side-effect assertion: no visit row was created.
-        const visits = await prisma.visit.count({ where: { participantId: normalId } });
+        const visits = await prisma.visit.count({ where: { personId: normalId } });
         expect(visits).toBe(0);
     });
 
@@ -99,14 +99,14 @@ describe('POST /api/scan — real check-in/out logic', () => {
         const json = await res.json();
         expect(json.type).toBe('checkin');
 
-        const visit = await prisma.visit.findFirst({ where: { participantId: keyholderId } });
+        const visit = await prisma.visit.findFirst({ where: { personId: keyholderId } });
         expect(visit).not.toBeNull();
         expect(visit?.departedAt).toBeNull();
     });
 
     it('orders check-in then check-out on a second scan: arrivedAt set first, departedAt after', async () => {
         // Seed an open isKeyholder visit so the facility is open for the normal user.
-        await prisma.visit.create({ data: { participantId: keyholderId, arrivedAt: new Date() } });
+        await prisma.visit.create({ data: { personId: keyholderId, arrivedAt: new Date() } });
 
         // First scan → check-in.
         const checkinRes = await POST(scanReq(normalId));
@@ -114,7 +114,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
         expect((await checkinRes.json()).type).toBe('checkin');
 
         const openVisit = await prisma.visit.findFirst({
-            where: { participantId: normalId, departedAt: null },
+            where: { personId: normalId, departedAt: null },
         });
         expect(openVisit).not.toBeNull();
         expect(openVisit?.arrivedAt).toBeInstanceOf(Date);
@@ -131,7 +131,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
         expect((await checkoutRes.json()).type).toBe('checkout');
 
         const closedVisit = await prisma.visit.findFirst({
-            where: { participantId: normalId },
+            where: { personId: normalId },
             orderBy: { arrivedAt: 'desc' },
         });
         expect(closedVisit?.departedAt).toBeInstanceOf(Date);
@@ -140,7 +140,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
     });
 
     it('silently debounces a repeated scan within 3 seconds (no second visit)', async () => {
-        await prisma.visit.create({ data: { participantId: keyholderId, arrivedAt: new Date() } });
+        await prisma.visit.create({ data: { personId: keyholderId, arrivedAt: new Date() } });
 
         const first = await POST(scanReq(normalId));
         expect((await first.json()).type).toBe('checkin');
@@ -151,7 +151,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
         expect(json.type).toBe('ignored_debounce');
 
         // The debounced scan must NOT have flipped the open visit to checked-out.
-        const open = await prisma.visit.count({ where: { participantId: normalId, departedAt: null } });
+        const open = await prisma.visit.count({ where: { personId: normalId, departedAt: null } });
         expect(open).toBe(1);
     });
 

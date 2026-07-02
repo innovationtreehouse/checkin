@@ -212,7 +212,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 // roster of who's in the building — reject instead.
                 const openVisit = await prisma.visit.findFirst({
                     where: {
-                        participantId: Number(participantId),
+                        personId: Number(participantId),
                         associatedEventId: eventId,
                         departedAt: null
                     }
@@ -223,7 +223,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 // Only closed visits remain; safe to remove on an Absent correction.
                 await prisma.visit.deleteMany({
                     where: {
-                        participantId: Number(participantId),
+                        personId: Number(participantId),
                         associatedEventId: eventId
                     }
                 });
@@ -235,7 +235,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 // Check if there is an existing visit
                 const existingVisit = await prisma.visit.findFirst({
                     where: {
-                        participantId: Number(participantId),
+                        personId: Number(participantId),
                         associatedEventId: eventId
                     }
                 });
@@ -253,7 +253,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 } else {
                     await prisma.visit.create({
                         data: {
-                            participantId: Number(participantId),
+                            personId: Number(participantId),
                             associatedEventId: eventId,
                             arrivedAt: new Date(arrivedAt),
                             departedAt: departedAt ? new Date(departedAt) : null,

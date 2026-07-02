@@ -29,7 +29,7 @@ describe('Profile Visits API Integration Tests', () => {
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter((id): id is number => id !== null);
 
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         // RESTRICT: delete participants before their households
@@ -56,16 +56,16 @@ describe('Profile Visits API Integration Tests', () => {
                 // Closed (departedAt set): a participant may have only one OPEN visit
                 // (Visit_one_open_per_participant partial unique index), and this
                 // window test filters by arrivedAt, so departure time is irrelevant.
-                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 1000), departedAt: new Date(now.getTime() - 500) }, // Just now
-                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 86400000), departedAt: new Date(now.getTime() - 86399000) }, // 1 day ago
-                { participantId: testUserId, arrivedAt: new Date(now.getTime() - 864000000), departedAt: new Date(now.getTime() - 863999000) }, // 10 days ago (outside 7 day window)
+                { personId: testUserId, arrivedAt: new Date(now.getTime() - 1000), departedAt: new Date(now.getTime() - 500) }, // Just now
+                { personId: testUserId, arrivedAt: new Date(now.getTime() - 86400000), departedAt: new Date(now.getTime() - 86399000) }, // 1 day ago
+                { personId: testUserId, arrivedAt: new Date(now.getTime() - 864000000), departedAt: new Date(now.getTime() - 863999000) }, // 10 days ago (outside 7 day window)
             ]
         });
     });
 
     afterAll(async () => {
         await prisma.visit.deleteMany({
-            where: { participantId: testUserId }
+            where: { personId: testUserId }
         });
 
         await prisma.participant.deleteMany({

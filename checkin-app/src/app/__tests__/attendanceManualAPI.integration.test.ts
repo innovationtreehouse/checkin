@@ -28,7 +28,7 @@ describe('Manual Attendance API Integration Tests', () => {
         const existingUserIds = existingUsers.map(u => u.id);
         
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         
         await prisma.auditLog.deleteMany({
@@ -50,7 +50,7 @@ describe('Manual Attendance API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.visit.deleteMany({
-            where: { participantId: testUserId }
+            where: { personId: testUserId }
         });
         await prisma.auditLog.deleteMany({
             where: { actorId: testUserId }
@@ -152,7 +152,7 @@ describe('Manual Attendance API Integration Tests', () => {
             
             expect(data.message).toBe('Manual visit recorded successfully.');
             expect(data.visit).toBeDefined();
-            expect(data.visit.participantId).toBe(testUserId);
+            expect(data.visit.personId).toBe(testUserId);
             expect(new Date(data.visit.arrivedAt).toISOString()).toBe(arrivedAt.toISOString());
             expect(new Date(data.visit.departedAt).toISOString()).toBe(departedAt.toISOString());
 
@@ -208,7 +208,7 @@ describe('Manual Attendance API Integration Tests', () => {
             });
 
             // Isolate: drop any open visit left by earlier tests so the count is unambiguous.
-            await prisma.visit.deleteMany({ where: { participantId: testUserId, departedAt: null } });
+            await prisma.visit.deleteMany({ where: { personId: testUserId, departedAt: null } });
 
             const arrivedAt = new Date(Date.now() - 600000).toISOString(); // 10 min ago, open (no departure)
             const makeReq = () => new Request('http://localhost:4000/api/attendance/manual', {
@@ -230,7 +230,7 @@ describe('Manual Attendance API Integration Tests', () => {
             expect(second.id).toBe(first.id);
 
             const openVisits = await prisma.visit.findMany({
-                where: { participantId: testUserId, departedAt: null }
+                where: { personId: testUserId, departedAt: null }
             });
             expect(openVisits.length).toBe(1);
             expect(openVisits[0].id).toBe(first.id);

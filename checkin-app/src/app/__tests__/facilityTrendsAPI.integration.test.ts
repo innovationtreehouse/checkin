@@ -71,23 +71,23 @@ describe('Facility trends API', () => {
 
         // Structured visit (associated to the event): enrolled adult, 3 hours -> participant.
         const structured = await prisma.visit.create({
-            data: { participantId: enrolledAdultId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), arrivedVia: 'SCANNER', associatedEventId: eventId },
+            data: { personId: enrolledAdultId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), arrivedVia: 'SCANNER', associatedEventId: eventId },
         });
         // Structured visit (associated to the event): non-enrolled youth, 2 hours -> volunteer.
         const youthStructured = await prisma.visit.create({
-            data: { participantId: youthId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(3), arrivedVia: 'SCANNER', associatedEventId: eventId },
+            data: { personId: youthId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(3), arrivedVia: 'SCANNER', associatedEventId: eventId },
         });
         // Unstructured visit (no event): non-enrolled adult volunteer, 1 hour.
         const unstructured = await prisma.visit.create({
-            data: { participantId: volunteerId, arrivedAt: hoursAgo(4), departedAt: hoursAgo(3), arrivedVia: 'WEB' },
+            data: { personId: volunteerId, arrivedAt: hoursAgo(4), departedAt: hoursAgo(3), arrivedVia: 'WEB' },
         });
         // Synthetic "marked present" visit (arrivedVia SYSTEM) — must be excluded entirely.
         const synthetic = await prisma.visit.create({
-            data: { participantId: volunteerId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), arrivedVia: 'SYSTEM', associatedEventId: eventId },
+            data: { personId: volunteerId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), arrivedVia: 'SYSTEM', associatedEventId: eventId },
         });
         // Still-open visit (no departedAt) — excluded (departedAt: { not: null } in the where).
         const open = await prisma.visit.create({
-            data: { participantId: youthId, arrivedAt: hoursAgo(1), arrivedVia: 'WEB' },
+            data: { personId: youthId, arrivedAt: hoursAgo(1), arrivedVia: 'WEB' },
         });
         visitIds.push(structured.id, youthStructured.id, unstructured.id, synthetic.id, open.id);
     });

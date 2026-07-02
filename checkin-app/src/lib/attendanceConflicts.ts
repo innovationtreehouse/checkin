@@ -112,31 +112,31 @@ export async function getLeadConflicts(userId: number): Promise<AttendanceConfli
   // conflict in this lead's scope — fetch their full visit set, then cluster.
   const anchored = await prisma.visit.findMany({
     where: { associatedEventId: { in: [...ledEventName.keys()] } },
-    select: { participantId: true },
+    select: { personId: true },
   });
-  const participantIds = [...new Set(anchored.map((v) => v.participantId))];
+  const participantIds = [...new Set(anchored.map((v) => v.personId))];
   if (participantIds.length === 0) return [];
 
   const visits = await prisma.visit.findMany({
-    where: { participantId: { in: participantIds } },
+    where: { personId: { in: participantIds } },
     select: {
       id: true,
-      participantId: true,
+      personId: true,
       arrivedAt: true,
       departedAt: true,
       arrivedVia: true,
       departedVia: true,
       associatedEventId: true,
-      participant: { select: { name: true } },
+      person: { select: { name: true } },
     },
     orderBy: { arrivedAt: "asc" },
   });
 
   const byParticipant = new Map<number, typeof visits>();
   for (const v of visits) {
-    const list = byParticipant.get(v.participantId) ?? [];
+    const list = byParticipant.get(v.personId) ?? [];
     list.push(v);
-    byParticipant.set(v.participantId, list);
+    byParticipant.set(v.personId, list);
   }
 
   const conflicts: AttendanceConflict[] = [];
@@ -146,7 +146,7 @@ export async function getLeadConflicts(userId: number): Promise<AttendanceConfli
       if (!anchor) continue; // overlap exists but not in this lead's scope
       conflicts.push({
         participantId,
-        participantName: pVisits[0].participant.name ?? `Participant ${participantId}`,
+        participantName: pVisits[0].person.name ?? `Participant ${participantId}`,
         eventId: anchor.associatedEventId!,
         eventName: ledEventName.get(anchor.associatedEventId!) ?? `Event ${anchor.associatedEventId}`,
         visits: cluster.map((v) => ({

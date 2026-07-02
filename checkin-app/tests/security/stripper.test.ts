@@ -105,8 +105,8 @@ describe('scopesHeld', () => {
         expect(scopesHeld('Participant', { id: 9 }, ctxNoKey).has('all_current_visitors')).toBe(false);
     });
 
-    it('Visit.their_own when row.participantId === selfId', () => {
-        expect(scopesHeld('Visit', { participantId: 5, departedAt: null }, ctx({ selfId: 5 })).has('their_own')).toBe(true);
+    it('Visit.their_own when row.personId === selfId', () => {
+        expect(scopesHeld('Visit', { personId: 5, departedAt: null }, ctx({ selfId: 5 })).has('their_own')).toBe(true);
     });
 
     it('Visit.all_current_visitors requires isKeyholder AND departedAt === null', () => {

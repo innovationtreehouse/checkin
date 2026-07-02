@@ -42,7 +42,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             // Pre-fetch all overlapping unassociated visits for the participants
             const overlappingVisits = await tx.visit.findMany({
                 where: {
-                    participantId: { in: participantIds },
+                    personId: { in: participantIds },
                     associatedEventId: null,
                     arrivedAt: { lte: event.endAt },
                     OR: [
@@ -56,8 +56,8 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             const visitsByParticipant = new Map();
             for (const visit of overlappingVisits) {
                 // We just need the first matching unassociated visit for each participant.
-                if (!visitsByParticipant.has(visit.participantId)) {
-                    visitsByParticipant.set(visit.participantId, visit);
+                if (!visitsByParticipant.has(visit.personId)) {
+                    visitsByParticipant.set(visit.personId, visit);
                 }
             }
 
@@ -93,7 +93,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                     // auto-checkout and the one-open-visit-per-participant index.
                     const newVisit = await tx.visit.create({
                         data: {
-                            participantId: pId,
+                            personId: pId,
                             associatedEventId: eventId,
                             arrivedAt: event.startAt,
                             departedAt: event.endAt,

@@ -103,7 +103,7 @@ export const DELETE = withAuth({}, async (req, auth) => {
 
         const visit = await prisma.visit.findUnique({
             where: { id: visitId },
-            include: { participant: true }
+            include: { person: true }
         });
 
         if (!visit) {
@@ -114,8 +114,8 @@ export const DELETE = withAuth({}, async (req, auth) => {
         // 1. User checking out themselves
         // 2. User is the household lead checking out a family member
         // 3. User is an admin (isSysadmin, isKeyholder, board member)
-        const isSelf = visit.participantId === Number(user.id);
-        const isHouseholdCheckOut = Boolean(user.householdId && visit.participant.householdId === user.householdId && user.householdLead);
+        const isSelf = visit.personId === Number(user.id);
+        const isHouseholdCheckOut = Boolean(user.householdId && visit.person.householdId === user.householdId && user.householdLead);
         const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
         if (!isSelf && !isHouseholdCheckOut && !isAdmin) {
@@ -180,7 +180,7 @@ export const POST = withAuth({}, async (req, auth) => {
 
                 const activeVisit = await tx.visit.findFirst({
                     where: {
-                        participantId: participant.id,
+                        personId: participant.id,
                         departedAt: null
                     }
                 });
@@ -191,7 +191,7 @@ export const POST = withAuth({}, async (req, auth) => {
 
                 const visit = await tx.visit.create({
                     data: {
-                        participantId: participant.id,
+                        personId: participant.id,
                         arrivedAt: arrivalTime,
                         arrivedVia: "WEB",
                         associatedEventId: eventId

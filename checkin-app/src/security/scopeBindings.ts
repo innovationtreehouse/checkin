@@ -93,7 +93,7 @@ export const SCOPE_BINDINGS = {
         their_program_participants: { field: 'personId', inCtx: 'participantIdsInScopePrograms' },
     },
     Visit: {
-        their_own: { field: 'participantId', eqCtx: 'selfId' },
+        their_own: { field: 'personId', eqCtx: 'selfId' },
         all_current_visitors: {
             all: [{ flag: 'isKeyholder' }, { field: 'departedAt', isNull: true }],
         },

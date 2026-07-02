@@ -62,7 +62,7 @@ describe("Merge Participants API", () => {
         // Cleanup. FeePayment / ProgramParticipant FK participant with RESTRICT, so
         // they must go before the participants.
         await prisma.feePayment.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
-        await prisma.visit.deleteMany({ where: { participantId: { in: [pKeepId, pMergeId] } } });
+        await prisma.visit.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
         await prisma.programParticipant.deleteMany({ where: { participantId: { in: [pKeepId, pMergeId] } } });
         await prisma.householdLead.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
         await prisma.auditLog.deleteMany({ where: { actorId } });
@@ -84,7 +84,7 @@ describe("Merge Participants API", () => {
         // Add some data to pMerge
         await prisma.visit.create({
             data: {
-                participantId: pMergeId,
+                personId: pMergeId,
                 arrivedAt: new Date()
             }
         });
@@ -101,7 +101,7 @@ describe("Merge Participants API", () => {
         expect(data.success).toBe(true);
 
         // Verify data was moved
-        const visits = await prisma.visit.findMany({ where: { participantId: pKeepId } });
+        const visits = await prisma.visit.findMany({ where: { personId: pKeepId } });
         expect(visits.length).toBe(1);
 
         // Verify kept user got merged user's phone
@@ -117,7 +117,7 @@ describe("Merge Participants API", () => {
 
     it("should write an AuditLog row capturing the merge", async () => {
         await prisma.visit.create({
-            data: { participantId: pMergeId, arrivedAt: new Date() }
+            data: { personId: pMergeId, arrivedAt: new Date() }
         });
 
         const req = new Request("http://localhost/api/membership-ops/participants/merge", {

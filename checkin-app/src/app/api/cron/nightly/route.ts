@@ -13,7 +13,7 @@ export const GET = withCron(async () => {
                 departedAt: null
             },
             include: {
-                participant: true
+                person: true
             }
         });
 
@@ -30,12 +30,12 @@ export const GET = withCron(async () => {
                     checkedOutCount += 1;
                 } else {
                     const visit = abandonedVisits[i];
-                    console.error(`Failed to check out visit ${visit.id} (participant ${visit.participant.email}):`, result.reason);
+                    console.error(`Failed to check out visit ${visit.id} (person ${visit.person.email}):`, result.reason);
                 }
             });
 
             // If at least one was a isKeyholder, the facility was left "Open". We need to alert the board.
-            const abandonedKeyholders = abandonedVisits.filter(v => v.participant.isKeyholder);
+            const abandonedKeyholders = abandonedVisits.filter(v => v.person.isKeyholder);
             
             if (abandonedKeyholders.length > 0) {
                 const boardMembers = await prisma.participant.findMany({
@@ -43,7 +43,7 @@ export const GET = withCron(async () => {
                     select: { email: true }
                 });
 
-                const keyholderNames = abandonedKeyholders.map(v => v.participant.name || v.participant.email).join(', ');
+                const keyholderNames = abandonedKeyholders.map(v => v.person.name || v.person.email).join(', ');
 
                 // System Audit Log for the violation
                 await prisma.auditLog.create({

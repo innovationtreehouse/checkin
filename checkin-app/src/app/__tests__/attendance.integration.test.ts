@@ -73,7 +73,7 @@ describe('Attendance API Integration Tests', () => {
         testHouseholdMemberId = householdMember.id;
 
         const visit = await prisma.visit.create({
-            data: { participantId: testParticipantId, arrivedAt: new Date() }
+            data: { personId: testParticipantId, arrivedAt: new Date() }
         });
         activeVisitId = visit.id;
     });
@@ -131,7 +131,7 @@ describe('Attendance API Integration Tests', () => {
         it('should allow a household lead to check out a household member', async () => {
             // Setup a visit for the household member
             const memberVisit = await prisma.visit.create({
-                data: { participantId: testHouseholdMemberId, arrivedAt: new Date() }
+                data: { personId: testHouseholdMemberId, arrivedAt: new Date() }
             });
 
             (getServerSession as jest.Mock).mockResolvedValue({
@@ -182,7 +182,7 @@ describe('Attendance API Integration Tests', () => {
 
             // Ensure testHouseholdMemberId is checked out before we check them in
             await prisma.visit.deleteMany({
-                where: { participantId: testHouseholdMemberId }
+                where: { personId: testHouseholdMemberId }
             });
 
             const req = new Request('http://localhost:4000/api/attendance', {
@@ -195,7 +195,7 @@ describe('Attendance API Integration Tests', () => {
 
             const data = await res.json();
             expect(data.success).toBe(true);
-            expect(data.visit.participantId).toBe(testHouseholdMemberId);
+            expect(data.visit.personId).toBe(testHouseholdMemberId);
         });
 
         it('should return 400 when trying to check in an already checked in user', async () => {

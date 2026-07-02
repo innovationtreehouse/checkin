@@ -62,13 +62,13 @@ describe('PATCH /api/events/[id] cancel — transaction rollback on partial fail
 
     afterEach(async () => {
         jest.restoreAllMocks();
-        await prisma.visit.deleteMany({ where: { participantId } });
+        await prisma.visit.deleteMany({ where: { personId: participantId } });
         await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
     });
 
     afterAll(async () => {
-        await prisma.visit.deleteMany({ where: { participantId } });
+        await prisma.visit.deleteMany({ where: { personId: participantId } });
         await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
         await prisma.participant.deleteMany({ where: { id: { in: [participantId, adminId] } } });
@@ -94,7 +94,7 @@ describe('PATCH /api/events/[id] cancel — transaction rollback on partial fail
         // (Visit_one_open_per_participant). This test counts visits by
         // associatedEventId, not open-state, so the departure time is irrelevant.
         await prisma.visit.create({
-            data: { participantId, arrivedAt: start, departedAt: new Date(start.getTime() + HOUR), associatedEventId: event.id },
+            data: { personId: participantId, arrivedAt: start, departedAt: new Date(start.getTime() + HOUR), associatedEventId: event.id },
         });
         return event.id;
     }

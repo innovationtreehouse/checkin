@@ -760,7 +760,7 @@ model Visit {
   /// @sensitivity:public
   id                Int       @id @default(autoincrement())
   /// @sensitivity:public
-  participantId     Int
+  personId          Int
   /// @sensitivity:personal
   arrivedAt         DateTime
   /// @sensitivity:personal
@@ -772,10 +772,10 @@ model Visit {
   /// @sensitivity:public
   associatedEventId Int?
 
-  participant Participant @relation(fields: [participantId], references: [id])
-  event       Event?      @relation(fields: [associatedEventId], references: [id])
+  person Participant @relation(fields: [personId], references: [id])
+  event  Event?      @relation(fields: [associatedEventId], references: [id])
 
-  @@index([participantId, departedAt]) // Active visits lookup in /api/scan
+  @@index([personId, departedAt]) // Active visits lookup in /api/scan
   // Partial unique index "Visit_one_open_per_participant" — at most one open visit
   // (departedAt IS NULL) per participant. Prisma's DSL can't express a partial
   // unique index, so it lives in the 20260629180000_visit_one_open_per_participant

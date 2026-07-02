@@ -15,7 +15,7 @@ type Visit = {
   departedAt?: string | null;
   arrivedVia?: VisitSource | null;
   departedVia?: VisitSource | null;
-  participant?: { name?: string | null; email?: string | null } | null;
+  person?: { name?: string | null; email?: string | null } | null;
   event?: { name?: string | null } | null;
 };
 
@@ -40,7 +40,7 @@ type SortKey = 'id' | 'participant' | 'event' | 'arrivedAt' | 'departedAt';
 const sortValue = (v: Visit, key: SortKey): string | number => {
   switch (key) {
     case 'id': return v.id;
-    case 'participant': return (v.participant?.name || v.participant?.email || '').toLowerCase();
+    case 'participant': return (v.person?.name || v.person?.email || '').toLowerCase();
     case 'event': return (v.event?.name || 'Open Facility').toLowerCase();
     case 'arrivedAt': return v.arrivedAt ? Date.parse(v.arrivedAt) : 0;
     case 'departedAt': return v.departedAt ? Date.parse(v.departedAt) : 0;
@@ -166,7 +166,7 @@ export default function AdminVisitsPage() {
             {sortedVisits.map((v) => (
               <Table.Tr key={v.id}>
                 <Table.Td>{v.id}</Table.Td>
-                <Table.Td>{v.participant?.name || v.participant?.email}</Table.Td>
+                <Table.Td>{v.person?.name || v.person?.email}</Table.Td>
                 <Table.Td>{v.event?.name || 'Open Facility'}</Table.Td>
 
                 {editingVisitId === v.id ? (

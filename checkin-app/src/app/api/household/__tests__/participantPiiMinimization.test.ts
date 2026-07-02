@@ -125,7 +125,7 @@ describe("Participant PII minimization (M1, M2)", () => {
                 id: 100,
                 arrivedAt: new Date(),
                 departedAt: null,
-                participant: {
+                person: {
                     id: 5,
                     email: "kid5@example.com",
                     name: null,

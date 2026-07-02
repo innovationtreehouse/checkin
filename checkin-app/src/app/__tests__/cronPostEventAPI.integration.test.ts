@@ -8,7 +8,7 @@ jest.mock("@/lib/email", () => ({
 
 describe("GET /api/cron/post-event", () => {
     beforeEach(async () => {
-        await prisma.visit.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
+        await prisma.visit.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
         await prisma.rSVP.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Past Event' } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Future Event' } } });
@@ -60,7 +60,7 @@ describe("GET /api/cron/post-event", () => {
         });
 
         await prisma.visit.create({
-            data: { associatedEventId: event.id, participantId: user.id, arrivedAt: pastStart }
+            data: { associatedEventId: event.id, personId: user.id, arrivedAt: pastStart }
         });
 
         process.env.CRON_SECRET = 'test-secret';

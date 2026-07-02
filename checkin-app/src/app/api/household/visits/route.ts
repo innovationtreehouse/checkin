@@ -38,7 +38,7 @@ export const GET = withAuth(
 
             const visits = await prisma.visit.findMany({
                 where: {
-                    participant: {
+                    person: {
                         householdId: user.householdId
                     },
                     arrivedAt: {
@@ -48,7 +48,7 @@ export const GET = withAuth(
                 },
                 orderBy: { arrivedAt: 'desc' },
                 include: {
-                    participant: { select: { id: true, name: true } },
+                    person: { select: { id: true, name: true } },
                     event: { select: { id: true, name: true } }
                 }
             });

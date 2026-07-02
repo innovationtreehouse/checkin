@@ -59,14 +59,14 @@ export const POST = withAuth({}, async (req, auth) => {
             // provided) is just a historical record, so multiple are fine.
             if (!departureTime) {
                 const openVisit = await tx.visit.findFirst({
-                    where: { participantId: userId, departedAt: null }
+                    where: { personId: userId, departedAt: null }
                 });
                 if (openVisit) return openVisit;
             }
 
             return await tx.visit.create({
                 data: {
-                    participantId: userId,
+                    personId: userId,
                     arrivedAt: arrivalTime,
                     departedAt: departureTime,
                     arrivedVia: "WEB",

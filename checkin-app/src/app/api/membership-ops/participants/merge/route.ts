@@ -83,8 +83,8 @@ export const POST = withAuth(
                 };
 
                 moved.visits = (await tx.visit.updateMany({
-                    where: { participantId: mergeId },
-                    data: { participantId: keepId }
+                    where: { personId: mergeId },
+                    data: { personId: keepId }
                 })).count;
 
                 // Instead of failing on unique constraints, we migrate manually:
