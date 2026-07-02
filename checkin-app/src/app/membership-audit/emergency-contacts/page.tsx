@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Badge, Button, Card, Center, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
+import { Badge, Button, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
 import { formatPhone } from "@/lib/phone";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type Lead = { id: number; name: string | null; phone: string | null; email: string | null };
 type Household = { id: number; name: string | null; leads: Lead[] };
 
@@ -39,7 +40,7 @@ export default function MissingEmergencyContactsPage() {
     fetchHouseholds();
   }, [fetchHouseholds]);
 
-  if (loading) return <Center mih="60vh"><Loader /></Center>;
+  if (loading) return <PageLoader />;
 
   if (error) {
     return (

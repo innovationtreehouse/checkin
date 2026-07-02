@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Anchor, Button, Card, Center, Loader, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Anchor, Button, Card, Stack, Text, TextInput, Title } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { isYouth } from '@/lib/time';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -80,7 +81,7 @@ export default function ProfilePage() {
   };
 
   if (loading || status === "loading") {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!session) return null; // Fallback while router redirects

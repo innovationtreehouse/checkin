@@ -6,9 +6,10 @@ import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
 import { isYouth } from '@/lib/time';
-import { Button, Card, Center, Checkbox, Container, Loader, Paper, Stack, Text, TextInput } from '@mantine/core';
+import { Button, Card, Checkbox, Container, Paper, Stack, Text, TextInput } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type HouseholdOption = {
   id: number;
   name: string;
@@ -17,7 +18,7 @@ type HouseholdOption = {
 
 export default function NewParticipantPage() {
   return (
-    <Suspense fallback={<Center mih="60vh"><Loader /></Center>}>
+    <Suspense fallback={<PageLoader />}>
       <NewParticipantForm />
     </Suspense>
   );
@@ -66,7 +67,7 @@ function NewParticipantForm() {
   }, [queryHouseholdId, householdId]);
 
   if (authLoading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) {

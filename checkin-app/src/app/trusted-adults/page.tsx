@@ -3,9 +3,10 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Center, Loader, Stack, Title } from "@mantine/core";
+import { Stack, Title } from "@mantine/core";
 import TrustedAdultPanel from "@/components/TrustedAdultPanel";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 export default function TrustedAdultsPage() {
     const { data: session, status } = useSession();
     const router = useRouter();
@@ -17,7 +18,7 @@ export default function TrustedAdultsPage() {
         if (status !== "loading" && !isLead) router.push("/");
     }, [status, isLead, router]);
 
-    if (status === "loading") return <Center mih="60vh"><Loader /></Center>;
+    if (status === "loading") return <PageLoader />;
     if (!isLead) return null; // redirect in flight
 
     return (

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Badge, Center, Group, Loader, Table, Text, TextInput, Title } from "@mantine/core";
+import { Badge, Group, Table, Text, TextInput, Title } from "@mantine/core";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { formatDate, formatVisitRange, formatDateTime } from "@/lib/time";
 import { AttendanceTabs } from "../AttendanceTabs";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type Visit = { id: number; person?: { name: string }; event?: { name: string }; arrivedAt: string; departedAt?: string };
 
 export default function HouseholdCheckins() {
@@ -27,7 +28,7 @@ export default function HouseholdCheckins() {
     return () => { active = false; };
   }, [ready, filterDate]);
 
-  if (authLoading) return <Center mih="60vh"><Loader /></Center>;
+  if (authLoading) return <PageLoader />;
   if (!ready) return null;
 
   return (

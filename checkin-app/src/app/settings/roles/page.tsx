@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Center, Checkbox, Group, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
+import { Center, Checkbox, Group, Stack, Table, Text, TextInput } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { SettingsTabs } from '@/components/admin/SettingsTabs';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type UserRole = {
   id: number;
   name: string | null;
@@ -88,7 +89,7 @@ export default function RoleAssignmentPage() {
   };
 
   if (authLoading || loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) return null;

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Center, Group, Loader, Modal, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
+import { Button, Group, Modal, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconRobot, IconScan, IconSelector } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type VisitSource = 'SCANNER' | 'WEB' | 'SYSTEM';
 
 type Visit = {
@@ -149,7 +150,7 @@ export default function AdminVisitsPage() {
   };
 
   if (authLoading || loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) return null;

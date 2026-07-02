@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button, Card, Center, Checkbox, Container, Group, Loader, Select, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
+import { Button, Card, Checkbox, Container, Group, Select, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 const DAYS_MAP = [
   { label: 'Sun', value: 0 },
   { label: 'Mon', value: 1 },
@@ -150,7 +151,7 @@ export function NewEventForm() {
   };
 
   if (loading || status === "loading") {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   const cancelHref = programId ? `/program-ops/programs/${programId}` : '/programs';
@@ -236,7 +237,7 @@ export function NewEventForm() {
 export default function NewEventPage() {
   return (
     <Container size="md" pb="md">
-      <Suspense fallback={<Center mih="60vh"><Loader /></Center>}>
+      <Suspense fallback={<PageLoader />}>
         <NewEventForm />
       </Suspense>
     </Container>

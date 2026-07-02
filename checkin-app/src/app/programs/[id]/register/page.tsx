@@ -2,11 +2,12 @@
 
 import { use, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Card, Center, Container, Group, Loader, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Button, Card, Container, Group, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
 import { formatCents } from '@inventory/money';
 import { useUnsavedGuard } from '@/components/UnsavedChangesProvider';
 import { isRegistrationDirty } from './dirty';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type RegProgram = {
   name: string;
   nonMemberPriceCents: number | null;
@@ -163,7 +164,7 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
   };
 
   if (loadingProgram) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (programError || !program) {

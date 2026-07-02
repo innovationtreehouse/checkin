@@ -9,6 +9,7 @@ import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { aggregateEnrollOutcomes, buildShopifyCheckoutUrl, type EnrollOutcome } from './enroll';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type ProgramDetail = {
   id: number;
   name: string;
@@ -224,7 +225,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   };
 
   if (loading || status === "loading") {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!program) return (

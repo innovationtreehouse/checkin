@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Center, Loader, Stack } from '@mantine/core';
+import { Stack } from '@mantine/core';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { formatDateTime } from '@/lib/time';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type BadgeEvent = {
   id: number;
   timestamp: string;
@@ -50,7 +51,7 @@ export default function AdminBadgesPage() {
   }, [ready, fetchBadges]);
 
   if (authLoading || loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) return null;

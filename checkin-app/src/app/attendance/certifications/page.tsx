@@ -7,6 +7,7 @@ import { useAutoCycle } from "../../../hooks/useAutoCycle";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { ToolLevelBadge, toToolLevel, toolLevelDot } from "@/components/ToolLevelBadge";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type ToolStatusLevel = "BASIC" | "DOF" | "CERTIFIED" | "INSTRUCTOR" | "MAY_CERTIFY_OTHERS";
 
 type Person = {
@@ -29,7 +30,7 @@ const LEGEND_LEVELS: ToolStatusLevel[] = ["BASIC", "CERTIFIED", "DOF", "INSTRUCT
 
 export default function KioskCertificationsDisplay() {
   return (
-    <Suspense fallback={<Center mih="100vh"><Loader /></Center>}>
+    <Suspense fallback={<PageLoader minHeight="100vh" />}>
       <KioskCertificationsInner />
     </Suspense>
   );
