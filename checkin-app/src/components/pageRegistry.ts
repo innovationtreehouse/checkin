@@ -144,4 +144,5 @@ export const REGISTRY_EXCLUDED: string[] = [
   '/settings',               // redirects to /settings/membership
   '/attendance',             // redirects to /attendance/current
   '/my-programs',            // redirects to /my-programs/attendance
+  '/dev/sent-mail',          // dev-only captured-email inbox (EMAIL_DEV_MOCK.md); 404s off dev
 ];
