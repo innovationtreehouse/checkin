@@ -27,7 +27,7 @@ describe("ProfilePage", () => {
         expect(fetchMock).toHaveBeenCalledWith("/api/profile", expect.objectContaining({ method: "PATCH" }));
     });
 
-    it("locks the form as read-only for a minor", async () => {
+    it("locks the form as read-only for a youth", async () => {
         setSession({ id: 2 });
         mockFetchJson({
             "/api/profile": { profile: { name: "Kid One", email: "kid@example.com", phone: "555-2222", dateOfBirth: "2020-01-01" } },

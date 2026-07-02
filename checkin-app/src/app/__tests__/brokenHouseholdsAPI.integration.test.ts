@@ -46,7 +46,7 @@ describe('Broken Households API Integration Tests', () => {
         });
         boardId = board.id;
 
-        // 1. Leadless household with an adult + a minor -> broken.
+        // 1. Leadless household with an adult + a youth -> broken.
         const broken = await prisma.household.create({ data: { name: 'Broken API Test HH Broken' } });
         brokenHouseholdId = broken.id;
         const adult = await prisma.participant.create({
@@ -54,7 +54,7 @@ describe('Broken Households API Integration Tests', () => {
         });
         brokenAdultId = adult.id;
         await prisma.participant.create({
-            data: { email: 'minor-broken-api-test@example.com', name: 'Broken Minor', householdId: brokenHouseholdId, dateOfBirth: new Date('2015-01-01') }
+            data: { email: 'youth-broken-api-test@example.com', name: 'Broken Youth', householdId: brokenHouseholdId, dateOfBirth: new Date('2015-01-01') }
         });
 
         // 2. Leadless household with no participants -> still broken (included).

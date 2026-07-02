@@ -449,7 +449,7 @@ describe('Event roster strip (events/[id] view)', () => {
                     participantId: ROSTER_ID,
                     participant: {
                         id: ROSTER_ID,
-                        name: 'Minor Kid',     // public
+                        name: 'Youth Kid',     // public
                         email: 'kid@x.com',    // pii
                         phone: '555-0100',     // pii
                         dateOfBirth: '2012-05-01', // pii
@@ -493,6 +493,6 @@ describe('Event roster strip (events/[id] view)', () => {
         const kid = roster(out);
         expect(kid.email).toBeUndefined();      // pii stripped
         expect(kid.dateOfBirth).toBeUndefined();
-        expect(kid.name).toBe('Minor Kid');     // but name (public) survives → the leak
+        expect(kid.name).toBe('Youth Kid');     // but name (public) survives → the leak
     });
 });

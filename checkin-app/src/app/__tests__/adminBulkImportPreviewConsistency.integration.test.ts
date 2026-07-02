@@ -14,7 +14,7 @@
  * Excel-serial DOB: both endpoints now share parseImportDob() (src/lib/importDob.ts),
  * so the serial "33239" parses to 1991-01-01 (an adult) on BOTH sides. Previously
  * preview did a bare `new Date("33239")` -> YEAR 33239 (far-future) and flagged the
- * same person as a minor while commit imported an adult lead. The second test pins
+ * same person as a youth while commit imported an adult lead. The second test pins
  * that they agree; if the two parsers ever diverge again it goes red.
  */
 
@@ -130,9 +130,9 @@ describe('Bulk import: preview vs commit consistency', () => {
     });
 
     // Preview and commit must parse the SAME Excel-serial DOB to the SAME date, so
-    // they agree on whether Anchor is a minor. (Regression guard: before the shared
+    // they agree on whether Anchor is a youth. (Regression guard: before the shared
     // parseImportDob() helper, preview read "33239" as YEAR 33239 and called Anchor a
-    // minor while commit imported a 1991 adult. If they diverge again this goes red.)
+    // youth while commit imported a 1991 adult. If they diverge again this goes red.)
     it('preview parses the Excel-serial DOB to the same date/age class as commit', async () => {
         const preview = await runPreview();
         const anchorPreview = preview.find(r => r.rowNumber === 2)!;
