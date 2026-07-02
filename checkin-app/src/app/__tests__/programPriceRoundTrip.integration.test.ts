@@ -76,8 +76,8 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
             expect(res.status).toBe(200);
 
             const persisted = await prisma.program.findFirstOrThrow({ where: { name } });
-            expect(persisted.memberPriceCents).toBe(2599);
-            expect(persisted.nonMemberPriceCents).toBe(10000);
+            expect(persisted.orgMemberPriceCents).toBe(2599);
+            expect(persisted.nonOrgMemberPriceCents).toBe(10000);
         });
 
         it('persists a whole-dollar price as cents and keeps an empty price null', async () => {
@@ -92,8 +92,8 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
             expect(res.status).toBe(200);
 
             const persisted = await prisma.program.findFirstOrThrow({ where: { name } });
-            expect(persisted.memberPriceCents).toBe(3000);
-            expect(persisted.nonMemberPriceCents).toBeNull();
+            expect(persisted.orgMemberPriceCents).toBe(3000);
+            expect(persisted.nonOrgMemberPriceCents).toBeNull();
         });
 
         it('keeps both prices null when omitted', async () => {
@@ -108,8 +108,8 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
             expect(res.status).toBe(200);
 
             const persisted = await prisma.program.findFirstOrThrow({ where: { name } });
-            expect(persisted.memberPriceCents).toBeNull();
-            expect(persisted.nonMemberPriceCents).toBeNull();
+            expect(persisted.orgMemberPriceCents).toBeNull();
+            expect(persisted.nonOrgMemberPriceCents).toBeNull();
         });
     });
 
@@ -119,7 +119,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
 
             const name = `${PROGRAM_NAME_TAG} patch`;
             const program = await prisma.program.create({
-                data: { name, leadMentorId: leadId, memberPriceCents: 100, nonMemberPriceCents: 200 },
+                data: { name, leadMentorId: leadId, orgMemberPriceCents: 100, nonOrgMemberPriceCents: 200 },
             });
 
             const req = new Request(`http://localhost:4000/api/programs/${program.id}`, {
@@ -130,8 +130,8 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
             expect(res.status).toBe(200);
 
             const persisted = await prisma.program.findUniqueOrThrow({ where: { id: program.id } });
-            expect(persisted.memberPriceCents).toBe(1250);
-            expect(persisted.nonMemberPriceCents).toBe(9999);
+            expect(persisted.orgMemberPriceCents).toBe(1250);
+            expect(persisted.nonOrgMemberPriceCents).toBe(9999);
         });
 
         it('clears a price back to null when set to empty string', async () => {
@@ -139,7 +139,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
 
             const name = `${PROGRAM_NAME_TAG} patch clear`;
             const program = await prisma.program.create({
-                data: { name, leadMentorId: leadId, memberPriceCents: 5000 },
+                data: { name, leadMentorId: leadId, orgMemberPriceCents: 5000 },
             });
 
             const req = new Request(`http://localhost:4000/api/programs/${program.id}`, {
@@ -150,7 +150,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
             expect(res.status).toBe(200);
 
             const persisted = await prisma.program.findUniqueOrThrow({ where: { id: program.id } });
-            expect(persisted.memberPriceCents).toBeNull();
+            expect(persisted.orgMemberPriceCents).toBeNull();
         });
     });
 });

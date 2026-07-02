@@ -216,7 +216,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
                 endAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
                 phase: "UPCOMING",
                 enrollmentStatus: "OPEN",
-                memberOnly: false,
+                orgMemberOnly: false,
                 minAge: 8,
                 maxParticipants: 20,
             },
@@ -281,7 +281,7 @@ export async function createProgram(prisma: Db): Promise<string> {
     });
     await prisma.fee.create({
         // Integer cents: $25.00 member / $40.00 non-member.
-        data: { programId: program.id, name: "Materials", memberPriceCents: 2500, nonMemberPriceCents: 4000 },
+        data: { programId: program.id, name: "Materials", orgMemberPriceCents: 2500, nonOrgMemberPriceCents: 4000 },
     });
     const enrollees = await prisma.person.findMany({ take: 2, orderBy: { id: "asc" } });
     for (const p of enrollees) {

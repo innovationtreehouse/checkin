@@ -22,7 +22,7 @@ export type ProgramDetail = {
   minAge: number | null;
   maxAge: number | null;
   maxParticipants: number | null;
-  memberOnly: boolean;
+  orgMemberOnly: boolean;
   participants: {
     personId: number;
     status: string;
@@ -37,8 +37,8 @@ export type ProgramDetail = {
   volunteers: { personId: number; isCore: boolean; person: { name: string | null; email: string } }[];
   events: { id: number; name: string; startAt: string; endAt: string; attendanceConfirmedAt: string | null }[];
   leadMentor: { name: string | null; email: string } | null;
-  memberPriceCents: number | null;
-  nonMemberPriceCents: number | null;
+  orgMemberPriceCents: number | null;
+  nonOrgMemberPriceCents: number | null;
   shopifyProductId: string | null;
 };
 
@@ -66,7 +66,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   const [maxParticipants, setMaxParticipants] = useState("");
   const [phase, setPhase] = useState("PLANNING");
   const [enrollmentStatus, setEnrollmentStatus] = useState("CLOSED");
-  const [memberOnly, setMemberOnly] = useState(false);
+  const [orgMemberOnly, setMemberOnly] = useState(false);
   const [leadMentorIdInput, setLeadMentorIdInput] = useState("");
   const [memberPrice, setMemberPrice] = useState("");
   const [nonMemberPrice, setNonMemberPrice] = useState("");
@@ -94,10 +94,10 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         setMaxParticipants(data.maxParticipants !== null ? String(data.maxParticipants) : "");
         setPhase(data.phase || "PLANNING");
         setEnrollmentStatus(data.enrollmentStatus || "CLOSED");
-        setMemberOnly(Boolean(data.memberOnly));
+        setMemberOnly(Boolean(data.orgMemberOnly));
         setLeadMentorIdInput(data.leadMentorId !== null ? String(data.leadMentorId) : "");
-        setMemberPrice(data.memberPriceCents !== null ? String(data.memberPriceCents / 100) : "");
-        setNonMemberPrice(data.nonMemberPriceCents !== null ? String(data.nonMemberPriceCents / 100) : "");
+        setMemberPrice(data.orgMemberPriceCents !== null ? String(data.orgMemberPriceCents / 100) : "");
+        setNonMemberPrice(data.nonOrgMemberPriceCents !== null ? String(data.nonOrgMemberPriceCents / 100) : "");
         setMentorSearch(data.leadMentor ? `${data.leadMentor.name || 'Unnamed'} (${data.leadMentor.email})` : "");
         setIsEditingMentor(false);
       } else if (res.status === 404) {
@@ -138,7 +138,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
           minAge: minAge ? parseInt(minAge) : null,
           maxAge: maxAge ? parseInt(maxAge) : null,
           maxParticipants: maxParticipants ? parseInt(maxParticipants) : null,
-          phase, enrollmentStatus, memberOnly,
+          phase, enrollmentStatus, orgMemberOnly,
           leadMentorId: leadMentorIdInput ? parseInt(leadMentorIdInput) : null,
           memberPrice: memberPrice || null,
           nonMemberPrice: nonMemberPrice || null,
@@ -193,7 +193,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
   const phaseBadge = PHASE_BADGE[program.phase];
   // Pricing is fixed at creation; derive rather than track as state.
-  const isFree = program.memberPriceCents === null && program.nonMemberPriceCents === null;
+  const isFree = program.orgMemberPriceCents === null && program.nonOrgMemberPriceCents === null;
 
   const downloadQr = () => {
     const url = `${window.location.origin}/programs/${program.id}`;
@@ -311,7 +311,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                   </SimpleGrid>
                 )}
 
-                <Checkbox checked={memberOnly} onChange={e => setMemberOnly(e.currentTarget.checked)} label="Treehouse Members-Only Program" />
+                <Checkbox checked={orgMemberOnly} onChange={e => setMemberOnly(e.currentTarget.checked)} label="Treehouse Members-Only Program" />
 
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
                   <Select label="Program Phase" value={phase} onChange={v => setPhase(v ?? 'PLANNING')} allowDeselect={false}

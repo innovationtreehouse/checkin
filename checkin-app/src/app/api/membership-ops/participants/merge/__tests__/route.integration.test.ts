@@ -145,7 +145,7 @@ describe("Merge Participants API", () => {
         const program = await prisma.program.create({ data: { name: "Merge Conflict Program" } });
         createdProgramId = program.id;
         const fee = await prisma.fee.create({
-            data: { programId: program.id, name: "Conflict Fee", nonMemberPriceCents: 5000, memberPriceCents: 2500 },
+            data: { programId: program.id, name: "Conflict Fee", nonOrgMemberPriceCents: 5000, orgMemberPriceCents: 2500 },
         });
         createdFeeId = fee.id;
 

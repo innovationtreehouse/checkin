@@ -78,8 +78,8 @@ describe('createShopifyProgramVariants', () => {
 
         expect(result).toEqual({
             shopifyProductId: '12345',
-            shopifyMemberVariantId: '67890',
-            shopifyNonMemberVariantId: '11111'
+            shopifyOrgMemberVariantId: '67890',
+            shopifyNonOrgMemberVariantId: '11111'
         });
 
         expect(fetchMock).toHaveBeenCalledTimes(4); // token + product + 2 variants

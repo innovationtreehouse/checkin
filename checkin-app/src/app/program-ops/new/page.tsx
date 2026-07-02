@@ -29,7 +29,7 @@ export default function CreateProgramPage() {
   const [memberPrice, setMemberPrice] = useState("");
   const [nonMemberPrice, setNonMemberPrice] = useState("");
   const [maxParticipants, setMaxParticipants] = useState("");
-  const [memberOnly, setMemberOnly] = useState(false);
+  const [orgMemberOnly, setMemberOnly] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [message, setMessage] = useState("");
@@ -57,7 +57,7 @@ export default function CreateProgramPage() {
           name,
           startAt: startAt || null,
           endAt: endAt || null,
-          memberOnly,
+          orgMemberOnly,
           minAge: minAge ? parseInt(minAge) : null,
           maxAge: maxAge ? parseInt(maxAge) : null,
           memberPrice: (!isFree && memberPrice) ? memberPrice : null,
@@ -88,8 +88,8 @@ export default function CreateProgramPage() {
   const isDirty =
     !submitted &&
     !shallowEqual(
-      { name: "", startAt: "", endAt: "", minAge: "", maxAge: "", isFree: true, memberPrice: "", nonMemberPrice: "", maxParticipants: "", memberOnly: false, leadMentorId: "" },
-      { name, startAt, endAt, minAge, maxAge, isFree, memberPrice, nonMemberPrice, maxParticipants, memberOnly, leadMentorId },
+      { name: "", startAt: "", endAt: "", minAge: "", maxAge: "", isFree: true, memberPrice: "", nonMemberPrice: "", maxParticipants: "", orgMemberOnly: false, leadMentorId: "" },
+      { name, startAt, endAt, minAge, maxAge, isFree, memberPrice, nonMemberPrice, maxParticipants, orgMemberOnly, leadMentorId },
     );
   useUnsavedGuard(isDirty);
 
@@ -208,7 +208,7 @@ export default function CreateProgramPage() {
             </div>
 
             <Checkbox
-              checked={memberOnly}
+              checked={orgMemberOnly}
               onChange={(e) => setMemberOnly(e.currentTarget.checked)}
               label="Treehouse Members-Only Program"
               description="If checked, this program will only be visible to logged-in users with active memberships."

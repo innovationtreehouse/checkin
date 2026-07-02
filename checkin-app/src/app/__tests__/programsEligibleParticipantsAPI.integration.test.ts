@@ -24,7 +24,7 @@ describe('Eligible Participants API Integration Tests', () => {
     let alreadyEnrolledId: number;
 
     let publicProgramId: number;
-    let memberOnlyProgramId: number;
+    let orgMemberOnlyProgramId: number;
     let testHouseholdId: number;
 
     const ENV_BEFORE = process.env.CHECKIN_ENV;
@@ -136,14 +136,14 @@ describe('Eligible Participants API Integration Tests', () => {
 
         // Create mock programs
         const publicProgram = await prisma.program.create({
-            data: { name: 'Public Elig API Test', phase: 'RUNNING', memberOnly: false, leadMentorId: leadId }
+            data: { name: 'Public Elig API Test', phase: 'RUNNING', orgMemberOnly: false, leadMentorId: leadId }
         });
         publicProgramId = publicProgram.id;
 
-        const memberOnlyProgram = await prisma.program.create({
-            data: { name: 'Member Only Elig API Test', phase: 'RUNNING', memberOnly: true, leadMentorId: leadId }
+        const orgMemberOnlyProgram = await prisma.program.create({
+            data: { name: 'Member Only Elig API Test', phase: 'RUNNING', orgMemberOnly: true, leadMentorId: leadId }
         });
-        memberOnlyProgramId = memberOnlyProgram.id;
+        orgMemberOnlyProgramId = orgMemberOnlyProgram.id;
 
         // Create already enrolled participant for public program
         const alreadyEnrolled = await prisma.person.create({
@@ -164,7 +164,7 @@ describe('Eligible Participants API Integration Tests', () => {
     afterAll(async () => {
         process.env.CHECKIN_ENV = ENV_BEFORE;
         const existingUserIds = [adminId, leadId, commonId, activeMemberId, householdMemberId, nonMemberId, alreadyEnrolledId].filter(id => id !== undefined);
-        const validProgramIds = [publicProgramId, memberOnlyProgramId].filter(id => id !== undefined);
+        const validProgramIds = [publicProgramId, orgMemberOnlyProgramId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
             await prisma.programParticipant.deleteMany({
@@ -289,10 +289,10 @@ describe('Eligible Participants API Integration Tests', () => {
              expect(data.members[0].name).toBe('Non Member Candidate');
         });
 
-        it('should strictly limit candidates for memberOnly programs to members and household members', async () => {
+        it('should strictly limit candidates for orgMemberOnly programs to members and household members', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
 
-             const res = await GET(createReq(memberOnlyProgramId, 'Candidate'), createParams(memberOnlyProgramId));
+             const res = await GET(createReq(orgMemberOnlyProgramId, 'Candidate'), createParams(orgMemberOnlyProgramId));
              expect(res.status).toBe(200);
              
              const data = await res.json();

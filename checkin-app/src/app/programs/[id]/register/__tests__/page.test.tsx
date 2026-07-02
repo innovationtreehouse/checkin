@@ -11,7 +11,7 @@ beforeEach(() => resetRtl());
 
 const program = {
   name: "Robotics Club",
-  nonMemberPriceCents: 5000,
+  nonOrgMemberPriceCents: 5000,
   minAge: null,
   maxAge: null,
   enrollmentStatus: "OPEN",
@@ -217,7 +217,7 @@ describe("PublicRegistrationPage", () => {
   });
 
   it("shows Complete Registration (no Shopify cost line) for a free program", async () => {
-    mockFetchJson({ "/api/programs/1": { ...program, nonMemberPriceCents: null } });
+    mockFetchJson({ "/api/programs/1": { ...program, nonOrgMemberPriceCents: null } });
     renderPage();
     expect(await screen.findByText("Complete Registration")).toBeInTheDocument();
   });

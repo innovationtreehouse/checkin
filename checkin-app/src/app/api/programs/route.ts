@@ -8,11 +8,11 @@ import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
 
 // GET is the PUBLIC program catalog — anonymous callers legitimately get the
-// non-draft, non-memberOnly list (asserted by programsAPI.integration.test.ts),
+// non-draft, non-orgMemberOnly list (asserted by programsAPI.integration.test.ts),
 // so it can't move to withAuth (which 401s anonymous). getOptionalSessionUser
 // applies the shared denied-household gate: a denied member is locked out of
 // the whole app, so it collapses to undefined (anonymous) — they see only the
-// public list and never the memberOnly programs isActiveOrgMember would otherwise
+// public list and never the orgMemberOnly programs isActiveOrgMember would otherwise
 // reveal (P0-C).
 export async function GET(req: Request) {
     const user = await getOptionalSessionUser(req);
@@ -21,14 +21,14 @@ export async function GET(req: Request) {
         const { searchParams } = new URL(req.url);
         const activeOnly = searchParams.get("active") === "true";
 
-        // Determine if the user is allowed to see memberOnly programs
-        let canSeeMemberOnly = false;
+        // Determine if the user is allowed to see orgMemberOnly programs
+        let canSeeOrgMemberOnly = false;
 
         if (user) {
             if (user.isSysadmin || user.isBoardMember) {
-                canSeeMemberOnly = true;
+                canSeeOrgMemberOnly = true;
             } else {
-                canSeeMemberOnly = await isActiveOrgMember(user.id);
+                canSeeOrgMemberOnly = await isActiveOrgMember(user.id);
             }
         }
 
@@ -43,8 +43,8 @@ export async function GET(req: Request) {
             });
         }
 
-        if (!canSeeMemberOnly) {
-            andClauses.push({ memberOnly: false });
+        if (!canSeeOrgMemberOnly) {
+            andClauses.push({ orgMemberOnly: false });
         }
 
         let canSeeDrafts = false;
@@ -94,11 +94,11 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
     if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     // Hoisted so the catch can name an orphaned Shopify product (created, but DB write failed) for manual cleanup.
-    let shopifyData: { shopifyProductId: string, shopifyMemberVariantId: string | null, shopifyNonMemberVariantId: string | null } | null = null;
+    let shopifyData: { shopifyProductId: string, shopifyOrgMemberVariantId: string | null, shopifyNonOrgMemberVariantId: string | null } | null = null;
 
     try {
         const body = await req.json();
-        const { name, leadMentorId, startAt, endAt, memberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
+        const { name, leadMentorId, startAt, endAt, orgMemberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
 
         if (!name) {
             return NextResponse.json({ error: "Program name is required" }, { status: 400 });
@@ -125,15 +125,15 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 leadMentorId: parseInt(leadMentorId, 10),
                 startAt: startAt ? new Date(startAt) : null,
                 endAt: endAt ? new Date(endAt) : null,
-                memberOnly: memberOnly || false,
+                orgMemberOnly: orgMemberOnly || false,
                 minAge: minAge || null,
                 maxAge: maxAge || null,
-                memberPriceCents: mPrice,
-                nonMemberPriceCents: nmPrice,
+                orgMemberPriceCents: mPrice,
+                nonOrgMemberPriceCents: nmPrice,
                 maxParticipants: maxPart,
                 shopifyProductId: shopifyData?.shopifyProductId || null,
-                shopifyMemberVariantId: shopifyData?.shopifyMemberVariantId || null,
-                shopifyNonMemberVariantId: shopifyData?.shopifyNonMemberVariantId || null,
+                shopifyOrgMemberVariantId: shopifyData?.shopifyOrgMemberVariantId || null,
+                shopifyNonOrgMemberVariantId: shopifyData?.shopifyNonOrgMemberVariantId || null,
             }
         });
 

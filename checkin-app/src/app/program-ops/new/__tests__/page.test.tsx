@@ -134,7 +134,7 @@ describe("CreateProgramPage", () => {
             name: "FRC Robotics 2026",
             startAt: null,
             endAt: null,
-            memberOnly: true,
+            orgMemberOnly: true,
             minAge: 10,
             maxAge: 18,
             memberPrice: null,

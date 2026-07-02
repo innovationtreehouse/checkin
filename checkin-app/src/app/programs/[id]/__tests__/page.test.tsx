@@ -44,10 +44,10 @@ function baseProgram(overrides: Record<string, unknown> = {}) {
         leadMentor: { name: "Coach K", email: "coach@example.com" },
         participants: [{ personId: 100, status: "ENROLLED" }],
         enrollmentStatus: "OPEN",
-        memberPriceCents: null,
-        nonMemberPriceCents: null,
-        shopifyMemberVariantId: null,
-        shopifyNonMemberVariantId: null,
+        orgMemberPriceCents: null,
+        nonOrgMemberPriceCents: null,
+        shopifyOrgMemberVariantId: null,
+        shopifyNonOrgMemberVariantId: null,
         minAge: 5,
         maxAge: 18,
         ...overrides,
@@ -82,7 +82,7 @@ describe("ProgramEnrollmentPage", () => {
         mockFetchJson({
             "/api/programs/10/participants": { ok: true },
             "/api/household": household,
-            "/api/programs/10": baseProgram({ memberPriceCents: 5000, nonMemberPriceCents: 7000, minAge: null, maxAge: null }),
+            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 7000, minAge: null, maxAge: null }),
         });
         renderPage();
 
@@ -138,7 +138,7 @@ describe("ProgramEnrollmentPage", () => {
         setSession({ id: 101 });
         const fetchMock = mockFetchJson({
             "/api/household": household,
-            "/api/programs/10": baseProgram({ memberPriceCents: 5000, minAge: null, maxAge: null }),
+            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null }),
             "/api/programs/10/participants": { ok: true },
             "/api/programs/10/request-payment-plan": { ok: true },
         });
@@ -156,14 +156,14 @@ describe("ProgramEnrollmentPage", () => {
         setSession({ id: 101 });
         mockFetchJson({
             "/api/household": household,
-            "/api/programs/10": baseProgram({ memberPriceCents: 5000, minAge: null, maxAge: null }),
+            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null }),
             "/api/programs/10/participants": () => ({ error: "Already pending." }),
         });
         global.fetch = jest.fn(async (input: RequestInfo | URL) => {
             const url = typeof input === "string" ? input : input.toString();
             if (url.includes("/api/programs/10/participants")) return { ok: false, status: 400, json: async () => ({ error: "Already pending." }) } as Response;
             if (url.includes("/api/household")) return { ok: true, status: 200, json: async () => household } as Response;
-            if (url.includes("/api/programs/10")) return { ok: true, status: 200, json: async () => baseProgram({ memberPriceCents: 5000, minAge: null, maxAge: null }) } as Response;
+            if (url.includes("/api/programs/10")) return { ok: true, status: 200, json: async () => baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null }) } as Response;
             return { ok: false, status: 404, json: async () => ({}) } as Response;
         });
         renderPage();
@@ -182,7 +182,7 @@ describe("ProgramEnrollmentPage", () => {
             if (url.includes("/api/programs/10/request-payment-plan")) return { ok: false, status: 500, json: async () => ({}) } as Response;
             if (url.includes("/api/programs/10/participants")) return { ok: true, status: 200, json: async () => ({}) } as Response;
             if (url.includes("/api/household")) return { ok: true, status: 200, json: async () => household } as Response;
-            if (url.includes("/api/programs/10")) return { ok: true, status: 200, json: async () => baseProgram({ memberPriceCents: 5000, minAge: null, maxAge: null }) } as Response;
+            if (url.includes("/api/programs/10")) return { ok: true, status: 200, json: async () => baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null }) } as Response;
             return { ok: false, status: 404, json: async () => ({}) } as Response;
         });
         renderPage();
@@ -196,7 +196,7 @@ describe("ProgramEnrollmentPage", () => {
 
     it("shows a network-error message when requesting a payment plan throws", async () => {
         setSession({ id: 101 });
-        mockFetchJson({ "/api/household": household, "/api/programs/10": baseProgram({ memberPriceCents: 5000, minAge: null, maxAge: null }) });
+        mockFetchJson({ "/api/household": household, "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null }) });
         renderPage();
         await screen.findByText("Robotics Club");
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
@@ -290,7 +290,7 @@ describe("ProgramEnrollmentPage", () => {
         const memberHousehold = { household: { ...household.household, membership: { status: "ACTIVE" } } };
         mockFetchJson({
             "/api/household": memberHousehold,
-            "/api/programs/10": baseProgram({ memberPriceCents: 5000, minAge: null, maxAge: null, shopifyMemberVariantId: "gid://member", shopifyNonMemberVariantId: "gid://nonmember" }),
+            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
             "/api/programs/10/participants": { ok: true },
         });
         renderPage();
@@ -343,8 +343,8 @@ describe("ProgramEnrollmentPage", () => {
                 startAt: null,
                 endAt: "2026-08-01T00:00:00.000Z",
                 enrollmentStatus: "WHITELIST",
-                memberPriceCents: 0,
-                nonMemberPriceCents: 0,
+                orgMemberPriceCents: 0,
+                nonOrgMemberPriceCents: 0,
             }),
         });
         renderPage();

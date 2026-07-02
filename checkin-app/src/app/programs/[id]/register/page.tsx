@@ -10,7 +10,7 @@ import { isRegistrationDirty } from './dirty';
 import { PageLoader } from "@/components/ui/PageLoader";
 type RegProgram = {
   name: string;
-  nonMemberPriceCents: number | null;
+  nonOrgMemberPriceCents: number | null;
   minAge: number | null;
   maxAge: number | null;
   enrollmentStatus?: string;
@@ -186,9 +186,9 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
         <Stack align="center" gap={4} mb="lg">
           <Title order={1}>Register for Program</Title>
           <Text c="dimmed" fz="lg">{program.name}</Text>
-          {program.nonMemberPriceCents !== null && (
+          {program.nonOrgMemberPriceCents !== null && (
             <Text c="green" fz="lg">
-              Cost: {formatCents(program.nonMemberPriceCents)} {participants.length > 1 ? `× ${participants.length}` : ''}
+              Cost: {formatCents(program.nonOrgMemberPriceCents)} {participants.length > 1 ? `× ${participants.length}` : ''}
             </Text>
           )}
         </Stack>
@@ -269,7 +269,7 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
                 Cancel
               </Button>
               <Button type="submit" size="md" disabled={submitting} loading={submitting}>
-                {program.nonMemberPriceCents !== null ? "Pay & Register via Shopify" : "Complete Registration"}
+                {program.nonOrgMemberPriceCents !== null ? "Pay & Register via Shopify" : "Complete Registration"}
               </Button>
             </Group>
           </Stack>

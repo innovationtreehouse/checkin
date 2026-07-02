@@ -64,15 +64,15 @@ describe('Public Program Registration API Integration Tests', () => {
                 name: 'Standard Public Reg Test', 
                 phase: 'RUNNING', 
                 enrollmentStatus: 'OPEN', 
-                memberPriceCents: 1000, 
-                nonMemberPriceCents: 1500,
-                shopifyNonMemberVariantId: '123456789'
+                orgMemberPriceCents: 1000, 
+                nonOrgMemberPriceCents: 1500,
+                shopifyNonOrgMemberVariantId: '123456789'
             }
         });
         standardProgramId = standardProgram.id;
 
         const freeProgram = await prisma.program.create({
-            data: { name: 'Free Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', memberPriceCents: null, nonMemberPriceCents: null }
+            data: { name: 'Free Public Reg Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', orgMemberPriceCents: null, nonOrgMemberPriceCents: null }
         });
         freeProgramId = freeProgram.id;
 

@@ -25,10 +25,10 @@ type ProgramDetail = {
   phase: string;
   maxParticipants: number | null;
   enrollmentStatus: string;
-  memberPriceCents: number | null;
-  nonMemberPriceCents: number | null;
-  shopifyMemberVariantId: string | null;
-  shopifyNonMemberVariantId: string | null;
+  orgMemberPriceCents: number | null;
+  nonOrgMemberPriceCents: number | null;
+  shopifyOrgMemberVariantId: string | null;
+  shopifyNonOrgMemberVariantId: string | null;
   minAge: number | null;
   maxAge: number | null;
 };
@@ -163,7 +163,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       return;
     }
 
-    const isPayingOnShopify = !override && (program?.memberPriceCents || program?.nonMemberPriceCents);
+    const isPayingOnShopify = !override && (program?.orgMemberPriceCents || program?.nonOrgMemberPriceCents);
 
     setEnrolling(true);
     setMessage("");
@@ -197,7 +197,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             isMember = householdData.household?.membership?.status === "ACTIVE" || false;
           }
 
-          const variantId = isMember ? program.shopifyMemberVariantId : program.shopifyNonMemberVariantId;
+          const variantId = isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId;
 
           if (variantId) {
             const storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
@@ -242,7 +242,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const user = session?.user as SessionUser | undefined;
   const canManage = !!(session && (user?.isSysadmin || user?.isBoardMember || user?.id === program.leadMentorId));
   const isClosed = program.enrollmentStatus === 'CLOSED';
-  const hasPrice = !!(program.memberPriceCents || program.nonMemberPriceCents);
+  const hasPrice = !!(program.orgMemberPriceCents || program.nonOrgMemberPriceCents);
 
   // Why is enrollment closed? Full wins over phase.
   const enrolledCount = program._count?.participants ?? program.participants?.length ?? 0;
@@ -285,12 +285,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   program.enrollmentStatus === 'WHITELIST' ? <Text component="span" c="yellow">Invite Only</Text> :
                     program.enrollmentStatus}
             </Text>
-            {(program.memberPriceCents !== null || program.nonMemberPriceCents !== null) && (
+            {(program.orgMemberPriceCents !== null || program.nonOrgMemberPriceCents !== null) && (
               <>
                 <Divider />
-                {program.memberPriceCents !== null && <Text><strong>Treehouse Member Price:</strong> {formatCents(program.memberPriceCents)}</Text>}
-                {program.nonMemberPriceCents !== null && <Text><strong>Non-Member Price:</strong> {formatCents(program.nonMemberPriceCents)}</Text>}
-                {(!program.memberPriceCents && !program.nonMemberPriceCents) && <Text><strong>Cost:</strong> Free</Text>}
+                {program.orgMemberPriceCents !== null && <Text><strong>Treehouse Member Price:</strong> {formatCents(program.orgMemberPriceCents)}</Text>}
+                {program.nonOrgMemberPriceCents !== null && <Text><strong>Non-Member Price:</strong> {formatCents(program.nonOrgMemberPriceCents)}</Text>}
+                {(!program.orgMemberPriceCents && !program.nonOrgMemberPriceCents) && <Text><strong>Cost:</strong> Free</Text>}
               </>
             )}
           </Stack>

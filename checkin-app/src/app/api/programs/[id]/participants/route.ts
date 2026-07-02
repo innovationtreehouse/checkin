@@ -106,7 +106,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             }
         }
 
-        const isFree = currentProgram.memberPriceCents === null && currentProgram.nonMemberPriceCents === null;
+        const isFree = currentProgram.orgMemberPriceCents === null && currentProgram.nonOrgMemberPriceCents === null;
         
         // PENDING (awaits payment) unless the program is free or an external
         // admin is comping it. A board parent overriding a soft limit for their

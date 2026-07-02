@@ -90,7 +90,7 @@ async function getAccessToken(): Promise<string | null> {
   }
 }
 
-export async function createShopifyProgramVariants(name: string, memberPriceCents: number | null, nonMemberPriceCents: number | null, maxParticipants: number | null = null) {
+export async function createShopifyProgramVariants(name: string, orgMemberPriceCents: number | null, nonOrgMemberPriceCents: number | null, maxParticipants: number | null = null) {
   const storeDomain = config.shopifyStoreDomain();
   const accessToken = await getAccessToken();
 
@@ -135,22 +135,22 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
     // 2. Create Variants
     const variants = [];
 
-    if (memberPriceCents !== null && memberPriceCents > 0) {
+    if (orgMemberPriceCents !== null && orgMemberPriceCents > 0) {
         variants.push({
             product_id: productId,
             option1: "Member",
-            price: (memberPriceCents / 100).toFixed(2),
+            price: (orgMemberPriceCents / 100).toFixed(2),
             requires_shipping: false,
             inventory_management: maxParticipants ? 'shopify' : null,
             inventory_policy: maxParticipants ? 'deny' : 'continue',
         });
     }
 
-    if (nonMemberPriceCents !== null && nonMemberPriceCents > 0) {
+    if (nonOrgMemberPriceCents !== null && nonOrgMemberPriceCents > 0) {
         variants.push({
             product_id: productId,
             option1: "Non-Member",
-            price: (nonMemberPriceCents / 100).toFixed(2),
+            price: (nonOrgMemberPriceCents / 100).toFixed(2),
             requires_shipping: false,
             inventory_management: maxParticipants ? 'shopify' : null,
             inventory_policy: maxParticipants ? 'deny' : 'continue',
@@ -221,8 +221,8 @@ export async function createShopifyProgramVariants(name: string, memberPriceCent
 
     return {
         shopifyProductId: productId!.toString(),
-        shopifyMemberVariantId: memberVariantId,
-        shopifyNonMemberVariantId: nonMemberVariantId
+        shopifyOrgMemberVariantId: memberVariantId,
+        shopifyNonOrgMemberVariantId: nonMemberVariantId
     };
 
   } catch (error) {

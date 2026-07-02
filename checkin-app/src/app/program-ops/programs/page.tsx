@@ -11,7 +11,7 @@ type Program = {
   name: string;
   phase?: string;
   enrollmentStatus?: "OPEN" | "CLOSED";
-  memberOnly?: boolean;
+  orgMemberOnly?: boolean;
   startAt?: string | null;
   endAt?: string | null;
   _count?: { participants?: number; events?: number };
@@ -66,7 +66,7 @@ export default function AdminProgramsIndex() {
   const visiblePrograms = programs.filter(
     (p) =>
       (!activeOnly || p.phase !== "FINISHED") &&
-      (!publicOnly || (p.phase !== "PLANNING" && !p.memberOnly)),
+      (!publicOnly || (p.phase !== "PLANNING" && !p.orgMemberOnly)),
   );
 
   const columns: DataTableColumn<Program>[] = [
@@ -113,11 +113,11 @@ export default function AdminProgramsIndex() {
     {
       header: "Access",
       render: (p) => (
-        <Badge color={p.memberOnly ? 'grape' : 'blue'} variant="light">
-          {p.memberOnly ? 'Treehouse Members Only' : 'Public'}
+        <Badge color={p.orgMemberOnly ? 'grape' : 'blue'} variant="light">
+          {p.orgMemberOnly ? 'Treehouse Members Only' : 'Public'}
         </Badge>
       ),
-      sortBy: (p) => (p.memberOnly ? 'Treehouse Members Only' : 'Public'),
+      sortBy: (p) => (p.orgMemberOnly ? 'Treehouse Members Only' : 'Public'),
     },
     {
       header: "",

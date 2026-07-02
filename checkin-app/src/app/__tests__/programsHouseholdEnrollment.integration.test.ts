@@ -81,7 +81,7 @@ describe('Multi-select household enrollment (integration)', () => {
         });
 
         const free = await prisma.program.create({
-            data: { name: 'Household Enroll Test Free', phase: 'RUNNING', enrollmentStatus: 'OPEN', memberPriceCents: null, nonMemberPriceCents: null }
+            data: { name: 'Household Enroll Test Free', phase: 'RUNNING', enrollmentStatus: 'OPEN', orgMemberPriceCents: null, nonOrgMemberPriceCents: null }
         });
         freeProgramId = free.id;
 

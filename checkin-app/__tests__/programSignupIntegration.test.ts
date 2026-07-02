@@ -19,8 +19,8 @@ jest.mock('@/lib/notifications', () => ({
 jest.mock('@/lib/shopify', () => ({
     createShopifyProgramVariants: jest.fn().mockResolvedValue({
         shopifyProductId: 'mock-product-id',
-        shopifyMemberVariantId: 'mock-member-variant-id',
-        shopifyNonMemberVariantId: 'mock-non-member-variant-id',
+        shopifyOrgMemberVariantId: 'mock-member-variant-id',
+        shopifyNonOrgMemberVariantId: 'mock-non-member-variant-id',
     }),
 }));
 

@@ -68,11 +68,11 @@ describe('Program Lifecycle Integration Tests', () => {
             data: {
                 name: "Integration Test Program",
                 leadMentorId,
-                memberPriceCents: 50,
-                nonMemberPriceCents: 100,
+                orgMemberPriceCents: 50,
+                nonOrgMemberPriceCents: 100,
                 shopifyProductId: "test-prod",
-                shopifyMemberVariantId: "test-mem-var",
-                shopifyNonMemberVariantId: "test-non-var",
+                shopifyOrgMemberVariantId: "test-mem-var",
+                shopifyNonOrgMemberVariantId: "test-non-var",
                 enrollmentStatus: "OPEN"
             }
         });

@@ -56,7 +56,7 @@ const programData = {
   minAge: 10,
   maxAge: 18,
   maxParticipants: 20,
-  memberOnly: false,
+  orgMemberOnly: false,
   participants: [
     {
       personId: 101, status: "ACTIVE", pendingSince: null,
@@ -74,8 +74,8 @@ const programData = {
     { id: 301, name: "Session 1", startAt: "2026-02-01T18:00:00.000Z", endAt: "2026-02-01T20:00:00.000Z", attendanceConfirmedAt: null },
   ],
   leadMentor: { name: "Mandy Mentor", email: "mandy@example.com" },
-  memberPriceCents: null,
-  nonMemberPriceCents: null,
+  orgMemberPriceCents: null,
+  nonOrgMemberPriceCents: null,
   shopifyProductId: null,
 };
 
@@ -273,7 +273,7 @@ describe("ProgramDetailsPage", () => {
   });
 
   it("shows disabled price inputs and warns when no max participants is set for a priced program", async () => {
-    const paidProgram = { ...programData, memberPriceCents: 1500, nonMemberPriceCents: 750, maxParticipants: null };
+    const paidProgram = { ...programData, orgMemberPriceCents: 1500, nonOrgMemberPriceCents: 750, maxParticipants: null };
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({ "/api/programs/1": paidProgram });
     renderPage();

@@ -41,7 +41,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]/eligible-part
         });
     }
 
-    if (currentProgram.memberOnly) {
+    if (currentProgram.orgMemberOnly) {
         andClauses.push(ACTIVE_ORG_MEMBER_PERSON_WHERE);
     }
 
