@@ -12,7 +12,7 @@ beforeEach(() => resetRtl());
 const participantA = {
   id: 1, name: "Alice Adams", email: "alice@example.com", phone: null, googleId: "g1",
   _count: { visits: 5, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
-  household: { id: 10, name: "Adams House", leads: [], participants: [{ id: 1 }] },
+  household: { id: 10, name: "Adams House", leads: [], householdMembers: [{ id: 1 }] },
 };
 const participantB = {
   id: 2, name: "Bob Adams", email: "bob@example.com", phone: null, googleId: null,

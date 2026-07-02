@@ -38,7 +38,7 @@ export const POST = withAuth(
                     householdLeads: true,
                     household: {
                         include: {
-                            participants: true
+                            householdMembers: true
                         }
                     }
                 }
@@ -49,7 +49,7 @@ export const POST = withAuth(
             }
 
             const isLead = mergeParticipant.householdLeads.length > 0;
-            const householdOthersCount = mergeParticipant.household?.participants.filter(p => p.id !== mergeId).length || 0;
+            const householdOthersCount = mergeParticipant.household?.householdMembers.filter(p => p.id !== mergeId).length || 0;
 
             if (isLead && householdOthersCount > 0) {
                 return NextResponse.json({ error: "Cannot merge: the to-be-deleted participant is the lead of a household with other members." }, { status: 400 });

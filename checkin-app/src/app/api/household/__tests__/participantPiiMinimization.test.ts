@@ -50,7 +50,7 @@ describe("Participant PII minimization (M1, M2)", () => {
         // Full raw row as it exists in the DB, including everything a household
         // peer must never see (M2). The mock applies whatever `select` the route
         // actually requests — same as Prisma would — so this fails if the route
-        // ever regresses back to `participants: true`.
+        // ever regresses back to `householdMembers: true`.
         const rawPeer = {
             id: 2,
             name: "Kid Two",
@@ -71,7 +71,7 @@ describe("Participant PII minimization (M1, M2)", () => {
         } as Record<string, unknown>;
 
         (prisma.person.findUnique as jest.Mock).mockImplementation((args) => {
-            const peerSelect = args.include.household.include.participants.select as Record<string, boolean>;
+            const peerSelect = args.include.household.include.householdMembers.select as Record<string, boolean>;
             const projected = Object.fromEntries(
                 Object.keys(peerSelect).filter((k) => peerSelect[k]).map((k) => [k, rawPeer[k]])
             );
@@ -83,7 +83,7 @@ describe("Participant PII minimization (M1, M2)", () => {
                     name: "Test Household",
                     leads: [{ householdId: 10, participantId: 1 }],
                     membership: { id: 1, status: "ACTIVE", memberSince: new Date(), isVolunteer: false, householdId: 10 },
-                    participants: [projected],
+                    householdMembers: [projected],
                 },
             });
         });
@@ -93,7 +93,7 @@ describe("Participant PII minimization (M1, M2)", () => {
         expect(res.status).toBe(200);
 
         const data = await res.json();
-        const peer = data.household.participants[0];
+        const peer = data.household.householdMembers[0];
 
         // Safe fields survive.
         expect(peer.name).toBe("Kid Two");
@@ -112,7 +112,7 @@ describe("Participant PII minimization (M1, M2)", () => {
 
         // Pin the actual query shape, not just this test's mock.
         const callArgs = (prisma.person.findUnique as jest.Mock).mock.calls[0][0];
-        expect(callArgs.include.household.include.participants).toEqual({ select: HOUSEHOLD_PEER_SELECT });
+        expect(callArgs.include.household.include.householdMembers).toEqual({ select: HOUSEHOLD_PEER_SELECT });
     });
 
     it("GET /api/attendance (full access) does not leak email/googleId", async () => {

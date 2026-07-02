@@ -13,7 +13,7 @@ type Household = {
   id: number;
   name?: string | null;
   membership?: { status: string } | null;
-  participants?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean }[] | null;
+  householdMembers?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean }[] | null;
 };
 
 export default function AdminHouseholdsPage() {
@@ -116,7 +116,7 @@ export default function AdminHouseholdsPage() {
   const filtered = q
     ? households.filter((h) =>
         (h.name || `Household #${h.id}`).toLowerCase().includes(q) ||
-        (h.participants?.some((p) =>
+        (h.householdMembers?.some((p) =>
           (p.name || '').toLowerCase().includes(q) ||
           (p.email || '').toLowerCase().includes(q)
         ) ?? false)
@@ -155,7 +155,7 @@ export default function AdminHouseholdsPage() {
               const status = household.membership?.status;
               const hasActiveMembership = status === "ACTIVE";
               const isDenied = status === "DENIED";
-              const hasBoardMember = household.participants?.some((p) => p.isBoardMember) ?? false;
+              const hasBoardMember = household.householdMembers?.some((p) => p.isBoardMember) ?? false;
 
               return (
                 <Table.Tr key={household.id}>
@@ -163,9 +163,9 @@ export default function AdminHouseholdsPage() {
                     <Text fw={600}>{household.name || `Household #${household.id}`}</Text>
                   </Table.Td>
                   <Table.Td>
-                    {household.participants && household.participants.length > 0 ? (
+                    {household.householdMembers && household.householdMembers.length > 0 ? (
                       <List size="sm">
-                        {household.participants.map((p) => (
+                        {household.householdMembers.map((p) => (
                           <List.Item key={p.id}>{p.name || p.email}</List.Item>
                         ))}
                       </List>

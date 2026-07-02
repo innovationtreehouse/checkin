@@ -36,7 +36,7 @@ describe('Bulk import merge rollback', () => {
             await prisma.membership.deleteMany({});
             await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({ where: { email: { contains: 'mergeroll-test' } } });
-            await prisma.household.deleteMany({ where: { participants: { none: {} } } });
+            await prisma.household.deleteMany({ where: { householdMembers: { none: {} } } });
         } catch {}
     };
 

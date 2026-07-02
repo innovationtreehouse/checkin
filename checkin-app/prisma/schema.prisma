@@ -166,7 +166,7 @@ model Household {
   /// @sensitivity:personal
   postalCode String?
 
-  participants      Person[]
+  householdMembers  Person[]
   leads             HouseholdLead[]
   membership        Membership?
   trustedAdults     TrustedAdult[]

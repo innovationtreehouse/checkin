@@ -16,7 +16,7 @@ export const GET = withAuth(
             const households = await prisma.household.findMany({
                 where: { leads: { none: {} } },
                 include: {
-                    participants: {
+                    householdMembers: {
                         select: { id: true, name: true, dateOfBirth: true },
                         orderBy: { id: "asc" },
                     },
@@ -27,7 +27,7 @@ export const GET = withAuth(
             const result = households.map(h => ({
                 id: h.id,
                 name: h.name || `Household #${h.id}`,
-                members: h.participants.map(p => ({ id: p.id, name: p.name, dateOfBirth: p.dateOfBirth })),
+                members: h.householdMembers.map(p => ({ id: p.id, name: p.name, dateOfBirth: p.dateOfBirth })),
             }));
 
             return NextResponse.json({ households: result });

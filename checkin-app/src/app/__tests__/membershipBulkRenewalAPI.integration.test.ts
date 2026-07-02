@@ -40,7 +40,7 @@ describe('Bulk renewal migration', () => {
     }
 
     async function wipe() {
-        const hhs = await prisma.household.findMany({ where: { OR: [{ name: { contains: TAG } }, { participants: { some: { email: { contains: TAG } } } }] }, select: { id: true } });
+        const hhs = await prisma.household.findMany({ where: { OR: [{ name: { contains: TAG } }, { householdMembers: { some: { email: { contains: TAG } } } }] }, select: { id: true } });
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
             await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });

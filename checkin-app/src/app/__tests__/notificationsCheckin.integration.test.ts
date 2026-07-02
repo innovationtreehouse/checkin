@@ -21,11 +21,11 @@ describe("sendCheckinNotifications()", () => {
         await prisma.person.deleteMany({
             where: { email: { contains: "notify-test" } }
         });
-        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { household: { participants: { none: {} } } } } } });
-        await prisma.membershipProcess.deleteMany({ where: { membership: { household: { participants: { none: {} } } } } });
-        await prisma.membership.deleteMany({ where: { household: { participants: { none: {} } } } });
+        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { household: { householdMembers: { none: {} } } } } } });
+        await prisma.membershipProcess.deleteMany({ where: { membership: { household: { householdMembers: { none: {} } } } } });
+        await prisma.membership.deleteMany({ where: { household: { householdMembers: { none: {} } } } });
         await prisma.household.deleteMany({
-            where: { participants: { none: {} } }
+            where: { householdMembers: { none: {} } }
         });
         jest.clearAllMocks();
 
@@ -72,11 +72,11 @@ describe("sendCheckinNotifications()", () => {
         await prisma.person.deleteMany({
             where: { email: { contains: "notify-test" } }
         });
-        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { household: { participants: { none: {} } } } } } });
-        await prisma.membershipProcess.deleteMany({ where: { membership: { household: { participants: { none: {} } } } } });
-        await prisma.membership.deleteMany({ where: { household: { participants: { none: {} } } } });
+        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { household: { householdMembers: { none: {} } } } } } });
+        await prisma.membershipProcess.deleteMany({ where: { membership: { household: { householdMembers: { none: {} } } } } });
+        await prisma.membership.deleteMany({ where: { household: { householdMembers: { none: {} } } } });
         await prisma.household.deleteMany({
-            where: { participants: { none: {} } }
+            where: { householdMembers: { none: {} } }
         });
     });
 

@@ -63,7 +63,7 @@ async function loadUserWithHousehold(userId: number) {
             householdLeads: true,
             household: {
                 include: {
-                    participants: { orderBy: { id: "asc" } },
+                    householdMembers: { orderBy: { id: "asc" } },
                     leads: true,
                     membership: { include: { processes: true } },
                     emergencyContacts: { orderBy: [{ priority: "asc" }, { id: "asc" }] },
@@ -94,8 +94,8 @@ export async function getIntakeState(userId: number) {
 
     // Parents/guardians are the household leads; children are non-lead members.
     const leadIds = new Set((household?.leads ?? []).map((l) => l.personId));
-    const parents = (household?.participants ?? []).filter((p) => leadIds.has(p.id));
-    const children = (household?.participants ?? []).filter((p) => !leadIds.has(p.id));
+    const parents = (household?.householdMembers ?? []).filter((p) => leadIds.has(p.id));
+    const children = (household?.householdMembers ?? []).filter((p) => !leadIds.has(p.id));
     const primary = parents.find((p) => p.id === userId) ?? null;
     const secondary = parents.find((p) => p.id !== userId) ?? null;
 
@@ -211,7 +211,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     if (!user) throw new IntakeError("no_household", "User not found.");
     assertLead(user);
     const householdId = user.householdId!;
-    const householdMemberIds = new Set((user.household?.participants ?? []).map((p) => p.id));
+    const householdMemberIds = new Set((user.household?.householdMembers ?? []).map((p) => p.id));
 
     const toDate = (d?: string | null) => (d ? new Date(d) : null);
 
@@ -355,7 +355,7 @@ export async function submitIntake(userId: number) {
         (c) => c.conflictParticipantId === null && c.name.trim() && c.phone.trim(),
     );
     if (!hasValidContact) missing.push({ field: "emergencyContact", label: "a valid emergency contact (someone outside the household)" });
-    const primary = household.participants.find((p) => p.id === userId);
+    const primary = household.householdMembers.find((p) => p.id === userId);
     if (!primary?.name?.trim()) missing.push({ field: "primaryName", label: "primary parent name" });
     if (missing.length) {
         throw new IntakeError(

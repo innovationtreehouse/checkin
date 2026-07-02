@@ -48,7 +48,7 @@ function KioskDisplayInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState<number | null>(null);
-  const [household, setHousehold] = useState<{ leads: { participantId: number }[], participants: Person[] } | null>(null);
+  const [household, setHousehold] = useState<{ leads: { participantId: number }[], householdMembers: Person[] } | null>(null);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [searchSignOutQuery, setSearchSignOutQuery] = useState("");
   const [selectedParticipant, setSelectedParticipant] = useState<Person | null>(null);
@@ -371,12 +371,12 @@ function KioskDisplayInner() {
           <Box mb="lg">
             <Title order={4} c="blue" mb="sm">Check In Household Members</Title>
             <Group gap="xs" wrap="wrap">
-              {household.participants?.filter((p) => !checkedInIds.includes(p.id)).map((p) => (
+              {household.householdMembers?.filter((p) => !checkedInIds.includes(p.id)).map((p) => (
                 <Button key={p.id} variant="default" onClick={() => handleManualCheckIn(p.id)} disabled={checkingInId === p.id}>
                   {checkingInId === p.id ? "..." : (p.name || p.email)}
                 </Button>
               ))}
-              {household.participants?.filter((p) => !checkedInIds.includes(p.id)).length === 0 && (
+              {household.householdMembers?.filter((p) => !checkedInIds.includes(p.id)).length === 0 && (
                 <Text c="dimmed" fs="italic" size="sm">All household members are currently checked in!</Text>
               )}
             </Group>
