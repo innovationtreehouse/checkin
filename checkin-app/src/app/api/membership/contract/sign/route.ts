@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import { getOrCreateContractSigningUrl, ExternalError, type ExternalErrorCode } from "@/lib/membership/external";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ const STATUS_BY_CODE: Record<ExternalErrorCode, number> = {
  * process) and returns a fresh embedded sign URL to redirect the applicant into.
  */
 export const POST = withAuth({}, async (_req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
     try {
         const url = await getOrCreateContractSigningUrl(auth.user.id);
         return NextResponse.json({ url });
@@ -31,6 +32,6 @@ export const POST = withAuth({}, async (_req, auth) => {
             return NextResponse.json({ error: error.message, code: error.code }, { status: STATUS_BY_CODE[error.code] });
         }
         logger.error(`Membership contract sign error: ${error instanceof Error ? error.message : String(error)}`);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiError("Internal Server Error", 500);
     }
 });

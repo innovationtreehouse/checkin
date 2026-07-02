@@ -5,22 +5,23 @@ import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
 import { calculateAge } from "@/lib/time";
+import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const { id } = await params;
 
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
+            return apiError("Invalid program ID", 400);
         }
 
         const body = await req.json();
         const { participantId } = body;
 
         if (!participantId) {
-            return NextResponse.json({ error: "participantId is required" }, { status: 400 });
+            return apiError("participantId is required", 400);
         }
 
         // Capacity is counted under a row lock inside the enroll transaction
@@ -29,7 +30,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             where: { id: programId }
         });
         if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
+            return apiError("Program not found", 404);
         }
 
         const currentUserId = auth.user.id;
@@ -55,7 +56,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         }
 
         if (!isSelfEnrollment && !isSysAdminOrBoard && !isHouseholdLead) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to enroll this participant. Program leads cannot manually add participants." }, { status: 403 });
+            return apiError("Forbidden: Not authorized to enroll this participant. Program leads cannot manually add participants.", 403);
         }
 
         const override = body.override === true;
@@ -151,10 +152,10 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         // Benign double-submit (UI double-click) re-enrolls the same participant;
         // return 409 instead of a 500.
         if (isPrismaError(error, 'P2002')) {
-            return NextResponse.json({ error: "Participant is already enrolled in this program." }, { status: 409 });
+            return apiError("Participant is already enrolled in this program.", 409);
         }
         logger.error("Enrollment creation error:", error);
-        return NextResponse.json({ error: "Failed to enroll participant" }, { status: 500 });
+        return apiError("Failed to enroll participant", 500);
     }
 });
 
@@ -166,20 +167,20 @@ function isPrismaError(error: unknown, code: string): boolean {
 }
 
 export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const { id } = await params;
 
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
+            return apiError("Invalid program ID", 400);
         }
 
         const body = await req.json();
         const { participantId } = body;
 
         if (!participantId) {
-            return NextResponse.json({ error: "participantId is required" }, { status: 400 });
+            return apiError("participantId is required", 400);
         }
 
         const currentProgram = await prisma.program.findUnique({
@@ -187,7 +188,7 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
         });
 
         if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
+            return apiError("Program not found", 404);
         }
 
         const currentUserId = auth.user.id;
@@ -196,7 +197,7 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
         const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
 
         if (!isSelfRemoval && !isLeadMentor && !isSysAdminOrBoard) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to remove this participant" }, { status: 403 });
+            return apiError("Forbidden: Not authorized to remove this participant", 403);
         }
 
         const enrollment = await prisma.programParticipant.delete({
@@ -227,6 +228,6 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
             return NextResponse.json({ success: true, idempotent: true });
         }
         logger.error("Enrollment deletion error:", error);
-        return NextResponse.json({ error: "Failed to remove participant" }, { status: 500 });
+        return apiError("Failed to remove participant", 500);
     }
 });

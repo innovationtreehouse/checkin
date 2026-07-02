@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import { getLeadConflicts, type AttendanceConflict } from "@/lib/attendanceConflicts";
+import { apiError } from "@/lib/api-response";
 
 export type ConflictsResponse = { conflicts: AttendanceConflict[] };
 
@@ -9,7 +10,7 @@ export type ConflictsResponse = { conflicts: AttendanceConflict[] };
 // events and returns [] for non-leads, so there's nothing to leak.
 export const GET = withAuth({}, async (_req, auth) => {
   if (auth.type !== "session") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401);
   }
   const conflicts = await getLeadConflicts(auth.user.id);
   return NextResponse.json({ conflicts } satisfies ConflictsResponse);

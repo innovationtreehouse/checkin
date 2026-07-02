@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import prisma from "@/lib/prisma";
 import { config } from "@/lib/config";
 import { authOptions } from "@/lib/auth-options";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = 'force-dynamic';
 
@@ -17,10 +18,10 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET() {
     if (process.env.NODE_ENV === 'production') {
-        return NextResponse.json({ error: "Not available" }, { status: 404 });
+        return apiError("Not available", 404);
     }
     if (!config.isDevInstance()) {
-        return NextResponse.json({ error: "Not available" }, { status: 404 });
+        return apiError("Not available", 404);
     }
     if (config.checkinEnv() === 'dev') {
         // DRIFT-GUARD ALLOWLIST (Step 7): this is the single sanctioned raw
@@ -33,7 +34,7 @@ export async function GET() {
         // breaking persona-switch) fits; this route stays on getServerSession.
         const session = await getServerSession(authOptions);
         if (!session?.user) {
-            return NextResponse.json({ error: "Not available" }, { status: 404 });
+            return apiError("Not available", 404);
         }
     }
 

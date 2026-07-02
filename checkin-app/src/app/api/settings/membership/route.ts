@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
  * link is an env var, not a board setting.)
  */
 export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
     let body: {
         normalDuesCents?: number;
         volunteerDuesCents?: number;
@@ -33,17 +34,17 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     try {
         body = await req.json();
     } catch {
-        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+        return apiError("Invalid JSON", 400);
     }
 
     const data: Record<string, unknown> = {};
     const invalidDues = (v: number) => !Number.isFinite(v) || v < 0;
     if (body.normalDuesCents !== undefined) {
-        if (invalidDues(body.normalDuesCents)) return NextResponse.json({ error: "normalDuesCents must be a number >= 0" }, { status: 400 });
+        if (invalidDues(body.normalDuesCents)) return apiError("normalDuesCents must be a number >= 0", 400);
         data.normalDuesCents = Math.round(body.normalDuesCents);
     }
     if (body.volunteerDuesCents !== undefined) {
-        if (invalidDues(body.volunteerDuesCents)) return NextResponse.json({ error: "volunteerDuesCents must be a number >= 0" }, { status: 400 });
+        if (invalidDues(body.volunteerDuesCents)) return apiError("volunteerDuesCents must be a number >= 0", 400);
         data.volunteerDuesCents = Math.round(body.volunteerDuesCents);
     }
     if (body.membershipYearBoundary !== undefined) {
@@ -51,7 +52,7 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     }
     if (body.membershipVariantId !== undefined) {
         const variantId = body.membershipVariantId?.trim();
-        if (variantId && !/^\d+$/.test(variantId)) return NextResponse.json({ error: "membershipVariantId must be a numeric Shopify variant ID" }, { status: 400 });
+        if (variantId && !/^\d+$/.test(variantId)) return apiError("membershipVariantId must be a numeric Shopify variant ID", 400);
         data.membershipVariantId = variantId || null;
     }
     if (body.volunteerDiscountCode !== undefined) {

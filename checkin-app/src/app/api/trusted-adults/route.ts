@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import { createTrustedAdult, TrustedAdultError } from "@/lib/trusted-adult/service";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -34,10 +35,10 @@ export const POST = withAuth({ allowKiosk: true }, async (req, auth) => {
     try {
         body = await req.json();
     } catch {
-        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+        return apiError("Invalid JSON", 400);
     }
     if (!body.counterpartyName || !body.familyContext) {
-        return NextResponse.json({ error: "counterpartyName and familyContext are required" }, { status: 400 });
+        return apiError("counterpartyName and familyContext are required", 400);
     }
 
     let householdId: number | undefined;
@@ -49,7 +50,7 @@ export const POST = withAuth({ allowKiosk: true }, async (req, auth) => {
         const isStaff = auth.user.isBoardMember || auth.user.isSysadmin;
         if (body.householdId && body.householdId !== auth.user.householdId) {
             if (!isStaff) {
-                return NextResponse.json({ error: "You may only add trusted adults for your own household." }, { status: 403 });
+                return apiError("You may only add trusted adults for your own household.", 403);
             }
             householdId = body.householdId;
             origin = "STAFF_ENTERED";
@@ -59,7 +60,7 @@ export const POST = withAuth({ allowKiosk: true }, async (req, auth) => {
     } else {
         // kiosk
         if (!body.householdId) {
-            return NextResponse.json({ error: "householdId is required" }, { status: 400 });
+            return apiError("householdId is required", 400);
         }
         householdId = body.householdId;
     }
@@ -81,6 +82,6 @@ export const POST = withAuth({ allowKiosk: true }, async (req, auth) => {
             return NextResponse.json({ error: error.message, code: error.code }, { status: STATUS_FOR[error.code] });
         }
         logger.error("Trusted adult create error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiError("Internal Server Error", 500);
     }
 });

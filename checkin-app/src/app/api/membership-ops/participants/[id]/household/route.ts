@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { logBackendError, logger } from "@/lib/logger";
+import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth<{ params: Promise<{ id: string }> }>(
     { roles: ['isSysadmin', 'isBoardMember'] },
@@ -9,24 +10,24 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
     try {
         const { id } = await params;
         if (auth.type !== 'session') {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            return apiError("Unauthorized", 401);
         }
 
         const participantId = parseInt(id);
         if (isNaN(participantId)) {
             logger.error(`Invalid participant ID from params: ${id}`);
-            return NextResponse.json({ error: `Invalid participant ID: ${id}` }, { status: 400 });
+            return apiError(`Invalid participant ID: ${id}`, 400);
         }
 
         const { householdId, createNew } = await req.json();
 
         if (!householdId && !createNew) {
-            return NextResponse.json({ error: "Must provide either householdId or createNew boolean" }, { status: 400 });
+            return apiError("Must provide either householdId or createNew boolean", 400);
         }
 
         const participant = await prisma.person.findUnique({ where: { id: participantId } });
         if (!participant) {
-            return NextResponse.json({ error: "Participant not found" }, { status: 404 });
+            return apiError("Participant not found", 404);
         }
 
         let targetHouseholdId: number;
@@ -48,12 +49,12 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
         } else {
             targetHouseholdId = parseInt(householdId);
             if (isNaN(targetHouseholdId)) {
-                return NextResponse.json({ error: "Invalid household ID" }, { status: 400 });
+                return apiError("Invalid household ID", 400);
             }
 
             const household = await prisma.household.findUnique({ where: { id: targetHouseholdId } });
             if (!household) {
-                return NextResponse.json({ error: "Household not found" }, { status: 404 });
+                return apiError("Household not found", 404);
             }
         }
 
@@ -86,6 +87,6 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
         return NextResponse.json({ success: true, participant: updatedParticipant });
     } catch (error) {
         await logBackendError(error, "POST /api/membership-ops/participants/[id]/household");
-        return NextResponse.json({ error: `Internal server error` }, { status: 500 });
+        return apiError(`Internal server error`, 500);
     }
 });

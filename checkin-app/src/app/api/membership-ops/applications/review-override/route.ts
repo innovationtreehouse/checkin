@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import { overrideBlocked, ReviewError } from "@/lib/membership/review";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -13,15 +14,15 @@ export const dynamic = "force-dynamic";
  *             leaving it at PENDING_PAYMENT
  */
 export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
     let body: { processId?: number; action?: "reset" | "approve" };
     try {
         body = await req.json();
     } catch {
-        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+        return apiError("Invalid JSON", 400);
     }
     if (!body.processId || (body.action !== "reset" && body.action !== "approve")) {
-        return NextResponse.json({ error: "processId and action (reset|approve) are required" }, { status: 400 });
+        return apiError("processId and action (reset|approve) are required", 400);
     }
     try {
         const outcome = await overrideBlocked(body.processId, auth.user.id, body.action);
@@ -31,6 +32,6 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
             return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "not_found" ? 404 : 409 });
         }
         logger.error("Review override error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiError("Internal Server Error", 500);
     }
 });

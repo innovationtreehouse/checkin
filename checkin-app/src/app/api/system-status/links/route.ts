@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { apiError } from "@/lib/api-response";
 
 // Link Status data source: recent external-integration failures.
 export const GET = withAuth(
@@ -23,7 +24,7 @@ export const GET = withAuth(
             return NextResponse.json({ errors });
         } catch (error) {
             logger.error("Failed to fetch integration errors:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            return apiError("Internal Server Error", 500);
         }
     }
 );

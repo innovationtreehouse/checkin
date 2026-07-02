@@ -7,12 +7,13 @@ import { isValidEmail } from "@/lib/emergencyContacts/identity";
 import { isOrgAccount } from "@/lib/orgAccount";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 import { householdLeadship } from "@/lib/household/leads";
+import { apiError } from "@/lib/api-response";
 
 export const GET = withAuth(
     {},
     async (_req, auth) => {
         try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            if (auth.type !== 'session') return apiError("Unauthorized", 401);
             const userId = auth.user.id;
 
             const user = await prisma.person.findUnique({
@@ -28,12 +29,12 @@ export const GET = withAuth(
                 }
             });
 
-            if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+            if (!user) return apiError("User not found", 404);
 
             return NextResponse.json({ household: user.household }, { status: 200 });
         } catch (error: unknown) {
             logger.error("Household GET Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            return apiError("Internal Server Error", 500);
         }
     }
 );
@@ -42,17 +43,14 @@ export const PATCH = withAuth(
     {},
     async (req, auth) => {
         try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            if (auth.type !== 'session') return apiError("Unauthorized", 401);
             const userId = auth.user.id;
 
             // Internal staff (@innovationtreehouse.org) accounts are not real member families,
             // so they may not build out a household with extra members via self-service. The
             // admin participant-add flow (isSysadmin/isBoardMember) is separate and stays open.
             if (isOrgAccount(auth.user)) {
-                return NextResponse.json(
-                    { error: "Staff accounts cannot add household members. Use the membership-ops participant tools instead." },
-                    { status: 403 }
-                );
+                return apiError("Staff accounts cannot add household members. Use the membership-ops participant tools instead.", 403);
             }
 
             const body = await req.json();
@@ -61,15 +59,15 @@ export const PATCH = withAuth(
             const hh = await householdLeadship(userId);
 
             if (!hh) {
-                return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
+                return apiError("You must create a household first", 400);
             }
 
             if (!hh.canManage) {
-                return NextResponse.json({ error: "Only household leads can add members" }, { status: 403 });
+                return apiError("Only household leads can add members", 403);
             }
 
             if (memberEmail && !isValidEmail(memberEmail)) {
-                return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+                return apiError("Invalid email format", 400);
             }
 
             let targetMember: Awaited<ReturnType<typeof prisma.person.findUnique>> = null;
@@ -78,14 +76,14 @@ export const PATCH = withAuth(
                 targetMember = await prisma.person.findUnique({ where: { email: memberEmail.toLowerCase() } });
 
                 if (targetMember && targetMember.householdId) {
-                    return NextResponse.json({ error: "A user with this email already belongs to a household." }, { status: 400 });
+                    return apiError("A user with this email already belongs to a household.", 400);
                 }
             }
 
             if (!targetMember && !memberDob && !memberOver25) {
                 // A new member's age must be known: either a DoB, or an explicit
                 // "25+" declaration (mirrors the client form's requirement).
-                return NextResponse.json({ error: "Date of birth is required for anyone under 25." }, { status: 400 });
+                return apiError("Date of birth is required for anyone under 25.", 400);
             }
 
             const householdId = hh.householdId;
@@ -128,7 +126,7 @@ export const PATCH = withAuth(
             return NextResponse.json({ member, warning }, { status: 200 });
         } catch (error: unknown) {
             logger.error("Household PATCH Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            return apiError("Internal Server Error", 500);
         }
     }
 );

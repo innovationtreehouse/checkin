@@ -2,27 +2,28 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const { id } = await params;
 
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
+            return apiError("Invalid program ID", 400);
         }
 
         const body = await req.json();
         const { participantId } = body;
 
         if (!participantId || typeof participantId !== 'number') {
-            return NextResponse.json({ error: "participantId is required" }, { status: 400 });
+            return apiError("participantId is required", 400);
         }
 
         const currentProgram = await prisma.program.findUnique({ where: { id: programId } });
         if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
+            return apiError("Program not found", 404);
         }
 
         const currentUserId = auth.user.id;
@@ -30,7 +31,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
 
         if (!isLeadMentor && !isSysAdminOrBoard) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to assign volunteers" }, { status: 403 });
+            return apiError("Forbidden: Not authorized to assign volunteers", 403);
         }
 
         // ponytail: no eligibility gate (age/membership) on volunteers — they're
@@ -60,15 +61,15 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         // P2002 = unique violation on @@id([programId, participantId]). Benign
         // double-submit re-assigns the same volunteer; 409 instead of 500.
         if (isPrismaError(error, 'P2002')) {
-            return NextResponse.json({ error: "Participant is already a volunteer for this program." }, { status: 409 });
+            return apiError("Participant is already a volunteer for this program.", 409);
         }
         // P2003 = FK violation: participantId points at no Participant row. Bad
         // input, not a server fault; 400 instead of 500.
         if (isPrismaError(error, 'P2003')) {
-            return NextResponse.json({ error: "Participant not found" }, { status: 400 });
+            return apiError("Participant not found", 400);
         }
         logger.error("Volunteer assignment error:", error);
-        return NextResponse.json({ error: "Failed to assign volunteer" }, { status: 500 });
+        return apiError("Failed to assign volunteer", 500);
     }
 });
 
@@ -80,25 +81,25 @@ function isPrismaError(error: unknown, code: string): boolean {
 }
 
 export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const { id } = await params;
 
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
+            return apiError("Invalid program ID", 400);
         }
 
         const body = await req.json();
         const { participantId } = body;
 
         if (!participantId) {
-            return NextResponse.json({ error: "participantId is required" }, { status: 400 });
+            return apiError("participantId is required", 400);
         }
 
         const currentProgram = await prisma.program.findUnique({ where: { id: programId } });
         if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
+            return apiError("Program not found", 404);
         }
 
         const currentUserId = auth.user.id;
@@ -106,7 +107,7 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
         const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
 
         if (!isLeadMentor && !isSysAdminOrBoard) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to remove volunteers" }, { status: 403 });
+            return apiError("Forbidden: Not authorized to remove volunteers", 403);
         }
 
         const assignment = await prisma.programVolunteer.delete({
@@ -132,30 +133,30 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
         return NextResponse.json({ success: true, assignment });
     } catch (error) {
         logger.error("Volunteer removal error:", error);
-        return NextResponse.json({ error: "Failed to remove volunteer" }, { status: 500 });
+        return apiError("Failed to remove volunteer", 500);
     }
 });
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const { id } = await params;
 
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
+            return apiError("Invalid program ID", 400);
         }
 
         const body = await req.json();
         const { participantId, isCore } = body;
 
         if (!participantId || isCore === undefined) {
-            return NextResponse.json({ error: "participantId and isCore are required" }, { status: 400 });
+            return apiError("participantId and isCore are required", 400);
         }
 
         const currentProgram = await prisma.program.findUnique({ where: { id: programId } });
         if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
+            return apiError("Program not found", 404);
         }
 
         const currentUserId = auth.user.id;
@@ -163,7 +164,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
 
         if (!isLeadMentor && !isSysAdminOrBoard) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to modify volunteers" }, { status: 403 });
+            return apiError("Forbidden: Not authorized to modify volunteers", 403);
         }
 
         const assignment = await prisma.programVolunteer.update({
@@ -192,6 +193,6 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         return NextResponse.json({ success: true, assignment });
     } catch (error) {
         logger.error("Volunteer toggle error:", error);
-        return NextResponse.json({ error: "Failed to toggle volunteer" }, { status: 500 });
+        return apiError("Failed to toggle volunteer", 500);
     }
 });

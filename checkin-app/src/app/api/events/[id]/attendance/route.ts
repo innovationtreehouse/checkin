@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const { id } = await params;
 
     try {
         const eventId = parseInt(id, 10);
         if (isNaN(eventId)) {
-            return NextResponse.json({ error: "Invalid event ID" }, { status: 400 });
+            return apiError("Invalid event ID", 400);
         }
 
         const event = await prisma.event.findUnique({
@@ -19,7 +20,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         });
 
         if (!event) {
-            return NextResponse.json({ error: "Event not found" }, { status: 404 });
+            return apiError("Event not found", 404);
         }
 
         const currentUserId = auth.user.id;
@@ -27,14 +28,14 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         const isSysAdminOrBoardOrKeyholder = auth.user.isSysadmin || auth.user.isBoardMember || auth.user.isKeyholder;
 
         if (!isLeadMentor && !isSysAdminOrBoardOrKeyholder) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to validate attendance" }, { status: 403 });
+            return apiError("Forbidden: Not authorized to validate attendance", 403);
         }
 
         const body = await req.json();
         const { participantIds } = body; // Array of participant IDs who actually attended
 
         if (!Array.isArray(participantIds)) {
-            return NextResponse.json({ error: "participantIds array is required" }, { status: 400 });
+            return apiError("participantIds array is required", 400);
         }
 
         // Authz on the TARGETS: only participants enrolled or volunteering in
@@ -55,7 +56,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             const allowedIds = new Set<number>([...enrolled, ...volunteering].map(r => r.personId));
             const unknownIds = participantIds.filter(pId => !allowedIds.has(pId));
             if (unknownIds.length > 0) {
-                return NextResponse.json({ error: `Participants not enrolled or volunteering in this program: ${unknownIds.join(", ")}` }, { status: 400 });
+                return apiError(`Participants not enrolled or volunteering in this program: ${unknownIds.join(", ")}`, 400);
             }
         }
 
@@ -159,6 +160,6 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         return NextResponse.json({ success: true, processed: results.length });
     } catch (error) {
         logger.error("Attendance validation error:", error);
-        return NextResponse.json({ error: "Failed to validate attendance" }, { status: 500 });
+        return apiError("Failed to validate attendance", 500);
     }
 });

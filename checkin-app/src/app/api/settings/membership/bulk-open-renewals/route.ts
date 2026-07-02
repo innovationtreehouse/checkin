@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import { openRenewalsForAllActive } from "@/lib/membership/renewal";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
  * Body: { sendReminders?: boolean } (default false — avoids a mass email blast).
  */
 export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
     let body: { sendReminders?: boolean } = {};
     try {
         body = await req.json();

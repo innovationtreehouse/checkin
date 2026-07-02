@@ -5,9 +5,10 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { canActFor } from "@/lib/household/activityMembers";
 import { RSVP_STATUSES, type RSVPStatus } from "@/types/rsvp";
+import { apiError } from "@/lib/api-response";
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const { id } = await params;
     // canActFor only reads session.user; reconstruct the minimal shape from auth.user.
     const session = { user: auth.user } as unknown as Session;
@@ -15,21 +16,21 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
     try {
         const eventId = parseInt(id, 10);
         if (isNaN(eventId)) {
-            return NextResponse.json({ error: "Invalid event ID" }, { status: 400 });
+            return apiError("Invalid event ID", 400);
         }
 
         const body = await req.json();
         const { status } = body;
 
         if (!status || !RSVP_STATUSES.includes(status)) {
-            return NextResponse.json({ error: "Invalid RSVP status" }, { status: 400 });
+            return apiError("Invalid RSVP status", 400);
         }
 
         // Target defaults to self; a household lead may RSVP for a member of
         // their household. Authorize the target before trusting it.
         const targetId = typeof body.participantId === "number" ? body.participantId : session.user.id;
         if (!(await canActFor(session, targetId))) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return apiError("Forbidden", 403);
         }
         const currentUserId = targetId;
 
@@ -40,13 +41,13 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         });
 
         if (!event) {
-            return NextResponse.json({ error: "Event not found" }, { status: 404 });
+            return apiError("Event not found", 404);
         }
 
         // Can't RSVP to an event that already finished. Use endAt (not startAt) so an
         // in-progress event still accepts RSVPs.
         if (event.endAt.getTime() < Date.now()) {
-            return NextResponse.json({ error: "Cannot RSVP to a past event" }, { status: 400 });
+            return apiError("Cannot RSVP to a past event", 400);
         }
 
         if (event.programId) {
@@ -68,7 +69,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
             });
 
             if (!isEnrolled && !isVolunteer) {
-                return NextResponse.json({ error: "Forbidden: You are not a participant of this program" }, { status: 403 });
+                return apiError("Forbidden: You are not a participant of this program", 403);
             }
         }
 
@@ -92,6 +93,6 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         return NextResponse.json({ success: true, rsvp });
     } catch (error) {
         logger.error("RSVP update error:", error);
-        return NextResponse.json({ error: "Failed to update RSVP" }, { status: 500 });
+        return apiError("Failed to update RSVP", 500);
     }
 });

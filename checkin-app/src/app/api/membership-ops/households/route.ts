@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = 'force-dynamic';
 
@@ -78,7 +79,7 @@ export const GET = withAuth(
             return NextResponse.json({ households: households.map(withFlatContact) });
         } catch (error) {
             logger.error("Failed to fetch households:", error);
-            return NextResponse.json({ error: "Failed to fetch households" }, { status: 500 });
+            return apiError("Failed to fetch households", 500);
         }
     }
 );
@@ -91,7 +92,7 @@ export const POST = withAuth(
             const { householdId, active, deny } = body;
 
             if (!householdId) {
-                return NextResponse.json({ error: "Household ID is required" }, { status: 400 });
+                return apiError("Household ID is required", 400);
             }
 
             const existingMembership = await prisma.membership.findUnique({
@@ -110,10 +111,7 @@ export const POST = withAuth(
                         select: { id: true }
                     });
                     if (boardMemberInHousehold) {
-                        return NextResponse.json(
-                            { error: "This household includes a board member. Remove the board role before denying membership." },
-                            { status: 409 }
-                        );
+                        return apiError("This household includes a board member. Remove the board role before denying membership.", 409);
                     }
                 }
 
@@ -185,7 +183,7 @@ export const POST = withAuth(
             return NextResponse.json({ success: true, message: "No change needed" });
         } catch (error) {
             logger.error("Failed to update household membership:", error);
-            return NextResponse.json({ error: "Failed to update membership" }, { status: 500 });
+            return apiError("Failed to update membership", 500);
         }
     }
 );

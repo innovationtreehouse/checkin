@@ -4,11 +4,12 @@ import prisma from '@/lib/prisma';
 import { withAuth } from "@/lib/auth";
 import { upsertPrimaryContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
+import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth(
     {},
     async (req, auth) => {
-        if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        if (auth.type !== 'session') return apiError("Unauthorized", 401);
         const userId = auth.user.id;
 
         try {
@@ -21,12 +22,12 @@ export const POST = withAuth(
             });
 
             if (!user) {
-                return NextResponse.json({ error: "User not found" }, { status: 404 });
+                return apiError("User not found", 404);
             }
 
             if (phone !== undefined) {
                 if (phone !== "" && !isValidPhone(phone)) {
-                    return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
+                    return apiError(PHONE_ERROR, 400);
                 }
                 await prisma.person.update({
                     where: { id: userId },
@@ -48,10 +49,10 @@ export const POST = withAuth(
             return NextResponse.json({ success: true });
         } catch (error) {
             if (error instanceof EmergencyContactError) {
-                return NextResponse.json({ error: error.message }, { status: 400 });
+                return apiError(error.message, 400);
             }
             logger.error("Error saving onboarding details:", error);
-            return NextResponse.json({ error: "Failed to save data" }, { status: 500 });
+            return apiError("Failed to save data", 500);
         }
     }
 );

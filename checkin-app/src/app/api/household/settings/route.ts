@@ -4,12 +4,13 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { upsertPrimaryContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 import { normalizeAddressInput, pickAddress, assertValidAddress, AddressValidationError } from "@/lib/address";
+import { apiError } from "@/lib/api-response";
 
 export const PATCH = withAuth(
     {},
     async (req, auth) => {
         try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            if (auth.type !== 'session') return apiError("Unauthorized", 401);
             const userId = auth.user.id;
 
             const body = await req.json();
@@ -26,12 +27,12 @@ export const PATCH = withAuth(
             });
 
             if (!user || !user.householdId) {
-                return NextResponse.json({ error: "Household not found" }, { status: 404 });
+                return apiError("Household not found", 404);
             }
 
             const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
             if (!isLead && !user.isSysadmin) {
-                return NextResponse.json({ error: "Only household leads can edit household settings" }, { status: 403 });
+                return apiError("Only household leads can edit household settings", 403);
             }
 
             const updatedHousehold = await prisma.household.update({
@@ -62,10 +63,10 @@ export const PATCH = withAuth(
 
         } catch (error: unknown) {
             if (error instanceof EmergencyContactError || error instanceof AddressValidationError) {
-                return NextResponse.json({ error: error.message }, { status: 400 });
+                return apiError(error.message, 400);
             }
             logger.error("Household Settings PATCH Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            return apiError("Internal Server Error", 500);
         }
     }
 );

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export const GET = withAuth(
             return NextResponse.json({ households: result });
         } catch (error) {
             logger.error("Failed to fetch broken households:", error);
-            return NextResponse.json({ error: "Failed to fetch broken households" }, { status: 500 });
+            return apiError("Failed to fetch broken households", 500);
         }
     }
 );

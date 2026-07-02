@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { intervalsOverlap } from "@/lib/attendanceConflicts";
+import { apiError } from "@/lib/api-response";
 
 /**
  * Resolve an attendance conflict by deleting one of the duplicate Visit rows.
@@ -22,14 +23,14 @@ import { intervalsOverlap } from "@/lib/attendanceConflicts";
  */
 export const POST = withAuth({}, async (req, auth) => {
   if (auth.type !== "session") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401);
   }
   const user = auth.user;
 
   const body = await req.json().catch(() => null);
   const visitId = body?.visitId;
   if (!Number.isInteger(visitId)) {
-    return NextResponse.json({ error: "visitId (integer) is required" }, { status: 400 });
+    return apiError("visitId (integer) is required", 400);
   }
 
   const visit = await prisma.visit.findUnique({
@@ -37,13 +38,13 @@ export const POST = withAuth({}, async (req, auth) => {
     include: { event: { include: { program: { select: { leadMentorId: true } } } } },
   });
   if (!visit) {
-    return NextResponse.json({ error: "Visit not found" }, { status: 404 });
+    return apiError("Visit not found", 404);
   }
 
   const isGlobalAdmin = !!(user.isSysadmin || user.isBoardMember || user.isKeyholder);
   const leadsOwningProgram = visit.event?.program?.leadMentorId === user.id;
   if (!isGlobalAdmin && !leadsOwningProgram) {
-    return NextResponse.json({ error: "Forbidden: not authorized to resolve this visit" }, { status: 403 });
+    return apiError("Forbidden: not authorized to resolve this visit", 403);
   }
 
   // Guard: only delete a visit that genuinely overlaps another of the same
@@ -54,7 +55,7 @@ export const POST = withAuth({}, async (req, auth) => {
   });
   const isConflicting = siblings.some((s) => intervalsOverlap(visit, s));
   if (!isConflicting) {
-    return NextResponse.json({ error: "Visit is not part of an attendance conflict" }, { status: 409 });
+    return apiError("Visit is not part of an attendance conflict", 409);
   }
 
   await prisma.$transaction(async (tx) => {

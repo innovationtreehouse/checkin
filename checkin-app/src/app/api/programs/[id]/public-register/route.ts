@@ -8,6 +8,7 @@ import { createContact, EmergencyContactError } from "@/lib/emergencyContacts/se
 import { rateLimit, rateLimitEmail } from "@/lib/rate-limit";
 import { calculateAge } from "@/lib/time";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
+import { apiError } from "@/lib/api-response";
 
 interface ParentInput {
     name: string;
@@ -31,7 +32,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
+            return apiError("Invalid program ID", 400);
         }
 
         // Capacity is counted under a row lock inside the registration
@@ -41,24 +42,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         });
 
         if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
+            return apiError("Program not found", 404);
         }
 
         const body = await req.json();
         const { parents, emergencyContact, participants } = body;
 
         if (!parents || parents.length === 0 || !parents[0].name || !parents[0].email || !parents[0].phone) {
-            return NextResponse.json({ error: "Primary parent/guardian information is required." }, { status: 400 });
+            return apiError("Primary parent/guardian information is required.", 400);
         }
         if (!isValidPhone(parents[0].phone)) {
-            return NextResponse.json({ error: PHONE_ERROR }, { status: 400 });
+            return apiError(PHONE_ERROR, 400);
         }
         if (!emergencyContact || !emergencyContact.name || !emergencyContact.phone) {
-            return NextResponse.json({ error: "Emergency contact is required." }, { status: 400 });
+            return apiError("Emergency contact is required.", 400);
         }
         // Emergency-contact phone format is enforced in createContact below.
         if (!participants || participants.length === 0) {
-            return NextResponse.json({ error: "At least one participant is required." }, { status: 400 });
+            return apiError("At least one participant is required.", 400);
         }
 
         // Second limit keyed on the normalized primary email so an attacker can't
@@ -77,7 +78,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 where: { email: { in: emailsToCheck } }
             });
             if (existingUsers.length > 0) {
-                return NextResponse.json({ error: "An account with that email already exists. Please log in to enroll." }, { status: 400 });
+                return apiError("An account with that email already exists. Please log in to enroll.", 400);
             }
         }
 
@@ -87,7 +88,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         // Check Enrollment Status
         if (currentProgram.enrollmentStatus === 'CLOSED') {
-            return NextResponse.json({ error: "Program enrollment is currently closed." }, { status: 400 });
+            return apiError("Program enrollment is currently closed.", 400);
         }
 
         // Check Age constraints
@@ -98,23 +99,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     // It's an adult parent. Assume they are over 18.
                     const age = 30; 
                     if (currentProgram.minAge !== null && age < currentProgram.minAge) {
-                        return NextResponse.json({ error: `Participant ${p.name} does not meet minimum age restriction.` }, { status: 400 });
+                        return apiError(`Participant ${p.name} does not meet minimum age restriction.`, 400);
                     }
                     if (currentProgram.maxAge !== null && age > currentProgram.maxAge) {
-                        return NextResponse.json({ error: `Participant ${p.name} exceeds maximum age restriction.` }, { status: 400 });
+                        return apiError(`Participant ${p.name} exceeds maximum age restriction.`, 400);
                     }
                 } else {
                     if (!p.dob) {
-                        return NextResponse.json({ error: `Date of Birth is required for participant ${p.name} to verify age constraints.` }, { status: 400 });
+                        return apiError(`Date of Birth is required for participant ${p.name} to verify age constraints.`, 400);
                     }
                     // Judge age as of the program's start date; fall back to now
                     // for dateless ("TBD") programs.
                     const age = calculateAge(p.dob, currentProgram.startAt ?? undefined);
                     if (currentProgram.minAge !== null && age < currentProgram.minAge) {
-                        return NextResponse.json({ error: `Participant ${p.name} must be at least ${currentProgram.minAge} years old.` }, { status: 400 });
+                        return apiError(`Participant ${p.name} must be at least ${currentProgram.minAge} years old.`, 400);
                     }
                     if (currentProgram.maxAge !== null && age > currentProgram.maxAge) {
-                        return NextResponse.json({ error: `Participant maximum age is ${currentProgram.maxAge} years old for ${p.name}.` }, { status: 400 });
+                        return apiError(`Participant maximum age is ${currentProgram.maxAge} years old for ${p.name}.`, 400);
                     }
                 }
             }
@@ -231,12 +232,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     } catch (error) {
         if (error instanceof ProgramCapacityError) {
-            return NextResponse.json({ error: `Not enough open spots. Only ${error.spotsLeft} spots left.` }, { status: 400 });
+            return apiError(`Not enough open spots. Only ${error.spotsLeft} spots left.`, 400);
         }
         if (error instanceof HouseholdLeadLimitError || error instanceof EmergencyContactError) {
-            return NextResponse.json({ error: error.message }, { status: 400 });
+            return apiError(error.message, 400);
         }
         await logBackendError(error, "POST /api/programs/[id]/public-register");
-        return NextResponse.json({ error: "An error occurred during registration." }, { status: 500 });
+        return apiError("An error occurred during registration.", 500);
     }
 }

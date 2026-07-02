@@ -2,23 +2,23 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-
+import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const { id } = await params;
 
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
+            return apiError("Invalid program ID", 400);
         }
 
         const body = await req.json();
         const { participantId } = body;
 
         if (!participantId) {
-            return NextResponse.json({ error: "participantId is required" }, { status: 400 });
+            return apiError("participantId is required", 400);
         }
 
         const participant = await prisma.programParticipant.findUnique({
@@ -32,7 +32,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         });
 
         if (!participant) {
-            return NextResponse.json({ error: "Participant not found in program" }, { status: 404 });
+            return apiError("Participant not found in program", 404);
         }
 
         // Authorization: only the participant themselves, a lead of their household,
@@ -58,7 +58,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         }
 
         if (!isSelf && !isSysAdminOrBoard && !isLeadMentor && !isHouseholdLead) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to request a payment plan for this participant" }, { status: 403 });
+            return apiError("Forbidden: Not authorized to request a payment plan for this participant", 403);
         }
 
         const updatedParticipant = await prisma.programParticipant.update({
@@ -77,6 +77,6 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         return NextResponse.json({ success: true, participant: updatedParticipant });
     } catch (error) {
         logger.error("Payment plan request error:", error);
-        return NextResponse.json({ error: "Failed to request payment plan" }, { status: 500 });
+        return apiError("Failed to request payment plan", 500);
     }
 });

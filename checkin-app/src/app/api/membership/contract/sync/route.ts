@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import { syncContractStatus } from "@/lib/membership/external";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +14,12 @@ export const dynamic = "force-dynamic";
  * Zoho webhook. Returns the current external status.
  */
 export const POST = withAuth({}, async (_req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
     try {
         const status = await syncContractStatus(auth.user.id);
         return NextResponse.json({ status });
     } catch (error) {
         logger.error(`Contract status sync error: ${error instanceof Error ? error.message : String(error)}`);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiError("Internal Server Error", 500);
     }
 });
