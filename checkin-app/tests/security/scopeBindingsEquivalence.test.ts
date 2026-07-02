@@ -73,8 +73,13 @@ function referenceScopesHeld(
             break;
         }
         case 'EmergencyContact': {
+            // Post-snapshot delta (deliberate): the original switch bound only
+            // their_households. their_program_households was added (mirrors
+            // TrustedAdult) so a program lead/core-vol overseeing a child's
+            // household sees the emergency contacts on GET /api/programs/[id].
             const householdId = num(row.householdId);
             if (householdId !== undefined && householdId === ctx.householdId) scopes.add('their_households');
+            if (householdId !== undefined && ctx.householdIdsInScopePrograms.has(householdId)) scopes.add('their_program_households');
             break;
         }
         case 'HouseholdLead': {
