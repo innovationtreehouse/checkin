@@ -15,7 +15,7 @@ describe("OneTimeEventsIndex", () => {
     mockFetchJson({ "/api/programs": [] });
     renderWithProviders(<OneTimeEventsIndex />);
 
-    expect(screen.getByRole("heading", { name: "New One Time Event" })).toBeInTheDocument();
-    expect(await screen.findByLabelText("Event Name", { exact: false })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Schedule Event" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Event Name", { exact: false })).toBeInTheDocument();
   });
 });
