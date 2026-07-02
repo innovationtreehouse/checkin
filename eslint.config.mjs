@@ -24,6 +24,25 @@ const eslintConfig = defineConfig([
     files: ["**/src/app/api/**/*.ts"],
     rules: { "no-console": "warn" },
   },
+  {
+    // P3-1: error responses must go through apiError() (@/lib/api-response) so the
+    // { error, details? } shape stays uniform. Bans re-growing a raw
+    // NextResponse.json({ error }) / ({ error, details }) in the route surface.
+    // Multi-key error bodies (e.g. { error, code }, { error, requiresOverride })
+    // are intentional richer contracts and are NOT flagged.
+    files: ["**/src/app/api/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.object.name='NextResponse'][callee.property.name='json'] > ObjectExpression:has(Property[key.name='error']):not(:has(Property[key.name!='error'][key.name!='details']))",
+          message:
+            "Return errors via apiError(message, status[, details]) from @/lib/api-response, not a raw NextResponse.json({ error }).",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

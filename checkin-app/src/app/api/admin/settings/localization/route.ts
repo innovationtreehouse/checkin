@@ -3,6 +3,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { APP_TIMEZONE } from "@/lib/time";
 import { APP_LOCALE } from "@/lib/appSettings";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -21,19 +22,19 @@ export const GET = withAuth({ roles: ["isSysadmin"] }, async () => {
  * previous value survives rather than being overwritten with garbage.
  */
 export const PUT = withAuth({ roles: ["isSysadmin"] }, async (req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
     let body: { timezone?: string; locale?: string };
     try {
         body = await req.json();
     } catch {
-        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+        return apiError("Invalid JSON", 400);
     }
 
     const data: Record<string, string> = {};
     if (body.timezone !== undefined) {
         const tz = body.timezone.trim();
         if (!Intl.supportedValuesOf("timeZone").includes(tz)) {
-            return NextResponse.json({ error: "timezone must be a valid IANA timezone" }, { status: 400 });
+            return apiError("timezone must be a valid IANA timezone", 400);
         }
         data.timezone = tz;
     }
@@ -42,7 +43,7 @@ export const PUT = withAuth({ roles: ["isSysadmin"] }, async (req, auth) => {
         try {
             if (Intl.getCanonicalLocales(loc)[0] !== loc) throw new Error();
         } catch {
-            return NextResponse.json({ error: "locale must be a valid BCP-47 locale" }, { status: 400 });
+            return apiError("locale must be a valid BCP-47 locale", 400);
         }
         data.locale = loc;
     }

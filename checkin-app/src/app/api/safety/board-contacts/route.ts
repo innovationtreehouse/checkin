@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
+import { apiError } from "@/lib/api-response";
 
 export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
@@ -15,10 +16,7 @@ export const GET = withAuth(
             return NextResponse.json({ members });
         } catch (error) {
             await logBackendError(error, "GET /api/safety/board-contacts");
-            return NextResponse.json(
-                { error: "Internal Server Error fetching board contacts." },
-                { status: 500 }
-            );
+            return apiError("Internal Server Error fetching board contacts.", 500);
         }
     }
 );

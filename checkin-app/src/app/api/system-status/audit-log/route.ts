@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import type { Prisma } from "@/generated/prisma/client";
+import { apiError } from "@/lib/api-response";
 
 const PAGE_SIZE = 50;
 const ACTIONS = ["CREATE", "EDIT", "DELETE", "BECOME_ADMIN"] as const;
@@ -77,7 +78,7 @@ export const GET = withAuth(
             });
         } catch (error) {
             logger.error("Failed to fetch audit logs:", error);
-            return NextResponse.json({ error: "Failed to fetch audit logs" }, { status: 500 });
+            return apiError("Failed to fetch audit logs", 500);
         }
     }
 );

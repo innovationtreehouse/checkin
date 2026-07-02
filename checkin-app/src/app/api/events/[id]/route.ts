@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
+import { apiError } from "@/lib/api-response";
 
 // FAIL-CLOSED, staff-only. This payload is fundamentally a roster — who is
 // enrolled / RSVP'd / attended — and a participant's name, id, and the very
@@ -63,11 +64,11 @@ export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth
 });
 
 export const PATCH = withAuth({}, async (req: Request, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
 
     const resolvedParams = await params;
     const eventId = parseInt(resolvedParams.id, 10);
-    if (isNaN(eventId)) return NextResponse.json({ error: "Invalid event ID" }, { status: 400 });
+    if (isNaN(eventId)) return apiError("Invalid event ID", 400);
     const body = await req.json();
 
     try {
@@ -76,7 +77,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
             include: { program: { include: { volunteers: true } } }
         });
 
-        if (!event) return NextResponse.json({ error: "Event not found" }, { status: 404 });
+        if (!event) return apiError("Event not found", 404);
 
         const userId = auth.user.id;
         const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
@@ -86,7 +87,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
         // Action: Confirm Attendance
         if (body.action === 'confirmAttendance') {
             if (!isSysAdminOrBoard && !isLeadMentor && !isCoreVolunteer) {
-                return NextResponse.json({ error: "Forbidden: Not authorized to confirm attendance" }, { status: 403 });
+                return apiError("Forbidden: Not authorized to confirm attendance", 403);
             }
 
             const updatedEvent = await prisma.event.update({
@@ -104,7 +105,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
         if (body.action === 'editTime' || body.action === 'cancel') {
             // Core volunteers can't edit or cancel events. Only lead mentors, isSysadmin, board.
             if (!isSysAdminOrBoard && !isLeadMentor) {
-                return NextResponse.json({ error: "Forbidden: Only Lead Mentors or Admins can edit/cancel events" }, { status: 403 });
+                return apiError("Forbidden: Only Lead Mentors or Admins can edit/cancel events", 403);
             }
 
             // Block edits to an event that has already finished. Re-clearing
@@ -112,7 +113,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
             // stale reminder; today only the cron's future-only window stops it
             // from firing. Use endAt (not startAt) so an in-progress event still edits.
             if (body.action === 'editTime' && event.endAt.getTime() < Date.now()) {
-                return NextResponse.json({ error: "Cannot edit a past event" }, { status: 400 });
+                return apiError("Cannot edit a past event", 400);
             }
 
             const { startAt, endAt, applyToFuture } = body;
@@ -198,13 +199,13 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
         // Action: Manual Edit Attendance
         if (body.action === 'manualEditAttendance') {
             if (!isSysAdminOrBoard && !isLeadMentor && !isCoreVolunteer) {
-                return NextResponse.json({ error: "Forbidden: Not authorized to edit attendance" }, { status: 403 });
+                return apiError("Forbidden: Not authorized to edit attendance", 403);
             }
 
             const { participantId, status, arrivedAt, departedAt } = body;
 
             if (!participantId || !status) {
-                return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+                return apiError("Missing required fields", 400);
             }
 
             // Authz on the TARGET: the participant must be enrolled or volunteering
@@ -219,7 +220,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     prisma.programVolunteer.findFirst({ where: { programId: event.programId, personId: targetId }, select: { personId: true } }),
                 ]);
                 if (!enrolled && !volunteering) {
-                    return NextResponse.json({ error: "Participant is not enrolled or volunteering in this program" }, { status: 400 });
+                    return apiError("Participant is not enrolled or volunteering in this program", 400);
                 }
             }
 
@@ -235,7 +236,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     }
                 });
                 if (openVisit) {
-                    return NextResponse.json({ error: "Participant is currently checked in — check them out before marking Absent" }, { status: 400 });
+                    return apiError("Participant is currently checked in — check them out before marking Absent", 400);
                 }
                 // Only closed visits remain; safe to remove on an Absent correction.
                 await prisma.visit.deleteMany({
@@ -246,7 +247,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 });
             } else if (status === 'Present') {
                 if (!arrivedAt) {
-                    return NextResponse.json({ error: "Arrival time is required for Present status" }, { status: 400 });
+                    return apiError("Arrival time is required for Present status", 400);
                 }
 
                 // Check if there is an existing visit
@@ -284,10 +285,10 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
             return NextResponse.json({ success: true });
         }
 
-        return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+        return apiError("Invalid action", 400);
 
     } catch (error: unknown) {
         logger.error("Failed to update event:", error);
-        return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
+        return apiError("Failed to update event", 500);
     }
 });

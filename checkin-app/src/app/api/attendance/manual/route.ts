@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { logBackendError } from "@/lib/logger";
+import { apiError } from "@/lib/api-response";
 
 // Self-service manual visit entry. INTENTIONAL by design: a member records a
 // visit for THEMSELVES only (participantId is forced to auth.user.id, never taken
@@ -15,28 +16,28 @@ import { logBackendError } from "@/lib/logger";
 // a security or integrity boundary. Recurring-audit note: this is not an IDOR and
 // not a fabrication vuln; do not re-flag the arbitrary backdate.
 export const POST = withAuth({}, async (req, auth) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     try {
         const userId = auth.user.id;
         const body = await req.json();
         const { arrivedAt, departedAt } = body;
 
         if (!arrivedAt) {
-            return NextResponse.json({ error: "Arrival time is required" }, { status: 400 });
+            return apiError("Arrival time is required", 400);
         }
 
         const arrivalTime = new Date(arrivedAt);
         const departureTime = departedAt ? new Date(departedAt) : null;
 
         if (isNaN(arrivalTime.getTime())) {
-            return NextResponse.json({ error: "Invalid arrival time" }, { status: 400 });
+            return apiError("Invalid arrival time", 400);
         }
         if (departureTime && isNaN(departureTime.getTime())) {
-            return NextResponse.json({ error: "Invalid departure time" }, { status: 400 });
+            return apiError("Invalid departure time", 400);
         }
 
         if (departureTime && departureTime <= arrivalTime) {
-            return NextResponse.json({ error: "Departure time must be after arrival time" }, { status: 400 });
+            return apiError("Departure time must be after arrival time", 400);
         }
 
         // Blank departure means "still in the building" → an open visit. Only allow
@@ -49,7 +50,7 @@ export const POST = withAuth({}, async (req, auth) => {
             const withinSixHours = now.getTime() - arrivalTime.getTime() <= 6 * 60 * 60 * 1000;
             const sameDay = arrivalTime.toDateString() === now.toDateString();
             if (!withinSixHours && !sameDay) {
-                return NextResponse.json({ error: "Departure time is required for past arrivals." }, { status: 400 });
+                return apiError("Departure time is required for past arrivals.", 400);
             }
         }
 
@@ -107,6 +108,6 @@ export const POST = withAuth({}, async (req, auth) => {
         return NextResponse.json({ message: "Manual visit recorded successfully.", visit }, { status: 201 });
     } catch (error: unknown) {
         await logBackendError(error, "POST /api/attendance/manual");
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiError("Internal Server Error", 500);
     }
 });

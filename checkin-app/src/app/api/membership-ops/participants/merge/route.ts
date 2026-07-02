@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,7 @@ export const POST = withAuth(
             const { keepId, mergeId } = body;
 
             if (!keepId || !mergeId || keepId === mergeId) {
-                return NextResponse.json({ error: "Invalid participant IDs provided." }, { status: 400 });
+                return apiError("Invalid participant IDs provided.", 400);
             }
 
             const keepParticipant = await prisma.person.findUnique({
@@ -45,14 +46,14 @@ export const POST = withAuth(
             });
 
             if (!keepParticipant || !mergeParticipant) {
-                return NextResponse.json({ error: "Participant(s) not found." }, { status: 404 });
+                return apiError("Participant(s) not found.", 404);
             }
 
             const isLead = mergeParticipant.householdLeads.length > 0;
             const householdOthersCount = mergeParticipant.household?.householdMembers.filter(p => p.id !== mergeId).length || 0;
 
             if (isLead && householdOthersCount > 0) {
-                return NextResponse.json({ error: "Cannot merge: the to-be-deleted participant is the lead of a household with other members." }, { status: 400 });
+                return apiError("Cannot merge: the to-be-deleted participant is the lead of a household with other members.", 400);
             }
 
             await prisma.$transaction(async (tx) => {
@@ -203,7 +204,7 @@ export const POST = withAuth(
             return NextResponse.json({ success: true });
         } catch (error: unknown) {
             await logBackendError(error, "POST /api/membership-ops/participants/merge");
-            return NextResponse.json({ error: "Failed to merge participants" }, { status: 500 });
+            return apiError("Failed to merge participants", 500);
         }
     }
 );

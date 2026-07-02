@@ -3,11 +3,12 @@ import { logger } from "@/lib/logger";
 import prisma from '@/lib/prisma';
 import { withAuth } from "@/lib/auth";
 import { isYouth } from "@/lib/time";
+import { apiError } from "@/lib/api-response";
 
 export const GET = withAuth(
     {},
     async (_req, auth) => {
-        if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        if (auth.type !== 'session') return apiError("Unauthorized", 401);
         const userId = auth.user.id;
 
         try {
@@ -22,7 +23,7 @@ export const GET = withAuth(
             });
 
             if (!user) {
-                return NextResponse.json({ error: "Participant not found" }, { status: 404 });
+                return apiError("Participant not found", 404);
             }
 
             // Youth are never required to provide a phone number (issue #169)
@@ -46,7 +47,7 @@ export const GET = withAuth(
             });
         } catch (error) {
             logger.error("Error checking onboarding status:", error);
-            return NextResponse.json({ error: "Failed to check status" }, { status: 500 });
+            return apiError("Failed to check status", 500);
         }
     }
 );

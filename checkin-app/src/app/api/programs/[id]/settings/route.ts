@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { apiError } from "@/lib/api-response";
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
     const { id } = await params;
 
     try {
         const programId = parseInt(id, 10);
         if (isNaN(programId)) {
-            return NextResponse.json({ error: "Invalid program ID" }, { status: 400 });
+            return apiError("Invalid program ID", 400);
         }
 
         const currentProgram = await prisma.program.findUnique({
@@ -18,7 +19,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         });
 
         if (!currentProgram) {
-            return NextResponse.json({ error: "Program not found" }, { status: 404 });
+            return apiError("Program not found", 404);
         }
 
         const currentUserId = auth.user.id;
@@ -26,7 +27,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         const isLeadMentor = currentProgram.leadMentorId === currentUserId;
 
         if (!isSysAdminOrBoard && !isLeadMentor) {
-            return NextResponse.json({ error: "Forbidden: Not authorized to update program settings" }, { status: 403 });
+            return apiError("Forbidden: Not authorized to update program settings", 403);
         }
 
         const body = await req.json();
@@ -49,13 +50,13 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         const effMinAge = minAge !== undefined ? minAge : currentProgram.minAge;
         const effMaxAge = maxAge !== undefined ? maxAge : currentProgram.maxAge;
         if (minAge != null && minAge < 0) {
-            return NextResponse.json({ error: "minAge cannot be negative" }, { status: 400 });
+            return apiError("minAge cannot be negative", 400);
         }
         if (maxAge != null && maxAge < 0) {
-            return NextResponse.json({ error: "maxAge cannot be negative" }, { status: 400 });
+            return apiError("maxAge cannot be negative", 400);
         }
         if (effMinAge != null && effMaxAge != null && effMinAge > effMaxAge) {
-            return NextResponse.json({ error: "minAge cannot exceed maxAge" }, { status: 400 });
+            return apiError("minAge cannot exceed maxAge", 400);
         }
 
         // maxParticipants: null = uncapped (allowed). Otherwise must be a
@@ -63,11 +64,11 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         // perma-rejects everyone. Mirrors the all-rows count in capacity.ts.
         if (maxParticipants !== undefined && maxParticipants !== null) {
             if (typeof maxParticipants !== "number" || !Number.isInteger(maxParticipants) || maxParticipants <= 0) {
-                return NextResponse.json({ error: "maxParticipants must be a positive integer" }, { status: 400 });
+                return apiError("maxParticipants must be a positive integer", 400);
             }
             const enrolled = await prisma.programParticipant.count({ where: { programId } });
             if (maxParticipants < enrolled) {
-                return NextResponse.json({ error: `maxParticipants cannot be set below the current enrollment of ${enrolled}` }, { status: 400 });
+                return apiError(`maxParticipants cannot be set below the current enrollment of ${enrolled}`, 400);
             }
         }
 
@@ -87,12 +88,12 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         // leadMentorId can only be changed by SysAdmin or Board
         if (leadMentorId !== undefined) {
             if (!leadMentorId) {
-                return NextResponse.json({ error: "Lead Mentor is required" }, { status: 400 });
+                return apiError("Lead Mentor is required", 400);
             }
             if (isSysAdminOrBoard) {
                 updateData.leadMentorId = parseInt(leadMentorId, 10);
             } else if (parseInt(leadMentorId, 10) !== currentProgram.leadMentorId) {
-                return NextResponse.json({ error: "Forbidden: Only administrators can reassign lead mentors" }, { status: 403 });
+                return apiError("Forbidden: Only administrators can reassign lead mentors", 403);
             }
         }
 
@@ -114,6 +115,6 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         return NextResponse.json({ success: true, program: updatedProgram });
     } catch (error) {
         logger.error("Program settings update error:", error);
-        return NextResponse.json({ error: "Failed to update program settings" }, { status: 500 });
+        return apiError("Failed to update program settings", 500);
     }
 });

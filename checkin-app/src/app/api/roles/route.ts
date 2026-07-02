@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { apiError } from "@/lib/api-response";
 
 export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
@@ -31,7 +32,7 @@ export const GET = withAuth(
             return NextResponse.json({ people });
         } catch (error) {
             logger.error("Error fetching roles:", error);
-            return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+            return apiError("Internal server error", 500);
         }
     }
 );
@@ -44,15 +45,12 @@ export const PATCH = withAuth(
             const { targetUserId, ...roleUpdates } = body;
 
             if (!targetUserId) {
-                return NextResponse.json({ error: "Missing 'targetUserId'" }, { status: 400 });
+                return apiError("Missing 'targetUserId'", 400);
             }
 
             // Board Members cannot modify isSysadmin privileges
             if (auth.type === 'session' && !auth.user.isSysadmin && roleUpdates.isSysadmin !== undefined) {
-                return NextResponse.json(
-                    { error: "Only Sysadmins can modify isSysadmin privileges" },
-                    { status: 403 }
-                );
+                return apiError("Only Sysadmins can modify isSysadmin privileges", 403);
             }
 
             const allowedFields = ["isSysadmin", "isBoardMember", "isKeyholder", "isBackgroundCheckReviewer"];
@@ -64,7 +62,7 @@ export const PATCH = withAuth(
             }
 
             if (Object.keys(updateData).length === 0) {
-                return NextResponse.json({ error: "No valid role fields provided" }, { status: 400 });
+                return apiError("No valid role fields provided", 400);
             }
 
             const updated = await prisma.person.update({
@@ -97,7 +95,7 @@ export const PATCH = withAuth(
             return NextResponse.json({ message: "Roles updated successfully", user: updated });
         } catch (error) {
             logger.error("Error updating role:", error);
-            return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+            return apiError("Internal server error", 500);
         }
     }
 );

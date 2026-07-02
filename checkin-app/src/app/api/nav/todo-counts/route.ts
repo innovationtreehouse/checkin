@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import type { MembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
 import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/service";
 import { ORG_DOMAIN } from "@/lib/config";
+import { apiError } from "@/lib/api-response";
 
 /**
  * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
@@ -92,7 +93,7 @@ const MEMBERSHIP_TODO_LABEL: Record<string, string> = {
 
 export const GET = withAuth({}, async (_req, auth) => {
     if (auth.type !== "session") {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return apiError("Unauthorized", 401);
     }
     const user = auth.user;
 
