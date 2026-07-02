@@ -34,7 +34,7 @@ describe('Eligible Participants API Integration Tests', () => {
         // 'dev' so unauthenticated stays unauthenticated (401), like registryAuthz.
         process.env.CHECKIN_ENV = 'dev';
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'elig-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -44,7 +44,7 @@ describe('Eligible Participants API Integration Tests', () => {
             .filter((id): id is number => id !== null && id !== undefined);
 
         await prisma.programParticipant.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         // Memberships live on the household now; scope cleanup to this test's households.
@@ -60,30 +60,30 @@ describe('Eligible Participants API Integration Tests', () => {
             where: { name: { contains: 'Elig API Test' } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-elig-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Lead
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: 'lead-elig-api-test@example.com', name: 'Lead', household: { create: {} } }
         });
         leadId = lead.id;
 
         // Create Common User
-        const commonUser = await prisma.participant.create({
+        const commonUser = await prisma.person.create({
             data: { email: 'common-elig-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
 
         // Create Active Member — membership now lives on the household (status ACTIVE).
-        const activeMember = await prisma.participant.create({
+        const activeMember = await prisma.person.create({
             data: {
                 email: 'active-member-elig-api-test@example.com',
                 name: 'Active Member Candidate',
@@ -115,7 +115,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
         testHouseholdId = household.id;
 
-        const householdMember = await prisma.participant.create({
+        const householdMember = await prisma.person.create({
             data: { 
                 email: 'household-member-elig-api-test@example.com', 
                 name: 'Household Member Candidate',
@@ -125,7 +125,7 @@ describe('Eligible Participants API Integration Tests', () => {
         householdMemberId = householdMember.id;
 
         // Create Non-Member
-        const nonMember = await prisma.participant.create({
+        const nonMember = await prisma.person.create({
             data: {
                 email: 'non-member-elig-api-test@example.com',
                 name: 'Non Member Candidate',
@@ -146,7 +146,7 @@ describe('Eligible Participants API Integration Tests', () => {
         memberOnlyProgramId = memberOnlyProgram.id;
 
         // Create already enrolled participant for public program
-        const alreadyEnrolled = await prisma.participant.create({
+        const alreadyEnrolled = await prisma.person.create({
             data: {
                 email: 'enrolled-elig-api-test@example.com',
                 name: 'Already Enrolled Candidate',
@@ -168,13 +168,13 @@ describe('Eligible Participants API Integration Tests', () => {
 
         if (existingUserIds.length > 0) {
             await prisma.programParticipant.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
 
             // Memberships are held by households. Scope the cleanup to exactly the
             // households this test touched: each test participant's household plus the
             // explicitly created Elig API Test household.
-            const testParticipants = await prisma.participant.findMany({
+            const testParticipants = await prisma.person.findMany({
                 where: { id: { in: existingUserIds } },
                 select: { householdId: true }
             });
@@ -193,7 +193,7 @@ describe('Eligible Participants API Integration Tests', () => {
         }
 
         if (existingUserIds.length > 0) {
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
         }

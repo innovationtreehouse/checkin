@@ -32,8 +32,8 @@ describe('Membership BG review API', () => {
     async function makeApplicantProcess(label: string, parentEmail?: string) {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
         // A parent/guardian is a household lead.
-        const parent = await prisma.participant.create({ data: { name: `${label} Parent`, householdId: hh.id, ...(parentEmail ? { email: parentEmail } : {}) } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: parent.id } });
+        const parent = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id, ...(parentEmail ? { email: parentEmail } : {}) } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: parent.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
         const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } });
         return { householdId: hh.id, membershipId: m.id, processId: p.id };
@@ -42,8 +42,8 @@ describe('Membership BG review API', () => {
     // Build a process in an arbitrary kind/status (for non-BLOCKED + renewal-branch tests).
     async function makeProcess(label: string, kind: 'INITIAL' | 'RENEWAL', status: 'PENDING_PAYMENT' | 'RENEWAL_PENDING_BG') {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
-        const parent = await prisma.participant.create({ data: { name: `${label} Parent`, householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: parent.id } });
+        const parent = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: parent.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
         const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind, status } });
         return { householdId: hh.id, membershipId: m.id, processId: p.id };
@@ -57,11 +57,11 @@ describe('Membership BG review API', () => {
             await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
             await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
         await prisma.volunteerDesignation.deleteMany({ where: { email: { contains: TAG } } });
-        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
     }
 
     beforeAll(async () => {
@@ -70,7 +70,7 @@ describe('Membership BG review API', () => {
             const data = householdId
                 ? { email: `${slug}-${TAG}@example.com`, name: slug, householdId, ...role }
                 : { email: `${slug}-${TAG}@example.com`, name: slug, household: { create: { name: `${slug} HH ${TAG}` } }, ...role };
-            return prisma.participant.create({ data });
+            return prisma.person.create({ data });
         };
         const r1 = await mk('rev1', { isBackgroundCheckReviewer: true });
         rev1 = r1.id;
@@ -129,7 +129,7 @@ describe('Membership BG review API', () => {
         expect(updated?.status).toBe('PENDING_PAYMENT');
         const membership = await prisma.membership.findUnique({ where: { id: proc.membershipId } });
         expect(membership?.isVolunteer).toBe(true);
-        const parent = await prisma.participant.findFirst({ where: { householdId: proc.householdId, householdLeads: { some: { householdId: proc.householdId } } } });
+        const parent = await prisma.person.findFirst({ where: { householdId: proc.householdId, householdLeads: { some: { householdId: proc.householdId } } } });
         expect(parent?.lastBackgroundCheck).not.toBeNull();
 
         // The advance audit records the reviewer whose attestation triggered it (rev2), not rev1/SYSTEM.
@@ -284,9 +284,9 @@ describe('Membership BG review API', () => {
     it('queue returns only parents (leads) and never exposes children', async () => {
         // Self-contained applicant household: one parent (lead) + one child (non-lead).
         const hh = await prisma.household.create({ data: { name: `ChildExcl ${TAG}` } });
-        const parent = await prisma.participant.create({ data: { name: 'Excl Parent', email: `exclparent-${TAG}@example.com`, householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: parent.id } });
-        await prisma.participant.create({ data: { name: 'Excl Child', email: `exclchild-${TAG}@example.com`, householdId: hh.id } });
+        const parent = await prisma.person.create({ data: { name: 'Excl Parent', email: `exclparent-${TAG}@example.com`, householdId: hh.id } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: parent.id } });
+        await prisma.person.create({ data: { name: 'Excl Child', email: `exclchild-${TAG}@example.com`, householdId: hh.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
         await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } });
 

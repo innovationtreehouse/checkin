@@ -148,7 +148,7 @@ function allMatches(scopeMap: Partial<Record<Scope, Match>>): Match[] {
  * `id` is intentionally excluded: it is a bare primary key on every model, so
  * judging on it makes isScopable true everywhere and falsely demands a binding
  * for admin-only log/settings models (BoardSettings, ErrorLog, etc.). It IS a
- * real scope field for Participant/Household/Program (`field: 'id'`), but all
+ * real scope field for Person/Household/Program (`field: 'id'`), but all
  * three are BOUND, and the coverage loop skips bound models BEFORE isScopable
  * runs — so isScopable only ever judges UNBOUND models, where `id` carries no
  * actor meaning. The truth about id-as-scope lives in SCOPE_BINDINGS, not here.

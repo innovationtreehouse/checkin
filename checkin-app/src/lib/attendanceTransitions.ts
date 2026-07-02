@@ -18,11 +18,11 @@ type DbClient = PrismaClient | Prisma.TransactionClient;
 async function getRelevantProgramIds(participantId: number, db: DbClient = prisma): Promise<number[]> {
     const [participantPrograms, volunteerPrograms, leadPrograms] = await Promise.all([
         db.programParticipant.findMany({
-            where: { participantId },
+            where: { personId: participantId },
             select: { programId: true }
         }),
         db.programVolunteer.findMany({
-            where: { participantId },
+            where: { personId: participantId },
             select: { programId: true }
         }),
         db.program.findMany({
@@ -97,7 +97,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
 
     // Chunks recreated below are all segments of one physical visit: they keep
     // the original arrival's source and take `source` as their departure channel.
-    const { participantId, arrivedAt, arrivedVia } = originalVisit;
+    const { personId: participantId, arrivedAt, arrivedVia } = originalVisit;
 
     const relevantProgramIds = await getRelevantProgramIds(participantId, db);
 
@@ -150,7 +150,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
                 if (currentIterStart < gapEnd) {
                     createdVisits.push(await tx.visit.create({
                         data: {
-                            participantId,
+                            personId: participantId,
                             arrivedAt: currentIterStart,
                             departedAt: gapEnd,
                             arrivedVia,
@@ -180,7 +180,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
             if (eventVisitStart < eventVisitEnd) {
                 createdVisits.push(await tx.visit.create({
                     data: {
-                        participantId,
+                        personId: participantId,
                         arrivedAt: eventVisitStart,
                         departedAt: eventVisitEnd,
                         arrivedVia,
@@ -196,7 +196,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         if (currentIterStart < checkoutTime) {
             createdVisits.push(await tx.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: currentIterStart,
                     departedAt: checkoutTime,
                     arrivedVia,

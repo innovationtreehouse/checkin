@@ -31,7 +31,7 @@ export const GET = withAuth(
                         participants: {
                             select: { id: true, name: true, email: true }
                         },
-                        householdLeads: { select: { participantId: true } },
+                        householdLeads: { select: { personId: true } },
                         membership: true,
                         emergencyContacts: {
                             where: PRIMARY_CONTACT_WHERE,
@@ -102,7 +102,7 @@ export const POST = withAuth(
                     // Two separate legal actions → two separate software actions: a household
                     // containing a board member cannot be denied. Remove the board role first.
                     // Enforced server-side; the UI's disabled button is only a courtesy.
-                    const boardMemberInHousehold = await prisma.participant.findFirst({
+                    const boardMemberInHousehold = await prisma.person.findFirst({
                         where: { householdId, isBoardMember: true },
                         select: { id: true }
                     });

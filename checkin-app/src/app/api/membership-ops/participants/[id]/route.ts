@@ -33,12 +33,12 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
             return NextResponse.json({ error: "No fields to update provided" }, { status: 400 });
         }
 
-        const prior = await prisma.participant.findUnique({
+        const prior = await prisma.person.findUnique({
             where: { id },
             select: { name: true, email: true, phone: true },
         });
 
-        const updatedParticipant = await prisma.participant.update({
+        const updatedParticipant = await prisma.person.update({
             where: { id },
             data: updateData,
             include: {

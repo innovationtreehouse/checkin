@@ -16,7 +16,7 @@ const attendanceData = {
     { id: 202, arrivedAt: "2026-07-01T14:05:00.000Z", participant: { id: 60, email: "val@example.com", name: "Val Volunteer", isKeyholder: false, isSysadmin: false, dateOfBirth: "1990-01-01", householdId: 7 } },
     { id: 203, arrivedAt: "2026-07-01T14:10:00.000Z", participant: { id: 70, email: "stu@example.com", name: "Stu Student", isKeyholder: false, isSysadmin: false, dateOfBirth: "2012-01-01", householdId: 8 } },
   ],
-  counts: { keyholders: 1, volunteers: 1, students: 1, total: 3 },
+  counts: { keyholders: 1, volunteers: 1, youth: 1, total: 3 },
   safety: { isLastKeyholder: false, isTwoDeepViolation: false },
 };
 
@@ -119,18 +119,20 @@ describe("attendance/current page", () => {
   });
 
   it("force-checks-out a user via the sign-out modal", async () => {
-    window.confirm = jest.fn(() => true);
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
     await screen.findByText("3 People Present");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out a user" }));
-    const modal = await screen.findByRole("dialog");
+    const modal = await screen.findByRole("dialog", { name: "Sign Out A User" });
     expect(within(modal).getByText("Val Volunteer")).toBeInTheDocument();
     // Rows are sorted alphabetically: Karen, Stu, Val -> Val is the 3rd "Sign Out" button.
     const signOutButtons = within(modal).getAllByRole("button", { name: "Sign Out" });
     fireEvent.click(signOutButtons[2]);
+
+    const confirmModal = await screen.findByRole("dialog", { name: "Force Checkout" });
+    fireEvent.click(within(confirmModal).getByRole("button", { name: "Force Checkout" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(

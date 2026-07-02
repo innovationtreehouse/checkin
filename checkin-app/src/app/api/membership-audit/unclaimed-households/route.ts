@@ -14,19 +14,19 @@ export const GET = withAuth(
             // yet, but at least one lead has an email we can chase.
             const households = await prisma.household.findMany({
                 where: {
-                    leads: { some: { participant: { email: { not: null } } } },
-                    NOT: { leads: { some: { participant: { googleId: { not: null } } } } }
+                    leads: { some: { person: { email: { not: null } } } },
+                    NOT: { leads: { some: { person: { googleId: { not: null } } } } }
                 },
-                include: { leads: { include: { participant: true } } }
+                include: { leads: { include: { person: true } } }
             });
 
             const result = households.map(h => ({
                 id: h.id,
                 name: h.name
-                    || h.leads.find(l => l.participant.name)?.participant.name
+                    || h.leads.find(l => l.person.name)?.person.name
                     || `Household #${h.id}`,
                 members: h.leads
-                    .map(l => l.participant)
+                    .map(l => l.person)
                     .filter(p => p.email !== null)
                     .map(p => ({ id: p.id, name: p.name, email: p.email }))
             }));

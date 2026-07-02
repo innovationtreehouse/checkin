@@ -31,26 +31,26 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
     let activeHouseholdId: number;
 
     beforeAll(async () => {
-        const leaked = await prisma.participant.findMany({
+        const leaked = await prisma.person.findMany({
             where: { email: { contains: TAG } }, select: { id: true },
         });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: leaked.map(u => u.id) } } });
-        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
 
         // Acting board member (in their own household).
-        const board = await prisma.participant.create({
+        const board = await prisma.person.create({
             data: { email: `board-${TAG}@example.com`, name: 'Board Actor', isBoardMember: true, household: { create: {} } },
         });
         boardId = board.id;
 
         // A household with no membership row → will be granted (ACTIVE).
-        const inactive = await prisma.participant.create({
+        const inactive = await prisma.person.create({
             data: { email: `inactive-${TAG}@example.com`, name: 'Inactive Member', household: { create: {} } },
         });
         inactiveHouseholdId = inactive.householdId;
 
         // A household that is already ACTIVE → will be revoked (REVOKED).
-        const active = await prisma.participant.create({
+        const active = await prisma.person.create({
             data: { email: `active-${TAG}@example.com`, name: 'Active Member', household: { create: {} } },
         });
         activeHouseholdId = active.householdId;
@@ -58,12 +58,12 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
     });
 
     afterAll(async () => {
-        const ids = await prisma.participant.findMany({
+        const ids = await prisma.person.findMany({
             where: { email: { contains: TAG } }, select: { id: true, householdId: true },
         });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: ids.map(u => u.id) } } });
         await prisma.membership.deleteMany({ where: { householdId: { in: ids.map(u => u.householdId) } } });
-        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
         await prisma.household.deleteMany({ where: { id: { in: ids.map(u => u.householdId) } } });
     });
 

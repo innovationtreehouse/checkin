@@ -37,7 +37,7 @@ async function createParticipantWithHousehold(data: {
         const household = await tx.household.create({
             data: { name: data.name ?? data.email ?? null },
         });
-        const participant = await tx.participant.create({
+        const participant = await tx.person.create({
             data: { ...data, householdId: household.id },
         });
         await addHouseholdLead(tx, household.id, participant.id);
@@ -58,7 +58,7 @@ const patchedAdapter = {
     getUser: async (id: string) => {
         const numericId = parseInt(id, 10);
         if (isNaN(numericId)) return null;
-        const user = await prisma.participant.findUnique({ where: { id: numericId } });
+        const user = await prisma.person.findUnique({ where: { id: numericId } });
         return user ? { ...user, id: String(user.id), email: user.email || "" } : null;
     },
 };
@@ -163,7 +163,7 @@ export const authOptions: NextAuthOptions = {
                     // Resolve the target participant (fake data only — must already exist).
                     let dbParticipant;
                     if (mode === "return") {
-                        dbParticipant = await prisma.participant.findUnique({
+                        dbParticipant = await prisma.person.findUnique({
                             where: { email: decision.targetEmail! },
                         });
                     } else {
@@ -172,7 +172,7 @@ export const authOptions: NextAuthOptions = {
                         // Restrict the mintable target to seeded @example.com personas (matches the
                         // dev-personas picker's filter) so a caller can never mint a real participant,
                         // even if one exists in the dev DB.
-                        dbParticipant = await prisma.participant.findFirst({
+                        dbParticipant = await prisma.person.findFirst({
                             where: { id: personaId, email: { endsWith: "@example.com" } },
                         });
                     }
@@ -238,7 +238,7 @@ export const authOptions: NextAuthOptions = {
             // + impersonatedBy so the dev gate passes and "Return to me" works.
             if (user?.email) {
                 const email = user.email;
-                const dbParticipant = await withAuroraResumeRetry(() => prisma.participant.findUnique({
+                const dbParticipant = await withAuroraResumeRetry(() => prisma.person.findUnique({
                     where: { email },
                     include: {
                         toolStatuses: {
@@ -248,7 +248,7 @@ export const authOptions: NextAuthOptions = {
                             }
                         },
                         // One row is enough to mark this participant a household lead.
-                        householdLeads: { take: 1, select: { participantId: true } },
+                        householdLeads: { take: 1, select: { personId: true } },
                         // Program ids led — drives the client program-ops row gate.
                         programsLed: { select: { id: true } },
                         household: { include: { membership: true } }
@@ -261,7 +261,7 @@ export const authOptions: NextAuthOptions = {
                         dbParticipant.email &&
                         BOOTSTRAP_SYSADMINS.includes(dbParticipant.email.toLowerCase())
                     ) {
-                        await prisma.participant.update({
+                        await prisma.person.update({
                             where: { id: dbParticipant.id },
                             data: { isSysadmin: true },
                         });
@@ -279,7 +279,7 @@ export const authOptions: NextAuthOptions = {
                 // read at sign-in, which let a revoked isSysadmin/isKeyholder keep their
                 // privileges (including the /api/roles endpoint) until the JWT
                 // aged out — up to 30 days.
-                const dbParticipant = await withAuroraResumeRetry(() => prisma.participant.findUnique({
+                const dbParticipant = await withAuroraResumeRetry(() => prisma.person.findUnique({
                     where: { id: token.id as number },
                     include: {
                         toolStatuses: {
@@ -289,7 +289,7 @@ export const authOptions: NextAuthOptions = {
                             }
                         },
                         // One row is enough to mark this participant a household lead.
-                        householdLeads: { take: 1, select: { participantId: true } },
+                        householdLeads: { take: 1, select: { personId: true } },
                         // Program ids led — drives the client program-ops row gate.
                         programsLed: { select: { id: true } },
                         household: { include: { membership: true } }

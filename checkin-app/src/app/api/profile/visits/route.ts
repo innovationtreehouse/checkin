@@ -29,7 +29,7 @@ export const GET = withAuth(
 
             const visits = await prisma.visit.findMany({
                 where: {
-                    participantId: userId,
+                    personId: userId,
                     arrivedAt: {
                         gte: startDate,
                         lte: endDate

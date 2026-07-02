@@ -2,13 +2,8 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { getAppSettings } from "@/lib/appSettings";
-import { calculateAge } from "@/lib/time";
 
 type PeriodType = "week" | "month" | "quarter" | "year";
-
-function isStudentAtDate(dob: Date | null, refDate: Date): boolean {
-    return dob ? calculateAge(dob, refDate) < 18 : false;
-}
 
 function getHoursBetween(arrived: Date, departed: Date | null): number {
     if (!departed) return 0;
@@ -63,9 +58,9 @@ export interface TrendBucket {
     label: string;
     periodStart: string;
     uniqueVolunteers: number;
-    uniqueStudents: number;
+    uniqueParticipants: number;
     totalVolunteerHours: number;
-    totalStudentHours: number;
+    totalParticipantHours: number;
     structuredHours: number;
     unstructuredHours: number;
 }
@@ -104,19 +99,29 @@ export const GET = withAuth(
             const visits = await prisma.visit.findMany({
                 where: whereClause,
                 include: {
-                    participant: { select: { id: true, dateOfBirth: true } },
+                    person: { select: { id: true } },
                     event: { select: { programId: true } },
                 },
                 orderBy: { arrivedAt: "asc" },
             });
 
+            // "Participant hours" = hours logged by people ENROLLED in a program
+            // (ProgramParticipant), not an age proxy. Per-program view counts enrollment in
+            // that program; aggregate view counts enrollment in any program. Only ACTIVE
+            // enrollments count — PENDING is applied-but-not-yet-approved, not an enrollee.
+            const enrollments = await prisma.programParticipant.findMany({
+                where: { status: "ACTIVE", ...(programId ? { programId } : {}) },
+                select: { personId: true },
+            });
+            const enrolledParticipantIds = new Set(enrollments.map(e => e.personId));
+
             const bucketMap = new Map<string, {
                 label: string;
                 periodStart: Date;
                 volunteerIds: Set<number>;
-                studentIds: Set<number>;
+                participantIds: Set<number>;
                 volunteerHours: number;
-                studentHours: number;
+                participantHours: number;
                 structuredHours: number;
                 unstructuredHours: number;
             }>();
@@ -130,9 +135,9 @@ export const GET = withAuth(
                         label: formatPeriodLabel(periodStart, period, locale),
                         periodStart,
                         volunteerIds: new Set(),
-                        studentIds: new Set(),
+                        participantIds: new Set(),
                         volunteerHours: 0,
-                        studentHours: 0,
+                        participantHours: 0,
                         structuredHours: 0,
                         unstructuredHours: 0,
                     });
@@ -140,13 +145,13 @@ export const GET = withAuth(
 
                 const bucket = bucketMap.get(key)!;
                 const hours = getHoursBetween(visit.arrivedAt, visit.departedAt);
-                const student = isStudentAtDate(visit.participant.dateOfBirth, visit.arrivedAt);
+                const isParticipant = enrolledParticipantIds.has(visit.person.id);
 
-                if (student) {
-                    bucket.studentIds.add(visit.participant.id);
-                    bucket.studentHours += hours;
+                if (isParticipant) {
+                    bucket.participantIds.add(visit.person.id);
+                    bucket.participantHours += hours;
                 } else {
-                    bucket.volunteerIds.add(visit.participant.id);
+                    bucket.volunteerIds.add(visit.person.id);
                     bucket.volunteerHours += hours;
                 }
 
@@ -163,9 +168,9 @@ export const GET = withAuth(
                     label: b.label,
                     periodStart: b.periodStart.toISOString(),
                     uniqueVolunteers: b.volunteerIds.size,
-                    uniqueStudents: b.studentIds.size,
+                    uniqueParticipants: b.participantIds.size,
                     totalVolunteerHours: Math.round(b.volunteerHours * 10) / 10,
-                    totalStudentHours: Math.round(b.studentHours * 10) / 10,
+                    totalParticipantHours: Math.round(b.participantHours * 10) / 10,
                     structuredHours: Math.round(b.structuredHours * 10) / 10,
                     unstructuredHours: Math.round(b.unstructuredHours * 10) / 10,
                 }));
@@ -173,10 +178,10 @@ export const GET = withAuth(
             const totals: TrendBucket = {
                 label: "Total",
                 periodStart: "",
-                uniqueVolunteers: new Set(visits.filter(v => !isStudentAtDate(v.participant.dateOfBirth, v.arrivedAt)).map(v => v.participant.id)).size,
-                uniqueStudents: new Set(visits.filter(v => isStudentAtDate(v.participant.dateOfBirth, v.arrivedAt)).map(v => v.participant.id)).size,
+                uniqueVolunteers: new Set(visits.filter(v => !enrolledParticipantIds.has(v.person.id)).map(v => v.person.id)).size,
+                uniqueParticipants: new Set(visits.filter(v => enrolledParticipantIds.has(v.person.id)).map(v => v.person.id)).size,
                 totalVolunteerHours: Math.round(buckets.reduce((s, b) => s + b.totalVolunteerHours, 0) * 10) / 10,
-                totalStudentHours: Math.round(buckets.reduce((s, b) => s + b.totalStudentHours, 0) * 10) / 10,
+                totalParticipantHours: Math.round(buckets.reduce((s, b) => s + b.totalParticipantHours, 0) * 10) / 10,
                 structuredHours: Math.round(buckets.reduce((s, b) => s + b.structuredHours, 0) * 10) / 10,
                 unstructuredHours: Math.round(buckets.reduce((s, b) => s + b.unstructuredHours, 0) * 10) / 10,
             };

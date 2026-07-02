@@ -8,15 +8,15 @@ jest.mock("@/lib/email", () => ({
 
 describe("GET /api/cron/post-event", () => {
     beforeEach(async () => {
-        await prisma.visit.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
-        await prisma.rSVP.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
+        await prisma.visit.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
+        await prisma.rSVP.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Past Event' } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Future Event' } } });
         await prisma.program.deleteMany({ where: { name: 'Test Program' } });
-        await prisma.toolStatus.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
-        await prisma.householdLead.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
-        await prisma.rawBadgeLog.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
-        await prisma.participant.deleteMany({ where: { email: { contains: 'example.com' } } });
+        await prisma.toolStatus.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
+        await prisma.householdLead.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
+        await prisma.person.deleteMany({ where: { email: { contains: 'example.com' } } });
         // Global participant-less household delete: clear the membership chain for those
         // households first or Membership_householdId_fkey (RESTRICT) blocks the delete.
         await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { household: { participants: { none: {} } } } } } });
@@ -28,7 +28,7 @@ describe("GET /api/cron/post-event", () => {
 
     it("should send emails for finished events and mark them as sent", async () => {
         // Setup data
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: "lead@example.com", name: "Lead Mentor", household: { create: {} } }
         });
 
@@ -51,16 +51,16 @@ describe("GET /api/cron/post-event", () => {
         });
 
         // Add some RSVPs and Visits
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: "user@example.com", name: "User", household: { create: {} } }
         });
         
         await prisma.rSVP.create({
-            data: { eventId: event.id, participantId: user.id, status: "ATTENDING" }
+            data: { eventId: event.id, personId: user.id, status: "ATTENDING" }
         });
 
         await prisma.visit.create({
-            data: { associatedEventId: event.id, participantId: user.id, arrivedAt: pastStart }
+            data: { associatedEventId: event.id, personId: user.id, arrivedAt: pastStart }
         });
 
         process.env.CRON_SECRET = 'test-secret';

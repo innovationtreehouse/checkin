@@ -37,7 +37,7 @@ function NewParticipantForm() {
   const [householdId, setHouseholdId] = useState("");
   const [householdSearch, setHouseholdSearch] = useState("");
 
-  const studentSelected = isYouth(dob);
+  const isYouthSelected = isYouth(dob);
 
   const [alreadyMember, setAlreadyMember] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -86,7 +86,7 @@ function NewParticipantForm() {
         body: JSON.stringify({
           name,
           email: email || null,
-          parentEmail: studentSelected ? parentEmail : null,
+          parentEmail: isYouthSelected ? parentEmail : null,
           dob: dob || null,
           householdId: householdId ? parseInt(householdId) : null,
           alreadyMember: !householdId && alreadyMember
@@ -116,7 +116,7 @@ function NewParticipantForm() {
     }
   };
 
-  const submitDisabled = saving || (!studentSelected && !email && !householdId) || (studentSelected && !parentEmail && !householdId);
+  const submitDisabled = saving || (!isYouthSelected && !email && !householdId) || (isYouthSelected && !parentEmail && !householdId);
 
   return (
     <Container size="md" pb="md">
@@ -143,7 +143,7 @@ function NewParticipantForm() {
             <TextInput
               type="date"
               label="Date of Birth"
-              description={studentSelected ? 'Student Detected' : undefined}
+              description={isYouthSelected ? 'Student Detected' : undefined}
               value={dob}
               onChange={(e) => setDob(e.currentTarget.value)}
               maw={300}
@@ -151,20 +151,20 @@ function NewParticipantForm() {
 
             <TextInput
               type="email"
-              label={`Participant Google Email ${studentSelected ? '(Optional for Students)' : ''}`}
-              required={!studentSelected && !householdId}
+              label={`Participant Google Email ${isYouthSelected ? '(Optional for Students)' : ''}`}
+              required={!isYouthSelected && !householdId}
               value={email}
               onChange={(e) => setEmail(e.currentTarget.value)}
               placeholder="jane.doe@example.com"
             />
 
-            {studentSelected && (
+            {isYouthSelected && (
               <Paper withBorder radius="md" p="md" bg="var(--mantine-color-grape-light)">
                 <TextInput
                   type="email"
                   label={`Parent / Guardian Google Email ${!householdId ? '' : '(Optional)'}`}
                   description="Because the participant is under 18, a parent or guardian's email is required to associate their accounts — unless you assign them to an existing household below."
-                  required={studentSelected && !householdId}
+                  required={isYouthSelected && !householdId}
                   value={parentEmail}
                   onChange={(e) => setParentEmail(e.currentTarget.value)}
                   placeholder="parent@example.com"

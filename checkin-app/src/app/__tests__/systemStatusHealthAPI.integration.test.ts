@@ -29,7 +29,7 @@ describe('System status health API', () => {
     let staleMetricId: number;
 
     beforeAll(async () => {
-        const keyholder = await prisma.participant.create({
+        const keyholder = await prisma.person.create({
             data: { email: `keyholder-${TAG}@example.com`, name: 'Keyholder', isKeyholder: true, household: { create: {} } },
         });
         keyholderId = keyholder.id;
@@ -67,7 +67,7 @@ describe('System status health API', () => {
 
     afterAll(async () => {
         await prisma.systemMetricLog.deleteMany({ where: { id: { in: [...metricIds, staleMetricId] } } });
-        await prisma.participant.deleteMany({ where: { id: keyholderId } });
+        await prisma.person.deleteMany({ where: { id: keyholderId } });
         await prisma.household.deleteMany({ where: { id: householdId } });
     });
 

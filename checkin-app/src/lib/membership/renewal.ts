@@ -188,7 +188,7 @@ export async function openRenewalsForAllActive(now: Date, opts: { sendReminders?
 
 /** Resolve and begin the caller's household renewal. */
 export async function beginRenewalForUser(userId: number) {
-    const user = await prisma.participant.findUnique({ where: { id: userId }, select: { householdId: true } });
+    const user = await prisma.person.findUnique({ where: { id: userId }, select: { householdId: true } });
     if (!user?.householdId) throw new RenewalError("not_found", "You are not in a household.");
     const process = await prisma.membershipProcess.findFirst({
         where: { membership: { householdId: user.householdId }, status: "PENDING_RENEWAL" },
@@ -206,7 +206,7 @@ export async function beginRenewalForUser(userId: number) {
 export async function householdBgIsFresh(householdId: number, boundary: Date, recheckMonths: number): Promise<boolean> {
     if (recheckMonths <= 0) return false;
     const threshold = monthsBefore(boundary, recheckMonths);
-    const fresh = await prisma.participant.findFirst({
+    const fresh = await prisma.person.findFirst({
         where: { householdId, householdLeads: { some: { householdId } }, lastBackgroundCheck: { gte: threshold } },
         select: { id: true },
     });

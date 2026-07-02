@@ -33,18 +33,18 @@ describe('Program Participants API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'partic-api-test' } },
             select: { id: true }
         });
         const existingUserIds = existingUsers.map(u => u.id);
 
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.programParticipant.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.program.deleteMany({
@@ -55,24 +55,24 @@ describe('Program Participants API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-partic-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Lead
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: 'lead-partic-api-test@example.com', name: 'Lead', household: { create: {} } }
         });
         leadId = lead.id;
 
         // Create Common User (25 years old)
-        const commonUser = await prisma.participant.create({
+        const commonUser = await prisma.person.create({
             data: {
                 email: 'common-partic-api-test@example.com',
                 name: 'Common',
@@ -83,7 +83,7 @@ describe('Program Participants API Integration Tests', () => {
         commonId = commonUser.id;
 
         // Create Other User (underage: 10 years old)
-        const otherUser = await prisma.participant.create({
+        const otherUser = await prisma.person.create({
             data: {
                 email: 'other-partic-api-test@example.com',
                 name: 'Other Underage',
@@ -96,11 +96,11 @@ describe('Program Participants API Integration Tests', () => {
         // Board member who leads a household containing a 25yo dependent. The
         // board flag lives on the session, not the DB row — see the mocks below.
         const boardHousehold = await prisma.household.create({ data: {} });
-        const board = await prisma.participant.create({
+        const board = await prisma.person.create({
             data: { email: 'board-partic-api-test@example.com', name: 'Board Parent', householdId: boardHousehold.id }
         });
         boardId = board.id;
-        const dependent = await prisma.participant.create({
+        const dependent = await prisma.person.create({
             data: {
                 email: 'dep-partic-api-test@example.com',
                 name: 'Board Dependent',
@@ -110,7 +110,7 @@ describe('Program Participants API Integration Tests', () => {
         });
         depId = dependent.id;
         await prisma.householdLead.create({
-            data: { householdId: boardHousehold.id, participantId: boardId }
+            data: { householdId: boardHousehold.id, personId: boardId }
         });
 
         // Create mock programs
@@ -132,7 +132,7 @@ describe('Program Participants API Integration Tests', () => {
                 enrollmentStatus: 'OPEN',
                 maxParticipants: 1,
                 participants: {
-                    create: { participantId: otherId }
+                    create: { personId: otherId }
                 }
             }
         });
@@ -150,10 +150,10 @@ describe('Program Participants API Integration Tests', () => {
 
         if (existingUserIds.length > 0) {
             await prisma.householdLead.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
             await prisma.programParticipant.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
         }
 
@@ -168,7 +168,7 @@ describe('Program Participants API Integration Tests', () => {
                 where: { actorId: { in: existingUserIds } }
             });
 
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
         }
@@ -214,7 +214,7 @@ describe('Program Participants API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.enrollment.participantId).toBe(commonId);
+             expect(data.enrollment.personId).toBe(commonId);
              expect(data.enrollment.status).toBe('PENDING');
         });
 
@@ -230,7 +230,7 @@ describe('Program Participants API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.enrollment.participantId).toBe(commonId);
+             expect(data.enrollment.personId).toBe(commonId);
              expect(data.enrollment.status).toBe('ACTIVE');
         });
 
@@ -367,7 +367,7 @@ describe('Program Participants API Integration Tests', () => {
 
              // No duplicate row, no corruption: exactly one enrollment exists.
              const count = await prisma.programParticipant.count({
-                 where: { programId: freeProgramId, participantId: leadId }
+                 where: { programId: freeProgramId, personId: leadId }
              });
              expect(count).toBe(1);
         });
@@ -411,7 +411,7 @@ describe('Program Participants API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.enrollment.participantId).toBe(commonId);
+             expect(data.enrollment.personId).toBe(commonId);
         });
         
         it('should allow a common user to drop out of their own program', async () => {

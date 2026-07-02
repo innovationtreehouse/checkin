@@ -59,12 +59,12 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         });
         programId = program.id;
 
-        const a = await prisma.participant.create({
+        const a = await prisma.person.create({
             data: { name: 'Hook P1', email: `p1-${TAG}@example.com`, household: { create: {} } },
         });
         p1 = a.id;
         h1 = a.householdId;
-        const b = await prisma.participant.create({
+        const b = await prisma.person.create({
             data: { name: 'Hook P2', email: `p2-${TAG}@example.com`, household: { create: {} } },
         });
         p2 = b.id;
@@ -92,15 +92,15 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         await prisma.integrationErrorLog.deleteMany({ where: { source: 'shopify-webhook' } });
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.delete({ where: { id: programId } });
-        await prisma.participant.deleteMany({ where: { id: { in: [p1, p2] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [p1, p2] } } });
         await prisma.household.deleteMany({ where: { id: { in: [h1, h2] } } });
     });
 
     async function setPending(participantId: number) {
         await prisma.programParticipant.upsert({
-            where: { programId_participantId: { programId, participantId } },
+            where: { programId_personId: { programId, personId: participantId } },
             update: { status: 'PENDING', pendingSince: new Date() },
-            create: { programId, participantId, status: 'PENDING', pendingSince: new Date() },
+            create: { programId, personId: participantId, status: 'PENDING', pendingSince: new Date() },
         });
     }
 
@@ -141,13 +141,13 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
 
     it('acknowledges (200) but makes no change when the participant is not enrolled', async () => {
         // p1 has no programParticipant row for this program yet.
-        await prisma.programParticipant.deleteMany({ where: { programId, participantId: p1 } });
+        await prisma.programParticipant.deleteMany({ where: { programId, personId: p1 } });
         const body = programPayload(String(p1));
         const res = await POST(webhookReq(body, sign(body)));
         expect(res.status).toBe(200);
 
         const row = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId, participantId: p1 } },
+            where: { programId_personId: { programId, personId: p1 } },
         });
         expect(row).toBeNull();
     });
@@ -159,7 +159,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         const first = await POST(webhookReq(body, sign(body)));
         expect(first.status).toBe(200);
         let row = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId, participantId: p1 } },
+            where: { programId_personId: { programId, personId: p1 } },
         });
         expect(row?.status).toBe('ACTIVE');
         expect(row?.pendingSince).toBeNull();
@@ -168,7 +168,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         const second = await POST(webhookReq(body, sign(body)));
         expect(second.status).toBe(200);
         row = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId, participantId: p1 } },
+            where: { programId_personId: { programId, personId: p1 } },
         });
         // Still ACTIVE, still cleared — replay must not error or regress state.
         expect(row?.status).toBe('ACTIVE');
@@ -184,7 +184,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         expect(res.status).toBe(200);
 
         const rows = await prisma.programParticipant.findMany({
-            where: { programId, participantId: { in: [p1, p2] } },
+            where: { programId, personId: { in: [p1, p2] } },
         });
         expect(rows).toHaveLength(2);
         expect(rows.every(r => r.status === 'ACTIVE')).toBe(true);

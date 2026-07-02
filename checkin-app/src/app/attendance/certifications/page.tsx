@@ -9,7 +9,7 @@ import { ToolLevelBadge, toToolLevel, toolLevelDot } from "@/components/ToolLeve
 
 type ToolStatusLevel = "BASIC" | "DOF" | "CERTIFIED" | "INSTRUCTOR" | "MAY_CERTIFY_OTHERS";
 
-type Participant = {
+type Person = {
   id: number;
   // Display name resolved server-side (real name, else email-prefix); never the raw email (#329).
   name: string;
@@ -39,7 +39,7 @@ function KioskCertificationsInner() {
   const searchParams = useSearchParams();
   const limitToPresent = searchParams.get('limit_to_present') !== 'false';
   const [isKioskMode, setIsKioskMode] = useState(searchParams.get('mode') === 'kiosk' || !!searchParams.get('sig'));
-  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [participants, setParticipants] = useState<Person[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,7 +101,7 @@ function KioskCertificationsInner() {
   };
 
   // Sort users alphabetically by first name (name is server-resolved, email-prefix included)
-  const sortAlphabetically = (a: Participant, b: Participant) => {
+  const sortAlphabetically = (a: Person, b: Person) => {
     const nameA = a.name;
     const nameB = b.name;
     const getFirstName = (name: string) => {
@@ -127,7 +127,7 @@ function KioskCertificationsInner() {
 
   const cellBorder = '1px solid var(--mantine-color-default-border)';
 
-  const renderVisitRow = (participant: Participant, index: number) => (
+  const renderVisitRow = (participant: Person, index: number) => (
     <tr key={participant.id} style={{ borderBottom: index % 2 === 1 ? '3px solid var(--mantine-color-default-border)' : cellBorder }}>
       <td style={{ padding: isKioskMode ? '0.5rem 0.75rem' : '0.75rem 1rem', position: 'sticky', left: 0, background: 'var(--mantine-color-body)', zIndex: 5, borderRight: cellBorder }}>
         <Text fw={isKioskMode ? 700 : 500} fz={isKioskMode ? '1.1rem' : undefined} truncate>

@@ -25,7 +25,7 @@ describe('Household Lead API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'lead-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -34,7 +34,7 @@ describe('Household Lead API Integration Tests', () => {
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter(id => id !== null) as number[];
         
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         
         await prisma.membership.deleteMany({
@@ -46,7 +46,7 @@ describe('Household Lead API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
@@ -60,21 +60,21 @@ describe('Household Lead API Integration Tests', () => {
         });
         householdId = household.id;
 
-        const leadUser = await prisma.participant.create({
+        const leadUser = await prisma.person.create({
             data: { email: 'lead-lead-api-test@example.com', name: 'Lead User', householdId: household.id }
         });
         testLeadId = leadUser.id;
 
         await prisma.householdLead.create({
-            data: { householdId: household.id, participantId: leadUser.id }
+            data: { householdId: household.id, personId: leadUser.id }
         });
 
-        const adultUser = await prisma.participant.create({
+        const adultUser = await prisma.person.create({
             data: { email: 'adult-lead-api-test@example.com', name: 'Adult User', householdId: household.id }
         });
         testAdultId = adultUser.id;
 
-        const childUser = await prisma.participant.create({
+        const childUser = await prisma.person.create({
             data: { email: 'child-lead-api-test@example.com', name: 'Child User', householdId: household.id }
         });
         testChildId = childUser.id;
@@ -84,16 +84,16 @@ describe('Household Lead API Integration Tests', () => {
         });
         otherHouseholdId = otherHousehold.id;
         
-        const otherLead = await prisma.participant.create({
+        const otherLead = await prisma.person.create({
             data: { email: 'other-lead-lead-api-test@example.com', name: 'Other Lead User', householdId: otherHousehold.id }
         });
         testOtherLeadId = otherLead.id;
 
         await prisma.householdLead.create({
-            data: { householdId: otherHousehold.id, participantId: otherLead.id }
+            data: { householdId: otherHousehold.id, personId: otherLead.id }
         });
 
-        const otherMember = await prisma.participant.create({
+        const otherMember = await prisma.person.create({
             data: { email: 'other-adult-lead-api-test@example.com', name: 'Other Adult', householdId: otherHousehold.id }
         });
         testOtherMemberId = otherMember.id;
@@ -104,7 +104,7 @@ describe('Household Lead API Integration Tests', () => {
         const validHouseholdIds = [householdId, otherHouseholdId];
 
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: currentIds } }
+            where: { personId: { in: currentIds } }
         });
         
         await prisma.membership.deleteMany({
@@ -116,7 +116,7 @@ describe('Household Lead API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: currentIds } }
         });
 
@@ -196,9 +196,9 @@ describe('Household Lead API Integration Tests', () => {
             // Validate the changes
             const newLead = await prisma.householdLead.findUnique({ 
                 where: { 
-                    householdId_participantId: {
+                    householdId_personId: {
                         householdId: householdId,
-                        participantId: testAdultId
+                        personId: testAdultId
                     }
                 } 
             });
@@ -228,7 +228,7 @@ describe('Household Lead API Integration Tests', () => {
 
             // No lead row should have been created for the third member.
             const noLead = await prisma.householdLead.findUnique({
-                where: { householdId_participantId: { householdId, participantId: testChildId } }
+                where: { householdId_personId: { householdId, personId: testChildId } }
             });
             expect(noLead).toBeNull();
         });
@@ -292,9 +292,9 @@ describe('Household Lead API Integration Tests', () => {
             // Validate the changes
             const demotedLead = await prisma.householdLead.findUnique({ 
                 where: { 
-                    householdId_participantId: {
+                    householdId_personId: {
                         householdId: householdId,
-                        participantId: testAdultId
+                        personId: testAdultId
                     }
                 } 
             });
@@ -308,11 +308,11 @@ describe('Household Lead API Integration Tests', () => {
             const boardHousehold = await prisma.household.create({
                 data: { name: 'Board Lead Test Household' }
             });
-            const boardUser = await prisma.participant.create({
+            const boardUser = await prisma.person.create({
                 data: { email: 'board-lead-api-test@example.com', name: 'Board User', isBoardMember: true, householdId: boardHousehold.id }
             });
             await prisma.householdLead.create({
-                data: { householdId: otherHouseholdId, participantId: testOtherMemberId }
+                data: { householdId: otherHouseholdId, personId: testOtherMemberId }
             });
 
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardUser.id } });
@@ -325,7 +325,7 @@ describe('Household Lead API Integration Tests', () => {
             expect(res.status).toBe(200);
 
             const removed = await prisma.householdLead.findUnique({
-                where: { householdId_participantId: { householdId: otherHouseholdId, participantId: testOtherLeadId } }
+                where: { householdId_personId: { householdId: otherHouseholdId, personId: testOtherLeadId } }
             });
             expect(removed).toBeNull();
         });

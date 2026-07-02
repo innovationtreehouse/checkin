@@ -73,7 +73,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // Check for existing emails to prevent Unique Constraint violations
         const emailsToCheck = parents.map((p: ParentInput) => p.email).filter(Boolean);
         if (emailsToCheck.length > 0) {
-            const existingUsers = await prisma.participant.findMany({
+            const existingUsers = await prisma.person.findMany({
                 where: { email: { in: emailsToCheck } }
             });
             if (existingUsers.length > 0) {
@@ -140,7 +140,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             const createdParents = [];
             for (const parent of parents) {
                 if (!parent.name) continue;
-                const newParent = await tx.participant.create({
+                const newParent = await tx.person.create({
                     data: {
                         name: parent.name,
                         email: parent.email || null,
@@ -165,7 +165,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 if (matchedParent) {
                     participantId = matchedParent.id;
                 } else {
-                    const newParticipant = await tx.participant.create({
+                    const newParticipant = await tx.person.create({
                         data: {
                             name: p.name,
                             dateOfBirth: p.dob ? new Date(p.dob) : null,
@@ -180,7 +180,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 const enrollment = await tx.programParticipant.create({
                     data: {
                         programId,
-                        participantId,
+                        personId: participantId,
                         status: initialStatus
                     }
                 });

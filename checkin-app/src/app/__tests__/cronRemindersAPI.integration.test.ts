@@ -25,7 +25,7 @@ describe('Cron Reminders API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'cron-reminders-test' } },
             select: { id: true }
         });
@@ -33,10 +33,10 @@ describe('Cron Reminders API Integration Tests', () => {
         const existingUserIds = existingUsers.map(u => u.id);
         
         await prisma.rSVP.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'cron-reminders-test' } }
         });
 
@@ -45,7 +45,7 @@ describe('Cron Reminders API Integration Tests', () => {
         });
 
         // Setup mock database records
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-cron-reminders-test@example.com', name: 'User Cron Reminders Test', household: { create: {} } }
         });
         testUserId = user.id;
@@ -90,9 +90,9 @@ describe('Cron Reminders API Integration Tests', () => {
         // Create RSVPs
         await prisma.rSVP.createMany({
             data: [
-                { eventId: upcomingEventId, participantId: testUserId, status: 'ATTENDING' },
-                { eventId: pastEventId, participantId: testUserId, status: 'ATTENDING' },
-                { eventId: farFutureEventId, participantId: testUserId, status: 'ATTENDING' }
+                { eventId: upcomingEventId, personId: testUserId, status: 'ATTENDING' },
+                { eventId: pastEventId, personId: testUserId, status: 'ATTENDING' },
+                { eventId: farFutureEventId, personId: testUserId, status: 'ATTENDING' }
             ]
         });
     });
@@ -104,12 +104,12 @@ describe('Cron Reminders API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.rSVP.deleteMany({
-            where: { participantId: testUserId }
+            where: { personId: testUserId }
         });
         await prisma.event.deleteMany({
             where: { id: { in: [upcomingEventId, pastEventId, farFutureEventId] } }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: testUserId }
         });
         await prisma.household.deleteMany({

@@ -44,7 +44,7 @@ export const GET = withCron(async () => {
 
         for (const event of upcomingEvents) {
             for (const rsvp of event.rsvps) {
-                const promise = Promise.resolve(sendNotification(rsvp.participantId, 'EVENT_STARTING_SOON', {
+                const promise = Promise.resolve(sendNotification(rsvp.personId, 'EVENT_STARTING_SOON', {
                     eventName: event.name,
                     hours: 2
                 })).then(async (ok) => {
@@ -53,9 +53,9 @@ export const GET = withCron(async () => {
                     if (!ok) return;
                     await prisma.rSVP.update({
                         where: {
-                            eventId_participantId: {
+                            eventId_personId: {
                                 eventId: event.id,
-                                participantId: rsvp.participantId
+                                personId: rsvp.personId
                             }
                         },
                         data: { reminderSentAt: new Date() }

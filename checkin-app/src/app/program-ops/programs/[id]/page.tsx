@@ -3,18 +3,17 @@
 import { use, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import Link from 'next/link';
 import {
-  Alert, Anchor, Badge, Box, Button, Card, Center, Checkbox, Container, Divider, Group,
-  Loader, NumberInput, Select, SimpleGrid, Stack, Table, Tabs, Text, TextInput, Title,
+  Alert, Badge, Box, Button, Card, Center, Checkbox, Container, Divider, Group,
+  Loader, NumberInput, Select, SimpleGrid, Stack, Tabs, Text, TextInput, Title,
 } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { EntityPicker } from '@/components/admin/EntityPicker';
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
-import { formatDateTime, calculateAge } from '@/lib/time';
-import { formatPhone } from '@/lib/phone';
+import { ProgramRosterTab } from './ProgramRosterTab';
+import { ProgramEventsTab } from './ProgramEventsTab';
 
-type ProgramDetail = {
+export type ProgramDetail = {
   id: number;
   name: string;
   startAt: string | null;
@@ -27,18 +26,17 @@ type ProgramDetail = {
   maxParticipants: number | null;
   memberOnly: boolean;
   participants: {
-    participantId: number;
+    personId: number;
     status: string;
-    joinedAt: string | null;
     pendingSince: string | null;
-    participant: {
+    person: {
       name: string | null;
       email: string;
       phone?: string | null;
       household?: { emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[] } | null;
     };
   }[];
-  volunteers: { participantId: number; isCore: boolean; participant: { name: string | null; email: string } }[];
+  volunteers: { personId: number; isCore: boolean; person: { name: string | null; email: string } }[];
   events: { id: number; name: string; startAt: string; endAt: string; attendanceConfirmedAt: string | null }[];
   leadMentor: { name: string | null; email: string } | null;
   memberPriceCents: number | null;
@@ -46,7 +44,7 @@ type ProgramDetail = {
   shopifyProductId: string | null;
 };
 
-type ParticipantOption = { id: number; name: string | null; email: string; dateOfBirth?: string | null };
+export type ParticipantOption = { id: number; name: string | null; email: string; dateOfBirth?: string | null };
 
 const PHASE_BADGE: Record<string, { label: string; color: string }> = {
   PLANNING: { label: 'Planning', color: 'gray' },
@@ -75,14 +73,9 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   const [memberPrice, setMemberPrice] = useState("");
   const [nonMemberPrice, setNonMemberPrice] = useState("");
 
-  const [newVolId, setNewVolId] = useState("");
-  const [newPartId, setNewPartId] = useState("");
-
   // EntityPicker owns the transient query/results/loading; we keep only the selected id + its display label.
-  const [volLabel, setVolLabel] = useState("");
   const [mentorSearch, setMentorSearch] = useState("");
   const [isEditingMentor, setIsEditingMentor] = useState(false);
-  const [partLabel, setPartLabel] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -124,14 +117,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   useEffect(() => {
     if (ready) fetchProgram();
   }, [ready, fetchProgram]);
-
-  // Volunteer + participant pickers both search this program's eligible members.
-  const searchEligible = useCallback(async (query: string): Promise<ParticipantOption[]> => {
-    const res = await fetch(`/api/programs/${id}/eligible-participants?q=${encodeURIComponent(query)}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.members || [];
-  }, [id]);
 
   // Lead-mentor picker searches adult members.
   const searchAdults = useCallback(async (query: string): Promise<ParticipantOption[]> => {
@@ -176,73 +161,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     }
   };
 
-  const handleAddVolunteer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newVolId) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/programs/${id}/volunteers`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ participantId: parseInt(newVolId) })
-      });
-      if (res.ok) { setNewVolId(""); setVolLabel(""); fetchProgram(); }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRemoveVolunteer = async (participantId: number) => {
-    if (!confirm("Remove this volunteer?")) return;
-    try {
-      await fetch(`/api/programs/${id}/volunteers`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId }) });
-      fetchProgram();
-    } catch { }
-  };
-
-  const handleToggleCore = async (participantId: number, isCore: boolean) => {
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/programs/${id}/volunteers`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId, isCore }) });
-      if (res.ok) fetchProgram();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleAddParticipant = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPartId) return;
-
-    const u = sessionUser as { isSysadmin?: boolean; isBoardMember?: boolean } | undefined;
-    if (u?.isSysadmin || u?.isBoardMember) {
-      if (!confirm("Warning: Adding a participant manually bypasses all payment requirements. Are you sure you wish to proceed?")) return;
-    }
-
-    setSaving(true);
-    setMessage("");
-    try {
-      const res = await fetch(`/api/programs/${id}/participants`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ participantId: parseInt(newPartId), override: true })
-      });
-      if (res.ok) { setNewPartId(""); setPartLabel(""); fetchProgram(); }
-      else {
-        const data = await res.json();
-        setMessage(data.error || "Failed to enroll participant.");
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRemoveParticipant = async (participantId: number) => {
-    if (!confirm("Remove this participant?")) return;
-    try {
-      await fetch(`/api/programs/${id}/participants`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId }) });
-      fetchProgram();
-    } catch { }
-  };
-
   if (loading || authLoading) {
     return <Center mih="60vh"><Loader /></Center>;
   }
@@ -262,8 +180,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   // to decide, which useRequireRole (a static role gate) can't express.
   const user = sessionUser as unknown as { id: number; isSysadmin?: boolean; isBoardMember?: boolean };
   const isAuthorized = program.leadMentorId === user?.id || user?.isSysadmin || user?.isBoardMember;
-  const activeParticipants = program.participants.filter(p => p.status === 'ACTIVE');
-  const pendingParticipants = program.participants.filter(p => p.status === 'PENDING');
 
   if (!isAuthorized) {
     return (
@@ -276,7 +192,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     );
   }
 
-  const sortedVolunteers = program.volunteers ? [...program.volunteers].sort((a, b) => (b.isCore ? 1 : 0) - (a.isCore ? 1 : 0)) : [];
   const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
   const phaseBadge = PHASE_BADGE[program.phase];
   // Pricing is fixed at creation; derive rather than track as state.
@@ -427,176 +342,18 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
 
           {/* ROSTER */}
           <Tabs.Panel value="roster">
-            <Stack gap="xl">
-              {/* Volunteers */}
-              <Card withBorder radius="md" padding="lg">
-                <Title order={4} mb="md">Volunteers ({program.volunteers.length})</Title>
-                <form onSubmit={handleAddVolunteer}>
-                  <Group align="flex-end" gap="md" mb="lg" wrap="wrap">
-                    <Box style={{ flex: 1, minWidth: 200 }}>
-                      <EntityPicker<ParticipantOption>
-                        label="Assign Volunteer (Name/Email)"
-                        placeholder="Start typing to search..."
-                        selectedId={newVolId || null}
-                        selectedLabel={volLabel}
-                        search={searchEligible}
-                        getOptionLabel={(p) => p.name || 'Unnamed'}
-                        getOptionDescription={(p) => p.email}
-                        onSelect={(p) => { setNewVolId(p.id.toString()); setVolLabel(`${p.name || 'Unnamed'} (${p.email})`); }}
-                        onClear={() => { setNewVolId(""); setVolLabel(""); }}
-                      />
-                    </Box>
-                    <Button type="submit" disabled={saving || !newVolId}>Add</Button>
-                  </Group>
-                </form>
-
-                {program.volunteers.length === 0 ? <Text c="dimmed">No volunteers assigned.</Text> : (
-                  <Stack gap="xs">
-                    {sortedVolunteers.map(v => (
-                      <Group key={v.participantId} justify="space-between" p="sm" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
-                        <Group gap="md" wrap="wrap">
-                          <Text fw={500}>{v.participant.name || 'Unnamed'} <Text component="span" c="dimmed" size="sm">({v.participant.email})</Text></Text>
-                          <Checkbox size="xs" checked={v.isCore} disabled={saving} onChange={e => handleToggleCore(v.participantId, e.currentTarget.checked)}
-                            label={<Text size="sm" c={v.isCore ? 'yellow' : undefined}>Core Volunteer</Text>} />
-                        </Group>
-                        <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveVolunteer(v.participantId)}>Remove</Button>
-                      </Group>
-                    ))}
-                  </Stack>
-                )}
-              </Card>
-
-              {/* Active Participants */}
-              <Card withBorder radius="md" padding="lg">
-                <Title order={4} mb="md">Active Participants ({activeParticipants.length})</Title>
-                <form onSubmit={handleAddParticipant}>
-                  <Group align="flex-end" gap="md" mb="lg" wrap="wrap">
-                    <Box style={{ flex: 1, minWidth: 200 }}>
-                      <EntityPicker<ParticipantOption>
-                        label="Assign Participant (Name/Email)"
-                        placeholder="Start typing to search..."
-                        selectedId={newPartId || null}
-                        selectedLabel={partLabel}
-                        search={searchEligible}
-                        getOptionLabel={(p) => p.name || 'Unnamed'}
-                        getOptionDescription={(p) => {
-                          let warning: string | null = null;
-                          if (p.dateOfBirth) {
-                            const age = calculateAge(p.dateOfBirth, program.startAt ?? undefined);
-                            if (program.minAge !== null && age < program.minAge) warning = `⚠️ Too Young (${age})`;
-                            if (program.maxAge !== null && age > program.maxAge) warning = `⚠️ Too Old (${age})`;
-                          }
-                          return (
-                            <Group gap="xs" justify="space-between" wrap="nowrap">
-                              <span>{p.email}</span>
-                              {warning && <Badge color="yellow" variant="light">{warning}</Badge>}
-                            </Group>
-                          );
-                        }}
-                        onSelect={(p) => { setNewPartId(p.id.toString()); setPartLabel(`${p.name || 'Unnamed'} (${p.email})`); }}
-                        onClear={() => { setNewPartId(""); setPartLabel(""); }}
-                      />
-                    </Box>
-                    {!isSysAdminOrBoard ? (
-                      <Alert color="yellow" variant="light" style={{ flex: 1 }}>
-                        ⚠️ Program Leads cannot manually enroll participants. Participants must enroll themselves and complete payment via Shopify.
-                      </Alert>
-                    ) : (
-                      <Button type="submit" disabled={saving || !newPartId}>Enroll</Button>
-                    )}
-                  </Group>
-                </form>
-
-                {activeParticipants.length === 0 ? <Text c="dimmed">No active participants yet.</Text> : (
-                  <Stack gap="xs">
-                    {activeParticipants.map(p => (
-                      <Card key={p.participantId} withBorder radius="sm" padding="sm">
-                        <Group justify="space-between">
-                          <Text fw={700} c="blue">{p.participant.name || 'Unnamed'}</Text>
-                          <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveParticipant(p.participantId)}>Remove</Button>
-                        </Group>
-                        <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs" spacing="xs">
-                          <Text size="sm" c="dimmed"><strong>Email:</strong> {p.participant.email}</Text>
-                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone ? formatPhone(p.participant.phone) : 'N/A'}</Text>
-                          <Text size="sm" c="dimmed"><strong>Joined:</strong> {p.joinedAt ? formatDateTime(p.joinedAt) : 'N/A'}</Text>
-                          {p.participant.household && (
-                            <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
-                              <strong>Emergency Contact{(p.participant.household.emergencyContacts?.length ?? 0) > 1 ? 's' : ''}:</strong>{' '}
-                              {p.participant.household.emergencyContacts && p.participant.household.emergencyContacts.length > 0
-                                ? p.participant.household.emergencyContacts.map((c) => `${c.name} - ${formatPhone(c.phone)}`).join('; ')
-                                : 'N/A'}
-                            </Text>
-                          )}
-                        </SimpleGrid>
-                      </Card>
-                    ))}
-                  </Stack>
-                )}
-              </Card>
-
-              {/* Pending Participants */}
-              <Card withBorder radius="md" padding="lg">
-                <Title order={4} mb="md">Pending Participants ({pendingParticipants.length})</Title>
-                {pendingParticipants.length === 0 ? <Text c="dimmed">No pending participants.</Text> : (
-                  <Stack gap="xs">
-                    {pendingParticipants.map(p => (
-                      <Card key={p.participantId} withBorder radius="sm" padding="sm">
-                        <Group justify="space-between">
-                          <Text fw={700} c="yellow">{p.participant.name || 'Unnamed'}</Text>
-                          <Button size="compact-xs" variant="subtle" color="red" onClick={() => handleRemoveParticipant(p.participantId)}>Remove</Button>
-                        </Group>
-                        <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs" spacing="xs">
-                          <Text size="sm" c="dimmed"><strong>Email:</strong> {p.participant.email}</Text>
-                          <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone ? formatPhone(p.participant.phone) : 'N/A'}</Text>
-                          <Text size="sm" c="dimmed"><strong>Pending Since:</strong> {p.pendingSince ? formatDateTime(p.pendingSince) : 'Unknown'}</Text>
-                        </SimpleGrid>
-                      </Card>
-                    ))}
-                  </Stack>
-                )}
-              </Card>
-            </Stack>
+            <ProgramRosterTab
+              programId={id}
+              program={program}
+              isSysAdminOrBoard={!!isSysAdminOrBoard}
+              setMessage={setMessage}
+              fetchProgram={fetchProgram}
+            />
           </Tabs.Panel>
 
           {/* EVENTS */}
           <Tabs.Panel value="events">
-            <Group justify="space-between" align="center" mb="md">
-              <Title order={4}>Events ({program.events.length})</Title>
-              <Button variant="light" onClick={() => router.push(`/program-ops/sessions/new?programId=${program.id}`)}>+ Schedule Session(s)</Button>
-            </Group>
-            <Table.ScrollContainer minWidth={500}>
-              <Table verticalSpacing="sm" highlightOnHover>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Event Name</Table.Th>
-                    <Table.Th>Start Time</Table.Th>
-                    <Table.Th ta="right">Actions</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {program.events.map(ev => {
-                    const isPastEvent = new Date(ev.endAt) < new Date();
-                    const needsConfirmation = isPastEvent && !ev.attendanceConfirmedAt;
-                    return (
-                      <Table.Tr key={ev.id}>
-                        <Table.Td fw={500}>{ev.name}</Table.Td>
-                        <Table.Td c="dimmed">{formatDateTime(ev.startAt)}</Table.Td>
-                        <Table.Td ta="right">
-                          {needsConfirmation ? (
-                            <Button component={Link} href={`/program-ops/sessions/${ev.id}`} size="compact-xs" color="yellow" variant="light">Confirm Attendance</Button>
-                          ) : (
-                            <Anchor component={Link} href={`/program-ops/sessions/${ev.id}`}>{isPastEvent ? 'Attendance →' : 'Edit Event →'}</Anchor>
-                          )}
-                        </Table.Td>
-                      </Table.Tr>
-                    );
-                  })}
-                  {program.events.length === 0 && (
-                    <Table.Tr><Table.Td colSpan={3} ta="center"><Text c="dimmed" py="md">No events scheduled.</Text></Table.Td></Table.Tr>
-                  )}
-                </Table.Tbody>
-              </Table>
-            </Table.ScrollContainer>
+            <ProgramEventsTab programId={program.id} events={program.events} />
           </Tabs.Panel>
         </Tabs>
       </Card>

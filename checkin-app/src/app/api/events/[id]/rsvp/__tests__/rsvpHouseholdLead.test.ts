@@ -18,7 +18,7 @@ const mockRsvpUpsert = jest.fn();
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        participant: { findMany: (...a: unknown[]) => mockParticipantFindMany(...a) },
+        person: { findMany: (...a: unknown[]) => mockParticipantFindMany(...a) },
         event: { findUnique: (...a: unknown[]) => mockEventFindUnique(...a) },
         programParticipant: { findUnique: jest.fn() },
         programVolunteer: { findUnique: jest.fn() },
@@ -35,7 +35,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     // Program-less event in the future → enrollment check is skipped.
     mockEventFindUnique.mockResolvedValue({ id: 5, programId: null, endAt: new Date(Date.now() + 3600_000) });
-    mockRsvpUpsert.mockResolvedValue({ eventId: 5, participantId: 2, status: 'ATTENDING' });
+    mockRsvpUpsert.mockResolvedValue({ eventId: 5, personId: 2, status: 'ATTENDING' });
 });
 
 it('lets a household lead RSVP for a member of their household', async () => {
@@ -46,7 +46,7 @@ it('lets a household lead RSVP for a member of their household', async () => {
 
     expect(res.status).toBe(200);
     expect(mockRsvpUpsert).toHaveBeenCalledTimes(1);
-    expect(mockRsvpUpsert.mock.calls[0][0].create.participantId).toBe(2);
+    expect(mockRsvpUpsert.mock.calls[0][0].create.personId).toBe(2);
 });
 
 it('forbids a non-lead from RSVPing for someone else', async () => {

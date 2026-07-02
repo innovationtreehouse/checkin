@@ -24,7 +24,7 @@ describe('Household Member API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'member-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -33,7 +33,7 @@ describe('Household Member API Integration Tests', () => {
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter(id => id !== null) as number[];
         
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         
         await prisma.membership.deleteMany({
@@ -45,7 +45,7 @@ describe('Household Member API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
@@ -59,21 +59,21 @@ describe('Household Member API Integration Tests', () => {
         });
         householdId = household.id;
 
-        const leadUser = await prisma.participant.create({
+        const leadUser = await prisma.person.create({
             data: { email: 'lead-member-api-test@example.com', name: 'Lead User', householdId: household.id }
         });
         testLeadId = leadUser.id;
 
         await prisma.householdLead.create({
-            data: { householdId: household.id, participantId: leadUser.id }
+            data: { householdId: household.id, personId: leadUser.id }
         });
 
-        const memberUser = await prisma.participant.create({
+        const memberUser = await prisma.person.create({
             data: { email: 'child-member-api-test@example.com', name: 'Child User', householdId: household.id }
         });
         testMemberId = memberUser.id;
 
-        const nonLeadUser = await prisma.participant.create({
+        const nonLeadUser = await prisma.person.create({
             data: { email: 'nonlead-member-api-test@example.com', name: 'Non-Lead Adult', householdId: household.id }
         });
         testNonLeadId = nonLeadUser.id;
@@ -83,7 +83,7 @@ describe('Household Member API Integration Tests', () => {
         });
         otherHouseholdId = otherHousehold.id;
 
-        const otherMember = await prisma.participant.create({
+        const otherMember = await prisma.person.create({
             data: { email: 'other-child-member-api-test@example.com', name: 'Other Child', householdId: otherHousehold.id }
         });
         testOtherMemberId = otherMember.id;
@@ -94,7 +94,7 @@ describe('Household Member API Integration Tests', () => {
         const validHouseholdIds = [householdId, otherHouseholdId];
 
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: currentIds } }
+            where: { personId: { in: currentIds } }
         });
         
         await prisma.membership.deleteMany({
@@ -106,7 +106,7 @@ describe('Household Member API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: currentIds } }
         });
 
@@ -192,7 +192,7 @@ describe('Household Member API Integration Tests', () => {
             expect(data.message).toBe('Household member updated successfully.');
 
             // Validate the changes
-            const updatedProfile = await prisma.participant.findUnique({ where: { id: testMemberId } });
+            const updatedProfile = await prisma.person.findUnique({ where: { id: testMemberId } });
             expect(updatedProfile?.name).toBe('Updated Child');
             expect(updatedProfile?.email).toBe('updated-child@example.com');
             expect(updatedProfile?.phone).toBe('555-555-5555');
@@ -221,7 +221,7 @@ describe('Household Member API Integration Tests', () => {
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
 
-            const updatedProfile = await prisma.participant.findUnique({ where: { id: testMemberId } });
+            const updatedProfile = await prisma.person.findUnique({ where: { id: testMemberId } });
             expect(updatedProfile?.email).toBeNull();
             expect(updatedProfile?.dateOfBirth).toBeNull();
             expect(updatedProfile?.phone).toBeNull();
@@ -243,7 +243,7 @@ describe('Household Member API Integration Tests', () => {
 
              // Verify they are now a lead
              const leadRecord = await prisma.householdLead.findUnique({
-                 where: { householdId_participantId: { householdId: householdId, participantId: testNonLeadId } }
+                 where: { householdId_personId: { householdId: householdId, personId: testNonLeadId } }
              });
              expect(leadRecord).not.toBeNull();
         });
@@ -264,7 +264,7 @@ describe('Household Member API Integration Tests', () => {
 
              // Verify they are no longer a lead
              const leadRecord = await prisma.householdLead.findUnique({
-                 where: { householdId_participantId: { householdId: householdId, participantId: testNonLeadId } }
+                 where: { householdId_personId: { householdId: householdId, personId: testNonLeadId } }
              });
              expect(leadRecord).toBeNull();
         });
@@ -285,7 +285,7 @@ describe('Household Member API Integration Tests', () => {
 
              // Verify they are STILL a lead
              const leadRecord = await prisma.householdLead.findUnique({
-                 where: { householdId_participantId: { householdId: householdId, participantId: testLeadId } }
+                 where: { householdId_personId: { householdId: householdId, personId: testLeadId } }
              });
              expect(leadRecord).not.toBeNull();
         });

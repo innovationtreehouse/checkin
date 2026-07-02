@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-    Alert,
     Badge,
     Button,
     Card,
@@ -15,7 +14,7 @@ import {
     Title,
     Tooltip,
 } from "@mantine/core";
-import { IconAlertTriangle } from "@tabler/icons-react";
+import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
 import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
@@ -70,8 +69,7 @@ export default function AdminTrustedAdultsPage() {
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState<number | null>(null);
     const [shared, setShared] = useState<Record<number, string>>({});
-    const [message, setMessage] = useState("");
-    const [isError, setIsError] = useState(false);
+    const [message, setMessage] = useState<{ text: string; tone: AlertTone } | undefined>();
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -92,7 +90,7 @@ export default function AdminTrustedAdultsPage() {
 
     const decide = async (reviewId: number, decision: string, extra?: Record<string, unknown>) => {
         setBusyId(reviewId);
-        setMessage("");
+        setMessage(undefined);
         try {
             const res = await fetch("/api/safety/trusted-adults/decision", {
                 method: "POST",
@@ -101,11 +99,9 @@ export default function AdminTrustedAdultsPage() {
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setIsError(true);
-                setMessage(body.error ?? "Decision failed.");
+                setMessage({ text: body.error ?? "Decision failed.", tone: "error" });
             } else {
-                setIsError(false);
-                setMessage(`Recorded: ${label(body.status)}.`);
+                setMessage({ text: `Recorded: ${label(body.status)}.`, tone: "success" });
                 await load();
             }
         } finally {
@@ -123,8 +119,7 @@ export default function AdminTrustedAdultsPage() {
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setIsError(true);
-                setMessage(body.error ?? "Override failed.");
+                setMessage({ text: body.error ?? "Override failed.", tone: "error" });
             } else {
                 await load();
             }
@@ -154,11 +149,7 @@ export default function AdminTrustedAdultsPage() {
                 </Text>
             </div>
 
-            {message && (
-                <Alert color={isError ? "red" : "green"} icon={<IconAlertTriangle size={16} />} withCloseButton onClose={() => setMessage("")}>
-                    {message}
-                </Alert>
-            )}
+            <AlertBanner message={message?.text} tone={message?.tone} onClose={() => setMessage(undefined)} />
 
             {items.length === 0 && <Text c="dimmed">Nothing in the queue.</Text>}
 

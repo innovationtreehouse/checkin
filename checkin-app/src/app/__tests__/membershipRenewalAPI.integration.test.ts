@@ -33,8 +33,8 @@ describe('Membership renewal', () => {
     async function makeActiveMembership(label: string, parentBg: Date | null) {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
         // The guardian is a household lead (drives the 3-yr BG-freshness check).
-        const parent = await prisma.participant.create({ data: { name: `${label} Parent`, householdId: hh.id, lastBackgroundCheck: parentBg ?? undefined } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: parent.id } });
+        const parent = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id, lastBackgroundCheck: parentBg ?? undefined } });
+        await prisma.householdLead.create({ data: { householdId: hh.id, personId: parent.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
         return { householdId: hh.id, membershipId: m.id };
     }
@@ -47,10 +47,10 @@ describe('Membership renewal', () => {
             await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
             await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
-        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
     }
 
     // A real Treehouse-style interval (~2.6yr) so the BG-freshness rule has a configured value.
@@ -71,9 +71,9 @@ describe('Membership renewal', () => {
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
         prevBoundary = existing?.membershipYearBoundary ?? null;
         await wipe();
-        const r1 = await prisma.participant.create({ data: { email: `rev1-${TAG}@example.com`, name: 'Rev1', isBackgroundCheckReviewer: true, household: { create: { name: `Rev1 HH ${TAG}` } } } });
+        const r1 = await prisma.person.create({ data: { email: `rev1-${TAG}@example.com`, name: 'Rev1', isBackgroundCheckReviewer: true, household: { create: { name: `Rev1 HH ${TAG}` } } } });
         rev1 = r1.id;
-        rev2 = (await prisma.participant.create({ data: { email: `rev2-${TAG}@example.com`, name: 'Rev2', isBackgroundCheckReviewer: true, household: { create: { name: `Rev2 HH ${TAG}` } } } })).id;
+        rev2 = (await prisma.person.create({ data: { email: `rev2-${TAG}@example.com`, name: 'Rev2', isBackgroundCheckReviewer: true, household: { create: { name: `Rev2 HH ${TAG}` } } } })).id;
     });
 
     afterAll(async () => {

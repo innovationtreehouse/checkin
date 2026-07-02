@@ -59,7 +59,7 @@ enum ProgramParticipantStatus {
   ACTIVE
 }
 
-model Participant {
+model Person {
   /// @sensitivity:public
   id            Int       @id @default(autoincrement())
   /// @sensitivity:pii
@@ -138,16 +138,16 @@ model Tool {
 
 model ToolStatus {
   /// @sensitivity:public
-  participantId Int
+  personId Int
   /// @sensitivity:public
   toolId Int
   /// @sensitivity:member
   level  ToolLevel
 
-  participant Participant @relation(fields: [participantId], references: [id])
+  person Person @relation(fields: [personId], references: [id])
   tool Tool        @relation(fields: [toolId], references: [id])
 
-  @@id([participantId, toolId])
+  @@id([personId, toolId])
 }
 
 model Household {
@@ -166,7 +166,7 @@ model Household {
   /// @sensitivity:personal
   postalCode String?
 
-  participants      Participant[]
+  participants      Person[]
   leads             HouseholdLead[]
   membership        Membership?
   trustedAdults     TrustedAdult[]
@@ -223,12 +223,12 @@ model HouseholdLead {
   /// @sensitivity:public
   householdId   Int
   /// @sensitivity:public
-  participantId Int
+  personId Int
 
   household   Household   @relation(fields: [householdId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person Person @relation(fields: [personId], references: [id])
 
-  @@id([householdId, participantId])
+  @@id([householdId, personId])
 }
 
 enum MembershipStatus {
@@ -367,7 +367,7 @@ model BackgroundCheckAttestation {
   process         MembershipProcess @relation(fields: [processId], references: [id])
   /// @sensitivity:public
   reviewerId      Int
-  reviewer        Participant       @relation("BgAttestations", fields: [reviewerId], references: [id])
+  reviewer        Person       @relation("BgAttestations", fields: [reviewerId], references: [id])
   /// @sensitivity:internal
   result          AttestationResult
   /// @sensitivity:internal
@@ -399,8 +399,11 @@ model BoardSettings {
   /// @sensitivity:public
   membershipYearBoundary     DateTime?
   /// Shopify variant ID of the membership product everyone checks out through.
-  /// The "Pay with Shopify" link is built from it as
-  /// https://<SHOPIFY_STORE_DOMAIN>/cart/<membershipVariantId>:1.
+  /// The "Pay with Shopify" link is built from it SERVER-SIDE (ensurePaymentLink
+  /// in lib/membership/payment.ts) as
+  /// https://<SHOPIFY_STORE_DOMAIN>/cart/<membershipVariantId>:1; the client only
+  /// receives the derived checkoutUrl, never this raw field — hence internal, not
+  /// public (contrast Program.shopify*VariantId, which the browser builds from).
   /// @sensitivity:internal
   membershipVariantId        String?
   /// Discount code (created in Shopify by the board) appended to the checkout
@@ -441,9 +444,9 @@ model AppSettings {
 }
 
 /// Trusted Adult Management (Trusted Adults). A board-reviewed disclosure that
-/// one individual (the subject, always a Participant) holds an external
+/// one individual (the subject, always a Person) holds an external
 /// relationship — familial, romantic, guardianship, financial, legal-restriction,
-/// etc. — with a counterparty who may be another Participant or someone outside
+/// etc. — with a counterparty who may be another Person or someone outside
 /// the org. The durable relationship facts live here, entered once; each annual
 /// review cycle is a TrustedAdultReview row (like Membership/MembershipProcess), so
 /// a renewal reuses the facts without re-entry.
@@ -458,7 +461,7 @@ model TrustedAdult {
   /// The trusted adult, if they are also a participant in the system.
   /// @sensitivity:public
   counterpartyParticipantId Int?
-  counterparty              Participant?       @relation("TrustedAdultCounterparty", fields: [counterpartyParticipantId], references: [id])
+  counterparty              Person?       @relation("TrustedAdultCounterparty", fields: [counterpartyParticipantId], references: [id])
   /// @sensitivity:personal
   counterpartyName          String
   /// The trusted adult's phone and/or email. At least one is required (enforced
@@ -478,7 +481,7 @@ model TrustedAdult {
   origin                    TrustedAdultOrigin @default(SELF_DISCLOSED)
   /// @sensitivity:internal
   disclosedById             Int
-  disclosedBy               Participant        @relation("TrustedAdultDiscloser", fields: [disclosedById], references: [id])
+  disclosedBy               Person        @relation("TrustedAdultDiscloser", fields: [disclosedById], references: [id])
   /// @sensitivity:public
   createdAt                 DateTime           @default(now())
   /// @sensitivity:internal
@@ -508,7 +511,7 @@ model TrustedAdultReview {
   status               TrustedAdultReviewStatus @default(PENDING_BOARD_REVIEW)
   /// @sensitivity:internal
   decidedById          Int?
-  decidedBy            Participant?             @relation("TrustedAdultDecider", fields: [decidedById], references: [id])
+  decidedBy            Person?             @relation("TrustedAdultDecider", fields: [decidedById], references: [id])
   /// @sensitivity:internal
   decision             TrustedAdultDecisionKind?
   /// The board's PRIVATE reasoning. Board/sysadmin only (internal tier).
@@ -560,24 +563,24 @@ model CorporationLead {
   /// @sensitivity:public
   corporationId Int
   /// @sensitivity:public
-  participantId Int
+  personId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Person @relation(fields: [personId], references: [id])
 
-  @@id([corporationId, participantId])
+  @@id([corporationId, personId])
 }
 
 model CorporationMember {
   /// @sensitivity:public
   corporationId Int
   /// @sensitivity:public
-  participantId Int
+  personId Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Person @relation(fields: [personId], references: [id])
 
-  @@id([corporationId, participantId])
+  @@id([corporationId, personId])
 }
 
 model Program {
@@ -587,7 +590,7 @@ model Program {
   name                           String
   /// @sensitivity:public
   leadMentorId                   Int?
-  leadMentor                     Participant?     @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
+  leadMentor                     Person?     @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
   /// @sensitivity:public
   startAt                        DateTime?
   /// @sensitivity:public
@@ -630,21 +633,21 @@ model ProgramVolunteer {
   /// @sensitivity:public
   programId     Int
   /// @sensitivity:public
-  participantId Int
+  personId Int
   /// @sensitivity:internal
   isCore        Boolean @default(false)
 
-  program     Program     @relation(fields: [programId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  program Program     @relation(fields: [programId], references: [id])
+  person  Person @relation(fields: [personId], references: [id])
 
-  @@id([programId, participantId])
+  @@id([programId, personId])
 }
 
 model ProgramParticipant {
   /// @sensitivity:public
   programId            Int
   /// @sensitivity:public
-  participantId        Int
+  personId             Int
   /// @sensitivity:public
   status               ProgramParticipantStatus @default(PENDING)
   /// @sensitivity:personal
@@ -652,10 +655,10 @@ model ProgramParticipant {
   /// @sensitivity:internal
   pendingSince         DateTime?                @default(now())
 
-  program     Program     @relation(fields: [programId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  program Program     @relation(fields: [programId], references: [id])
+  person  Person @relation(fields: [personId], references: [id])
 
-  @@id([programId, participantId])
+  @@id([programId, personId])
 }
 
 model Fee {
@@ -680,7 +683,7 @@ model FeePayment {
   /// @sensitivity:public
   feeId             Int
   /// @sensitivity:public
-  participantId     Int
+  personId          Int
   /// @sensitivity:personal
   paidAt            DateTime? @default(now())
   /// @sensitivity:personal
@@ -691,9 +694,9 @@ model FeePayment {
   customNote        String?
 
   fee         Fee         @relation(fields: [feeId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Person @relation(fields: [personId], references: [id])
 
-  @@id([feeId, participantId])
+  @@id([feeId, personId])
 }
 
 model Event {
@@ -714,7 +717,7 @@ model Event {
   attendanceConfirmedAt   DateTime?
   /// @sensitivity:internal
   attendanceConfirmedById Int?
-  attendanceConfirmedBy   Participant? @relation("EventAttendanceConfirmer", fields: [attendanceConfirmedById], references: [id])
+  attendanceConfirmedBy   Person? @relation("EventAttendanceConfirmer", fields: [attendanceConfirmedById], references: [id])
   /// @sensitivity:internal
   postEventEmailSent      Boolean      @default(false)
   /// @sensitivity:public
@@ -729,38 +732,38 @@ model RSVP {
   /// @sensitivity:public
   eventId       Int
   /// @sensitivity:public
-  participantId Int
+  personId      Int
   /// @sensitivity:public
   status        RSVPStatus
   /// @sensitivity:internal
   reminderSentAt DateTime?
 
   event       Event       @relation(fields: [eventId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Person @relation(fields: [personId], references: [id])
 
-  @@id([eventId, participantId])
+  @@id([eventId, personId])
 }
 
 model RawBadgeLog {
   /// @sensitivity:internal
   id            Int      @id @default(autoincrement())
   /// @sensitivity:internal
-  participantId Int
+  personId Int
   /// @sensitivity:personal
   timestamp     DateTime @default(now())
   /// @sensitivity:personal
   location      String?
 
-  participant Participant @relation(fields: [participantId], references: [id])
+  person Person @relation(fields: [personId], references: [id])
 
-  @@index([participantId, timestamp]) // Double-badge detection in /api/scan
+  @@index([personId, timestamp]) // Double-badge detection in /api/scan
 }
 
 model Visit {
   /// @sensitivity:public
   id                Int       @id @default(autoincrement())
   /// @sensitivity:public
-  participantId     Int
+  personId          Int
   /// @sensitivity:personal
   arrivedAt         DateTime
   /// @sensitivity:personal
@@ -772,10 +775,10 @@ model Visit {
   /// @sensitivity:public
   associatedEventId Int?
 
-  participant Participant @relation(fields: [participantId], references: [id])
-  event       Event?      @relation(fields: [associatedEventId], references: [id])
+  person Person @relation(fields: [personId], references: [id])
+  event  Event?      @relation(fields: [associatedEventId], references: [id])
 
-  @@index([participantId, departedAt]) // Active visits lookup in /api/scan
+  @@index([personId, departedAt]) // Active visits lookup in /api/scan
   // Partial unique index "Visit_one_open_per_participant" — at most one open visit
   // (departedAt IS NULL) per participant. Prisma's DSL can't express a partial
   // unique index, so it lives in the 20260629180000_visit_one_open_per_participant
@@ -829,7 +832,7 @@ model Account {
   /// @sensitivity:internal
   session_state     String?
 
-  user Participant @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user Person @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -843,7 +846,7 @@ model Session {
   userId       Int         @map("participant_id")
   /// @sensitivity:internal
   expires      DateTime
-  user         Participant @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         Person @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {

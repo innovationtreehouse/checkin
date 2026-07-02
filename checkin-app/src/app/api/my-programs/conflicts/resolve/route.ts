@@ -49,7 +49,7 @@ export const POST = withAuth({}, async (req, auth) => {
   // Guard: only delete a visit that genuinely overlaps another of the same
   // participant's visits. Refuse to delete an isolated, legitimate visit.
   const siblings = await prisma.visit.findMany({
-    where: { participantId: visit.participantId, id: { not: visit.id } },
+    where: { personId: visit.personId, id: { not: visit.id } },
     select: { arrivedAt: true, departedAt: true },
   });
   const isConflicting = siblings.some((s) => intervalsOverlap(visit, s));
@@ -67,7 +67,7 @@ export const POST = withAuth({}, async (req, auth) => {
         affectedEntityId: visit.id,
         secondaryAffectedEntity: visit.associatedEventId,
         oldData: {
-          participantId: visit.participantId,
+          personId: visit.personId,
           arrivedAt: visit.arrivedAt,
           departedAt: visit.departedAt,
           arrivedVia: visit.arrivedVia,

@@ -25,31 +25,31 @@ describe('My Events API Integration Tests', () => {
     beforeAll(async () => {
         // Clean up any leaked state
         await prisma.rSVP.deleteMany({
-            where: { participant: { email: { contains: 'mine-events-test' } } }
+            where: { person: { email: { contains: 'mine-events-test' } } }
         });
         await prisma.event.deleteMany({
             where: { name: { contains: 'Mine Test Event' } }
         });
         await prisma.programParticipant.deleteMany({
-            where: { participant: { email: { contains: 'mine-events-test' } } }
+            where: { person: { email: { contains: 'mine-events-test' } } }
         });
         await prisma.programVolunteer.deleteMany({
-            where: { participant: { email: { contains: 'mine-events-test' } } }
+            where: { person: { email: { contains: 'mine-events-test' } } }
         });
         await prisma.program.deleteMany({
             where: { name: { contains: 'Mine Test Program' } }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'mine-events-test' } }
         });
 
         // Setup mock database records
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-mine-events-test@example.com', name: 'User Mine Test', household: { create: {} } }
         });
         testUserId = user.id;
 
-        const volunteer = await prisma.participant.create({
+        const volunteer = await prisma.person.create({
             data: { email: 'volunteer-mine-events-test@example.com', name: 'Volunteer Mine Test', household: { create: {} } }
         });
         testVolunteerId = volunteer.id;
@@ -78,7 +78,7 @@ describe('My Events API Integration Tests', () => {
         await prisma.programParticipant.create({
             data: {
                 programId: testProgram1Id,
-                participantId: testUserId
+                personId: testUserId
             }
         });
 
@@ -86,7 +86,7 @@ describe('My Events API Integration Tests', () => {
         await prisma.programVolunteer.create({
             data: {
                 programId: testProgram2Id,
-                participantId: testVolunteerId
+                personId: testVolunteerId
             }
         });
 
@@ -132,7 +132,7 @@ describe('My Events API Integration Tests', () => {
         await prisma.rSVP.create({
             data: {
                 eventId: testEventUpcoming1Id,
-                participantId: testUserId,
+                personId: testUserId,
                 status: 'ATTENDING'
             }
         });
@@ -141,7 +141,7 @@ describe('My Events API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.rSVP.deleteMany({
-            where: { participantId: { in: [testUserId, testVolunteerId] } }
+            where: { personId: { in: [testUserId, testVolunteerId] } }
         });
         await prisma.event.deleteMany({
             where: { id: { in: [testEventUpcoming1Id, testEventUpcoming2Id, testEventPastId] } }
@@ -156,12 +156,12 @@ describe('My Events API Integration Tests', () => {
             where: { id: { in: [testProgram1Id, testProgram2Id] } }
         });
         // RESTRICT: delete participants before their (auto-created) households.
-        const householdIds = (await prisma.participant.findMany({
+        const householdIds = (await prisma.person.findMany({
             where: { id: { in: [testUserId, testVolunteerId] } },
             select: { householdId: true }
         })).map(p => p.householdId);
 
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [testUserId, testVolunteerId] } }
         });
         await prisma.household.deleteMany({

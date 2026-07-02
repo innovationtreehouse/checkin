@@ -40,7 +40,7 @@ describe('Program payment-plan routes', () => {
     const householdIds: number[] = [];
 
     beforeAll(async () => {
-        const mentor = await prisma.participant.create({
+        const mentor = await prisma.person.create({
             data: { name: 'PP Mentor', email: `mentor-${TAG}@example.com`, household: { create: {} } },
         });
         mentorId = mentor.id;
@@ -51,25 +51,25 @@ describe('Program payment-plan routes', () => {
         });
         programId = program.id;
 
-        const board = await prisma.participant.create({
+        const board = await prisma.person.create({
             data: { name: 'PP Board', email: `board-${TAG}@example.com`, isBoardMember: true, household: { create: {} } },
         });
         boardId = board.id;
         householdIds.push(board.householdId);
 
-        const self = await prisma.participant.create({
+        const self = await prisma.person.create({
             data: { name: 'PP Self', email: `self-${TAG}@example.com`, household: { create: {} } },
         });
         selfId = self.id;
         householdIds.push(self.householdId);
 
-        const other = await prisma.participant.create({
+        const other = await prisma.person.create({
             data: { name: 'PP Other', email: `other-${TAG}@example.com`, household: { create: {} } },
         });
         otherId = other.id;
         householdIds.push(other.householdId);
 
-        const noise = await prisma.participant.create({
+        const noise = await prisma.person.create({
             data: { name: 'PP Noise', email: `noise-${TAG}@example.com`, household: { create: {} } },
         });
         noiseId = noise.id;
@@ -83,7 +83,7 @@ describe('Program payment-plan routes', () => {
     afterAll(async () => {
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.delete({ where: { id: programId } });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [mentorId, boardId, selfId, otherId, noiseId] } },
         });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
@@ -91,9 +91,9 @@ describe('Program payment-plan routes', () => {
 
     async function enroll(participantId: number, opts: { requested: boolean }) {
         await prisma.programParticipant.upsert({
-            where: { programId_participantId: { programId, participantId } },
+            where: { programId_personId: { programId, personId: participantId } },
             update: { status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
-            create: { programId, participantId, status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
+            create: { programId, personId: participantId, status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
         });
     }
 
@@ -125,7 +125,7 @@ describe('Program payment-plan routes', () => {
             const res = await PlansGet(nextReq());
             expect(res.status).toBe(200);
             const rows = await res.json();
-            const ids = rows.map((r: { participantId: number }) => r.participantId);
+            const ids = rows.map((r: { personId: number }) => r.personId);
             expect(ids).toContain(selfId);
             expect(ids).not.toContain(noiseId);
         });
@@ -155,7 +155,7 @@ describe('Program payment-plan routes', () => {
             expect(res.status).toBe(200);
 
             const row = await prisma.programParticipant.findUnique({
-                where: { programId_participantId: { programId, participantId: selfId } },
+                where: { programId_personId: { programId, personId: selfId } },
             });
             expect(row?.status).toBe('ACTIVE');
             expect(row?.isPaymentPlanRequested).toBe(false);
@@ -185,7 +185,7 @@ describe('Program payment-plan routes', () => {
         });
 
         it('404 when the participant is not enrolled in the program', async () => {
-            await prisma.programParticipant.deleteMany({ where: { programId, participantId: otherId } });
+            await prisma.programParticipant.deleteMany({ where: { programId, personId: otherId } });
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
             const res = await RequestPost(requestReq({ participantId: otherId }), params(programId));
             expect(res.status).toBe(404);
@@ -199,7 +199,7 @@ describe('Program payment-plan routes', () => {
             expect(res.status).toBe(403);
 
             const row = await prisma.programParticipant.findUnique({
-                where: { programId_participantId: { programId, participantId: selfId } },
+                where: { programId_personId: { programId, personId: selfId } },
             });
             expect(row?.isPaymentPlanRequested).toBe(false);
         });
@@ -211,7 +211,7 @@ describe('Program payment-plan routes', () => {
             expect(res.status).toBe(200);
 
             const row = await prisma.programParticipant.findUnique({
-                where: { programId_participantId: { programId, participantId: selfId } },
+                where: { programId_personId: { programId, personId: selfId } },
             });
             expect(row?.isPaymentPlanRequested).toBe(true);
         });

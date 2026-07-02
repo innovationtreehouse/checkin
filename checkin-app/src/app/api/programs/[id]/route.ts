@@ -12,10 +12,10 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     const program = await prisma.program.findUnique({
         where: { id: programId },
         include: {
-            volunteers: { include: { participant: true } },
+            volunteers: { include: { person: true } },
             participants: {
                 include: {
-                    participant: {
+                    person: {
                         include: {
                             household: {
                                 include: {
@@ -46,7 +46,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     const sessionUser = isSessionUser ? auth.user : undefined;
     const isSysAdminOrBoard = !!(sessionUser?.isSysadmin || sessionUser?.isBoardMember);
     const isLeadMentor = !!sessionUser && sessionUser.id === program.leadMentorId;
-    const isCoreVolunteer = !!sessionUser && program.volunteers.some(v => v.participantId === sessionUser.id && v.isCore);
+    const isCoreVolunteer = !!sessionUser && program.volunteers.some(v => v.personId === sessionUser.id && v.isCore);
     const isPrivileged = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
 
     if (program.memberOnly && !isPrivileged) {
@@ -74,8 +74,8 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     // The registry orderedView tiers remain as defense-in-depth, stripping
     // pii/personal on the rows for non-staff-but-enrolled callers.
     const isEnrolled = !!sessionUser && program.participants.some(p =>
-        p.participantId === sessionUser.id ||
-        (sessionUser.householdId != null && p.participant?.householdId === sessionUser.householdId)
+        p.personId === sessionUser.id ||
+        (sessionUser.householdId != null && p.person?.householdId === sessionUser.householdId)
     );
     if (!isPrivileged && !isEnrolled) {
         const metadata: Record<string, unknown> = { ...program };

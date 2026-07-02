@@ -22,7 +22,7 @@ describe('Admin Visits API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'visits-api-test' } },
             select: { id: true }
         });
@@ -30,33 +30,33 @@ describe('Admin Visits API Integration Tests', () => {
         const existingUserIds = existingUsers.map(u => u.id);
         
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'visits-api-test' } }
         });
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-visits-api-test@example.com', name: 'Admin Visits Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
-        const checkAdmin = await prisma.participant.findUnique({ where: { id: testAdminId } });
+        const checkAdmin = await prisma.person.findUnique({ where: { id: testAdminId } });
         console.log("Check Admin:", checkAdmin);
 
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-visits-api-test@example.com', name: 'User Visits Test', household: { create: {} } }
         });
         testUserId = user.id;
 
         const visit = await prisma.visit.create({
             data: {
-                participantId: testUserId,
+                personId: testUserId,
                 arrivedAt: new Date(Date.now() - 3600000), // 1 hour ago
             }
         });
@@ -66,12 +66,12 @@ describe('Admin Visits API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.visit.deleteMany({
-            where: { participantId: { in: [testAdminId, testUserId] } }
+            where: { personId: { in: [testAdminId, testUserId] } }
         });
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: [testAdminId, testUserId] } }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [testAdminId, testUserId] } }
         });
     });
@@ -116,9 +116,9 @@ describe('Admin Visits API Integration Tests', () => {
             expect(Array.isArray(data.visits)).toBe(true);
             expect(data.visits.length).toBeGreaterThanOrEqual(1);
 
-            const visitMatches = data.visits.filter((v: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => v.participantId === testUserId);
+            const visitMatches = data.visits.filter((v: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => v.personId === testUserId);
             expect(visitMatches.length).toBe(1);
-            expect(visitMatches[0].participant).toBeDefined();
+            expect(visitMatches[0].person).toBeDefined();
         });
     });
 

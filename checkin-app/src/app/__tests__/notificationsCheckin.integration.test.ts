@@ -18,7 +18,7 @@ describe("sendCheckinNotifications()", () => {
         // for those households must go first or Membership_householdId_fkey blocks it.
         await prisma.visit.deleteMany();
         await prisma.householdLead.deleteMany();
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: "notify-test" } }
         });
         await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { household: { participants: { none: {} } } } } } });
@@ -34,7 +34,7 @@ describe("sendCheckinNotifications()", () => {
         householdId = hh.id;
 
         // Create Lead
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: {
                 email: "lead-notify-test@example.com",
                 name: "Test Lead",
@@ -48,11 +48,11 @@ describe("sendCheckinNotifications()", () => {
         leadId = lead.id;
 
         await prisma.householdLead.create({
-            data: { householdId, participantId: leadId }
+            data: { householdId, personId: leadId }
         });
 
         // Create Dependent
-        const dependent = await prisma.participant.create({
+        const dependent = await prisma.person.create({
             data: {
                 email: "dependent-notify-test@example.com",
                 name: "Test Dependent",
@@ -69,7 +69,7 @@ describe("sendCheckinNotifications()", () => {
     afterAll(async () => {
         await prisma.visit.deleteMany();
         await prisma.householdLead.deleteMany();
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: "notify-test" } }
         });
         await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { household: { participants: { none: {} } } } } } });

@@ -16,7 +16,7 @@ export const POST = withAuth(
                 return NextResponse.json({ error: "Invalid participant IDs provided." }, { status: 400 });
             }
 
-            const keepParticipant = await prisma.participant.findUnique({
+            const keepParticipant = await prisma.person.findUnique({
                 where: { id: keepId },
                 include: {
                     programParticipants: true,
@@ -27,7 +27,7 @@ export const POST = withAuth(
                 }
             });
 
-            const mergeParticipant = await prisma.participant.findUnique({
+            const mergeParticipant = await prisma.person.findUnique({
                 where: { id: mergeId },
                 include: {
                     programParticipants: true,
@@ -67,7 +67,7 @@ export const POST = withAuth(
                 }
 
                 if (Object.keys(updates).length > 0) {
-                    await tx.participant.update({
+                    await tx.person.update({
                         where: { id: keepId },
                         data: updates
                     });
@@ -83,21 +83,21 @@ export const POST = withAuth(
                 };
 
                 moved.visits = (await tx.visit.updateMany({
-                    where: { participantId: mergeId },
-                    data: { participantId: keepId }
+                    where: { personId: mergeId },
+                    data: { personId: keepId }
                 })).count;
 
                 // Instead of failing on unique constraints, we migrate manually:
                 for (const pp of mergeParticipant.programParticipants) {
                     if (!keepParticipant.programParticipants.find(k => k.programId === pp.programId)) {
                         await tx.programParticipant.update({
-                            where: { programId_participantId: { programId: pp.programId, participantId: mergeId } },
-                            data: { participantId: keepId }
+                            where: { programId_personId: { programId: pp.programId, personId: mergeId } },
+                            data: { personId: keepId }
                         });
                         moved.programParticipants.migrated++;
                     } else {
                         await tx.programParticipant.delete({
-                            where: { programId_participantId: { programId: pp.programId, participantId: mergeId } }
+                            where: { programId_personId: { programId: pp.programId, personId: mergeId } }
                         });
                         moved.programParticipants.deleted++;
                     }
@@ -106,13 +106,13 @@ export const POST = withAuth(
                 for (const pv of mergeParticipant.programVolunteers) {
                     if (!keepParticipant.programVolunteers.find(k => k.programId === pv.programId)) {
                         await tx.programVolunteer.update({
-                            where: { programId_participantId: { programId: pv.programId, participantId: mergeId } },
-                            data: { participantId: keepId }
+                            where: { programId_personId: { programId: pv.programId, personId: mergeId } },
+                            data: { personId: keepId }
                         });
                         moved.programVolunteers.migrated++;
                     } else {
                         await tx.programVolunteer.delete({
-                            where: { programId_participantId: { programId: pv.programId, participantId: mergeId } }
+                            where: { programId_personId: { programId: pv.programId, personId: mergeId } }
                         });
                         moved.programVolunteers.deleted++;
                     }
@@ -121,13 +121,13 @@ export const POST = withAuth(
                 for (const rsvp of mergeParticipant.rsvps) {
                     if (!keepParticipant.rsvps.find(k => k.eventId === rsvp.eventId)) {
                         await tx.rSVP.update({
-                            where: { eventId_participantId: { eventId: rsvp.eventId, participantId: mergeId } },
-                            data: { participantId: keepId }
+                            where: { eventId_personId: { eventId: rsvp.eventId, personId: mergeId } },
+                            data: { personId: keepId }
                         });
                         moved.rsvps.migrated++;
                     } else {
                         await tx.rSVP.delete({
-                            where: { eventId_participantId: { eventId: rsvp.eventId, participantId: mergeId } }
+                            where: { eventId_personId: { eventId: rsvp.eventId, personId: mergeId } }
                         });
                         moved.rsvps.deleted++;
                     }
@@ -136,13 +136,13 @@ export const POST = withAuth(
                 for (const fee of mergeParticipant.feePayments) {
                     if (!keepParticipant.feePayments.find(k => k.feeId === fee.feeId)) {
                         await tx.feePayment.update({
-                            where: { feeId_participantId: { feeId: fee.feeId, participantId: mergeId } },
-                            data: { participantId: keepId }
+                            where: { feeId_personId: { feeId: fee.feeId, personId: mergeId } },
+                            data: { personId: keepId }
                         });
                         moved.feePayments.migrated++;
                     } else {
                         await tx.feePayment.delete({
-                            where: { feeId_participantId: { feeId: fee.feeId, participantId: mergeId } }
+                            where: { feeId_personId: { feeId: fee.feeId, personId: mergeId } }
                         });
                         moved.feePayments.deleted++;
                     }
@@ -151,26 +151,26 @@ export const POST = withAuth(
                 for (const tool of mergeParticipant.toolStatuses) {
                     if (!keepParticipant.toolStatuses.find(k => k.toolId === tool.toolId)) {
                         await tx.toolStatus.update({
-                            where: { participantId_toolId: { toolId: tool.toolId, participantId: mergeId } },
-                            data: { participantId: keepId }
+                            where: { personId_toolId: { toolId: tool.toolId, personId: mergeId } },
+                            data: { personId: keepId }
                         });
                         moved.toolStatuses.migrated++;
                     } else {
                         await tx.toolStatus.delete({
-                            where: { participantId_toolId: { toolId: tool.toolId, participantId: mergeId } }
+                            where: { personId_toolId: { toolId: tool.toolId, personId: mergeId } }
                         });
                         moved.toolStatuses.deleted++;
                     }
                 }
 
                 await tx.householdLead.deleteMany({
-                    where: { participantId: mergeId }
+                    where: { personId: mergeId }
                 });
 
                 // householdId stays pointing at the old household: every
                 // participant must belong to a household, and merged-away
                 // records are tombstoned rather than deleted.
-                await tx.participant.update({
+                await tx.person.update({
                     where: { id: mergeId },
                     data: {
                         googleId: null,

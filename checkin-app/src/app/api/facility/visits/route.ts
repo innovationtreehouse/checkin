@@ -10,7 +10,7 @@ export const GET = withAuth(
                 take: 50,
                 orderBy: { arrivedAt: "desc" },
                 include: {
-                    participant: {
+                    person: {
                         select: { email: true, name: true, isSysadmin: true, isKeyholder: true },
                     },
                 },

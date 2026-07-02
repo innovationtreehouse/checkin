@@ -7,7 +7,7 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { formatDate, formatVisitRange, formatDateTime } from "@/lib/time";
 import { AttendanceTabs } from "../AttendanceTabs";
 
-type Visit = { id: number; participant?: { name: string }; event?: { name: string }; arrivedAt: string; departedAt?: string };
+type Visit = { id: number; person?: { name: string }; event?: { name: string }; arrivedAt: string; departedAt?: string };
 
 export default function HouseholdCheckins() {
   const { ready, loading: authLoading } = useRequireRole([]);
@@ -68,7 +68,7 @@ export default function HouseholdCheckins() {
           <Table.Tbody>
             {visits.map((v) => (
               <Table.Tr key={v.id}>
-                <Table.Td><Text fw={600} c="blue">{v.participant?.name || 'Unnamed household member'}</Text></Table.Td>
+                <Table.Td><Text fw={600} c="blue">{v.person?.name || 'Unnamed household member'}</Text></Table.Td>
                 <Table.Td>{v.event?.name || 'General Facility Visit'}</Table.Td>
                 <Table.Td>{formatDateTime(v.arrivedAt, { dateStyle: 'short', timeStyle: 'short' })}</Table.Td>
                 <Table.Td>{formatVisitRange(v.arrivedAt, v.departedAt)}</Table.Td>

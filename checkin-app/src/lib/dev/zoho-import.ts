@@ -414,7 +414,7 @@ export async function applyImport(
         let householdId: number | null = null;
         for (const m of h.members) {
             if (!m.email) continue;
-            const existing = await tx.participant.findUnique({ where: { email: m.email } });
+            const existing = await tx.person.findUnique({ where: { email: m.email } });
             if (existing) {
                 householdId = existing.householdId;
                 break;
@@ -454,9 +454,9 @@ export async function applyImport(
                 householdId,
             };
 
-            let participant = m.email ? await tx.participant.findUnique({ where: { email: m.email } }) : null;
+            let participant = m.email ? await tx.person.findUnique({ where: { email: m.email } }) : null;
             if (!participant) {
-                participant = await tx.participant.findFirst({ where: { householdId, name: m.name } });
+                participant = await tx.person.findFirst({ where: { householdId, name: m.name } });
             }
 
             const bg = m.lastBackgroundCheck
@@ -471,7 +471,7 @@ export async function applyImport(
                 : {};
 
             if (participant) {
-                participant = await tx.participant.update({ where: { id: participant.id }, data });
+                participant = await tx.person.update({ where: { id: participant.id }, data });
                 res.participantsUpdated++;
                 await audit(tx, actorId, "EDIT", "Participant", participant.id, {
                     name: m.name,
@@ -480,7 +480,7 @@ export async function applyImport(
                     ...bg,
                 });
             } else {
-                participant = await tx.participant.create({ data });
+                participant = await tx.person.create({ data });
                 res.participantsCreated++;
                 await audit(tx, actorId, "CREATE", "Participant", participant.id, {
                     name: m.name,
@@ -496,8 +496,8 @@ export async function applyImport(
         // The primary contact is the household lead.
         if (primaryParticipantId !== null) {
             await tx.householdLead.upsert({
-                where: { householdId_participantId: { householdId, participantId: primaryParticipantId } },
-                create: { householdId, participantId: primaryParticipantId },
+                where: { householdId_personId: { householdId, personId: primaryParticipantId } },
+                create: { householdId, personId: primaryParticipantId },
                 update: {},
             });
         }

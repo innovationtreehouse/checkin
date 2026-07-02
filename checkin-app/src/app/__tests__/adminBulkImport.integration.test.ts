@@ -25,10 +25,10 @@ describe('Admin Bulk Import API Integration Tests', () => {
             // Clean up any leaked state
             await prisma.membership.deleteMany({});
             await prisma.householdLead.deleteMany({});
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { email: { contains: 'import-test' } }
             });
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { name: { contains: 'Import Test' } }
             });
             await prisma.household.deleteMany({
@@ -40,12 +40,12 @@ describe('Admin Bulk Import API Integration Tests', () => {
         } catch {}
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-import-test@example.com', name: 'Admin Import Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-import-test@example.com', name: 'User Import Test', household: { create: {} } }
         });
         testUserId = user.id;
@@ -56,10 +56,10 @@ describe('Admin Bulk Import API Integration Tests', () => {
             // Clean up
             await prisma.membership.deleteMany({});
             await prisma.householdLead.deleteMany({});
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { email: { contains: 'import-test' } }
             });
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { name: { contains: 'Import Test' } }
             });
             await prisma.household.deleteMany({
@@ -76,10 +76,10 @@ describe('Admin Bulk Import API Integration Tests', () => {
             // Clean up participants created during tests
             await prisma.membership.deleteMany({});
             await prisma.householdLead.deleteMany({});
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { email: { contains: 'batch-import-test' } }
             });
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { name: { contains: 'Batch Import Test' } }
             });
             await prisma.household.deleteMany({
@@ -183,17 +183,17 @@ describe('Admin Bulk Import API Integration Tests', () => {
             expect(data.message).toContain('3 participants');
 
             // Verify Alice
-            const alice = await prisma.participant.findUnique({ where: { email: 'alice-batch-import-test@example.com' } });
+            const alice = await prisma.person.findUnique({ where: { email: 'alice-batch-import-test@example.com' } });
             expect(alice).toBeDefined();
             expect(alice?.householdId).not.toBeNull();
 
             // Verify Bob
-            const bob = await prisma.participant.findFirst({ where: { name: 'Bob Batch Import Test' } });
+            const bob = await prisma.person.findFirst({ where: { name: 'Bob Batch Import Test' } });
             expect(bob).toBeDefined();
             expect(bob?.householdId).toBe(alice?.householdId);
 
             // Verify Charlie
-            const charlie = await prisma.participant.findUnique({ where: { email: 'charlie-batch-import-test@example.com' } });
+            const charlie = await prisma.person.findUnique({ where: { email: 'charlie-batch-import-test@example.com' } });
             expect(charlie).toBeDefined();
             expect(charlie?.householdId).toBe(alice?.householdId);
         });
@@ -220,24 +220,24 @@ describe('Admin Bulk Import API Integration Tests', () => {
             if (data.errors) console.log("Import Errors:", data.errors);
             expect(res.status).toBe(200);
             
-            const adult = await prisma.participant.findFirst({ where: { name: 'Adult Import Test' } });
+            const adult = await prisma.person.findFirst({ where: { name: 'Adult Import Test' } });
             expect(adult).not.toBeNull();
             expect(adult!.householdId).not.toBeNull();
             
-            const adultLead = await prisma.householdLead.findFirst({ where: { participantId: adult!.id } });
+            const adultLead = await prisma.householdLead.findFirst({ where: { personId: adult!.id } });
             // In some environments, lead assignment might delay or fail if the household creation isn't atomic.
             // But here it should be present.
             expect(adultLead).not.toBeNull();
 
-            const youth = await prisma.participant.findFirst({ where: { name: 'Youth Import Test' } });
+            const youth = await prisma.person.findFirst({ where: { name: 'Youth Import Test' } });
             expect(youth).not.toBeNull();
             expect(youth!.householdId).not.toBeNull();
-            const youthLead = await prisma.householdLead.findFirst({ where: { participantId: youth!.id } });
+            const youthLead = await prisma.householdLead.findFirst({ where: { personId: youth!.id } });
             expect(youthLead).toBeNull();
 
-            const defaultAdult = await prisma.participant.findFirst({ where: { name: 'Default Import Test' } });
+            const defaultAdult = await prisma.person.findFirst({ where: { name: 'Default Import Test' } });
             expect(defaultAdult?.householdId).not.toBeNull();
-            const defaultLead = await prisma.householdLead.findFirst({ where: { participantId: defaultAdult?.id } });
+            const defaultLead = await prisma.householdLead.findFirst({ where: { personId: defaultAdult?.id } });
             expect(defaultLead).not.toBeNull();
         });
     });

@@ -3,15 +3,15 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
 import AdminVisitsPage from "../page";
 
 beforeEach(() => resetRtl());
 
 const visits = [
-  { id: 1, arrivedAt: "2026-01-01T14:00:00.000Z", departedAt: "2026-01-01T16:00:00.000Z", arrivedVia: "SCANNER", departedVia: "WEB", participant: { name: "Val Volunteer" }, event: { name: "Open Gym" } },
-  { id: 2, arrivedAt: "2026-01-02T14:00:00.000Z", departedAt: null, arrivedVia: "WEB", participant: { name: "Stu Student" }, event: null },
+  { id: 1, arrivedAt: "2026-01-01T14:00:00.000Z", departedAt: "2026-01-01T16:00:00.000Z", arrivedVia: "SCANNER", departedVia: "WEB", person: { name: "Val Volunteer" }, event: { name: "Open Gym" } },
+  { id: 2, arrivedAt: "2026-01-02T14:00:00.000Z", departedAt: null, arrivedVia: "WEB", person: { name: "Stu Student" }, event: null },
 ];
 
 describe("facility-ops/visits page", () => {
@@ -40,14 +40,14 @@ describe("facility-ops/visits page", () => {
   });
 
   it("edits and saves a visit's arrival/departure", async () => {
-    window.confirm = jest.fn(() => true);
     setSession({ id: 1, isSysadmin: true });
     const fetchMock = mockFetchJson({ "/api/facility/visits": { visits } });
     renderWithProviders(<AdminVisitsPage />);
     await screen.findByText("Val Volunteer");
 
     fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    expect(window.confirm).toHaveBeenCalled();
+    const confirmModal = await screen.findByRole("dialog", { name: "Edit Past Visit Record" });
+    fireEvent.click(within(confirmModal).getByRole("button", { name: "Continue" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 

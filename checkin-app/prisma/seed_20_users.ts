@@ -19,7 +19,7 @@ async function main() {
         })
 
         // Create participant
-        const participant = await prisma.participant.create({
+        const participant = await prisma.person.create({
             data: {
                 email: `testmember${i}@example.com`,
                 name: `Test Member ${i}`,
@@ -31,7 +31,7 @@ async function main() {
         await prisma.householdLead.create({
             data: {
                 householdId: household.id,
-                participantId: participant.id,
+                personId: participant.id,
             }
         });
 
@@ -46,7 +46,7 @@ async function main() {
         // Mark them as arrivedAt so they show up as "present" just in case limitToPresent is true
         await prisma.visit.create({
             data: {
-                participantId: participant.id,
+                personId: participant.id,
                 arrivedAt: new Date()
             }
         })

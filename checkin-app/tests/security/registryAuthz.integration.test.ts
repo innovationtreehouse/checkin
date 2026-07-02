@@ -87,7 +87,7 @@ describe('Registry route admission gates', () => {
         // unsigned request as kiosk — that would turn our 401 cases into kiosk.
         process.env.CHECKIN_ENV = 'dev';
 
-        const plain = await prisma.participant.create({
+        const plain = await prisma.person.create({
             data: {
                 name: 'Authz Plain',
                 email: `plain-${TAG}@example.com`,
@@ -130,7 +130,7 @@ describe('Registry route admission gates', () => {
         process.env.CHECKIN_ENV = ENV_BEFORE;
         await prisma.event.deleteMany({ where: { id: eventId } });
         await prisma.program.deleteMany({ where: { id: programId } });
-        await prisma.participant.deleteMany({ where: { id: { in: participantIds } } });
+        await prisma.person.deleteMany({ where: { id: { in: participantIds } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 

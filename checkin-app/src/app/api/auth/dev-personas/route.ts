@@ -37,7 +37,7 @@ export async function GET() {
         }
     }
 
-    const personas = await prisma.participant.findMany({
+    const personas = await prisma.person.findMany({
         where: {
             email: { endsWith: "@example.com" },
         },

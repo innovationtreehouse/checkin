@@ -24,27 +24,27 @@ describe('Admin Badges API Integration Tests', () => {
         // Clean up any leaked state
         await prisma.rawBadgeLog.deleteMany({
             where: {
-                participant: { email: { contains: 'badges-api-test' } }
+                person: { email: { contains: 'badges-api-test' } }
             }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'badges-api-test' } }
         });
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-badges-api-test@example.com', name: 'Admin Badges Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-badges-api-test@example.com', name: 'User Badges Test', household: { create: {} } }
         });
         testUserId = user.id;
 
         const badgeEvent = await prisma.rawBadgeLog.create({
             data: {
-                participantId: testUserId,
+                personId: testUserId,
                 location: 'Front Door'
             }
         });
@@ -56,7 +56,7 @@ describe('Admin Badges API Integration Tests', () => {
         await prisma.rawBadgeLog.deleteMany({
             where: { id: testBadgeEventId }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [testAdminId, testUserId] } }
         });
     });
@@ -106,9 +106,9 @@ describe('Admin Badges API Integration Tests', () => {
             const foundEvent = data.badges.find((b: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => b.id === testBadgeEventId);
             expect(foundEvent).toBeDefined();
             expect(foundEvent.location).toBe('Front Door');
-            expect(foundEvent.participant).toBeDefined();
-            expect(foundEvent.participant.name).toBe('User Badges Test');
-            expect(foundEvent.participant.email).toBe('user-badges-api-test@example.com');
+            expect(foundEvent.person).toBeDefined();
+            expect(foundEvent.person.name).toBe('User Badges Test');
+            expect(foundEvent.person.email).toBe('user-badges-api-test@example.com');
         });
     });
 });

@@ -86,7 +86,7 @@ export const AWAITING_BG_WHERE: Prisma.MembershipProcessWhereInput = {
 /** Email every background-check reviewer that an application awaits review. */
 export async function notifyReviewers(): Promise<void> {
     try {
-        const reviewers = await prisma.participant.findMany({
+        const reviewers = await prisma.person.findMany({
             where: { email: { not: null }, OR: [{ isBackgroundCheckReviewer: true }, { isBoardMember: true }] },
             select: { email: true },
         });
@@ -108,7 +108,7 @@ export async function notifyReviewers(): Promise<void> {
 }
 
 async function loadReviewer(reviewerId: number) {
-    return prisma.participant.findUnique({ where: { id: reviewerId }, select: { id: true, householdId: true, isBackgroundCheckReviewer: true, isBoardMember: true } });
+    return prisma.person.findUnique({ where: { id: reviewerId }, select: { id: true, householdId: true, isBackgroundCheckReviewer: true, isBoardMember: true } });
 }
 
 /**
@@ -226,7 +226,7 @@ async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: nu
 
     // Stamp the guardians' (household leads') lastBackgroundCheck. Expiry is derived from this
     // plus BoardSettings.bgRecheckMonths at read time (see householdBgIsFresh) — not stored.
-    await tx.participant.updateMany({ where: { householdId, householdLeads: { some: { householdId } } }, data: { lastBackgroundCheck: now } });
+    await tx.person.updateMany({ where: { householdId, householdLeads: { some: { householdId } } }, data: { lastBackgroundCheck: now } });
     await applyVolunteerStatus(tx, process.membershipId, householdId, process.attestations.some((a) => a.isMarkedVolunteer));
 
     await tx.membershipProcess.update({
@@ -260,7 +260,7 @@ export function matchesVolunteerDesignation(parentEmails: string[], designationE
 export async function applyVolunteerStatus(db: TxClient | typeof prisma, membershipId: number, householdId: number, markedByReviewer: boolean) {
     let isVolunteer = markedByReviewer;
     if (!isVolunteer) {
-        const parents = await db.participant.findMany({ where: { householdId, householdLeads: { some: { householdId } }, email: { not: null } }, select: { email: true } });
+        const parents = await db.person.findMany({ where: { householdId, householdLeads: { some: { householdId } }, email: { not: null } }, select: { email: true } });
         const designations = await db.volunteerDesignation.findMany({ select: { email: true } });
         isVolunteer = matchesVolunteerDesignation(parents.map((p) => p.email!), designations.map((d) => d.email));
     }

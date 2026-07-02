@@ -35,7 +35,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         const isSelfEnrollment = currentUserId === participantId;
         const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
 
-        const participantData = await prisma.participant.findUnique({
+        const participantData = await prisma.person.findUnique({
             where: { id: participantId },
             select: { dateOfBirth: true, householdId: true }
         });
@@ -44,9 +44,9 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         if (participantData?.householdId) {
             const leadRecord = await prisma.householdLead.findUnique({
                 where: {
-                    householdId_participantId: {
+                    householdId_personId: {
                         householdId: participantData.householdId,
-                        participantId: currentUserId
+                        personId: currentUserId
                     }
                 }
             });
@@ -121,7 +121,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             return tx.programParticipant.create({
                 data: {
                     programId,
-                    participantId,
+                    personId: participantId,
                     status: initialStatus
                 }
             });
@@ -200,9 +200,9 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
 
         const enrollment = await prisma.programParticipant.delete({
             where: {
-                programId_participantId: {
+                programId_personId: {
                     programId,
-                    participantId
+                    personId: participantId
                 }
             }
         });

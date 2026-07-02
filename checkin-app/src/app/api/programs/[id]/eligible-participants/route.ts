@@ -21,7 +21,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]/eligible-part
     // new URL(req.url) (not req.nextUrl) so the handler works on a plain Request too.
     const q = new URL(req.url).searchParams.get("q") || "";
 
-    const andClauses: Prisma.ParticipantWhereInput[] = [
+    const andClauses: Prisma.PersonWhereInput[] = [
         {
             NOT: {
                 OR: [
@@ -45,12 +45,12 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]/eligible-part
         andClauses.push(ACTIVE_MEMBER_PARTICIPANT_WHERE);
     }
 
-    const members = await prisma.participant.findMany({
+    const members = await prisma.person.findMany({
         where: andClauses.length > 0 ? { AND: andClauses } : undefined,
         select: { id: true, name: true, email: true, dateOfBirth: true },
         orderBy: { name: 'asc' },
         take: 50
     });
 
-    return { Participant: members };
+    return { Person: members };
 });

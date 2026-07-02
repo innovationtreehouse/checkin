@@ -7,7 +7,7 @@ export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
     async () => {
         try {
-            const members = await prisma.participant.findMany({
+            const members = await prisma.person.findMany({
                 where: { isBoardMember: true },
                 select: { id: true, name: true, phone: true, email: true },
                 orderBy: { name: "asc" },

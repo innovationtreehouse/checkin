@@ -27,7 +27,7 @@ jest.mock("@/lib/logger", () => ({ logBackendError: jest.fn() }));
 jest.mock("@/lib/prisma", () => ({
     __esModule: true,
     default: {
-        participant: { findUnique: jest.fn() },
+        person: { findUnique: jest.fn() },
         visit: { findMany: jest.fn() },
     },
 }));
@@ -70,7 +70,7 @@ describe("Participant PII minimization (M1, M2)", () => {
             householdId: 10,
         } as Record<string, unknown>;
 
-        (prisma.participant.findUnique as jest.Mock).mockImplementation((args) => {
+        (prisma.person.findUnique as jest.Mock).mockImplementation((args) => {
             const peerSelect = args.include.household.include.participants.select as Record<string, boolean>;
             const projected = Object.fromEntries(
                 Object.keys(peerSelect).filter((k) => peerSelect[k]).map((k) => [k, rawPeer[k]])
@@ -111,7 +111,7 @@ describe("Participant PII minimization (M1, M2)", () => {
         expect(peer.notificationSettings).toBeUndefined();
 
         // Pin the actual query shape, not just this test's mock.
-        const callArgs = (prisma.participant.findUnique as jest.Mock).mock.calls[0][0];
+        const callArgs = (prisma.person.findUnique as jest.Mock).mock.calls[0][0];
         expect(callArgs.include.household.include.participants).toEqual({ select: HOUSEHOLD_PEER_SELECT });
     });
 
@@ -125,7 +125,7 @@ describe("Participant PII minimization (M1, M2)", () => {
                 id: 100,
                 arrivedAt: new Date(),
                 departedAt: null,
-                participant: {
+                person: {
                     id: 5,
                     email: "kid5@example.com",
                     name: null,

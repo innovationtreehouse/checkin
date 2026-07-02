@@ -10,9 +10,9 @@ interface TrendBucket {
   label: string;
   periodStart: string;
   uniqueVolunteers: number;
-  uniqueStudents: number;
+  uniqueParticipants: number;
   totalVolunteerHours: number;
-  totalStudentHours: number;
+  totalParticipantHours: number;
   structuredHours: number;
   unstructuredHours: number;
 }
@@ -79,9 +79,9 @@ export default function ParticipationTrendsPage() {
 
   const stats: { value: string | number; label: string }[] = totals ? [
     { value: totals.uniqueVolunteers, label: "Unique Volunteers" },
-    { value: totals.uniqueStudents, label: "Unique Students" },
+    { value: totals.uniqueParticipants, label: "Unique Participants" },
     { value: fmtHours(totals.totalVolunteerHours), label: "Volunteer Hours" },
-    { value: fmtHours(totals.totalStudentHours), label: "Student Hours" },
+    { value: fmtHours(totals.totalParticipantHours), label: "Participant Hours" },
     { value: fmtHours(totals.structuredHours), label: "Program Hours" },
     { value: fmtHours(totals.unstructuredHours), label: "Unstructured Hours" },
   ] : [];
@@ -130,9 +130,9 @@ export default function ParticipationTrendsPage() {
             <Table.Tr>
               <Table.Th>Period</Table.Th>
               <Table.Th>Volunteers</Table.Th>
-              <Table.Th>Students</Table.Th>
+              <Table.Th>Participants</Table.Th>
               <Table.Th>Vol. Hours</Table.Th>
-              <Table.Th>Stu. Hours</Table.Th>
+              <Table.Th>Part. Hours</Table.Th>
               <Table.Th>Program</Table.Th>
               <Table.Th>Unstructured</Table.Th>
             </Table.Tr>
@@ -149,9 +149,9 @@ export default function ParticipationTrendsPage() {
                 <Table.Tr key={b.periodStart}>
                   <Table.Td>{b.label}</Table.Td>
                   <Table.Td>{b.uniqueVolunteers}</Table.Td>
-                  <Table.Td>{b.uniqueStudents}</Table.Td>
+                  <Table.Td>{b.uniqueParticipants}</Table.Td>
                   <Table.Td>{fmtHours(b.totalVolunteerHours)}</Table.Td>
-                  <Table.Td>{fmtHours(b.totalStudentHours)}</Table.Td>
+                  <Table.Td>{fmtHours(b.totalParticipantHours)}</Table.Td>
                   <Table.Td>{fmtHours(b.structuredHours)}</Table.Td>
                   <Table.Td>{fmtHours(b.unstructuredHours)}</Table.Td>
                 </Table.Tr>
@@ -163,9 +163,9 @@ export default function ParticipationTrendsPage() {
               <Table.Tr>
                 <Table.Th>Total</Table.Th>
                 <Table.Th>{totals.uniqueVolunteers}</Table.Th>
-                <Table.Th>{totals.uniqueStudents}</Table.Th>
+                <Table.Th>{totals.uniqueParticipants}</Table.Th>
                 <Table.Th>{fmtHours(totals.totalVolunteerHours)}</Table.Th>
-                <Table.Th>{fmtHours(totals.totalStudentHours)}</Table.Th>
+                <Table.Th>{fmtHours(totals.totalParticipantHours)}</Table.Th>
                 <Table.Th>{fmtHours(totals.structuredHours)}</Table.Th>
                 <Table.Th>{fmtHours(totals.unstructuredHours)}</Table.Th>
               </Table.Tr>
