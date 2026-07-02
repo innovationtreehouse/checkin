@@ -201,14 +201,14 @@ function KioskCertificationsInner() {
         ) : error ? (
           <Alert color="red">{error}</Alert>
         ) : participants.length === 0 || tools.length === 0 ? (
-          <Center py="xl"><Text c="dimmed">No {limitToPresent ? "active participants" : "participants"} found.</Text></Center>
+          <Center py="xl"><Text c="dimmed">No {limitToPresent ? "active people" : "people"} found.</Text></Center>
         ) : (
           <div ref={containerRef} style={{ flex: 1, overflowX: 'hidden', borderRadius: 8, border: cellBorder, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <table style={{ borderCollapse: 'collapse', textAlign: 'left', width: '100%', tableLayout: isKioskMode ? 'fixed' : undefined }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
                   <th style={{ padding: isKioskMode ? '0.5rem 0.75rem' : '1rem', borderBottom: cellBorder, background: 'var(--mantine-color-default-hover)', position: 'sticky', left: 0, zIndex: 11, borderRight: cellBorder, verticalAlign: 'bottom', width: isKioskMode ? '12%' : 150, fontWeight: 700 }}>
-                    Participant
+                    Name
                   </th>
                   {tools.map((tool) => (
                     <th key={tool.id} style={{ borderBottom: cellBorder, borderRight: cellBorder, background: 'var(--mantine-color-default-hover)', fontSize: isKioskMode ? '0.8rem' : '0.875rem', fontWeight: 700, verticalAlign: 'bottom', padding: isKioskMode ? '0.4rem 0.2rem' : '0.5rem', textAlign: 'center', wordBreak: 'break-word', lineHeight: 1.2 }}>
