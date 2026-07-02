@@ -80,6 +80,22 @@ These describe *what kind of person*, independent of which relationship you're v
 
 Source: `counterparty*` → `trustedAdult*` rename (audit P2-2, branch `claude/vigilant-blackburn-7f713d`; scalar fields + Person FK, RENAME migrations). The schema carries this same glossary inline above `model TrustedAdult`.
 
+## Program hierarchy (LOCKED)
+
+Product-owner decision — **design to these; do not relitigate the names or shape.**
+
+**Program → Instance → Event** = **definition → offering → occurrence.**
+
+| Level | Semantics | Meaning | Code | UI |
+|---|---|---|---|---|
+| **Program** | definition | a **reusable definition / template** — a catalog entry (e.g. "Woodworking 101") | `Program` | "Program" |
+| **Instance** | offering | one **concrete offering / run** of that program (e.g. "Fall 2026 Woodworking") | **`ProgramInstance`** — **never** a bare `instance` / `instanceId` (too generic) | "Instance" |
+| **Event** | occurrence | a **dated occurrence / meeting** people check into | `Event` (today's `Event` row **is** this leaf — it stays the leaf) | "Event" |
+
+Rules:
+- The middle layer's model name is **`ProgramInstance`** in code; bare `instance`/`instanceId` is banned (ambiguous).
+- `Event` is unchanged — it remains the check-in leaf; the Instance layer is inserted **above** it, not in place of it.
+
 ## Migration status
 
 The term-by-term migration plan lives in
