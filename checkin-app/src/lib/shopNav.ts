@@ -1,4 +1,5 @@
 import type { Session } from "next-auth";
+import type { NavLink } from "@/lib/nav/types";
 
 /**
  * Single source of truth for the Shop Ops tabs. Rendered as the persistent top
@@ -14,10 +15,7 @@ export interface ShopRoles {
   isCertifier: boolean;
 }
 
-export interface ShopNavLink {
-  name: string;
-  href: string;
-  icon: string;
+export interface ShopNavLink extends NavLink {
   visible: (roles: ShopRoles) => boolean;
 }
 
