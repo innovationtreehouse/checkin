@@ -129,8 +129,9 @@ function findUnwrappedPrismaHandlers(code: string): string[] {
 const EDGE_MODELS = new Set(['ProgramParticipant', 'ProgramVolunteer', 'RSVP', 'Visit']);
 
 /** The generated relations map, typed: ParentModel → relationKey → target. This
- * is what makes the scan parent-AWARE: the same key (`participants`) resolves to
- * ProgramParticipant under Program (edge) but Participant under Household (not),
+ * is what makes the scan parent-AWARE: a relation key resolves by enclosing
+ * model — `participants` is ProgramParticipant under Program (edge), while the
+ * household member set (`householdMembers`) is Person under Household (not),
  * so we must know the enclosing model — a flat key match can't, and would either
  * miss the Program case (the #575 leak class) or false-flag the Household case. */
 const REL = relations as Record<string, Record<string, { model: string }>>;
@@ -361,11 +362,11 @@ describe('route auth drift-guard — every app/api/**/route.ts', () => {
     });
 
     describe('rule 3 — edge-sensitive reads in GET/HEAD must be allowlisted', () => {
-        it('resolves the shared `participants` key parent-aware via the map', () => {
-            // The whole point: same key, different model by parent. If this map
+        it('resolves relation keys parent-aware via the map', () => {
+            // The whole point: resolve each key by enclosing model. If this map
             // shape changes, the parent-aware walk's assumptions broke.
             expect(REL.Program?.participants?.model).toBe('ProgramParticipant'); // edge
-            expect(REL.Household?.participants?.model).toBe('Participant'); // not edge
+            expect(REL.Household?.householdMembers?.model).toBe('Person'); // not edge
         });
 
         for (const { rel, code } of routeFiles) {
@@ -469,13 +470,13 @@ describe('route auth drift-guard — detectors catch violations', () => {
         expect(findEdgeReadsInReads(stripComments(synthetic))).toEqual([]);
     });
 
-    it('does NOT flag Household.participants (same key, resolves to Participant — not edge)', () => {
-        const synthetic = `export const GET = withAuth({}, async () => prisma.household.findUnique({ include: { participants: true } }));`;
+    it('does NOT flag Household.householdMembers (resolves to Person — not edge)', () => {
+        const synthetic = `export const GET = withAuth({}, async () => prisma.household.findUnique({ include: { householdMembers: true } }));`;
         expect(findEdgeReadsInReads(stripComments(synthetic))).toEqual([]);
     });
 
     it('does NOT flag an edge relation used only as a where-filter (no rows returned)', () => {
-        const synthetic = `export const GET = withAuth({}, async () => prisma.participant.findMany({ where: { programParticipants: { some: { programId: 1 } } } }));`;
+        const synthetic = `export const GET = withAuth({}, async () => prisma.person.findMany({ where: { programParticipants: { some: { programId: 1 } } } }));`;
         expect(findEdgeReadsInReads(stripComments(synthetic))).toEqual([]);
     });
 });

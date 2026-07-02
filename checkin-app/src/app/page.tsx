@@ -159,7 +159,7 @@ export default function Home() {
               {/* Operational Warnings */}
               {isTwoDeepViolation && (
                 <Alert color="red" icon={<IconAlertTriangle size={18} />} title="Critical Warning">
-                  Two-Deep Compliance is failing. An unaccompanied student is present without
+                  Two-Deep Compliance is failing. An unaccompanied youth is present without
                   sufficient adult supervision.
                 </Alert>
               )}

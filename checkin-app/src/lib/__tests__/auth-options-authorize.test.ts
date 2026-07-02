@@ -59,7 +59,7 @@ jest.mock('@/lib/dev/ledger', () => ({ recordLedger: jest.fn() }));
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { participant: { findUnique: jest.fn(), findFirst: jest.fn() } },
+    default: { person: { findUnique: jest.fn(), findFirst: jest.fn() } },
 }));
 
 // jest.setup.js globally mocks @/lib/auth-options to `{}` (it normally pulls GoogleProvider's heavy
@@ -73,10 +73,10 @@ import { authOptions, PERSONA_MINT_PROVIDER_ID } from '@/lib/auth-options';
 const mockGetToken = getToken as jest.Mock;
 const mockEvaluateMint = evaluateMint as jest.Mock;
 const mockRecordLedger = recordLedger as jest.Mock;
-const mockFindUnique = (prisma as unknown as { participant: { findUnique: jest.Mock } })
-    .participant.findUnique;
-const mockFindFirst = (prisma as unknown as { participant: { findFirst: jest.Mock } })
-    .participant.findFirst;
+const mockFindUnique = (prisma as unknown as { person: { findUnique: jest.Mock } })
+    .person.findUnique;
+const mockFindFirst = (prisma as unknown as { person: { findFirst: jest.Mock } })
+    .person.findFirst;
 const mockCheckinEnv = config.checkinEnv as jest.Mock;
 
 // next-auth v4 CredentialsProvider returns { id: "credentials", authorize: () => null, options }:

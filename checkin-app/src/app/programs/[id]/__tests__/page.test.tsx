@@ -42,7 +42,7 @@ function baseProgram(overrides: Record<string, unknown> = {}) {
         endAt: null,
         leadMentorId: 5,
         leadMentor: { name: "Coach K", email: "coach@example.com" },
-        participants: [{ participantId: 100, status: "ENROLLED" }],
+        participants: [{ personId: 100, status: "ENROLLED" }],
         enrollmentStatus: "OPEN",
         memberPriceCents: null,
         nonMemberPriceCents: null,

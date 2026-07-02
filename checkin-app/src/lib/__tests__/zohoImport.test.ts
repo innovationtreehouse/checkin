@@ -346,7 +346,7 @@ describe("applyImport", () => {
                     return h;
                 }),
             },
-            participant: {
+            person: {
                 findUnique: jest.fn(async ({ where }: { where: { email: string } }) => [...participants.values()].find((p) => p.email === where.email) ?? null),
                 findFirst: jest.fn(
                     async ({ where }: { where: { householdId: number; name: string } }) =>

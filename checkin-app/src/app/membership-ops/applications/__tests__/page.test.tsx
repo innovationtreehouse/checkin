@@ -8,7 +8,7 @@ import AdminMembershipPage from "../page";
 beforeEach(() => resetRtl());
 
 function household(name: string, id: number) {
-    return { name, participants: [{ id: 1, name: "Lead One", email: "lead@example.com" }], leads: [{ participantId: 1 }], householdId: id };
+    return { name, householdMembers: [{ id: 1, name: "Lead One", email: "lead@example.com" }], leads: [{ personId: 1 }], householdId: id };
 }
 
 const rows = [

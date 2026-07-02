@@ -28,10 +28,10 @@ export const GET = withAuth(
                 const household = await prisma.household.findUnique({
                     where: { id: parseInt(id) },
                     include: {
-                        participants: {
+                        householdMembers: {
                             select: { id: true, name: true, email: true }
                         },
-                        householdLeads: { select: { participantId: true } },
+                        leads: { select: { personId: true } },
                         membership: true,
                         emergencyContacts: {
                             where: PRIMARY_CONTACT_WHERE,
@@ -41,21 +41,23 @@ export const GET = withAuth(
                         },
                     }
                 });
-                return NextResponse.json({ household: household ? withFlatContact(household) : null });
+                if (!household) return NextResponse.json({ household: null });
+                const { leads: householdLeads, ...rest } = household;
+                return NextResponse.json({ household: { ...withFlatContact(rest), householdLeads } });
             }
 
             const whereClause = q ? {
                 OR: [
                     { name: { contains: q, mode: 'insensitive' as const } },
-                    { participants: { some: { name: { contains: q, mode: 'insensitive' as const } } } },
-                    { participants: { some: { email: { contains: q, mode: 'insensitive' as const } } } },
+                    { householdMembers: { some: { name: { contains: q, mode: 'insensitive' as const } } } },
+                    { householdMembers: { some: { email: { contains: q, mode: 'insensitive' as const } } } },
                 ]
             } : {};
 
             const households = await prisma.household.findMany({
                 where: whereClause,
                 include: {
-                    participants: {
+                    householdMembers: {
                         select: { id: true, name: true, email: true, isBoardMember: true }
                     },
                     membership: true,
@@ -102,7 +104,7 @@ export const POST = withAuth(
                     // Two separate legal actions → two separate software actions: a household
                     // containing a board member cannot be denied. Remove the board role first.
                     // Enforced server-side; the UI's disabled button is only a courtesy.
-                    const boardMemberInHousehold = await prisma.participant.findFirst({
+                    const boardMemberInHousehold = await prisma.person.findFirst({
                         where: { householdId, isBoardMember: true },
                         select: { id: true }
                     });

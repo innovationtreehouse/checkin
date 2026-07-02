@@ -9,8 +9,8 @@ import NewParticipantPage from "../page";
 
 beforeEach(() => resetRtl());
 
-const household = { id: 9, name: "The Does", participants: [{ id: 1, name: "Jane Doe", email: null }, { id: 2, name: null, email: "john@example.com" }] };
-const emptyHousehold = { id: 8, name: "", participants: [] };
+const household = { id: 9, name: "The Does", householdMembers: [{ id: 1, name: "Jane Doe", email: null }, { id: 2, name: null, email: "john@example.com" }] };
+const emptyHousehold = { id: 8, name: "", householdMembers: [] };
 
 describe("membership-ops/participants/new page", () => {
   it("renders the registration form", async () => {

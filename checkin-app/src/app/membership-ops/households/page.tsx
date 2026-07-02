@@ -3,16 +3,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Button, Center, Group, List, Loader, Stack, Table, Text, TextInput } from '@mantine/core';
+import { Button, Group, List, Modal, Stack, Table, Text, TextInput } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { AdminEditHouseholdModal } from '@/components/admin/AdminEditHouseholdModal';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type Household = {
   id: number;
   name?: string | null;
   membership?: { status: string } | null;
-  participants?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean }[] | null;
+  householdMembers?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean }[] | null;
 };
 
 export default function AdminHouseholdsPage() {
@@ -24,6 +26,8 @@ export default function AdminHouseholdsPage() {
   const [error, setError] = useState("");
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
   const [filter, setFilter] = useState("");
+  const [confirmDenyOpened, { open: openConfirmDeny, close: closeConfirmDeny }] = useDisclosure(false);
+  const [pendingDenyHouseholdId, setPendingDenyHouseholdId] = useState<number | null>(null);
 
   const fetchHouseholds = useCallback(async () => {
     try {
@@ -66,11 +70,15 @@ export default function AdminHouseholdsPage() {
   // Deny blocks login for every member of the household; restore (deny=false) returns it
   // to NONE so they can log in again with no privileges. Separate from grant/revoke.
   const setDenied = async (householdId: number, deny: boolean) => {
-    if (deny && !window.confirm(
-      'Deny membership for this household? Every member will be unable to log in.'
-    )) {
+    if (deny) {
+      setPendingDenyHouseholdId(householdId);
+      openConfirmDeny();
       return;
     }
+    await doSetDenied(householdId, false);
+  };
+
+  const doSetDenied = async (householdId: number, deny: boolean) => {
     try {
       const res = await fetch('/api/membership-ops/households', {
         method: 'POST',
@@ -89,8 +97,16 @@ export default function AdminHouseholdsPage() {
     }
   };
 
+  const confirmDeny = async () => {
+    if (pendingDenyHouseholdId === null) return;
+    closeConfirmDeny();
+    const householdId = pendingDenyHouseholdId;
+    setPendingDenyHouseholdId(null);
+    await doSetDenied(householdId, true);
+  };
+
   if (authLoading || loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) {
@@ -101,7 +117,7 @@ export default function AdminHouseholdsPage() {
   const filtered = q
     ? households.filter((h) =>
         (h.name || `Household #${h.id}`).toLowerCase().includes(q) ||
-        (h.participants?.some((p) =>
+        (h.householdMembers?.some((p) =>
           (p.name || '').toLowerCase().includes(q) ||
           (p.email || '').toLowerCase().includes(q)
         ) ?? false)
@@ -140,7 +156,7 @@ export default function AdminHouseholdsPage() {
               const status = household.membership?.status;
               const hasActiveMembership = status === "ACTIVE";
               const isDenied = status === "DENIED";
-              const hasBoardMember = household.participants?.some((p) => p.isBoardMember) ?? false;
+              const hasBoardMember = household.householdMembers?.some((p) => p.isBoardMember) ?? false;
 
               return (
                 <Table.Tr key={household.id}>
@@ -148,9 +164,9 @@ export default function AdminHouseholdsPage() {
                     <Text fw={600}>{household.name || `Household #${household.id}`}</Text>
                   </Table.Td>
                   <Table.Td>
-                    {household.participants && household.participants.length > 0 ? (
+                    {household.householdMembers && household.householdMembers.length > 0 ? (
                       <List size="sm">
-                        {household.participants.map((p) => (
+                        {household.householdMembers.map((p) => (
                           <List.Item key={p.id}>{p.name || p.email}</List.Item>
                         ))}
                       </List>
@@ -237,6 +253,19 @@ export default function AdminHouseholdsPage() {
         onClose={() => setEditHouseholdId(null)}
         onSaved={() => fetchHouseholds()}
       />
+
+      <Modal
+        opened={confirmDenyOpened}
+        onClose={closeConfirmDeny}
+        title={<Text span fw={700} fz="lg">Deny Membership</Text>}
+        centered
+      >
+        <Text mb="lg">Deny membership for this household? Every member will be unable to log in.</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmDeny}>Cancel</Button>
+          <Button color="red" onClick={confirmDeny}>Deny Membership</Button>
+        </Group>
+      </Modal>
     </Stack>
   );
 }

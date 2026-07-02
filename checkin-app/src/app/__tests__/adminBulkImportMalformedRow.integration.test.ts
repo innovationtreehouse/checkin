@@ -25,15 +25,15 @@ describe('Bulk import: malformed row among valid rows', () => {
         try {
             await prisma.membership.deleteMany({});
             await prisma.householdLead.deleteMany({});
-            await prisma.participant.deleteMany({ where: { email: { contains: 'malrow-import-test' } } });
-            await prisma.participant.deleteMany({ where: { name: { contains: 'Malrow Import Test' } } });
-            await prisma.household.deleteMany({ where: { participants: { none: {} } } });
+            await prisma.person.deleteMany({ where: { email: { contains: 'malrow-import-test' } } });
+            await prisma.person.deleteMany({ where: { name: { contains: 'Malrow Import Test' } } });
+            await prisma.household.deleteMany({ where: { householdMembers: { none: {} } } });
         } catch {}
     };
 
     beforeAll(async () => {
         await cleanup();
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-malrow-import-test@example.com', name: 'Admin Malrow Import Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
@@ -78,15 +78,15 @@ describe('Bulk import: malformed row among valid rows', () => {
         expect(data.success).toBe(true);
 
         // Valid rows persisted...
-        const valid1 = await prisma.participant.findUnique({ where: { email: 'valid1-malrow-import-test@example.com' } });
-        const valid3 = await prisma.participant.findUnique({ where: { email: 'valid3-malrow-import-test@example.com' } });
+        const valid1 = await prisma.person.findUnique({ where: { email: 'valid1-malrow-import-test@example.com' } });
+        const valid3 = await prisma.person.findUnique({ where: { email: 'valid3-malrow-import-test@example.com' } });
         expect(valid1).not.toBeNull();
         expect(valid3).not.toBeNull();
 
         // ...bad row NOT persisted.
-        const bad = await prisma.participant.findFirst({ where: { name: 'Bad Malrow Import Test' } });
+        const bad = await prisma.person.findFirst({ where: { name: 'Bad Malrow Import Test' } });
         expect(bad).toBeNull();
-        const importedCount = await prisma.participant.count({ where: { name: { contains: 'Malrow Import Test' }, NOT: { name: 'Admin Malrow Import Test' } } });
+        const importedCount = await prisma.person.count({ where: { name: { contains: 'Malrow Import Test' }, NOT: { name: 'Admin Malrow Import Test' } } });
         expect(importedCount).toBe(2);
 
         // Bad row surfaced in errors[], naming the right sheet row (the 2nd data row = "Row 3").
@@ -110,14 +110,14 @@ describe('Bulk import: malformed row among valid rows', () => {
         expect(res.status).toBe(200);
         expect(data.success).toBe(true);
 
-        const valid1 = await prisma.participant.findUnique({ where: { email: 'valid1-malrow-import-test@example.com' } });
-        const valid3 = await prisma.participant.findUnique({ where: { email: 'valid3-malrow-import-test@example.com' } });
+        const valid1 = await prisma.person.findUnique({ where: { email: 'valid1-malrow-import-test@example.com' } });
+        const valid3 = await prisma.person.findUnique({ where: { email: 'valid3-malrow-import-test@example.com' } });
         expect(valid1).not.toBeNull();
         expect(valid3).not.toBeNull();
 
-        const bad = await prisma.participant.findFirst({ where: { name: 'BadParent Malrow Import Test' } });
+        const bad = await prisma.person.findFirst({ where: { name: 'BadParent Malrow Import Test' } });
         expect(bad).toBeNull();
-        const importedCount = await prisma.participant.count({ where: { name: { contains: 'Malrow Import Test' }, NOT: { name: 'Admin Malrow Import Test' } } });
+        const importedCount = await prisma.person.count({ where: { name: { contains: 'Malrow Import Test' }, NOT: { name: 'Admin Malrow Import Test' } } });
         expect(importedCount).toBe(2);
 
         expect(data.errors).toHaveLength(1);

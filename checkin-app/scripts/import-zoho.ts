@@ -53,7 +53,7 @@ async function main() {
     const prisma = new PrismaClient({ adapter });
     try {
         // Confirm the audit actor exists before writing anything.
-        const actor = await prisma.participant.findUnique({ where: { id: actorId } });
+        const actor = await prisma.person.findUnique({ where: { id: actorId } });
         if (!actor) throw new Error(`--actor ${actorId} is not an existing Participant.`);
 
         const result = await prisma.$transaction((tx) => applyImport(tx, built, actorId), {

@@ -25,7 +25,7 @@ describe('Program Publish API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'publish-api-test' } },
             select: { id: true }
         });
@@ -43,24 +43,24 @@ describe('Program Publish API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-publish-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Lead
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: 'lead-publish-api-test@example.com', name: 'Lead', household: { create: {} } }
         });
         leadId = lead.id;
 
         // Create Common User
-        const commonUser = await prisma.participant.create({
+        const commonUser = await prisma.person.create({
             data: { email: 'common-publish-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
@@ -142,7 +142,7 @@ describe('Program Publish API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
     });

@@ -1,14 +1,5 @@
 import prisma from "@/lib/prisma";
-import type { PrismaClient, Prisma } from "@/generated/prisma/client";
-
-/**
- * A Prisma client that can run queries: either the global singleton or a
- * transaction-scoped client passed in by a caller that has already opened a
- * `$transaction` (e.g. the scan route's per-participant lock). Threading this
- * through lets the same reads/writes run under the caller's transaction and
- * lock instead of on independent connections.
- */
-type DbClient = PrismaClient | Prisma.TransactionClient;
+import { type DbClient, type TxClient, withTx } from "@/lib/db-client";
 
 /**
  * Finds all program IDs that a participant is associated with
@@ -18,11 +9,11 @@ type DbClient = PrismaClient | Prisma.TransactionClient;
 async function getRelevantProgramIds(participantId: number, db: DbClient = prisma): Promise<number[]> {
     const [participantPrograms, volunteerPrograms, leadPrograms] = await Promise.all([
         db.programParticipant.findMany({
-            where: { participantId },
+            where: { personId: participantId },
             select: { programId: true }
         }),
         db.programVolunteer.findMany({
-            where: { participantId },
+            where: { personId: participantId },
             select: { programId: true }
         }),
         db.program.findMany({
@@ -97,7 +88,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
 
     // Chunks recreated below are all segments of one physical visit: they keep
     // the original arrival's source and take `source` as their departure channel.
-    const { participantId, arrivedAt, arrivedVia } = originalVisit;
+    const { personId: participantId, arrivedAt, arrivedVia } = originalVisit;
 
     const relevantProgramIds = await getRelevantProgramIds(participantId, db);
 
@@ -130,7 +121,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
 
     // We have at least one event. We need to chunk the visit by deleting the
     // original open visit and recreating the chunks atomically.
-    const chunk = async (tx: Prisma.TransactionClient) => {
+    const chunk = async (tx: TxClient) => {
         // First, delete the original open visit
         await tx.visit.delete({
             where: { id: visitId }
@@ -150,7 +141,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
                 if (currentIterStart < gapEnd) {
                     createdVisits.push(await tx.visit.create({
                         data: {
-                            participantId,
+                            personId: participantId,
                             arrivedAt: currentIterStart,
                             departedAt: gapEnd,
                             arrivedVia,
@@ -180,7 +171,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
             if (eventVisitStart < eventVisitEnd) {
                 createdVisits.push(await tx.visit.create({
                     data: {
-                        participantId,
+                        personId: participantId,
                         arrivedAt: eventVisitStart,
                         departedAt: eventVisitEnd,
                         arrivedVia,
@@ -196,7 +187,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         if (currentIterStart < checkoutTime) {
             createdVisits.push(await tx.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: currentIterStart,
                     departedAt: checkoutTime,
                     arrivedVia,
@@ -213,8 +204,5 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
     // the scan route's per-participant lock), run the chunking on it directly:
     // Postgres has no nested transactions and the tx client has no `$transaction`.
     // Otherwise open our own transaction so the delete + recreates stay atomic.
-    if ("$transaction" in db) {
-        return await db.$transaction(chunk);
-    }
-    return await chunk(db);
+    return withTx(db, chunk);
 }

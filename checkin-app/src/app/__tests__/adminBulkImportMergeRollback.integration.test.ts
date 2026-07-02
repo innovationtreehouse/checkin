@@ -35,26 +35,26 @@ describe('Bulk import merge rollback', () => {
             await prisma.trustedAdult.deleteMany({ where: { counterpartyName: 'Grandma Mergeroll' } });
             await prisma.membership.deleteMany({});
             await prisma.householdLead.deleteMany({});
-            await prisma.participant.deleteMany({ where: { email: { contains: 'mergeroll-test' } } });
-            await prisma.household.deleteMany({ where: { participants: { none: {} } } });
+            await prisma.person.deleteMany({ where: { email: { contains: 'mergeroll-test' } } });
+            await prisma.household.deleteMany({ where: { householdMembers: { none: {} } } });
         } catch {}
     };
 
     beforeAll(async () => {
         await cleanup();
 
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-mergeroll-test@example.com', name: 'Admin Mergeroll Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
-        const target = await prisma.participant.create({
+        const target = await prisma.person.create({
             data: { email: TARGET_EMAIL, name: 'Target Anchor Mergeroll Test', household: { create: {} } },
             select: { householdId: true }
         });
         targetHouseholdId = target.householdId;
 
-        const source = await prisma.participant.create({
+        const source = await prisma.person.create({
             data: { email: SOURCE_EMAIL, name: 'Source Member Mergeroll Test', household: { create: {} } },
             select: { id: true, householdId: true }
         });
@@ -111,7 +111,7 @@ describe('Bulk import merge rollback', () => {
         expect(data.errors.join(' ')).toContain('Household linking error');
 
         // NO partial move: source member still in the source household...
-        const source = await prisma.participant.findUnique({
+        const source = await prisma.person.findUnique({
             where: { id: sourceMemberId },
             select: { householdId: true }
         });

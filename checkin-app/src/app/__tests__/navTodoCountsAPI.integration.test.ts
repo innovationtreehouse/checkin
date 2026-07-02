@@ -47,14 +47,14 @@ describe('Nav todo-counts API', () => {
     beforeAll(async () => {
         // Household A: a lead with a full slate of *member-actionable* todos, plus
         // one reviewer-owned membership state that must NOT count for the member.
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dateOfBirth: new Date('1985-01-01'), phone: '555-0001', household: { create: {} } },
         });
         leadId = lead.id;
         householdAId = lead.householdId;
-        await prisma.householdLead.create({ data: { householdId: householdAId, participantId: leadId } });
+        await prisma.householdLead.create({ data: { householdId: householdAId, personId: leadId } });
 
-        const second = await prisma.participant.create({
+        const second = await prisma.person.create({
             data: { email: `member2-${TAG}@example.com`, name: 'Member A2', dateOfBirth: new Date('1987-01-01'), householdId: householdAId },
         });
         secondMemberId = second.id;
@@ -112,8 +112,8 @@ describe('Nav todo-counts API', () => {
         const program2 = await prisma.program.create({ data: { name: `Prog2 ${TAG}` } });
         program1Id = program1.id;
         program2Id = program2.id;
-        await prisma.programParticipant.create({ data: { programId: program1Id, participantId: leadId, status: 'PENDING' } });
-        await prisma.programParticipant.create({ data: { programId: program2Id, participantId: secondMemberId, status: 'PENDING', isPaymentPlanRequested: true } });
+        await prisma.programParticipant.create({ data: { programId: program1Id, personId: leadId, status: 'PENDING' } });
+        await prisma.programParticipant.create({ data: { programId: program2Id, personId: secondMemberId, status: 'PENDING', isPaymentPlanRequested: true } });
 
         // The lead also *runs* a program (leadMentorId). Three events: one ended
         // and unconfirmed (the inbox item), one ended but already confirmed, one
@@ -134,7 +134,7 @@ describe('Nav todo-counts API', () => {
         futureEventId = futureEvent.id;
 
         // Household B: a board member with no household todos of their own.
-        const board = await prisma.participant.create({
+        const board = await prisma.person.create({
             data: { email: `board-${TAG}@example.com`, name: 'Board B', dateOfBirth: new Date('1980-01-01'), phone: '555-0000', isBoardMember: true, household: { create: {} } },
         });
         boardId = board.id;
@@ -150,7 +150,7 @@ describe('Nav todo-counts API', () => {
         await prisma.membershipProcess.deleteMany({ where: { membershipId } });
         await prisma.membership.deleteMany({ where: { id: membershipId } });
         await prisma.householdLead.deleteMany({ where: { householdId: householdAId } });
-        await prisma.participant.deleteMany({ where: { id: { in: [leadId, secondMemberId, boardId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [leadId, secondMemberId, boardId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [householdAId, householdBId] } } });
     });
 
@@ -205,7 +205,7 @@ describe('Nav todo-counts API', () => {
     });
 
     it('surfaces a household todo for a member with no DoB and no 25+ declaration', async () => {
-        const noAge = await prisma.participant.create({
+        const noAge = await prisma.person.create({
             data: { name: 'No Age M', householdId: householdAId },
         });
         try {
@@ -217,7 +217,7 @@ describe('Nav todo-counts API', () => {
                 ]),
             );
         } finally {
-            await prisma.participant.delete({ where: { id: noAge.id } });
+            await prisma.person.delete({ where: { id: noAge.id } });
         }
     });
 
@@ -274,18 +274,18 @@ describe('Nav todo-counts API', () => {
         const before = await memberFamilies();
 
         // Staff household: only an org-email participant → must NOT count.
-        const staff = await prisma.participant.create({
+        const staff = await prisma.person.create({
             data: { email: `staff-${TAG}@${ORG_DOMAIN}`, name: 'Staff', household: { create: {} } },
         });
         expect(await memberFamilies()).toBe(before);
 
         // Member family: a non-org email → +1.
-        const member = await prisma.participant.create({
+        const member = await prisma.person.create({
             data: { email: `family-${TAG}@example.com`, name: 'Family', household: { create: {} } },
         });
         expect(await memberFamilies()).toBe(before + 1);
 
-        await prisma.participant.deleteMany({ where: { id: { in: [staff.id, member.id] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [staff.id, member.id] } } });
         await prisma.household.deleteMany({ where: { id: { in: [staff.householdId, member.householdId] } } });
     });
 });

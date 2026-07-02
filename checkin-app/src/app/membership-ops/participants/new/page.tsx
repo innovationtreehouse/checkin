@@ -6,18 +6,19 @@ import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
 import { isYouth } from '@/lib/time';
-import { Button, Card, Center, Checkbox, Container, Loader, Paper, Stack, Text, TextInput } from '@mantine/core';
+import { Button, Card, Checkbox, Container, Paper, Stack, Text, TextInput } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type HouseholdOption = {
   id: number;
   name: string;
-  participants: { id: number; name: string | null; email: string | null }[];
+  householdMembers: { id: number; name: string | null; email: string | null }[];
 };
 
 export default function NewParticipantPage() {
   return (
-    <Suspense fallback={<Center mih="60vh"><Loader /></Center>}>
+    <Suspense fallback={<PageLoader />}>
       <NewParticipantForm />
     </Suspense>
   );
@@ -37,7 +38,7 @@ function NewParticipantForm() {
   const [householdId, setHouseholdId] = useState("");
   const [householdSearch, setHouseholdSearch] = useState("");
 
-  const studentSelected = isYouth(dob);
+  const isYouthSelected = isYouth(dob);
 
   const [alreadyMember, setAlreadyMember] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -66,7 +67,7 @@ function NewParticipantForm() {
   }, [queryHouseholdId, householdId]);
 
   if (authLoading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) {
@@ -86,7 +87,7 @@ function NewParticipantForm() {
         body: JSON.stringify({
           name,
           email: email || null,
-          parentEmail: studentSelected ? parentEmail : null,
+          parentEmail: isYouthSelected ? parentEmail : null,
           dob: dob || null,
           householdId: householdId ? parseInt(householdId) : null,
           alreadyMember: !householdId && alreadyMember
@@ -116,7 +117,7 @@ function NewParticipantForm() {
     }
   };
 
-  const submitDisabled = saving || (!studentSelected && !email && !householdId) || (studentSelected && !parentEmail && !householdId);
+  const submitDisabled = saving || (!isYouthSelected && !email && !householdId) || (isYouthSelected && !parentEmail && !householdId);
 
   return (
     <Container size="md" pb="md">
@@ -143,7 +144,7 @@ function NewParticipantForm() {
             <TextInput
               type="date"
               label="Date of Birth"
-              description={studentSelected ? 'Student Detected' : undefined}
+              description={isYouthSelected ? 'Student Detected' : undefined}
               value={dob}
               onChange={(e) => setDob(e.currentTarget.value)}
               maw={300}
@@ -151,20 +152,20 @@ function NewParticipantForm() {
 
             <TextInput
               type="email"
-              label={`Participant Google Email ${studentSelected ? '(Optional for Students)' : ''}`}
-              required={!studentSelected && !householdId}
+              label={`Participant Google Email ${isYouthSelected ? '(Optional for Students)' : ''}`}
+              required={!isYouthSelected && !householdId}
               value={email}
               onChange={(e) => setEmail(e.currentTarget.value)}
               placeholder="jane.doe@example.com"
             />
 
-            {studentSelected && (
+            {isYouthSelected && (
               <Paper withBorder radius="md" p="md" bg="var(--mantine-color-grape-light)">
                 <TextInput
                   type="email"
                   label={`Parent / Guardian Google Email ${!householdId ? '' : '(Optional)'}`}
                   description="Because the participant is under 18, a parent or guardian's email is required to associate their accounts — unless you assign them to an existing household below."
-                  required={studentSelected && !householdId}
+                  required={isYouthSelected && !householdId}
                   value={parentEmail}
                   onChange={(e) => setParentEmail(e.currentTarget.value)}
                   placeholder="parent@example.com"
@@ -187,7 +188,7 @@ function NewParticipantForm() {
                   return data.households || [];
                 }}
                 getOptionLabel={(h) => h.name || `Household #${h.id}`}
-                getOptionDescription={(h) => h.participants.map((p) => p.name || p.email || 'Unnamed').join(', ') || 'Empty'}
+                getOptionDescription={(h) => h.householdMembers.map((p) => p.name || p.email || 'Unnamed').join(', ') || 'Empty'}
                 onSelect={(h) => { setHouseholdId(h.id.toString()); setHouseholdSearch(h.name || `Household #${h.id}`); }}
                 onClear={() => { setHouseholdId(""); setHouseholdSearch(""); }}
               />

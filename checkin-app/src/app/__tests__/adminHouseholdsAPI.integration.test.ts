@@ -24,7 +24,7 @@ describe('Admin Households API Integration Tests', () => {
     beforeAll(async () => {
         // Clean up any leaked state
         await prisma.membership.deleteMany({});
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'households-api-test' } }
         });
         await prisma.household.deleteMany({
@@ -32,7 +32,7 @@ describe('Admin Households API Integration Tests', () => {
         });
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-households-api-test@example.com', name: 'Admin Households Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
@@ -48,7 +48,7 @@ describe('Admin Households API Integration Tests', () => {
         testHousehold2Id = household2.id;
 
         // Add user to household 2 for search testing
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-households-api-test@example.com', name: 'User Households Test', householdId: testHousehold2Id }
         });
         testUserId = user.id;
@@ -67,7 +67,7 @@ describe('Admin Households API Integration Tests', () => {
         await prisma.membership.deleteMany({
             where: { householdId: { in: [testHousehold1Id, testHousehold2Id] } }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [testAdminId, testUserId] } }
         });
         await prisma.household.deleteMany({

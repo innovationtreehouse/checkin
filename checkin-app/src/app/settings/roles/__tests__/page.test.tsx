@@ -16,7 +16,7 @@ const users = [
 describe("RoleAssignmentPage", () => {
     it("loads and lists users, hiding youth by default", async () => {
         setSession({ id: 1, isSysadmin: true });
-        mockFetchJson({ "/api/roles": { participants: users } });
+        mockFetchJson({ "/api/roles": { people: users } });
         renderWithProviders(<RoleAssignmentPage />);
 
         expect(await screen.findByText("Ann Admin")).toBeInTheDocument();
@@ -26,7 +26,7 @@ describe("RoleAssignmentPage", () => {
     it("filters by search text and toggles a role checkbox", async () => {
         setSession({ id: 1, isSysadmin: true });
         const fetchSpy = mockFetchJson({
-            "/api/roles": () => ({ participants: users }),
+            "/api/roles": () => ({ people: users }),
         });
         renderWithProviders(<RoleAssignmentPage />);
 

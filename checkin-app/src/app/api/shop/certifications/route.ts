@@ -33,10 +33,10 @@ export const GET = handler('GET /api/shop/certifications', async ({ req, auth })
         const isAuthorized = user.isSysadmin || user.isBoardMember || user.isKeyholder || hasCertifierAuth;
         if (!isAuthorized) throw forbidden();
         const certifications = await prisma.toolStatus.findMany({
-            orderBy: [{ tool: { name: 'asc' } }, { participant: { name: 'asc' } }],
+            orderBy: [{ tool: { name: 'asc' } }, { person: { name: 'asc' } }],
             include: {
                 tool: true,
-                participant: { select: { id: true, name: true } },
+                person: { select: { id: true, name: true } },
             },
         });
         return { ToolStatus: certifications };
@@ -45,13 +45,13 @@ export const GET = handler('GET /api/shop/certifications', async ({ req, auth })
     const targetUserId = participantIdParam ? parseInt(participantIdParam, 10) : user.id;
     const whereClause = toolIdParam
         ? { toolId: parseInt(toolIdParam, 10) }
-        : { participantId: targetUserId };
+        : { personId: targetUserId };
 
     const certifications = await prisma.toolStatus.findMany({
         where: whereClause,
         include: {
             tool: true,
-            participant: toolIdParam ? { select: { id: true, name: true } } : false,
+            person: toolIdParam ? { select: { id: true, name: true } } : false,
         },
     });
 
@@ -89,8 +89,8 @@ export const POST = withAuth({}, async (req, auth) => {
             // Check if user is a certifier for this specific tool
             const currentUserStatus = await prisma.toolStatus.findUnique({
                 where: {
-                    participantId_toolId: {
-                        participantId: currentUserId,
+                    personId_toolId: {
+                        personId: currentUserId,
                         toolId: parseInt(toolId, 10)
                     }
                 }
@@ -116,13 +116,13 @@ export const POST = withAuth({}, async (req, auth) => {
         const pId = parseInt(participantId, 10);
 
         const currentStatus = await prisma.toolStatus.findUnique({
-            where: { participantId_toolId: { participantId: pId, toolId: tId } }
+            where: { personId_toolId: { personId: pId, toolId: tId } }
         });
 
         const upsertedCert = await prisma.toolStatus.upsert({
             where: {
-                participantId_toolId: {
-                    participantId: pId,
+                personId_toolId: {
+                    personId: pId,
                     toolId: tId
                 }
             },
@@ -130,7 +130,7 @@ export const POST = withAuth({}, async (req, auth) => {
                 level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'INSTRUCTOR' | 'MAY_CERTIFY_OTHERS'
             },
             create: {
-                participantId: pId,
+                personId: pId,
                 toolId: tId,
                 level: level as 'BASIC' | 'DOF' | 'CERTIFIED' | 'INSTRUCTOR' | 'MAY_CERTIFY_OTHERS'
             }

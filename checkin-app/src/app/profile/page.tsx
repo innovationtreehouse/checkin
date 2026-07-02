@@ -3,17 +3,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Anchor, Button, Card, Center, Loader, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Anchor, Button, Card, Stack, Text, TextInput, Title } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
+import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { isYouth } from '@/lib/time';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; tone: AlertTone } | null>(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -33,10 +35,10 @@ export default function ProfilePage() {
           dob: data.profile.dateOfBirth ? new Date(data.profile.dateOfBirth).toISOString().split('T')[0] : ""
         });
       } else {
-        setMessage("Failed to load profile.");
+        setMessage({ text: "Failed to load profile.", tone: "error" });
       }
     } catch {
-      setMessage("Network error loading profile.");
+      setMessage({ text: "Network error loading profile.", tone: "error" });
     } finally {
       setLoading(false);
     }
@@ -53,7 +55,7 @@ export default function ProfilePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setMessage("");
+    setMessage(null);
 
     try {
       const res = await fetch('/api/profile', {
@@ -67,19 +69,19 @@ export default function ProfilePage() {
       });
 
       if (res.ok) {
-        setMessage("Profile updated successfully!");
+        setMessage({ text: "Profile updated successfully!", tone: "success" });
       } else {
-        setMessage("Failed to update profile.");
+        setMessage({ text: "Failed to update profile.", tone: "error" });
       }
     } catch {
-      setMessage("Network error saving profile.");
+      setMessage({ text: "Network error saving profile.", tone: "error" });
     } finally {
       setSaving(false);
     }
   };
 
   if (loading || status === "loading") {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!session) return null; // Fallback while router redirects
@@ -115,7 +117,7 @@ export default function ProfilePage() {
             </Stack>
           </form>
 
-          {message && <Alert color={message.includes('success') ? 'green' : 'red'} mt="md">{message}</Alert>}
+          <AlertBanner message={message?.text} tone={message?.tone} mb="md" />
       </Card>
     </PageContainer>
   );

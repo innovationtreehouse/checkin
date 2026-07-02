@@ -39,39 +39,39 @@ const member = ctx({ selfId: 5 }); // no programs
 
 describe('RSVP their_program_participants via eventId', () => {
     it('grants their_program_participants to a lead for an RSVP whose event is in their program', () => {
-        const held = scopesHeld('RSVP', { eventId: 200, participantId: 5 }, lead);
+        const held = scopesHeld('RSVP', { eventId: 200, personId:5 }, lead);
         expect(held.has('their_program_participants')).toBe(true);
     });
 
     it('grants their_program_participants to a core-vol for an in-program event', () => {
-        const held = scopesHeld('RSVP', { eventId: 201, participantId: 5 }, coreVol);
+        const held = scopesHeld('RSVP', { eventId: 201, personId:5 }, coreVol);
         expect(held.has('their_program_participants')).toBe(true);
     });
 
     it('does NOT grant their_program_participants to a plain member', () => {
-        const held = scopesHeld('RSVP', { eventId: 200, participantId: 99 }, member);
+        const held = scopesHeld('RSVP', { eventId: 200, personId:99 }, member);
         expect(held.has('their_program_participants')).toBe(false);
     });
 
     it('does NOT grant a lead access to an RSVP whose event is in a DIFFERENT program', () => {
-        const held = scopesHeld('RSVP', { eventId: 999, participantId: 5 }, lead);
+        const held = scopesHeld('RSVP', { eventId: 999, personId:5 }, lead);
         expect(held.has('their_program_participants')).toBe(false);
     });
 
     it('the RSVP owner still holds their_own (participantId === selfId)', () => {
-        const held = scopesHeld('RSVP', { eventId: 999, participantId: 5 }, member);
+        const held = scopesHeld('RSVP', { eventId: 999, personId:5 }, member);
         expect(held.has('their_own')).toBe(true);
     });
 
     it('a non-owner does NOT hold their_own', () => {
-        const held = scopesHeld('RSVP', { eventId: 999, participantId: 5 }, ctx({ selfId: 6 }));
+        const held = scopesHeld('RSVP', { eventId: 999, personId:5 }, ctx({ selfId: 6 }));
         expect(held.has('their_own')).toBe(false);
     });
 
     it('the stale programId read no longer grants — a row carrying only programId is inert', () => {
         // Old dead binding: a lead of program 100 with a row {programId: 100} used
         // to (try to) match. With the eventId binding it grants nothing.
-        const held = scopesHeld('RSVP', { programId: 100, participantId: 99 }, lead);
+        const held = scopesHeld('RSVP', { programId: 100, personId:99 }, lead);
         expect(held.has('their_program_participants')).toBe(false);
     });
 });

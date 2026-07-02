@@ -39,9 +39,9 @@ describe('outboundCall — public-only surface (shopify.product.create)', () => 
         expect(out.Program.leadMentorNotificationSettings).toBeUndefined();
     });
 
-    it('strips pii (email/phone/dob) and internal from a Participant', async () => {
+    it('strips pii (email/phone/dob) and internal from a Person', async () => {
         const out = (await capture('shopify.product.create', {
-            Participant: {
+            Person: {
                 id: 5,
                 name: 'Me',                // public
                 email: 'me@x.com',         // pii
@@ -50,14 +50,14 @@ describe('outboundCall — public-only surface (shopify.product.create)', () => 
                 notificationSettings: { x: 1 }, // personal
                 emailVerified: '2026-01-01',    // internal
             },
-        })) as { Participant: Record<string, unknown> };
-        expect(out.Participant.id).toBe(5);
-        expect(out.Participant.name).toBe('Me');
-        expect(out.Participant.email).toBeUndefined();
-        expect(out.Participant.phone).toBeUndefined();
-        expect(out.Participant.dob).toBeUndefined();
-        expect(out.Participant.notificationSettings).toBeUndefined();
-        expect(out.Participant.emailVerified).toBeUndefined();
+        })) as { Person: Record<string, unknown> };
+        expect(out.Person.id).toBe(5);
+        expect(out.Person.name).toBe('Me');
+        expect(out.Person.email).toBeUndefined();
+        expect(out.Person.phone).toBeUndefined();
+        expect(out.Person.dob).toBeUndefined();
+        expect(out.Person.notificationSettings).toBeUndefined();
+        expect(out.Person.emailVerified).toBeUndefined();
     });
 });
 
@@ -66,7 +66,7 @@ describe('outboundCall — public-only surface (shopify.product.create)', () => 
 describe('outboundCall — pii surface (email.admin-notify)', () => {
     it('keeps public + pii, still drops personal/internal', async () => {
         const out = (await capture('email.admin-notify', {
-            Participant: {
+            Person: {
                 id: 5,
                 name: 'Me',                // public  → kept
                 email: 'me@x.com',         // pii     → kept
@@ -75,14 +75,14 @@ describe('outboundCall — pii surface (email.admin-notify)', () => {
                 emailVerified: '2026-01-01',    // internal → dropped
                 isSysadmin: true,                 // internal → dropped
             },
-        })) as { Participant: Record<string, unknown> };
-        expect(out.Participant.id).toBe(5);
-        expect(out.Participant.name).toBe('Me');
-        expect(out.Participant.email).toBe('me@x.com');
-        expect(out.Participant.phone).toBe('555');
-        expect(out.Participant.notificationSettings).toBeUndefined();
-        expect(out.Participant.emailVerified).toBeUndefined();
-        expect(out.Participant.isSysadmin).toBeUndefined();
+        })) as { Person: Record<string, unknown> };
+        expect(out.Person.id).toBe(5);
+        expect(out.Person.name).toBe('Me');
+        expect(out.Person.email).toBe('me@x.com');
+        expect(out.Person.phone).toBe('555');
+        expect(out.Person.notificationSettings).toBeUndefined();
+        expect(out.Person.emailVerified).toBeUndefined();
+        expect(out.Person.isSysadmin).toBeUndefined();
     });
 });
 
@@ -128,9 +128,9 @@ describe('outboundCall — secret is unconditionally stripped', () => {
 describe('outboundCall — nested relations', () => {
     it('strips a nested relation by ITS model tiers, not the parent key', async () => {
         // pii surface: Household.line1 is 'personal' → must be stripped even
-        // though the parent Participant carries pii the surface allows.
+        // though the parent Person carries pii the surface allows.
         const out = (await capture('email.admin-notify', {
-            Participant: {
+            Person: {
                 id: 5,
                 name: 'Me',
                 email: 'me@x.com', // pii → kept
@@ -140,9 +140,9 @@ describe('outboundCall — nested relations', () => {
                     line1: 'private st', // personal → stripped
                 },
             },
-        })) as { Participant: Record<string, unknown> };
-        expect(out.Participant.email).toBe('me@x.com');
-        const hh = out.Participant.household as Record<string, unknown>;
+        })) as { Person: Record<string, unknown> };
+        expect(out.Person.email).toBe('me@x.com');
+        const hh = out.Person.household as Record<string, unknown>;
         expect(hh.id).toBe(2);
         expect(hh.name).toBe('Home');
         expect(hh.line1).toBeUndefined();

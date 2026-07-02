@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/auth";
 import { updateContact, deleteContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
 
 async function leadHousehold(userId: number): Promise<number | { error: string; status: number }> {
-    const user = await prisma.participant.findUnique({ where: { id: userId }, include: { householdLeads: true } });
+    const user = await prisma.person.findUnique({ where: { id: userId }, include: { householdLeads: true } });
     if (!user?.householdId) return { error: "You must create a household first.", status: 400 };
     const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
     if (!isLead && !user.isSysadmin) return { error: "Only household leads can manage emergency contacts.", status: 403 };

@@ -12,7 +12,7 @@ beforeEach(() => resetRtl());
 const participantA = {
   id: 1, name: "Alice Adams", email: "alice@example.com", phone: null, googleId: "g1",
   _count: { visits: 5, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
-  household: { id: 10, name: "Adams House", leads: [], participants: [{ id: 1 }] },
+  household: { id: 10, name: "Adams House", leads: [], householdMembers: [{ id: 1 }] },
 };
 const participantB = {
   id: 2, name: "Bob Adams", email: "bob@example.com", phone: null, googleId: null,
@@ -154,7 +154,7 @@ describe("membership-ops/participants/merge page", () => {
     const leo = {
       id: 40, name: "Leo Lead", email: "leo@example.com", phone: "5551234567", googleId: "g40",
       _count: { visits: 0, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
-      household: { id: 100, name: "Lead House", leads: [{ participantId: 40 }], participants: [{ id: 40 }, { id: 41 }] },
+      household: { id: 100, name: "Lead House", leads: [{ personId: 40 }], householdMembers: [{ id: 40 }, { id: 41 }] },
     };
     const otto = {
       id: 41, name: "Otto Other", email: "otto@example.com", phone: null, googleId: "g41",
@@ -183,7 +183,7 @@ describe("membership-ops/participants/merge page", () => {
     const mia = {
       id: 20, name: "Mia Member", email: "mia@example.com", phone: null, googleId: null,
       _count: { visits: 0, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
-      household: { id: 200, name: "Member House", leads: [{ participantId: 21 }], participants: [{ id: 20 }, { id: 21 }] },
+      household: { id: 200, name: "Member House", leads: [{ personId: 21 }], householdMembers: [{ id: 20 }, { id: 21 }] },
     };
     const hank = {
       id: 21, name: "Hank High", email: "hank@example.com", phone: null, googleId: "g21",

@@ -3,7 +3,7 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import ProgramDetailsPage from "../page";
 
@@ -59,16 +59,16 @@ const programData = {
   memberOnly: false,
   participants: [
     {
-      participantId: 101, status: "ACTIVE", joinedAt: "2026-01-05T00:00:00.000Z", pendingSince: null,
-      participant: { name: "Alice Kid", email: "alice@example.com", phone: "5125551234" },
+      personId: 101, status: "ACTIVE", pendingSince: null,
+      person: { name: "Alice Kid", email: "alice@example.com", phone: "5125551234" },
     },
     {
-      participantId: 102, status: "PENDING", joinedAt: null, pendingSince: "2026-01-06T00:00:00.000Z",
-      participant: { name: "Charlie Kid", email: "charlie@example.com" },
+      personId: 102, status: "PENDING", pendingSince: "2026-01-06T00:00:00.000Z",
+      person: { name: "Charlie Kid", email: "charlie@example.com" },
     },
   ],
   volunteers: [
-    { participantId: 201, isCore: true, participant: { name: "Vera Volunteer", email: "vera@example.com" } },
+    { personId: 201, isCore: true, person: { name: "Vera Volunteer", email: "vera@example.com" } },
   ],
   events: [
     { id: 301, name: "Session 1", startAt: "2026-02-01T18:00:00.000Z", endAt: "2026-02-01T20:00:00.000Z", attendanceConfirmedAt: null },
@@ -237,7 +237,7 @@ describe("ProgramDetailsPage", () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
       "/api/programs/1/eligible-participants": {},
-      "/api/participants/search": { participants: [{ id: 9, name: "Andy Adult", email: "andy@example.com" }] },
+      "/api/people/search": { people: [{ id: 9, name: "Andy Adult", email: "andy@example.com" }] },
       "/api/programs/1": programData,
     });
     renderPage();
@@ -310,15 +310,17 @@ describe("ProgramDetailsPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
     await screen.findByText(/Vera Volunteer/);
 
-    window.confirm = jest.fn(() => false);
     fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+    const declineModal = await screen.findByRole("dialog", { name: "Remove Volunteer" });
+    fireEvent.click(within(declineModal).getByRole("button", { name: "Cancel" }));
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/programs/1/volunteers",
       expect.objectContaining({ method: "DELETE" }),
     );
 
-    window.confirm = jest.fn(() => true);
     fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+    const confirmModal = await screen.findByRole("dialog", { name: "Remove Volunteer" });
+    fireEvent.click(within(confirmModal).getByRole("button", { name: "Remove" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/programs/1/volunteers",
@@ -395,15 +397,19 @@ describe("ProgramDetailsPage", () => {
     expect(screen.getAllByText(/Too Old/).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText("Gerry Grownup"));
 
-    window.confirm = jest.fn(() => false);
     fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+    const declineModal = await screen.findByRole("dialog", { name: "Add Participant Manually" });
+    fireEvent.click(within(declineModal).getByRole("button", { name: "Cancel" }));
     expect(fetchMock).not.toHaveBeenCalledWith("/api/programs/1/participants", expect.anything());
 
-    window.confirm = jest.fn(() => true);
     fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+    const failModal = await screen.findByRole("dialog", { name: "Add Participant Manually" });
+    fireEvent.click(within(failModal).getByRole("button", { name: "Add Participant" }));
     expect(await screen.findByText("Program is full.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+    const retryModal = await screen.findByRole("dialog", { name: "Add Participant Manually" });
+    fireEvent.click(within(retryModal).getByRole("button", { name: "Add Participant" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/programs/1/participants",
@@ -417,12 +423,12 @@ describe("ProgramDetailsPage", () => {
       ...programData,
       participants: [
         {
-          participantId: 401, status: "ACTIVE", joinedAt: null, pendingSince: null,
-          participant: { name: "No Phone Kid", email: "nophone@example.com", phone: null, household: { emergencyContacts: [] } },
+          personId: 401, status: "ACTIVE", joinedAt: null, pendingSince: null,
+          person: { name: "No Phone Kid", email: "nophone@example.com", phone: null, household: { emergencyContacts: [] } },
         },
         {
-          participantId: 402, status: "ACTIVE", joinedAt: "2026-01-02T00:00:00.000Z", pendingSince: null,
-          participant: {
+          personId: 402, status: "ACTIVE", joinedAt: "2026-01-02T00:00:00.000Z", pendingSince: null,
+          person: {
             name: "Two Contacts Kid", email: "two@example.com", phone: "5125550000",
             household: { emergencyContacts: [
               { id: 1, name: "Mom", phone: "5125551111", relationship: "Mother" },
@@ -431,8 +437,8 @@ describe("ProgramDetailsPage", () => {
           },
         },
         {
-          participantId: 403, status: "PENDING", joinedAt: null, pendingSince: null,
-          participant: { name: "Unknown Pending", email: "pend@example.com", phone: null },
+          personId: 403, status: "PENDING", joinedAt: null, pendingSince: null,
+          person: { name: "Unknown Pending", email: "pend@example.com", phone: null },
         },
       ],
     };
@@ -447,17 +453,22 @@ describe("ProgramDetailsPage", () => {
     expect(screen.getByText(/Mom - 512-555-1111; Dad - 512-555-2222/)).toBeInTheDocument();
     expect(screen.getByText("Unknown")).toBeInTheDocument(); // pendingSince null
 
-    window.confirm = jest.fn(() => true);
     const removeButtons = screen.getAllByRole("button", { name: "Remove" });
     // Volunteers card renders first (1 volunteer), then active participants (401, 402), then pending (403).
     fireEvent.click(removeButtons[1]);
+    const modal1 = await screen.findByRole("dialog", { name: "Remove Participant" });
+    fireEvent.click(within(modal1).getByRole("button", { name: "Remove" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/programs/1/participants",
         expect.objectContaining({ method: "DELETE", body: JSON.stringify({ participantId: 401 }) }),
       ),
     );
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Remove Participant" })).not.toBeInTheDocument());
+
     fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[3]);
+    const modal2 = await screen.findByRole("dialog", { name: "Remove Participant" });
+    fireEvent.click(within(modal2).getByRole("button", { name: "Remove" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/programs/1/participants",

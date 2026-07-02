@@ -20,7 +20,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         include: {
             leads: {
                 include: {
-                    participant: { select: { id: true, name: true, phone: true, email: true } },
+                    person: { select: { id: true, name: true, phone: true, email: true } },
                 },
             },
         },
@@ -31,10 +31,10 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         id: h.id,
         name: h.name,
         leads: h.leads.map((l) => ({
-            id: l.participant.id,
-            name: l.participant.name,
-            phone: l.participant.phone,
-            email: l.participant.email,
+            id: l.person.id,
+            name: l.person.name,
+            phone: l.person.phone,
+            email: l.person.email,
         })),
     }));
 

@@ -47,7 +47,7 @@ const row = {
     participantId: 2,
     status: 'PENDING',
     isPaymentPlanRequested: true,
-    participant: { id: 2, name: 'Member Name', email: 'member@x.test', dateOfBirth: '2000-01-01' },
+    person: { id: 2, name: 'Member Name', email: 'member@x.test', dateOfBirth: '2000-01-01' },
     program: { id: 1, name: 'Woodshop' },
 };
 
@@ -55,7 +55,7 @@ describe('payment-plans field-stripping', () => {
     it('board sees the nested participant email + dateOfBirth (pii)', () => {
         const tokens = tokensFor(ENDPOINT, 'isBoardMember');
         const out = stripValue('ProgramParticipant', row, tokens, ctx()) as Record<string, unknown>;
-        const p = out.participant as Record<string, unknown>;
+        const p = out.person as Record<string, unknown>;
         expect(p.email).toBe('member@x.test');
         expect(p.dateOfBirth).toBe('2000-01-01');
         expect(p.name).toBe('Member Name');
@@ -66,17 +66,17 @@ describe('payment-plans field-stripping', () => {
         // role later granted a member/public-only view of this route.
         const tokens: readonly Token[] = ['member', 'public'];
         const out = stripValue('ProgramParticipant', row, tokens, ctx()) as Record<string, unknown>;
-        const p = out.participant as Record<string, unknown>;
+        const p = out.person as Record<string, unknown>;
         expect(p.email).toBeUndefined();
         expect(p.dateOfBirth).toBeUndefined();
         expect(p.name).toBe('Member Name');
     });
 
-    it('Participant.email is pii, so everyones:pii is required to see it', () => {
+    it('Person.email is pii, so everyones:pii is required to see it', () => {
         // Guards the assumption the test rests on.
         const board = tokensFor(ENDPOINT, 'isBoardMember');
         expect(board).toContain('everyones:pii');
-        const scopes = scopesHeld('Participant', row.participant, ctx());
+        const scopes = scopesHeld('Person', row.person, ctx());
         expect(scopes.has('everyones')).toBe(true);
     });
 });

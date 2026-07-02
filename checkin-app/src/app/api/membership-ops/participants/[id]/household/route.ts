@@ -24,7 +24,7 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
             return NextResponse.json({ error: "Must provide either householdId or createNew boolean" }, { status: 400 });
         }
 
-        const participant = await prisma.participant.findUnique({ where: { id: participantId } });
+        const participant = await prisma.person.findUnique({ where: { id: participantId } });
         if (!participant) {
             return NextResponse.json({ error: "Participant not found" }, { status: 404 });
         }
@@ -37,7 +37,7 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
                     name: `${participant.name || 'User'}'s Household`,
                     leads: {
                         create: {
-                            participantId: participant.id
+                            personId: participant.id
                         }
                     }
                 }
@@ -57,7 +57,7 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
             }
         }
 
-        const updatedParticipant = await prisma.participant.update({
+        const updatedParticipant = await prisma.person.update({
             where: { id: participantId },
             data: { householdId: targetHouseholdId },
             include: { household: true }
@@ -77,7 +77,7 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
         if (participant.householdId && participant.householdId !== targetHouseholdId) {
             await prisma.householdLead.deleteMany({
                 where: {
-                    participantId: participant.id,
+                    personId: participant.id,
                     householdId: participant.householdId
                 }
             });

@@ -23,7 +23,7 @@ describe('Program Settings API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'settings-api-test' } },
             select: { id: true }
         });
@@ -37,30 +37,30 @@ describe('Program Settings API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-settings-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Lead
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: 'lead-settings-api-test@example.com', name: 'Lead', household: { create: {} } }
         });
         leadId = lead.id;
 
         // Create New Lead Candidate
-        const newLead = await prisma.participant.create({
+        const newLead = await prisma.person.create({
             data: { email: 'newlead-settings-api-test@example.com', name: 'New Lead', household: { create: {} } }
         });
         newLeadId = newLead.id;
 
         // Create Common User
-        const commonUser = await prisma.participant.create({
+        const commonUser = await prisma.person.create({
             data: { email: 'common-settings-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
@@ -89,7 +89,7 @@ describe('Program Settings API Integration Tests', () => {
                 where: { actorId: { in: existingUserIds } }
             });
             
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
         }
@@ -195,8 +195,8 @@ describe('Program Settings API Integration Tests', () => {
              // Enroll 2 participants.
              await prisma.programParticipant.createMany({
                  data: [
-                     { programId: targetProgramId, participantId: commonId, status: 'ACTIVE' },
-                     { programId: targetProgramId, participantId: leadId, status: 'PENDING' },
+                     { programId: targetProgramId, personId: commonId, status: 'ACTIVE' },
+                     { programId: targetProgramId, personId: leadId, status: 'PENDING' },
                  ]
              });
 

@@ -15,7 +15,7 @@ export const GET = withAuth(
             const eighteenYearsAgo = new Date();
             eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 
-            const participants = await prisma.participant.findMany({
+            const people = await prisma.person.findMany({
                 where: q ? {
                     OR: [
                         { name: { contains: q, mode: 'insensitive' } },
@@ -27,14 +27,14 @@ export const GET = withAuth(
                 include: {
                     household: {
                         include: {
-                            participants: true,
+                            householdMembers: true,
                             membership: true,
                         }
                     }
                 }
             });
 
-            const formatted = participants.map(p => ({
+            const formatted = people.map(p => ({
                 id: p.id,
                 name: p.name,
                 email: p.email,
@@ -45,10 +45,10 @@ export const GET = withAuth(
                 household: p.household,
             }));
 
-            return NextResponse.json({ participants: formatted });
+            return NextResponse.json({ people: formatted });
         } catch (error) {
-            console.error("Failed to fetch participants:", error);
-            return NextResponse.json({ error: "Failed to fetch participants" }, { status: 500 });
+            console.error("Failed to fetch people:", error);
+            return NextResponse.json({ error: "Failed to fetch people" }, { status: 500 });
         }
     }
 );

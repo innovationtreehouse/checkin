@@ -8,7 +8,7 @@ export const GET = handler('GET /api/shop/members', async () => {
     // Select email too: admins/board are granted everyones:pii and see it. For a
     // certifier the view holds only member+public, so the stripper drops email
     // and keeps name. Field-stripping — not the query — decides who sees what.
-    const members = await prisma.participant.findMany({
+    const members = await prisma.person.findMany({
         where: ACTIVE_MEMBER_PARTICIPANT_WHERE,
         select: {
             id: true,
@@ -20,5 +20,5 @@ export const GET = handler('GET /api/shop/members', async () => {
         }
     });
 
-    return { Participant: members };
+    return { Person: members };
 });

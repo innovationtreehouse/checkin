@@ -32,7 +32,7 @@ async function wipe() {
     await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: hhIds } } } });
     await prisma.membership.deleteMany({ where: { householdId: { in: hhIds } } });
     await prisma.householdLead.deleteMany({ where: { householdId: { in: hhIds } } });
-    await prisma.participant.deleteMany({ where: { householdId: { in: hhIds } } });
+    await prisma.person.deleteMany({ where: { householdId: { in: hhIds } } });
     await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
 }
 
@@ -42,7 +42,7 @@ async function makeHousehold(suffix: string) {
 }
 
 async function addMember(householdId: number, data: { name?: string; email?: string; phone?: string }) {
-    return prisma.participant.create({ data: { householdId, ...data } });
+    return prisma.person.create({ data: { householdId, ...data } });
 }
 
 beforeAll(wipe);
@@ -202,7 +202,7 @@ describe("reconcileHouseholdConflicts — direction B (soft)", () => {
         expect((await prisma.emergencyContact.findUnique({ where: { id: contact.id } }))?.conflictParticipantId).toBe(member.id);
 
         // The colliding member leaves the household — the flag is now stale.
-        await prisma.participant.delete({ where: { id: member.id } });
+        await prisma.person.delete({ where: { id: member.id } });
         await reconcileHouseholdConflicts(prisma, hh);
         expect((await prisma.emergencyContact.findUnique({ where: { id: contact.id } }))?.conflictParticipantId).toBeNull();
     });
@@ -215,7 +215,7 @@ describe("reconcileHouseholdConflicts — direction B (soft)", () => {
         expect((await prisma.emergencyContact.findUnique({ where: { id: contact.id } }))?.conflictParticipantId).toBe(memberA.id);
 
         // Member A leaves, a different member with the SAME identity arrives.
-        await prisma.participant.delete({ where: { id: memberA.id } });
+        await prisma.person.delete({ where: { id: memberA.id } });
         const memberB = await addMember(hh, { name: "Aunt May", phone: "555-555-2000" });
         await reconcileHouseholdConflicts(prisma, hh);
         const after = await prisma.emergencyContact.findUnique({ where: { id: contact.id } });

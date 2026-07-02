@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { Prisma } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import * as xlsx from "xlsx";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { parseImportDob } from "@/lib/importDob";
 import { calculateAge } from "@/lib/time";
+import type { DbClient } from "@/lib/db-client";
 
 export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req: NextRequest, auth) => {
     try {
@@ -53,8 +53,8 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
         // Helper: look up a participant's household. Every participant has one
         // (householdId is a required FK).
-        const ensureHousehold = async (participantId: number, db: Prisma.TransactionClient = prisma): Promise<number> => {
-            const participant = await db.participant.findUnique({ where: { id: participantId } });
+        const ensureHousehold = async (participantId: number, db: DbClient = prisma): Promise<number> => {
+            const participant = await db.person.findUnique({ where: { id: participantId } });
             if (!participant) throw new Error(`Participant ${participantId} not found`);
             return participant.householdId;
         };
@@ -66,9 +66,9 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             name: string;
             dob?: Date;
             address?: string;
-        }, db: Prisma.TransactionClient = prisma) => {
+        }, db: DbClient = prisma) => {
             const isAdult = !data.dob || calculateAge(data.dob) >= 18;
-            const participant = await db.participant.create({
+            const participant = await db.person.create({
                 data: {
                     ...(data.email && { email: data.email }),
                     name: data.name,
@@ -91,7 +91,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         // A CSV address overwrites the row's household address when provided.
         // ponytail: legacy CSV has one free-text address column → goes to line1
         // verbatim. Bulk import is being redone; structured columns land then.
-        const applyAddressToHousehold = async (householdId: number, address: string, db: Prisma.TransactionClient = prisma) => {
+        const applyAddressToHousehold = async (householdId: number, address: string, db: DbClient = prisma) => {
             if (!address) return;
             await db.household.update({
                 where: { id: householdId },
@@ -102,7 +102,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         // Helper: ensure an active household membership exists for a household
         const ensureHouseholdMembership = async (
             householdId: number,
-            db: Prisma.TransactionClient = prisma,
+            db: DbClient = prisma,
         ) => {
             await db.membership.upsert({
                 where: { householdId },
@@ -177,9 +177,9 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                     let participantId: number;
 
                     if (pr.email) {
-                        let participant = await tx.participant.findUnique({ where: { email: pr.email } });
+                        let participant = await tx.person.findUnique({ where: { email: pr.email } });
                         if (participant) {
-                            participant = await tx.participant.update({
+                            participant = await tx.person.update({
                                 where: { id: participant.id },
                                 data: {
                                     name: pr.fullName,
@@ -199,7 +199,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         participantByEmail.set(pr.email.toLowerCase(), participantId);
                     } else if (pr.parentEmail) {
                         // Ensure parent exists (new parents get their own household)
-                        let parent = await tx.participant.findUnique({ where: { email: pr.parentEmail } });
+                        let parent = await tx.person.findUnique({ where: { email: pr.parentEmail } });
                         if (!parent) {
                             parent = await createParticipantWithHousehold({
                                 email: pr.parentEmail,
@@ -211,18 +211,18 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         const parentHouseholdId = await ensureHousehold(parent.id, tx);
 
                         // Find or create child in that household
-                        let participant = await tx.participant.findFirst({
+                        let participant = await tx.person.findFirst({
                             where: { householdId: parentHouseholdId, name: pr.fullName }
                         });
                         if (participant) {
-                            participant = await tx.participant.update({
+                            participant = await tx.person.update({
                                 where: { id: participant.id },
                                 data: {
                                     dateOfBirth: pr.parsedDob ?? participant.dateOfBirth,
                                 }
                             });
                         } else {
-                            participant = await tx.participant.create({
+                            participant = await tx.person.create({
                                 data: {
                                     name: pr.fullName,
                                     dateOfBirth: pr.parsedDob,
@@ -240,7 +240,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         const matchQuery: { name: string; dateOfBirth?: Date } = { name: pr.fullName };
                         if (pr.parsedDob) matchQuery.dateOfBirth = pr.parsedDob;
 
-                        let participant = await tx.participant.findFirst({ where: matchQuery });
+                        let participant = await tx.person.findFirst({ where: matchQuery });
                         if (participant) {
                             await applyAddressToHousehold(participant.householdId, pr.address, tx);
                         } else {
@@ -279,7 +279,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                     const hhId = await ensureHousehold(batchId);
                     return { householdId: hhId, refParticipantId: batchId };
                 }
-                const byEmail = await prisma.participant.findUnique({
+                const byEmail = await prisma.person.findUnique({
                     where: { email: trimmed },
                     select: { id: true, householdId: true }
                 });
@@ -295,7 +295,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 return { householdId: hhId, refParticipantId: batchId };
             }
 
-            const byName = await prisma.participant.findFirst({
+            const byName = await prisma.person.findFirst({
                 where: { name: { equals: trimmed, mode: 'insensitive' } },
                 select: { id: true, householdId: true }
             });
@@ -322,7 +322,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         const targetHouseholdId = resolved.householdId;
                         
                         // Get the participant's current household (might have just been created in Pass 1)
-                        const participant = await prisma.participant.findUnique({
+                        const participant = await prisma.person.findUnique({
                             where: { id: participantId },
                             select: { householdId: true }
                         });
@@ -344,10 +344,10 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         const projectedLeadIds = new Set(
                             (await prisma.householdLead.findMany({
                                 where: { householdId: targetHouseholdId },
-                                select: { participantId: true }
-                            })).map((l) => l.participantId)
+                                select: { personId: true }
+                            })).map((l) => l.personId)
                         );
-                        for (const l of sourceLeads) projectedLeadIds.add(l.participantId);
+                        for (const l of sourceLeads) projectedLeadIds.add(l.personId);
                         if (pr.email) projectedLeadIds.add(participantId);
                         if (projectedLeadIds.size > MAX_HOUSEHOLD_LEADS) {
                             throw new HouseholdLeadLimitError(targetHouseholdId);
@@ -357,14 +357,14 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         // participants are never left half-moved between households.
                         await prisma.$transaction(async (tx) => {
                             // Move all participants from source to target
-                            await tx.participant.updateMany({
+                            await tx.person.updateMany({
                                 where: { householdId: sourceHouseholdId },
                                 data: { householdId: targetHouseholdId }
                             });
 
                             // Move all leads from source to target
                             for (const lead of sourceLeads) {
-                                await addHouseholdLead(tx, targetHouseholdId, lead.participantId);
+                                await addHouseholdLead(tx, targetHouseholdId, lead.personId);
                             }
 
                             // Delete memberships and leads from the old source household
@@ -389,7 +389,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 // Every participant got a household in pass 1 (or already had
                 // one) — just make sure the membership exists.
                 else {
-                    const participant = await prisma.participant.findUnique({ where: { id: participantId } });
+                    const participant = await prisma.person.findUnique({ where: { id: participantId } });
                     if (participant) {
                         await ensureHouseholdMembership(participant.householdId);
                     }

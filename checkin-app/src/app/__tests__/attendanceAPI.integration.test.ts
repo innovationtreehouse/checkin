@@ -33,17 +33,17 @@ describe('General Attendance API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'attend-api-test' } },
             select: { id: true }
         });
         const existingUserIds = existingUsers.map(u => u.id);
         
         await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.auditLog.deleteMany({
@@ -52,12 +52,12 @@ describe('General Attendance API Integration Tests', () => {
 
         // Capture households before participants are removed (RESTRICT requires
         // participants to be deleted before their household).
-        const existingHouseholdIds = (await prisma.participant.findMany({
+        const existingHouseholdIds = (await prisma.person.findMany({
             where: { id: { in: existingUserIds } },
             select: { householdId: true }
         })).map(p => p.householdId);
 
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
@@ -70,19 +70,19 @@ describe('General Attendance API Integration Tests', () => {
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-attend-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Board Member
-        const isBoardMember = await prisma.participant.create({
+        const isBoardMember = await prisma.person.create({
             data: { email: 'board-attend-api-test@example.com', name: 'Board Member', isBoardMember: true, household: { create: {} } }
         });
         boardMemberId = isBoardMember.id;
 
         // Create Common User
-        const commonUser = await prisma.participant.create({
+        const commonUser = await prisma.person.create({
             data: { email: 'common-attend-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
@@ -92,7 +92,7 @@ describe('General Attendance API Integration Tests', () => {
             data: { name: 'Attend API Household Test' }
         });
 
-        const householdLead = await prisma.participant.create({
+        const householdLead = await prisma.person.create({
             data: { 
                 email: 'lead-attend-api-test@example.com', 
                 name: 'Household Lead',
@@ -102,7 +102,7 @@ describe('General Attendance API Integration Tests', () => {
         });
         householdLeadId = householdLead.id;
 
-        const householdChild = await prisma.participant.create({
+        const householdChild = await prisma.person.create({
             data: { 
                 email: 'child-attend-api-test@example.com', 
                 name: 'Household Child',
@@ -113,12 +113,12 @@ describe('General Attendance API Integration Tests', () => {
 
         // Create initial active visits
         const commonVisit = await prisma.visit.create({
-            data: { participantId: commonId, arrivedAt: new Date() }
+            data: { personId: commonId, arrivedAt: new Date() }
         });
         activeVisitId = commonVisit.id;
 
         const childVisit = await prisma.visit.create({
-            data: { participantId: householdChildId, arrivedAt: new Date() }
+            data: { personId: householdChildId, arrivedAt: new Date() }
         });
         childActiveVisitId = childVisit.id;
     });
@@ -128,22 +128,22 @@ describe('General Attendance API Integration Tests', () => {
 
         if (existingUserIds.length > 0) {
             await prisma.householdLead.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
             await prisma.visit.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
             await prisma.auditLog.deleteMany({
                 where: { actorId: { in: existingUserIds } }
             });
 
             // RESTRICT: delete participants before their households.
-            const existingHouseholdIds = (await prisma.participant.findMany({
+            const existingHouseholdIds = (await prisma.person.findMany({
                 where: { id: { in: existingUserIds } },
                 select: { householdId: true }
             })).map(p => p.householdId);
 
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
             await prisma.household.deleteMany({
@@ -249,7 +249,7 @@ describe('General Attendance API Integration Tests', () => {
 
              // We actually have to mock the user having the *correct* householdId matching the child in the DB
              // The mock user object should have the actual household.id
-             const childRecord = await prisma.participant.findUnique({ where: { id: householdChildId } });
+             const childRecord = await prisma.person.findUnique({ where: { id: householdChildId } });
              (getServerSession as jest.Mock).mockResolvedValue({ 
                  user: { id: householdLeadId, householdId: childRecord!.householdId, householdLead: true } 
              });
@@ -259,7 +259,7 @@ describe('General Attendance API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.visit.participantId).toBe(householdChildId);
+             expect(data.visit.personId).toBe(householdChildId);
         });
 
         it('should allow an admin to check in any user', async () => {
@@ -275,7 +275,7 @@ describe('General Attendance API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.visit.participantId).toBe(householdLeadId);
+             expect(data.visit.personId).toBe(householdLeadId);
         });
     });
 

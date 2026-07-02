@@ -13,12 +13,12 @@ export const GET = withAuth(
             if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
             const userId = auth.user.id;
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
                 include: {
                     household: {
                         include: {
-                            participants: { select: HOUSEHOLD_PEER_SELECT },
+                            householdMembers: { select: HOUSEHOLD_PEER_SELECT },
                             leads: true,
                             membership: true,
                         }
@@ -56,7 +56,7 @@ export const PATCH = withAuth(
             const body = await req.json();
             const { memberName, memberEmail, memberDob, memberOver25 } = body;
 
-            const user = await prisma.participant.findUnique({ where: { id: userId }, include: { householdLeads: true } });
+            const user = await prisma.person.findUnique({ where: { id: userId }, include: { householdLeads: true } });
 
             if (!user?.householdId) {
                 return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
@@ -71,57 +71,60 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
             }
 
-            let targetMember;
+            let targetMember: Awaited<ReturnType<typeof prisma.person.findUnique>> = null;
 
             if (memberEmail) {
-                targetMember = await prisma.participant.findUnique({ where: { email: memberEmail.toLowerCase() } });
+                targetMember = await prisma.person.findUnique({ where: { email: memberEmail.toLowerCase() } });
 
-                if (targetMember) {
-                    if (targetMember.householdId) {
-                        return NextResponse.json({ error: "A user with this email already belongs to a household." }, { status: 400 });
-                    }
-
-                    targetMember = await prisma.participant.update({
-                        where: { id: targetMember.id },
-                        data: { householdId: user.householdId },
-                        select: HOUSEHOLD_PEER_SELECT,
-                    });
+                if (targetMember && targetMember.householdId) {
+                    return NextResponse.json({ error: "A user with this email already belongs to a household." }, { status: 400 });
                 }
             }
 
-            if (!targetMember) {
+            if (!targetMember && !memberDob && !memberOver25) {
                 // A new member's age must be known: either a DoB, or an explicit
                 // "25+" declaration (mirrors the client form's requirement).
-                if (!memberDob && !memberOver25) {
-                    return NextResponse.json({ error: "Date of birth is required for anyone under 25." }, { status: 400 });
-                }
-                targetMember = await prisma.participant.create({
-                    data: {
-                        name: memberName,
-                        ...(memberEmail && { email: memberEmail.toLowerCase() }),
-                        dateOfBirth: memberDob ? new Date(memberDob) : null,
-                        isDeclaredAdult: !memberDob && !!memberOver25,
-                        householdId: user.householdId,
-                    },
-                    select: HOUSEHOLD_PEER_SELECT,
-                });
+                return NextResponse.json({ error: "Date of birth is required for anyone under 25." }, { status: 400 });
             }
 
-            await prisma.auditLog.create({
-                data: {
-                    actorId: userId,
-                    action: "EDIT",
-                    tableName: "Participant",
-                    affectedEntityId: targetMember.id,
-                    newData: { householdId: user.householdId, email: targetMember.email, name: targetMember.name }
-                }
+            const householdId = user.householdId;
+
+            const { member, warning } = await prisma.$transaction(async (tx) => {
+                const member = targetMember
+                    ? await tx.person.update({
+                        where: { id: targetMember.id },
+                        data: { householdId },
+                        select: HOUSEHOLD_PEER_SELECT,
+                    })
+                    : await tx.person.create({
+                        data: {
+                            name: memberName,
+                            ...(memberEmail && { email: memberEmail.toLowerCase() }),
+                            dateOfBirth: memberDob ? new Date(memberDob) : null,
+                            isDeclaredAdult: !memberDob && !!memberOver25,
+                            householdId,
+                        },
+                        select: HOUSEHOLD_PEER_SELECT,
+                    });
+
+                await tx.auditLog.create({
+                    data: {
+                        actorId: userId,
+                        action: "EDIT",
+                        tableName: "Participant",
+                        affectedEntityId: member.id,
+                        newData: { householdId, email: member.email, name: member.name }
+                    }
+                });
+
+                // A newly-added member may be an existing emergency contact (direction
+                // B): flag the colliding contact and warn the lead to add a replacement.
+                const warning = await reconcileAndWarn(tx, householdId);
+
+                return { member, warning };
             });
 
-            // A newly-added member may be an existing emergency contact (direction
-            // B): flag the colliding contact and warn the lead to add a replacement.
-            const warning = await reconcileAndWarn(prisma, user.householdId);
-
-            return NextResponse.json({ member: targetMember, warning }, { status: 200 });
+            return NextResponse.json({ member, warning }, { status: 200 });
         } catch (error: unknown) {
             console.error("Household PATCH Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

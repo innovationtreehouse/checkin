@@ -13,7 +13,7 @@ import { setZohoEnvelope, findProcessByEnvelope, getOrCreateContractSigningUrl, 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        participant: { findUnique: jest.fn() },
+        person: { findUnique: jest.fn() },
         membershipProcess: { findUnique: jest.fn(), update: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
         auditLog: { create: jest.fn() },
     },
@@ -107,31 +107,31 @@ describe('getOrCreateContractSigningUrl', () => {
     it('not_configured when Zoho is unavailable', async () => {
         config.zohoAvailable.mockReturnValue(false);
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'not_configured' });
-        expect(prisma.participant.findUnique).not.toHaveBeenCalled();
+        expect(prisma.person.findUnique).not.toHaveBeenCalled();
     });
 
     it('not_found when the user does not exist', async () => {
-        prisma.participant.findUnique.mockResolvedValue(null);
+        prisma.person.findUnique.mockResolvedValue(null);
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'not_found' });
     });
 
     it('no_household when the user has no household', async () => {
-        prisma.participant.findUnique.mockResolvedValue({ ...leadUser, householdId: null });
+        prisma.person.findUnique.mockResolvedValue({ ...leadUser, householdId: null });
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'no_household' });
     });
 
     it('not_lead when the caller is not a household lead and not a sysadmin', async () => {
-        prisma.participant.findUnique.mockResolvedValue({ ...leadUser, householdLeads: [] });
+        prisma.person.findUnique.mockResolvedValue({ ...leadUser, householdLeads: [] });
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'not_lead' });
     });
 
     it('wrong_phase when there is no process awaiting external action', async () => {
-        prisma.participant.findUnique.mockResolvedValue({ ...leadUser, household: { membership: { processes: [] } } });
+        prisma.person.findUnique.mockResolvedValue({ ...leadUser, household: { membership: { processes: [] } } });
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'wrong_phase' });
     });
 
     it('mock mode: skips loadAgreementPdf/stampWatermark and creates + submits + embeds', async () => {
-        prisma.participant.findUnique.mockResolvedValue(leadUser);
+        prisma.person.findUnique.mockResolvedValue(leadUser);
         zohoSign.getAccessToken.mockResolvedValue('token-1');
         zohoSign.createRequest.mockResolvedValue({ requestId: 'req-1', actionId: 'act-1', documentId: 'doc-1' });
         zohoSign.submitRequest.mockResolvedValue(undefined);
@@ -149,7 +149,7 @@ describe('getOrCreateContractSigningUrl', () => {
     });
 
     it('already claimed ids → skips create/submit and goes straight to the embed URL', async () => {
-        prisma.participant.findUnique.mockResolvedValue({
+        prisma.person.findUnique.mockResolvedValue({
             ...leadUser,
             household: { membership: { processes: [{ ...pendingProcess, zohoEnvelopeId: 'req-existing', zohoActionId: 'act-existing' }] } },
         });
@@ -165,7 +165,7 @@ describe('getOrCreateContractSigningUrl', () => {
 
     it('non-mock mode: AgreementUnavailableError maps to an agreement_unavailable ExternalError', async () => {
         config.zohoMockActive.mockReturnValue(false);
-        prisma.participant.findUnique.mockResolvedValue(leadUser);
+        prisma.person.findUnique.mockResolvedValue(leadUser);
         zohoSign.getAccessToken.mockResolvedValue('token-1');
         loadAgreementPdf.mockRejectedValue(new AgreementUnavailableError('no pdf yet'));
 

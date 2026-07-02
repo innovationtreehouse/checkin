@@ -28,11 +28,11 @@ const household = {
   postalCode: "78701",
   emergencyContactName: "Jo Smith",
   emergencyContactPhone: "5551234",
-  participants: [
+  householdMembers: [
     { id: 1, name: "Kid A", email: "kid@example.com" },
     { id: 2, name: null, email: null },
   ],
-  householdLeads: [{ participantId: 1 }, { participantId: 2 }],
+  householdLeads: [{ personId: 1 }, { personId: 2 }],
 };
 
 beforeEach(() => {
@@ -173,7 +173,7 @@ describe("AdminEditHouseholdModal", () => {
     expect(removeButtons).toHaveLength(2);
     expect(removeButtons[0]).toBeEnabled();
 
-    const reduced = { ...household, householdLeads: [{ participantId: 2 }] };
+    const reduced = { ...household, householdLeads: [{ personId: 2 }] };
     const fetchMock = mockFetchJson({
       "/api/household/lead": { ok: true },
       "/api/membership-ops/households?id=55": { household: reduced },

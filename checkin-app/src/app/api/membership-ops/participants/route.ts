@@ -29,7 +29,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         }
 
         if (email) {
-            const existingUser = await prisma.participant.findUnique({
+            const existingUser = await prisma.person.findUnique({
                 where: { email }
             });
 
@@ -44,12 +44,12 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         let householdIdToAssign: number | null = null;
 
         if (parentEmail) {
-            let parent = await prisma.participant.findUnique({
+            let parent = await prisma.person.findUnique({
                 where: { email: parentEmail }
             });
 
             if (!parent) {
-                parent = await prisma.participant.create({
+                parent = await prisma.person.create({
                     data: {
                         email: parentEmail,
                         household: {
@@ -75,7 +75,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
         let newParticipant;
         if (householdIdToAssign) {
-            newParticipant = await prisma.participant.create({
+            newParticipant = await prisma.person.create({
                 data: {
                     name,
                     ...(email && { email }),
@@ -85,7 +85,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             });
         } else {
             const lastName = (name || "").trim().split(/\s+/).pop() || "";
-            newParticipant = await prisma.participant.create({
+            newParticipant = await prisma.person.create({
                 data: {
                     name,
                     ...(email && { email }),

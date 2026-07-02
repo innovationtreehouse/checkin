@@ -39,7 +39,7 @@ function checkinRequest(participantId: number) {
 }
 
 async function openVisitCount(participantId: number) {
-    return prisma.visit.count({ where: { participantId, departedAt: null } });
+    return prisma.visit.count({ where: { personId: participantId, departedAt: null } });
 }
 
 describe('POST /api/attendance MANUAL_CHECKIN concurrency (advisory lock)', () => {
@@ -48,18 +48,18 @@ describe('POST /api/attendance MANUAL_CHECKIN concurrency (advisory lock)', () =
 
     beforeAll(async () => {
         // Clean any leaked state from a prior run.
-        const leaked = await prisma.participant.findMany({
+        const leaked = await prisma.person.findMany({
             where: { email: { contains: EMAIL_TAG } },
             select: { id: true, householdId: true },
         });
         const leakedIds = leaked.map(p => p.id);
         const leakedHouseholdIds = leaked.map(p => p.householdId);
-        await prisma.visit.deleteMany({ where: { participantId: { in: leakedIds } } });
+        await prisma.visit.deleteMany({ where: { personId: { in: leakedIds } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: leakedIds } } });
-        await prisma.participant.deleteMany({ where: { id: { in: leakedIds } } });
+        await prisma.person.deleteMany({ where: { id: { in: leakedIds } } });
         await prisma.household.deleteMany({ where: { id: { in: leakedHouseholdIds } } });
 
-        const subject = await prisma.participant.create({
+        const subject = await prisma.person.create({
             data: { email: `subject-${EMAIL_TAG}@example.com`, name: 'Manual Checkin Concurrency Subject', household: { create: {} } },
         });
         subjectId = subject.id;
@@ -67,15 +67,15 @@ describe('POST /api/attendance MANUAL_CHECKIN concurrency (advisory lock)', () =
     });
 
     afterAll(async () => {
-        await prisma.visit.deleteMany({ where: { participantId: subjectId } });
+        await prisma.visit.deleteMany({ where: { personId: subjectId } });
         await prisma.auditLog.deleteMany({ where: { actorId: subjectId } });
-        await prisma.participant.deleteMany({ where: { id: subjectId } });
+        await prisma.person.deleteMany({ where: { id: subjectId } });
         await prisma.household.deleteMany({ where: { id: householdId } });
     });
 
     it('two concurrent MANUAL_CHECKINs → exactly one open visit, no 500', async () => {
         // Fresh state: no open visit before the race.
-        await prisma.visit.deleteMany({ where: { participantId: subjectId } });
+        await prisma.visit.deleteMany({ where: { personId: subjectId } });
         expect(await openVisitCount(subjectId)).toBe(0);
 
         // Subject checks themselves in (isSelf → passes the permission guard).

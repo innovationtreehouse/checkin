@@ -19,9 +19,9 @@ export async function emailHouseholdLeads(householdId: number, subject: string, 
     try {
         const leads = await prisma.householdLead.findMany({
             where: { householdId },
-            select: { participant: { select: { email: true } } },
+            select: { person: { select: { email: true } } },
         });
-        const emails = leads.map((l) => l.participant?.email).filter((e): e is string => !!e);
+        const emails = leads.map((l) => l.person?.email).filter((e): e is string => !!e);
         await fanOutEmails(emails, subject, html, errorLabel);
     } catch (e) {
         logger.error(errorLabel, e);
@@ -31,7 +31,7 @@ export async function emailHouseholdLeads(householdId: number, subject: string, 
 /** Email every board member with an address on file. Resolve + fan-out; all errors logged and swallowed. */
 export async function emailBoardMembers(subject: string, html: string, errorLabel: string): Promise<void> {
     try {
-        const board = await prisma.participant.findMany({
+        const board = await prisma.person.findMany({
             where: { isBoardMember: true, email: { not: null } },
             select: { email: true },
         });

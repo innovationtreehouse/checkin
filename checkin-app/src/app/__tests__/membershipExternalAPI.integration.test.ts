@@ -68,19 +68,19 @@ describe('Membership EXTERNAL phase API', () => {
         if (ids.length) {
             await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
             await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
-        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
     }
 
     beforeAll(async () => {
         process.env.ZOHO_WEBHOOK_SECRET = SECRET;
         await wipe();
 
-        const board = await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: {} } } });
+        const board = await prisma.person.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: {} } } });
         boardId = board.id;
-        const user = await prisma.participant.create({ data: { email: `user-${TAG}@example.com`, name: 'User', household: { create: {} } } });
+        const user = await prisma.person.create({ data: { email: `user-${TAG}@example.com`, name: 'User', household: { create: {} } } });
         plainUserId = user.id;
 
         const a = await makeProcess(`A ${TAG}`, 'zoho-A');
@@ -94,7 +94,7 @@ describe('Membership EXTERNAL phase API', () => {
     afterAll(async () => {
         await wipe();
         // boardId/userId households
-        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
         if (prevSecret === undefined) delete process.env.ZOHO_WEBHOOK_SECRET;
         else process.env.ZOHO_WEBHOOK_SECRET = prevSecret;
         await prisma.$disconnect();

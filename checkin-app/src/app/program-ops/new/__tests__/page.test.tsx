@@ -83,7 +83,7 @@ describe("CreateProgramPage", () => {
 
   it("searches for and selects a lead mentor, then clears the selection", async () => {
     setSession({ id: 1, isSysadmin: true });
-    mockFetchJson({ "/api/participants/search": { participants: [mentor] } });
+    mockFetchJson({ "/api/people/search": { people: [mentor] } });
     renderWithProviders(<CreateProgramPage />);
     await screen.findByLabelText("Program Name", { exact: false });
 
@@ -109,7 +109,7 @@ describe("CreateProgramPage", () => {
   it("creates a program and redirects to it", async () => {
     setSession({ id: 1, isSysadmin: true });
     const fetchMock = mockFetchJson({
-      "/api/participants/search": { participants: [mentor] },
+      "/api/people/search": { people: [mentor] },
       "/api/programs": { program: { id: 42 } },
     });
     renderWithProviders(<CreateProgramPage />);
@@ -154,8 +154,8 @@ describe("CreateProgramPage", () => {
     // mockFetchJson's all-or-nothing 200/404 routing can't express.
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/participants/search")) {
-        return { ok: true, status: 200, json: async () => ({ participants: [mentor] }) } as Response;
+      if (url.includes("/api/people/search")) {
+        return { ok: true, status: 200, json: async () => ({ people: [mentor] }) } as Response;
       }
       if (url.includes("/api/programs")) {
         return { ok: false, status: 400, json: async () => ({ error: "Name already taken." }) } as Response;
@@ -175,7 +175,7 @@ describe("CreateProgramPage", () => {
 
   it("shows a network error message when the create request throws", async () => {
     setSession({ id: 1, isSysadmin: true });
-    mockFetchJson({ "/api/participants/search": { participants: [mentor] } });
+    mockFetchJson({ "/api/people/search": { people: [mentor] } });
     renderWithProviders(<CreateProgramPage />);
     const nameInput = await screen.findByLabelText("Program Name", { exact: false });
     fireEvent.change(nameInput, { target: { value: "FRC Robotics 2026" } });
@@ -183,8 +183,8 @@ describe("CreateProgramPage", () => {
 
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/participants/search")) {
-        return { ok: true, status: 200, json: async () => ({ participants: [mentor] }) } as Response;
+      if (url.includes("/api/people/search")) {
+        return { ok: true, status: 200, json: async () => ({ people: [mentor] }) } as Response;
       }
       throw new Error("boom");
     }) as unknown as typeof fetch;

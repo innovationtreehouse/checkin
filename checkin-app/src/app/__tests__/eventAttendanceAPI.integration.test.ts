@@ -29,7 +29,7 @@ describe('Event Attendance API Integration Tests', () => {
     beforeAll(async () => {
         // Clean up any leaked state
         await prisma.visit.deleteMany({
-            where: { participant: { email: { contains: 'event-attendance-test' } } }
+            where: { person: { email: { contains: 'event-attendance-test' } } }
         });
         await prisma.event.deleteMany({
             where: { name: 'Attendance Test Event' }
@@ -37,32 +37,32 @@ describe('Event Attendance API Integration Tests', () => {
         await prisma.program.deleteMany({
             where: { name: 'Attendance Test Program' }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'event-attendance-test' } }
         });
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-event-attendance-test@example.com', name: 'Admin Att Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-event-attendance-test@example.com', name: 'User Att Test', household: { create: {} } }
         });
         testUserId = user.id;
 
-        const mentor = await prisma.participant.create({
+        const mentor = await prisma.person.create({
             data: { email: 'mentor-event-attendance-test@example.com', name: 'Mentor Att Test', household: { create: {} } }
         });
         testLeadMentorId = mentor.id;
 
-        const participant1 = await prisma.participant.create({
+        const participant1 = await prisma.person.create({
             data: { email: 'p1-event-attendance-test@example.com', name: 'P1 Att Test', household: { create: {} } }
         });
         testParticipant1Id = participant1.id;
 
-        const participant2 = await prisma.participant.create({
+        const participant2 = await prisma.person.create({
             data: { email: 'p2-event-attendance-test@example.com', name: 'P2 Att Test', household: { create: {} } }
         });
         testParticipant2Id = participant2.id;
@@ -80,7 +80,7 @@ describe('Event Attendance API Integration Tests', () => {
 
         // A lead of an UNRELATED program — the cross-tenant attacker for the IDOR
         // tests. Privileged in their own program, but not lead/staff of testEvent's.
-        const foreignLead = await prisma.participant.create({
+        const foreignLead = await prisma.person.create({
             data: { email: 'foreignlead-event-attendance-test@example.com', name: 'Foreign Lead Att Test', household: { create: {} } }
         });
         foreignLeadId = foreignLead.id;
@@ -102,15 +102,29 @@ describe('Event Attendance API Integration Tests', () => {
             }
         });
         testEventId = event.id;
+
+        // Attendance can only be written for participants enrolled (or volunteering)
+        // in the event's program — enroll the two targets so the happy-path writes
+        // are authorized. testUserId is deliberately left unenrolled (IDOR target).
+        await prisma.programParticipant.createMany({
+            data: [
+                { programId: testProgramId, personId: testParticipant1Id },
+                { programId: testProgramId, personId: testParticipant2Id },
+            ]
+        });
     });
 
     afterAll(async () => {
         // Clean up
         await prisma.visit.deleteMany({
-            where: { participantId: { in: [testParticipant1Id, testParticipant2Id] } }
+            where: { personId: { in: [testParticipant1Id, testParticipant2Id] } }
         });
         await prisma.event.deleteMany({
             where: { id: testEventId }
+        });
+        // FK: enrollments reference the program — clear before deleting it.
+        await prisma.programParticipant.deleteMany({
+            where: { programId: { in: [testProgramId, foreignProgramId] } }
         });
         await prisma.program.deleteMany({
             where: { id: { in: [testProgramId, foreignProgramId] } }
@@ -118,12 +132,12 @@ describe('Event Attendance API Integration Tests', () => {
         const participantIds = [testAdminId, testUserId, testLeadMentorId, testParticipant1Id, testParticipant2Id, foreignLeadId];
 
         // RESTRICT: delete participants before their (auto-created) households.
-        const householdIds = (await prisma.participant.findMany({
+        const householdIds = (await prisma.person.findMany({
             where: { id: { in: participantIds } },
             select: { householdId: true }
         })).map(p => p.householdId);
 
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: participantIds } }
         });
         await prisma.household.deleteMany({
@@ -134,7 +148,7 @@ describe('Event Attendance API Integration Tests', () => {
     afterEach(async () => {
         // Clear visits created during tests
         await prisma.visit.deleteMany({
-            where: { participantId: { in: [testParticipant1Id, testParticipant2Id] } }
+            where: { personId: { in: [testParticipant1Id, testParticipant2Id] } }
         });
         // Clear audit rows so each test asserts exactly its own write.
         // Per-Visit audit rows carry the event in secondaryAffectedEntity;
@@ -178,7 +192,7 @@ describe('Event Attendance API Integration Tests', () => {
         // Mirrors fd192fc (trusted-adults "assert no mutation after IDOR 403").
         async function attendanceWriteCount() {
             const visits = await prisma.visit.count({
-                where: { participantId: { in: [testParticipant1Id, testParticipant2Id] }, associatedEventId: testEventId }
+                where: { personId: { in: [testParticipant1Id, testParticipant2Id] }, associatedEventId: testEventId }
             });
             const audits = await prisma.auditLog.count({
                 where: { tableName: 'Visit', secondaryAffectedEntity: testEventId }
@@ -250,7 +264,7 @@ describe('Event Attendance API Integration Tests', () => {
             expect(data.processed).toBe(1);
 
             const visits = await prisma.visit.findMany({
-                where: { participantId: testParticipant1Id, associatedEventId: testEventId }
+                where: { personId: testParticipant1Id, associatedEventId: testEventId }
             });
             expect(visits.length).toBe(1);
             expect(visits[0].arrivedAt).not.toBeNull();
@@ -283,7 +297,7 @@ describe('Event Attendance API Integration Tests', () => {
             
             await prisma.visit.create({
                 data: {
-                    participantId: testParticipant2Id,
+                    personId: testParticipant2Id,
                     arrivedAt: earlyArrival,
                     departedAt: null, // Still active
                 }
@@ -302,7 +316,7 @@ describe('Event Attendance API Integration Tests', () => {
             expect(data.processed).toBe(1);
 
             const visits = await prisma.visit.findMany({
-                where: { participantId: testParticipant2Id }
+                where: { personId: testParticipant2Id }
             });
             expect(visits.length).toBe(1); // Should only be the one we created
             expect(visits[0].associatedEventId).toBe(testEventId); // It was successfully linked
@@ -322,6 +336,25 @@ describe('Event Attendance API Integration Tests', () => {
                 associatedEventId: testEventId,
                 synthetic: false
             });
+        });
+
+        it('IDOR: the event lead cannot fabricate attendance for a participant NOT enrolled in the program (400, no Visit written)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testLeadMentorId, isSysadmin: false, isBoardMember: false, isKeyholder: false }
+            });
+
+            // testUserId is a real participant but enrolled in no program.
+            const before = await prisma.visit.count({ where: { personId: testUserId, associatedEventId: testEventId } });
+
+            const req = new Request(`http://localhost:4000/api/events/${testEventId}/attendance`, {
+                method: 'POST',
+                body: JSON.stringify({ participantIds: [testUserId] })
+            });
+            const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testEventId) }) });
+
+            expect(res.status).toBe(400);
+            const after = await prisma.visit.count({ where: { personId: testUserId, associatedEventId: testEventId } });
+            expect(after).toBe(before);
         });
     });
 });

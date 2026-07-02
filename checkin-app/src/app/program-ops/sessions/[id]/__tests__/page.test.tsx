@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports */
-import { screen, waitFor, fireEvent } from "@testing-library/react";
+import { screen, waitFor, fireEvent, within } from "@testing-library/react";
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 import { renderWithProviders, mockFetchJson, setSession, setSearchParams, router, resetRtl } from "@/test-helpers/rtl";
@@ -47,8 +47,8 @@ function baseEvent(overrides: Record<string, unknown> = {}) {
                 { participantId: 3, participant: { id: 3, name: "Pat Participant", email: "pat@example.com" } },
             ],
         },
-        visits: [{ id: 1, participantId: 3, arrivedAt: "2020-01-01T18:05:00.000Z", departedAt: null }],
-        rsvps: [{ participantId: 3, status: "ATTENDING" }],
+        visits: [{ id: 1, personId: 3, arrivedAt: "2020-01-01T18:05:00.000Z", departedAt: null }],
+        rsvps: [{ personId: 3, status: "ATTENDING" }],
         ...overrides,
     };
 }
@@ -127,8 +127,10 @@ describe("EventAdminPage", () => {
         expect(await screen.findByText("Event time updated successfully!")).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Edit Date / Time" }));
-        window.confirm = jest.fn(() => true);
         fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
+
+        const confirmModal = await screen.findByRole("dialog", { name: "Cancel Event" });
+        fireEvent.click(within(confirmModal).getByRole("button", { name: "Cancel Event(s)" }));
         await waitFor(() => expect(router.push).toHaveBeenCalledWith("/program-ops/programs/10"));
     });
 
@@ -270,13 +272,16 @@ describe("EventAdminPage", () => {
         // (separate onClick instance) — used here so both handlers get exercised.
         fireEvent.click(screen.getByRole("button", { name: "Cancel Event" }));
 
-        window.confirm = jest.fn(() => false);
         fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
+        let modal = await screen.findByRole("dialog", { name: "Cancel Event" });
+        fireEvent.click(within(modal).getByRole("button", { name: "Nevermind" }));
         expect(fetchMock).not.toHaveBeenCalledWith("/api/events/5", expect.objectContaining({ method: "PATCH" }));
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Cancel Event" })).not.toBeInTheDocument());
 
-        window.confirm = jest.fn(() => true);
         fetchEventThenPatchWith(future, () => ({ ok: false, json: async () => ({ error: "Cannot cancel now." }) } as Response));
         fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
+        modal = await screen.findByRole("dialog", { name: "Cancel Event" });
+        fireEvent.click(within(modal).getByRole("button", { name: "Cancel Event(s)" }));
         expect(await screen.findByText("Cannot cancel now.")).toBeInTheDocument();
     });
 
@@ -286,15 +291,19 @@ describe("EventAdminPage", () => {
         mockFetchJson({ "/api/events/5": future });
         renderPage(params);
         await screen.findByText("Robotics Session");
-        window.confirm = jest.fn(() => true);
         fireEvent.click(screen.getByRole("button", { name: "Edit Date / Time" }));
 
         fetchEventThenPatchWith(future, () => { throw new Error("boom"); });
         fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
+        let modal = await screen.findByRole("dialog", { name: "Cancel Event" });
+        fireEvent.click(within(modal).getByRole("button", { name: "Cancel Event(s)" }));
         expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Cancel Event" })).not.toBeInTheDocument());
 
         fetchEventThenPatchWith(future, () => ({ ok: true, json: async () => ({}) } as Response));
         fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
+        modal = await screen.findByRole("dialog", { name: "Cancel Event" });
+        fireEvent.click(within(modal).getByRole("button", { name: "Cancel Event(s)" }));
         await waitFor(() => expect(router.push).toHaveBeenCalledWith("/program-ops/programs"));
     });
 
@@ -348,11 +357,11 @@ describe("EventAdminPage", () => {
                     { participantId: 6, participant: { id: 6, name: "Robin Roster", email: "robin@example.com" } },
                 ],
             },
-            visits: [{ id: 1, participantId: 2, arrivedAt: "2020-01-01T18:05:00.000Z", departedAt: "2020-01-01T19:00:00.000Z" }],
+            visits: [{ id: 1, personId: 2, arrivedAt: "2020-01-01T18:05:00.000Z", departedAt: "2020-01-01T19:00:00.000Z" }],
             rsvps: [
-                { participantId: 2, status: "ATTENDING" },
-                { participantId: 3, status: "MAYBE" },
-                { participantId: 4, status: "NOT_ATTENDING" },
+                { personId: 2, status: "ATTENDING" },
+                { personId: 3, status: "MAYBE" },
+                { personId: 4, status: "NOT_ATTENDING" },
             ],
         });
         mockFetchJson({ "/api/events/5": event });

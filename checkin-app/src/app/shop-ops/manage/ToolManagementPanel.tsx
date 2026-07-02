@@ -2,13 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import {
-  Alert, Anchor, Button, Card, Center, Collapse, Group, Loader,
-  Modal, Select, Stack, Table, Tabs, Text, TextInput,
-} from '@mantine/core';
+import { Alert, Anchor, Button, Card, Center, Collapse, Group, Loader, Modal, Select, Stack, Table, Tabs, Text, TextInput } from '@mantine/core';
 import { ToolLevelBadge, toToolLevel, toolLevelDot, toolLevelLabel } from '@/components/ToolLevelBadge';
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type Tool = {
   id: number;
   name: string;
@@ -514,7 +512,7 @@ export function ToolManagementPanel() {
   }, [ready]);
 
   if (loading || authLoading) {
-    return <Center mih="40vh"><Loader /></Center>;
+    return <PageLoader minHeight="40vh" />;
   }
 
   // Role gate stays inline: this renders a Forbidden alert (not a redirect),

@@ -7,9 +7,10 @@ import { useAutoCycle } from "../../../hooks/useAutoCycle";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { ToolLevelBadge, toToolLevel, toolLevelDot } from "@/components/ToolLevelBadge";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type ToolStatusLevel = "BASIC" | "DOF" | "CERTIFIED" | "INSTRUCTOR" | "MAY_CERTIFY_OTHERS";
 
-type Participant = {
+type Person = {
   id: number;
   // Display name resolved server-side (real name, else email-prefix); never the raw email (#329).
   name: string;
@@ -29,7 +30,7 @@ const LEGEND_LEVELS: ToolStatusLevel[] = ["BASIC", "CERTIFIED", "DOF", "INSTRUCT
 
 export default function KioskCertificationsDisplay() {
   return (
-    <Suspense fallback={<Center mih="100vh"><Loader /></Center>}>
+    <Suspense fallback={<PageLoader minHeight="100vh" />}>
       <KioskCertificationsInner />
     </Suspense>
   );
@@ -39,7 +40,7 @@ function KioskCertificationsInner() {
   const searchParams = useSearchParams();
   const limitToPresent = searchParams.get('limit_to_present') !== 'false';
   const [isKioskMode, setIsKioskMode] = useState(searchParams.get('mode') === 'kiosk' || !!searchParams.get('sig'));
-  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [participants, setParticipants] = useState<Person[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,7 +102,7 @@ function KioskCertificationsInner() {
   };
 
   // Sort users alphabetically by first name (name is server-resolved, email-prefix included)
-  const sortAlphabetically = (a: Participant, b: Participant) => {
+  const sortAlphabetically = (a: Person, b: Person) => {
     const nameA = a.name;
     const nameB = b.name;
     const getFirstName = (name: string) => {
@@ -127,7 +128,7 @@ function KioskCertificationsInner() {
 
   const cellBorder = '1px solid var(--mantine-color-default-border)';
 
-  const renderVisitRow = (participant: Participant, index: number) => (
+  const renderVisitRow = (participant: Person, index: number) => (
     <tr key={participant.id} style={{ borderBottom: index % 2 === 1 ? '3px solid var(--mantine-color-default-border)' : cellBorder }}>
       <td style={{ padding: isKioskMode ? '0.5rem 0.75rem' : '0.75rem 1rem', position: 'sticky', left: 0, background: 'var(--mantine-color-body)', zIndex: 5, borderRight: cellBorder }}>
         <Text fw={isKioskMode ? 700 : 500} fz={isKioskMode ? '1.1rem' : undefined} truncate>
@@ -201,14 +202,14 @@ function KioskCertificationsInner() {
         ) : error ? (
           <Alert color="red">{error}</Alert>
         ) : participants.length === 0 || tools.length === 0 ? (
-          <Center py="xl"><Text c="dimmed">No {limitToPresent ? "active participants" : "participants"} found.</Text></Center>
+          <Center py="xl"><Text c="dimmed">No {limitToPresent ? "active people" : "people"} found.</Text></Center>
         ) : (
           <div ref={containerRef} style={{ flex: 1, overflowX: 'hidden', borderRadius: 8, border: cellBorder, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <table style={{ borderCollapse: 'collapse', textAlign: 'left', width: '100%', tableLayout: isKioskMode ? 'fixed' : undefined }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
                   <th style={{ padding: isKioskMode ? '0.5rem 0.75rem' : '1rem', borderBottom: cellBorder, background: 'var(--mantine-color-default-hover)', position: 'sticky', left: 0, zIndex: 11, borderRight: cellBorder, verticalAlign: 'bottom', width: isKioskMode ? '12%' : 150, fontWeight: 700 }}>
-                    Participant
+                    Name
                   </th>
                   {tools.map((tool) => (
                     <th key={tool.id} style={{ borderBottom: cellBorder, borderRight: cellBorder, background: 'var(--mantine-color-default-hover)', fontSize: isKioskMode ? '0.8rem' : '0.875rem', fontWeight: 700, verticalAlign: 'bottom', padding: isKioskMode ? '0.4rem 0.2rem' : '0.5rem', textAlign: 'center', wordBreak: 'break-word', lineHeight: 1.2 }}>

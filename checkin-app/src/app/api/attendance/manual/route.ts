@@ -5,6 +5,15 @@ import type { Prisma } from "@/generated/prisma/client";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { logBackendError } from "@/lib/logger";
 
+// Self-service manual visit entry. INTENTIONAL by design: a member records a
+// visit for THEMSELVES only (participantId is forced to auth.user.id, never taken
+// from the body) to backfill a forgotten badge-in — left the badge at home, forgot
+// to scan, etc. Every entry is audit-logged (see below). A member CAN backdate a
+// closed visit arbitrarily far; that is accepted on purpose (people remember a
+// past visit days later). The only downside is self-reported hours in
+// facility/trends, which the board reconciles against the audit trail — it is not
+// a security or integrity boundary. Recurring-audit note: this is not an IDOR and
+// not a fabrication vuln; do not re-flag the arbitrary backdate.
 export const POST = withAuth({}, async (req, auth) => {
     if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     try {
@@ -59,14 +68,14 @@ export const POST = withAuth({}, async (req, auth) => {
             // provided) is just a historical record, so multiple are fine.
             if (!departureTime) {
                 const openVisit = await tx.visit.findFirst({
-                    where: { participantId: userId, departedAt: null }
+                    where: { personId: userId, departedAt: null }
                 });
                 if (openVisit) return openVisit;
             }
 
             return await tx.visit.create({
                 data: {
-                    participantId: userId,
+                    personId: userId,
                     arrivedAt: arrivalTime,
                     departedAt: departureTime,
                     arrivedVia: "WEB",

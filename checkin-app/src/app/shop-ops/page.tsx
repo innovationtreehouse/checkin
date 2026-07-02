@@ -3,9 +3,10 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Center, Loader } from "@mantine/core";
+
 import { defaultShopTab, shopRoles } from "@/lib/shopNav";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 /**
  * /shop has no content of its own — it redirects to the role-appropriate tab.
  * Client-side because the default depends on the session (admin→create,
@@ -22,8 +23,6 @@ export default function ShopOpsIndex() {
   }, [status, session, router]);
 
   return (
-    <Center mih="60vh">
-      <Loader />
-    </Center>
+    <PageLoader />
   );
 }

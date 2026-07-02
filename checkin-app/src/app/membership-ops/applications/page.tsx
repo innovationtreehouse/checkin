@@ -5,7 +5,7 @@ import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text } from "
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
-interface Participant {
+interface Person {
   id: number;
   name: string | null;
   email: string | null;
@@ -29,7 +29,7 @@ interface ProcessRow {
   membership: {
     householdId: number;
     isVolunteer: boolean;
-    household: { name: string | null; participants: Participant[]; leads: { participantId: number }[] } | null;
+    household: { name: string | null; householdMembers: Person[]; leads: { personId: number }[] } | null;
   } | null;
 }
 
@@ -161,8 +161,8 @@ export default function AdminMembershipPage() {
   const householdLabel = (r: ProcessRow) => {
     const hh = r.membership?.household;
     if (!hh) return `Household #${r.membership?.householdId ?? "?"}`;
-    const leadIds = new Set((hh.leads || []).map((l) => l.participantId));
-    const parents = (hh.participants || []).filter((p) => leadIds.has(p.id)).map((p) => p.name || p.email).filter(Boolean);
+    const leadIds = new Set((hh.leads || []).map((l) => l.personId));
+    const parents = (hh.householdMembers || []).filter((p) => leadIds.has(p.id)).map((p) => p.name || p.email).filter(Boolean);
     return hh.name || parents.join(" & ") || `Household #${r.membership?.householdId}`;
   };
 

@@ -40,8 +40,8 @@ function routedFetch(rules: { url: string; method?: string; result: RouteResult 
 const householdData = {
   id: 55,
   name: "Smith Household",
-  leads: [{ participantId: 10 }],
-  participants: [
+  leads: [{ personId: 10 }],
+  householdMembers: [
     { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01" },
     { id: 11, name: "Jamie Smith", email: "", dateOfBirth: "2012-05-01" },
   ],
@@ -236,7 +236,7 @@ describe("HouseholdPage", () => {
   it("edits a household member: cancels, validates, toggles the lead checkbox, and shows a lead-rejection warning", async () => {
     const editHousehold = {
       ...householdData,
-      participants: [
+      householdMembers: [
         { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01" },
         { id: 12, name: "Casey Smith", email: "", isDeclaredAdult: true },
       ],
@@ -297,7 +297,7 @@ describe("HouseholdPage", () => {
   it("promotes a household member to lead, and shows a server error on failure", async () => {
     const leadHousehold = {
       ...householdData,
-      participants: [
+      householdMembers: [
         { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01" },
         { id: 12, name: "Casey Smith", email: "", isDeclaredAdult: true },
       ],
@@ -331,7 +331,7 @@ describe("HouseholdPage", () => {
   it("hides add-member controls for staff accounts and renders varied age badges", async () => {
     const variedHousehold = {
       ...householdData,
-      participants: [
+      householdMembers: [
         { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01" }, // lead, adult via dob
         { id: 11, name: "Jamie Smith", email: "", dateOfBirth: "2012-05-01" }, // kid via dob
         { id: 13, name: "Alex Smith", email: "" }, // no dob, not declared -> Age Unavailable
@@ -436,7 +436,7 @@ describe("HouseholdPage", () => {
   });
 
   it("covers the remaining server-error and network-error branches (settings, contacts, member edit, lead)", async () => {
-    const household = { ...householdData, participants: [...householdData.participants, { id: 12, name: "Casey Smith", email: "", isDeclaredAdult: true }] };
+    const household = { ...householdData, householdMembers: [...householdData.householdMembers, { id: 12, name: "Casey Smith", email: "", isDeclaredAdult: true }] };
     setSession({ id: 10, email: "sam@example.com" });
     let settingsAttempt = 0;
     let deleteAttempt = 0;

@@ -9,7 +9,7 @@ import prisma from "@/lib/prisma";
  * source of truth for member gating — route every "is member?" check through
  * here so a child or second parent in an active household is honored.
  */
-export const ACTIVE_MEMBER_PARTICIPANT_WHERE: Prisma.ParticipantWhereInput = {
+export const ACTIVE_MEMBER_PARTICIPANT_WHERE: Prisma.PersonWhereInput = {
     household: { membership: { status: "ACTIVE" } },
 };
 
@@ -21,7 +21,7 @@ export const ACTIVE_MEMBER_PARTICIPANT_WHERE: Prisma.ParticipantWhereInput = {
  */
 export const ACTIVE_MEMBER_INCLUDE = {
     household: { include: { membership: true } },
-} satisfies Prisma.ParticipantInclude;
+} satisfies Prisma.PersonInclude;
 
 /**
  * Does the Participant with this id currently count as an active member?
@@ -29,7 +29,7 @@ export const ACTIVE_MEMBER_INCLUDE = {
  */
 export async function isActiveMember(participantId: number): Promise<boolean> {
     if (!Number.isInteger(participantId)) return false;
-    const match = await prisma.participant.findFirst({
+    const match = await prisma.person.findFirst({
         where: { AND: [{ id: participantId }, ACTIVE_MEMBER_PARTICIPANT_WHERE] },
         select: { id: true },
     });

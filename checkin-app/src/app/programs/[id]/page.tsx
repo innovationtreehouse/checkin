@@ -9,6 +9,7 @@ import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { aggregateEnrollOutcomes, buildShopifyCheckoutUrl, type EnrollOutcome } from './enroll';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type ProgramDetail = {
   id: number;
   name: string;
@@ -19,7 +20,7 @@ type ProgramDetail = {
   // Absent for non-enrolled callers (route gates the roster); only their own
   // household's rows arrive when enrolled, which is all the "already enrolled"
   // check below needs.
-  participants?: { participantId: number, status?: string }[];
+  participants?: { personId: number, status?: string }[];
   _count?: { participants?: number };
   phase: string;
   maxParticipants: number | null;
@@ -224,7 +225,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   };
 
   if (loading || status === "loading") {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!program) return (
@@ -328,7 +329,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 >
                   <Stack>
                     {householdMembers.map((member) => {
-                      const alreadyEnrolled = (program.participants ?? []).some(p => p.participantId === member.id);
+                      const alreadyEnrolled = (program.participants ?? []).some(p => p.personId === member.id);
 
                       let ageError: string | null = null;
                       if (program.minAge !== null || program.maxAge !== null) {

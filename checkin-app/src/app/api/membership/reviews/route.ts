@@ -40,7 +40,7 @@ export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
                     household: {
                         select: {
                             name: true,
-                            leads: { select: { participant: { select: { id: true, name: true, email: true } } } },
+                            leads: { select: { person: { select: { id: true, name: true, email: true } } } },
                         },
                     },
                 },

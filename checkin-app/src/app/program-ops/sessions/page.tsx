@@ -1,9 +1,10 @@
 "use client";
 
 import { Suspense } from "react";
-import { Center, Loader, Stack, Text } from "@mantine/core";
+import { Stack, Text } from "@mantine/core";
 import { NewEventForm } from "@/app/program-ops/sessions/new/page";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 export default function OneTimeEventsIndex() {
   return (
     <Stack>
@@ -11,7 +12,7 @@ export default function OneTimeEventsIndex() {
         <Text c="dimmed">Schedule a one-off event or manual session.</Text>
       </div>
 
-      <Suspense fallback={<Center mih="60vh"><Loader /></Center>}>
+      <Suspense fallback={<PageLoader />}>
         <NewEventForm />
       </Suspense>
     </Stack>

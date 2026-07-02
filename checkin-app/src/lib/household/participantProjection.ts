@@ -1,7 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 
 /**
- * Fields of a household peer's Participant row that are safe to send to any
+ * Fields of a household peer's Person row that are safe to send to any
  * other member of the same household (including youth) — i.e. what the
  * my-household member cards and the program-enrollment picker actually
  * render. Excludes INTERNAL-tier fields (role flags, googleId, emailVerified,
@@ -18,4 +18,4 @@ export const HOUSEHOLD_PEER_SELECT = {
     // peer legitimately needs it to render each member's age badge / pre-fill the edit
     // form (my-household). It's an age-status flag, not a role/audit/security flag.
     isDeclaredAdult: true,
-} satisfies Prisma.ParticipantSelect;
+} satisfies Prisma.PersonSelect;

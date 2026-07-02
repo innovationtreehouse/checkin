@@ -49,7 +49,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
                     include: {
                         volunteers: {
                             where: { isCore: true },
-                            include: { participant: true }
+                            include: { person: true }
                         }
                     }
                 },
@@ -74,7 +74,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
         // Batch fetch all lead mentors at once
         const leadMentorsMap = new Map<number, string | null>();
         if (leadMentorIds.length > 0) {
-            const leadMentors = await prisma.participant.findMany({
+            const leadMentors = await prisma.person.findMany({
                 where: {
                     id: { in: leadMentorIds }
                 },
@@ -100,7 +100,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
                 recipientEmail = leadMentorsMap.get(leadMentorId);
             } else {
                 // Try to fallback to a core volunteer
-                const coreVolunteer = program.volunteers[0]?.participant;
+                const coreVolunteer = program.volunteers[0]?.person;
                 recipientEmail = coreVolunteer?.email;
             }
 

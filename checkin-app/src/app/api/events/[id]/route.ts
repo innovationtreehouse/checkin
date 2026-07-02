@@ -29,16 +29,16 @@ export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth
             program: {
                 include: {
                     volunteers: {
-                        include: { participant: true }
+                        include: { person: true }
                     },
                     participants: {
-                        include: { participant: true }
+                        include: { person: true }
                     }
                 }
             },
             visits: true,
             rsvps: {
-                include: { participant: true }
+                include: { person: true }
             },
             attendanceConfirmedBy: {
                 select: { name: true }
@@ -54,7 +54,7 @@ export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth
         auth.user.isSysadmin ||
         auth.user.isBoardMember ||
         event.program?.leadMentorId === auth.user.id ||
-        (event.program?.volunteers?.some(v => v.participantId === auth.user.id && v.isCore) ?? false)
+        (event.program?.volunteers?.some(v => v.personId === auth.user.id && v.isCore) ?? false)
     );
     if (!isStaff) throw forbidden('Forbidden: Not authorized to view this event');
 
@@ -80,7 +80,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
         const userId = auth.user.id;
         const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
         const isLeadMentor = event.program?.leadMentorId === userId;
-        const isCoreVolunteer = event.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
+        const isCoreVolunteer = event.program?.volunteers?.some(v => v.personId === userId && v.isCore) || false;
 
         // Action: Confirm Attendance
         if (body.action === 'confirmAttendance') {
@@ -206,13 +206,29 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
             }
 
+            // Authz on the TARGET: the participant must be enrolled or volunteering
+            // in this event's program. Without this a lead mentor could write a
+            // presence record for anyone in the system (see attendance POST). A
+            // program-less event is reachable only by admin/board (lead/core-vol
+            // authz above requires a program), so there is no IDOR to guard there.
+            const targetId = Number(participantId);
+            if (event.programId != null) {
+                const [enrolled, volunteering] = await Promise.all([
+                    prisma.programParticipant.findFirst({ where: { programId: event.programId, personId: targetId }, select: { personId: true } }),
+                    prisma.programVolunteer.findFirst({ where: { programId: event.programId, personId: targetId }, select: { personId: true } }),
+                ]);
+                if (!enrolled && !volunteering) {
+                    return NextResponse.json({ error: "Participant is not enrolled or volunteering in this program" }, { status: 400 });
+                }
+            }
+
             if (status === 'Absent') {
                 // An open visit (departedAt = null) means they physically scanned in
                 // and are currently on-site. Deleting it would destroy the live
                 // roster of who's in the building — reject instead.
                 const openVisit = await prisma.visit.findFirst({
                     where: {
-                        participantId: Number(participantId),
+                        personId: Number(participantId),
                         associatedEventId: eventId,
                         departedAt: null
                     }
@@ -223,7 +239,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 // Only closed visits remain; safe to remove on an Absent correction.
                 await prisma.visit.deleteMany({
                     where: {
-                        participantId: Number(participantId),
+                        personId: Number(participantId),
                         associatedEventId: eventId
                     }
                 });
@@ -235,7 +251,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 // Check if there is an existing visit
                 const existingVisit = await prisma.visit.findFirst({
                     where: {
-                        participantId: Number(participantId),
+                        personId: Number(participantId),
                         associatedEventId: eventId
                     }
                 });
@@ -253,7 +269,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 } else {
                     await prisma.visit.create({
                         data: {
-                            participantId: Number(participantId),
+                            personId: Number(participantId),
                             associatedEventId: eventId,
                             arrivedAt: new Date(arrivedAt),
                             departedAt: departedAt ? new Date(departedAt) : null,

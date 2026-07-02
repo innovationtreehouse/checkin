@@ -98,7 +98,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
         beforeAll(async () => {
             // A isKeyholder so a valid kiosk check-in opens the facility → always 200,
             // independent of facility state.
-            const k = await prisma.participant.create({
+            const k = await prisma.person.create({
                 data: {
                     name: 'Kiosk Keyholder',
                     email: `kiosk-${TAG}@example.com`,
@@ -111,9 +111,9 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
         });
 
         afterAll(async () => {
-            await prisma.visit.deleteMany({ where: { participantId: kioskId } });
-            await prisma.rawBadgeLog.deleteMany({ where: { participantId: kioskId } });
-            await prisma.participant.delete({ where: { id: kioskId } });
+            await prisma.visit.deleteMany({ where: { personId: kioskId } });
+            await prisma.rawBadgeLog.deleteMany({ where: { personId: kioskId } });
+            await prisma.person.delete({ where: { id: kioskId } });
             await prisma.household.delete({ where: { id: kioskHouseholdId } });
         });
 
@@ -125,8 +125,8 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
         });
 
         afterEach(async () => {
-            await prisma.visit.deleteMany({ where: { participantId: kioskId } });
-            await prisma.rawBadgeLog.deleteMany({ where: { participantId: kioskId } });
+            await prisma.visit.deleteMany({ where: { personId: kioskId } });
+            await prisma.rawBadgeLog.deleteMany({ where: { personId: kioskId } });
         });
 
         it('valid signature → 200 and records the check-in', async () => {
@@ -146,9 +146,9 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             expect(json.type).toBe('checkin');
             expect(json.signedRequest).toBe(true);
 
-            const visit = await prisma.visit.findFirst({ where: { participantId: kioskId, departedAt: null } });
+            const visit = await prisma.visit.findFirst({ where: { personId: kioskId, departedAt: null } });
             expect(visit).not.toBeNull();
-            const events = await prisma.rawBadgeLog.count({ where: { participantId: kioskId } });
+            const events = await prisma.rawBadgeLog.count({ where: { personId: kioskId } });
             expect(events).toBe(1);
         });
 
@@ -166,7 +166,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             }));
 
             expect(res.status).toBe(401);
-            const visits = await prisma.visit.count({ where: { participantId: kioskId } });
+            const visits = await prisma.visit.count({ where: { personId: kioskId } });
             expect(visits).toBe(0);
         });
 
@@ -183,7 +183,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             }));
 
             expect(res.status).toBe(401);
-            const visits = await prisma.visit.count({ where: { participantId: kioskId } });
+            const visits = await prisma.visit.count({ where: { personId: kioskId } });
             expect(visits).toBe(0);
         });
 
@@ -212,7 +212,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
 
             expect(res2.status).toBe(401);
             // Only the first request checked in; the replay changed nothing.
-            const events = await prisma.rawBadgeLog.count({ where: { participantId: kioskId } });
+            const events = await prisma.rawBadgeLog.count({ where: { personId: kioskId } });
             expect(events).toBe(1);
         });
 
@@ -222,7 +222,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             const res = await POST(scanReq(body));
 
             expect(res.status).toBe(401);
-            const visits = await prisma.visit.count({ where: { participantId: kioskId } });
+            const visits = await prisma.visit.count({ where: { personId: kioskId } });
             expect(visits).toBe(0);
         });
     });
@@ -245,7 +245,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             delete process.env.KIOSK_PUBLIC_KEY;
 
             const mk = async (name: string, extra: object = {}) => {
-                const p = await prisma.participant.create({
+                const p = await prisma.person.create({
                     data: {
                         name,
                         email: `${name.replace(/\s+/g, '-').toLowerCase()}-${TAG}@example.com`,
@@ -265,22 +265,22 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
 
         afterEach(async () => {
             const ids = [pSelf, pSameHH, pOtherHH, pStranger, pKeyholder];
-            await prisma.visit.deleteMany({ where: { participantId: { in: ids } } });
-            await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: ids } } });
+            await prisma.visit.deleteMany({ where: { personId: { in: ids } } });
+            await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: ids } } });
         });
 
         afterAll(async () => {
             const ids = [pSelf, pSameHH, pOtherHH, pStranger, pKeyholder];
             const hs = [hSelf, hLead, hOther, hStranger, hKeyholder];
-            await prisma.visit.deleteMany({ where: { participantId: { in: ids } } });
-            await prisma.rawBadgeLog.deleteMany({ where: { participantId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { id: { in: ids } } });
+            await prisma.visit.deleteMany({ where: { personId: { in: ids } } });
+            await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { id: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: hs } } });
         });
 
         /** Open the facility so a non-isKeyholder check-in can reach 200. */
         async function openFacility() {
-            await prisma.visit.create({ data: { participantId: pKeyholder, arrivedAt: new Date() } });
+            await prisma.visit.create({ data: { personId: pKeyholder, arrivedAt: new Date() } });
         }
 
         it('non-admin scanning self in prod → 403 (self-check-in gate, must use kiosk)', async () => {
@@ -293,7 +293,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             const json = await res.json();
             expect(json.error).toMatch(/kiosk badge scanner/i);
             // Gate fires before any state change.
-            expect(await prisma.visit.count({ where: { participantId: pSelf } })).toBe(0);
+            expect(await prisma.visit.count({ where: { personId: pSelf } })).toBe(0);
         });
 
         it('household lead scanning another member of their OWN household → 200', async () => {
@@ -307,7 +307,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             expect(res.status).toBe(200);
             const json = await res.json();
             expect(json.type).toBe('checkin');
-            const visit = await prisma.visit.findFirst({ where: { participantId: pSameHH, departedAt: null } });
+            const visit = await prisma.visit.findFirst({ where: { personId: pSameHH, departedAt: null } });
             expect(visit).not.toBeNull();
         });
 
@@ -322,7 +322,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             expect(res.status).toBe(403);
             const json = await res.json();
             expect(json.error).toMatch(/not authorized/i);
-            expect(await prisma.visit.count({ where: { participantId: pOtherHH } })).toBe(0);
+            expect(await prisma.visit.count({ where: { personId: pOtherHH } })).toBe(0);
         });
 
         it('non-admin non-lead scanning an arbitrary stranger → 403', async () => {
@@ -337,7 +337,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             expect(res.status).toBe(403);
             const json = await res.json();
             expect(json.error).toMatch(/not authorized/i);
-            expect(await prisma.visit.count({ where: { participantId: pStranger } })).toBe(0);
+            expect(await prisma.visit.count({ where: { personId: pStranger } })).toBe(0);
         });
     });
 

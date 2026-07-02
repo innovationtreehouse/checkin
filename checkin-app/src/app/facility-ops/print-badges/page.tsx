@@ -39,13 +39,13 @@ export default function PrintBadgesPage() {
   const fetchParticipants = useCallback(async () => {
     setLoading(true);
     try {
-      const url = new URL('/api/participants/search', window.location.origin);
+      const url = new URL('/api/people/search', window.location.origin);
       if (searchTerm) url.searchParams.set('q', searchTerm);
 
       const res = await fetch(url.toString());
       const data = await res.json();
-      if (data.participants) {
-        setParticipants(data.participants);
+      if (data.people) {
+        setParticipants(data.people);
       }
     } catch (e) {
       console.error(e);

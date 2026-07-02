@@ -17,12 +17,12 @@ export const POST = withAuth(
                 return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
             }
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
                 include: { householdLeads: true }
             });
 
-            const targetMember = await prisma.participant.findUnique({ where: { id: participantId } });
+            const targetMember = await prisma.person.findUnique({ where: { id: participantId } });
             if (!targetMember) {
                 return NextResponse.json({ error: "Participant not found" }, { status: 404 });
             }
@@ -81,12 +81,12 @@ export const DELETE = withAuth(
                 return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
             }
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
                 include: { householdLeads: true }
             });
 
-            const targetMember = await prisma.participant.findUnique({ where: { id: participantId } });
+            const targetMember = await prisma.person.findUnique({ where: { id: participantId } });
             if (!targetMember) {
                 return NextResponse.json({ error: "Participant not found" }, { status: 404 });
             }
@@ -108,15 +108,15 @@ export const DELETE = withAuth(
                 where: { householdId: targetHouseholdId }
             });
 
-            if (allLeads.length <= 1 && allLeads.some(l => l.participantId === participantId)) {
+            if (allLeads.length <= 1 && allLeads.some(l => l.personId === participantId)) {
                 return NextResponse.json({ error: "Cannot remove the last lead of a household." }, { status: 400 });
             }
 
             const existingLead = await prisma.householdLead.findUnique({
                 where: {
-                    householdId_participantId: {
+                    householdId_personId: {
                         householdId: targetHouseholdId,
-                        participantId: participantId
+                        personId: participantId
                     }
                 }
             });
@@ -127,9 +127,9 @@ export const DELETE = withAuth(
 
             await prisma.householdLead.delete({
                 where: {
-                    householdId_participantId: {
+                    householdId_personId: {
                         householdId: targetHouseholdId,
-                        participantId: participantId
+                        personId: participantId
                     }
                 }
             });

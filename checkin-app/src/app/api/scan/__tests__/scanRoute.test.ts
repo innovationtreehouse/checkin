@@ -11,7 +11,7 @@ jest.mock('@/lib/auth', () => ({
 
 jest.mock('@/lib/prisma', () => {
     const mock = {
-        participant: {
+        person: {
             findUnique: jest.fn(),
         },
         rawBadgeLog: {
@@ -97,7 +97,7 @@ describe('POST /api/scan', () => {
             body: JSON.stringify({ participantId: 1 })
         }) as unknown as import('next/server').NextRequest;
 
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: 1 });
+        (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: 1 });
         (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue({ timestamp: new Date(Date.now() - 1000) });
 
         const res = await POST(req);

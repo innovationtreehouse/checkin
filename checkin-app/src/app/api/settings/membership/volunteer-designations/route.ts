@@ -34,7 +34,7 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
 
     // Non-blocking warning: is this email already an active full-price member?
     let warning: string | undefined;
-    const participant = await prisma.participant.findFirst({
+    const participant = await prisma.person.findFirst({
         where: { email: { equals: email, mode: "insensitive" } },
         select: { household: { select: { membership: { select: { status: true, isVolunteer: true } } } } },
     });

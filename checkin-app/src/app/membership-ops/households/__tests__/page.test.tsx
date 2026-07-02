@@ -15,13 +15,13 @@ const households = {
       id: 1,
       name: "The Smiths",
       membership: { status: "ACTIVE" },
-      participants: [{ id: 10, name: "Pat Smith", email: "pat@example.com", isBoardMember: false }],
+      householdMembers: [{ id: 10, name: "Pat Smith", email: "pat@example.com", isBoardMember: false }],
     },
     {
       id: 2,
       name: "The Joneses",
       membership: null,
-      participants: [{ id: 20, name: "Jo Jones", email: "jo@example.com", isBoardMember: false }],
+      householdMembers: [{ id: 20, name: "Jo Jones", email: "jo@example.com", isBoardMember: false }],
     },
   ],
 };

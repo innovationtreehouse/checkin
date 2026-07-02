@@ -18,7 +18,7 @@ const bob = {
     name: "Bob B",
     email: null,
     phone: null,
-    household: { id: 20, name: "The B Family", participants: [{ id: 2, name: "Bob B", email: null }, { id: 3, name: "Sis B", email: "sis@example.com" }] },
+    household: { id: 20, name: "The B Family", householdMembers: [{ id: 2, name: "Bob B", email: null }, { id: 3, name: "Sis B", email: "sis@example.com" }] },
 };
 const carol = { id: 3, name: "Carol C", email: null, phone: null, household: null };
 const dave = {
@@ -26,13 +26,13 @@ const dave = {
     name: "Dave D",
     email: "dave@example.com",
     phone: null,
-    household: { id: 30, name: "Dave Household", participants: [{ id: 4, name: "Dave D", email: "dave@example.com" }] },
+    household: { id: 30, name: "Dave Household", householdMembers: [{ id: 4, name: "Dave D", email: "dave@example.com" }] },
 };
 
 describe("AdminParticipantsIndex", () => {
     it("searches, sorts, and edits a participant's details", async () => {
         mockFetchJson({
-            "/api/participants/search": { participants: [alice, bob] },
+            "/api/people/search": { people: [alice, bob] },
             "/api/membership-ops/participants/1": { participant: { id: 1, name: "Alice A", email: "alice@new.com", phone: "555-2222" } },
         });
         renderWithProviders(<AdminParticipantsIndex />);
@@ -54,20 +54,20 @@ describe("AdminParticipantsIndex", () => {
         const aliceRow = screen.getByText("Alice A").closest("tr")!;
         fireEvent.click(within(aliceRow).getByRole("button", { name: "Details" }));
 
-        expect(await screen.findByText("Edit Participant")).toBeInTheDocument();
+        expect(await screen.findByText("Edit Person")).toBeInTheDocument();
         const emailInput = screen.getByLabelText("Email Address");
         fireEvent.change(emailInput, { target: { value: "alice@new.com" } });
         fireEvent.click(screen.getByRole("button", { name: "Save Details" }));
 
-        await waitFor(() => expect(screen.queryByText("Edit Participant")).not.toBeInTheDocument());
-        expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Participant updated successfully!" }));
+        await waitFor(() => expect(screen.queryByText("Edit Person")).not.toBeInTheDocument());
+        expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Person updated successfully!" }));
     });
 
     it("assigns a new household to a participant with none", async () => {
         mockFetchJson({
-            "/api/participants/search": { participants: [carol] },
+            "/api/people/search": { people: [carol] },
             "/api/membership-ops/participants/3/household": {
-                participant: { ...carol, household: { id: 50, name: "Carol Household", participants: [{ id: 3, name: "Carol C", email: null }] } },
+                participant: { ...carol, household: { id: 50, name: "Carol Household", householdMembers: [{ id: 3, name: "Carol C", email: null }] } },
             },
         });
         renderWithProviders(<AdminParticipantsIndex />);
@@ -83,7 +83,7 @@ describe("AdminParticipantsIndex", () => {
     });
 
     it("sorts by the household and email columns, and toggles direction back to ascending", async () => {
-        mockFetchJson({ "/api/participants/search": { participants: [alice, bob] } });
+        mockFetchJson({ "/api/people/search": { people: [alice, bob] } });
         renderWithProviders(<AdminParticipantsIndex />);
         expect(await screen.findByText("Alice A")).toBeInTheDocument();
 
@@ -102,10 +102,10 @@ describe("AdminParticipantsIndex", () => {
     it("shows an empty state when the search returns no participants", async () => {
         mockFetchJson({});
         renderWithProviders(<AdminParticipantsIndex />);
-        expect(screen.queryByText("No participants found.")).not.toBeInTheDocument();
+        expect(screen.queryByText("No people found.")).not.toBeInTheDocument();
 
         fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "zzz" } });
-        expect(await screen.findByText("No participants found.")).toBeInTheDocument();
+        expect(await screen.findByText("No people found.")).toBeInTheDocument();
     });
 
     it("recovers from a network error while searching", async () => {
@@ -119,14 +119,14 @@ describe("AdminParticipantsIndex", () => {
 
     it("pulls a participant from an existing household into a new one via the confirm step", async () => {
         mockFetchJson({
-            "/api/participants/search": { participants: [bob] },
+            "/api/people/search": { people: [bob] },
             "/api/membership-ops/participants/2/household": { participant: { ...bob, household: null } },
         });
         renderWithProviders(<AdminParticipantsIndex />);
         expect(await screen.findByText("Bob B")).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Details" }));
-        expect(await screen.findByText("Edit Participant")).toBeInTheDocument();
+        expect(await screen.findByText("Edit Person")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Move to Another Household" }));
 
         expect(await screen.findByText("Assign Household to Bob B")).toBeInTheDocument();
@@ -148,10 +148,10 @@ describe("AdminParticipantsIndex", () => {
 
     it("changes a single-member household by searching and selecting a new one via EntityPicker", async () => {
         mockFetchJson({
-            "/api/participants/search": { participants: [dave] },
-            "/api/membership-ops/households?q=": { households: [{ id: 99, name: "New Fam", participants: [{ id: 50, name: "Existing Member", email: null }] }] },
+            "/api/people/search": { people: [dave] },
+            "/api/membership-ops/households?q=": { households: [{ id: 99, name: "New Fam", householdMembers: [{ id: 50, name: "Existing Member", email: null }] }] },
             "/api/membership-ops/participants/4/household": {
-                participant: { ...dave, household: { id: 99, name: "New Fam", participants: [{ id: 50, name: "Existing Member", email: null }, { id: 4, name: "Dave D", email: "dave@example.com" }] } },
+                participant: { ...dave, household: { id: 99, name: "New Fam", householdMembers: [{ id: 50, name: "Existing Member", email: null }, { id: 4, name: "Dave D", email: "dave@example.com" }] } },
             },
         });
         renderWithProviders(<AdminParticipantsIndex />);
@@ -180,13 +180,13 @@ describe("AdminParticipantsIndex", () => {
     });
 
     it("surfaces a server error message when assigning a household fails", async () => {
-        mockFetchJson({ "/api/participants/search": { participants: [carol] } });
+        mockFetchJson({ "/api/people/search": { people: [carol] } });
         renderWithProviders(<AdminParticipantsIndex />);
         expect(await screen.findByText("Carol C")).toBeInTheDocument();
 
         global.fetch = jest.fn(async (input: RequestInfo | URL) => {
             const url = typeof input === "string" ? input : input.toString();
-            if (url.includes("/api/participants/search")) return { ok: true, status: 200, json: async () => ({ participants: [carol] }) } as Response;
+            if (url.includes("/api/people/search")) return { ok: true, status: 200, json: async () => ({ people: [carol] }) } as Response;
             return { ok: false, status: 400, json: async () => ({ error: "Household is full" }) } as Response;
         });
 
@@ -198,7 +198,7 @@ describe("AdminParticipantsIndex", () => {
     });
 
     it("shows a network-error notification when assigning a household throws", async () => {
-        mockFetchJson({ "/api/participants/search": { participants: [carol] } });
+        mockFetchJson({ "/api/people/search": { people: [carol] } });
         renderWithProviders(<AdminParticipantsIndex />);
         expect(await screen.findByText("Carol C")).toBeInTheDocument();
 
@@ -211,13 +211,13 @@ describe("AdminParticipantsIndex", () => {
     });
 
     it("surfaces an error and a network-error notification when saving participant details fails", async () => {
-        mockFetchJson({ "/api/participants/search": { participants: [alice] } });
+        mockFetchJson({ "/api/people/search": { people: [alice] } });
         renderWithProviders(<AdminParticipantsIndex />);
         expect(await screen.findByText("Alice A")).toBeInTheDocument();
 
         global.fetch = jest.fn(async (input: RequestInfo | URL) => {
             const url = typeof input === "string" ? input : input.toString();
-            if (url.includes("/api/participants/search")) return { ok: true, status: 200, json: async () => ({ participants: [alice] }) } as Response;
+            if (url.includes("/api/people/search")) return { ok: true, status: 200, json: async () => ({ people: [alice] }) } as Response;
             return { ok: false, status: 400, json: async () => ({ error: "Email already in use" }) } as Response;
         });
         fireEvent.click(screen.getByRole("button", { name: "Details" }));
@@ -225,7 +225,7 @@ describe("AdminParticipantsIndex", () => {
         await waitFor(() =>
             expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Email already in use", color: "red" })),
         );
-        expect(screen.getByText("Edit Participant")).toBeInTheDocument();
+        expect(screen.getByText("Edit Person")).toBeInTheDocument();
 
         global.fetch = jest.fn().mockRejectedValue(new Error("down"));
         fireEvent.click(screen.getByRole("button", { name: "Save Details" }));
@@ -235,24 +235,24 @@ describe("AdminParticipantsIndex", () => {
     });
 
     it("cancels out of the edit participant modal", async () => {
-        mockFetchJson({ "/api/participants/search": { participants: [alice] } });
+        mockFetchJson({ "/api/people/search": { people: [alice] } });
         renderWithProviders(<AdminParticipantsIndex />);
         expect(await screen.findByText("Alice A")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Details" }));
-        expect(await screen.findByText("Edit Participant")).toBeInTheDocument();
+        expect(await screen.findByText("Edit Person")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-        await waitFor(() => expect(screen.queryByText("Edit Participant")).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.queryByText("Edit Person")).not.toBeInTheDocument());
     });
 
     it("opens Edit Household Info from a row's Household button and saves via the admin household modal", async () => {
-        mockFetchJson({ "/api/participants/search": { participants: [bob] } });
+        mockFetchJson({ "/api/people/search": { people: [bob] } });
         global.fetch = jest.fn(async (input: RequestInfo | URL) => {
             const url = typeof input === "string" ? input : input.toString();
-            if (url.includes("/api/participants/search")) return { ok: true, status: 200, json: async () => ({ participants: [bob] }) } as Response;
+            if (url.includes("/api/people/search")) return { ok: true, status: 200, json: async () => ({ people: [bob] }) } as Response;
             if (url.includes("/api/membership-ops/households?id=20")) {
                 return {
                     ok: true, status: 200,
-                    json: async () => ({ household: { id: 20, name: "The B Family", emergencyContactName: null, emergencyContactPhone: null, participants: bob.household!.participants, householdLeads: [] } }),
+                    json: async () => ({ household: { id: 20, name: "The B Family", emergencyContactName: null, emergencyContactPhone: null, householdMembers: bob.household!.householdMembers, householdLeads: [] } }),
                 } as Response;
             }
             if (url.includes("/api/membership-ops/households/20")) {
@@ -276,21 +276,21 @@ describe("AdminParticipantsIndex", () => {
     });
 
     it("opens Edit Household Info from the details modal's household sub-action", async () => {
-        mockFetchJson({ "/api/participants/search": { participants: [bob] } });
+        mockFetchJson({ "/api/people/search": { people: [bob] } });
         global.fetch = jest.fn(async (input: RequestInfo | URL) => {
             const url = typeof input === "string" ? input : input.toString();
-            if (url.includes("/api/participants/search")) return { ok: true, status: 200, json: async () => ({ participants: [bob] }) } as Response;
+            if (url.includes("/api/people/search")) return { ok: true, status: 200, json: async () => ({ people: [bob] }) } as Response;
             if (url.includes("/api/membership-ops/households?id=20")) {
-                return { ok: true, status: 200, json: async () => ({ household: { id: 20, name: "The B Family", participants: bob.household!.participants } }) } as Response;
+                return { ok: true, status: 200, json: async () => ({ household: { id: 20, name: "The B Family", householdMembers: bob.household!.householdMembers } }) } as Response;
             }
             return { ok: false, status: 404, json: async () => ({}) } as Response;
         });
         renderWithProviders(<AdminParticipantsIndex />);
         expect(await screen.findByText("Bob B")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Details" }));
-        expect(await screen.findByText("Edit Participant")).toBeInTheDocument();
+        expect(await screen.findByText("Edit Person")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Edit Household Info" }));
         expect(await screen.findByText(/Edit Household Info —/)).toBeInTheDocument();
-        await waitFor(() => expect(screen.queryByText("Edit Participant")).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.queryByText("Edit Person")).not.toBeInTheDocument());
     });
 });

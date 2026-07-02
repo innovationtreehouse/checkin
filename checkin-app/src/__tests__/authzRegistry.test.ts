@@ -78,7 +78,7 @@ const AUTHZ_TESTED = new Set<string>([
     'membership-ops/participants/merge',
     'membership-ops/participants/merge/analyze',
     'membership/reviews',
-    'participants/search',
+    'people/search',
     'programs',
     'roles',
     'safety/board-contacts',

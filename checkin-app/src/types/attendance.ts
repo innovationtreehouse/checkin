@@ -45,7 +45,7 @@ export type VisitWithDetails = Prisma.VisitGetPayload<{
 export interface AttendanceCounts {
     keyholders: number;
     volunteers: number;
-    students: number;
+    youth: number;
     total: number;
 }
 

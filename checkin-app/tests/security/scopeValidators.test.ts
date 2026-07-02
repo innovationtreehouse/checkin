@@ -22,8 +22,8 @@ const CLS = classifications as unknown as Record<string, Record<string, string>>
 
 describe('validateBindings — field-existence (typo catcher)', () => {
     it('flags a binding field absent from the model', () => {
-        const bad: ScopeBindings = { Participant: { their_own: { field: 'householdID', eqCtx: 'householdId' } } };
-        expect(validateBindings(bad, CLS, new Set())).toContain('Participant.householdID — no such field');
+        const bad: ScopeBindings = { Person: { their_own: { field: 'householdID', eqCtx: 'householdId' } } };
+        expect(validateBindings(bad, CLS, new Set())).toContain('Person.householdID — no such field');
     });
 
     it('flags an unknown model', () => {
@@ -75,11 +75,11 @@ describe('validateBindings — Fee/RSVP dead-field cleanup + RSVP eventId re-add
 });
 
 describe('validateRouteGrants — seam check', () => {
-    const bindings: ScopeBindings = { Participant: { their_own: { field: 'id', eqCtx: 'selfId' } } };
+    const bindings: ScopeBindings = { Person: { their_own: { field: 'id', eqCtx: 'selfId' } } };
 
     it('flags a granted scope that no returned model binds', () => {
         const routes: RouteGrantSpec[] = [
-            { endpoint: '/api/x', orderedView: [['authenticated', ['their_households:pii']]], returns: ['Participant'] },
+            { endpoint: '/api/x', orderedView: [['authenticated', ['their_households:pii']]], returns: ['Person'] },
         ];
         const errs = validateRouteGrants(routes, bindings);
         expect(errs.some(e => e.includes("grants 'their_households:*'"))).toBe(true);
@@ -87,7 +87,7 @@ describe('validateRouteGrants — seam check', () => {
 
     it('passes when the grant resolves and ignores everyones', () => {
         const routes: RouteGrantSpec[] = [
-            { endpoint: '/api/y', orderedView: [['authenticated', ['their_own:pii', 'everyones:internal', 'public']]], returns: ['Participant'] },
+            { endpoint: '/api/y', orderedView: [['authenticated', ['their_own:pii', 'everyones:internal', 'public']]], returns: ['Person'] },
         ];
         expect(validateRouteGrants(routes, bindings)).toEqual([]);
     });

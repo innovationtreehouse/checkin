@@ -39,17 +39,17 @@ describe('POST /api/programs/[id]/participants concurrency (capacity lock)', () 
     let programId: number;
 
     async function cleanup() {
-        const users = await prisma.participant.findMany({
+        const users = await prisma.person.findMany({
             where: { email: { contains: TAG } },
             select: { id: true, householdId: true },
         });
         const ids = users.map(u => u.id);
         const householdIds = [...new Set(users.map(u => u.householdId))];
-        await prisma.programParticipant.deleteMany({ where: { participantId: { in: ids } } });
+        await prisma.programParticipant.deleteMany({ where: { personId: { in: ids } } });
         await prisma.program.deleteMany({ where: { name: { contains: TAG } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
-        await prisma.householdLead.deleteMany({ where: { participantId: { in: ids } } });
-        await prisma.participant.deleteMany({ where: { id: { in: ids } } });
+        await prisma.householdLead.deleteMany({ where: { personId: { in: ids } } });
+        await prisma.person.deleteMany({ where: { id: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     }
 
@@ -59,17 +59,17 @@ describe('POST /api/programs/[id]/participants concurrency (capacity lock)', () 
         const household = await prisma.household.create({ data: { name: `${TAG} household` } });
         householdId = household.id;
 
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: `lead-${TAG}@example.com`, name: 'Lead', householdId },
         });
         leadId = lead.id;
-        await prisma.householdLead.create({ data: { householdId, participantId: leadId } });
+        await prisma.householdLead.create({ data: { householdId, personId: leadId } });
 
-        const m1 = await prisma.participant.create({
+        const m1 = await prisma.person.create({
             data: { email: `m1-${TAG}@example.com`, name: 'Member One', householdId },
         });
         member1Id = m1.id;
-        const m2 = await prisma.participant.create({
+        const m2 = await prisma.person.create({
             data: { email: `m2-${TAG}@example.com`, name: 'Member Two', householdId },
         });
         member2Id = m2.id;

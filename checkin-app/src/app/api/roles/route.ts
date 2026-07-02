@@ -9,7 +9,7 @@ export const GET = withAuth(
             const eighteenYearsAgo = new Date();
             eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 
-            const rows = await prisma.participant.findMany({
+            const rows = await prisma.person.findMany({
                 select: {
                     id: true,
                     email: true,
@@ -23,11 +23,11 @@ export const GET = withAuth(
                 orderBy: { name: "asc" },
             });
             // Don't leak dob (PII); expose only a youth flag for filtering.
-            const participants = rows.map(({ dateOfBirth, ...p }: (typeof rows)[number]) => ({
+            const people = rows.map(({ dateOfBirth, ...p }: (typeof rows)[number]) => ({
                 ...p,
                 isYouth: dateOfBirth != null && dateOfBirth > eighteenYearsAgo,
             }));
-            return NextResponse.json({ participants });
+            return NextResponse.json({ people });
         } catch (error) {
             console.error("Error fetching roles:", error);
             return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -66,7 +66,7 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: "No valid role fields provided" }, { status: 400 });
             }
 
-            const updated = await prisma.participant.update({
+            const updated = await prisma.person.update({
                 where: { id: targetUserId },
                 data: updateData,
                 select: {

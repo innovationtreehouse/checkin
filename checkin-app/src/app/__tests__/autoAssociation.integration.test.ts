@@ -25,12 +25,12 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
         await prisma.programParticipant.deleteMany();
         await prisma.event.deleteMany();
         await prisma.program.deleteMany();
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: 'auto-assoc-test@example.com' }
         });
 
         // Setup User
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'auto-assoc-test@example.com', name: 'Auto Assoc Tester', household: { create: {} } }
         });
         participantId = user.id;
@@ -95,10 +95,10 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
 
         // Enroll User in A and B
         await prisma.programParticipant.create({
-            data: { programId: programAId, participantId }
+            data: { programId: programAId, personId: participantId }
         });
         await prisma.programParticipant.create({
-            data: { programId: programBId, participantId }
+            data: { programId: programBId, personId: participantId }
         });
     });
 
@@ -108,7 +108,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
         await prisma.programParticipant.deleteMany();
         await prisma.event.deleteMany();
         await prisma.program.deleteMany();
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: participantId }
         });
         await prisma.household.deleteMany({
@@ -154,7 +154,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
         it('should not split a visit that falls completely within one event', async () => {
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: new Date(`${baseDateString}10:15:00Z`),
                     associatedEventId: eventAId
                 }
@@ -173,7 +173,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             const arrivalTime = new Date(`${baseDateString}09:30:00Z`);
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: arrivalTime,
                     associatedEventId: null // We'll say it wasn't associated on entry for testing the chunker
                 }
@@ -205,14 +205,14 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
         it('should continue to chunk into the first event if the user is not enrolled in subsequent events', async () => {
             // Un-enroll user from B so they are ONLY enrolled in A.
             await prisma.programParticipant.deleteMany({
-                where: { participantId, programId: programBId }
+                where: { personId: participantId, programId: programBId }
             });
 
             // Arrives during A, leaves during B time
             const arrivalTime = new Date(`${baseDateString}10:30:00Z`);
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: arrivalTime,
                     associatedEventId: eventAId
                 }
@@ -236,7 +236,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             const arrivalTime = new Date(`${baseDateString}13:30:00Z`);
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
+                    personId: participantId,
                     arrivedAt: arrivalTime
                 }
             });

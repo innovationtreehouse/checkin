@@ -57,13 +57,13 @@ export interface IntakeSaveInput {
 }
 
 async function loadUserWithHousehold(userId: number) {
-    return prisma.participant.findUnique({
+    return prisma.person.findUnique({
         where: { id: userId },
         include: {
             householdLeads: true,
             household: {
                 include: {
-                    participants: { orderBy: { id: "asc" } },
+                    householdMembers: { orderBy: { id: "asc" } },
                     leads: true,
                     membership: { include: { processes: true } },
                     emergencyContacts: { orderBy: [{ priority: "asc" }, { id: "asc" }] },
@@ -93,9 +93,9 @@ export async function getIntakeState(userId: number) {
         .sort((a, b) => b.id - a.id)[0] ?? null;
 
     // Parents/guardians are the household leads; children are non-lead members.
-    const leadIds = new Set((household?.leads ?? []).map((l) => l.participantId));
-    const parents = (household?.participants ?? []).filter((p) => leadIds.has(p.id));
-    const children = (household?.participants ?? []).filter((p) => !leadIds.has(p.id));
+    const leadIds = new Set((household?.leads ?? []).map((l) => l.personId));
+    const parents = (household?.householdMembers ?? []).filter((p) => leadIds.has(p.id));
+    const children = (household?.householdMembers ?? []).filter((p) => !leadIds.has(p.id));
     const primary = parents.find((p) => p.id === userId) ?? null;
     const secondary = parents.find((p) => p.id !== userId) ?? null;
 
@@ -211,7 +211,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     if (!user) throw new IntakeError("no_household", "User not found.");
     assertLead(user);
     const householdId = user.householdId!;
-    const householdMemberIds = new Set((user.household?.participants ?? []).map((p) => p.id));
+    const householdMemberIds = new Set((user.household?.householdMembers ?? []).map((p) => p.id));
 
     const toDate = (d?: string | null) => (d ? new Date(d) : null);
 
@@ -261,7 +261,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     // Primary parent is always the caller.
     if (input.primaryParent) {
         // The primary applicant is already a household lead (set at startIntake).
-        await prisma.participant.update({
+        await prisma.person.update({
             where: { id: userId },
             data: {
                 ...(input.primaryParent.name !== undefined && { name: input.primaryParent.name }),
@@ -275,7 +275,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     if (input.secondaryParent) {
         const sp = input.secondaryParent;
         if (sp.id && householdMemberIds.has(sp.id)) {
-            await prisma.participant.update({
+            await prisma.person.update({
                 where: { id: sp.id },
                 data: {
                     ...(sp.name !== undefined && { name: sp.name }),
@@ -286,7 +286,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             // A second guardian is a household lead (parent).
             await addLeadOrRecord(sp.id);
         } else if (sp.name || sp.email) {
-            const created = await prisma.participant.create({
+            const created = await prisma.person.create({
                 data: {
                     householdId,
                     name: sp.name ?? null,
@@ -303,7 +303,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     // only), create the rest. Never delete; never add a HouseholdLead row.
     for (const child of input.children ?? []) {
         if (child.id && householdMemberIds.has(child.id)) {
-            await prisma.participant.update({
+            await prisma.person.update({
                 where: { id: child.id },
                 data: {
                     ...(child.name !== undefined && { name: child.name }),
@@ -312,7 +312,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 },
             });
         } else if (child.name) {
-            await prisma.participant.create({
+            await prisma.person.create({
                 data: {
                     householdId,
                     name: child.name,
@@ -355,7 +355,7 @@ export async function submitIntake(userId: number) {
         (c) => c.conflictParticipantId === null && c.name.trim() && c.phone.trim(),
     );
     if (!hasValidContact) missing.push({ field: "emergencyContact", label: "a valid emergency contact (someone outside the household)" });
-    const primary = household.participants.find((p) => p.id === userId);
+    const primary = household.householdMembers.find((p) => p.id === userId);
     if (!primary?.name?.trim()) missing.push({ field: "primaryName", label: "primary parent name" });
     if (missing.length) {
         throw new IntakeError(

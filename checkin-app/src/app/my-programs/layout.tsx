@@ -3,13 +3,14 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Badge, Center, Loader, Tabs, Text } from "@mantine/core";
+import { Badge, Tabs, Text } from "@mantine/core";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { useConflicts } from "@/hooks/useConflicts";
 import { leadsAnyProgram, leadPendingCount } from "@/components/navBadges";
 
+import { PageLoader } from "@/components/ui/PageLoader";
 /**
  * Staff "My Programs" chrome: section title + subtabs (Attendance inbox /
  * Conflicts), gated to program lead mentors. Lead status rides in on the
@@ -33,9 +34,7 @@ export default function MyProgramsLayout({ children }: { children: React.ReactNo
 
   if (status === "loading" || counts === null) {
     return (
-      <Center mih="60vh">
-        <Loader />
-      </Center>
+      <PageLoader />
     );
   }
   if (!leadsAnyProgram(counts)) return null; // redirect in flight

@@ -5,11 +5,11 @@
  * Authorization-boundary tests for sensitive (PII / impersonation) routes that
  * previously had no integration coverage. Focus: who is rejected.
  *   - GET /api/safety/emergency-contacts   (isSysadmin | isBoardMember | isKeyholder)
- *   - GET /api/participants/search  (isSysadmin | isBoardMember — isKeyholder MUST be denied)
+ *   - GET /api/people/search  (isSysadmin | isBoardMember — isKeyholder MUST be denied)
  *   - GET /api/auth/dev-personas          (impersonation surface; 404 outside dev)
  */
 import { GET as EmergencyGet } from '@/app/api/safety/emergency-contacts/route';
-import { GET as SearchGet } from '@/app/api/participants/search/route';
+import { GET as SearchGet } from '@/app/api/people/search/route';
 import { GET as DevPersonasGet } from '@/app/api/auth/dev-personas/route';
 import { GET as CertsGet } from '@/app/api/kioskdisplay/certifications/route';
 import prisma from '@/lib/prisma';
@@ -35,19 +35,19 @@ describe('Sensitive route authorization', () => {
     const ENV_BEFORE = process.env.CHECKIN_ENV;
 
     beforeAll(async () => {
-        const plain = await prisma.participant.create({
+        const plain = await prisma.person.create({
             data: { name: 'Authz Plain', email: `plain-${TAG}@example.com`, household: { create: {} } },
         });
         plainId = plain.id;
         householdIds.push(plain.householdId);
 
-        const target = await prisma.participant.create({
+        const target = await prisma.person.create({
             data: { name: `ZZTarget ${TAG}`, email: `target-${TAG}@example.com`, phone: '555-0101', household: { create: {} } },
         });
         searchTargetId = target.id;
         householdIds.push(target.householdId);
 
-        const persona = await prisma.participant.create({
+        const persona = await prisma.person.create({
             data: { name: 'Persona One', email: `persona-${TAG}@example.com`, isSysadmin: true, household: { create: {} } },
         });
         personaId = persona.id;
@@ -61,7 +61,7 @@ describe('Sensitive route authorization', () => {
 
     afterAll(async () => {
         process.env.CHECKIN_ENV = ENV_BEFORE;
-        await prisma.participant.deleteMany({ where: { id: { in: [plainId, searchTargetId, personaId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [plainId, searchTargetId, personaId] } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 
@@ -85,8 +85,8 @@ describe('Sensitive route authorization', () => {
         });
     });
 
-    describe('GET /api/participants/search', () => {
-        const url = `http://localhost/api/participants/search?q=ZZTarget`;
+    describe('GET /api/people/search', () => {
+        const url = `http://localhost/api/people/search?q=ZZTarget`;
 
         it('401 when unauthenticated', async () => {
             mockSession.mockResolvedValue(null);
@@ -108,7 +108,7 @@ describe('Sensitive route authorization', () => {
             const res = await SearchGet(req(url));
             expect(res.status).toBe(200);
             const json = await res.json();
-            const hit = json.participants.find((p: { id: number }) => p.id === searchTargetId);
+            const hit = json.people.find((p: { id: number }) => p.id === searchTargetId);
             expect(hit).toBeDefined();
             expect(hit.phone).toBe('555-0101');
         });

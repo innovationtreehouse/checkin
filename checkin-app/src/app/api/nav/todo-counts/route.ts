@@ -105,7 +105,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     if (user.householdId) {
         const householdId = user.householdId;
-        const members = await prisma.participant.findMany({
+        const members = await prisma.person.findMany({
             where: { householdId },
             select: { id: true },
         });
@@ -114,8 +114,8 @@ export const GET = withAuth({}, async (_req, auth) => {
         const isLead =
             user.householdLead ??
             (await prisma.householdLead.findFirst({
-                where: { householdId, participantId: user.id },
-                select: { participantId: true },
+                where: { householdId, personId: user.id },
+                select: { personId: true },
             })) !== null;
 
         const [hh, leadsMissingPhone, membersMissingAge, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
@@ -137,14 +137,14 @@ export const GET = withAuth({}, async (_req, auth) => {
             // page highlights the member box; this drives the nav badge count.
             isLead
                 ? prisma.householdLead.findMany({
-                      where: { householdId, OR: [{ participant: { phone: null } }, { participant: { phone: "" } }] },
-                      select: { participant: { select: { id: true, name: true } } },
+                      where: { householdId, OR: [{ person: { phone: null } }, { person: { phone: "" } }] },
+                      select: { person: { select: { id: true, name: true } } },
                   })
                 : Promise.resolve([]),
             // A member with no DoB and no 25+ declaration shows "Age Unavailable"
             // on the household page; the lead must add one or the other.
             isLead
-                ? prisma.participant.findMany({
+                ? prisma.person.findMany({
                       where: { householdId, dateOfBirth: null, isDeclaredAdult: false },
                       select: { id: true, name: true },
                   })
@@ -164,7 +164,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 },
             }),
             prisma.programParticipant.findMany({
-                where: { participantId: { in: memberIds }, status: "PENDING" },
+                where: { personId: { in: memberIds }, status: "PENDING" },
                 select: { programId: true, program: { select: { name: true } } },
             }),
         ]);
@@ -173,7 +173,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             householdTodos.push({ key: "emergency-contact", label: "Add a household emergency contact", href: "/my-household#emergency-contact" });
         }
         for (const l of leadsMissingPhone) {
-            householdTodos.push({ key: `lead-phone-${l.participant.id}`, label: `Add a phone number for ${l.participant.name ?? "the household lead"}`, href: "/my-household" });
+            householdTodos.push({ key: `lead-phone-${l.person.id}`, label: `Add a phone number for ${l.person.name ?? "the household lead"}`, href: "/my-household" });
         }
         for (const m of membersMissingAge) {
             householdTodos.push({ key: `member-age-${m.id}`, label: `Add a date of birth for ${m.name ?? "a household member"}`, href: "/my-household" });
@@ -204,7 +204,7 @@ export const GET = withAuth({}, async (_req, auth) => {
     const [building, buildingHousehold, activePrograms] = await Promise.all([
         prisma.visit.count({ where: { departedAt: null } }),
         user.householdId
-            ? prisma.visit.count({ where: { departedAt: null, participant: { householdId: user.householdId } } })
+            ? prisma.visit.count({ where: { departedAt: null, person: { householdId: user.householdId } } })
             : Promise.resolve(0),
         prisma.program.count({ where: { phase: "RUNNING" } }),
     ]);
@@ -238,7 +238,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             prisma.programParticipant.groupBy({
                 by: ["programId"],
                 where: { programId: { in: ledIds }, status: "ACTIVE" },
-                _count: { participantId: true },
+                _count: { personId: true },
             }),
             // All upcoming sessions, ascending; we keep the next 3 per program below.
             prisma.event.findMany({
@@ -249,11 +249,11 @@ export const GET = withAuth({}, async (_req, auth) => {
             // Volunteer roster per program — used to split RSVP tallies by role.
             prisma.programVolunteer.findMany({
                 where: { programId: { in: ledIds } },
-                select: { programId: true, participantId: true },
+                select: { programId: true, personId: true },
             }),
         ]);
-        // (programId, participantId) keys that belong to a volunteer; everyone else on a roster is a participant.
-        const volunteerKeys = new Set(volunteerRows.map((v) => `${v.programId}:${v.participantId}`));
+        // (programId, personId) keys that belong to a volunteer; everyone else on a roster is a participant.
+        const volunteerKeys = new Set(volunteerRows.map((v) => `${v.programId}:${v.personId}`));
 
         const pendingByProgram = new Map<number, TodoItem[]>();
         for (const e of pendingEvents) {
@@ -267,7 +267,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             pendingByProgram.set(e.programId, items);
         }
 
-        const enrolledByProgram = new Map(enrolledCounts.map((g) => [g.programId, g._count.participantId]));
+        const enrolledByProgram = new Map(enrolledCounts.map((g) => [g.programId, g._count.personId]));
 
         // Next 3 future sessions per program (futureEvents is already startAt-asc).
         const upcomingByProgram = new Map<number, { id: number; name: string; startAt: Date }[]>();
@@ -286,7 +286,7 @@ export const GET = withAuth({}, async (_req, auth) => {
         const rsvpRows = upcomingEventIds.length
             ? await prisma.rSVP.findMany({
                   where: { eventId: { in: upcomingEventIds } },
-                  select: { eventId: true, participantId: true, status: true },
+                  select: { eventId: true, personId: true, status: true },
               })
             : [];
         const emptyTally = (): { participants: RsvpTally; volunteers: RsvpTally } => ({
@@ -297,7 +297,7 @@ export const GET = withAuth({}, async (_req, auth) => {
         for (const r of rsvpRows) {
             const t = tallyByEvent.get(r.eventId) ?? emptyTally();
             const programId = eventProgram.get(r.eventId);
-            const bucket = programId !== undefined && volunteerKeys.has(`${programId}:${r.participantId}`) ? t.volunteers : t.participants;
+            const bucket = programId !== undefined && volunteerKeys.has(`${programId}:${r.personId}`) ? t.volunteers : t.participants;
             if (r.status === "ATTENDING") bucket.yes += 1;
             else if (r.status === "MAYBE") bucket.maybe += 1;
             else if (r.status === "NOT_ATTENDING") bucket.no += 1;
@@ -335,14 +335,19 @@ export const GET = withAuth({}, async (_req, auth) => {
                 where: { status: "PENDING_BOARD_REVIEW" },
             }),
             countHouseholdsMissingValidContact(),
-            // Households with an account created at registration that nobody has
-            // claimed via Google sign-in yet. Mirrors /api/membership-audit/unclaimed-households:
-            // claiming hinges on leads only (kids/members may never log in), so count
-            // households with an email-having lead where no lead has signed in with Google.
+            // Households nobody has claimed via Google sign-in yet: either a lead has an
+            // email to chase but no lead has signed in, OR the household has no lead at
+            // all (broken). Must stay identical to /api/membership-audit/unclaimed-households
+            // or the badge count and the list diverge.
             prisma.household.count({
                 where: {
-                    leads: { some: { participant: { email: { not: null } } } },
-                    NOT: { leads: { some: { participant: { googleId: { not: null } } } } },
+                    OR: [
+                        {
+                            leads: { some: { person: { email: { not: null } } } },
+                            NOT: { leads: { some: { person: { googleId: { not: null } } } } }
+                        },
+                        { leads: { none: {} } }
+                    ]
                 },
             }),
             // "Broken" households: no household lead at all. Mirrors
@@ -355,7 +360,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // explicitly so null-email members (e.g. children) count.
             prisma.household.count({
                 where: {
-                    participants: {
+                    householdMembers: {
                         some: { OR: [{ email: null }, { NOT: { email: { endsWith: `@${ORG_DOMAIN}` } } }] },
                     },
                 },

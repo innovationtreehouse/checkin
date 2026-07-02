@@ -19,7 +19,7 @@ const TAG = 'review-concurrency-test';
 
 /** A background-check reviewer in their own (distinct) household. */
 async function makeReviewer(label: string): Promise<number> {
-    const r = await prisma.participant.create({
+    const r = await prisma.person.create({
         data: {
             email: `${label}-${TAG}@example.com`,
             name: label,
@@ -42,7 +42,7 @@ async function makePendingProcess(): Promise<number> {
 
 async function wipe() {
     const hhs = await prisma.household.findMany({
-        where: { OR: [{ name: { contains: TAG } }, { participants: { some: { email: { contains: TAG } } } }] },
+        where: { OR: [{ name: { contains: TAG } }, { householdMembers: { some: { email: { contains: TAG } } } }] },
         select: { id: true },
     });
     const ids = hhs.map((h) => h.id);
@@ -51,10 +51,10 @@ async function wipe() {
         await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
         await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
-    await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+    await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
 }
 
 describe('attest() concurrency', () => {

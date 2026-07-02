@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Badge, Center, Group, Loader, Table, Text, TextInput, Title } from "@mantine/core";
+import { Badge, Group, Table, Text, TextInput, Title } from "@mantine/core";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { formatDate, formatVisitRange, formatDateTime } from "@/lib/time";
 import { AttendanceTabs } from "../AttendanceTabs";
 
-type Visit = { id: number; participant?: { name: string }; event?: { name: string }; arrivedAt: string; departedAt?: string };
+import { PageLoader } from "@/components/ui/PageLoader";
+type Visit = { id: number; person?: { name: string }; event?: { name: string }; arrivedAt: string; departedAt?: string };
 
 export default function HouseholdCheckins() {
   const { ready, loading: authLoading } = useRequireRole([]);
@@ -27,7 +28,7 @@ export default function HouseholdCheckins() {
     return () => { active = false; };
   }, [ready, filterDate]);
 
-  if (authLoading) return <Center mih="60vh"><Loader /></Center>;
+  if (authLoading) return <PageLoader />;
   if (!ready) return null;
 
   return (
@@ -68,7 +69,7 @@ export default function HouseholdCheckins() {
           <Table.Tbody>
             {visits.map((v) => (
               <Table.Tr key={v.id}>
-                <Table.Td><Text fw={600} c="blue">{v.participant?.name || 'Unnamed household member'}</Text></Table.Td>
+                <Table.Td><Text fw={600} c="blue">{v.person?.name || 'Unnamed household member'}</Text></Table.Td>
                 <Table.Td>{v.event?.name || 'General Facility Visit'}</Table.Td>
                 <Table.Td>{formatDateTime(v.arrivedAt, { dateStyle: 'short', timeStyle: 'short' })}</Table.Td>
                 <Table.Td>{formatVisitRange(v.arrivedAt, v.departedAt)}</Table.Td>

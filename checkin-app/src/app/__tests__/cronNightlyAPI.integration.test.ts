@@ -41,17 +41,17 @@ describe('Cron Nightly API Integration Tests', () => {
         await cleanup();
 
         // Setup Users
-        const board = await prisma.participant.create({
+        const board = await prisma.person.create({
             data: { email: 'board-nightly@example.com', name: 'Board Member', isBoardMember: true, household: { create: {} } }
         });
         boardMemberId = board.id;
 
-        const isKeyholder = await prisma.participant.create({
+        const isKeyholder = await prisma.person.create({
             data: { email: 'keyholder-nightly@example.com', name: 'Forgetful Keyholder', isKeyholder: true, household: { create: {} } }
         });
         keyholderId = isKeyholder.id;
 
-        const normalUser = await prisma.participant.create({
+        const normalUser = await prisma.person.create({
             data: { email: 'user-nightly@example.com', name: 'Normal User', household: { create: {} } }
         });
         normalUserId = normalUser.id;
@@ -82,16 +82,16 @@ describe('Cron Nightly API Integration Tests', () => {
         eventId = event.id;
 
         await prisma.rSVP.create({
-            data: { eventId, participantId: normalUserId, status: 'ATTENDING' }
+            data: { eventId, personId: normalUserId, status: 'ATTENDING' }
         });
 
         // Setup Abandoned Visits
         await prisma.visit.create({
-            data: { participantId: keyholderId, arrivedAt: justEndedStart } // Never departedAt
+            data: { personId: keyholderId, arrivedAt: justEndedStart } // Never departedAt
         });
 
         await prisma.visit.create({
-            data: { participantId: normalUserId, arrivedAt: justEndedStart, associatedEventId: eventId } // Never departedAt
+            data: { personId: normalUserId, arrivedAt: justEndedStart, associatedEventId: eventId } // Never departedAt
         });
     });
 
@@ -101,19 +101,19 @@ describe('Cron Nightly API Integration Tests', () => {
 
     async function cleanup() {
         // Broad cleanup for nightly tests
-        await prisma.rSVP.deleteMany({ where: { participant: { email: { contains: '-nightly@' } } } });
-        await prisma.visit.deleteMany({ where: { participant: { email: { contains: '-nightly@' } } } });
+        await prisma.rSVP.deleteMany({ where: { person: { email: { contains: '-nightly@' } } } });
+        await prisma.visit.deleteMany({ where: { person: { email: { contains: '-nightly@' } } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Test Event - Nightly' } } });
         await prisma.program.deleteMany({ where: { name: 'Nightly Test Program' } });
         await prisma.auditLog.deleteMany();
 
         // RESTRICT: delete participants before their (auto-created) households.
-        const householdIds = (await prisma.participant.findMany({
+        const householdIds = (await prisma.person.findMany({
             where: { email: { contains: '-nightly@' } },
             select: { householdId: true }
         })).map(p => p.householdId);
 
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: '-nightly@' } }
         });
         await prisma.household.deleteMany({
@@ -151,7 +151,7 @@ describe('Cron Nightly API Integration Tests', () => {
 
             // Db checks
             const abandonedVisits = await prisma.visit.findMany({
-                where: { departedAt: null, participant: { email: { contains: '-nightly@' } } }
+                where: { departedAt: null, person: { email: { contains: '-nightly@' } } }
             });
             expect(abandonedVisits.length).toBe(0); // Everyone checked out
 
@@ -193,18 +193,18 @@ describe('Cron Nightly API Integration Tests', () => {
 
             // An extra plain participant (no program enrollment -> simple close path)
             // so we have two GOOD visits whose `departedAt` we can assert by id.
-            const extra = await prisma.participant.create({
+            const extra = await prisma.person.create({
                 data: { email: 'extra-nightly@example.com', name: 'Extra User', household: { create: {} } }
             });
 
             const badVisit = await prisma.visit.create({
-                data: { participantId: keyholderId, arrivedAt } // isKeyholder -> triggers board notify
+                data: { personId: keyholderId, arrivedAt } // isKeyholder -> triggers board notify
             });
             const goodVisitA = await prisma.visit.create({
-                data: { participantId: normalUserId, arrivedAt }
+                data: { personId: normalUserId, arrivedAt }
             });
             const goodVisitB = await prisma.visit.create({
-                data: { participantId: extra.id, arrivedAt }
+                data: { personId: extra.id, arrivedAt }
             });
 
             mockBadVisitIds.clear();
@@ -247,8 +247,8 @@ describe('Cron Nightly API Integration Tests', () => {
             await prisma.event.update({ where: { id: eventId }, data: { postEventEmailSent: false } });
 
             const arrivedAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
-            await prisma.visit.create({ data: { participantId: keyholderId, arrivedAt } });
-            await prisma.visit.create({ data: { participantId: normalUserId, arrivedAt, associatedEventId: eventId } });
+            await prisma.visit.create({ data: { personId: keyholderId, arrivedAt } });
+            await prisma.visit.create({ data: { personId: normalUserId, arrivedAt, associatedEventId: eventId } });
 
             // --- Run 1: real work happens ---
             const res1 = await GET(cronReq());

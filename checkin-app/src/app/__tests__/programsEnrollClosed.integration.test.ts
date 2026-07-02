@@ -26,19 +26,19 @@ describe('Enroll into a CLOSED program is rejected (both paths)', () => {
         const progIds = progs.map(p => p.id);
         await prisma.programParticipant.deleteMany({ where: { programId: { in: progIds } } });
         // Households spawned by public-register (reached via enrolled members) + the test user.
-        const members = await prisma.participant.findMany({ where: { OR: [{ email: { contains: TAG } }, { programParticipants: { some: { programId: { in: progIds } } } }] }, select: { id: true, householdId: true } });
+        const members = await prisma.person.findMany({ where: { OR: [{ email: { contains: TAG } }, { programParticipants: { some: { programId: { in: progIds } } } }] }, select: { id: true, householdId: true } });
         const hhIds = [...new Set(members.map(m => m.householdId).filter((x): x is number => x != null))];
         await prisma.auditLog.deleteMany({ where: { actorId: { in: members.map(m => m.id) } } });
         await prisma.emergencyContact.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.householdLead.deleteMany({ where: { householdId: { in: hhIds } } });
-        await prisma.participant.deleteMany({ where: { householdId: { in: hhIds } } });
+        await prisma.person.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
         await prisma.program.deleteMany({ where: { id: { in: progIds } } });
     }
 
     beforeAll(async () => {
         await cleanup();
-        const user = await prisma.participant.create({ data: { email: `user-${TAG}@example.com`, name: 'Self Enroller', household: { create: {} } } });
+        const user = await prisma.person.create({ data: { email: `user-${TAG}@example.com`, name: 'Self Enroller', household: { create: {} } } });
         userId = user.id;
         const program = await prisma.program.create({
             data: { name: `Closed ${TAG}`, phase: 'RUNNING', enrollmentStatus: 'CLOSED', memberPriceCents: null, nonMemberPriceCents: null },

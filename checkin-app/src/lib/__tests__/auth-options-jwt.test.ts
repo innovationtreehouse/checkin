@@ -41,7 +41,7 @@ jest.mock('@/lib/config', () => {
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        participant: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+        person: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
         household: { create: jest.fn() },
         $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prismaMockTx)),
     },
@@ -54,15 +54,15 @@ jest.unmock('@/lib/auth-options');
 
 import { authOptions, PERSONA_MINT_PROVIDER_ID } from '@/lib/auth-options';
 
-const mockFindUnique = (prisma as unknown as { participant: { findUnique: jest.Mock } })
-    .participant.findUnique;
-const mockUpdate = (prisma as unknown as { participant: { update: jest.Mock } })
-    .participant.update;
+const mockFindUnique = (prisma as unknown as { person: { findUnique: jest.Mock } })
+    .person.findUnique;
+const mockUpdate = (prisma as unknown as { person: { update: jest.Mock } })
+    .person.update;
 const mockCheckinEnv = config.checkinEnv as jest.Mock;
 
 // The transaction client the `$transaction` mock above hands to its callback — same object as
 // `prisma` itself is fine here since createParticipantWithHousehold only touches household/participant.
-const prismaMockTx = prisma as unknown as { household: { create: jest.Mock }; participant: { create: jest.Mock } };
+const prismaMockTx = prisma as unknown as { household: { create: jest.Mock }; person: { create: jest.Mock } };
 
 type JwtCallback = NonNullable<NonNullable<typeof authOptions.callbacks>['jwt']>;
 const jwt: JwtCallback = authOptions.callbacks!.jwt!;
@@ -195,9 +195,9 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
             jest.isolateModules(() => {
                 // Fresh module registry so BOOTSTRAP_SYSADMINS is re-read from the env just set above.
                 // eslint-disable-next-line @typescript-eslint/no-require-imports
-                const freshPrisma = (require('@/lib/prisma') as { default: { participant: { findUnique: jest.Mock; update: jest.Mock } } }).default;
-                freshFindUnique = freshPrisma.participant.findUnique;
-                freshUpdate = freshPrisma.participant.update;
+                const freshPrisma = (require('@/lib/prisma') as { default: { person: { findUnique: jest.Mock; update: jest.Mock } } }).default;
+                freshFindUnique = freshPrisma.person.findUnique;
+                freshUpdate = freshPrisma.person.update;
                 freshFindUnique.mockResolvedValue(dbParticipant({ isSysadmin: false, email: 'boss@example.com' }));
                 // eslint-disable-next-line @typescript-eslint/no-require-imports
                 freshJwt = (require('@/lib/auth-options') as typeof import('@/lib/auth-options')).authOptions.callbacks!.jwt!;
@@ -363,7 +363,7 @@ describe('adapter — createUser / getUser (Participant.id is an Int, NextAuth I
 
     it('createUser: creates a Household + Participant in one transaction, adds the household lead, and stringifies the id', async () => {
         (prismaMockTx.household.create as jest.Mock).mockResolvedValue({ id: 55 });
-        (prismaMockTx.participant.create as jest.Mock).mockResolvedValue({ id: 9, email: 'new@x.org', name: 'New Person' });
+        (prismaMockTx.person.create as jest.Mock).mockResolvedValue({ id: 9, email: 'new@x.org', name: 'New Person' });
 
         const created = await (authOptions.adapter!.createUser as (u: Record<string, unknown>) => Promise<unknown>)({
             name: 'New Person',
@@ -371,7 +371,7 @@ describe('adapter — createUser / getUser (Participant.id is an Int, NextAuth I
         });
 
         expect(prismaMockTx.household.create).toHaveBeenCalledWith({ data: { name: 'New Person' } });
-        expect(prismaMockTx.participant.create).toHaveBeenCalledWith({
+        expect(prismaMockTx.person.create).toHaveBeenCalledWith({
             data: { name: 'New Person', email: 'new@x.org', householdId: 55 },
         });
         expect(addHouseholdLead).toHaveBeenCalledWith(expect.anything(), 55, 9);
@@ -380,7 +380,7 @@ describe('adapter — createUser / getUser (Participant.id is an Int, NextAuth I
 
     it('createUser: defaults email to "" when the participant has none', async () => {
         (prismaMockTx.household.create as jest.Mock).mockResolvedValue({ id: 56 });
-        (prismaMockTx.participant.create as jest.Mock).mockResolvedValue({ id: 10, email: null, name: 'No Email' });
+        (prismaMockTx.person.create as jest.Mock).mockResolvedValue({ id: 10, email: null, name: 'No Email' });
 
         const created = await (authOptions.adapter!.createUser as (u: Record<string, unknown>) => Promise<unknown>)({
             name: 'No Email',

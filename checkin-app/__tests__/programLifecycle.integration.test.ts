@@ -26,7 +26,7 @@ describe('Program Lifecycle Integration Tests', () => {
         // Setup initial db state for test scope
         
         // 1. Create a board member
-        const adminUser = await prisma.participant.create({
+        const adminUser = await prisma.person.create({
             data: {
                 name: "Board Tester",
                 email: "board@test.com",
@@ -40,7 +40,7 @@ describe('Program Lifecycle Integration Tests', () => {
         boardAdminId = adminUser.id;
 
         // 2. Create a Lead Mentor
-        const mentorUser = await prisma.participant.create({
+        const mentorUser = await prisma.person.create({
             data: {
                 name: "Mentor Tester",
                 email: "mentor@test.com",
@@ -52,7 +52,7 @@ describe('Program Lifecycle Integration Tests', () => {
         leadMentorId = mentorUser.id;
 
         // 3. Create a standard participant
-        const standardUser = await prisma.participant.create({
+        const standardUser = await prisma.person.create({
             data: {
                 name: "Standard Tester",
                 email: "participant@test.com",
@@ -88,7 +88,7 @@ describe('Program Lifecycle Integration Tests', () => {
 
         const idsToDelete = [testParticipantId, leadMentorId, boardAdminId].filter(id => id);
         if (idsToDelete.length > 0) {
-            await prisma.participant.deleteMany({ where: { id: { in: idsToDelete } } });
+            await prisma.person.deleteMany({ where: { id: { in: idsToDelete } } });
         }
     });
 
@@ -112,9 +112,9 @@ describe('Program Lifecycle Integration Tests', () => {
         expect(data.success).toBe(true);
 
         const dbRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } }
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } }
         });
-        
+
         expect(dbRecord).toBeDefined();
         expect(dbRecord?.status).toBe('PENDING');
         expect(dbRecord?.pendingSince).toBeInstanceOf(Date);
@@ -152,7 +152,7 @@ describe('Program Lifecycle Integration Tests', () => {
         mockGetSession.mockResolvedValue({ user: { id: boardAdminId, isBoardMember: true } });
 
         // Clean previous runs
-        await prisma.programParticipant.deleteMany({ where: { programId: testProgramId, participantId: testParticipantId } });
+        await prisma.programParticipant.deleteMany({ where: { programId: testProgramId, personId: testParticipantId } });
 
         const req = new Request(`http://localhost/api/programs/${testProgramId}/participants`, {
             method: 'POST',
@@ -163,9 +163,9 @@ describe('Program Lifecycle Integration Tests', () => {
         expect(res.status).toBe(200);
 
         const dbRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } }
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } }
         });
-        
+
         // Overrides by board default to ACTIVE
         expect(dbRecord?.status).toBe('ACTIVE'); 
     });
@@ -174,9 +174,9 @@ describe('Program Lifecycle Integration Tests', () => {
         // 1. Reset user to PENDING state manually to simulate self-enroll flow
         // First, recreate or ensure it exists from the previous test
         await prisma.programParticipant.upsert({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } },
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } },
             update: { status: 'PENDING', pendingSince: new Date() },
-            create: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: new Date() }
+            create: { programId: testProgramId, personId: testParticipantId, status: 'PENDING', pendingSince: new Date() }
         });
 
         // 2. Build Shopify webhook payload
@@ -205,11 +205,11 @@ describe('Program Lifecycle Integration Tests', () => {
         expect(res.status).toBe(200);
 
         const dbRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } }
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } }
         });
-        
-        expect(dbRecord?.status).toBe('ACTIVE'); 
-        expect(dbRecord?.pendingSince).toBeNull(); 
+
+        expect(dbRecord?.status).toBe('ACTIVE');
+        expect(dbRecord?.pendingSince).toBeNull();
     });
 
      it('Cron job should remove PENDING participants after 7 days, unless isPaymentPlanRequested is true', async () => {
@@ -220,9 +220,9 @@ describe('Program Lifecycle Integration Tests', () => {
         eightDaysAgo.setDate(eightDaysAgo.getDate() - 8);
 
         await prisma.programParticipant.upsert({
-             where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } },
+             where: { programId_personId: { programId: testProgramId, personId: testParticipantId } },
              update: { status: 'PENDING', pendingSince: eightDaysAgo, isPaymentPlanRequested: false },
-             create: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, isPaymentPlanRequested: false }
+             create: { programId: testProgramId, personId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, isPaymentPlanRequested: false }
         });
 
         let req = new Request(`http://localhost/api/cron/pending-participants`, {
@@ -237,13 +237,13 @@ describe('Program Lifecycle Integration Tests', () => {
 
         // Verify Delete
         let dbRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } }
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } }
         });
         expect(dbRecord).toBeNull();
 
         // 2. Recreate, set to 8 days old PENDING, but isPaymentPlanRequested = true
         await prisma.programParticipant.create({
-            data: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, isPaymentPlanRequested: true}
+            data: { programId: testProgramId, personId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, isPaymentPlanRequested: true}
         });
 
          req = new Request(`http://localhost/api/cron/pending-participants`, {
@@ -257,7 +257,7 @@ describe('Program Lifecycle Integration Tests', () => {
 
          // Verify Still there
         dbRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } }
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } }
         });
         expect(dbRecord).toBeDefined();
     });

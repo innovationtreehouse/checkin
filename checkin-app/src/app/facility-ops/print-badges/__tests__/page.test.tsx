@@ -38,7 +38,7 @@ const participants = [
 describe("facility-ops/print-badges page", () => {
   it("loads and renders the participant roster", async () => {
     setSession({ id: 1, isSysadmin: true });
-    mockFetchJson({ "/api/participants/search": { participants } });
+    mockFetchJson({ "/api/people/search": { people: participants } });
     renderWithProviders(<PrintBadgesPage />);
 
     expect(await screen.findByText("Kim Keyholder")).toBeInTheDocument();
@@ -49,7 +49,7 @@ describe("facility-ops/print-badges page", () => {
 
   it("re-searches participants as the search box changes", async () => {
     setSession({ id: 1, isSysadmin: true });
-    const fetchMock = mockFetchJson({ "/api/participants/search": { participants } });
+    const fetchMock = mockFetchJson({ "/api/people/search": { people: participants } });
     renderWithProviders(<PrintBadgesPage />);
     await screen.findByText("Kim Keyholder");
 
@@ -62,7 +62,7 @@ describe("facility-ops/print-badges page", () => {
 
   it("selects participants and generates a badge PDF", async () => {
     setSession({ id: 1, isSysadmin: true });
-    mockFetchJson({ "/api/participants/search": { participants } });
+    mockFetchJson({ "/api/people/search": { people: participants } });
     renderWithProviders(<PrintBadgesPage />);
     await screen.findByText("Kim Keyholder");
 

@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Center, Group, Loader, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
+import { Button, Group, Modal, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconRobot, IconScan, IconSelector } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { AlertBanner } from '@/components/admin/AlertBanner';
+import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type VisitSource = 'SCANNER' | 'WEB' | 'SYSTEM';
 
 type Visit = {
@@ -15,7 +17,7 @@ type Visit = {
   departedAt?: string | null;
   arrivedVia?: VisitSource | null;
   departedVia?: VisitSource | null;
-  participant?: { name?: string | null; email?: string | null } | null;
+  person?: { name?: string | null; email?: string | null } | null;
   event?: { name?: string | null } | null;
 };
 
@@ -40,7 +42,7 @@ type SortKey = 'id' | 'participant' | 'event' | 'arrivedAt' | 'departedAt';
 const sortValue = (v: Visit, key: SortKey): string | number => {
   switch (key) {
     case 'id': return v.id;
-    case 'participant': return (v.participant?.name || v.participant?.email || '').toLowerCase();
+    case 'participant': return (v.person?.name || v.person?.email || '').toLowerCase();
     case 'event': return (v.event?.name || 'Open Facility').toLowerCase();
     case 'arrivedAt': return v.arrivedAt ? Date.parse(v.arrivedAt) : 0;
     case 'departedAt': return v.departedAt ? Date.parse(v.departedAt) : 0;
@@ -52,12 +54,14 @@ export default function AdminVisitsPage() {
 
   const [loading, setLoading] = useState(true);
   const [visits, setVisits] = useState<Visit[]>([]);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; tone: AlertTone } | null>(null);
 
   const [editingVisitId, setEditingVisitId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ arrivedAt: "", departedAt: "" });
 
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'arrivedAt', dir: 'desc' });
+  const [confirmEditOpened, { open: openConfirmEdit, close: closeConfirmEdit }] = useDisclosure(false);
+  const [pendingEditVisit, setPendingEditVisit] = useState<Visit | null>(null);
 
   const sortedVisits = useMemo(() => {
     return [...visits].sort((a, b) => {
@@ -93,10 +97,10 @@ export default function AdminVisitsPage() {
         const data = await res.json();
         setVisits(data.visits);
       } else {
-        setMessage("Failed to load visits.");
+        setMessage({ text: "Failed to load visits.", tone: "error" });
       }
     } catch {
-      setMessage("Network error loading visits.");
+      setMessage({ text: "Network error loading visits.", tone: "error" });
     } finally {
       setLoading(false);
     }
@@ -107,14 +111,19 @@ export default function AdminVisitsPage() {
   }, [ready, fetchVisits]);
 
   const handleEditClick = (visit: Visit) => {
-    const confirmEdit = window.confirm("Warning: You are editing a past visit record using Admin overrides. This will be permanently logged.");
-    if (!confirmEdit) return;
+    setPendingEditVisit(visit);
+    openConfirmEdit();
+  };
 
-    setEditingVisitId(visit.id);
+  const confirmEditClick = () => {
+    if (!pendingEditVisit) return;
+    closeConfirmEdit();
+    setEditingVisitId(pendingEditVisit.id);
     setEditForm({
-      arrivedAt: toDatetimeLocal(visit.arrivedAt),
-      departedAt: toDatetimeLocal(visit.departedAt ?? null)
+      arrivedAt: toDatetimeLocal(pendingEditVisit.arrivedAt),
+      departedAt: toDatetimeLocal(pendingEditVisit.departedAt ?? null)
     });
+    setPendingEditVisit(null);
   };
 
   const handleSaveEdit = async (id: number) => {
@@ -129,26 +138,26 @@ export default function AdminVisitsPage() {
         })
       });
       if (res.ok) {
-        setMessage("Visit updated successfully.");
+        setMessage({ text: "Visit updated successfully.", tone: "success" });
         setEditingVisitId(null);
         fetchVisits();
       } else {
-        setMessage("Failed to update visit.");
+        setMessage({ text: "Failed to update visit.", tone: "error" });
       }
     } catch {
-      setMessage("Network error saving visit.");
+      setMessage({ text: "Network error saving visit.", tone: "error" });
     }
   };
 
   if (authLoading || loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) return null;
 
   return (
     <Stack>
-      <AlertBanner message={message} tone={message.includes('success') ? 'success' : 'error'} />
+      <AlertBanner message={message?.text} tone={message?.tone} />
 
       <Table.ScrollContainer minWidth={800}>
         <Table verticalSpacing="sm" highlightOnHover>
@@ -166,7 +175,7 @@ export default function AdminVisitsPage() {
             {sortedVisits.map((v) => (
               <Table.Tr key={v.id}>
                 <Table.Td>{v.id}</Table.Td>
-                <Table.Td>{v.participant?.name || v.participant?.email}</Table.Td>
+                <Table.Td>{v.person?.name || v.person?.email}</Table.Td>
                 <Table.Td>{v.event?.name || 'Open Facility'}</Table.Td>
 
                 {editingVisitId === v.id ? (
@@ -220,6 +229,21 @@ export default function AdminVisitsPage() {
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
+
+      <Modal
+        opened={confirmEditOpened}
+        onClose={closeConfirmEdit}
+        title={<Text span fw={700} fz="lg">Edit Past Visit Record</Text>}
+        centered
+      >
+        <Text mb="lg">
+          Warning: You are editing a past visit record using Admin overrides. This will be permanently logged.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmEdit}>Cancel</Button>
+          <Button color="red" onClick={confirmEditClick}>Continue</Button>
+        </Group>
+      </Modal>
     </Stack>
   );
 }

@@ -3,10 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { Alert, Button, Card, Center, Checkbox, Container, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { Button, Card, Checkbox, Container, Group, Stack, Text, Title } from "@mantine/core";
+import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
-interface Participant {
+import { PageLoader } from "@/components/ui/PageLoader";
+interface Person {
     id: number;
     name: string | null;
     email: string | null;
@@ -15,7 +17,7 @@ interface Participant {
 // Only the household leads (parents) are returned — children are never sent.
 interface QueueItem {
   id: number;
-  membership: { household: { name: string | null; leads: { participant: Participant }[] } | null } | null;
+  membership: { household: { name: string | null; leads: { participant: Person }[] } | null } | null;
   _count: { attestations: number };
 }
 
@@ -28,8 +30,7 @@ export default function MembershipReviewPage() {
   const [forbidden, setForbidden] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [volunteer, setVolunteer] = useState<Record<number, boolean>>({});
-  const [message, setMessage] = useState("");
-  const [isError, setIsError] = useState(false);
+  const [message, setMessage] = useState<{ text: string; tone: AlertTone } | undefined>();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,7 +56,7 @@ export default function MembershipReviewPage() {
 
   const submit = async (processId: number, result: "APPROVE" | "REJECT") => {
     setBusyId(processId);
-    setMessage("");
+    setMessage(undefined);
     try {
       const res = await fetch("/api/membership/reviews", {
         method: "POST",
@@ -64,24 +65,21 @@ export default function MembershipReviewPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setIsError(false);
-        setMessage(result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified.");
+        setMessage({ text: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified.", tone: "success" });
         await load();
         notifyNavRefresh();
       } else {
-        setIsError(true);
-        setMessage(data.error || "Could not record your attestation.");
+        setMessage({ text: data.error || "Could not record your attestation.", tone: "error" });
       }
     } catch {
-      setIsError(true);
-      setMessage("Network error.");
+      setMessage({ text: "Network error.", tone: "error" });
     } finally {
       setBusyId(null);
     }
   };
 
   if (sessionStatus === "loading" || loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (forbidden || sessionStatus === "unauthenticated") {
@@ -108,7 +106,7 @@ export default function MembershipReviewPage() {
         board is notified and the applicant is not told the reason.
       </Text>
 
-      {message && <Alert color={isError ? "red" : "green"} mt="md">{message}</Alert>}
+      <AlertBanner message={message?.text} tone={message?.tone} mt="md" />
 
       {queue.length === 0 ? (
         <Card withBorder radius="md" padding="xl" ta="center" mt="md">

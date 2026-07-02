@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const GET = withAuth({}, async (_req, auth) => {
     if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const user = await prisma.participant.findUnique({
+    const user = await prisma.person.findUnique({
         where: { id: auth.user.id },
         select: { householdId: true, householdLeads: { select: { householdId: true } } },
     });

@@ -4,13 +4,14 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Badge, Button, Card, Center, Container, Loader, SimpleGrid, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Container, SimpleGrid, Text, Title } from '@mantine/core';
 import { formatDate } from '@/lib/time';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type UserProgram = {
   programId: number;
-  participantId: number;
-  participant: { id: number; name: string | null };
+  personId: number;
+  person: { id: number; name: string | null };
   program: {
     id: number;
     name: string;
@@ -47,9 +48,7 @@ export default function MyProgramsDashboard() {
 
   if (status === "loading") {
     return (
-      <Center mih="60vh">
-        <Loader />
-      </Center>
+      <PageLoader />
     );
   }
 
@@ -76,19 +75,17 @@ export default function MyProgramsDashboard() {
       )}
 
       {loading ? (
-        <Center mih="30vh">
-          <Loader />
-        </Center>
+        <PageLoader minHeight="30vh" />
       ) : enrollments.length === 0 ? (
         <Card withBorder radius="md" padding="xl" ta="center">
           <Text c="dimmed">You are not enrolled in any programs yet.</Text>
         </Card>
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-          {enrollments.map(({ program, participantId, participant }) => (
-            <Card key={`${program.id}-${participantId}`} withBorder radius="md" padding="lg">
+          {enrollments.map(({ program, personId, person }) => (
+            <Card key={`${program.id}-${personId}`} withBorder radius="md" padding="lg">
               {showMembers && (
-                <Badge variant="light" mb="sm">{participant.name ?? 'Member'}</Badge>
+                <Badge variant="light" mb="sm">{person.name ?? 'Member'}</Badge>
               )}
               <Title order={4} mb="sm">{program.name}</Title>
               <Text c="dimmed" style={{ flex: 1 }}>

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Alert, Badge, Button, Card, Center, Checkbox, Group, Loader, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { formatDate, calculateAge } from '@/lib/time';
@@ -17,6 +17,7 @@ import { isValidPhone, formatPhone, PHONE_ERROR } from '@/lib/phone';
 import { isValidEmail } from '@/lib/emergencyContacts/identity';
 import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
 const EMAIL_ERROR = "Enter a valid email address.";
@@ -48,8 +49,8 @@ type EmergencyContact = { id: number; name: string; phone: string; email?: strin
 type HouseholdData = {
   id?: number;
   name?: string;
-  leads?: Array<{ participantId: number }>;
-  participants?: HouseholdMember[];
+  leads?: Array<{ personId: number }>;
+  householdMembers?: HouseholdMember[];
   membership?: { status?: string; memberSince?: string; isVolunteer?: boolean } | null;
 } & Partial<StructuredAddress> | null;
 
@@ -319,7 +320,7 @@ export default function HouseholdPage() {
   useUnsavedGuard(isDirty);
 
   if (loading || authLoading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!ready) return null;
@@ -328,10 +329,10 @@ export default function HouseholdPage() {
   // Staff (@innovationtreehouse.org) accounts aren't real member families; the add-member
   // control is hidden for them (server also enforces this — see /api/household PATCH).
   const isStaffAccount = isOrgAccount(sessionUser as { hd?: string | null; email?: string | null });
-  const isLead = (pid: number) => household?.leads?.some((l) => l.participantId === pid) ?? false;
+  const isLead = (pid: number) => household?.leads?.some((l) => l.personId === pid) ?? false;
   const viewerIsLead = isLead(userId);
 
-  const sortedHouseholdMembers = (household?.participants || []).slice().sort((a, b) => {
+  const sortedHouseholdMembers = (household?.householdMembers || []).slice().sort((a, b) => {
     const isLeadA = isLead(a.id) ? 1 : 0;
     const isLeadB = isLead(b.id) ? 1 : 0;
     if (isLeadA !== isLeadB) return isLeadB - isLeadA;

@@ -47,15 +47,15 @@ describe('Bulk import: preview vs commit consistency', () => {
         try {
             await prisma.membership.deleteMany({});
             await prisma.householdLead.deleteMany({});
-            await prisma.participant.deleteMany({ where: { email: { contains: 'consist-import-test' } } });
-            await prisma.participant.deleteMany({ where: { name: { contains: 'Consist Import Test' } } });
-            await prisma.household.deleteMany({ where: { participants: { none: {} } } });
+            await prisma.person.deleteMany({ where: { email: { contains: 'consist-import-test' } } });
+            await prisma.person.deleteMany({ where: { name: { contains: 'Consist Import Test' } } });
+            await prisma.household.deleteMany({ where: { householdMembers: { none: {} } } });
         } catch {}
     };
 
     beforeAll(async () => {
         await cleanup();
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-consist-import-test@example.com', name: 'Admin Consist Import Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
@@ -121,11 +121,11 @@ describe('Bulk import: preview vs commit consistency', () => {
 
         // Dup detection: commit collapses the two Anchor-email rows into ONE participant
         // (the second row updates the first), matching preview's "duplicate" signal.
-        const anchorRecords = await prisma.participant.findMany({ where: { email: ANCHOR_EMAIL } });
+        const anchorRecords = await prisma.person.findMany({ where: { email: ANCHOR_EMAIL } });
         expect(anchorRecords).toHaveLength(1);
 
         // Household resolution: Ref actually lands in Anchor's household, matching preview's "will link".
-        const ref = await prisma.participant.findUnique({ where: { email: REF_EMAIL }, select: { householdId: true } });
+        const ref = await prisma.person.findUnique({ where: { email: REF_EMAIL }, select: { householdId: true } });
         expect(ref?.householdId).toBe(anchorRecords[0].householdId);
     });
 
@@ -141,10 +141,10 @@ describe('Bulk import: preview vs commit consistency', () => {
         expect(body.success).toBe(true);
 
         // Commit's Excel-serial branch parses 33239 -> 1991-01-01 (an ADULT)...
-        const anchor = await prisma.participant.findUnique({ where: { email: ANCHOR_EMAIL }, select: { id: true, dateOfBirth: true } });
+        const anchor = await prisma.person.findUnique({ where: { email: ANCHOR_EMAIL }, select: { id: true, dateOfBirth: true } });
         expect(anchor?.dateOfBirth?.getUTCFullYear()).toBe(1991);
         // ...and commit therefore makes the adult a household lead.
-        const lead = await prisma.householdLead.findFirst({ where: { participantId: anchor!.id } });
+        const lead = await prisma.householdLead.findFirst({ where: { personId: anchor!.id } });
         expect(lead).not.toBeNull();
 
         // Preview must agree Anchor is an adult: NO "Student (under 18)" warning.

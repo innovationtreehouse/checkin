@@ -3,7 +3,7 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
 import MembershipSettingsPage from "../page";
 
@@ -143,9 +143,10 @@ describe("MembershipSettingsPage", () => {
     renderWithProviders(<MembershipSettingsPage />);
     await screen.findByDisplayValue("150.00");
 
-    window.confirm = jest.fn(() => true);
     fireEvent.click(screen.getByLabelText("Also email each household a renewal reminder"));
     fireEvent.click(screen.getByRole("button", { name: "Open renewals for all active members" }));
+    const modal = await screen.findByRole("dialog", { name: "Open Renewals For All Active Members" });
+    fireEvent.click(within(modal).getByRole("button", { name: "Open Renewals" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -172,14 +173,18 @@ describe("MembershipSettingsPage", () => {
     mockFetchJson({ "/api/settings/membership": { settings: SETTINGS } });
     renderWithProviders(<MembershipSettingsPage />);
     await screen.findByDisplayValue("150.00");
-    window.confirm = jest.fn(() => true);
 
     global.fetch = jest.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: "Already open." }) })) as unknown as typeof fetch;
     fireEvent.click(screen.getByRole("button", { name: "Open renewals for all active members" }));
+    let modal = await screen.findByRole("dialog", { name: "Open Renewals For All Active Members" });
+    fireEvent.click(within(modal).getByRole("button", { name: "Open Renewals" }));
     expect(await screen.findByText("Already open.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Open Renewals For All Active Members" })).not.toBeInTheDocument());
 
     global.fetch = jest.fn(() => Promise.reject(new Error("net"))) as unknown as typeof fetch;
     fireEvent.click(screen.getByRole("button", { name: "Open renewals for all active members" }));
+    modal = await screen.findByRole("dialog", { name: "Open Renewals For All Active Members" });
+    fireEvent.click(within(modal).getByRole("button", { name: "Open Renewals" }));
     expect(await screen.findByText("Network error.")).toBeInTheDocument();
   });
 });

@@ -19,7 +19,7 @@ describe("HouseholdCheckins", () => {
         mockFetchJson({
             "/api/household/visits": {
                 visits: [
-                    { id: 1, participant: { name: "Kid One" }, event: { name: "Open Shop" }, arrivedAt: "2026-06-01T10:00:00.000Z", departedAt: "2026-06-01T11:00:00.000Z" },
+                    { id: 1, person: { name: "Kid One" }, event: { name: "Open Shop" }, arrivedAt: "2026-06-01T10:00:00.000Z", departedAt: "2026-06-01T11:00:00.000Z" },
                 ],
             },
         });
