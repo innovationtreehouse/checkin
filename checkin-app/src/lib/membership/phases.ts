@@ -1,4 +1,4 @@
-import type { MembershipProcessStatus } from "@/generated/prisma/client";
+import type { MembershipProcess, MembershipProcessStatus } from "@/generated/prisma/client";
 
 /**
  * Applicant-facing phases of an INITIAL membership application, in order.
@@ -54,3 +54,19 @@ export const IN_FLIGHT_INITIAL_STATUSES: MembershipProcessStatus[] = [
     "PENDING_PAYMENT",
     "PENDING_BG_CLEARANCE",
 ];
+
+/**
+ * The latest process awaiting applicant external action (contract signing).
+ * Kind-agnostic by design — INITIAL applications AND renewals both re-sign here,
+ * and gating on status alone keeps the sign button (getOrCreateContractSigningUrl)
+ * in step with the status sync (syncContractStatus); a kind filter would render
+ * the button then 409. Highest id == most recent (autoincrement). Returns
+ * undefined when nothing is awaiting action — callers guard for that.
+ */
+export function latestPendingExternal<T extends Pick<MembershipProcess, "id" | "status">>(
+    processes: T[] | null | undefined,
+): T | undefined {
+    return [...(processes ?? [])]
+        .filter((p) => p.status === "PENDING_EXTERNAL_ACTION")
+        .sort((a, b) => b.id - a.id)[0];
+}
