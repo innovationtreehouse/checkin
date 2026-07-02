@@ -167,8 +167,8 @@ describe("buildImport", () => {
             [family({ Primary_Contact_E_mail: "kailemizell@gmail.com", Primary_Contact_Name: "Ari Mizell" })],
             [input({ Primary_Contact_E_mail: "kailemizell@gmail.com" })],
         );
-        expect(report.minorsAsPrimary).toHaveLength(1);
-        expect(report.minorsAsPrimary[0].name).toBe("Ari Mizell");
+        expect(report.youthAsPrimary).toHaveLength(1);
+        expect(report.youthAsPrimary[0].name).toBe("Ari Mizell");
     });
 
     it("declares the primary an adult only when Zoho has no DoB (age model, #606)", () => {

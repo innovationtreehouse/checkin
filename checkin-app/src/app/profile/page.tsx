@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Anchor, Button, Card, Center, Loader, Stack, Text, TextInput, Title } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
-import { isMinor } from '@/lib/time';
+import { isYouth } from '@/lib/time';
 
 export default function ProfilePage() {
   const { data: session, status } = useSession();
@@ -84,7 +84,7 @@ export default function ProfilePage() {
 
   if (!session) return null; // Fallback while router redirects
 
-  const readOnly = isMinor(form.dob);
+  const readOnly = isYouth(form.dob);
 
   return (
     <PageContainer>
