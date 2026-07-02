@@ -107,7 +107,7 @@ export interface ImportReport {
         rowDob: string;
     }[];
     emailCollisions: { email: string; keptFor: string; nulledFor: string[] }[];
-    minorsAsPrimary: { name: string; dob: string; householdKey: string }[];
+    youthAsPrimary: { name: string; dob: string; householdKey: string }[];
     secondaryAdultsNotPromoted: number;
     flags: string[];
 }
@@ -174,7 +174,7 @@ export function buildImport(files: ZohoFiles, now: Date): BuiltImport {
         activeMemberships: 0,
         blankNamesSkipped: [],
         emailCollisions: [],
-        minorsAsPrimary: [],
+        youthAsPrimary: [],
         secondaryAdultsNotPromoted: 0,
         flags: [],
     };
@@ -271,10 +271,10 @@ export function buildImport(files: ZohoFiles, now: Date): BuiltImport {
             (input?.Payment_Status || "").trim() === "Completed" &&
             (input?.Membership_Agreement_Status || "").trim() === "Completed";
 
-        // Flag minors listed as the household's primary contact.
+        // Flag youth listed as the household's primary contact.
         const primaryAge = ageYears(primary.dob, now);
         if (primaryAge !== null && primaryAge < 18) {
-            report.minorsAsPrimary.push({
+            report.youthAsPrimary.push({
                 name: primary.name,
                 dob: primary.dob?.toISOString().slice(0, 10) ?? "?",
                 householdKey: key,
@@ -541,8 +541,8 @@ export function renderReport(report: ImportReport): string {
     for (const c of report.emailCollisions) {
         lines.push(`    - ${c.email}: kept for ${c.keptFor}; nulled for ${c.nulledFor.join(", ")}`);
     }
-    lines.push(`Minors as primary:   ${report.minorsAsPrimary.length}`);
-    for (const m of report.minorsAsPrimary) lines.push(`    - ${m.name} (DOB ${m.dob}, household ${m.householdKey})`);
+    lines.push(`Youth as primary:   ${report.youthAsPrimary.length}`);
+    for (const m of report.youthAsPrimary) lines.push(`    - ${m.name} (DOB ${m.dob}, household ${m.householdKey})`);
     lines.push(`Secondary adults not promoted to lead: ${report.secondaryAdultsNotPromoted}`);
     lines.push("Flags:");
     for (const f of report.flags) lines.push(`    ! ${f}`);

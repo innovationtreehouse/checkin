@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuth } from "@/lib/auth";
-import { isMinor } from "@/lib/time";
+import { isYouth } from "@/lib/time";
 
 export const GET = withAuth(
     {},
@@ -24,8 +24,8 @@ export const GET = withAuth(
                 return NextResponse.json({ error: "Participant not found" }, { status: 404 });
             }
 
-            // Minors are never required to provide a phone number (issue #169)
-            const needsPhone = !user.phone && !isMinor(user.dateOfBirth);
+            // Youth are never required to provide a phone number (issue #169)
+            const needsPhone = !user.phone && !isYouth(user.dateOfBirth);
             const isLead = user.householdId && user.householdLeads.some((lead: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => lead.householdId === user.householdId);
 
             // A lead needs a contact when no valid (non-member, complete) one exists.

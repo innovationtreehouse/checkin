@@ -6,13 +6,9 @@
  * stay under /admin and self-gate via isProgramFlow — drilling into a detail leaves
  * the tab chrome. Relocate them under /program-ops too if that inconsistency matters.
  */
-export interface ProgramNavLink {
-  name: string;
-  href: string;
-  icon: string;
-}
+import type { NavLink } from "@/lib/nav/types";
 
-export const PROGRAM_NAV_LINKS: ProgramNavLink[] = [
+export const PROGRAM_NAV_LINKS: NavLink[] = [
   { name: "All Programs", href: "/program-ops/programs", icon: "📚" },
   { name: "New Program", href: "/program-ops/new", icon: "✨" },
   { name: "One Time Events", href: "/program-ops/events", icon: "📋" },

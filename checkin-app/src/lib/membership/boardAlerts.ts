@@ -1,4 +1,5 @@
 import { emailBoardMembers } from "@/lib/emailRecipients";
+import { config } from "@/lib/config";
 
 /**
  * Board-facing membership email alerts. Kept dependency-free (delegates to the
@@ -15,7 +16,7 @@ import { emailBoardMembers } from "@/lib/emailRecipients";
  * automatically.)
  */
 export async function notifyBoardPaidReject(processId: number): Promise<void> {
-    const base = process.env.NEXTAUTH_URL ?? "";
+    const base = config.baseUrl();
     await emailBoardMembers(
         "Membership: a paid application was blocked at background check",
         `<p>A household that already paid did not pass background-check review (application #${processId}). The membership has <strong>not</strong> been activated and a refund may be needed — please review and contact the household. <a href="${base}/membership-ops/applications">Open applications</a></p>`,

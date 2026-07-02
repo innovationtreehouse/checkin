@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Box, Button, Card, Group, Loader, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { formatDate, isMinor } from "@/lib/time";
+import { formatDate, isYouth } from "@/lib/time";
 
 type Member = { id: number; name: string | null; dateOfBirth: string | null };
 type BrokenHousehold = { id: number; name: string; members: Member[] };
@@ -74,11 +74,11 @@ export default function BrokenHouseholdsPage() {
                         <Text size="sm">
                           {m.name || "Unnamed"}
                           {m.dateOfBirth ? ` • ${formatDate(m.dateOfBirth)}` : " • no birthdate"}
-                          {isMinor(m.dateOfBirth) && (
-                            <Badge ml="xs" size="xs" color="gray" variant="light">minor</Badge>
+                          {isYouth(m.dateOfBirth) && (
+                            <Badge ml="xs" size="xs" color="gray" variant="light">youth</Badge>
                           )}
                         </Text>
-                        {!isMinor(m.dateOfBirth) && (
+                        {!isYouth(m.dateOfBirth) && (
                           <Button
                             size="compact-xs"
                             variant="light"

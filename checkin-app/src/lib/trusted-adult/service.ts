@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { emailBoardMembers, emailHouseholdLeads } from "@/lib/emailRecipients";
 import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
+import { config } from "@/lib/config";
 import { validateContact } from "@/lib/trusted-adult/contact";
 
 type TxClient = Prisma.TransactionClient;
@@ -375,7 +376,7 @@ export async function assertHouseholdLead(householdId: number, actorId: number) 
 
 /** Email every board member that a trusted-adult review is waiting. */
 async function notifyBoard(): Promise<void> {
-    const base = process.env.NEXTAUTH_URL ?? "";
+    const base = config.baseUrl();
     await emailBoardMembers(
         "Trusted adult: a disclosure needs board review",
         `<p>A trusted-adult disclosure is awaiting board review. <a href="${base}/safety/trusted-adults">Review it</a>.</p>`,
@@ -385,7 +386,7 @@ async function notifyBoard(): Promise<void> {
 
 /** Email the household's leads (the "family"). */
 async function notifyHouseholdFamily(householdId: number, subject: string, body?: string): Promise<void> {
-    const base = process.env.NEXTAUTH_URL ?? "";
+    const base = config.baseUrl();
     const html = `<p>${escapeHtml(body ?? "")}</p><p><a href="${base}/trusted-adults">View your trusted adults</a>.</p>`;
     await emailHouseholdLeads(householdId, subject, html, "Family trusted-adult ping failed:");
 }

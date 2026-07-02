@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
-import { isMinor } from '@/lib/time';
+import { isYouth } from '@/lib/time';
 import { Button, Card, Center, Checkbox, Container, Loader, Paper, Stack, Text, TextInput } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 
@@ -37,7 +37,7 @@ function NewParticipantForm() {
   const [householdId, setHouseholdId] = useState("");
   const [householdSearch, setHouseholdSearch] = useState("");
 
-  const studentSelected = isMinor(dob);
+  const studentSelected = isYouth(dob);
 
   const [alreadyMember, setAlreadyMember] = useState(false);
   const [saving, setSaving] = useState(false);

@@ -3,13 +3,9 @@
  * bar in membership-ops/layout.tsx; the hub (/membership-ops) redirects to the
  * first entry. Add a tool once here and it shows up as a tab.
  */
-export interface MembershipOpsNavLink {
-  name: string;
-  href: string;
-  icon: string;
-}
+import type { NavLink } from "@/lib/nav/types";
 
-export const MEMBERSHIP_OPS_NAV_LINKS: MembershipOpsNavLink[] = [
+export const MEMBERSHIP_OPS_NAV_LINKS: NavLink[] = [
   { name: "Participants", href: "/membership-ops/participants", icon: "👥" },
   // HIDDEN: "Merge Participants" is unlinked until the merge API reconciles join-table
   // collisions instead of blind-deleting the merge-side row.

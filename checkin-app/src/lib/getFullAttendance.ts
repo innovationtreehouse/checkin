@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { isMinor } from "@/lib/time";
+import { isYouth } from "@/lib/time";
 
 export async function getFullAttendance() {
     const activeVisits = await prisma.visit.findMany({
@@ -39,15 +39,15 @@ export async function getFullAttendance() {
         orderBy: { arrivedAt: "desc" },
     });
 
-    // Pre-compute isMinor once per visit to avoid repeated calculations
-    const minorMap = new Map<number, boolean>();
+    // Pre-compute isYouth once per visit to avoid repeated calculations
+    const youthMap = new Map<number, boolean>();
     for (const v of activeVisits) {
-        minorMap.set(v.id, isMinor(v.participant.dateOfBirth));
+        youthMap.set(v.id, isYouth(v.participant.dateOfBirth));
     }
 
     const keyholderVisits = activeVisits.filter(v => v.participant.isKeyholder);
-    const studentVisits = activeVisits.filter(v => minorMap.get(v.id)!);
-    const volunteerVisits = activeVisits.filter(v => !v.participant.isKeyholder && !minorMap.get(v.id));
+    const studentVisits = activeVisits.filter(v => youthMap.get(v.id)!);
+    const volunteerVisits = activeVisits.filter(v => !v.participant.isKeyholder && !youthMap.get(v.id));
 
     const counts = {
         keyholders: keyholderVisits.length,
@@ -56,7 +56,7 @@ export async function getFullAttendance() {
         total: activeVisits.length,
     };
 
-    const adultVisits = activeVisits.filter(v => !minorMap.get(v.id));
+    const adultVisits = activeVisits.filter(v => !youthMap.get(v.id));
     const unaccompaniedStudents = studentVisits.filter(sv => {
         if (!sv.participant.householdId) return true;
         return !adultVisits.some(av => av.participant.householdId === sv.participant.householdId);
