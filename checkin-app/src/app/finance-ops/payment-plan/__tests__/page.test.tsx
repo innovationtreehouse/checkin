@@ -4,7 +4,7 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
 import PendingParticipantsPage from "../page";
 
@@ -33,7 +33,6 @@ describe("finance-ops/payment-plan page", () => {
   });
 
   it("approves a request and removes it from the list", async () => {
-    window.confirm = jest.fn(() => true);
     setSession({ id: 1, isSysadmin: true });
     const fetchMock = mockFetchJson({
       "/api/finance-ops/payment-plans": () => requests,
@@ -42,6 +41,9 @@ describe("finance-ops/payment-plan page", () => {
     await screen.findByText("Pat Participant");
 
     fireEvent.click(screen.getByRole("button", { name: /Approve/ }));
+
+    const confirmModal = await screen.findByRole("dialog", { name: "Approve Payment Plan" });
+    fireEvent.click(within(confirmModal).getByRole("button", { name: /Approve/ }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
