@@ -680,7 +680,7 @@ model FeePayment {
   /// @sensitivity:public
   feeId             Int
   /// @sensitivity:public
-  participantId     Int
+  personId          Int
   /// @sensitivity:personal
   paidAt            DateTime? @default(now())
   /// @sensitivity:personal
@@ -691,9 +691,9 @@ model FeePayment {
   customNote        String?
 
   fee         Fee         @relation(fields: [feeId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Participant @relation(fields: [personId], references: [id])
 
-  @@id([feeId, participantId])
+  @@id([feeId, personId])
 }
 
 model Event {
@@ -729,16 +729,16 @@ model RSVP {
   /// @sensitivity:public
   eventId       Int
   /// @sensitivity:public
-  participantId Int
+  personId      Int
   /// @sensitivity:public
   status        RSVPStatus
   /// @sensitivity:internal
   reminderSentAt DateTime?
 
   event       Event       @relation(fields: [eventId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  person      Participant @relation(fields: [personId], references: [id])
 
-  @@id([eventId, participantId])
+  @@id([eventId, personId])
 }
 
 model RawBadgeLog {

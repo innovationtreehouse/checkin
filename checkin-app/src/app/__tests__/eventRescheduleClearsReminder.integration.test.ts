@@ -81,12 +81,12 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
     });
 
     afterEach(async () => {
-        await prisma.rSVP.deleteMany({ where: { participantId } });
+        await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
     });
 
     afterAll(async () => {
-        await prisma.rSVP.deleteMany({ where: { participantId } });
+        await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
         await prisma.participant.deleteMany({ where: { id: { in: [participantId, adminId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [householdId, adminHouseholdId] } } });
@@ -104,14 +104,14 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
             },
         });
         await prisma.rSVP.create({
-            data: { eventId: event.id, participantId, status: 'ATTENDING', reminderSentAt: new Date() },
+            data: { eventId: event.id, personId: participantId, status: 'ATTENDING', reminderSentAt: new Date() },
         });
         return event.id;
     }
 
     function reminderSentAt(eventId: number) {
         return prisma.rSVP
-            .findUnique({ where: { eventId_participantId: { eventId, participantId } } })
+            .findUnique({ where: { eventId_personId: { eventId, personId: participantId } } })
             .then(r => r?.reminderSentAt ?? null);
     }
 
@@ -156,7 +156,7 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
             },
         });
         await prisma.rSVP.create({
-            data: { eventId: event.id, participantId, status: 'ATTENDING', reminderSentAt: new Date() },
+            data: { eventId: event.id, personId: participantId, status: 'ATTENDING', reminderSentAt: new Date() },
         });
         const before = await reminderSentAt(event.id);
 
@@ -178,7 +178,7 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
             },
         });
         await prisma.rSVP.create({
-            data: { eventId: event.id, participantId, status: 'ATTENDING', reminderSentAt: new Date() },
+            data: { eventId: event.id, personId: participantId, status: 'ATTENDING', reminderSentAt: new Date() },
         });
         const before = await reminderSentAt(event.id);
         expect(before).not.toBeNull();

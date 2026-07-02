@@ -25,7 +25,7 @@ describe('My Events API Integration Tests', () => {
     beforeAll(async () => {
         // Clean up any leaked state
         await prisma.rSVP.deleteMany({
-            where: { participant: { email: { contains: 'mine-events-test' } } }
+            where: { person: { email: { contains: 'mine-events-test' } } }
         });
         await prisma.event.deleteMany({
             where: { name: { contains: 'Mine Test Event' } }
@@ -132,7 +132,7 @@ describe('My Events API Integration Tests', () => {
         await prisma.rSVP.create({
             data: {
                 eventId: testEventUpcoming1Id,
-                participantId: testUserId,
+                personId: testUserId,
                 status: 'ATTENDING'
             }
         });
@@ -141,7 +141,7 @@ describe('My Events API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.rSVP.deleteMany({
-            where: { participantId: { in: [testUserId, testVolunteerId] } }
+            where: { personId: { in: [testUserId, testVolunteerId] } }
         });
         await prisma.event.deleteMany({
             where: { id: { in: [testEventUpcoming1Id, testEventUpcoming2Id, testEventPastId] } }

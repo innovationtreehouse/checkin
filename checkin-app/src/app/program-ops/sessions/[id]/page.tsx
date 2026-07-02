@@ -39,7 +39,7 @@ type EventData = {
     arrivedAt: string;
     departedAt: string | null;
   }[];
-  rsvps: { participantId: number; status: RSVPStatus }[];
+  rsvps: { personId: number; status: RSVPStatus }[];
 };
 
 const RSVP_BADGE: Record<RSVPStatus, { label: string; color: string }> = {
@@ -319,7 +319,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   const renderRsvpList = () => {
     if (!eventData.program) return null;
 
-    const statusByParticipant = new Map(eventData.rsvps.map(r => [r.participantId, r.status]));
+    const statusByParticipant = new Map(eventData.rsvps.map(r => [r.personId, r.status]));
     const roster = [
       ...eventData.program.volunteers.map(v => ({ ...v, role: v.isCore ? 'Core Volunteer' : 'Volunteer' })),
       ...eventData.program.participants.map(p => ({ ...p, role: 'Participant' })),

@@ -38,7 +38,7 @@ export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth
             },
             visits: true,
             rsvps: {
-                include: { participant: true }
+                include: { person: true }
             },
             attendanceConfirmedBy: {
                 select: { name: true }

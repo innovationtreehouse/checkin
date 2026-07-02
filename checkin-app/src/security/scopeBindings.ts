@@ -79,7 +79,7 @@ export const SCOPE_BINDINGS = {
     // (ctx.eventIdsInScopePrograms) — a deliberate behavior CHANGE, not the dead
     // switch read. See docs/security/auth-consistency-analysis.md §7.5 + §9 Step 3.
     RSVP: {
-        their_own: { field: 'participantId', eqCtx: 'selfId' },
+        their_own: { field: 'personId', eqCtx: 'selfId' },
         their_program_participants: { field: 'eventId', inCtx: 'eventIdsInScopePrograms' },
     },
     Event: {
@@ -89,8 +89,8 @@ export const SCOPE_BINDINGS = {
         },
     },
     FeePayment: {
-        their_own: { field: 'participantId', eqCtx: 'selfId' },
-        their_program_participants: { field: 'participantId', inCtx: 'participantIdsInScopePrograms' },
+        their_own: { field: 'personId', eqCtx: 'selfId' },
+        their_program_participants: { field: 'personId', inCtx: 'participantIdsInScopePrograms' },
     },
     Visit: {
         their_own: { field: 'participantId', eqCtx: 'selfId' },

@@ -9,7 +9,7 @@ jest.mock("@/lib/email", () => ({
 describe("GET /api/cron/post-event", () => {
     beforeEach(async () => {
         await prisma.visit.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
-        await prisma.rSVP.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
+        await prisma.rSVP.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Past Event' } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Future Event' } } });
         await prisma.program.deleteMany({ where: { name: 'Test Program' } });
@@ -56,7 +56,7 @@ describe("GET /api/cron/post-event", () => {
         });
         
         await prisma.rSVP.create({
-            data: { eventId: event.id, participantId: user.id, status: "ATTENDING" }
+            data: { eventId: event.id, personId: user.id, status: "ATTENDING" }
         });
 
         await prisma.visit.create({

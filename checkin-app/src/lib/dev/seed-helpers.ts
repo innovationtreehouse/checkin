@@ -310,7 +310,7 @@ export async function createEvent(prisma: Db): Promise<string> {
     const attendees = await prisma.participant.findMany({ take: 3, orderBy: { id: "asc" } });
     for (const p of attendees) {
         await prisma.rSVP.create({
-            data: { eventId: event.id, participantId: p.id, status: "ATTENDING" },
+            data: { eventId: event.id, personId: p.id, status: "ATTENDING" },
         });
     }
     const where = latestProgram ? ` under program #${latestProgram.id}` : "";

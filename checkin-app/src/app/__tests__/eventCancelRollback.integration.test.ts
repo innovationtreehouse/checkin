@@ -63,13 +63,13 @@ describe('PATCH /api/events/[id] cancel — transaction rollback on partial fail
     afterEach(async () => {
         jest.restoreAllMocks();
         await prisma.visit.deleteMany({ where: { participantId } });
-        await prisma.rSVP.deleteMany({ where: { participantId } });
+        await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
     });
 
     afterAll(async () => {
         await prisma.visit.deleteMany({ where: { participantId } });
-        await prisma.rSVP.deleteMany({ where: { participantId } });
+        await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
         await prisma.participant.deleteMany({ where: { id: { in: [participantId, adminId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [householdId, adminHouseholdId] } } });
@@ -87,7 +87,7 @@ describe('PATCH /api/events/[id] cancel — transaction rollback on partial fail
             },
         });
         await prisma.rSVP.create({
-            data: { eventId: event.id, participantId, status: 'ATTENDING' },
+            data: { eventId: event.id, personId: participantId, status: 'ATTENDING' },
         });
         // Closed (departedAt set): makeEvent is called for several events that reuse
         // this one participant, but a participant may have only one OPEN visit
