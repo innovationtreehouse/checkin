@@ -10,7 +10,7 @@ export type AdminHousehold = {
   name: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
-  participants?: Array<{ id: number; name: string | null; email: string | null }>;
+  householdMembers?: Array<{ id: number; name: string | null; email: string | null }>;
   householdLeads?: Array<{ participantId: number }>;
 } & Partial<StructuredAddress>;
 
@@ -57,7 +57,7 @@ export function AdminEditHouseholdModal({
   const [form, setForm] = useState<FormState>(EMPTY);
   const [initial, setInitial] = useState<FormState>(EMPTY);
   const [displayName, setDisplayName] = useState("");
-  const [members, setMembers] = useState<NonNullable<AdminHousehold["participants"]>>([]);
+  const [members, setMembers] = useState<NonNullable<AdminHousehold["householdMembers"]>>([]);
   const [leadIds, setLeadIds] = useState<number[]>([]);
   const [removingLead, setRemovingLead] = useState<number | null>(null);
 
@@ -79,7 +79,7 @@ export function AdminEditHouseholdModal({
         setForm(loaded);
         setInitial(loaded);
         setDisplayName(h.name || `Household #${h.id}`);
-        setMembers(h.participants ?? []);
+        setMembers(h.householdMembers ?? []);
         setLeadIds((h.householdLeads ?? []).map((l) => l.participantId));
       }
     } catch {

@@ -29,7 +29,7 @@ interface ProcessRow {
   membership: {
     householdId: number;
     isVolunteer: boolean;
-    household: { name: string | null; participants: Person[]; leads: { personId: number }[] } | null;
+    household: { name: string | null; householdMembers: Person[]; leads: { personId: number }[] } | null;
   } | null;
 }
 
@@ -162,7 +162,7 @@ export default function AdminMembershipPage() {
     const hh = r.membership?.household;
     if (!hh) return `Household #${r.membership?.householdId ?? "?"}`;
     const leadIds = new Set((hh.leads || []).map((l) => l.personId));
-    const parents = (hh.participants || []).filter((p) => leadIds.has(p.id)).map((p) => p.name || p.email).filter(Boolean);
+    const parents = (hh.householdMembers || []).filter((p) => leadIds.has(p.id)).map((p) => p.name || p.email).filter(Boolean);
     return hh.name || parents.join(" & ") || `Household #${r.membership?.householdId}`;
   };
 

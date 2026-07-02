@@ -149,7 +149,7 @@ describe('Household API Integration Tests', () => {
             const data = await res.json();
             expect(data.household).toBeDefined();
             expect(data.household.id).toBe(householdId);
-            expect(data.household.participants.length).toBeGreaterThanOrEqual(2);
+            expect(data.household.householdMembers.length).toBeGreaterThanOrEqual(2);
         });
     });
 

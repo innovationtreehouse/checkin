@@ -53,7 +53,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
 
         await prisma.household.deleteMany({
-             where: { participants: { some: { id: { in: existingUserIds } } } }
+             where: { householdMembers: { some: { id: { in: existingUserIds } } } }
         });
 
         await prisma.program.deleteMany({

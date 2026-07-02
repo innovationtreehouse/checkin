@@ -42,7 +42,7 @@ async function makePendingProcess(): Promise<number> {
 
 async function wipe() {
     const hhs = await prisma.household.findMany({
-        where: { OR: [{ name: { contains: TAG } }, { participants: { some: { email: { contains: TAG } } } }] },
+        where: { OR: [{ name: { contains: TAG } }, { householdMembers: { some: { email: { contains: TAG } } } }] },
         select: { id: true },
     });
     const ids = hhs.map((h) => h.id);

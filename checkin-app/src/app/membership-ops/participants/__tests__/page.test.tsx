@@ -18,7 +18,7 @@ const bob = {
     name: "Bob B",
     email: null,
     phone: null,
-    household: { id: 20, name: "The B Family", participants: [{ id: 2, name: "Bob B", email: null }, { id: 3, name: "Sis B", email: "sis@example.com" }] },
+    household: { id: 20, name: "The B Family", householdMembers: [{ id: 2, name: "Bob B", email: null }, { id: 3, name: "Sis B", email: "sis@example.com" }] },
 };
 const carol = { id: 3, name: "Carol C", email: null, phone: null, household: null };
 
@@ -60,7 +60,7 @@ describe("AdminParticipantsIndex", () => {
         mockFetchJson({
             "/api/participants/search": { participants: [carol] },
             "/api/membership-ops/participants/3/household": {
-                participant: { ...carol, household: { id: 50, name: "Carol Household", participants: [{ id: 3, name: "Carol C", email: null }] } },
+                participant: { ...carol, household: { id: 50, name: "Carol Household", householdMembers: [{ id: 3, name: "Carol C", email: null }] } },
             },
         });
         renderWithProviders(<AdminParticipantsIndex />);

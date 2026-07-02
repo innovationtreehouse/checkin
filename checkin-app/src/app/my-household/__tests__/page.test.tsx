@@ -13,7 +13,7 @@ const householdData = {
   id: 55,
   name: "Smith Household",
   leads: [{ participantId: 10 }],
-  participants: [
+  householdMembers: [
     { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01" },
     { id: 11, name: "Jamie Smith", email: "", dateOfBirth: "2012-05-01" },
   ],

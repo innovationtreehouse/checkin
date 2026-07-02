@@ -9,7 +9,7 @@ export const GET = withAuth(
         try {
             const households = await prisma.household.findMany({
                 include: {
-                    participants: {
+                    householdMembers: {
                         select: {
                             id: true,
                             name: true,
@@ -39,7 +39,7 @@ export const GET = withAuth(
             });
 
             const formattedHouseholds = households.map(h => {
-                const isPresent = h.participants.some(p => p.visits.length > 0);
+                const isPresent = h.householdMembers.some(p => p.visits.length > 0);
                 const contacts = h.emergencyContacts.map(c => ({
                     id: c.id,
                     name: c.name,
@@ -59,7 +59,7 @@ export const GET = withAuth(
                     emergencyContactPhone: primaryValid?.phone ?? null,
                     emergencyContacts: contacts,
                     isPresent,
-                    participants: h.participants.map(p => ({
+                    householdMembers: h.householdMembers.map(p => ({
                         id: p.id,
                         name: p.name,
                         isPresent: p.visits.length > 0

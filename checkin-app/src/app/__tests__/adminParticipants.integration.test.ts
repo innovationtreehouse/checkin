@@ -54,7 +54,7 @@ describe('Admin Participants API Integration Tests', () => {
         // doesn't own could share a similar name (e.g. "Test Household"), and the
         // Participant->Household FK is RESTRICT.
         if (householdIds.length) {
-            await prisma.household.deleteMany({ where: { id: { in: householdIds }, participants: { none: {} } } });
+            await prisma.household.deleteMany({ where: { id: { in: householdIds }, householdMembers: { none: {} } } });
         }
     }
 

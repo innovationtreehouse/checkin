@@ -49,7 +49,7 @@ describe('Bulk import: preview vs commit consistency', () => {
             await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({ where: { email: { contains: 'consist-import-test' } } });
             await prisma.person.deleteMany({ where: { name: { contains: 'Consist Import Test' } } });
-            await prisma.household.deleteMany({ where: { participants: { none: {} } } });
+            await prisma.household.deleteMany({ where: { householdMembers: { none: {} } } });
         } catch {}
     };
 

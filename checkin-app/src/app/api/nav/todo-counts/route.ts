@@ -355,7 +355,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // explicitly so null-email members (e.g. children) count.
             prisma.household.count({
                 where: {
-                    participants: {
+                    householdMembers: {
                         some: { OR: [{ email: null }, { NOT: { email: { endsWith: `@${ORG_DOMAIN}` } } }] },
                     },
                 },

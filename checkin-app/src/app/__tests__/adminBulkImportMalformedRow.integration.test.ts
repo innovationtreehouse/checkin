@@ -27,7 +27,7 @@ describe('Bulk import: malformed row among valid rows', () => {
             await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({ where: { email: { contains: 'malrow-import-test' } } });
             await prisma.person.deleteMany({ where: { name: { contains: 'Malrow Import Test' } } });
-            await prisma.household.deleteMany({ where: { participants: { none: {} } } });
+            await prisma.household.deleteMany({ where: { householdMembers: { none: {} } } });
         } catch {}
     };
 

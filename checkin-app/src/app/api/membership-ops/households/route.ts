@@ -28,7 +28,7 @@ export const GET = withAuth(
                 const household = await prisma.household.findUnique({
                     where: { id: parseInt(id) },
                     include: {
-                        participants: {
+                        householdMembers: {
                             select: { id: true, name: true, email: true }
                         },
                         householdLeads: { select: { personId: true } },
@@ -47,15 +47,15 @@ export const GET = withAuth(
             const whereClause = q ? {
                 OR: [
                     { name: { contains: q, mode: 'insensitive' as const } },
-                    { participants: { some: { name: { contains: q, mode: 'insensitive' as const } } } },
-                    { participants: { some: { email: { contains: q, mode: 'insensitive' as const } } } },
+                    { householdMembers: { some: { name: { contains: q, mode: 'insensitive' as const } } } },
+                    { householdMembers: { some: { email: { contains: q, mode: 'insensitive' as const } } } },
                 ]
             } : {};
 
             const households = await prisma.household.findMany({
                 where: whereClause,
                 include: {
-                    participants: {
+                    householdMembers: {
                         select: { id: true, name: true, email: true, isBoardMember: true }
                     },
                     membership: true,

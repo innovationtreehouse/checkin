@@ -12,7 +12,7 @@ import { AlertBanner } from '@/components/admin/AlertBanner';
 type HouseholdOption = {
   id: number;
   name: string;
-  participants: { id: number; name: string | null; email: string | null }[];
+  householdMembers: { id: number; name: string | null; email: string | null }[];
 };
 
 export default function NewParticipantPage() {
@@ -187,7 +187,7 @@ function NewParticipantForm() {
                   return data.households || [];
                 }}
                 getOptionLabel={(h) => h.name || `Household #${h.id}`}
-                getOptionDescription={(h) => h.participants.map((p) => p.name || p.email || 'Unnamed').join(', ') || 'Empty'}
+                getOptionDescription={(h) => h.householdMembers.map((p) => p.name || p.email || 'Unnamed').join(', ') || 'Empty'}
                 onSelect={(h) => { setHouseholdId(h.id.toString()); setHouseholdSearch(h.name || `Household #${h.id}`); }}
                 onClear={() => { setHouseholdId(""); setHouseholdSearch(""); }}
               />

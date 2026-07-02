@@ -25,7 +25,7 @@ type Household = {
   emergencyContactPhone: string | null;
   emergencyContacts: EmergencyContactInfo[];
   isPresent: boolean;
-  participants: ParticipantInfo[];
+  householdMembers: ParticipantInfo[];
   leads: LeadInfo[];
 };
 
@@ -80,7 +80,7 @@ export default function EmergencyContactsPage() {
     const query = searchQuery.toLowerCase();
     if (h.name && h.name.toLowerCase().includes(query)) return true;
     if (h.leads.some(l => l.name && l.name.toLowerCase().includes(query))) return true;
-    if (h.participants.some(p => p.name && p.name.toLowerCase().includes(query))) return true;
+    if (h.householdMembers.some(p => p.name && p.name.toLowerCase().includes(query))) return true;
     return false;
   });
 
@@ -131,9 +131,9 @@ export default function EmergencyContactsPage() {
                   {h.isPresent && <Badge color="cyan" variant="light">Present Now</Badge>}
                 </Group>
                 <Text size="sm" c="dimmed">Household members:</Text>
-                {h.participants.length > 0 ? (
+                {h.householdMembers.length > 0 ? (
                   <List size="sm">
-                    {h.participants.map((p) => (
+                    {h.householdMembers.map((p) => (
                       <List.Item key={p.id}>
                         {p.name || `Member #${p.id}`}
                         {p.isPresent && <Text component="span" c="green" size="sm"> ● (Checked In)</Text>}

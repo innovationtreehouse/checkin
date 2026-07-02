@@ -17,7 +17,7 @@ const households = [
     emergencyContactPhone: null,
     emergencyContacts: [{ id: 11, name: "Gary Guardian", phone: "5551234567", email: "gary@example.com", relationship: "Uncle", invalid: false }],
     isPresent: true,
-    participants: [{ id: 101, name: "Kid Keyholder", isPresent: true }],
+    householdMembers: [{ id: 101, name: "Kid Keyholder", isPresent: true }],
     leads: [{ id: 201, name: "Lea Lead", phone: "5559876543", email: "lea@example.com" }],
   },
   {
@@ -27,7 +27,7 @@ const households = [
     emergencyContactPhone: null,
     emergencyContacts: [],
     isPresent: false,
-    participants: [],
+    householdMembers: [],
     leads: [],
   },
 ];

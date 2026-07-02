@@ -11,7 +11,7 @@ import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdMo
 type HouseholdRef = {
   id: number;
   name: string | null;
-  participants: { id: number; name: string | null; email: string | null }[];
+  householdMembers: { id: number; name: string | null; email: string | null }[];
 };
 
 type ParticipantRow = {
@@ -170,8 +170,8 @@ export default function AdminParticipantsIndex() {
     }
   };
 
-  const canSubmitAssign = !selectedParticipant?.household || (selectedParticipant.household.participants.length > 1);
-  const canChangeHousehold = selectedParticipant?.household && selectedParticipant.household.participants.length === 1 && householdId;
+  const canSubmitAssign = !selectedParticipant?.household || (selectedParticipant.household.householdMembers.length > 1);
+  const canChangeHousehold = selectedParticipant?.household && selectedParticipant.household.householdMembers.length === 1 && householdId;
 
   return (
     <Stack maw={1000} mx="auto">
@@ -264,7 +264,7 @@ export default function AdminParticipantsIndex() {
           <Paper withBorder radius="md" p="md" mb="md">
             <Text size="sm" fw={600} c="dimmed" mb="xs">Current Household: {selectedParticipant.household.name}</Text>
             <Text size="sm">
-              Members: {selectedParticipant.household.participants
+              Members: {selectedParticipant.household.householdMembers
                 .filter((p) => p.id !== selectedParticipant.id)
                 .map((p) => p.name || p.email)
                 .join(', ') || 'No other members'}
@@ -298,7 +298,7 @@ export default function AdminParticipantsIndex() {
                 return data.households || [];
               }}
               getOptionLabel={(h) => h.name || `Household #${h.id}`}
-              getOptionDescription={(h) => h.participants.map((p) => p.name || p.email || 'Unnamed').join(', ') || 'Empty'}
+              getOptionDescription={(h) => h.householdMembers.map((p) => p.name || p.email || 'Unnamed').join(', ') || 'Empty'}
               onSelect={(h) => { setHouseholdId(h.id.toString()); setHouseholdSearch(h.name || `Household #${h.id}`); }}
               onClear={() => { setHouseholdId(""); setHouseholdSearch(""); }}
             />

@@ -13,7 +13,7 @@ interface ParticipantMergeView {
   phone?: string;
   googleId?: string;
   _count: { visits: number, rawBadgeLogs: number, programParticipants: number, programVolunteers: number };
-  household?: { id: number, name: string, leads: { participant: { name: string, email: string } }[], _count?: { participants: number }, participants: Record<string, unknown>[] } | null;
+  household?: { id: number, name: string, leads: { participant: { name: string, email: string } }[], _count?: { householdMembers: number }, householdMembers: Record<string, unknown>[] } | null;
   [key: string]: unknown;
 }
 
@@ -180,9 +180,9 @@ export default function MergeParticipants() {
         <Text size="sm" c="dimmed" mt="md">
           Household: {p.household ? p.household.name || `Household #${p.household.id}` : "None"}
         </Text>
-        {p.household && p.household.participants && (
+        {p.household && p.household.householdMembers && (
           <List size="sm">
-            {(p.household.participants as { id: number, name: string | null }[]).map((hp) => (
+            {(p.household.householdMembers as { id: number, name: string | null }[]).map((hp) => (
               <List.Item key={hp.id}>
                 {hp.name} {hp.id === p.id && "(This)"} {((p.household!.leads as unknown) as { personId: number }[]).find((l) => l.personId === hp.id) && "[Lead]"}
               </List.Item>
@@ -198,7 +198,7 @@ export default function MergeParticipants() {
         </Alert>
       )}
 
-      {!isKept && p.household && p.household.participants && !isLeadWithOthers && p.household.participants.length > 1 && (
+      {!isKept && p.household && p.household.householdMembers && !isLeadWithOthers && p.household.householdMembers.length > 1 && (
         <Alert color="yellow" variant="light" mt="md" fw={700}>
           Warning: This participant is in a household with others. They will be removed from that
           household during deletion.
@@ -230,7 +230,7 @@ export default function MergeParticipants() {
   let isLeadWithOthers = false;
   if (mergeParticipant && !previewMode) {
     const isLead = mergeParticipant.household?.leads.find((l: { personId?: number;[key: string]: unknown }) => l.personId === mergeParticipant.id);
-    const othersCount = (mergeParticipant.household?.participants as { id: number }[] | undefined)?.filter((p) => p.id !== mergeParticipant.id).length || 0;
+    const othersCount = (mergeParticipant.household?.householdMembers as { id: number }[] | undefined)?.filter((p) => p.id !== mergeParticipant.id).length || 0;
     isLeadWithOthers = !!isLead && othersCount > 0;
   }
 

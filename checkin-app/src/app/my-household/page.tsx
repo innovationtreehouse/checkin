@@ -49,7 +49,7 @@ type HouseholdData = {
   id?: number;
   name?: string;
   leads?: Array<{ participantId: number }>;
-  participants?: HouseholdMember[];
+  householdMembers?: HouseholdMember[];
   membership?: { status?: string; memberSince?: string; isVolunteer?: boolean } | null;
 } & Partial<StructuredAddress> | null;
 
@@ -331,7 +331,7 @@ export default function HouseholdPage() {
   const isLead = (pid: number) => household?.leads?.some((l) => l.participantId === pid) ?? false;
   const viewerIsLead = isLead(userId);
 
-  const sortedHouseholdMembers = (household?.participants || []).slice().sort((a, b) => {
+  const sortedHouseholdMembers = (household?.householdMembers || []).slice().sort((a, b) => {
     const isLeadA = isLead(a.id) ? 1 : 0;
     const isLeadB = isLead(b.id) ? 1 : 0;
     if (isLeadA !== isLeadB) return isLeadB - isLeadA;
