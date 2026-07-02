@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { logger } from "./logger";
+import { config } from "./config";
 
 /**
  * Shared auth gate for the cron routes. Checks `Authorization: Bearer $CRON_SECRET`
@@ -13,7 +14,7 @@ import { logger } from "./logger";
  */
 export function requireCronSecret(req: Request): NextResponse | null {
     const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
+    const cronSecret = config.cronSecret();
 
     if (!cronSecret || !authHeader) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

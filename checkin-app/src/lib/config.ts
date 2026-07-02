@@ -111,6 +111,16 @@ export const config = {
     // zohoConfigured() checks so the mock can drive them in dev).
     zohoAvailable: (): boolean => zohoConfiguredEnv() || zohoMockActiveEnv(),
 
+    // Cron — shared secret gating the session-less cron routes (see cronAuth.ts).
+    cronSecret: (): string | null => process.env.CRON_SECRET || null,
+
+    // Shopify — Client Credentials Grant integration (see shopify.ts). All three
+    // null when unset (integration "off").
+    shopifyStoreDomain: (): string | null => process.env.SHOPIFY_STORE_DOMAIN || null,
+    shopifyClientId: (): string | null => process.env.SHOPIFY_CLIENT_ID || null,
+    shopifyClientSecret: (): string | null => process.env.SHOPIFY_CLIENT_SECRET || null,
+    shopifyWebhookSecret: (): string | null => process.env.SHOPIFY_WEBHOOK_SECRET || null,
+
     // App
     checkinEnv: (): CheckinEnv => readCheckinEnv(),
     // Production (default when unset). Consumers should call this rather than
