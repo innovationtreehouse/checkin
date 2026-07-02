@@ -33,12 +33,20 @@ Method: grepped every non-test use of `calculateAge`/`isYouth`/`isMinor`/`< 18`/
 | # | Site | Proxy used | Real intent | Status |
 |---|---|---|---|---|
 | A1 | `api/facility/trends/route.ts:9-11,143,176-177` (`isStudentAtDate`) | age < 18 → "student"; else "volunteer" | enrollee hours (`ProgramParticipant`) vs volunteer hours | **known — fix chip in flight** |
-| A2 | `lib/getFullAttendance.ts:50,54` (`volunteerVisits`, `counts.volunteers`) + `attendance/current/page.tsx:75,81` (`volunteerList`, `householdVolunteers`) | `!isKeyholder && !isYouth` → "volunteer" | if the intent is *real volunteers*, that is `ProgramVolunteer`; the proxy is "adult non-keyholder" | **not fixed — reported here** |
+| A2 | `lib/getFullAttendance.ts:50,54` (`volunteerVisits`, `counts.volunteers`) + `attendance/current/page.tsx:75,81` (`volunteerList`, `householdVolunteers`) | `!isKeyholder && !isYouth` → "volunteer" | if the intent is *real volunteers*, that is `ProgramVolunteer`; the proxy is "adult non-keyholder" | **WON'T CHANGE** (decided after investigation — see below) |
 
 **A2 detail.** The "volunteer" bucket on the live attendance dashboard is *every
 adult who isn't a keyholder* — it sweeps in enrolled adult participants, parents,
 and board members, none of whom are necessarily `ProgramVolunteer`. Same shape as
 the trends bug, on the volunteer side.
+
+> **RESOLUTION — WON'T CHANGE.** Investigated under a dedicated chip
+> (`ATTENDANCE_VOLUNTEER_PROXY_PROPOSAL.md`); closed as won't-change. Unlike the
+> trends metric (A1), the attendance dashboard's "adult non-keyholder" count is
+> the *intended* number — an "adults on the floor" supervision signal — and the
+> UI already labels it honestly as **"Volunteers/Adults"**. The age/keyholder
+> split is also safety-load-bearing (two-deep banner), so it stays as-is. Not a
+> real-volunteer count and not meant to be one. No change.
 
 Three things keep A2 lower-severity than A1:
 1. The UI already partly admits it: the column renders **"Volunteers/Adults"**
@@ -110,18 +118,18 @@ already tracked:
 ## Recommendations
 
 1. **A1 (trends):** covered by the in-flight chip — enrollment-based split. ✅
-2. **A2 (attendance "volunteer"):** the *only* other true bug-class instance.
-   Don't touch the age/keyholder safety split. Decide separately whether the
-   dashboard wants a real `ProgramVolunteer`-derived count or should just rename
-   the label to "Adults" (matching the already-honest "Volunteers/Adults"
-   header). Own decision, not part of the trends chip.
+2. **A2 (attendance "volunteer"):** investigated, **closed WON'T CHANGE** — the
+   "adult non-keyholder" count is the intended supervision signal (already
+   labelled "Volunteers/Adults"), and its age/keyholder split is safety
+   load-bearing. No change. See `ATTENDANCE_VOLUNTEER_PROXY_PROPOSAL.md`.
 3. **Tier B:** fold into the student→youth rename (Phase 2). Word-only.
 4. **Tier C:** leave alone.
 5. **Doc:** the team likely wants to record a new **BUG (trends measured age, not
    enrollment)** in `PARTICIPANT_TERMINOLOGY_PROPOSAL.md §3`. Not edited here (the
    proposal is read-only from this chip).
 
-**Net:** across the whole codebase, the age-as-proxy-for-enrollment/role bug has
-exactly **two** true instances — `facility/trends` (A1, being fixed) and the
-attendance "volunteer" bucket (A2, reported, safety-guarded). Everything else is
-either a pure wording issue (Tier B) or a legitimate age concept (Tier C).
+**Net:** across the whole codebase, the age-as-proxy-for-enrollment/role bug had
+two candidates — `facility/trends` (A1, fixed) and the attendance "volunteer"
+bucket (A2, investigated and **closed won't-change**: intended supervision count,
+safety-guarded). Only A1 was a real defect. Everything else is either a pure
+wording issue (Tier B) or a legitimate age concept (Tier C).
