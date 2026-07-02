@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { Badge, Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
+import { tabBadgeFor } from "@/components/navBadges";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { PageContainer } from "@/components/ui/PageContainer";
 
@@ -40,35 +41,23 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
       .sort((a, b) => b.href.length - a.href.length)
       .find((l) => pathname === l.href || pathname.startsWith(l.href + "/"))?.href ?? null;
 
-  const missingContact = todoCounts?.admin?.householdsMissingContact ?? 0;
-  const unclaimed = todoCounts?.admin?.unclaimedHouseholds ?? 0;
-  const broken = todoCounts?.admin?.brokenHouseholds ?? 0;
-
-  // Emergency/Unclaimed are gray: gaps on the household, not something the board can fix.
-  // Broken is green: the board must assign a lead. Returns [count, label].
-  const badgeFor = (href: string): [number, string] => {
-    if (href === "/membership-audit/emergency-contacts")
-      return [missingContact, `${missingContact} household${missingContact === 1 ? "" : "s"} missing an emergency contact`];
-    if (href === "/membership-audit/broken")
-      return [broken, `${broken} household${broken === 1 ? "" : "s"} without a lead`];
-    return [unclaimed, `${unclaimed} unclaimed account household${unclaimed === 1 ? "" : "s"}`];
-  };
-
+  // Emergency/Unclaimed are gray (gaps on the household), Broken is green (board must
+  // assign a lead) — derived in navBadges.tabBadgeFor so nav and tab agree.
   return (
     <PageContainer>
       <Stack>
       <Tabs value={activeTab} onChange={(value) => value && router.push(value)}>
         <ScrollableTabsList>
           {NAV_LINKS.map((link) => {
-            const [count, label] = badgeFor(link.href);
-            const isBroken = link.href === "/membership-audit/broken";
+            const badge = tabBadgeFor(link.href, todoCounts);
+            const isBroken = badge?.color === "treehouseGreen";
             return (
               <Tabs.Tab
                 key={link.href}
                 value={link.href}
                 leftSection={<span>{link.icon}</span>}
                 rightSection={
-                  count > 0 ? (
+                  badge ? (
                     <Badge
                       size="md"
                       color={isBroken ? "treehouseGreen" : "gray"}
@@ -76,9 +65,9 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
                       // Pinned label color so the active tab's green recolor doesn't render the
                       // count green-on-green (gray informational fill, or black on the green fill).
                       c={isBroken ? "var(--mantine-color-black)" : "var(--mantine-color-gray-7)"}
-                      aria-label={label}
+                      aria-label={badge.label}
                     >
-                      {count}
+                      {badge.count}
                     </Badge>
                   ) : undefined
                 }

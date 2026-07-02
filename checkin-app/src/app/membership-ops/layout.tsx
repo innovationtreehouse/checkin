@@ -5,16 +5,9 @@ import { Badge, Box, Center, Loader, Stack, Text } from "@mantine/core";
 import { MEMBERSHIP_OPS_NAV_LINKS } from "@/lib/membershipOpsNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
-import type { TodoCounts } from "@/app/api/nav/todo-counts/route";
+import { tabBadgeFor } from "@/components/navBadges";
 import { SectionTabs } from "@/components/ui/SectionTabs";
 import { PageContainer } from "@/components/ui/PageContainer";
-
-/** Informational count for a Membership Ops nav link, or 0 when none / unknown. */
-function membershipTodoCountFor(href: string, counts: TodoCounts | null): number {
-  if (!counts?.admin) return 0;
-  if (href === "/membership-ops/applications") return counts.admin.applicationsTotal;
-  return 0;
-}
 
 export default function MembershipOpsLayout({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
@@ -50,8 +43,8 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
 
   // Right-aligned count badge for a tab: pending applications, or the member-family total.
   const badgeFor = (href: string): React.ReactNode => {
-    const todoCount = membershipTodoCountFor(href, todoCounts);
-    if (todoCount > 0) {
+    const badge = tabBadgeFor(href, todoCounts);
+    if (badge) {
       return (
         <Badge
           size="md"
@@ -60,9 +53,9 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
           // Active tab recolors its content to the tabs color (green); pin a readable
           // label color so the count isn't rendered green-on-green on the active tab.
           c="var(--mantine-color-gray-7)"
-          aria-label={`${todoCount} application${todoCount === 1 ? "" : "s"}`}
+          aria-label={badge.label}
         >
-          {todoCount}
+          {badge.count}
         </Badge>
       );
     }
