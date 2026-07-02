@@ -34,16 +34,16 @@ const programData = {
   memberOnly: false,
   participants: [
     {
-      participantId: 101, status: "ACTIVE", pendingSince: null,
-      participant: { name: "Alice Kid", email: "alice@example.com", phone: "5125551234" },
+      personId: 101, status: "ACTIVE", pendingSince: null,
+      person: { name: "Alice Kid", email: "alice@example.com", phone: "5125551234" },
     },
     {
-      participantId: 102, status: "PENDING", pendingSince: "2026-01-06T00:00:00.000Z",
-      participant: { name: "Charlie Kid", email: "charlie@example.com" },
+      personId: 102, status: "PENDING", pendingSince: "2026-01-06T00:00:00.000Z",
+      person: { name: "Charlie Kid", email: "charlie@example.com" },
     },
   ],
   volunteers: [
-    { participantId: 201, isCore: true, participant: { name: "Vera Volunteer", email: "vera@example.com" } },
+    { personId: 201, isCore: true, person: { name: "Vera Volunteer", email: "vera@example.com" } },
   ],
   events: [
     { id: 301, name: "Session 1", startAt: "2026-02-01T18:00:00.000Z", endAt: "2026-02-01T20:00:00.000Z", attendanceConfirmedAt: null },

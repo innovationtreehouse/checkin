@@ -121,7 +121,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             return tx.programParticipant.create({
                 data: {
                     programId,
-                    participantId,
+                    personId: participantId,
                     status: initialStatus
                 }
             });
@@ -200,9 +200,9 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
 
         const enrollment = await prisma.programParticipant.delete({
             where: {
-                programId_participantId: {
+                programId_personId: {
                     programId,
-                    participantId
+                    personId: participantId
                 }
             }
         });

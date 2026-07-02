@@ -10,7 +10,7 @@ export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
             status: 'PENDING'
         },
         include: {
-            participant: true,
+            person: true,
             program: true
         },
         orderBy: {
@@ -42,7 +42,7 @@ export const POST = withAuth(
             // Scope to the pending request so approving a non-pending/nonexistent
             // request is a no-op error, mirroring the GET queue's filter.
             const { count } = await prisma.programParticipant.updateMany({
-                where: { programId, participantId, isPaymentPlanRequested: true, status: 'PENDING' },
+                where: { programId, personId: participantId, isPaymentPlanRequested: true, status: 'PENDING' },
                 data
             });
 

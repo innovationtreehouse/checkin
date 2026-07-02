@@ -111,9 +111,9 @@ export const GET = withAuth(
             // enrollments count — PENDING is applied-but-not-yet-approved, not an enrollee.
             const enrollments = await prisma.programParticipant.findMany({
                 where: { status: "ACTIVE", ...(programId ? { programId } : {}) },
-                select: { participantId: true },
+                select: { personId: true },
             });
-            const enrolledParticipantIds = new Set(enrollments.map(e => e.participantId));
+            const enrolledParticipantIds = new Set(enrollments.map(e => e.personId));
 
             const bucketMap = new Map<string, {
                 label: string;

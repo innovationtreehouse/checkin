@@ -32,7 +32,7 @@ describe('Program Volunteers API Integration Tests', () => {
         const existingUserIds = existingUsers.map(u => u.id);
         
         await prisma.programVolunteer.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.program.deleteMany({
@@ -80,7 +80,7 @@ describe('Program Volunteers API Integration Tests', () => {
                 phase: 'RUNNING', 
                 leadMentorId: leadId,
                 volunteers: {
-                    create: { participantId: existingVolunteerId, isCore: false }
+                    create: { personId: existingVolunteerId, isCore: false }
                 }
             }
         });
@@ -92,7 +92,7 @@ describe('Program Volunteers API Integration Tests', () => {
 
         if (existingUserIds.length > 0) {
             await prisma.programVolunteer.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
         }
 
@@ -154,11 +154,11 @@ describe('Program Volunteers API Integration Tests', () => {
              const data = await res.json();
              expect(data.success).toBe(true);
              expect(data.assignment.isCore).toBe(false); // Default logic
-             expect(data.assignment.participantId).toBe(candidateId);
+             expect(data.assignment.personId).toBe(candidateId);
 
              // Persisted: a ProgramVolunteer row now exists for this pair.
              const row = await prisma.programVolunteer.findUnique({
-                 where: { programId_participantId: { programId: targetProgramId, participantId: candidateId } }
+                 where: { programId_personId: { programId: targetProgramId, personId: candidateId } }
              });
              expect(row).not.toBeNull();
         });
@@ -207,7 +207,7 @@ describe('Program Volunteers API Integration Tests', () => {
              const candidate = await prisma.participant.findUnique({ where: { id: candidateId } });
              expect(candidate?.dateOfBirth).toBeNull();
              const row = await prisma.programVolunteer.findUnique({
-                 where: { programId_participantId: { programId: targetProgramId, participantId: candidateId } }
+                 where: { programId_personId: { programId: targetProgramId, personId: candidateId } }
              });
              expect(row).not.toBeNull();
         });
@@ -278,7 +278,7 @@ describe('Program Volunteers API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.assignment.participantId).toBe(existingVolunteerId);
+             expect(data.assignment.personId).toBe(existingVolunteerId);
         });
     });
 });

@@ -23,15 +23,15 @@ export const GET = handler("GET /api/trusted-adults/operational", async ({ auth 
         // Program leads: households of children enrolled in programs they lead or core-vol.
         const led = await prisma.program.findMany({
             where: { leadMentorId: u.id },
-            select: { participants: { select: { participant: { select: { householdId: true } } } } },
+            select: { participants: { select: { person: { select: { householdId: true } } } } },
         });
         const coreVol = await prisma.programVolunteer.findMany({
-            where: { participantId: u.id, isCore: true },
-            select: { program: { select: { participants: { select: { participant: { select: { householdId: true } } } } } } },
+            where: { personId: u.id, isCore: true },
+            select: { program: { select: { participants: { select: { person: { select: { householdId: true } } } } } } },
         });
         const households = new Set<number>();
-        for (const p of led) for (const pp of p.participants) households.add(pp.participant.householdId);
-        for (const v of coreVol) for (const pp of v.program.participants) households.add(pp.participant.householdId);
+        for (const p of led) for (const pp of p.participants) households.add(pp.person.householdId);
+        for (const v of coreVol) for (const pp of v.program.participants) households.add(pp.person.householdId);
         if (households.size === 0) return { TrustedAdult: [] };
         where.householdId = { in: [...households] };
     }

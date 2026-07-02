@@ -31,10 +31,10 @@ describe('My Events API Integration Tests', () => {
             where: { name: { contains: 'Mine Test Event' } }
         });
         await prisma.programParticipant.deleteMany({
-            where: { participant: { email: { contains: 'mine-events-test' } } }
+            where: { person: { email: { contains: 'mine-events-test' } } }
         });
         await prisma.programVolunteer.deleteMany({
-            where: { participant: { email: { contains: 'mine-events-test' } } }
+            where: { person: { email: { contains: 'mine-events-test' } } }
         });
         await prisma.program.deleteMany({
             where: { name: { contains: 'Mine Test Program' } }
@@ -78,7 +78,7 @@ describe('My Events API Integration Tests', () => {
         await prisma.programParticipant.create({
             data: {
                 programId: testProgram1Id,
-                participantId: testUserId
+                personId: testUserId
             }
         });
 
@@ -86,7 +86,7 @@ describe('My Events API Integration Tests', () => {
         await prisma.programVolunteer.create({
             data: {
                 programId: testProgram2Id,
-                participantId: testVolunteerId
+                personId: testVolunteerId
             }
         });
 

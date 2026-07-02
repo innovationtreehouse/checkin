@@ -188,12 +188,12 @@ export const classifications = {
     },
     ProgramVolunteer: {
         programId: 'public',
-        participantId: 'public',
+        personId: 'public',
         isCore: 'internal',
     },
     ProgramParticipant: {
         programId: 'public',
-        participantId: 'public',
+        personId: 'public',
         status: 'public',
         isPaymentPlanRequested: 'personal',
         pendingSince: 'internal',
@@ -413,11 +413,11 @@ export const relations = {
     },
     ProgramVolunteer: {
         program: { model: 'Program', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     ProgramParticipant: {
         program: { model: 'Program', isList: false },
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     Fee: {
         program: { model: 'Program', isList: false },

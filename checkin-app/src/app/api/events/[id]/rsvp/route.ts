@@ -51,17 +51,17 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         if (event.programId) {
             const isEnrolled = await prisma.programParticipant.findUnique({
                 where: {
-                    programId_participantId: {
+                    programId_personId: {
                         programId: event.programId,
-                        participantId: currentUserId
+                        personId: currentUserId
                     }
                 }
             });
             const isVolunteer = await prisma.programVolunteer.findUnique({
                 where: {
-                    programId_participantId: {
+                    programId_personId: {
                         programId: event.programId,
-                        participantId: currentUserId
+                        personId: currentUserId
                     }
                 }
             });

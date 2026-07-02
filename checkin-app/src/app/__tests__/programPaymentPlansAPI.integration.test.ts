@@ -91,9 +91,9 @@ describe('Program payment-plan routes', () => {
 
     async function enroll(participantId: number, opts: { requested: boolean }) {
         await prisma.programParticipant.upsert({
-            where: { programId_participantId: { programId, participantId } },
+            where: { programId_personId: { programId, personId: participantId } },
             update: { status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
-            create: { programId, participantId, status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
+            create: { programId, personId: participantId, status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
         });
     }
 
@@ -125,7 +125,7 @@ describe('Program payment-plan routes', () => {
             const res = await PlansGet(nextReq());
             expect(res.status).toBe(200);
             const rows = await res.json();
-            const ids = rows.map((r: { participantId: number }) => r.participantId);
+            const ids = rows.map((r: { personId: number }) => r.personId);
             expect(ids).toContain(selfId);
             expect(ids).not.toContain(noiseId);
         });
@@ -155,7 +155,7 @@ describe('Program payment-plan routes', () => {
             expect(res.status).toBe(200);
 
             const row = await prisma.programParticipant.findUnique({
-                where: { programId_participantId: { programId, participantId: selfId } },
+                where: { programId_personId: { programId, personId: selfId } },
             });
             expect(row?.status).toBe('ACTIVE');
             expect(row?.isPaymentPlanRequested).toBe(false);
@@ -185,7 +185,7 @@ describe('Program payment-plan routes', () => {
         });
 
         it('404 when the participant is not enrolled in the program', async () => {
-            await prisma.programParticipant.deleteMany({ where: { programId, participantId: otherId } });
+            await prisma.programParticipant.deleteMany({ where: { programId, personId: otherId } });
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
             const res = await RequestPost(requestReq({ participantId: otherId }), params(programId));
             expect(res.status).toBe(404);
@@ -199,7 +199,7 @@ describe('Program payment-plan routes', () => {
             expect(res.status).toBe(403);
 
             const row = await prisma.programParticipant.findUnique({
-                where: { programId_participantId: { programId, participantId: selfId } },
+                where: { programId_personId: { programId, personId: selfId } },
             });
             expect(row?.isPaymentPlanRequested).toBe(false);
         });
@@ -211,7 +211,7 @@ describe('Program payment-plan routes', () => {
             expect(res.status).toBe(200);
 
             const row = await prisma.programParticipant.findUnique({
-                where: { programId_participantId: { programId, participantId: selfId } },
+                where: { programId_personId: { programId, personId: selfId } },
             });
             expect(row?.isPaymentPlanRequested).toBe(true);
         });

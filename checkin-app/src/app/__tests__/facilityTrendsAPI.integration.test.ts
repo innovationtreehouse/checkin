@@ -66,7 +66,7 @@ describe('Facility trends API', () => {
 
         // Enroll the adult in `programId` (ACTIVE) — this, not their age, makes them a participant.
         await prisma.programParticipant.create({
-            data: { programId, participantId: enrolledAdultId, status: 'ACTIVE' },
+            data: { programId, personId: enrolledAdultId, status: 'ACTIVE' },
         });
 
         // Structured visit (associated to the event): enrolled adult, 3 hours -> participant.

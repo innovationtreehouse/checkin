@@ -60,23 +60,23 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
 
     const ledPrograms = await prisma.program.findMany({
         where: { leadMentorId: auth.user.id },
-        select: { id: true, participants: { select: { participantId: true } } },
+        select: { id: true, participants: { select: { personId: true } } },
     });
     for (const p of ledPrograms) {
         ctx.programsLed.add(p.id);
-        for (const pp of p.participants) ctx.participantIdsInScopePrograms.add(pp.participantId);
+        for (const pp of p.participants) ctx.participantIdsInScopePrograms.add(pp.personId);
     }
 
     const coreVols = await prisma.programVolunteer.findMany({
-        where: { participantId: auth.user.id, isCore: true },
+        where: { personId: auth.user.id, isCore: true },
         select: {
             programId: true,
-            program: { select: { participants: { select: { participantId: true } } } },
+            program: { select: { participants: { select: { personId: true } } } },
         },
     });
     for (const v of coreVols) {
         ctx.programsCoreVolIn.add(v.programId);
-        for (const pp of v.program.participants) ctx.participantIdsInScopePrograms.add(pp.participantId);
+        for (const pp of v.program.participants) ctx.participantIdsInScopePrograms.add(pp.personId);
     }
 
     // Households of the children in the caller's programs — for Trusted Adult

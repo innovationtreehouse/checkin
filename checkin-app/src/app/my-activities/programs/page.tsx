@@ -9,8 +9,8 @@ import { formatDate } from '@/lib/time';
 
 type UserProgram = {
   programId: number;
-  participantId: number;
-  participant: { id: number; name: string | null };
+  personId: number;
+  person: { id: number; name: string | null };
   program: {
     id: number;
     name: string;
@@ -85,10 +85,10 @@ export default function MyProgramsDashboard() {
         </Card>
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-          {enrollments.map(({ program, participantId, participant }) => (
-            <Card key={`${program.id}-${participantId}`} withBorder radius="md" padding="lg">
+          {enrollments.map(({ program, personId, person }) => (
+            <Card key={`${program.id}-${personId}`} withBorder radius="md" padding="lg">
               {showMembers && (
-                <Badge variant="light" mb="sm">{participant.name ?? 'Member'}</Badge>
+                <Badge variant="light" mb="sm">{person.name ?? 'Member'}</Badge>
               )}
               <Title order={4} mb="sm">{program.name}</Title>
               <Text c="dimmed" style={{ flex: 1 }}>

@@ -633,21 +633,21 @@ model ProgramVolunteer {
   /// @sensitivity:public
   programId     Int
   /// @sensitivity:public
-  participantId Int
+  personId Int
   /// @sensitivity:internal
   isCore        Boolean @default(false)
 
-  program     Program     @relation(fields: [programId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  program Program     @relation(fields: [programId], references: [id])
+  person  Participant @relation(fields: [personId], references: [id])
 
-  @@id([programId, participantId])
+  @@id([programId, personId])
 }
 
 model ProgramParticipant {
   /// @sensitivity:public
   programId            Int
   /// @sensitivity:public
-  participantId        Int
+  personId             Int
   /// @sensitivity:public
   status               ProgramParticipantStatus @default(PENDING)
   /// @sensitivity:personal
@@ -655,10 +655,10 @@ model ProgramParticipant {
   /// @sensitivity:internal
   pendingSince         DateTime?                @default(now())
 
-  program     Program     @relation(fields: [programId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
+  program Program     @relation(fields: [programId], references: [id])
+  person  Participant @relation(fields: [personId], references: [id])
 
-  @@id([programId, participantId])
+  @@id([programId, personId])
 }
 
 model Fee {

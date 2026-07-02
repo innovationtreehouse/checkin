@@ -52,7 +52,7 @@ describe('Trusted Adults API', () => {
             await prisma.trustedAdult.deleteMany({ where: { householdId: { in: ids } } });
             const parts = await prisma.participant.findMany({ where: { householdId: { in: ids } }, select: { id: true } });
             const pids = parts.map((p) => p.id);
-            await prisma.programParticipant.deleteMany({ where: { participantId: { in: pids } } });
+            await prisma.programParticipant.deleteMany({ where: { personId: { in: pids } } });
             await prisma.program.deleteMany({ where: { name: { contains: TAG } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
@@ -80,7 +80,7 @@ describe('Trusted Adults API', () => {
         // Program led by programLeadId with the family's child enrolled.
         const prog = await prisma.program.create({ data: { name: `Prog ${TAG}`, leadMentorId: programLeadId } });
         programId = prog.id;
-        await prisma.programParticipant.create({ data: { programId, participantId: childId, status: 'ACTIVE' } });
+        await prisma.programParticipant.create({ data: { programId, personId: childId, status: 'ACTIVE' } });
     });
 
     afterAll(async () => {

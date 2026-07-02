@@ -44,7 +44,7 @@ describe('Eligible Participants API Integration Tests', () => {
             .filter((id): id is number => id !== null && id !== undefined);
 
         await prisma.programParticipant.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         // Memberships live on the household now; scope cleanup to this test's households.
@@ -168,7 +168,7 @@ describe('Eligible Participants API Integration Tests', () => {
 
         if (existingUserIds.length > 0) {
             await prisma.programParticipant.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
 
             // Memberships are held by households. Scope the cleanup to exactly the

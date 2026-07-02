@@ -32,7 +32,7 @@ describe('attendanceTransitions', () => {
         participantId = p.id;
         householdIds.push(p.householdId);
         await prisma.programParticipant.create({
-            data: { programId, participantId, status: 'ACTIVE', pendingSince: null },
+            data: { programId, personId: participantId, status: 'ACTIVE', pendingSince: null },
         });
 
         const u = await prisma.participant.create({

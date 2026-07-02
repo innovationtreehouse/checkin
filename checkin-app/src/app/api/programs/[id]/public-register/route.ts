@@ -180,7 +180,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 const enrollment = await tx.programParticipant.create({
                     data: {
                         programId,
-                        participantId,
+                        personId: participantId,
                         status: initialStatus
                     }
                 });

@@ -31,7 +31,7 @@ describe('Event RSVP API Integration Tests', () => {
             where: { name: 'RSVP Test Event' }
         });
         await prisma.programParticipant.deleteMany({
-            where: { participant: { email: { contains: 'rsvp-test' } } }
+            where: { person: { email: { contains: 'rsvp-test' } } }
         });
         await prisma.program.deleteMany({
             where: { name: 'RSVP Test Program' }
@@ -66,7 +66,7 @@ describe('Event RSVP API Integration Tests', () => {
         await prisma.programParticipant.create({
             data: {
                 programId: testProgramId,
-                participantId: testUserId
+                personId: testUserId
             }
         });
 

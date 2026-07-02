@@ -45,7 +45,7 @@ describe('POST /api/programs/[id]/participants concurrency (capacity lock)', () 
         });
         const ids = users.map(u => u.id);
         const householdIds = [...new Set(users.map(u => u.householdId))];
-        await prisma.programParticipant.deleteMany({ where: { participantId: { in: ids } } });
+        await prisma.programParticipant.deleteMany({ where: { personId: { in: ids } } });
         await prisma.program.deleteMany({ where: { name: { contains: TAG } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
         await prisma.householdLead.deleteMany({ where: { personId: { in: ids } } });

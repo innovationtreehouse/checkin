@@ -33,7 +33,7 @@ describe('Public Program Registration API Integration Tests', () => {
         const existingUserIds = existingUsers.map(u => u.id);
         
         await prisma.programParticipant.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.program.deleteMany({
@@ -83,7 +83,7 @@ describe('Public Program Registration API Integration Tests', () => {
                 enrollmentStatus: 'OPEN',
                 maxParticipants: 1,
                 participants: {
-                    create: { participantId: existingParticipantId } // Pre-fill
+                    create: { personId: existingParticipantId } // Pre-fill
                 }
             }
         });
@@ -122,7 +122,7 @@ describe('Public Program Registration API Integration Tests', () => {
 
         if (existingUserIds.length > 0) {
             await prisma.programParticipant.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
         }
 
@@ -157,7 +157,7 @@ describe('Public Program Registration API Integration Tests', () => {
                 where: { householdId: { in: householdIds } }
             });
             await prisma.programParticipant.deleteMany({
-                where: { participant: { householdId: { in: householdIds } } }
+                where: { person: { householdId: { in: householdIds } } }
             });
             await prisma.participant.deleteMany({
                 where: { householdId: { in: householdIds } }
@@ -387,7 +387,7 @@ describe('Public Program Registration API Integration Tests', () => {
             // Inline cleanup: this parent email isn't in the afterAll sweep list.
             const p = await prisma.participant.findUnique({ where: { email: inBoundsEmail } });
             if (p) {
-                await prisma.programParticipant.deleteMany({ where: { participant: { householdId: p.householdId } } });
+                await prisma.programParticipant.deleteMany({ where: { person: { householdId: p.householdId } } });
                 await prisma.householdLead.deleteMany({ where: { person: { householdId: p.householdId } } });
                 await prisma.participant.deleteMany({ where: { householdId: p.householdId } });
                 await prisma.household.delete({ where: { id: p.householdId as number } });
@@ -430,7 +430,7 @@ describe('Public Program Registration API Integration Tests', () => {
             expect(householdMembers.length).toBe(2); // Parent + Child (no duplicates)
 
             const enrollments = await prisma.programParticipant.findMany({
-                where: { programId: standardProgramId, participant: { householdId: parent?.householdId } }
+                where: { programId: standardProgramId, person: { householdId: parent?.householdId } }
             });
             expect(enrollments.length).toBe(2);
             expect(enrollments[0].status).toBe('PENDING');
@@ -506,7 +506,7 @@ describe('Public Program Registration API Integration Tests', () => {
             // Clean up the created one immediately for isolation
             const p = await prisma.participant.findUnique({ where: { email: uniqueEmail } });
             if (p) {
-                await prisma.programParticipant.deleteMany({ where: { programId: freeProgramId, participant: { householdId: p.householdId } }});
+                await prisma.programParticipant.deleteMany({ where: { programId: freeProgramId, person: { householdId: p.householdId } }});
                 await prisma.householdLead.deleteMany({ where: { person: { householdId: p.householdId } } });
                 await prisma.participant.deleteMany({ where: { householdId: p.householdId } });
                 await prisma.household.delete({ where: { id: p.householdId as number } });

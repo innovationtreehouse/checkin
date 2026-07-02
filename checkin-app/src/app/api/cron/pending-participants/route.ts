@@ -11,14 +11,14 @@ export const GET = withCron(async () => {
                 pendingSince: { not: null }
             },
             include: {
-                participant: true,
+                person: true,
                 program: true
             }
         });
 
         let kickedCount = 0;
         let warnedCount = 0;
-        const toDelete: { programId: number; participantId: number }[] = [];
+        const toDelete: { programId: number; personId: number }[] = [];
 
         for (const record of pendingParticipants) {
             if (!record.pendingSince) continue;
@@ -33,24 +33,24 @@ export const GET = withCron(async () => {
                 // Collect IDs for batch deletion
                 toDelete.push({
                     programId: record.programId,
-                    participantId: record.participantId
+                    personId: record.personId
                 });
 
                 kickedCount++;
 
-                console.log(`[CRON] Removed participant ${record.participant.name} from ${record.program.name} after ${diffDays} days.`);
-                console.log(`[EMAIL DISPATCH] To: ${record.participant.email}, Subject: Removed from ${record.program.name} due to non-payment`);
+                console.log(`[CRON] Removed participant ${record.person.name} from ${record.program.name} after ${diffDays} days.`);
+                console.log(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Removed from ${record.program.name} due to non-payment`);
             } else if (diffDays === 6) {
                 warnedCount++;
-                console.log(`[EMAIL DISPATCH] To: ${record.participant.email}, Subject: FINAL WARNING: 24 hours left to pay for ${record.program.name}`);
+                console.log(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: FINAL WARNING: 24 hours left to pay for ${record.program.name}`);
                 console.log(`[EMAIL DISPATCH] Body: ${warningText}`);
             } else if (diffDays === 3) {
                 warnedCount++;
-                console.log(`[EMAIL DISPATCH] To: ${record.participant.email}, Subject: Please pay for ${record.program.name} within 4 days`);
+                console.log(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Please pay for ${record.program.name} within 4 days`);
                 console.log(`[EMAIL DISPATCH] Body: ${warningText}`);
             } else if (diffDays === 1) {
                 warnedCount++;
-                console.log(`[EMAIL DISPATCH] To: ${record.participant.email}, Subject: Reminder: Payment required for ${record.program.name}`);
+                console.log(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Reminder: Payment required for ${record.program.name}`);
                 console.log(`[EMAIL DISPATCH] Body: ${warningText}`);
             }
         }

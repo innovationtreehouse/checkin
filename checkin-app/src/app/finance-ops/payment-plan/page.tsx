@@ -12,9 +12,9 @@ import { formatCents } from '@inventory/money';
 
 type PaymentPlanRequest = {
   programId: number;
-  participantId: number;
+  personId: number;
   pendingSince: string;
-  participant: {
+  person: {
     id: number;
     name: string | null;
     email: string;
@@ -65,7 +65,7 @@ export default function PendingParticipantsPage() {
       });
 
       if (res.ok) {
-        setRequests(prev => prev.filter(r => !(r.programId === programId && r.participantId === participantId)));
+        setRequests(prev => prev.filter(r => !(r.programId === programId && r.personId === participantId)));
         notifyNavRefresh();
       } else {
         const data = await res.json();
@@ -85,11 +85,11 @@ export default function PendingParticipantsPage() {
   const columns: DataTableColumn<PaymentPlanRequest>[] = [
     {
       header: 'Participant',
-      sortBy: (req) => req.participant.name?.toLowerCase() ?? req.participant.email.toLowerCase(),
+      sortBy: (req) => req.person.name?.toLowerCase() ?? req.person.email.toLowerCase(),
       render: (req) => (
         <>
-          <Text fw={500}>{req.participant.name}</Text>
-          <Text size="sm" c="dimmed">{req.participant.email}</Text>
+          <Text fw={500}>{req.person.name}</Text>
+          <Text size="sm" c="dimmed">{req.person.email}</Text>
         </>
       ),
     },
@@ -114,7 +114,7 @@ export default function PendingParticipantsPage() {
       header: 'Actions',
       align: 'right',
       render: (req) => (
-        <Button size="xs" fz={15} color="green" variant="light" onClick={() => handleApprove(req.programId, req.participantId)}>
+        <Button size="xs" fz={15} color="green" variant="light" onClick={() => handleApprove(req.programId, req.personId)}>
           Approve &amp; Mark Active
         </Button>
       ),
@@ -134,7 +134,7 @@ export default function PendingParticipantsPage() {
       <DataTable
         columns={columns}
         rows={requests}
-        getRowKey={(req) => `${req.programId}-${req.participantId}`}
+        getRowKey={(req) => `${req.programId}-${req.personId}`}
         emptyMessage="No pending payment plan requests."
       />
     </Stack>

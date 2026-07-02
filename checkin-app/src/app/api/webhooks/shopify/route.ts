@@ -122,14 +122,14 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                     // Find existing participant
                     const existing = await prisma.programParticipant.findUnique({
                         where: {
-                            programId_participantId: { programId, participantId }
+                            programId_personId: { programId, personId: participantId }
                         }
                     });
 
                     if (existing) {
                         await prisma.programParticipant.update({
                             where: {
-                                programId_participantId: { programId, participantId }
+                                programId_personId: { programId, personId: participantId }
                             },
                             data: {
                                 status: 'ACTIVE',

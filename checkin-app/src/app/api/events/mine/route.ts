@@ -18,20 +18,20 @@ export const GET = withAuth({}, async (_req, auth) => {
         // Which household members are tied to which programs (enrolled or volunteering).
         const [enrolled, volunteers] = await Promise.all([
             prisma.programParticipant.findMany({
-                where: { participantId: { in: householdMemberIds } },
-                select: { participantId: true, programId: true }
+                where: { personId: { in: householdMemberIds } },
+                select: { personId: true, programId: true }
             }),
             prisma.programVolunteer.findMany({
-                where: { participantId: { in: householdMemberIds } },
-                select: { participantId: true, programId: true }
+                where: { personId: { in: householdMemberIds } },
+                select: { personId: true, programId: true }
             })
         ]);
 
         const programParticipants = new Map<number, Set<number>>();
-        for (const { programId, participantId } of [...enrolled, ...volunteers]) {
+        for (const { programId, personId } of [...enrolled, ...volunteers]) {
             let set = programParticipants.get(programId);
             if (!set) programParticipants.set(programId, (set = new Set()));
-            set.add(participantId);
+            set.add(personId);
         }
 
         const events = await prisma.event.findMany({
