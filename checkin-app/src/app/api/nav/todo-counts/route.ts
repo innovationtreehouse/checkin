@@ -335,14 +335,19 @@ export const GET = withAuth({}, async (_req, auth) => {
                 where: { status: "PENDING_BOARD_REVIEW" },
             }),
             countHouseholdsMissingValidContact(),
-            // Households with an account created at registration that nobody has
-            // claimed via Google sign-in yet. Mirrors /api/membership-audit/unclaimed-households:
-            // claiming hinges on leads only (kids/members may never log in), so count
-            // households with an email-having lead where no lead has signed in with Google.
+            // Households nobody has claimed via Google sign-in yet: either a lead has an
+            // email to chase but no lead has signed in, OR the household has no lead at
+            // all (broken). Must stay identical to /api/membership-audit/unclaimed-households
+            // or the badge count and the list diverge.
             prisma.household.count({
                 where: {
-                    leads: { some: { person: { email: { not: null } } } },
-                    NOT: { leads: { some: { person: { googleId: { not: null } } } } },
+                    OR: [
+                        {
+                            leads: { some: { person: { email: { not: null } } } },
+                            NOT: { leads: { some: { person: { googleId: { not: null } } } } }
+                        },
+                        { leads: { none: {} } }
+                    ]
                 },
             }),
             // "Broken" households: no household lead at all. Mirrors
