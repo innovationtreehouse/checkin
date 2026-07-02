@@ -5,7 +5,7 @@ import { notifications } from "@mantine/notifications";
 import { renderWithProviders, mockFetchJson, resetRtl } from "@/test-helpers/rtl";
 import { AdminEditHouseholdModal, isFormDirty } from "../AdminEditHouseholdModal";
 
-const base = { name: "Smith", line1: "1 Main", line2: "", city: "Austin", state: "TX", postalCode: "78701", emergencyContactName: "Jo", emergencyContactPhone: "5550000" };
+const base = { name: "Smith", line1: "1 Main", line2: "", city: "Austin", state: "TX", postalCode: "78701", emergencyContactName: "Jo", emergencyContactPhone: "5550000", memberSince: "2020-01-15" };
 
 describe("isFormDirty", () => {
   it("is false when snapshots match", () => {
@@ -15,6 +15,7 @@ describe("isFormDirty", () => {
   it("is true when any field differs", () => {
     expect(isFormDirty(base, { ...base, name: "Jones" })).toBe(true);
     expect(isFormDirty(base, { ...base, emergencyContactPhone: "5551111" })).toBe(true);
+    expect(isFormDirty(base, { ...base, memberSince: "2021-06-01" })).toBe(true);
   });
 });
 

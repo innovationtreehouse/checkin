@@ -12,6 +12,7 @@ export type AdminHousehold = {
   emergencyContactPhone: string | null;
   householdMembers?: Array<{ id: number; name: string | null; email: string | null }>;
   householdLeads?: Array<{ personId: number }>;
+  membership?: { memberSince: string | null } | null;
 } & Partial<StructuredAddress>;
 
 type FormState = {
@@ -23,9 +24,10 @@ type FormState = {
   postalCode: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
+  memberSince: string;
 };
 
-const EMPTY: FormState = { name: "", line1: "", line2: "", city: "", state: "", postalCode: "", emergencyContactName: "", emergencyContactPhone: "" };
+const EMPTY: FormState = { name: "", line1: "", line2: "", city: "", state: "", postalCode: "", emergencyContactName: "", emergencyContactPhone: "", memberSince: "" };
 
 /** Deep-compares flat string form state. Exported for unit test. */
 export function isFormDirty(a: FormState, b: FormState): boolean {
@@ -75,6 +77,8 @@ export function AdminEditHouseholdModal({
           line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "",
           emergencyContactName: h.emergencyContactName || "",
           emergencyContactPhone: h.emergencyContactPhone || "",
+          // date-only slice of the membership's join date (ISO → YYYY-MM-DD)
+          memberSince: h.membership?.memberSince ? h.membership.memberSince.slice(0, 10) : "",
         };
         setForm(loaded);
         setInitial(loaded);
@@ -214,6 +218,13 @@ export function AdminEditHouseholdModal({
                 placeholder="(555) 555-5555"
               />
             </SimpleGrid>
+            <TextInput
+              type="date"
+              label="Member since"
+              description="Household's membership start date. Editing this is recorded in the audit log."
+              value={form.memberSince}
+              onChange={(e) => update({ memberSince: e.currentTarget.value })}
+            />
             <Divider label="Household Leads" labelPosition="left" mt="sm" />
             <Stack gap="xs">
               {leadIds.length === 0 && (
