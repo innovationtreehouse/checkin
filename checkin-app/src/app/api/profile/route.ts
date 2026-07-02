@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { handler, notFound, unauthorized } from "@/security/handler";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
-import { isMinor } from "@/lib/time";
+import { isYouth } from "@/lib/time";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
     if (auth.type !== 'session') throw unauthorized();
@@ -32,7 +32,7 @@ export const PATCH = withAuth(
                 where: { id: userId },
                 select: { dateOfBirth: true },
             });
-            if (isMinor(me?.dateOfBirth)) {
+            if (isYouth(me?.dateOfBirth)) {
                 return NextResponse.json({ error: "Youth profiles are read-only." }, { status: 403 });
             }
 

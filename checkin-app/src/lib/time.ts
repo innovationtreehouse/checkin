@@ -89,10 +89,10 @@ export function calculateAge(dob: Date | string, asOf: Date | string = new Date(
 }
 
 /**
- * Returns true if the person with the given DOB is under 18 years old.
+ * Returns true if the person with the given DOB is under 18 years old (youth).
  * Canonical implementation — use this everywhere instead of inline age checks.
  */
-export function isMinor(dob: Date | string | null | undefined): boolean {
+export function isYouth(dob: Date | string | null | undefined): boolean {
     if (!dob) return false;
     return calculateAge(dob) < 18;
 }
