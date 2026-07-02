@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
@@ -71,11 +72,11 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         // Send email to finances
         // In a real implementation this would trigger an actual email via SendGrid, NodeMailer, etc.
-        console.log(`[EMAIL DISPATCH] To: finances@innovationtreehouse.org, Subject: Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
+        logger.info(`[EMAIL DISPATCH] To: finances@innovationtreehouse.org, Subject: Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
 
         return NextResponse.json({ success: true, participant: updatedParticipant });
     } catch (error) {
-        console.error("Payment plan request error:", error);
+        logger.error("Payment plan request error:", error);
         return NextResponse.json({ error: "Failed to request payment plan" }, { status: 500 });
     }
 });

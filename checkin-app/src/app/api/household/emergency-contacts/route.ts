@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { createContact, listContacts, EmergencyContactError } from "@/lib/emergencyContacts/service";
@@ -50,7 +51,7 @@ export const POST = withAuth({}, async (req, auth) => {
         return NextResponse.json({ contact: present(contact) }, { status: 201 });
     } catch (error) {
         if (error instanceof EmergencyContactError) return NextResponse.json({ error: error.message }, { status: 400 });
-        console.error("Emergency contact POST error:", error);
+        logger.error("Emergency contact POST error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });

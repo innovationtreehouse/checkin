@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
@@ -67,7 +68,7 @@ export const GET = withAuth(
 
         return NextResponse.json({ participants, tools });
     } catch (error) {
-        console.error("Certifications fetch error:", error);
+        logger.error("Certifications fetch error:", error);
         return NextResponse.json(
             { error: "Internal Server Error while fetching certifications." },
             { status: 500 }

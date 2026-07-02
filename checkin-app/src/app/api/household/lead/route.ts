@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
@@ -61,7 +62,7 @@ export const POST = withAuth(
             if (error instanceof HouseholdLeadLimitError) {
                 return NextResponse.json({ error: error.message }, { status: 400 });
             }
-            console.error("Household Lead POST Error:", error);
+            logger.error("Household Lead POST Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }
@@ -148,7 +149,7 @@ export const DELETE = withAuth(
             return NextResponse.json({ message: "Lead removed successfully." }, { status: 200 });
 
         } catch (error: unknown) {
-            console.error("Household Lead DELETE Error:", error);
+            logger.error("Household Lead DELETE Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }

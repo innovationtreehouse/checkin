@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import { markContractSigned, markBgConsent, setZohoEnvelope, ExternalError } from "@/lib/membership/external";
 
@@ -47,7 +48,7 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
         if (error instanceof ExternalError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "not_found" ? 404 : 400 });
         }
-        console.error("Membership external action error:", error);
+        logger.error("Membership external action error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });

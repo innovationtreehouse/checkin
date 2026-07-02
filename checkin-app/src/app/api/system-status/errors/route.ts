@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
@@ -12,7 +13,7 @@ export const GET = withAuth(
             });
             return NextResponse.json({ errors });
         } catch (error) {
-            console.error("Failed to fetch error logs:", error);
+            logger.error("Failed to fetch error logs:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }

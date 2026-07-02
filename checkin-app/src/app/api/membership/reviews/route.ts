@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, unauthorized } from "@/security/handler";
@@ -71,7 +72,7 @@ export const POST = withAuth({ roles: ["isBackgroundCheckReviewer", "isBoardMemb
         if (error instanceof ReviewError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: STATUS_FOR[error.code] });
         }
-        console.error("Attestation error:", error);
+        logger.error("Attestation error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });

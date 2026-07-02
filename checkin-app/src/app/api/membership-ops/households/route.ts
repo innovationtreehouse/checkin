@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
@@ -76,7 +77,7 @@ export const GET = withAuth(
 
             return NextResponse.json({ households: households.map(withFlatContact) });
         } catch (error) {
-            console.error("Failed to fetch households:", error);
+            logger.error("Failed to fetch households:", error);
             return NextResponse.json({ error: "Failed to fetch households" }, { status: 500 });
         }
     }
@@ -183,7 +184,7 @@ export const POST = withAuth(
 
             return NextResponse.json({ success: true, message: "No change needed" });
         } catch (error) {
-            console.error("Failed to update household membership:", error);
+            logger.error("Failed to update household membership:", error);
             return NextResponse.json({ error: "Failed to update membership" }, { status: 500 });
         }
     }

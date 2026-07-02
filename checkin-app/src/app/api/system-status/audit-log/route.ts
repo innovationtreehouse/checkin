@@ -3,6 +3,7 @@
 // Server-side paged + filtered so the full history is reachable without ever
 // shipping it all at once.
 import { NextResponse, type NextRequest } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import type { Prisma } from "@/generated/prisma/client";
@@ -75,7 +76,7 @@ export const GET = withAuth(
                 tables: tableRows.map((t) => t.tableName),
             });
         } catch (error) {
-            console.error("Failed to fetch audit logs:", error);
+            logger.error("Failed to fetch audit logs:", error);
             return NextResponse.json({ error: "Failed to fetch audit logs" }, { status: 500 });
         }
     }

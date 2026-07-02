@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { participantRecordIsActiveMember } from "@/lib/membership";
@@ -47,7 +48,7 @@ export const GET = withAuth(
 
             return NextResponse.json({ people: formatted });
         } catch (error) {
-            console.error("Failed to fetch people:", error);
+            logger.error("Failed to fetch people:", error);
             return NextResponse.json({ error: "Failed to fetch people" }, { status: 500 });
         }
     }

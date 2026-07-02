@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { upsertPrimaryContact, getPrimaryValidContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
@@ -75,7 +76,7 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
         if (error instanceof EmergencyContactError) {
             return NextResponse.json({ error: error.message }, { status: 400 });
         }
-        console.error("Failed to update household:", error);
+        logger.error("Failed to update household:", error);
         return NextResponse.json({ error: "Failed to update household" }, { status: 500 });
     }
 });

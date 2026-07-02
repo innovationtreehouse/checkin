@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { upsertPrimaryContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
@@ -63,7 +64,7 @@ export const PATCH = withAuth(
             if (error instanceof EmergencyContactError || error instanceof AddressValidationError) {
                 return NextResponse.json({ error: error.message }, { status: 400 });
             }
-            console.error("Household Settings PATCH Error:", error);
+            logger.error("Household Settings PATCH Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }

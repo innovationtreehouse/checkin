@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { addDays, parseISO, isBefore, isEqual, getDay, setHours, setMinutes } from 'date-fns';
@@ -131,7 +132,7 @@ export const POST = withAuth({}, async (req, auth) => {
 
         return NextResponse.json({ success: true, count: insertedEvents.count });
     } catch (error: unknown) {
-        console.error("Event creation error:", error);
+        logger.error("Event creation error:", error);
         return NextResponse.json({ error: "Failed to create event(s)" }, { status: 500 });
     }
 });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { updateContact, deleteContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
@@ -29,7 +30,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         if (error instanceof EmergencyContactError) {
             return NextResponse.json({ error: error.message }, { status: error.code === "not_found" ? 404 : 400 });
         }
-        console.error("Emergency contact PATCH error:", error);
+        logger.error("Emergency contact PATCH error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });
@@ -76,7 +77,7 @@ export const DELETE = withAuth({}, async (_req, auth, { params }: { params: Prom
         if (error instanceof EmergencyContactError) {
             return NextResponse.json({ error: error.message }, { status: error.code === "not_found" ? 404 : 400 });
         }
-        console.error("Emergency contact DELETE error:", error);
+        logger.error("Emergency contact DELETE error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 });

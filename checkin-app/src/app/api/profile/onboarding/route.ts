@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logger } from "@/lib/logger";
 import prisma from '@/lib/prisma';
 import { withAuth } from "@/lib/auth";
 import { upsertPrimaryContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
@@ -49,7 +50,7 @@ export const POST = withAuth(
             if (error instanceof EmergencyContactError) {
                 return NextResponse.json({ error: error.message }, { status: 400 });
             }
-            console.error("Error saving onboarding details:", error);
+            logger.error("Error saving onboarding details:", error);
             return NextResponse.json({ error: "Failed to save data" }, { status: 500 });
         }
     }

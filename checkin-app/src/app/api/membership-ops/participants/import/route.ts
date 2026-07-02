@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import * as xlsx from "xlsx";
-import { logBackendError } from "@/lib/logger";
+import { logBackendError, logger } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { parseImportDob } from "@/lib/importDob";
 import { calculateAge } from "@/lib/time";
@@ -260,7 +260,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 insertedOrUpdatedCount++;
 
             } catch (err: unknown) {
-                console.error(`Error processing row ${pr.index + 2}:`, err);
+                logger.error(`Error processing row ${pr.index + 2}:`, err);
                 const errorMessage = err instanceof Error ? err.message : 'Unknown error';
                 errors.push(`Row ${pr.index + 2} (${pr.fullName || 'Unknown'}): ${errorMessage}`);
             }
@@ -395,7 +395,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                     }
                 }
             } catch (err: unknown) {
-                console.error(`Error in pass 2 for row ${pr.index + 2}:`, err);
+                logger.error(`Error in pass 2 for row ${pr.index + 2}:`, err);
                 const errorMessage = err instanceof Error ? err.message : 'Unknown error';
                 errors.push(`Row ${pr.index + 2} (${pr.fullName}): Household linking error: ${errorMessage}`);
             }

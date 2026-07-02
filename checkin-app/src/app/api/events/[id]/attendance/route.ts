@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
@@ -157,7 +158,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         return NextResponse.json({ success: true, processed: results.length });
     } catch (error) {
-        console.error("Attendance validation error:", error);
+        logger.error("Attendance validation error:", error);
         return NextResponse.json({ error: "Failed to validate attendance" }, { status: 500 });
     }
 });

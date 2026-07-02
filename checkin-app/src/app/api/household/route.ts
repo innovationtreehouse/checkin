@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
@@ -31,7 +32,7 @@ export const GET = withAuth(
 
             return NextResponse.json({ household: user.household }, { status: 200 });
         } catch (error: unknown) {
-            console.error("Household GET Error:", error);
+            logger.error("Household GET Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }
@@ -126,7 +127,7 @@ export const PATCH = withAuth(
 
             return NextResponse.json({ member, warning }, { status: 200 });
         } catch (error: unknown) {
-            console.error("Household PATCH Error:", error);
+            logger.error("Household PATCH Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }

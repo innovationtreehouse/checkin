@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
@@ -12,7 +13,7 @@ export const GET = withAuth(
             ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
             prisma.integrationErrorLog
                 .deleteMany({ where: { timestamp: { lt: ninetyDaysAgo } } })
-                .catch((err: unknown) => console.error("Failed to purge old integration errors:", err));
+                .catch((err: unknown) => logger.error("Failed to purge old integration errors:", err));
 
             const errors = await prisma.integrationErrorLog.findMany({
                 orderBy: [{ resolvedAt: "asc" }, { timestamp: "desc" }],
@@ -21,7 +22,7 @@ export const GET = withAuth(
 
             return NextResponse.json({ errors });
         } catch (error) {
-            console.error("Failed to fetch integration errors:", error);
+            logger.error("Failed to fetch integration errors:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }

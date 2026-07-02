@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 
@@ -73,13 +74,13 @@ export const GET = withAuth(
                         },
                     },
                 })
-                .catch((err: unknown) => console.error("Failed to delete old system metrics:", err));
+                .catch((err: unknown) => logger.error("Failed to delete old system metrics:", err));
 
             return NextResponse.json({
                 days: dailyStats
             });
         } catch (error) {
-            console.error("Failed to fetch system health metrics:", error);
+            logger.error("Failed to fetch system health metrics:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }

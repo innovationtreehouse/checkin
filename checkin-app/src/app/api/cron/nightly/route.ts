@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { processPostEventEmails } from "@/lib/postEventEmails";
@@ -30,7 +31,7 @@ export const GET = withCron(async () => {
                     checkedOutCount += 1;
                 } else {
                     const visit = abandonedVisits[i];
-                    console.error(`Failed to check out visit ${visit.id} (person ${visit.person.email}):`, result.reason);
+                    logger.error(`Failed to check out visit ${visit.id} (person ${visit.person.email}):`, result.reason);
                 }
             });
 
@@ -56,8 +57,8 @@ export const GET = withCron(async () => {
                     }
                 });
 
-                console.log(`CRITICAL NOTIFICATION TO BOARD MEMBERS (${boardMembers.map(m => m.email).join(', ')}):`);
-                console.log(`Facility was auto-closed by the nightly cron. The following keyholders failed to badge out: ${keyholderNames}`);
+                logger.info(`CRITICAL NOTIFICATION TO BOARD MEMBERS (${boardMembers.map(m => m.email).join(', ')}):`);
+                logger.info(`Facility was auto-closed by the nightly cron. The following keyholders failed to badge out: ${keyholderNames}`);
                 
                 boardNotified = true;
             }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { handler, notFound, unauthorized } from "@/security/handler";
@@ -73,7 +74,7 @@ export const PATCH = withAuth(
             return NextResponse.json({ profile: updatedProfile }, { status: 200 });
 
         } catch (error) {
-            console.error("Profile PATCH Error:", error);
+            logger.error("Profile PATCH Error:", error);
             return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
         }
     }
