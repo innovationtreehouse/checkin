@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger";
 import { sendCongrats } from "@/lib/membership/payment";
 import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
 import { config } from "@/lib/config";
+import { canonicalizeEmail } from "@/lib/emailNormalize";
 
 type TxClient = Prisma.TransactionClient;
 
@@ -81,17 +82,6 @@ export const AWAITING_BG_WHERE: Prisma.MembershipProcessWhereInput = {
         { status: { in: ["PENDING_PAYMENT", "PENDING_BG_CLEARANCE"] }, bgConsentAt: { not: null } },
     ],
 };
-
-/**
- * Normalize an email for volunteer-designation matching: lowercase, and strip
- * dots from the local part (Gmail-style). "Foo.Bar@Gmail.com" -> "foobar@gmail.com".
- */
-export function normalizeEmail(email: string): string {
-    const lower = email.trim().toLowerCase();
-    const at = lower.indexOf("@");
-    if (at < 0) return lower;
-    return lower.slice(0, at).replace(/\./g, "") + lower.slice(at);
-}
 
 /** Email every background-check reviewer that an application awaits review. */
 export async function notifyReviewers(): Promise<void> {
@@ -252,6 +242,17 @@ async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: nu
 }
 
 /**
+ * True if any household-lead email matches any volunteer-designation email, under
+ * the shared Gmail/+tag-aware canonicalization. Extracted (pure) so the money-path
+ * match rule is unit-testable without a DB. DRIVES DUES via isVolunteer.
+ */
+export function matchesVolunteerDesignation(parentEmails: string[], designationEmails: string[]): boolean {
+    const parents = new Set(parentEmails.map(canonicalizeEmail));
+    if (!parents.size) return false;
+    return designationEmails.some((d) => parents.has(canonicalizeEmail(d)));
+}
+
+/**
  * Sticky/additive volunteer status: set Membership.isVolunteer = true if ANY
  * reviewer marked the family volunteer-only OR a household parent's email is pre-
  * designated. Never clears it here.
@@ -260,11 +261,8 @@ export async function applyVolunteerStatus(db: TxClient | typeof prisma, members
     let isVolunteer = markedByReviewer;
     if (!isVolunteer) {
         const parents = await db.participant.findMany({ where: { householdId, householdLeads: { some: { householdId } }, email: { not: null } }, select: { email: true } });
-        const parentEmails = new Set(parents.map((p) => normalizeEmail(p.email!)));
-        if (parentEmails.size) {
-            const designations = await db.volunteerDesignation.findMany({ select: { email: true } });
-            isVolunteer = designations.some((d) => parentEmails.has(normalizeEmail(d.email)));
-        }
+        const designations = await db.volunteerDesignation.findMany({ select: { email: true } });
+        isVolunteer = matchesVolunteerDesignation(parents.map((p) => p.email!), designations.map((d) => d.email));
     }
     if (isVolunteer) {
         await db.membership.update({ where: { id: membershipId }, data: { isVolunteer: true } });

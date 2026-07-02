@@ -1,4 +1,5 @@
-import { checkRateLimit, clientIpKey, normalizeEmail, rateLimit, rateLimitEmail } from "../rate-limit";
+import { checkRateLimit, clientIpKey, rateLimit, rateLimitEmail } from "../rate-limit";
+import { canonicalizeEmail } from "../emailNormalize";
 
 describe("checkRateLimit", () => {
     it("allows up to the limit, blocks the N+1th, then resets after the window", () => {
@@ -69,19 +70,19 @@ describe("clientIpKey", () => {
     });
 });
 
-describe("normalizeEmail", () => {
+describe("canonicalizeEmail", () => {
     it("strips plus-tags for any provider", () => {
-        expect(normalizeEmail("victim+sale@outlook.com")).toBe("victim@outlook.com");
-        expect(normalizeEmail("victim+a@gmail.com")).toBe(normalizeEmail("victim@gmail.com"));
+        expect(canonicalizeEmail("victim+sale@outlook.com")).toBe("victim@outlook.com");
+        expect(canonicalizeEmail("victim+a@gmail.com")).toBe(canonicalizeEmail("victim@gmail.com"));
     });
 
     it("drops Gmail dots and treats googlemail as gmail", () => {
-        expect(normalizeEmail("Foo.Bar+sale@GoogleMail.com")).toBe("foobar@gmail.com");
-        expect(normalizeEmail("v.i.c.t.i.m@gmail.com")).toBe(normalizeEmail("victim@gmail.com"));
+        expect(canonicalizeEmail("Foo.Bar+sale@GoogleMail.com")).toBe("foobar@gmail.com");
+        expect(canonicalizeEmail("v.i.c.t.i.m@gmail.com")).toBe(canonicalizeEmail("victim@gmail.com"));
     });
 
     it("keeps dots significant for non-Gmail domains", () => {
-        expect(normalizeEmail("foo.bar@outlook.com")).not.toBe(normalizeEmail("foobar@outlook.com"));
+        expect(canonicalizeEmail("foo.bar@outlook.com")).not.toBe(canonicalizeEmail("foobar@outlook.com"));
     });
 });
 

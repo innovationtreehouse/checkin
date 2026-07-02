@@ -1,4 +1,4 @@
-import { normalizePhone, normalizeEmail, normalizeName, isValidEmail, identityKeys, sameIdentity } from "@/lib/emergencyContacts/identity";
+import { normalizePhone, cleanEmail, normalizeName, isValidEmail, identityKeys, sameIdentity } from "@/lib/emergencyContacts/identity";
 
 describe("emergency contact identity normalization", () => {
     it("strips non-digits from phones", () => {
@@ -8,9 +8,9 @@ describe("emergency contact identity normalization", () => {
     });
 
     it("lowercases/trims email, empty -> null", () => {
-        expect(normalizeEmail("  Foo@Bar.COM ")).toBe("foo@bar.com");
-        expect(normalizeEmail("")).toBeNull();
-        expect(normalizeEmail(undefined)).toBeNull();
+        expect(cleanEmail("  Foo@Bar.COM ")).toBe("foo@bar.com");
+        expect(cleanEmail("")).toBeNull();
+        expect(cleanEmail(undefined)).toBeNull();
     });
 
     it("validates email shape", () => {
