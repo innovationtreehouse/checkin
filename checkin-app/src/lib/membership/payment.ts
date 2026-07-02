@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
-import { sendEmail } from "@/lib/email";
 import { logger } from "@/lib/logger";
+import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
 
 /**
@@ -248,25 +248,11 @@ export async function activateByProcessId(processId: number, shopifyOrderId: str
 
 /** Send the one "welcome — your membership is active" email to a household's leads. */
 export async function sendCongrats(householdId: number) {
-    try {
-        const leads = await prisma.householdLead.findMany({
-            where: { householdId },
-            select: { participant: { select: { email: true, name: true } } },
-        });
-        const base = process.env.NEXTAUTH_URL ?? "";
-        await Promise.all(
-            leads
-                .map((l) => l.participant?.email)
-                .filter((e): e is string => !!e)
-                .map((email) =>
-                    sendEmail(
-                        email,
-                        "Welcome to the Treehouse — your membership is active!",
-                        `<p>Congratulations! Your household membership is now active. Welcome to the Innovation Treehouse community.</p><p><a href="${base}">Visit your dashboard</a></p>`,
-                    ).catch((e) => logger.error("Congrats email failed:", e)),
-                ),
-        );
-    } catch (e) {
-        logger.error("sendCongrats failed:", e);
-    }
+    const base = process.env.NEXTAUTH_URL ?? "";
+    await emailHouseholdLeads(
+        householdId,
+        "Welcome to the Treehouse — your membership is active!",
+        `<p>Congratulations! Your household membership is now active. Welcome to the Innovation Treehouse community.</p><p><a href="${base}">Visit your dashboard</a></p>`,
+        "Congrats email failed:",
+    );
 }

@@ -1,8 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
-import { sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/email-templates/base";
-import { logger } from "@/lib/logger";
+import { emailBoardMembers, emailHouseholdLeads } from "@/lib/emailRecipients";
 import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
 import { validateContact } from "@/lib/trusted-adult/contact";
 
@@ -376,46 +375,19 @@ export async function assertHouseholdLead(householdId: number, actorId: number) 
 
 /** Email every board member that a trusted-adult review is waiting. */
 async function notifyBoard(): Promise<void> {
-    try {
-        const board = await prisma.participant.findMany({
-            where: { isBoardMember: true, email: { not: null } },
-            select: { email: true },
-        });
-        const base = process.env.NEXTAUTH_URL ?? "";
-        await Promise.all(
-            board.map((b) =>
-                b.email
-                    ? sendEmail(
-                          b.email,
-                          "Trusted adult: a disclosure needs board review",
-                          `<p>A trusted-adult disclosure is awaiting board review. <a href="${base}/safety/trusted-adults">Review it</a>.</p>`,
-                      ).catch((e) => logger.error("Board trusted-adult ping failed:", e))
-                    : Promise.resolve(),
-            ),
-        );
-    } catch (e) {
-        logger.error("notifyBoard failed:", e);
-    }
+    const base = process.env.NEXTAUTH_URL ?? "";
+    await emailBoardMembers(
+        "Trusted adult: a disclosure needs board review",
+        `<p>A trusted-adult disclosure is awaiting board review. <a href="${base}/safety/trusted-adults">Review it</a>.</p>`,
+        "Board trusted-adult ping failed:",
+    );
 }
 
 /** Email the household's leads (the "family"). */
 async function notifyHouseholdFamily(householdId: number, subject: string, body?: string): Promise<void> {
-    try {
-        const leads = await prisma.householdLead.findMany({
-            where: { householdId },
-            select: { participant: { select: { email: true } } },
-        });
-        const base = process.env.NEXTAUTH_URL ?? "";
-        const html = `<p>${escapeHtml(body ?? "")}</p><p><a href="${base}/trusted-adults">View your trusted adults</a>.</p>`;
-        await Promise.all(
-            leads
-                .map((l) => l.participant?.email)
-                .filter((e): e is string => !!e)
-                .map((email) => sendEmail(email, subject, html).catch((e) => logger.error("Family trusted-adult ping failed:", e))),
-        );
-    } catch (e) {
-        logger.error("notifyHouseholdFamily failed:", e);
-    }
+    const base = process.env.NEXTAUTH_URL ?? "";
+    const html = `<p>${escapeHtml(body ?? "")}</p><p><a href="${base}/trusted-adults">View your trusted adults</a>.</p>`;
+    await emailHouseholdLeads(householdId, subject, html, "Family trusted-adult ping failed:");
 }
 
 function audit(
