@@ -50,12 +50,12 @@ describe('Trusted Adults API', () => {
         if (ids.length) {
             await prisma.trustedAdultReview.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.trustedAdult.deleteMany({ where: { householdId: { in: ids } } });
-            const parts = await prisma.participant.findMany({ where: { householdId: { in: ids } }, select: { id: true } });
+            const parts = await prisma.person.findMany({ where: { householdId: { in: ids } }, select: { id: true } });
             const pids = parts.map((p) => p.id);
             await prisma.programParticipant.deleteMany({ where: { personId: { in: pids } } });
             await prisma.program.deleteMany({ where: { name: { contains: TAG } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         }
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
@@ -64,18 +64,18 @@ describe('Trusted Adults API', () => {
         await wipe();
         const fhh = await prisma.household.create({ data: { name: `Family HH ${TAG}` } });
         familyHh = fhh.id;
-        leadId = (await prisma.participant.create({ data: { name: 'Lead', householdId: familyHh } })).id;
+        leadId = (await prisma.person.create({ data: { name: 'Lead', householdId: familyHh } })).id;
         await prisma.householdLead.create({ data: { householdId: familyHh, personId: leadId } });
-        childId = (await prisma.participant.create({ data: { name: 'Child', householdId: familyHh } })).id;
+        childId = (await prisma.person.create({ data: { name: 'Child', householdId: familyHh } })).id;
 
         boardHh = (await prisma.household.create({ data: { name: `Board HH ${TAG}` } })).id;
-        boardId = (await prisma.participant.create({ data: { name: 'Board', isBoardMember: true, householdId: boardHh } })).id;
+        boardId = (await prisma.person.create({ data: { name: 'Board', isBoardMember: true, householdId: boardHh } })).id;
         keyholderHh = (await prisma.household.create({ data: { name: `Key HH ${TAG}` } })).id;
-        keyholderId = (await prisma.participant.create({ data: { name: 'Key', isKeyholder: true, householdId: keyholderHh } })).id;
+        keyholderId = (await prisma.person.create({ data: { name: 'Key', isKeyholder: true, householdId: keyholderHh } })).id;
         programLeadHh = (await prisma.household.create({ data: { name: `PL HH ${TAG}` } })).id;
-        programLeadId = (await prisma.participant.create({ data: { name: 'PL', householdId: programLeadHh } })).id;
+        programLeadId = (await prisma.person.create({ data: { name: 'PL', householdId: programLeadHh } })).id;
         outsiderHh = (await prisma.household.create({ data: { name: `Out HH ${TAG}` } })).id;
-        outsiderId = (await prisma.participant.create({ data: { name: 'Out', householdId: outsiderHh } })).id;
+        outsiderId = (await prisma.person.create({ data: { name: 'Out', householdId: outsiderHh } })).id;
 
         // Program led by programLeadId with the family's child enrolled.
         const prog = await prisma.program.create({ data: { name: `Prog ${TAG}`, leadMentorId: programLeadId } });

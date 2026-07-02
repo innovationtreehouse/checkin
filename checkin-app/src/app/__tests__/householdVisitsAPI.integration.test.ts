@@ -22,7 +22,7 @@ describe('Household Visits API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'house-visits-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -47,7 +47,7 @@ describe('Household Visits API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
@@ -60,7 +60,7 @@ describe('Household Visits API Integration Tests', () => {
             data: { name: 'Visits Test Household' }
         });
 
-        const leadUser = await prisma.participant.create({
+        const leadUser = await prisma.person.create({
             data: { email: 'lead-house-visits-api-test@example.com', name: 'Lead User', householdId: household.id }
         });
         testUserId = leadUser.id;
@@ -69,7 +69,7 @@ describe('Household Visits API Integration Tests', () => {
             data: { householdId: household.id, personId: leadUser.id }
         });
 
-        const memberUser = await prisma.participant.create({
+        const memberUser = await prisma.person.create({
             data: { email: 'child-house-visits-api-test@example.com', name: 'Child User', householdId: household.id }
         });
         testMemberId = memberUser.id;
@@ -78,13 +78,13 @@ describe('Household Visits API Integration Tests', () => {
             data: { name: 'Other Visits Test Household' }
         });
 
-        const otherUser = await prisma.participant.create({
+        const otherUser = await prisma.person.create({
             data: { email: 'other-house-visits-api-test@example.com', name: 'Other User', householdId: otherHousehold.id }
         });
         testOtherHouseUserId = otherUser.id;
 
         // Every participant now belongs to a household; this user's own household simply has no visits.
-        const noHouseUser = await prisma.participant.create({
+        const noHouseUser = await prisma.person.create({
             data: { email: 'nohouse-visits-api-test@example.com', name: 'No House User', household: { create: {} } }
         });
         testNoHouseId = noHouseUser.id;
@@ -112,7 +112,7 @@ describe('Household Visits API Integration Tests', () => {
     afterAll(async () => {
         const currentIds = [testUserId, testMemberId, testOtherHouseUserId, testNoHouseId].filter(id => id !== undefined);
         
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { id: { in: currentIds } },
             select: { householdId: true }
         });
@@ -135,7 +135,7 @@ describe('Household Visits API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: currentIds } }
         });
 

@@ -108,7 +108,7 @@ describe('Protected-route role rejection', () => {
         await prisma.event.deleteMany({ where: { program: { name: { contains: TAG } } } });
         await prisma.program.deleteMany({ where: { name: { contains: TAG } } });
         if (ids.length) {
-            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
     }
@@ -116,7 +116,7 @@ describe('Protected-route role rejection', () => {
     beforeAll(async () => {
         await wipe();
         plainHh = (await prisma.household.create({ data: { name: `Plain HH ${TAG}` } })).id;
-        plainId = (await prisma.participant.create({ data: { name: `Plain ${TAG}`, householdId: plainHh } })).id;
+        plainId = (await prisma.person.create({ data: { name: `Plain ${TAG}`, householdId: plainHh } })).id;
         // A real event so events/[id] GET reaches its in-handler staff gate
         // (a missing event short-circuits to 404 before the 403).
         const prog = await prisma.program.create({ data: { name: `Prog ${TAG}` } });
@@ -129,13 +129,13 @@ describe('Protected-route role rejection', () => {
         // plus foreignLead who leads a SEPARATE program (privileged elsewhere, but
         // not staff of ownedEvent — the cross-program attacker).
         const ownerHh = (await prisma.household.create({ data: { name: `Owner HH ${TAG}` } })).id;
-        ownerLeadId = (await prisma.participant.create({ data: { name: `OwnerLead ${TAG}`, householdId: ownerHh } })).id;
+        ownerLeadId = (await prisma.person.create({ data: { name: `OwnerLead ${TAG}`, householdId: ownerHh } })).id;
         const ownedProgram = await prisma.program.create({ data: { name: `Owned Prog ${TAG}`, leadMentorId: ownerLeadId } });
         ownedEventId = (await prisma.event.create({
             data: { programId: ownedProgram.id, name: `Owned Evt ${TAG}`, startAt: new Date('2030-02-01T10:00:00Z'), endAt: new Date('2030-02-01T12:00:00Z') },
         })).id;
         const foreignHh = (await prisma.household.create({ data: { name: `Foreign HH ${TAG}` } })).id;
-        foreignLeadId = (await prisma.participant.create({ data: { name: `ForeignLead ${TAG}`, householdId: foreignHh } })).id;
+        foreignLeadId = (await prisma.person.create({ data: { name: `ForeignLead ${TAG}`, householdId: foreignHh } })).id;
         await prisma.program.create({ data: { name: `Foreign Prog ${TAG}`, leadMentorId: foreignLeadId } });
     });
 

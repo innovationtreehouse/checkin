@@ -7,21 +7,21 @@ jest.mock('../email', () => ({
 
 describe('Performance benchmark for processPostEventEmails', () => {
     let origFindMany: typeof prisma.event.findMany;
-    let origFindUnique: typeof prisma.participant.findUnique;
-    let origParticipantFindMany: typeof prisma.participant.findMany;
+    let origFindUnique: typeof prisma.person.findUnique;
+    let origParticipantFindMany: typeof prisma.person.findMany;
     let origEventUpdate: typeof prisma.event.update;
 
     beforeAll(() => {
         origFindMany = prisma.event.findMany;
-        origFindUnique = prisma.participant.findUnique;
-        origParticipantFindMany = prisma.participant.findMany;
+        origFindUnique = prisma.person.findUnique;
+        origParticipantFindMany = prisma.person.findMany;
         origEventUpdate = prisma.event.update;
     });
 
     afterAll(() => {
         prisma.event.findMany = origFindMany;
-        prisma.participant.findUnique = origFindUnique;
-        prisma.participant.findMany = origParticipantFindMany;
+        prisma.person.findUnique = origFindUnique;
+        prisma.person.findMany = origParticipantFindMany;
         prisma.event.update = origEventUpdate;
     });
 
@@ -51,14 +51,14 @@ describe('Performance benchmark for processPostEventEmails', () => {
         prisma.event.update = jest.fn().mockImplementation(async () => { return {} as unknown as never; });
 
         let uniqueCalls = 0;
-        prisma.participant.findUnique = jest.fn().mockImplementation(async ({ where }: { where: { id: number } }) => {
+        prisma.person.findUnique = jest.fn().mockImplementation(async ({ where }: { where: { id: number } }) => {
             uniqueCalls++;
             await new Promise(resolve => setTimeout(resolve, 5));
             return { email: `lead${where.id}@example.com` } as unknown as never;
         });
 
         let manyCalls = 0;
-        prisma.participant.findMany = jest.fn().mockImplementation(async ({ where }: { where: { id: { in: number[] } } }) => {
+        prisma.person.findMany = jest.fn().mockImplementation(async ({ where }: { where: { id: { in: number[] } } }) => {
             manyCalls++;
             await new Promise(resolve => setTimeout(resolve, 10));
             const ids = where.id.in as number[];

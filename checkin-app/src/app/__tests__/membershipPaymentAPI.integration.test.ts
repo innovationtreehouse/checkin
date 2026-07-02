@@ -53,7 +53,7 @@ describe('Membership payment API', () => {
     async function makeProc(label: string, isVolunteer: boolean, withLead = false) {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
         if (withLead) {
-            const lead = await prisma.participant.create({ data: { email: `lead-${TAG}@example.com`, name: 'Lead', householdId: hh.id } });
+            const lead = await prisma.person.create({ data: { email: `lead-${TAG}@example.com`, name: 'Lead', householdId: hh.id } });
             await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
             leadId = lead.id;
         }
@@ -72,10 +72,10 @@ describe('Membership payment API', () => {
             await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
             await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
-        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
     }
 
     beforeAll(async () => {
@@ -201,7 +201,7 @@ describe('Membership payment API', () => {
     it('concurrent activate() of the same process sends one email and writes one audit row', async () => {
         // Fresh proc with a lead so a congrats email would fire.
         const hh = await prisma.household.create({ data: { name: `Concurrent ${TAG}` } });
-        const lead = await prisma.participant.create({ data: { email: `concurrent-${TAG}@example.com`, name: 'C Lead', householdId: hh.id } });
+        const lead = await prisma.person.create({ data: { email: `concurrent-${TAG}@example.com`, name: 'C Lead', householdId: hh.id } });
         await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
         const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer: false } });
         // bgClearedAt set so paying activates (and the one congrats email fires).

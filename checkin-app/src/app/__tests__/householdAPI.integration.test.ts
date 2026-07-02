@@ -23,7 +23,7 @@ describe('Household API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'household-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -44,7 +44,7 @@ describe('Household API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
@@ -58,7 +58,7 @@ describe('Household API Integration Tests', () => {
         });
         householdId = household.id;
 
-        const leadUser = await prisma.participant.create({
+        const leadUser = await prisma.person.create({
             data: { email: 'lead-user-household-api-test@example.com', name: 'Lead User', householdId: household.id }
         });
         testUserId = leadUser.id;
@@ -67,7 +67,7 @@ describe('Household API Integration Tests', () => {
             data: { householdId: household.id, personId: leadUser.id }
         });
 
-        const memberUser = await prisma.participant.create({
+        const memberUser = await prisma.person.create({
             data: { email: 'member-user-household-api-test@example.com', name: 'Member User', householdId: household.id }
         });
         testMemberId = memberUser.id;
@@ -77,7 +77,7 @@ describe('Household API Integration Tests', () => {
         });
         otherHouseholdId = otherHousehold.id;
 
-        const otherUser = await prisma.participant.create({
+        const otherUser = await prisma.person.create({
             data: { email: 'other-household-api-test@example.com', name: 'Other User', householdId: otherHousehold.id }
         });
         testOtherHouseUserId = otherUser.id;
@@ -85,14 +85,14 @@ describe('Household API Integration Tests', () => {
 
     afterAll(async () => {
         // Find trailing records created during test
-        const newDobs = await prisma.participant.findMany({
+        const newDobs = await prisma.person.findMany({
             where: { email: { contains: 'child-household-api-test' } },
             select: { id: true, householdId: true }
         });
         const currentIds = [testUserId, testMemberId, testOtherHouseUserId, ...(newDobs.map(u => u.id))];
 
         // Collect every household referenced by the test participants (incl. the no-house user's own household)
-        const participants = await prisma.participant.findMany({
+        const participants = await prisma.person.findMany({
             where: { id: { in: currentIds } },
             select: { householdId: true }
         });
@@ -117,7 +117,7 @@ describe('Household API Integration Tests', () => {
         // RESTRICT: delete participants before their households. Sweep by household
         // too, so members the API created without a tracked id/email (e.g. a 25+
         // member with no email) don't leave a dangling FK to a household below.
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { OR: [{ id: { in: currentIds } }, { householdId: { in: validHouseholdIds } }] }
         });
 
@@ -211,7 +211,7 @@ describe('Household API Integration Tests', () => {
 
             // householdId is deliberately not on the wire (HOUSEHOLD_PEER_SELECT, M2
             // PII minimization) — verify the attachment directly against the DB instead.
-            const created = await prisma.participant.findUnique({ where: { id: data.member.id } });
+            const created = await prisma.person.findUnique({ where: { id: data.member.id } });
             expect(created?.householdId).toBe(householdId);
         });
 

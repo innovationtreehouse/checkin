@@ -45,19 +45,19 @@ describe('Bulk renewal migration', () => {
         if (ids.length) {
             await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
             await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
-        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
     }
 
     beforeAll(async () => {
         const maxRow = await prisma.membershipProcess.findFirst({ orderBy: { id: 'desc' }, select: { id: true } });
         preMaxProcessId = maxRow?.id ?? 0;
         await wipe();
-        sysId = (await prisma.participant.create({ data: { email: `sys-${TAG}@example.com`, name: 'Sys', isSysadmin: true, household: { create: { name: `Sys HH ${TAG}` } } } })).id;
-        boardId = (await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
-        plainId = (await prisma.participant.create({ data: { email: `plain-${TAG}@example.com`, name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
+        sysId = (await prisma.person.create({ data: { email: `sys-${TAG}@example.com`, name: 'Sys', isSysadmin: true, household: { create: { name: `Sys HH ${TAG}` } } } })).id;
+        boardId = (await prisma.person.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
+        plainId = (await prisma.person.create({ data: { email: `plain-${TAG}@example.com`, name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
         mA = await makeActive('A');
         mB = await makeActive('B');
     });

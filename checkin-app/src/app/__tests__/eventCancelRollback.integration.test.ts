@@ -42,13 +42,13 @@ describe('PATCH /api/events/[id] cancel — transaction rollback on partial fail
     let adminHouseholdId: number;
 
     beforeAll(async () => {
-        const p = await prisma.participant.create({
+        const p = await prisma.person.create({
             data: { name: 'Cancel Attendee', email: `attendee-${TAG}@example.com`, household: { create: {} } },
         });
         participantId = p.id;
         householdId = p.householdId;
 
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { name: 'Cancel Admin', email: `admin-${TAG}@example.com`, household: { create: {} } },
         });
         adminId = admin.id;
@@ -71,7 +71,7 @@ describe('PATCH /api/events/[id] cancel — transaction rollback on partial fail
         await prisma.visit.deleteMany({ where: { personId: participantId } });
         await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
-        await prisma.participant.deleteMany({ where: { id: { in: [participantId, adminId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [participantId, adminId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [householdId, adminHouseholdId] } } });
     });
 

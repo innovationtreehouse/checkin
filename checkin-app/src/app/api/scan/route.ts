@@ -42,7 +42,7 @@ export const POST = withKiosk(
         }
 
         // 3. Lookup participant
-        const participant = await prisma.participant.findUnique({
+        const participant = await prisma.person.findUnique({
             where: { id: participantId },
         });
 

@@ -57,13 +57,13 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
     let householdId: number;
 
     beforeAll(async () => {
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { name: 'Cancel Admin', email: `admin-${TAG}@example.com`, isSysadmin: true, household: { create: {} } },
         });
         adminId = admin.id;
         adminHouseholdId = admin.householdId;
 
-        const p = await prisma.participant.create({
+        const p = await prisma.person.create({
             data: { name: 'Cancel Attendee', email: `attendee-${TAG}@example.com`, household: { create: {} } },
         });
         participantId = p.id;
@@ -86,7 +86,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
         await prisma.visit.deleteMany({ where: { personId: participantId } });
         await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
-        await prisma.participant.deleteMany({ where: { id: { in: [adminId, participantId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [adminId, participantId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [adminHouseholdId, householdId] } } });
     });
 

@@ -61,13 +61,13 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
     let adminHouseholdId: number;
 
     beforeAll(async () => {
-        const p = await prisma.participant.create({
+        const p = await prisma.person.create({
             data: { name: 'Reschedule Attendee', email: `attendee-${TAG}@example.com`, household: { create: {} } },
         });
         participantId = p.id;
         householdId = p.householdId;
 
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { name: 'Reschedule Admin', email: `admin-${TAG}@example.com`, household: { create: {} } },
         });
         adminId = admin.id;
@@ -88,7 +88,7 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
     afterAll(async () => {
         await prisma.rSVP.deleteMany({ where: { personId: participantId } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
-        await prisma.participant.deleteMany({ where: { id: { in: [participantId, adminId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [participantId, adminId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [householdId, adminHouseholdId] } } });
     });
 

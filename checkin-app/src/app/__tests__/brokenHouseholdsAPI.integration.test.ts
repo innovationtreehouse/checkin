@@ -29,7 +29,7 @@ describe('Broken Households API Integration Tests', () => {
         await prisma.householdLead.deleteMany({
             where: { household: { name: { contains: 'Broken API Test' } } }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'broken-api-test' } }
         });
         await prisma.household.deleteMany({
@@ -41,7 +41,7 @@ describe('Broken Households API Integration Tests', () => {
         await cleanup();
 
         // Acting board member (not a member of any test household below).
-        const board = await prisma.participant.create({
+        const board = await prisma.person.create({
             data: { email: 'board-broken-api-test@example.com', name: 'Board Broken Test', isBoardMember: true, household: { create: {} } }
         });
         boardId = board.id;
@@ -49,11 +49,11 @@ describe('Broken Households API Integration Tests', () => {
         // 1. Leadless household with an adult + a youth -> broken.
         const broken = await prisma.household.create({ data: { name: 'Broken API Test HH Broken' } });
         brokenHouseholdId = broken.id;
-        const adult = await prisma.participant.create({
+        const adult = await prisma.person.create({
             data: { email: 'adult-broken-api-test@example.com', name: 'Broken Adult', householdId: brokenHouseholdId, dateOfBirth: new Date('1990-01-01') }
         });
         brokenAdultId = adult.id;
-        await prisma.participant.create({
+        await prisma.person.create({
             data: { email: 'youth-broken-api-test@example.com', name: 'Broken Youth', householdId: brokenHouseholdId, dateOfBirth: new Date('2015-01-01') }
         });
 
@@ -64,7 +64,7 @@ describe('Broken Households API Integration Tests', () => {
         // 3. Household that already has a lead -> NOT broken.
         const led = await prisma.household.create({ data: { name: 'Broken API Test HH Led' } });
         ledHouseholdId = led.id;
-        const leadMember = await prisma.participant.create({
+        const leadMember = await prisma.person.create({
             data: { email: 'lead-broken-api-test@example.com', name: 'Existing Lead', householdId: ledHouseholdId, dateOfBirth: new Date('1985-01-01') }
         });
         await prisma.householdLead.create({

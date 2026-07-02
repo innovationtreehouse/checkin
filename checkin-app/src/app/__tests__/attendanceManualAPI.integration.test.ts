@@ -20,7 +20,7 @@ describe('Manual Attendance API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'manual-attendance-test' } },
             select: { id: true }
         });
@@ -35,12 +35,12 @@ describe('Manual Attendance API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'manual-attendance-test' } }
         });
 
         // Setup mock database records
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-manual-attendance-test@example.com', name: 'User Manual Attendance Test', household: { create: {} } }
         });
         testUserId = user.id;
@@ -55,7 +55,7 @@ describe('Manual Attendance API Integration Tests', () => {
         await prisma.auditLog.deleteMany({
             where: { actorId: testUserId }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: testUserId }
         });
         await prisma.household.deleteMany({

@@ -41,17 +41,17 @@ describe('Cron Nightly API Integration Tests', () => {
         await cleanup();
 
         // Setup Users
-        const board = await prisma.participant.create({
+        const board = await prisma.person.create({
             data: { email: 'board-nightly@example.com', name: 'Board Member', isBoardMember: true, household: { create: {} } }
         });
         boardMemberId = board.id;
 
-        const isKeyholder = await prisma.participant.create({
+        const isKeyholder = await prisma.person.create({
             data: { email: 'keyholder-nightly@example.com', name: 'Forgetful Keyholder', isKeyholder: true, household: { create: {} } }
         });
         keyholderId = isKeyholder.id;
 
-        const normalUser = await prisma.participant.create({
+        const normalUser = await prisma.person.create({
             data: { email: 'user-nightly@example.com', name: 'Normal User', household: { create: {} } }
         });
         normalUserId = normalUser.id;
@@ -108,12 +108,12 @@ describe('Cron Nightly API Integration Tests', () => {
         await prisma.auditLog.deleteMany();
 
         // RESTRICT: delete participants before their (auto-created) households.
-        const householdIds = (await prisma.participant.findMany({
+        const householdIds = (await prisma.person.findMany({
             where: { email: { contains: '-nightly@' } },
             select: { householdId: true }
         })).map(p => p.householdId);
 
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: '-nightly@' } }
         });
         await prisma.household.deleteMany({
@@ -193,7 +193,7 @@ describe('Cron Nightly API Integration Tests', () => {
 
             // An extra plain participant (no program enrollment -> simple close path)
             // so we have two GOOD visits whose `departedAt` we can assert by id.
-            const extra = await prisma.participant.create({
+            const extra = await prisma.person.create({
                 data: { email: 'extra-nightly@example.com', name: 'Extra User', household: { create: {} } }
             });
 

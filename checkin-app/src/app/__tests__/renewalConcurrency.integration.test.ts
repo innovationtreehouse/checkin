@@ -30,7 +30,7 @@ async function wipe() {
         await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
         await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
 }
@@ -43,7 +43,7 @@ describe('renewal opening concurrency', () => {
         await wipe();
         const hh = await prisma.household.create({ data: { name: `Family ${TAG}` } });
         householdId = hh.id;
-        const lead = await prisma.participant.create({ data: { name: 'Lead', email: `lead-${TAG}@ex.com`, householdId: hh.id } });
+        const lead = await prisma.person.create({ data: { name: 'Lead', email: `lead-${TAG}@ex.com`, householdId: hh.id } });
         await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
         membershipId = (await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } })).id;
     });

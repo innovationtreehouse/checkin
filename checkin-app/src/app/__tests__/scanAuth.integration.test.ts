@@ -98,7 +98,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
         beforeAll(async () => {
             // A isKeyholder so a valid kiosk check-in opens the facility → always 200,
             // independent of facility state.
-            const k = await prisma.participant.create({
+            const k = await prisma.person.create({
                 data: {
                     name: 'Kiosk Keyholder',
                     email: `kiosk-${TAG}@example.com`,
@@ -113,7 +113,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
         afterAll(async () => {
             await prisma.visit.deleteMany({ where: { personId: kioskId } });
             await prisma.rawBadgeLog.deleteMany({ where: { personId: kioskId } });
-            await prisma.participant.delete({ where: { id: kioskId } });
+            await prisma.person.delete({ where: { id: kioskId } });
             await prisma.household.delete({ where: { id: kioskHouseholdId } });
         });
 
@@ -245,7 +245,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             delete process.env.KIOSK_PUBLIC_KEY;
 
             const mk = async (name: string, extra: object = {}) => {
-                const p = await prisma.participant.create({
+                const p = await prisma.person.create({
                     data: {
                         name,
                         email: `${name.replace(/\s+/g, '-').toLowerCase()}-${TAG}@example.com`,
@@ -274,7 +274,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
             const hs = [hSelf, hLead, hOther, hStranger, hKeyholder];
             await prisma.visit.deleteMany({ where: { personId: { in: ids } } });
             await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { id: { in: ids } } });
+            await prisma.person.deleteMany({ where: { id: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: hs } } });
         });
 

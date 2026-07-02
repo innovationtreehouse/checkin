@@ -40,7 +40,7 @@ describe('Multi-select household enrollment (integration)', () => {
     const TAG = 'household-enroll-test';
 
     const cleanup = async () => {
-        const users = await prisma.participant.findMany({
+        const users = await prisma.person.findMany({
             where: { email: { contains: TAG } },
             select: { id: true }
         });
@@ -52,7 +52,7 @@ describe('Multi-select household enrollment (integration)', () => {
         }
         await prisma.program.deleteMany({ where: { name: { contains: 'Household Enroll Test' } } });
         if (ids.length) {
-            await prisma.participant.deleteMany({ where: { id: { in: ids } } });
+            await prisma.person.deleteMany({ where: { id: { in: ids } } });
         }
     };
 
@@ -61,11 +61,11 @@ describe('Multi-select household enrollment (integration)', () => {
 
         // One household: a lead + three adult dependents (no age limits in play).
         const household = await prisma.household.create({ data: {} });
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: `lead-${TAG}@example.com`, name: 'HH Lead', householdId: household.id }
         });
         leadId = lead.id;
-        const mkDep = async (label: string) => (await prisma.participant.create({
+        const mkDep = async (label: string) => (await prisma.person.create({
             data: {
                 email: `${label}-${TAG}@example.com`,
                 name: `Dep ${label}`,

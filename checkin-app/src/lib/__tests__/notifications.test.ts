@@ -5,11 +5,11 @@ import prisma from '../prisma';
 jest.mock('../email', () => ({ sendEmail: jest.fn() }));
 jest.mock('../prisma', () => ({
     __esModule: true,
-    default: { participant: { findUnique: jest.fn() } },
+    default: { person: { findUnique: jest.fn() } },
 }));
 
 const mockSendEmail = sendEmail as jest.Mock;
-const mockFindUnique = (prisma as unknown as { participant: { findUnique: jest.Mock } }).participant.findUnique;
+const mockFindUnique = (prisma as unknown as { person: { findUnique: jest.Mock } }).person.findUnique;
 
 describe('sendNotification return contract', () => {
     beforeEach(() => jest.clearAllMocks());

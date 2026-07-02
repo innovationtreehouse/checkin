@@ -22,7 +22,7 @@ describe('Admin Visits API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'visits-api-test' } },
             select: { id: true }
         });
@@ -37,19 +37,19 @@ describe('Admin Visits API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'visits-api-test' } }
         });
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-visits-api-test@example.com', name: 'Admin Visits Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
-        const checkAdmin = await prisma.participant.findUnique({ where: { id: testAdminId } });
+        const checkAdmin = await prisma.person.findUnique({ where: { id: testAdminId } });
         console.log("Check Admin:", checkAdmin);
 
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-visits-api-test@example.com', name: 'User Visits Test', household: { create: {} } }
         });
         testUserId = user.id;
@@ -71,7 +71,7 @@ describe('Admin Visits API Integration Tests', () => {
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: [testAdminId, testUserId] } }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [testAdminId, testUserId] } }
         });
     });

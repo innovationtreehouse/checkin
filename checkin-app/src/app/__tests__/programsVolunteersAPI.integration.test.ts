@@ -25,7 +25,7 @@ describe('Program Volunteers API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'volun-api-test' } },
             select: { id: true }
         });
@@ -43,32 +43,32 @@ describe('Program Volunteers API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Roles
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-volun-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: 'lead-volun-api-test@example.com', name: 'Lead', household: { create: {} } }
         });
         leadId = lead.id;
 
-        const commonUser = await prisma.participant.create({
+        const commonUser = await prisma.person.create({
             data: { email: 'common-volun-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
 
-        const candidate = await prisma.participant.create({
+        const candidate = await prisma.person.create({
             data: { email: 'candidate-volun-api-test@example.com', name: 'Candidate', household: { create: {} } }
         });
         candidateId = candidate.id;
 
-        const existingVol = await prisma.participant.create({
+        const existingVol = await prisma.person.create({
             data: { email: 'existing-volun-api-test@example.com', name: 'Existing Volunteer', household: { create: {} } }
         });
         existingVolunteerId = existingVol.id;
@@ -107,7 +107,7 @@ describe('Program Volunteers API Integration Tests', () => {
                 where: { actorId: { in: existingUserIds } }
             });
             
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
         }
@@ -204,7 +204,7 @@ describe('Program Volunteers API Integration Tests', () => {
              // assignment succeeded above. Volunteers are staff, not enrollees —
              // there is intentionally no eligibility rule. If product adds one,
              // this test should change deliberately.
-             const candidate = await prisma.participant.findUnique({ where: { id: candidateId } });
+             const candidate = await prisma.person.findUnique({ where: { id: candidateId } });
              expect(candidate?.dateOfBirth).toBeNull();
              const row = await prisma.programVolunteer.findUnique({
                  where: { programId_personId: { programId: targetProgramId, personId: candidateId } }

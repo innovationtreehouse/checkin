@@ -24,7 +24,7 @@ describe('Household Member API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'member-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -45,7 +45,7 @@ describe('Household Member API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
@@ -59,7 +59,7 @@ describe('Household Member API Integration Tests', () => {
         });
         householdId = household.id;
 
-        const leadUser = await prisma.participant.create({
+        const leadUser = await prisma.person.create({
             data: { email: 'lead-member-api-test@example.com', name: 'Lead User', householdId: household.id }
         });
         testLeadId = leadUser.id;
@@ -68,12 +68,12 @@ describe('Household Member API Integration Tests', () => {
             data: { householdId: household.id, personId: leadUser.id }
         });
 
-        const memberUser = await prisma.participant.create({
+        const memberUser = await prisma.person.create({
             data: { email: 'child-member-api-test@example.com', name: 'Child User', householdId: household.id }
         });
         testMemberId = memberUser.id;
 
-        const nonLeadUser = await prisma.participant.create({
+        const nonLeadUser = await prisma.person.create({
             data: { email: 'nonlead-member-api-test@example.com', name: 'Non-Lead Adult', householdId: household.id }
         });
         testNonLeadId = nonLeadUser.id;
@@ -83,7 +83,7 @@ describe('Household Member API Integration Tests', () => {
         });
         otherHouseholdId = otherHousehold.id;
 
-        const otherMember = await prisma.participant.create({
+        const otherMember = await prisma.person.create({
             data: { email: 'other-child-member-api-test@example.com', name: 'Other Child', householdId: otherHousehold.id }
         });
         testOtherMemberId = otherMember.id;
@@ -106,7 +106,7 @@ describe('Household Member API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: currentIds } }
         });
 
@@ -192,7 +192,7 @@ describe('Household Member API Integration Tests', () => {
             expect(data.message).toBe('Household member updated successfully.');
 
             // Validate the changes
-            const updatedProfile = await prisma.participant.findUnique({ where: { id: testMemberId } });
+            const updatedProfile = await prisma.person.findUnique({ where: { id: testMemberId } });
             expect(updatedProfile?.name).toBe('Updated Child');
             expect(updatedProfile?.email).toBe('updated-child@example.com');
             expect(updatedProfile?.phone).toBe('555-555-5555');
@@ -221,7 +221,7 @@ describe('Household Member API Integration Tests', () => {
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
 
-            const updatedProfile = await prisma.participant.findUnique({ where: { id: testMemberId } });
+            const updatedProfile = await prisma.person.findUnique({ where: { id: testMemberId } });
             expect(updatedProfile?.email).toBeNull();
             expect(updatedProfile?.dateOfBirth).toBeNull();
             expect(updatedProfile?.phone).toBeNull();

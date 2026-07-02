@@ -3,7 +3,7 @@
  */
 /**
  * ToolStatus.userId was renamed userId->participantId->personId (Person =
- * Participant). The `their_own` stripper branch was SPLIT so ToolStatus reads
+ * Person). The `their_own` stripper branch was SPLIT so ToolStatus reads
  * `personId` while Account/Session (NextAuth-mandated) keep reading `userId`.
  * Guards that split: a member must still self-scope their own ToolStatus rows,
  * and the Account/Session read must NOT regress.

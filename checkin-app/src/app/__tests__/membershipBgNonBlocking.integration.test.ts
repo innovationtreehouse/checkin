@@ -25,7 +25,7 @@ jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }
 const TAG = 'bg-nonblocking-test';
 
 async function makeReviewer(label: string): Promise<number> {
-    const r = await prisma.participant.create({
+    const r = await prisma.person.create({
         data: {
             email: `${label}-${TAG}@example.com`,
             name: label,
@@ -38,7 +38,7 @@ async function makeReviewer(label: string): Promise<number> {
 
 /** A board member (notifyBoardPaidReject's recipient) in their own household. */
 async function makeBoardMember(): Promise<number> {
-    const r = await prisma.participant.create({
+    const r = await prisma.person.create({
         data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } },
     });
     return r.id;
@@ -47,7 +47,7 @@ async function makeBoardMember(): Promise<number> {
 /** ACTIVE membership + lead with a valid prior check + a PENDING_RENEWAL process. */
 async function makeFreshRenewal() {
     const hh = await prisma.household.create({ data: { name: `Renewal ${TAG} ${Math.random()}` } });
-    const lead = await prisma.participant.create({
+    const lead = await prisma.person.create({
         data: { email: `rlead-${Math.random()}-${TAG}@example.com`, name: 'R Lead', householdId: hh.id, lastBackgroundCheck: new Date() },
     });
     await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
@@ -59,7 +59,7 @@ async function makeFreshRenewal() {
 /** Applicant household + a lead + membership + a process at the given status. */
 async function makeApplicant(status: 'PENDING_EXTERNAL_ACTION', extra: { lastBackgroundCheck?: Date } = {}) {
     const hh = await prisma.household.create({ data: { name: `Applicant ${TAG} ${Math.random()}` } });
-    const lead = await prisma.participant.create({
+    const lead = await prisma.person.create({
         data: { email: `lead-${Math.random()}-${TAG}@example.com`, name: 'Lead Parent', householdId: hh.id, lastBackgroundCheck: extra.lastBackgroundCheck ?? null },
     });
     await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
@@ -83,10 +83,10 @@ async function wipe() {
         await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.emergencyContact.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
-    await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+    await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
 }
 
 describe('background check is non-blocking', () => {
@@ -132,7 +132,7 @@ describe('background check is non-blocking', () => {
         expect(await statusOf(processId)).toBe('ACTIVE');
         expect(await membershipStatusOf(membershipId)).toBe('ACTIVE');
         // Guardians' lastBackgroundCheck stamped.
-        const lead = await prisma.participant.findUnique({ where: { id: leadId } });
+        const lead = await prisma.person.findUnique({ where: { id: leadId } });
         expect(lead?.lastBackgroundCheck).not.toBeNull();
         expect(householdId).toBeGreaterThan(0);
     });
@@ -194,7 +194,7 @@ describe('background check is non-blocking', () => {
         await prisma.membershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
         await prisma.household.update({ where: { id: householdId }, data: { line1: '123 Test St' } });
         await prisma.emergencyContact.create({ data: { householdId, name: 'Out Of House', phone: '555-555-1212', phoneDigits: '5555551212', priority: 0 } });
-        const lead = await prisma.participant.findFirst({ where: { householdId, householdLeads: { some: { householdId } } } });
+        const lead = await prisma.person.findFirst({ where: { householdId, householdLeads: { some: { householdId } } } });
 
         await submitIntake(lead!.id);
         const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });

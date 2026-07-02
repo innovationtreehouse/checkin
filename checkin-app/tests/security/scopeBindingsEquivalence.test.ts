@@ -58,7 +58,7 @@ function referenceScopesHeld(
     }
     const scopes = new Set<Scope>(['everyones']);
     switch (modelName) {
-        case 'Participant': {
+        case 'Person': {
             const id = num(row.id);
             const householdId = num(row.householdId);
             if (id !== undefined && id === ctx.selfId) scopes.add('their_own');

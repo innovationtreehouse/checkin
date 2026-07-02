@@ -103,7 +103,7 @@ describe('Ownership-boundary authorization', () => {
             await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
             await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
     }
@@ -112,7 +112,7 @@ describe('Ownership-boundary authorization', () => {
         return (await prisma.household.create({ data: { name: `${label} ${TAG}` } })).id;
     }
     async function mkMember(householdId: number, name: string, lead = false) {
-        const p = await prisma.participant.create({ data: { name: `${name} ${TAG}`, householdId } });
+        const p = await prisma.person.create({ data: { name: `${name} ${TAG}`, householdId } });
         if (lead) await prisma.householdLead.create({ data: { householdId, personId: p.id } });
         return p.id;
     }

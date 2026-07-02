@@ -105,7 +105,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     if (user.householdId) {
         const householdId = user.householdId;
-        const members = await prisma.participant.findMany({
+        const members = await prisma.person.findMany({
             where: { householdId },
             select: { id: true },
         });
@@ -144,7 +144,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // A member with no DoB and no 25+ declaration shows "Age Unavailable"
             // on the household page; the lead must add one or the other.
             isLead
-                ? prisma.participant.findMany({
+                ? prisma.person.findMany({
                       where: { householdId, dateOfBirth: null, isDeclaredAdult: false },
                       select: { id: true, name: true },
                   })

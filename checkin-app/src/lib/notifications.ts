@@ -25,7 +25,7 @@ export type NotificationEvent =
  */
 export async function sendNotification(userId: number, eventType: NotificationEvent, payload: Record<string, unknown>): Promise<boolean> {
     try {
-        const user = await prisma.participant.findUnique({
+        const user = await prisma.person.findUnique({
             where: { id: userId },
             select: { email: true, notificationSettings: true, name: true }
         });
@@ -87,7 +87,7 @@ export async function sendNotification(userId: number, eventType: NotificationEv
  */
 export async function sendCheckinNotifications(participantId: number, type: 'checkin' | 'checkout') {
     try {
-        const participant = await prisma.participant.findUnique({
+        const participant = await prisma.person.findUnique({
             where: { id: participantId },
             select: {
                 id: true,

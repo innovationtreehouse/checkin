@@ -4,7 +4,7 @@
 /**
  * Strip-assertion for GET /api/shop/certifications. Cert status is PUBLIC BY
  * DESIGN (posted in the shop), but the participant's email is not. A bag row is
- * a ToolStatus with nested tool (Tool) + person (Participant):
+ * a ToolStatus with nested tool (Tool) + person (Person):
  *
  *   - board/sysadmin (everyones:pii) → level + tool + person name + email.
  *   - member/certifier (member+public) → level + tool + person name;

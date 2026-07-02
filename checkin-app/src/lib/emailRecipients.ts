@@ -31,7 +31,7 @@ export async function emailHouseholdLeads(householdId: number, subject: string, 
 /** Email every board member with an address on file. Resolve + fan-out; all errors logged and swallowed. */
 export async function emailBoardMembers(subject: string, html: string, errorLabel: string): Promise<void> {
     try {
-        const board = await prisma.participant.findMany({
+        const board = await prisma.person.findMany({
             where: { isBoardMember: true, email: { not: null } },
             select: { email: true },
         });

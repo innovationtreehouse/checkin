@@ -36,17 +36,17 @@ describe('Event RSVP API Integration Tests', () => {
         await prisma.program.deleteMany({
             where: { name: 'RSVP Test Program' }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'rsvp-test' } }
         });
 
         // Setup mock database records
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'enrolled-user-rsvp-test@example.com', name: 'Enrolled RSVP Test', household: { create: {} } }
         });
         testUserId = user.id;
 
-        const unenrolledUser = await prisma.participant.create({
+        const unenrolledUser = await prisma.person.create({
             data: { email: 'unenrolled-user-rsvp-test@example.com', name: 'Unenrolled RSVP Test', household: { create: {} } }
         });
         testUnenrolledUserId = unenrolledUser.id;
@@ -72,7 +72,7 @@ describe('Event RSVP API Integration Tests', () => {
 
         // A lead of an UNRELATED program — the cross-tenant attacker. Privileged in
         // their own program but not enrolled/volunteering in testEvent's program.
-        const foreignLead = await prisma.participant.create({
+        const foreignLead = await prisma.person.create({
             data: { email: 'foreignlead-rsvp-test@example.com', name: 'Foreign Lead RSVP Test', household: { create: {} } }
         });
         foreignLeadId = foreignLead.id;
@@ -111,12 +111,12 @@ describe('Event RSVP API Integration Tests', () => {
         });
         // RESTRICT: delete participants before their (auto-created) households.
         const allParticipantIds = [testUserId, testUnenrolledUserId, foreignLeadId];
-        const householdIds = (await prisma.participant.findMany({
+        const householdIds = (await prisma.person.findMany({
             where: { id: { in: allParticipantIds } },
             select: { householdId: true }
         })).map(p => p.householdId);
 
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: allParticipantIds } }
         });
         await prisma.household.deleteMany({

@@ -149,7 +149,7 @@ export const POST = withAuth({}, async (req, auth) => {
             }
 
             // Verify participant exists
-            const participant = await prisma.participant.findUnique({
+            const participant = await prisma.person.findUnique({
                 where: { id: participantId }
             });
 
@@ -227,7 +227,7 @@ export const POST = withAuth({}, async (req, auth) => {
             }
 
             // Find all board members
-            const boardMembers = await prisma.participant.findMany({
+            const boardMembers = await prisma.person.findMany({
                 where: { isBoardMember: true },
                 select: { email: true, name: true }
             });

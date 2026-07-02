@@ -29,7 +29,7 @@ describe('Individual Program API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'prog-id-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -48,30 +48,30 @@ describe('Individual Program API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-prog-id-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Lead
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: { email: 'lead-prog-id-api-test@example.com', name: 'Lead', household: { create: {} } }
         });
         leadId = lead.id;
 
         // Create Common User (no membership)
-        const commonUser = await prisma.participant.create({
+        const commonUser = await prisma.person.create({
             data: { email: 'common-prog-id-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
 
         // Create Member User (household holds an active membership)
-        const memberUser = await prisma.participant.create({
+        const memberUser = await prisma.person.create({
             data: {
                 email: 'member-prog-id-api-test@example.com',
                 name: 'Member',
@@ -104,7 +104,7 @@ describe('Individual Program API Integration Tests', () => {
 
         // Enroll a participant with a recognizable name into the public program so
         // the leak tests have a roster identity to look for.
-        const enrolled = await prisma.participant.create({
+        const enrolled = await prisma.person.create({
             data: { email: 'enrolled-prog-id-api-test@example.com', name: ENROLLED_NAME, household: { create: {} } }
         });
         enrolledId = enrolled.id;
@@ -137,7 +137,7 @@ describe('Individual Program API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
     });

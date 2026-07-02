@@ -26,7 +26,7 @@ describe('Shop API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'shop-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -43,7 +43,7 @@ describe('Shop API Integration Tests', () => {
             where: { personId: { in: existingUserIds } }
         });
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
         // Memberships belong to the household; remove them before deleting households.
@@ -62,19 +62,19 @@ describe('Shop API Integration Tests', () => {
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-shop-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Board Member
-        const board = await prisma.participant.create({
+        const board = await prisma.person.create({
             data: { email: 'board-shop-api-test@example.com', name: 'Board', isBoardMember: true, household: { create: {} } }
         });
         boardId = board.id;
 
         // Create Common User
-        const commonUser = await prisma.participant.create({
+        const commonUser = await prisma.person.create({
             data: {
                 email: 'common-shop-api-test@example.com',
                 name: 'Common',
@@ -90,7 +90,7 @@ describe('Shop API Integration Tests', () => {
         mockToolId = tool.id;
 
         // Create Certifier (A user who has MAY_CERTIFY_OTHERS on a tool)
-        const certifier = await prisma.participant.create({
+        const certifier = await prisma.person.create({
             data: {
                 email: 'certifier-shop-api-test@example.com',
                 name: 'Certifier',
@@ -107,7 +107,7 @@ describe('Shop API Integration Tests', () => {
         const existingUserIds = [adminId, boardId, certifierId, commonId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
-            const participants = await prisma.participant.findMany({
+            const participants = await prisma.person.findMany({
                 where: { id: { in: existingUserIds } },
                 select: { householdId: true }
             });
@@ -123,7 +123,7 @@ describe('Shop API Integration Tests', () => {
                 where: { personId: { in: existingUserIds } }
             });
             // RESTRICT: delete participants before their households
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
             if (householdIds.length > 0) {
@@ -335,7 +335,7 @@ describe('Shop API Integration Tests', () => {
         it('re-cert by a certifier writes an EDIT audit row with the prior level in oldData and the acting certifier as actor', async () => {
             // Self-contained: a fresh tool the certifier may certify on, a fresh target.
             const tool = await prisma.tool.create({ data: { name: 'Shop Test Tool Recert' } });
-            const reCertifier = await prisma.participant.create({
+            const reCertifier = await prisma.person.create({
                 data: {
                     email: 'recert-certifier-shop-api-test@example.com',
                     name: 'Recert Certifier',
@@ -343,7 +343,7 @@ describe('Shop API Integration Tests', () => {
                     toolStatuses: { create: { toolId: tool.id, level: 'MAY_CERTIFY_OTHERS' } },
                 },
             });
-            const target = await prisma.participant.create({
+            const target = await prisma.person.create({
                 data: { email: 'recert-target-shop-api-test@example.com', name: 'Recert Target', household: { create: {} } },
             });
 
@@ -380,7 +380,7 @@ describe('Shop API Integration Tests', () => {
                 await prisma.toolStatus.deleteMany({ where: { toolId: tool.id } });
                 await prisma.tool.deleteMany({ where: { id: tool.id } });
                 const hhIds = [reCertifier.householdId, target.householdId].filter((id): id is number => id !== null);
-                await prisma.participant.deleteMany({ where: { id: { in: [reCertifier.id, target.id] } } });
+                await prisma.person.deleteMany({ where: { id: { in: [reCertifier.id, target.id] } } });
                 await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
             }
         });

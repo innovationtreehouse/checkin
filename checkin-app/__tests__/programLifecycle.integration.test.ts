@@ -26,7 +26,7 @@ describe('Program Lifecycle Integration Tests', () => {
         // Setup initial db state for test scope
         
         // 1. Create a board member
-        const adminUser = await prisma.participant.create({
+        const adminUser = await prisma.person.create({
             data: {
                 name: "Board Tester",
                 email: "board@test.com",
@@ -40,7 +40,7 @@ describe('Program Lifecycle Integration Tests', () => {
         boardAdminId = adminUser.id;
 
         // 2. Create a Lead Mentor
-        const mentorUser = await prisma.participant.create({
+        const mentorUser = await prisma.person.create({
             data: {
                 name: "Mentor Tester",
                 email: "mentor@test.com",
@@ -52,7 +52,7 @@ describe('Program Lifecycle Integration Tests', () => {
         leadMentorId = mentorUser.id;
 
         // 3. Create a standard participant
-        const standardUser = await prisma.participant.create({
+        const standardUser = await prisma.person.create({
             data: {
                 name: "Standard Tester",
                 email: "participant@test.com",
@@ -88,7 +88,7 @@ describe('Program Lifecycle Integration Tests', () => {
 
         const idsToDelete = [testParticipantId, leadMentorId, boardAdminId].filter(id => id);
         if (idsToDelete.length > 0) {
-            await prisma.participant.deleteMany({ where: { id: { in: idsToDelete } } });
+            await prisma.person.deleteMany({ where: { id: { in: idsToDelete } } });
         }
     });
 

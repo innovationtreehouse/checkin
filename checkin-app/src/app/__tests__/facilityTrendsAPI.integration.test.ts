@@ -36,21 +36,21 @@ describe('Facility trends API', () => {
     const hoursAgo = (h: number) => new Date(Date.now() - h * 60 * 60 * 1000);
 
     beforeAll(async () => {
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: `admin-${TAG}@example.com`, name: 'Admin', isSysadmin: true, household: { create: {} } },
         });
         adminId = admin.id;
         householdId = admin.householdId;
 
-        const volunteer = await prisma.participant.create({
+        const volunteer = await prisma.person.create({
             data: { email: `volunteer-${TAG}@example.com`, name: 'Volunteer', dateOfBirth: new Date('1980-01-01'), householdId },
         });
         volunteerId = volunteer.id;
-        const enrolledAdult = await prisma.participant.create({
+        const enrolledAdult = await prisma.person.create({
             data: { email: `enrolled-${TAG}@example.com`, name: 'Enrolled Adult', dateOfBirth: new Date('1985-01-01'), householdId },
         });
         enrolledAdultId = enrolledAdult.id;
-        const youth = await prisma.participant.create({
+        const youth = await prisma.person.create({
             data: { email: `youth-${TAG}@example.com`, name: 'Youth', dateOfBirth: new Date('2015-01-01'), householdId },
         });
         youthId = youth.id;
@@ -97,7 +97,7 @@ describe('Facility trends API', () => {
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.event.deleteMany({ where: { id: eventId } });
         await prisma.program.deleteMany({ where: { id: { in: [programId, otherProgramId] } } });
-        await prisma.participant.deleteMany({ where: { id: { in: [adminId, volunteerId, enrolledAdultId, youthId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [adminId, volunteerId, enrolledAdultId, youthId] } } });
         await prisma.household.deleteMany({ where: { id: householdId } });
     });
 

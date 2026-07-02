@@ -20,7 +20,7 @@ describe('Profile API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'profile-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -37,7 +37,7 @@ describe('Profile API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
@@ -46,7 +46,7 @@ describe('Profile API Integration Tests', () => {
         });
 
         // Setup mock database records
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: {
                 email: 'user-profile-api-test@example.com',
                 name: 'Profile Tester',
@@ -77,7 +77,7 @@ describe('Profile API Integration Tests', () => {
             where: { actorId: testUserId }
         });
 
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: testUserId }
         });
 

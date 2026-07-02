@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { sendCheckinNotifications } from "@/lib/notifications";
 import { apiError, apiJson } from "@/lib/api-response";
-import type { Participant, PrismaClient, Prisma } from "@/generated/prisma/client";
+import type { Person, PrismaClient, Prisma } from "@/generated/prisma/client";
 
 /** Global client or a caller-supplied transaction-scoped client. */
 type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -15,7 +15,7 @@ type DbClient = PrismaClient | Prisma.TransactionClient;
  * unit tests) `db` defaults to the global prisma client. Fire-and-forget side
  * effects (notifications) intentionally run off the global client either way.
  */
-export async function processCheckin(participant: Participant, authType: string, db: DbClient = prisma) {
+export async function processCheckin(participant: Person, authType: string, db: DbClient = prisma) {
     // Non-keyholders require an open facility (at least 1 isKeyholder present)
     if (!participant.isKeyholder) {
         const activeKeyholders = await db.visit.count({
@@ -64,7 +64,7 @@ export async function processCheckin(participant: Participant, authType: string,
  * advisory lock) or, when called standalone, the global prisma client.
  */
 export async function processCheckout(
-    participant: Participant,
+    participant: Person,
     activeVisitId: number,
     authType: string,
     db: DbClient = prisma

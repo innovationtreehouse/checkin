@@ -173,7 +173,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 
                 // 2. Try to resolve the reference via DB
                 if (!found && sameHouseholdAs.includes('@')) {
-                    const byEmail = await prisma.participant.findUnique({
+                    const byEmail = await prisma.person.findUnique({
                         where: { email: sameHouseholdAs },
                         select: { id: true, name: true, householdId: true }
                     });
@@ -187,7 +187,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                     }
                 }
                 if (!found) {
-                    const byName = await prisma.participant.findFirst({
+                    const byName = await prisma.person.findFirst({
                         where: { name: { equals: sameHouseholdAs, mode: 'insensitive' } },
                         select: { id: true, name: true, householdId: true }
                     });
@@ -207,7 +207,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
             // Check against existing DB records
             if (email) {
-                const existing = await prisma.participant.findUnique({
+                const existing = await prisma.person.findUnique({
                     where: { email },
                     select: { id: true, name: true, householdId: true },
                 });
@@ -222,14 +222,14 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                     action += "Create new participant with email + household + membership";
                 }
             } else if (parentEmail) {
-                const parent = await prisma.participant.findUnique({
+                const parent = await prisma.person.findUnique({
                     where: { email: parentEmail },
                     select: { id: true, name: true, householdId: true },
                 });
 
                 if (parent) {
                     if (parent.householdId) {
-                        const existingChild = await prisma.participant.findFirst({
+                        const existingChild = await prisma.person.findFirst({
                             where: { householdId: parent.householdId, name: fullName },
                             select: { id: true, name: true },
                         });
@@ -252,7 +252,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 const matchQuery: Record<string, unknown> = { name: fullName };
                 if (parsedDob) matchQuery.dateOfBirth = parsedDob;
 
-                const existing = await prisma.participant.findFirst({
+                const existing = await prisma.person.findFirst({
                     where: matchQuery,
                     select: { id: true, name: true },
                 });

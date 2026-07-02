@@ -27,7 +27,7 @@ export const GET = withAuth(
                 startDate.setDate(endDate.getDate() - 7);
             }
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
                 select: { householdId: true }
             });

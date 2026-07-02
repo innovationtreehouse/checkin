@@ -19,7 +19,7 @@ const tx = { $queryRaw: txQueryRaw, membershipProcess: txMembershipProcess, audi
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        participant: { findUnique: jest.fn() },
+        person: { findUnique: jest.fn() },
         membership: { upsert: jest.fn() },
         $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
     },
@@ -38,7 +38,7 @@ const user = {
 
 beforeEach(() => {
     jest.clearAllMocks();
-    prisma.participant.findUnique.mockResolvedValue(user);
+    prisma.person.findUnique.mockResolvedValue(user);
     prisma.membership.upsert.mockResolvedValue({ id: 42, householdId: 7, status: 'NONE' });
 });
 

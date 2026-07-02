@@ -43,13 +43,13 @@ describe('Admin Participants API Integration Tests', () => {
 
     /** Delete participants matching `filters`, their memberships/leads, then sweep any household left empty. */
     async function wipe(filters: Array<Record<string, unknown>>) {
-        const rows = await prisma.participant.findMany({ where: { OR: filters }, select: { householdId: true } });
+        const rows = await prisma.person.findMany({ where: { OR: filters }, select: { householdId: true } });
         const householdIds = [...new Set(rows.map((r) => r.householdId).filter((id): id is number => id != null))];
         if (householdIds.length) {
             await prisma.membership.deleteMany({ where: { householdId: { in: householdIds } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: householdIds } } });
         }
-        await prisma.participant.deleteMany({ where: { OR: filters } });
+        await prisma.person.deleteMany({ where: { OR: filters } });
         // Only sweep households the deletion above emptied — a household this file
         // doesn't own could share a similar name (e.g. "Test Household"), and the
         // Participant->Household FK is RESTRICT.
@@ -63,12 +63,12 @@ describe('Admin Participants API Integration Tests', () => {
         await wipe(PERSISTENT_EMAIL_FILTERS);
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-participants-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-participants-test@example.com', name: 'User Test', household: { create: {} } }
         });
         testUserId = user.id;
@@ -163,7 +163,7 @@ describe('Admin Participants API Integration Tests', () => {
 
             // The API returns the participant created BEFORE the household is linked since it does not refetch
             // We should just verify it exists in the DB correctly
-            const updatedParticipant = await prisma.participant.findUnique({
+            const updatedParticipant = await prisma.person.findUnique({
                 where: { id: data.participant.id }
             });
             expect(updatedParticipant?.householdId).not.toBeNull();
@@ -199,7 +199,7 @@ describe('Admin Participants API Integration Tests', () => {
             expect(res.status).toBe(200);
             const data = await res.json();
 
-            const created = await prisma.participant.findUnique({
+            const created = await prisma.person.findUnique({
                 where: { id: data.participant.id }
             });
             const membership = await prisma.membership.findUnique({
@@ -231,7 +231,7 @@ describe('Admin Participants API Integration Tests', () => {
             expect(data.participant.householdId).not.toBeNull();
 
             // Verify the parent was created
-            const parent = await prisma.participant.findUnique({
+            const parent = await prisma.person.findUnique({
                 where: { email: 'new-parent-participants-test@example.com' }
             });
             expect(parent).toBeDefined();
@@ -260,7 +260,7 @@ describe('Admin Participants API Integration Tests', () => {
             });
 
             // Create a disposable user just for this edit test
-            const editUser = await prisma.participant.create({
+            const editUser = await prisma.person.create({
                 data: { email: 'edit-test-user@example.com', name: 'Original Name', household: { create: {} } }
             });
 
@@ -279,7 +279,7 @@ describe('Admin Participants API Integration Tests', () => {
             expect(data.participant.phone).toBe('555-123-4567');
 
             // Verify the DB actually saved it
-            const dbCheck = await prisma.participant.findUnique({ where: { id: editUser.id } });
+            const dbCheck = await prisma.person.findUnique({ where: { id: editUser.id } });
             expect(dbCheck?.name).toBe('Updated Name');
             expect(dbCheck?.phone).toBe('555-123-4567');
 

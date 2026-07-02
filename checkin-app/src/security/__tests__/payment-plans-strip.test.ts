@@ -72,11 +72,11 @@ describe('payment-plans field-stripping', () => {
         expect(p.name).toBe('Member Name');
     });
 
-    it('Participant.email is pii, so everyones:pii is required to see it', () => {
+    it('Person.email is pii, so everyones:pii is required to see it', () => {
         // Guards the assumption the test rests on.
         const board = tokensFor(ENDPOINT, 'isBoardMember');
         expect(board).toContain('everyones:pii');
-        const scopes = scopesHeld('Participant', row.person, ctx());
+        const scopes = scopesHeld('Person', row.person, ctx());
         expect(scopes.has('everyones')).toBe(true);
     });
 });

@@ -13,7 +13,7 @@ import { canActFor } from '@/lib/household/activityMembers';
 const mockParticipantFindMany = jest.fn();
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { participant: { findMany: (...a: unknown[]) => mockParticipantFindMany(...a) } },
+    default: { person: { findMany: (...a: unknown[]) => mockParticipantFindMany(...a) } },
 }));
 
 const session = (u: { id: number; householdId?: number; householdLead?: boolean }) =>

@@ -38,7 +38,7 @@ describe('POST /api/programs/[id]/public-register concurrency (capacity lock)', 
         });
         const progIds = progs.map(p => p.id);
         // Households created by registrations: reached via their enrolled members.
-        const members = await prisma.participant.findMany({
+        const members = await prisma.person.findMany({
             where: { programParticipants: { some: { programId: { in: progIds } } } },
             select: { id: true, householdId: true },
         });
@@ -47,7 +47,7 @@ describe('POST /api/programs/[id]/public-register concurrency (capacity lock)', 
         await prisma.emergencyContact.deleteMany({ where: { householdId: { in: householdIds } } });
         await prisma.householdLead.deleteMany({ where: { householdId: { in: householdIds } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: members.map(m => m.id) } } });
-        await prisma.participant.deleteMany({ where: { householdId: { in: householdIds } } });
+        await prisma.person.deleteMany({ where: { householdId: { in: householdIds } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
         await prisma.program.deleteMany({ where: { id: { in: progIds } } });
     }

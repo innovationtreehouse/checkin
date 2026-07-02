@@ -31,7 +31,7 @@
 import { makeScopesHeld, type ScopeBindings } from './scopes';
 
 export const SCOPE_BINDINGS = {
-    Participant: {
+    Person: {
         their_own: { field: 'id', eqCtx: 'selfId' },
         their_households: { field: 'householdId', eqCtx: 'householdId' },
         their_program_participants: { field: 'id', inCtx: 'participantIdsInScopePrograms' },

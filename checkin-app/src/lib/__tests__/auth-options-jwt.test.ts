@@ -38,7 +38,7 @@ jest.mock('@/lib/config', () => {
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { participant: { findUnique: jest.fn(), update: jest.fn() } },
+    default: { person: { findUnique: jest.fn(), update: jest.fn() } },
 }));
 
 // jest.setup.js globally mocks @/lib/auth-options to `{}`; unmock to get the real callbacks.
@@ -46,8 +46,8 @@ jest.unmock('@/lib/auth-options');
 
 import { authOptions } from '@/lib/auth-options';
 
-const mockFindUnique = (prisma as unknown as { participant: { findUnique: jest.Mock } })
-    .participant.findUnique;
+const mockFindUnique = (prisma as unknown as { person: { findUnique: jest.Mock } })
+    .person.findUnique;
 
 type JwtCallback = NonNullable<NonNullable<typeof authOptions.callbacks>['jwt']>;
 const jwt: JwtCallback = authOptions.callbacks!.jwt!;

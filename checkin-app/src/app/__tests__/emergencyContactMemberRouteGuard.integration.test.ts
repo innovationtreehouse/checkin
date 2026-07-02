@@ -46,12 +46,12 @@ async function wipe() {
     const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
     const ids = hhs.map((h) => h.id);
     if (!ids.length) return;
-    const members = await prisma.participant.findMany({ where: { householdId: { in: ids } }, select: { id: true } });
+    const members = await prisma.person.findMany({ where: { householdId: { in: ids } }, select: { id: true } });
     const memberIds = members.map((m) => m.id);
     await prisma.emergencyContact.deleteMany({ where: { householdId: { in: ids } } });
     if (memberIds.length) await prisma.auditLog.deleteMany({ where: { actorId: { in: memberIds } } });
     await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-    await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+    await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
     await prisma.household.deleteMany({ where: { id: { in: ids } } });
 }
 
@@ -67,7 +67,7 @@ describe("PATCH /api/household/settings — Direction A: reject a member as prim
     let memberId: number;
 
     beforeAll(async () => {
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: {
                 email: `lead-A-${TAG}@example.com`,
                 name: "Lead A",
@@ -77,7 +77,7 @@ describe("PATCH /api/household/settings — Direction A: reject a member as prim
         leadId = lead.id;
         householdId = lead.householdId!;
         await prisma.householdLead.create({ data: { householdId, personId: leadId } });
-        const member = await prisma.participant.create({
+        const member = await prisma.person.create({
             data: {
                 email: `member-A-${TAG}@example.com`,
                 name: "Bobby Member",
@@ -135,7 +135,7 @@ describe("PATCH /api/household — Direction B: adding a member that collides wi
     let contactId: number;
 
     beforeAll(async () => {
-        const lead = await prisma.participant.create({
+        const lead = await prisma.person.create({
             data: {
                 email: `lead-B-${TAG}@example.com`,
                 name: "Lead B",

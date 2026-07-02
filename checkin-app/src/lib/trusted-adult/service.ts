@@ -207,7 +207,7 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
     // Conflict of interest: a board member may not decide a trusted-adult review for
     // their own household, nor one where they are the counterparty. The UI disables the
     // buttons off the same rule; this is the real enforcement — a direct POST bypasses the UI.
-    const me = await prisma.participant.findUnique({ where: { id: boardMemberId }, select: { householdId: true } });
+    const me = await prisma.person.findUnique({ where: { id: boardMemberId }, select: { householdId: true } });
     if (
         isTrustedAdultConflict({
             actorParticipantId: boardMemberId,
@@ -286,7 +286,7 @@ export async function overrideReview(
     if (!review) throw new TrustedAdultError("not_found", "Review not found.");
 
     if (!opts?.isSysadmin) {
-        const me = await prisma.participant.findUnique({ where: { id: actorId }, select: { householdId: true } });
+        const me = await prisma.person.findUnique({ where: { id: actorId }, select: { householdId: true } });
         if (
             isTrustedAdultConflict({
                 actorParticipantId: actorId,

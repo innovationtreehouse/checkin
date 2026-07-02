@@ -31,14 +31,14 @@ import {
 const TAG = 'hh-lead-conc-test';
 
 async function cleanup() {
-    const users = await prisma.participant.findMany({
+    const users = await prisma.person.findMany({
         where: { email: { contains: TAG } },
         select: { id: true, householdId: true },
     });
     const ids = users.map(u => u.id);
     const householdIds = [...new Set(users.map(u => u.householdId))];
     await prisma.householdLead.deleteMany({ where: { personId: { in: ids } } });
-    await prisma.participant.deleteMany({ where: { id: { in: ids } } });
+    await prisma.person.deleteMany({ where: { id: { in: ids } } });
     await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
 }
 
@@ -50,7 +50,7 @@ async function makeHousehold(label: string, existingLeads: number, spares: numbe
     });
     const leadIds: number[] = [];
     for (let i = 0; i < existingLeads; i++) {
-        const p = await prisma.participant.create({
+        const p = await prisma.person.create({
             data: { email: `lead-${i}-${label}-${TAG}@example.com`, name: `Lead ${i}`, householdId: household.id },
         });
         await prisma.householdLead.create({ data: { householdId: household.id, personId: p.id } });
@@ -58,7 +58,7 @@ async function makeHousehold(label: string, existingLeads: number, spares: numbe
     }
     const spareIds: number[] = [];
     for (let i = 0; i < spares; i++) {
-        const p = await prisma.participant.create({
+        const p = await prisma.person.create({
             data: { email: `spare-${i}-${label}-${TAG}@example.com`, name: `Spare ${i}`, householdId: household.id },
         });
         spareIds.push(p.id);

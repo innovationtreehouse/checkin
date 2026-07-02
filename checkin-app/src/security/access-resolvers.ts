@@ -34,7 +34,7 @@ export interface CallerContext {
      *  program only via eventId → Event.programId. Drives 'their_program_participants'
      *  on RSVP. */
     eventIdsInScopePrograms: Set<number>;
-    /** Participant IDs with an un-departed Visit. Only populated for keyholders. */
+    /** Person IDs with an un-departed Visit. Only populated for keyholders. */
     activeVisitorIds: Set<number>;
 }
 
@@ -83,7 +83,7 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
     // pickup-note visibility (program leads see operational notes for the
     // households whose kids they oversee).
     if (ctx.participantIdsInScopePrograms.size) {
-        const members = await prisma.participant.findMany({
+        const members = await prisma.person.findMany({
             where: { id: { in: [...ctx.participantIdsInScopePrograms] } },
             select: { householdId: true },
         });

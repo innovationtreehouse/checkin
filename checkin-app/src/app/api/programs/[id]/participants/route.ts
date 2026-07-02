@@ -35,7 +35,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         const isSelfEnrollment = currentUserId === participantId;
         const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
 
-        const participantData = await prisma.participant.findUnique({
+        const participantData = await prisma.person.findUnique({
             where: { id: participantId },
             select: { dateOfBirth: true, householdId: true }
         });

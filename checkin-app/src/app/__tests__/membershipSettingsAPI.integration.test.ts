@@ -35,10 +35,10 @@ describe('Membership settings + volunteer designations API', () => {
         if (ids.length) {
             await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
-        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
     }
 
     beforeAll(async () => {
@@ -46,11 +46,11 @@ describe('Membership settings + volunteer designations API', () => {
         prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents } : null;
         await wipe();
 
-        boardId = (await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
-        plainId = (await prisma.participant.create({ data: { email: `plain-${TAG}@example.com`, name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
+        boardId = (await prisma.person.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
+        plainId = (await prisma.person.create({ data: { email: `plain-${TAG}@example.com`, name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
 
         // A full-price active member, for the designation warning.
-        await prisma.participant.create({
+        await prisma.person.create({
             data: { email: `fullmember-${TAG}@example.com`, name: 'Full', household: { create: { name: `Full HH ${TAG}`, membership: { create: { status: 'ACTIVE', isVolunteer: false } } } } },
         });
     });

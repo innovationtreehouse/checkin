@@ -34,7 +34,7 @@ describe('GET /api/directory/board', () => {
     beforeAll(async () => {
         // A board member WITH non-null pii, so "must not leak dob/googleId" is a
         // meaningful assertion (an all-null fixture would pass vacuously).
-        const board = await prisma.participant.create({
+        const board = await prisma.person.create({
             data: {
                 name: `Board ${TAG}`,
                 email: `board-${TAG}@example.com`,
@@ -48,7 +48,7 @@ describe('GET /api/directory/board', () => {
         boardId = board.id;
         householdIds.push(board.householdId);
 
-        const isKeyholder = await prisma.participant.create({
+        const isKeyholder = await prisma.person.create({
             data: {
                 name: `Keyholder ${TAG}`,
                 email: `isKeyholder-${TAG}@example.com`,
@@ -63,7 +63,7 @@ describe('GET /api/directory/board', () => {
     beforeEach(() => jest.clearAllMocks());
 
     afterAll(async () => {
-        await prisma.participant.deleteMany({ where: { id: { in: [boardId, keyholderId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [boardId, keyholderId] } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 

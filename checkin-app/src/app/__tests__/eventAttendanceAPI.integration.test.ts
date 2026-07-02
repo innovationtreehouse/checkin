@@ -37,32 +37,32 @@ describe('Event Attendance API Integration Tests', () => {
         await prisma.program.deleteMany({
             where: { name: 'Attendance Test Program' }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'event-attendance-test' } }
         });
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-event-attendance-test@example.com', name: 'Admin Att Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-event-attendance-test@example.com', name: 'User Att Test', household: { create: {} } }
         });
         testUserId = user.id;
 
-        const mentor = await prisma.participant.create({
+        const mentor = await prisma.person.create({
             data: { email: 'mentor-event-attendance-test@example.com', name: 'Mentor Att Test', household: { create: {} } }
         });
         testLeadMentorId = mentor.id;
 
-        const participant1 = await prisma.participant.create({
+        const participant1 = await prisma.person.create({
             data: { email: 'p1-event-attendance-test@example.com', name: 'P1 Att Test', household: { create: {} } }
         });
         testParticipant1Id = participant1.id;
 
-        const participant2 = await prisma.participant.create({
+        const participant2 = await prisma.person.create({
             data: { email: 'p2-event-attendance-test@example.com', name: 'P2 Att Test', household: { create: {} } }
         });
         testParticipant2Id = participant2.id;
@@ -80,7 +80,7 @@ describe('Event Attendance API Integration Tests', () => {
 
         // A lead of an UNRELATED program — the cross-tenant attacker for the IDOR
         // tests. Privileged in their own program, but not lead/staff of testEvent's.
-        const foreignLead = await prisma.participant.create({
+        const foreignLead = await prisma.person.create({
             data: { email: 'foreignlead-event-attendance-test@example.com', name: 'Foreign Lead Att Test', household: { create: {} } }
         });
         foreignLeadId = foreignLead.id;
@@ -132,12 +132,12 @@ describe('Event Attendance API Integration Tests', () => {
         const participantIds = [testAdminId, testUserId, testLeadMentorId, testParticipant1Id, testParticipant2Id, foreignLeadId];
 
         // RESTRICT: delete participants before their (auto-created) households.
-        const householdIds = (await prisma.participant.findMany({
+        const householdIds = (await prisma.person.findMany({
             where: { id: { in: participantIds } },
             select: { householdId: true }
         })).map(p => p.householdId);
 
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: participantIds } }
         });
         await prisma.household.deleteMany({

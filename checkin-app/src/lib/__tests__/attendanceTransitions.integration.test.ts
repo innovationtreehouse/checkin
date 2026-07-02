@@ -26,7 +26,7 @@ describe('attendanceTransitions', () => {
         });
         programId = program.id;
 
-        const p = await prisma.participant.create({
+        const p = await prisma.person.create({
             data: { name: 'AT Enrolled', email: `enrolled-${TAG}@example.com`, household: { create: {} } },
         });
         participantId = p.id;
@@ -35,7 +35,7 @@ describe('attendanceTransitions', () => {
             data: { programId, personId: participantId, status: 'ACTIVE', pendingSince: null },
         });
 
-        const u = await prisma.participant.create({
+        const u = await prisma.person.create({
             data: { name: 'AT Unenrolled', email: `unenrolled-${TAG}@example.com`, household: { create: {} } },
         });
         unenrolledId = u.id;
@@ -50,7 +50,7 @@ describe('attendanceTransitions', () => {
     afterAll(async () => {
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.delete({ where: { id: programId } });
-        await prisma.participant.deleteMany({ where: { id: { in: [participantId, unenrolledId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [participantId, unenrolledId] } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 

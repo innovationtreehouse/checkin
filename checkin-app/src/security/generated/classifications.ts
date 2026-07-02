@@ -2,7 +2,7 @@
 // Re-run `prisma generate` after editing /// @sensitivity comments.
 
 export const classifications = {
-    Participant: {
+    Person: {
         id: 'public',
         googleId: 'pii',
         email: 'pii',
@@ -322,7 +322,7 @@ export const classifications = {
 } as const;
 
 export const relations = {
-    Participant: {
+    Person: {
         accounts: { model: 'Account', isList: true },
         sessions: { model: 'Session', isList: true },
         household: { model: 'Household', isList: false },
@@ -347,11 +347,11 @@ export const relations = {
         toolStatuses: { model: 'ToolStatus', isList: true },
     },
     ToolStatus: {
-        person: { model: 'Participant', isList: false },
+        person: { model: 'Person', isList: false },
         tool: { model: 'Tool', isList: false },
     },
     Household: {
-        participants: { model: 'Participant', isList: true },
+        participants: { model: 'Person', isList: true },
         leads: { model: 'HouseholdLead', isList: true },
         membership: { model: 'Membership', isList: false },
         trustedAdults: { model: 'TrustedAdult', isList: true },
@@ -362,7 +362,7 @@ export const relations = {
     },
     HouseholdLead: {
         household: { model: 'Household', isList: false },
-        person: { model: 'Participant', isList: false },
+        person: { model: 'Person', isList: false },
     },
     Membership: {
         household: { model: 'Household', isList: false },
@@ -374,7 +374,7 @@ export const relations = {
     },
     BackgroundCheckAttestation: {
         process: { model: 'MembershipProcess', isList: false },
-        reviewer: { model: 'Participant', isList: false },
+        reviewer: { model: 'Person', isList: false },
     },
     VolunteerDesignation: {
     },
@@ -384,13 +384,13 @@ export const relations = {
     },
     TrustedAdult: {
         household: { model: 'Household', isList: false },
-        counterparty: { model: 'Participant', isList: false },
-        disclosedBy: { model: 'Participant', isList: false },
+        counterparty: { model: 'Person', isList: false },
+        disclosedBy: { model: 'Person', isList: false },
         reviews: { model: 'TrustedAdultReview', isList: true },
     },
     TrustedAdultReview: {
         trustedAdult: { model: 'TrustedAdult', isList: false },
-        decidedBy: { model: 'Participant', isList: false },
+        decidedBy: { model: 'Person', isList: false },
     },
     Corporation: {
         leads: { model: 'CorporationLead', isList: true },
@@ -398,14 +398,14 @@ export const relations = {
     },
     CorporationLead: {
         corporation: { model: 'Corporation', isList: false },
-        person: { model: 'Participant', isList: false },
+        person: { model: 'Person', isList: false },
     },
     CorporationMember: {
         corporation: { model: 'Corporation', isList: false },
-        person: { model: 'Participant', isList: false },
+        person: { model: 'Person', isList: false },
     },
     Program: {
-        leadMentor: { model: 'Participant', isList: false },
+        leadMentor: { model: 'Person', isList: false },
         volunteers: { model: 'ProgramVolunteer', isList: true },
         participants: { model: 'ProgramParticipant', isList: true },
         fees: { model: 'Fee', isList: true },
@@ -413,11 +413,11 @@ export const relations = {
     },
     ProgramVolunteer: {
         program: { model: 'Program', isList: false },
-        person: { model: 'Participant', isList: false },
+        person: { model: 'Person', isList: false },
     },
     ProgramParticipant: {
         program: { model: 'Program', isList: false },
-        person: { model: 'Participant', isList: false },
+        person: { model: 'Person', isList: false },
     },
     Fee: {
         program: { model: 'Program', isList: false },
@@ -425,32 +425,32 @@ export const relations = {
     },
     FeePayment: {
         fee: { model: 'Fee', isList: false },
-        person: { model: 'Participant', isList: false },
+        person: { model: 'Person', isList: false },
     },
     Event: {
-        attendanceConfirmedBy: { model: 'Participant', isList: false },
+        attendanceConfirmedBy: { model: 'Person', isList: false },
         program: { model: 'Program', isList: false },
         rsvps: { model: 'RSVP', isList: true },
         visits: { model: 'Visit', isList: true },
     },
     RSVP: {
         event: { model: 'Event', isList: false },
-        person: { model: 'Participant', isList: false },
+        person: { model: 'Person', isList: false },
     },
     RawBadgeLog: {
-        person: { model: 'Participant', isList: false },
+        person: { model: 'Person', isList: false },
     },
     Visit: {
-        person: { model: 'Participant', isList: false },
+        person: { model: 'Person', isList: false },
         event: { model: 'Event', isList: false },
     },
     AuditLog: {
     },
     Account: {
-        user: { model: 'Participant', isList: false },
+        user: { model: 'Person', isList: false },
     },
     Session: {
-        user: { model: 'Participant', isList: false },
+        user: { model: 'Person', isList: false },
     },
     VerificationToken: {
     },

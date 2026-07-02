@@ -20,19 +20,19 @@ describe('Admin Participant Household API Integration Tests', () => {
         // Clean up any leaked state
         await prisma.membership.deleteMany({});
         await prisma.householdLead.deleteMany({});
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'household-api-test' } }
         });
         await prisma.household.deleteMany({
             where: { name: { contains: 'Household API Test' } }
         });
 
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-household-api-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
         });
         testAdminId = admin.id;
 
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-household-api-test@example.com', name: 'User Test', household: { create: {} } }
         });
         testUserId = user.id;
@@ -46,7 +46,7 @@ describe('Admin Participant Household API Integration Tests', () => {
     afterAll(async () => {
         await prisma.membership.deleteMany({});
         await prisma.householdLead.deleteMany({});
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'household-api-test' } }
         });
         await prisma.household.deleteMany({
@@ -55,7 +55,7 @@ describe('Admin Participant Household API Integration Tests', () => {
     });
 
     beforeEach(async () => {
-        const participant = await prisma.participant.create({
+        const participant = await prisma.person.create({
             data: { email: 'subject-household-api-test@example.com', name: 'Subject Test', household: { create: {} } }
         });
         testParticipantId = participant.id;
@@ -64,7 +64,7 @@ describe('Admin Participant Household API Integration Tests', () => {
     afterEach(async () => {
         await prisma.membership.deleteMany({});
         await prisma.householdLead.deleteMany({});
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { name: 'Subject Test' }
         });
     });
@@ -89,7 +89,7 @@ describe('Admin Participant Household API Integration Tests', () => {
                 user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
-            const subjectBefore = await prisma.participant.findUnique({ where: { id: testParticipantId } });
+            const subjectBefore = await prisma.person.findUnique({ where: { id: testParticipantId } });
             const priorHouseholdId = subjectBefore!.householdId;
 
             const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}/household`, {
@@ -104,7 +104,7 @@ describe('Admin Participant Household API Integration Tests', () => {
             expect(data.success).toBe(true);
             expect(data.participant.householdId).toBe(testHouseholdId);
 
-            const updatedParticipant = await prisma.participant.findUnique({ where: { id: testParticipantId } });
+            const updatedParticipant = await prisma.person.findUnique({ where: { id: testParticipantId } });
             expect(updatedParticipant?.householdId).toBe(testHouseholdId);
 
             // The move MUST be audited with the acting admin and the prior→new

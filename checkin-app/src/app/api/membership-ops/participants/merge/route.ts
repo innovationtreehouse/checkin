@@ -16,7 +16,7 @@ export const POST = withAuth(
                 return NextResponse.json({ error: "Invalid participant IDs provided." }, { status: 400 });
             }
 
-            const keepParticipant = await prisma.participant.findUnique({
+            const keepParticipant = await prisma.person.findUnique({
                 where: { id: keepId },
                 include: {
                     programParticipants: true,
@@ -27,7 +27,7 @@ export const POST = withAuth(
                 }
             });
 
-            const mergeParticipant = await prisma.participant.findUnique({
+            const mergeParticipant = await prisma.person.findUnique({
                 where: { id: mergeId },
                 include: {
                     programParticipants: true,
@@ -67,7 +67,7 @@ export const POST = withAuth(
                 }
 
                 if (Object.keys(updates).length > 0) {
-                    await tx.participant.update({
+                    await tx.person.update({
                         where: { id: keepId },
                         data: updates
                     });
@@ -170,7 +170,7 @@ export const POST = withAuth(
                 // householdId stays pointing at the old household: every
                 // participant must belong to a household, and merged-away
                 // records are tombstoned rather than deleted.
-                await tx.participant.update({
+                await tx.person.update({
                     where: { id: mergeId },
                     data: {
                         googleId: null,

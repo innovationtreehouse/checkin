@@ -29,7 +29,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'certifications-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -50,7 +50,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'certifications-api-test' } }
         });
 
@@ -59,7 +59,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         // Setup mock database records
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: { email: 'user-certifications-api-test@example.com', name: 'User Kiosk Test', household: { create: {} } }
         });
         testUserId = user.id;
@@ -95,7 +95,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
         await prisma.toolStatus.deleteMany({
             where: { personId: testUserId }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: testUserId }
         });
         // RESTRICT: delete the household only after its participant is gone

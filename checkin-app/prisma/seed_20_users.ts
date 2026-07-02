@@ -19,7 +19,7 @@ async function main() {
         })
 
         // Create participant
-        const participant = await prisma.participant.create({
+        const participant = await prisma.person.create({
             data: {
                 email: `testmember${i}@example.com`,
                 name: `Test Member ${i}`,

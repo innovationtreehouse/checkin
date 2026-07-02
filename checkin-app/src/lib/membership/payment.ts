@@ -79,7 +79,7 @@ export async function ensurePaymentLink(processId: number): Promise<{ amountCent
 
 /** Resolve the caller's household PENDING_PAYMENT process and ensure its payment link. */
 export async function ensurePaymentLinkForUser(userId: number) {
-    const user = await prisma.participant.findUnique({ where: { id: userId }, select: { householdId: true } });
+    const user = await prisma.person.findUnique({ where: { id: userId }, select: { householdId: true } });
     if (!user?.householdId) throw new PaymentError("not_found", "You are not in a household.");
     const process = await prisma.membershipProcess.findFirst({
         where: { membership: { householdId: user.householdId }, status: "PENDING_PAYMENT" },

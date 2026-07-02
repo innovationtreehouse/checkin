@@ -21,7 +21,7 @@ describe('Admin Audit API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'audit-api-test' } },
             select: { id: true }
         });
@@ -31,18 +31,18 @@ describe('Admin Audit API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
+        const admin = await prisma.person.create({
             data: { email: 'admin-audit-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
         });
         adminId = admin.id;
 
         // Create Common User
-        const commonUser = await prisma.participant.create({
+        const commonUser = await prisma.person.create({
             data: { email: 'common-audit-api-test@example.com', name: 'Common', household: { create: {} } }
         });
         commonId = commonUser.id;
@@ -67,7 +67,7 @@ describe('Admin Audit API Integration Tests', () => {
                 where: { actorId: { in: existingUserIds } }
             });
 
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
         }
