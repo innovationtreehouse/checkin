@@ -14,7 +14,7 @@ type HouseholdRef = {
   householdMembers: { id: number; name: string | null; email: string | null }[];
 };
 
-type ParticipantRow = {
+type PersonRow = {
   id: number;
   name: string | null;
   email: string | null;
@@ -24,7 +24,7 @@ type ParticipantRow = {
 
 export default function AdminParticipantsIndex() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [results, setResults] = useState<ParticipantRow[]>([]);
+  const [results, setResults] = useState<PersonRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [sortBy, setSortBy] = useState<"id" | "name" | "email" | "household">("id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -65,10 +65,10 @@ export default function AdminParticipantsIndex() {
   const fetchParticipants = async (query = "") => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/participants/search?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/people/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
-      if (data.participants) {
-        setResults(data.participants);
+      if (data.people) {
+        setResults(data.people);
       }
     } catch (err) {
       console.error(err);
@@ -78,7 +78,7 @@ export default function AdminParticipantsIndex() {
   };
 
   const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [selectedParticipant, setSelectedParticipant] = useState<ParticipantRow | null>(null);
+  const [selectedParticipant, setSelectedParticipant] = useState<PersonRow | null>(null);
   const [householdId, setHouseholdId] = useState("");
   const [householdSearch, setHouseholdSearch] = useState("");
   const [assigning, setAssigning] = useState(false);
@@ -86,7 +86,7 @@ export default function AdminParticipantsIndex() {
 
   // Edit Participant State
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editingParticipant, setEditingParticipant] = useState<ParticipantRow | null>(null);
+  const [editingParticipant, setEditingParticipant] = useState<PersonRow | null>(null);
   const [editForm, setEditForm] = useState({ name: "", email: "", phone: "" });
   const [savingDetails, setSavingDetails] = useState(false);
 
@@ -157,10 +157,10 @@ export default function AdminParticipantsIndex() {
         setResults(results.map(p => p.id === editingParticipant.id ? { ...p, ...data.participant } : p));
         setEditModalOpen(false);
         setEditingParticipant(null);
-        showNotification("Participant updated successfully!");
+        showNotification("Person updated successfully!");
       } else {
         const data = await res.json().catch(() => ({}));
-        showNotification(data.error || "Failed to update participant", "error");
+        showNotification(data.error || "Failed to update person", "error");
       }
     } catch (err) {
       console.error(err);
@@ -177,11 +177,11 @@ export default function AdminParticipantsIndex() {
     <Stack maw={1000} mx="auto">
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <div>
-          <Text c="dimmed">Search and manage system participants and households.</Text>
+          <Text c="dimmed">Search and manage system people and households.</Text>
         </div>
         <Group>
           <Button variant="light" onClick={() => router.push('/membership-ops/participants/import')}>Bulk Import</Button>
-          <Button color="green" onClick={() => router.push('/membership-ops/participants/new')}>+ New Participant</Button>
+          <Button color="green" onClick={() => router.push('/membership-ops/participants/new')}>+ New Person</Button>
         </Group>
       </Group>
 
@@ -253,7 +253,7 @@ export default function AdminParticipantsIndex() {
               </Table>
             </Table.ScrollContainer>
           ) : searchQuery && !loading ? (
-            <Text ta="center" c="dimmed">No participants found.</Text>
+            <Text ta="center" c="dimmed">No people found.</Text>
           ) : null}
         </Box>
       </Card>
@@ -318,7 +318,7 @@ export default function AdminParticipantsIndex() {
       </Modal>
 
       {/* Edit participant modal */}
-      <Modal opened={editModalOpen} onClose={() => { setEditModalOpen(false); setEditingParticipant(null); }} title={<Text span fw={700} fz="lg">Edit Participant</Text>} size="lg">
+      <Modal opened={editModalOpen} onClose={() => { setEditModalOpen(false); setEditingParticipant(null); }} title={<Text span fw={700} fz="lg">Edit Person</Text>} size="lg">
         <form onSubmit={handleEditParticipant}>
           <Stack>
             {/* Read e.currentTarget.value synchronously into a local before the setState

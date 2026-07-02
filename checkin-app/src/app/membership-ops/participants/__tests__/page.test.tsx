@@ -25,7 +25,7 @@ const carol = { id: 3, name: "Carol C", email: null, phone: null, household: nul
 describe("AdminParticipantsIndex", () => {
     it("searches, sorts, and edits a participant's details", async () => {
         mockFetchJson({
-            "/api/participants/search": { participants: [alice, bob] },
+            "/api/people/search": { people: [alice, bob] },
             "/api/membership-ops/participants/1": { participant: { id: 1, name: "Alice A", email: "alice@new.com", phone: "555-2222" } },
         });
         renderWithProviders(<AdminParticipantsIndex />);
@@ -47,18 +47,18 @@ describe("AdminParticipantsIndex", () => {
         const aliceRow = screen.getByText("Alice A").closest("tr")!;
         fireEvent.click(within(aliceRow).getByRole("button", { name: "Details" }));
 
-        expect(await screen.findByText("Edit Participant")).toBeInTheDocument();
+        expect(await screen.findByText("Edit Person")).toBeInTheDocument();
         const emailInput = screen.getByLabelText("Email Address");
         fireEvent.change(emailInput, { target: { value: "alice@new.com" } });
         fireEvent.click(screen.getByRole("button", { name: "Save Details" }));
 
-        await waitFor(() => expect(screen.queryByText("Edit Participant")).not.toBeInTheDocument());
-        expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Participant updated successfully!" }));
+        await waitFor(() => expect(screen.queryByText("Edit Person")).not.toBeInTheDocument());
+        expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Person updated successfully!" }));
     });
 
     it("assigns a new household to a participant with none", async () => {
         mockFetchJson({
-            "/api/participants/search": { participants: [carol] },
+            "/api/people/search": { people: [carol] },
             "/api/membership-ops/participants/3/household": {
                 participant: { ...carol, household: { id: 50, name: "Carol Household", householdMembers: [{ id: 3, name: "Carol C", email: null }] } },
             },
