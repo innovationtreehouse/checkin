@@ -61,7 +61,7 @@ The term-by-term migration plan lives in
 [designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md](designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md).
 
 - **Phase 1 — youth** (`minor`/`isMinor` → `youth`/`isYouth`): shipped (#670) + a comment-scrub followup. `child` deliberately preserved.
-- **Phase 3 — householdMember** (sense-B bare `member` → `householdMember`, route kept at `/api/household/member`): shipped (#674, branch `claude/determined-bell-70bb18`). `programParticipants` and Prisma `participant`/`participantId` kept intentionally (rule 2).
+- **Phase 3 — householdMember** (sense-B bare `member` → `householdMember`, route kept at `/api/household/member`): shipped (#674, branch `claude/determined-bell-70bb18`). Program-enrollee `programParticipants` correctly stays. Prisma `participant`/`participantId` were left untouched by Phase 3 — **not because they're canonical** (they're the person model, which rule 2 no longer calls "participant") but because renaming them belongs to the Person-umbrella migration (→ `person`/`personId`), not the household phase.
 - **Phase 2 — student**, **Phase 4 — OrgMembership**, **Phase 5 — household/family**, **Phase 6 — dependent**: pending.
 - **Person umbrella** — rename `model Participant` → `Person` (and `participantId` FKs → `personId`, TBC), freeing "participant" to mean only the program enrollee; requalify every mixed-people "participant" label. Large schema migration — under investigation (report: [designs/PERSON_UMBRELLA_INVESTIGATION.md](designs/PERSON_UMBRELLA_INVESTIGATION.md), chip `task_e6b621d7`) before it's specced as a phase.
 

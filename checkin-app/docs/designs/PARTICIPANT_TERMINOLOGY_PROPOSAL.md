@@ -244,7 +244,7 @@ definition of every people/household term, the code-vs-copy split, and the
 
 - **Route STAYS `/api/household/member`** — the `/household/` segment already qualifies "member" as the household relationship. Do **NOT** move it to `/participant`. (`participant` is reserved for the Person model + Program relationship; see §2.)
 - **Identifiers:** sense-B `member*` vars/types/params → `householdMember*` across `api/household/member/route.ts`, `my-household/page.tsx`, `api/events/mine/route.ts`, `api/programs/mine/route.ts`, `lib/membership/intake.ts`, `attendance/household`, `safety/emergency-contacts`, tests.
-- **Kept intentionally:** `programParticipants` (Program relationship) and Prisma `participant`/`participantId` (Person row) — rule 2. `participantProjection.ts`/`HOUSEHOLD_PEER_SELECT` stay `participant`.
+- **Left for later:** `programParticipants` (Program relationship) correctly stays `participant`. Prisma `participant`/`participantId` and `participantProjection.ts`/`HOUSEHOLD_PEER_SELECT` are the **person model/row** — untouched by *this* phase, but they are NOT canonical: they rename to `person`/`personId` in the Person-umbrella migration (see §2 + the investigation report).
 - **Copy:** sense-B "Member" JSX → "household member".
 - **Schema:** none — the person model is already `Participant`; this is the word catching up.
 - **Done-when:** no bare `member`/`Member` identifier or UI string resolves to the household relationship; all are `householdMember`/"household member". ✅ (#674, branch `claude/determined-bell-70bb18`)
