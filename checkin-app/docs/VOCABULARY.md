@@ -1,0 +1,70 @@
+# Canonical Vocabulary
+
+The one place that defines what each people/household word means in this
+codebase. The vocabulary is built on **relationships, not loose nouns**: a person
+is named by *which relationship you are viewing them through*. The same human
+legitimately carries several names at once — a kid is a **household member** on
+the household screen and a **participant** on a program screen. That is not a
+collision to "fix"; it is the model working as intended.
+
+## The core rule
+
+**Never a bare `member` / `Member` / `Membership` — in code OR UI.** It is always
+qualified by the relationship's target: **Org** or **Household**. A screen or
+identifier that just says "member" is a bug against this dictionary.
+
+## The relationships
+
+| Concept | Relationship | UI word | Code identifier | Model / table | Path |
+|---|---|---|---|---|---|
+| **Person** | the human | name / "person" | `participant` | `Participant` (the sole person model) | — |
+| **Org Membership (A)** | Person/household ↔ **Organization** | **"Treehouse Member"** | `isActiveOrgMember`, `orgMember…` | `OrgMembership` (rename from `Membership`) | `/api/shop/org-members` |
+| **Household** | grouping of people | "household" (warm: "family") | `household` | `Household` | `/api/household` |
+| **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `HouseholdLead` (lead variant) | `/api/household/member` |
+| **Program relationship** | Person ↔ **Program** | "participant" | `programParticipant` | `ProgramParticipant` | — |
+
+## Rules stated explicitly
+
+1. **No bare member/Member/Membership.** Qualify with the target — **Org** or **Household** — every time, in code and UI.
+2. **`participant` is reserved for exactly two things:** (a) the `Participant` **Person** model/row, and (b) the **Program** relationship (`ProgramParticipant`). It must **NOT** name the household relationship — that is `householdMember`.
+3. **A person carries multiple relationship-names at once.** Same human, different relationship on different screens (household member here, participant there, Treehouse Member elsewhere). Do not "reconcile" these into one word.
+4. **The `/api/household/member` route stays put.** The `/household/` path segment already qualifies "member" as the household relationship — do NOT move it to `/participant`.
+5. **`participantProjection.ts` / `HOUSEHOLD_PEER_SELECT` stay `participant`.** They project a **Person row** (rule 2a), not the household relationship. Do not rename them in any later sweep.
+
+## Person sub-classifications (orthogonal to the relationships above)
+
+These describe *what kind of person*, independent of which relationship you're viewing:
+
+| Term | Meaning | Code | Copy |
+|---|---|---|---|
+| **Youth** | Under 18 — an **age** classification (`isYouth(dob)`). Absorbs the age-synonym **minor** only. | `youth` / `isYouth` | "youth" |
+| **Child** | The lead's **offspring / kin** — a **relationship**, age-independent (a 25-year-old is still their parents' child). Distinct from `youth` (age) and `dependent` (non-lead). | `child` | "child" / "children" |
+| **Student** | A **pre-college program enrollee** — derived from `ProgramParticipant`, **NOT an age test.** | `student` (enrollment contexts only) | "student" only where truly an enrollee |
+| **Dependent** | A **non-lead** household member a lead acts for; broader than `child` (a non-lead adult non-offspring is a dependent, not a child). | non-lead subset of `householdMember` | "someone in your household" |
+
+## Coding rules for the above
+
+- **Code identifiers AND comments/prose** use the canonical word. No `minor`, no
+  loose `dependent`, no bare sense-B `member`, in identifiers *or* comments.
+  **`child` is allowed** — it is a valid relationship term (offspring); keep it
+  where it means "a lead's child", and use `youth` only for the under-18 age.
+- **API wire keys are a contract**, not a free rename. A serialized request/
+  response key changes only in the phase that owns that contract, all consumers
+  moved together. Rename surrounding vars freely; leave the key until its phase.
+- Age is always derived from `dateOfBirth` via `isYouth` — never re-implement an
+  age check inline.
+
+## Migration status
+
+The term-by-term migration plan lives in
+[designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md](designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md).
+
+- **Phase 1 — youth** (`minor`/`isMinor` → `youth`/`isYouth`): shipped (#670) + a comment-scrub followup. `child` deliberately preserved.
+- **Phase 3 — householdMember** (sense-B bare `member` → `householdMember`, route kept at `/api/household/member`): shipped (#674, branch `claude/determined-bell-70bb18`). `programParticipants` and Prisma `participant`/`participantId` kept intentionally (rule 2).
+- **Phase 2 — student**, **Phase 4 — OrgMembership**, **Phase 5 — household/family**, **Phase 6 — dependent**: pending.
+
+## Known semantic bugs (see proposal §3)
+
+- **BUG-1:** attendance/facility "student" is computed from age (`isYouth`), not enrollment — should be `youth`. Fixed in Phase 2.
+- **BUG-2:** `intake.ts` `children` bucket = every non-lead participant (really *dependents*, not offspring/age). Addressed in Phase 6.
+</content>
