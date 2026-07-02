@@ -347,6 +347,59 @@ self-contained landable phase:
 - Rename fixtures/mocks across all 3 test roots (142 files) in the same phase.
 - **Done-when:** `prisma.participant` and `Prisma.Participant` return 0; suite green.
 
+#### Phase A broken into smaller, independently-green pieces
+
+**The hard constraint.** Renaming a Prisma *model* is atomic: `model Participant`
+→ `model Person` + client regen kills every `prisma.participant` accessor and
+every `Prisma.Participant*` type in one shot — tsc is red until all ~701 sites
+change. That step can't be merged half-done. Strategy: **move everything NOT tied
+to the model name out of the atomic flip first**, in small green PRs, leaving a
+final flip that is purely mechanical.
+
+Order so each PR compiles and the suite stays green:
+
+**A0 — hand-rolled local `Participant` types (prep, freely sliceable).**
+Client-side `interface/type Participant` shapes that are *not* the imported
+Prisma type: `attendance/current/page.tsx:30,58`, `certifications/page.tsx:42`,
+`membership-ops/review/page.tsx:18`, `applications/page.tsx:32`,
+`programs/[id]/register/dirty.ts:14`. Rename → `Person`. Independent of the model;
+each a tiny green PR. **Verify per file it's a local shape, not
+`import { Participant } from generated/prisma`** (those belong to A2).
+
+**A1 — FK columns + relation fields, per-model (the Q2 rename), model still named
+`Participant`.** Prisma allows `person Participant @relation(fields:[personId])`
+while the model keeps its old name — so this lands *before* the flip, sliced one
+model at a time. Each slice: rename that model's `participantId` → `personId`
+(+ composite `@@id`/`@@index`), relation field `participant` → `person`,
+`migrate dev`, and the code touching *that model's*
+`x.participant`/`participantId`/`include:{participant}`. Green because other
+models are untouched. The 10 FK-bearing models (group the trivial ones):
+
+| Slice | Model(s) | schema |
+|---|---|---|
+| A1a | Visit | `:775` |
+| A1b | RSVP, FeePayment | `:739,694` |
+| A1c | ProgramParticipant, ProgramVolunteer | `:656,638` |
+| A1d | HouseholdLead, ToolStatus | `:229,147` |
+| A1e | CorporationLead, CorporationMember | `:566,578` |
+| A1f | RawBadgeLog | `:754` |
+
+(`reviewerId`, `disclosedById`, `decidedById`, `leadMentorId`,
+`attendanceConfirmedById`, `userId` do **not** contain "participant" — untouched
+by A1; they only flip *type* in A2.)
+
+**A2 — the atomic model-name flip (last, one PR, mechanical).** With FKs already
+`personId`, this is purely: schema `model Participant` → `model Person` + the 19
+relation *target* types `Participant` → `Person`; `prisma generate` +
+`migrate dev`; find/replace `prisma.participant` → `prisma.person` and
+`Prisma.Participant*` → `Prisma.Person*`; fixtures/mocks across all three test
+roots. **Cannot be sub-split** (accessor derives from the model name) but is a
+pure mechanical rename — low review risk. `participantProjection.ts` type/prose
+flip here too (see §e; file rename optional).
+
+Net: Phase A = **A0 (n tiny PRs) → A1a–A1f (6 green slices) → A2 (one atomic
+mechanical flip)** — instead of one ~1700-hit megamerge.
+
 **Phase B — mixed-people API + UI (the §c misuse).**
 - `/api/roles` envelope `participants` → `people`; consumer
   `settings/roles/page.tsx:44`.
