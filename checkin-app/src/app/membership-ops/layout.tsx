@@ -1,15 +1,13 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Badge, Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
+import { Badge, Box, Center, Loader, Stack, Text } from "@mantine/core";
 import { MEMBERSHIP_OPS_NAV_LINKS } from "@/lib/membershipOpsNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import type { TodoCounts } from "@/app/api/nav/todo-counts/route";
-import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { SectionTabs } from "@/components/ui/SectionTabs";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 
 /** Informational count for a Membership Ops nav link, or 0 when none / unknown. */
 function membershipTodoCountFor(href: string, counts: TodoCounts | null): number {
@@ -19,9 +17,6 @@ function membershipTodoCountFor(href: string, counts: TodoCounts | null): number
 }
 
 export default function MembershipOpsLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const confirmNav = useConfirmNav();
   const { data: session } = useSession();
   const sessionUser = session?.user as { isSysadmin?: boolean; isBoardMember?: boolean; isBackgroundCheckReviewer?: boolean } | undefined;
   const isAdmin = !!(sessionUser?.isSysadmin || sessionUser?.isBoardMember);
@@ -53,62 +48,48 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
 
   if (!ready) return null;
 
-  // Longest-prefix match so sub-routes (e.g. /participants/123) keep their parent tab active.
-  const activeTab =
-    [...navLinks]
-      .sort((a, b) => b.href.length - a.href.length)
-      .find((l) => pathname === l.href || pathname.startsWith(l.href + "/"))?.href ?? null;
+  // Right-aligned count badge for a tab: pending applications, or the member-family total.
+  const badgeFor = (href: string): React.ReactNode => {
+    const todoCount = membershipTodoCountFor(href, todoCounts);
+    if (todoCount > 0) {
+      return (
+        <Badge
+          size="md"
+          color="gray"
+          variant="light"
+          // Active tab recolors its content to the tabs color (green); pin a readable
+          // label color so the count isn't rendered green-on-green on the active tab.
+          c="var(--mantine-color-gray-7)"
+          aria-label={`${todoCount} application${todoCount === 1 ? "" : "s"}`}
+        >
+          {todoCount}
+        </Badge>
+      );
+    }
+    if (href === "/membership-ops/households" && memberFamilies !== null) {
+      return (
+        <Badge
+          size="md"
+          // Dark-gray total counter: gray.8 is dark enough for white text (plain
+          // gray filled = gray.6 ≈ #868e96, where white fails contrast). Pinned white
+          // also survives the active tab's green recolor.
+          color="gray.8"
+          variant="filled"
+          c="white"
+          aria-label={`${memberFamilies} member famil${memberFamilies === 1 ? "y" : "ies"}`}
+        >
+          {memberFamilies}
+        </Badge>
+      );
+    }
+    return undefined;
+  };
 
   return (
     <PageContainer>
       <Stack>
-      <Tabs value={activeTab} onChange={(value) => { if (value && value !== activeTab && confirmNav()) router.push(value); }}>
-        <ScrollableTabsList>
-          {navLinks.map((link) => {
-            const todoCount = membershipTodoCountFor(link.href, todoCounts);
-            const showMemberFamilies =
-              link.href === "/membership-ops/households" && memberFamilies !== null;
-            return (
-              <Tabs.Tab
-                key={link.href}
-                value={link.href}
-                leftSection={<span>{link.icon}</span>}
-                rightSection={
-                  todoCount > 0 ? (
-                    <Badge
-                      size="md"
-                      color="gray"
-                      variant="light"
-                      // Active tab recolors its content to the tabs color (green); pin a readable
-                      // label color so the count isn't rendered green-on-green on the active tab.
-                      c="var(--mantine-color-gray-7)"
-                      aria-label={`${todoCount} application${todoCount === 1 ? "" : "s"}`}
-                    >
-                      {todoCount}
-                    </Badge>
-                  ) : showMemberFamilies ? (
-                    <Badge
-                      size="md"
-                      // Dark-gray total counter: gray.8 is dark enough for white text (plain
-                      // gray filled = gray.6 ≈ #868e96, where white fails contrast). Pinned white
-                      // also survives the active tab's green recolor.
-                      color="gray.8"
-                      variant="filled"
-                      c="white"
-                      aria-label={`${memberFamilies} member famil${memberFamilies === 1 ? "y" : "ies"}`}
-                    >
-                      {memberFamilies}
-                    </Badge>
-                  ) : undefined
-                }
-              >
-                {link.name}
-              </Tabs.Tab>
-            );
-          })}
-        </ScrollableTabsList>
-      </Tabs>
-      <Box style={{ minWidth: 0 }}>{children}</Box>
+        <SectionTabs links={navLinks} prefixMatch badgeFor={badgeFor} />
+        <Box style={{ minWidth: 0 }}>{children}</Box>
       </Stack>
     </PageContainer>
   );

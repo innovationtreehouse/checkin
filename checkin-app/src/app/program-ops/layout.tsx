@@ -3,11 +3,10 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect } from "react";
-import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
-import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
+import { Box, Center, Loader, Stack, Text } from "@mantine/core";
+import { SectionTabs } from "@/components/ui/SectionTabs";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PROGRAM_NAV_LINKS } from "@/lib/programNav";
-import { useConfirmNav } from "@/components/UnsavedChangesProvider";
 
 // A program-edit URL (/program-ops/programs/[id]) carries a PROGRAM id, so the
 // layout can gate it precisely against the caller's led-program set. Session URLs
@@ -24,7 +23,6 @@ const isSessionFlowPath = (pathname: string | null) =>
 export default function ProgramOpsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const confirmNav = useConfirmNav();
   const { data: session, status } = useSession();
 
   const user = session?.user;
@@ -64,28 +62,9 @@ export default function ProgramOpsLayout({ children }: { children: React.ReactNo
 
   if (isChromeless) return <>{children}</>;
 
-  // Active tab = the longest nav href that prefixes the current route (null on the hub).
-  const active =
-    PROGRAM_NAV_LINKS.filter((link) => pathname === link.href || pathname.startsWith(`${link.href}/`))
-      .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
-
   return (
     <PageContainer>
-      <Tabs
-        value={active}
-        onChange={(value) => {
-          if (value && value !== active && confirmNav()) router.push(value);
-        }}
-        mb="md"
-      >
-        <ScrollableTabsList>
-          {PROGRAM_NAV_LINKS.map((link) => (
-            <Tabs.Tab key={link.href} value={link.href} leftSection={<span>{link.icon}</span>}>
-              {link.name}
-            </Tabs.Tab>
-          ))}
-        </ScrollableTabsList>
-      </Tabs>
+      <SectionTabs links={PROGRAM_NAV_LINKS} prefixMatch mb="md" />
       <Box style={{ minWidth: 0 }}>{children}</Box>
     </PageContainer>
   );
