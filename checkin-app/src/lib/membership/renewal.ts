@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { notifyReviewers } from "@/lib/membership/review";
+import { config } from "@/lib/config";
 
 /**
  * Annual renewal. A common membership-year boundary (BoardSettings) drives every
@@ -213,7 +214,7 @@ export async function householdBgIsFresh(householdId: number, boundary: Date, re
 }
 
 async function remindHousehold(householdId: number, boundary: Date) {
-    const base = process.env.NEXTAUTH_URL ?? "";
+    const base = config.baseUrl();
     const due = boundary.toISOString().slice(0, 10);
     await emailHouseholdLeads(
         householdId,
