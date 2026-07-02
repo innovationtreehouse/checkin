@@ -102,6 +102,16 @@ describe('Event Attendance API Integration Tests', () => {
             }
         });
         testEventId = event.id;
+
+        // Attendance can only be written for participants enrolled (or volunteering)
+        // in the event's program — enroll the two targets so the happy-path writes
+        // are authorized. testUserId is deliberately left unenrolled (IDOR target).
+        await prisma.programParticipant.createMany({
+            data: [
+                { programId: testProgramId, personId: testParticipant1Id },
+                { programId: testProgramId, personId: testParticipant2Id },
+            ]
+        });
     });
 
     afterAll(async () => {
@@ -111,6 +121,10 @@ describe('Event Attendance API Integration Tests', () => {
         });
         await prisma.event.deleteMany({
             where: { id: testEventId }
+        });
+        // FK: enrollments reference the program — clear before deleting it.
+        await prisma.programParticipant.deleteMany({
+            where: { programId: { in: [testProgramId, foreignProgramId] } }
         });
         await prisma.program.deleteMany({
             where: { id: { in: [testProgramId, foreignProgramId] } }
@@ -322,6 +336,25 @@ describe('Event Attendance API Integration Tests', () => {
                 associatedEventId: testEventId,
                 synthetic: false
             });
+        });
+
+        it('IDOR: the event lead cannot fabricate attendance for a participant NOT enrolled in the program (400, no Visit written)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testLeadMentorId, isSysadmin: false, isBoardMember: false, isKeyholder: false }
+            });
+
+            // testUserId is a real participant but enrolled in no program.
+            const before = await prisma.visit.count({ where: { personId: testUserId, associatedEventId: testEventId } });
+
+            const req = new Request(`http://localhost:4000/api/events/${testEventId}/attendance`, {
+                method: 'POST',
+                body: JSON.stringify({ participantIds: [testUserId] })
+            });
+            const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testEventId) }) });
+
+            expect(res.status).toBe(400);
+            const after = await prisma.visit.count({ where: { personId: testUserId, associatedEventId: testEventId } });
+            expect(after).toBe(before);
         });
     });
 });
