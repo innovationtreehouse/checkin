@@ -11,7 +11,7 @@ import crypto from 'crypto';
 import { normalizeAuditData } from '@/lib/auditPayload';
 import { POST as SHOPIFY_WEBHOOK } from '@/app/api/webhooks/shopify/route';
 import { POST as CERTIFY } from '@/app/api/membership-ops/applications/certify-payment/route';
-import { computeDuesCents, ensurePaymentLink, ensurePaymentLinkForUser, activate } from '@/lib/membership/payment';
+import { ensurePaymentLink, ensurePaymentLinkForUser, activate } from '@/lib/membership/payment';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { sendEmail } from '@/lib/email';
@@ -111,11 +111,6 @@ describe('Membership payment API', () => {
         if (prevStoreDomain === undefined) delete process.env.SHOPIFY_STORE_DOMAIN;
         else process.env.SHOPIFY_STORE_DOMAIN = prevStoreDomain;
         await prisma.$disconnect();
-    });
-
-    it('computes dues by tier from BoardSettings', async () => {
-        expect(await computeDuesCents(false)).toBe(10000);
-        expect(await computeDuesCents(true)).toBe(2500);
     });
 
     it('builds a checkout link to the membership product (no discount for normal)', async () => {

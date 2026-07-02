@@ -25,12 +25,6 @@ export class PaymentError extends Error {
     }
 }
 
-/** Annual dues in cents for this membership tier (volunteer families pay the lower rate). */
-export async function computeDuesCents(isVolunteer: boolean): Promise<number> {
-    const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    return isVolunteer ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
-}
-
 /**
  * Build the Shopify cart-permalink checkout link for a membership process. Both
  * tiers point at the same product variant; volunteers get `discount=<code>`

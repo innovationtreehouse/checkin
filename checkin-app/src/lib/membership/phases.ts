@@ -24,11 +24,6 @@ export const INITIAL_PHASES: IntakePhase[] = [
     { status: "ACTIVE", label: "Member", description: "Welcome to the Treehouse!" },
 ];
 
-/** Index of a status within the INITIAL flow, or -1 if it isn't a flow phase. */
-export function phaseIndex(status: MembershipProcessStatus): number {
-    return INITIAL_PHASES.findIndex((p) => p.status === status);
-}
-
 /**
  * Stepper position for a status: how many INITIAL_PHASES steps are complete.
  * PENDING_BG_CLEARANCE (paid, awaiting the check) sits between Payment and
