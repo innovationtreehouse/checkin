@@ -147,4 +147,5 @@ export const REGISTRY_EXCLUDED: string[] = [
   '/dev',                    // dev-tools hub, redirects to /dev/sent-mail
   '/dev/sent-mail',          // dev-only captured-email inbox (EMAIL_DEV_MOCK.md); 404s off dev
   '/dev/zoho-sign',          // dev-only Zoho Sign mock interstitial (404 in prod)
+  '/dev/shopify',            // dev-only Shopify orders/paid mock (SHOPIFY_DEV_STORE_WEBHOOK.md); 404s off dev
 ];

@@ -114,11 +114,40 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         });
     }
 
-    it('returns 500 when the webhook secret is not configured', async () => {
+    it('returns 500 when the webhook secret is not configured on a real (non-mock) instance', async () => {
+        // The dev orders/paid mock supplies a fixed fallback secret when Shopify is
+        // unconfigured on a non-prod instance, so "no secret → 500" only holds off
+        // the mock. Wire store creds so shopifyMockActive() is false, then a missing
+        // webhook secret is a real misconfiguration → 500.
         delete process.env.SHOPIFY_WEBHOOK_SECRET;
-        const body = programPayload(String(p1));
-        const res = await POST(webhookReq(body, sign(body)));
-        expect(res.status).toBe(500);
+        process.env.SHOPIFY_STORE_DOMAIN = 'test.myshopify.com';
+        process.env.SHOPIFY_CLIENT_ID = 'test-client-id';
+        process.env.SHOPIFY_CLIENT_SECRET = 'test-client-secret';
+        try {
+            const body = programPayload(String(p1));
+            const res = await POST(webhookReq(body, sign(body)));
+            expect(res.status).toBe(500);
+        } finally {
+            delete process.env.SHOPIFY_STORE_DOMAIN;
+            delete process.env.SHOPIFY_CLIENT_ID;
+            delete process.env.SHOPIFY_CLIENT_SECRET;
+        }
+    });
+
+    it('accepts a mock-signed webhook when Shopify is unconfigured (dev orders/paid mock)', async () => {
+        // Off a real store (creds unset, non-prod), shopifyWebhookSecret() falls back
+        // to the fixed mock secret so the dev mock's self-signed webhook verifies for
+        // real — the symmetry /api/dev/shopify/orders-paid relies on. Bad signature
+        // still 401s; a correctly mock-signed body passes verification (200).
+        delete process.env.SHOPIFY_WEBHOOK_SECRET;
+        const MOCK_SECRET = 'dev-shopify-mock-webhook-secret';
+        try {
+            const body = programPayload(String(p1));
+            expect((await POST(webhookReq(body, sign(body)))).status).toBe(401); // signed with the wrong secret
+            expect((await POST(webhookReq(body, sign(body, MOCK_SECRET)))).status).toBe(200); // signed with the mock secret
+        } finally {
+            process.env.SHOPIFY_WEBHOOK_SECRET = SECRET;
+        }
     });
 
     it('returns 401 when the signature header is missing', async () => {

@@ -53,6 +53,32 @@ function zohoMockActiveEnv(): boolean {
  */
 const DEV_MOCK_WEBHOOK_SECRET = 'dev-zoho-mock-webhook-secret';
 
+/** Real Shopify integration is wired only when all three credentials are present. */
+function shopifyConfiguredEnv(): boolean {
+    return !!(process.env.SHOPIFY_STORE_DOMAIN && process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET);
+}
+
+/**
+ * The dev/local Shopify orders/paid MOCK is active when the real integration is
+ * unconfigured AND we're on a non-prod instance (see
+ * docs/designs/SHOPIFY_DEV_STORE_WEBHOOK.md §6). Same two server-only fuses as the
+ * Zoho mock — CHECKIN_ENV (fails safe to prod) and NODE_ENV — so no mock path is
+ * reachable in prod by construction. Wiring real Shopify creds opts back into the
+ * real store.
+ */
+function shopifyMockActiveEnv(): boolean {
+    return !shopifyConfiguredEnv() && readCheckinEnv() !== 'prod' && process.env.NODE_ENV !== 'production';
+}
+
+/**
+ * Fixed secret the Shopify mock signs its self-fired orders/paid webhook with.
+ * Unlike a real dev store (which signs with Shopify's own per-store secret we
+ * don't choose), the mock generates the payload locally, so a fixed constant is
+ * enough for verifyShopifyHmac's real timing-safe compare — same rationale as
+ * DEV_MOCK_WEBHOOK_SECRET. See §4 of the design: fixed ⇔ self-fired mock.
+ */
+const DEV_MOCK_SHOPIFY_WEBHOOK_SECRET = 'dev-shopify-mock-webhook-secret';
+
 export const config = {
     // Database
     databaseUrl: () => requireEnv('DATABASE_URL'),
@@ -119,7 +145,14 @@ export const config = {
     shopifyStoreDomain: (): string | null => process.env.SHOPIFY_STORE_DOMAIN || null,
     shopifyClientId: (): string | null => process.env.SHOPIFY_CLIENT_ID || null,
     shopifyClientSecret: (): string | null => process.env.SHOPIFY_CLIENT_SECRET || null,
-    shopifyWebhookSecret: (): string | null => process.env.SHOPIFY_WEBHOOK_SECRET || null,
+    // Real store's per-store secret, else the fixed mock secret when the mock is
+    // active (self-fired webhook verifies for real with zero env setup), else null
+    // (unconfigured on a real-but-unwired instance → webhook 500s, the intended fail).
+    shopifyWebhookSecret: (): string | null =>
+        process.env.SHOPIFY_WEBHOOK_SECRET || (shopifyMockActiveEnv() ? DEV_MOCK_SHOPIFY_WEBHOOK_SECRET : null),
+    // True when the dev/local mock stands in for a real Shopify store (creds unset,
+    // non-prod). Gates /api/dev/shopify/* + the dev tool. Always false in prod.
+    shopifyMockActive: (): boolean => shopifyMockActiveEnv(),
 
     // App
     checkinEnv: (): CheckinEnv => readCheckinEnv(),
