@@ -5,6 +5,7 @@ import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
 import { isOrgAccount } from "@/lib/orgAccount";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
+import { householdLeadship } from "@/lib/household/leads";
 
 export const GET = withAuth(
     {},
@@ -56,14 +57,13 @@ export const PATCH = withAuth(
             const body = await req.json();
             const { memberName, memberEmail, memberDob, memberOver25 } = body;
 
-            const user = await prisma.person.findUnique({ where: { id: userId }, include: { householdLeads: true } });
+            const hh = await householdLeadship(userId);
 
-            if (!user?.householdId) {
+            if (!hh) {
                 return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
             }
 
-            const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isLead && !user.isSysadmin) {
+            if (!hh.canManage) {
                 return NextResponse.json({ error: "Only household leads can add members" }, { status: 403 });
             }
 
@@ -87,7 +87,7 @@ export const PATCH = withAuth(
                 return NextResponse.json({ error: "Date of birth is required for anyone under 25." }, { status: 400 });
             }
 
-            const householdId = user.householdId;
+            const householdId = hh.householdId;
 
             const { member, warning } = await prisma.$transaction(async (tx) => {
                 const member = targetMember
