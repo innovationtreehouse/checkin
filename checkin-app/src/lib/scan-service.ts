@@ -93,7 +93,7 @@ export async function processCheckout(
                 let confirmForceClose = false;
 
                 const recentEvents = await db.rawBadgeLog.findMany({
-                    where: { participantId: participant.id },
+                    where: { personId: participant.id },
                     orderBy: { timestamp: "desc" },
                     take: 2
                 });

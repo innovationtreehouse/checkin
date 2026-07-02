@@ -233,7 +233,7 @@ export const classifications = {
     },
     RawBadgeLog: {
         id: 'internal',
-        participantId: 'internal',
+        personId: 'internal',
         timestamp: 'personal',
         location: 'personal',
     },
@@ -438,7 +438,7 @@ export const relations = {
         participant: { model: 'Participant', isList: false },
     },
     RawBadgeLog: {
-        participant: { model: 'Participant', isList: false },
+        person: { model: 'Participant', isList: false },
     },
     Visit: {
         participant: { model: 'Participant', isList: false },

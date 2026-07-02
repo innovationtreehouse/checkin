@@ -15,7 +15,7 @@ describe("GET /api/cron/post-event", () => {
         await prisma.program.deleteMany({ where: { name: 'Test Program' } });
         await prisma.toolStatus.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
         await prisma.householdLead.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
-        await prisma.rawBadgeLog.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
         await prisma.participant.deleteMany({ where: { email: { contains: 'example.com' } } });
         // Global participant-less household delete: clear the membership chain for those
         // households first or Membership_householdId_fkey (RESTRICT) blocks the delete.

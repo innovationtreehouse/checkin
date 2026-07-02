@@ -10,15 +10,15 @@ import { formatDateTime } from '@/lib/time';
 type BadgeEvent = {
   id: number;
   timestamp: string;
-  participant?: { name?: string; email?: string };
+  person?: { name?: string; email?: string };
   location?: string;
 };
 
 const COLUMNS: DataTableColumn<BadgeEvent>[] = [
   { header: 'ID', render: (b) => b.id, sortBy: (b) => b.id },
   { header: 'Time', render: (b) => formatDateTime(b.timestamp), sortBy: (b) => b.timestamp },
-  { header: 'Participant', render: (b) => b.participant?.name || 'Unknown', sortBy: (b) => b.participant?.name },
-  { header: 'Email', render: (b) => b.participant?.email, sortBy: (b) => b.participant?.email },
+  { header: 'Participant', render: (b) => b.person?.name || 'Unknown', sortBy: (b) => b.person?.name },
+  { header: 'Email', render: (b) => b.person?.email, sortBy: (b) => b.person?.email },
   { header: 'Location', render: (b) => b.location || 'Front Door', sortBy: (b) => b.location },
 ];
 

@@ -98,7 +98,7 @@ export const SCOPE_BINDINGS = {
             all: [{ flag: 'isKeyholder' }, { field: 'departedAt', isNull: true }],
         },
     },
-    RawBadgeLog: { their_own: { field: 'participantId', eqCtx: 'selfId' } },
+    RawBadgeLog: { their_own: { field: 'personId', eqCtx: 'selfId' } },
     ToolStatus: { their_own: { field: 'participantId', eqCtx: 'selfId' } },
     Account: { their_own: { field: 'userId', eqCtx: 'selfId' } },
     Session: { their_own: { field: 'userId', eqCtx: 'selfId' } },
