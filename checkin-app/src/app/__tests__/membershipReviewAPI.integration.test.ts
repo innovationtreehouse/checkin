@@ -138,9 +138,11 @@ describe('Membership BG review API', () => {
         expect(advance?.actorId).toBe(rev2);
     });
 
-    it('applies volunteer status from a pre-designation (dot-insensitive), without a checkbox', async () => {
-        const proc = await makeApplicantProcess('Predesig', `vol.parent-${TAG}@example.com`);
-        await prisma.volunteerDesignation.create({ data: { email: `volparent-${TAG}@example.com` } }); // no dot
+    it('applies volunteer status from a pre-designation (Gmail dot-insensitive), without a checkbox', async () => {
+        // Gmail drops dots, so vol.parent... matches the dotless designation. Non-Gmail
+        // domains keep dots significant (see volunteerMatch.test.ts) — that's the fix.
+        const proc = await makeApplicantProcess('Predesig', `vol.parent-${TAG}@gmail.com`);
+        await prisma.volunteerDesignation.create({ data: { email: `volparent-${TAG}@gmail.com` } }); // no dot
         as(rev1, { isBackgroundCheckReviewer: true });
         await ATTEST(req({ processId: proc.processId, result: 'APPROVE' }) as never);
         as(rev2, { isBackgroundCheckReviewer: true });
