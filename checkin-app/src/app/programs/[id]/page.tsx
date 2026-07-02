@@ -87,10 +87,10 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       const res = await fetch(`/api/household`);
       if (res.ok) {
         const data = await res.json();
-        if (data.household && data.household.participants) {
-          setHouseholdMembers(data.household.participants);
-          const me = data.household.participants.find((p: { id: number }) => p.id === currentUserId);
-          setSelectedParticipantIds([me ? me.id : (data.household.participants[0]?.id || currentUserId)]);
+        if (data.household && data.household.householdMembers) {
+          setHouseholdMembers(data.household.householdMembers);
+          const me = data.household.householdMembers.find((p: { id: number }) => p.id === currentUserId);
+          setSelectedParticipantIds([me ? me.id : (data.household.householdMembers[0]?.id || currentUserId)]);
         } else {
           setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
           setSelectedParticipantIds([currentUserId]);

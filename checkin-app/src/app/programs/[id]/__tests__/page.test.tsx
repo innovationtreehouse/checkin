@@ -26,7 +26,7 @@ function renderPage() {
 
 const household = {
     household: {
-        participants: [
+        householdMembers: [
             { id: 100, name: "Jamie Guardian", dateOfBirth: "1990-01-01" },
             { id: 101, name: "Kid One", dateOfBirth: "2015-01-01" },
             { id: 102, name: "Too Young", dateOfBirth: "2023-01-01" },

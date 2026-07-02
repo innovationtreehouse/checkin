@@ -42,9 +42,9 @@ export default function MergeParticipants() {
 
   useEffect(() => {
     if (searchA.length > 2 && !pA) {
-      fetch(`/api/participants/search?q=${encodeURIComponent(searchA)}`)
+      fetch(`/api/people/search?q=${encodeURIComponent(searchA)}`)
         .then(r => r.json())
-        .then(d => setResultsA(d.participants || []));
+        .then(d => setResultsA(d.people || []));
     } else {
       setResultsA([]);
     }
@@ -52,9 +52,9 @@ export default function MergeParticipants() {
 
   useEffect(() => {
     if (searchB.length > 2 && !pB) {
-      fetch(`/api/participants/search?q=${encodeURIComponent(searchB)}`)
+      fetch(`/api/people/search?q=${encodeURIComponent(searchB)}`)
         .then(r => r.json())
-        .then(d => setResultsB(d.participants || []));
+        .then(d => setResultsB(d.people || []));
     } else {
       setResultsB([]);
     }

@@ -24,8 +24,8 @@ function mockRoutes() {
   return mockFetchJson({
     "/api/membership-ops/participants/merge/analyze": { participants: [participantA, participantB] },
     "/api/membership-ops/participants/merge": { success: true },
-    "/api/participants/search?q=Alice": { participants: [participantA] },
-    "/api/participants/search?q=Bob": { participants: [participantB] },
+    "/api/people/search?q=Alice": { people: [participantA] },
+    "/api/people/search?q=Bob": { people: [participantB] },
   });
 }
 
