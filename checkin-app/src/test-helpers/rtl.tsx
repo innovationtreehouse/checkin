@@ -13,9 +13,17 @@
  *   beforeEach(() => resetRtl());
  *   it("...", () => { setSession({ id: 1, isSysadmin: true }); mockFetchJson({ "/api/x": {...} }); renderWithProviders(<Page />); });
  */
-import { render, type RenderOptions } from "@testing-library/react";
+import { render, configure, type RenderOptions } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import type { ReactElement, ReactNode } from "react";
+
+// RTL's default findBy*/waitFor timeout is 1000ms of real (non-fake) timers.
+// The full coverage run's CI job (290 suites, --coverage instrumentation, no
+// --runInBand) shares a runner's few vCPUs across many workers; under that
+// contention some renders legitimately settle after 1000ms even though
+// there's no debounce/delay in the component. Give every findBy/waitFor
+// headroom here once, instead of bumping it test-by-test.
+configure({ asyncUtilTimeout: 5000 });
 
 // jsdom lacks matchMedia + ResizeObserver, which Mantine's ScrollArea/Table use.
 // Install once at import time; guarded so node-env (integration) files that happen
