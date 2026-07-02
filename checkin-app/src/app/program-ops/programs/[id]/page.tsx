@@ -29,7 +29,6 @@ type ProgramDetail = {
   participants: {
     participantId: number;
     status: string;
-    joinedAt: string | null;
     pendingSince: string | null;
     participant: {
       name: string | null;
@@ -518,7 +517,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                         <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs" spacing="xs">
                           <Text size="sm" c="dimmed"><strong>Email:</strong> {p.participant.email}</Text>
                           <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.participant.phone ? formatPhone(p.participant.phone) : 'N/A'}</Text>
-                          <Text size="sm" c="dimmed"><strong>Joined:</strong> {p.joinedAt ? formatDateTime(p.joinedAt) : 'N/A'}</Text>
                           {p.participant.household && (
                             <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
                               <strong>Emergency Contact{(p.participant.household.emergencyContacts?.length ?? 0) > 1 ? 's' : ''}:</strong>{' '}
