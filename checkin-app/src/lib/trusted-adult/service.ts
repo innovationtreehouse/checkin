@@ -1,12 +1,10 @@
-import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { emailBoardMembers, emailHouseholdLeads } from "@/lib/emailRecipients";
 import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
 import { config } from "@/lib/config";
 import { validateContact } from "@/lib/trusted-adult/contact";
-
-type TxClient = Prisma.TransactionClient;
+import type { TxClient } from "@/lib/db-client";
 
 /**
  * Serialize all mutations of one TrustedAdult by taking a row lock on the parent.

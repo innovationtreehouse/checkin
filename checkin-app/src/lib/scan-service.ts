@@ -2,10 +2,8 @@ import prisma from "@/lib/prisma";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { sendCheckinNotifications } from "@/lib/notifications";
 import { apiError, apiJson } from "@/lib/api-response";
-import type { Person, PrismaClient, Prisma } from "@/generated/prisma/client";
-
-/** Global client or a caller-supplied transaction-scoped client. */
-type DbClient = PrismaClient | Prisma.TransactionClient;
+import type { Person } from "@/generated/prisma/client";
+import { type DbClient, isRootClient } from "@/lib/db-client";
 
 /**
  * Process a check-in for a participant who has no active visit.
@@ -124,7 +122,7 @@ export async function processCheckout(
             // client — e.g. tests) we own the whole operation, so run them here;
             // under the route's tx client the route runs both AFTER it commits
             // (see finalizeFacilityClose / route.ts).
-            if ("$transaction" in db) {
+            if (isRootClient(db)) {
                 await closeAllOpenVisits(db);
                 kickPostEventEmails();
             }
