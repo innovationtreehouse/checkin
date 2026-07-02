@@ -209,7 +209,7 @@ export default function AdminTrustedAdultsPage() {
                                     autosize
                                     minRows={2}
                                     value={sharedVal}
-                                    onChange={(e) => setShared((s) => ({ ...s, [latest.id]: e.currentTarget.value }))}
+                                    onChange={(e) => { const value = e.currentTarget.value; setShared((s) => ({ ...s, [latest.id]: value })); }}
                                 />
                                 <Tooltip
                                     label="You can't review your own household's trusted adult — another board member must decide."

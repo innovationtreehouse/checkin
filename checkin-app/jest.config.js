@@ -13,7 +13,22 @@ const createJestConfig = nextJest({
 const customJestConfig = {
     // 'default' keeps jest's built-in output; ours appends a loud summary of
     // tests that failed by THROWING (schema/mock rot) vs honest assertions.
-    reporters: ['default', '<rootDir>/test/failureClassifierReporter.js'],
+    // jest-junit only runs in CI (gated on process.env.CI) so local dev runs
+    // don't litter the working tree with test-results/junit.xml on every run;
+    // ci.yml feeds that file to dorny/test-reporter to publish a Check Run.
+    reporters: [
+        'default',
+        '<rootDir>/test/failureClassifierReporter.js',
+        ...(process.env.CI
+            ? [['jest-junit', {
+                outputDirectory: 'test-results',
+                outputName: 'junit.xml',
+                suiteNameTemplate: '{filepath}',
+                classNameTemplate: '{classname}',
+                titleTemplate: '{title}',
+            }]]
+            : []),
+    ],
     setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
     // Coverage (only collected when a run passes --coverage; normal runs are
     // unaffected). v8 provider because next/jest transforms with SWC, not babel,
