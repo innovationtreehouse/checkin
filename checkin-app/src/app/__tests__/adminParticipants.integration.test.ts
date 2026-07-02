@@ -279,12 +279,13 @@ describe('Admin Participants API Integration Tests', () => {
             const data = await res.json();
             expect(data.participant.name).toBe('Updated Name');
             expect(data.participant.email).toBe('updated-email@example.com');
-            expect(data.participant.phone).toBe('5551234567');
+            // The route formats via formatPhone() before saving (dashed, not raw digits).
+            expect(data.participant.phone).toBe('555-123-4567');
 
             // Verify the DB actually saved it
             const dbCheck = await prisma.participant.findUnique({ where: { id: editUser.id } });
             expect(dbCheck?.name).toBe('Updated Name');
-            expect(dbCheck?.phone).toBe('5551234567');
+            expect(dbCheck?.phone).toBe('555-123-4567');
 
             // PII edits MUST leave an audit trail naming the acting admin and the
             // before/after of the field — a regression dropping the actor or the

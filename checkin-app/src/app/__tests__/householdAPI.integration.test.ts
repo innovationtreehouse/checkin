@@ -208,7 +208,11 @@ describe('Household API Integration Tests', () => {
             const data = await res.json();
             expect(data.member).toBeDefined();
             expect(data.member.name).toBe('New Child');
-            expect(data.member.householdId).toBe(householdId);
+
+            // householdId is deliberately not on the wire (HOUSEHOLD_PEER_SELECT, M2
+            // PII minimization) — verify the attachment directly against the DB instead.
+            const created = await prisma.participant.findUnique({ where: { id: data.member.id } });
+            expect(created?.householdId).toBe(householdId);
         });
 
         it('should reject a new member with neither a DoB nor a 25+ declaration (400)', async () => {

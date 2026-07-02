@@ -21,6 +21,17 @@ const customJestConfig = {
     coverageProvider: 'v8',
     coverageDirectory: 'coverage',
     coverageReporters: ['text-summary', 'lcov', 'json-summary'],
+    // Hard gate: `npm run test:coverage` (the full unit+integration run, the only
+    // one that meaningfully measures this — see collectCoverageFrom below) fails
+    // if the repo drops under these floors. Only enforced when a run passes
+    // --coverage; unit-only test:ci is unaffected.
+    coverageThreshold: {
+        global: {
+            lines: 80,
+            branches: 70,
+            functions: 68,
+        },
+    },
     // Count every source file, so untested files show as 0% rather than vanishing.
     collectCoverageFrom: [
         'src/**/*.{ts,tsx}',

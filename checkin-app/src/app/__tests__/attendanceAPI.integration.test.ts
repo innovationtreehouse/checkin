@@ -199,9 +199,11 @@ describe('General Attendance API Integration Tests', () => {
              expect(data.access).toBe('full');
              expect(data.counts).toBeDefined();
              expect(data.counts.total).toBeGreaterThanOrEqual(2);
-             const emails = data.attendance.map((v: { participant: { email: string } }) => v.participant.email);
-             expect(emails).toContain('common-attend-api-test@example.com');
-             expect(emails).toContain('child-attend-api-test@example.com');
+             // email is deliberately not returned on this route (M1 PII minimization) —
+             // assert on name, the field the response actually carries.
+             const names = data.attendance.map((v: { participant: { name: string } }) => v.participant.name);
+             expect(names).toContain('Common');
+             expect(names).toContain('Household Child');
         });
     });
 
