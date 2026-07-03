@@ -15,10 +15,10 @@ type Tool = {
 };
 
 type Certification = {
-  participantId: number;
+  personId: number;
   toolId: number;
   level: "BASIC" | "DOF" | "CERTIFIED" | "INSTRUCTOR" | "MAY_CERTIFY_OTHERS";
-  participant?: { id: number; name: string | null };
+  person?: { id: number; name: string | null };
   tool?: { id: number; name: string };
 };
 
@@ -69,7 +69,7 @@ function GrantForm({
       toolName: selectedTool?.name ?? '?',
       userName: selectedMember?.name ?? selectedMember?.email ?? '?',
       newLevel: level,
-      payload: { toolId: parseInt(toolId), participantId: parseInt(memberId), level },
+      payload: { toolId: parseInt(toolId), personId: parseInt(memberId), level },
     });
   };
 
@@ -233,8 +233,8 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
                       ) : (
                         <Stack gap={6} mb="md">
                           {certs.map((c) => (
-                            <Group key={`${c.participantId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
-                              <Text size="sm">{c.participant?.name ?? 'Unnamed'}</Text>
+                            <Group key={`${c.personId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
+                              <Text size="sm">{c.person?.name ?? 'Unnamed'}</Text>
                               <ToolLevelBadge level={toToolLevel(c.level)} />
                             </Group>
                           ))}
@@ -284,7 +284,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
     setExpanded(memberId);
     setLoadingCerts(true);
     try {
-      const res = await fetch(`/api/shop/certifications?participantId=${memberId}`);
+      const res = await fetch(`/api/shop/certifications?personId=${memberId}`);
       if (res.ok) setCerts(await res.json());
     } finally {
       setLoadingCerts(false);
@@ -324,7 +324,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
                       ) : (
                         <Stack gap={6} mb="md">
                           {certs.map((c) => (
-                            <Group key={`${c.participantId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
+                            <Group key={`${c.personId}-${c.toolId}`} justify="space-between" p="xs" style={{ borderRadius: 6, background: 'var(--mantine-color-default-hover)' }}>
                               <Text size="sm">{c.tool?.name ?? 'Unknown Tool'}</Text>
                               <ToolLevelBadge level={toToolLevel(c.level)} />
                             </Group>
@@ -373,13 +373,13 @@ function AllTab({ tools }: { tools: Tool[] }) {
   // Build the person×tool matrix from the flat cert list.
   const memberMap = new Map<number, string>();
   const toolMap = new Map<number, string>();
-  const cell = new Map<string, Certification>(); // `${participantId}-${toolId}` -> cert
+  const cell = new Map<string, Certification>(); // `${personId}-${toolId}` -> cert
   // Seed all tools so columns show even with zero assignments.
   for (const t of tools) toolMap.set(t.id, t.name);
   for (const c of certs) {
-    if (c.participant) memberMap.set(c.participant.id, c.participant.name ?? 'Unnamed');
+    if (c.person) memberMap.set(c.person.id, c.person.name ?? 'Unnamed');
     if (c.tool) toolMap.set(c.tool.id, c.tool.name);
-    cell.set(`${c.participantId}-${c.toolId}`, c);
+    cell.set(`${c.personId}-${c.toolId}`, c);
   }
   const byName = (a: [number, string], b: [number, string]) => a[1].localeCompare(b[1]);
   const allMembers = [...memberMap].sort(byName);

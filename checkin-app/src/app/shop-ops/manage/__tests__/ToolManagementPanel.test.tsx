@@ -54,7 +54,7 @@ describe("ToolManagementPanel", () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
       "/api/shop/certifications?toolId=1": [
-        { participantId: 10, toolId: 1, level: "CERTIFIED", participant: { id: 10, name: "Alice" } },
+        { personId: 10, toolId: 1, level: "CERTIFIED", person: { id: 10, name: "Alice" } },
       ],
       "/api/shop/tools": [TABLE_SAW],
       "/api/shop/org-members": { orgMembers: MEMBERS },
@@ -93,8 +93,8 @@ describe("ToolManagementPanel", () => {
     // Single member: same shared-Collapse-content reasoning as the tool list above.
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
-      "/api/shop/certifications?participantId=10": [
-        { participantId: 10, toolId: 1, level: "CERTIFIED", tool: { id: 1, name: "Table Saw" } },
+      "/api/shop/certifications?personId=10": [
+        { personId: 10, toolId: 1, level: "CERTIFIED", tool: { id: 1, name: "Table Saw" } },
       ],
       "/api/shop/tools": [TABLE_SAW],
       "/api/shop/org-members": { orgMembers: [MEMBERS[0]] },
@@ -112,10 +112,10 @@ describe("ToolManagementPanel", () => {
     mockFetchJson({
       "/api/shop/certifications?all=true": [
         {
-          participantId: 10,
+          personId: 10,
           toolId: 1,
           level: "CERTIFIED",
-          participant: { id: 10, name: "Alice" },
+          person: { id: 10, name: "Alice" },
           tool: { id: 1, name: "Table Saw" },
         },
       ],
@@ -238,7 +238,7 @@ describe("ToolManagementPanel", () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
       "/api/shop/certifications?toolId=1": [
-        { participantId: 10, toolId: 1, level: "CERTIFIED", participant: { id: 10, name: "Alice" } },
+        { personId: 10, toolId: 1, level: "CERTIFIED", person: { id: 10, name: "Alice" } },
       ],
       "/api/shop/tools": [TABLE_SAW],
       "/api/shop/org-members": { orgMembers: MEMBERS },
@@ -309,8 +309,8 @@ describe("ToolManagementPanel", () => {
   it("PersonTab: collapses an expanded member on second click, and filters to 'No members match'", async () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
-      "/api/shop/certifications?participantId=10": [
-        { participantId: 10, toolId: 1, level: "CERTIFIED", tool: { id: 1, name: "Table Saw" } },
+      "/api/shop/certifications?personId=10": [
+        { personId: 10, toolId: 1, level: "CERTIFIED", tool: { id: 1, name: "Table Saw" } },
       ],
       "/api/shop/tools": [TABLE_SAW],
       "/api/shop/org-members": { orgMembers: [MEMBERS[0]] },
@@ -330,7 +330,7 @@ describe("ToolManagementPanel", () => {
   it("PersonTab: grant flow uses the Tool select (prefillMemberId variant)", async () => {
     setSession({ id: 1, isSysadmin: true });
     const fetchMock = mockFetchJson({
-      "/api/shop/certifications?participantId=10": [],
+      "/api/shop/certifications?personId=10": [],
       "/api/shop/certifications": { success: true },
       "/api/shop/tools": [TABLE_SAW],
       "/api/shop/org-members": { orgMembers: [MEMBERS[0]] },
@@ -368,8 +368,8 @@ describe("ToolManagementPanel", () => {
     mockFetchJson({
       "/api/shop/certifications?all=true": [
         {
-          participantId: 10, toolId: 1, level: "CERTIFIED",
-          participant: { id: 10, name: "Alice" }, tool: { id: 1, name: "Table Saw" },
+          personId: 10, toolId: 1, level: "CERTIFIED",
+          person: { id: 10, name: "Alice" }, tool: { id: 1, name: "Table Saw" },
         },
       ],
       "/api/shop/tools": [TABLE_SAW, LASER],
