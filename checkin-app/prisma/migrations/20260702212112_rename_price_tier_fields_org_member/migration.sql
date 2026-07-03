@@ -1,31 +1,13 @@
-/*
-  Warnings:
+-- Rename Fee/Program price-tier fields member* -> orgMember* plus the Shopify
+-- variant-id columns. Use RENAME (not Prisma's default DROP+ADD): the generated
+-- version fails on a non-empty Fee (ADD COLUMN NOT NULL without default) and
+-- silently discards prices, the member-only flag, and Shopify variant ids
+-- everywhere else.
+ALTER TABLE "Fee" RENAME COLUMN "memberPriceCents" TO "orgMemberPriceCents";
+ALTER TABLE "Fee" RENAME COLUMN "nonMemberPriceCents" TO "nonOrgMemberPriceCents";
 
-  - You are about to drop the column `memberPriceCents` on the `Fee` table. All the data in the column will be lost.
-  - You are about to drop the column `nonMemberPriceCents` on the `Fee` table. All the data in the column will be lost.
-  - You are about to drop the column `memberOnly` on the `Program` table. All the data in the column will be lost.
-  - You are about to drop the column `memberPriceCents` on the `Program` table. All the data in the column will be lost.
-  - You are about to drop the column `nonMemberPriceCents` on the `Program` table. All the data in the column will be lost.
-  - You are about to drop the column `shopifyMemberVariantId` on the `Program` table. All the data in the column will be lost.
-  - You are about to drop the column `shopifyNonMemberVariantId` on the `Program` table. All the data in the column will be lost.
-  - Added the required column `nonOrgMemberPriceCents` to the `Fee` table without a default value. This is not possible if the table is not empty.
-  - Added the required column `orgMemberPriceCents` to the `Fee` table without a default value. This is not possible if the table is not empty.
-
-*/
--- AlterTable
-ALTER TABLE "Fee" DROP COLUMN "memberPriceCents",
-DROP COLUMN "nonMemberPriceCents",
-ADD COLUMN     "nonOrgMemberPriceCents" INTEGER NOT NULL,
-ADD COLUMN     "orgMemberPriceCents" INTEGER NOT NULL;
-
--- AlterTable
-ALTER TABLE "Program" DROP COLUMN "memberOnly",
-DROP COLUMN "memberPriceCents",
-DROP COLUMN "nonMemberPriceCents",
-DROP COLUMN "shopifyMemberVariantId",
-DROP COLUMN "shopifyNonMemberVariantId",
-ADD COLUMN     "nonOrgMemberPriceCents" INTEGER,
-ADD COLUMN     "orgMemberOnly" BOOLEAN NOT NULL DEFAULT false,
-ADD COLUMN     "orgMemberPriceCents" INTEGER,
-ADD COLUMN     "shopifyNonOrgMemberVariantId" TEXT,
-ADD COLUMN     "shopifyOrgMemberVariantId" TEXT;
+ALTER TABLE "Program" RENAME COLUMN "memberOnly" TO "orgMemberOnly";
+ALTER TABLE "Program" RENAME COLUMN "memberPriceCents" TO "orgMemberPriceCents";
+ALTER TABLE "Program" RENAME COLUMN "nonMemberPriceCents" TO "nonOrgMemberPriceCents";
+ALTER TABLE "Program" RENAME COLUMN "shopifyMemberVariantId" TO "shopifyOrgMemberVariantId";
+ALTER TABLE "Program" RENAME COLUMN "shopifyNonMemberVariantId" TO "shopifyNonOrgMemberVariantId";
