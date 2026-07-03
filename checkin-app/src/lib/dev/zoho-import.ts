@@ -86,13 +86,22 @@ export interface BuiltMember {
     };
 }
 
+/** Legacy Zoho stores address as one string; the modern Household has separate columns. */
+export interface ParsedAddress {
+    line1: string | null;
+    line2: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+}
+
 export interface BuiltHousehold {
     groupKey: string; // canonical (aliased) primary-contact email
     name: string;
-    address: string | null;
+    address: ParsedAddress;
     members: BuiltMember[];
     membershipActive: boolean;
-    source: { familyZohoId: string | null; inputZohoId: string | null; rawPrimaryEmail: string };
+    source: { familyZohoId: string | null; inputZohoId: string | null; rawPrimaryEmail: string; rawAddress: string | null };
 }
 
 export interface ImportReport {
@@ -118,6 +127,28 @@ export interface BuiltImport {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+const ZIP_RE = /^\d{5}(-\d{4})?$/;
+/** "Texas"/"tx" → "TX"; any 2-letter → upper; else leave as-is. */
+const normState = (s: string) => (/^texas$/i.test(s) ? "TX" : s.length === 2 ? s.toUpperCase() : s);
+
+/**
+ * Split a legacy Zoho single-line address ("line1[, line2], city, state, zip")
+ * into the modern Household columns. Parses right-to-left — zip, state, city are
+ * the trailing fields — and never consumes the last remaining part, so partial or
+ * malformed rows keep their street line instead of dropping it.
+ */
+export function parseAddress(raw: string | null | undefined): ParsedAddress {
+    const parts = (raw || "").split(",").map((p) => p.trim()).filter(Boolean);
+    const out: ParsedAddress = { line1: null, line2: null, city: null, state: null, postalCode: null };
+    if (parts.length === 0) return out;
+    if (parts.length > 1 && ZIP_RE.test(parts[parts.length - 1])) out.postalCode = parts.pop()!;
+    if (parts.length > 1) out.state = normState(parts.pop()!);
+    if (parts.length > 1) out.city = parts.pop()!;
+    out.line1 = parts.shift() ?? null;
+    out.line2 = parts.length ? parts.join(", ") : null;
+    return out;
+}
 
 const norm = (e: string) => (e || "").trim().toLowerCase();
 const canonKey = (e: string) => PCE_ALIASES[norm(e)] ?? norm(e);
@@ -286,16 +317,18 @@ export function buildImport(files: ZohoFiles, now: Date): BuiltImport {
             (m) => !m.isPrimary && (ageYears(m.dob, now) ?? 0) >= 18,
         ).length;
 
+        const rawAddress = (family?.Address || "").trim() || null;
         households.push({
             groupKey: key,
             name: ln ? `${ln} Household` : "Household",
-            address: (family?.Address || "").trim() || null,
+            address: parseAddress(rawAddress),
             members,
             membershipActive,
             source: {
                 familyZohoId: family?.ID ?? null,
                 inputZohoId: input?.ID ?? null,
                 rawPrimaryEmail: key,
+                rawAddress,
             },
         });
     }
@@ -421,24 +454,25 @@ export async function applyImport(
             }
         }
 
+        const addr = h.address;
         if (householdId === null) {
             const created = await tx.household.create({
-                data: { name: h.name, line1: h.address },
+                data: { name: h.name, ...addr },
             });
             householdId = created.id;
             res.householdsCreated++;
             await audit(tx, actorId, "CREATE", "Household", householdId, {
                 name: h.name,
-                address: h.address,
-                source: { system: "Zoho", familyId: h.source.familyZohoId, primaryEmail: h.source.rawPrimaryEmail },
+                address: addr,
+                source: { system: "Zoho", familyId: h.source.familyZohoId, primaryEmail: h.source.rawPrimaryEmail, rawAddress: h.source.rawAddress },
             });
         } else {
-            await tx.household.update({ where: { id: householdId }, data: { name: h.name, line1: h.address } });
+            await tx.household.update({ where: { id: householdId }, data: { name: h.name, ...addr } });
             res.householdsUpdated++;
             await audit(tx, actorId, "EDIT", "Household", householdId, {
                 name: h.name,
-                address: h.address,
-                source: { system: "Zoho", familyId: h.source.familyZohoId },
+                address: addr,
+                source: { system: "Zoho", familyId: h.source.familyZohoId, rawAddress: h.source.rawAddress },
             });
         }
 

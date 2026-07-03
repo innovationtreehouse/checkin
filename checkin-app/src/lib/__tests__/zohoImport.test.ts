@@ -1,5 +1,6 @@
 import {
     parseUSDate,
+    parseAddress,
     parseZoho,
     buildImport,
     resolveEmailCollisions,
@@ -58,6 +59,30 @@ describe("parseUSDate", () => {
     });
 });
 
+describe("parseAddress", () => {
+    it("splits the 4-part street/city/state/zip form", () => {
+        expect(parseAddress("8306 Farmington Ct, Austin, TX, 78736")).toEqual({
+            line1: "8306 Farmington Ct", line2: null, city: "Austin", state: "TX", postalCode: "78736",
+        });
+    });
+    it("uses the 5th part as line2 and normalizes full/lowercase state", () => {
+        expect(parseAddress("1301 Greenlawn Pkwy , Apt D, Blanco, Texas, 78606")).toEqual({
+            line1: "1301 Greenlawn Pkwy", line2: "Apt D", city: "Blanco", state: "TX", postalCode: "78606",
+        });
+    });
+    it("keeps zip+4 and does not treat a #suite in line1 as a separate field", () => {
+        expect(parseAddress("403 E. Bluebonnet Ln. #1733, Johnson City, Texas, 78636-2125")).toEqual({
+            line1: "403 E. Bluebonnet Ln. #1733", line2: null, city: "Johnson City", state: "TX", postalCode: "78636-2125",
+        });
+    });
+    it("degrades gracefully — never eats the street line", () => {
+        expect(parseAddress("388 Sawtooth, TX")).toEqual({ line1: "388 Sawtooth", line2: null, city: null, state: "TX", postalCode: null });
+        expect(parseAddress("126 Grapevine Ct")).toEqual({ line1: "126 Grapevine Ct", line2: null, city: null, state: null, postalCode: null });
+        expect(parseAddress("")).toEqual({ line1: null, line2: null, city: null, state: null, postalCode: null });
+        expect(parseAddress(null)).toEqual({ line1: null, line2: null, city: null, state: null, postalCode: null });
+    });
+});
+
 describe("buildImport", () => {
     function build(people: RawPerson[], families: RawFamily[], inputs: RawInput[]) {
         return buildImport(parseZoho({
@@ -79,7 +104,7 @@ describe("buildImport", () => {
         expect(households).toHaveLength(1);
         const h = households[0];
         expect(h.name).toBe("Spinosa Household");
-        expect(h.address).toBe("388 Sawtooth, TX");
+        expect(h.address).toEqual({ line1: "388 Sawtooth", line2: null, city: null, state: "TX", postalCode: null });
         expect(h.members).toHaveLength(2);
         expect(report.participants).toBe(2);
     });
@@ -153,7 +178,7 @@ describe("buildImport", () => {
         );
         expect(households).toHaveLength(1);
         expect(households[0].name).toBe("Kay Household");
-        expect(households[0].address).toBe("126 Grapevine Ct");
+        expect(households[0].address).toEqual({ line1: "126 Grapevine Ct", line2: null, city: null, state: null, postalCode: null });
         // Primary detected by name (email doesn't match the family key).
         const danae = households[0].members.find((m) => m.name === "Danae Kay")!;
         expect(danae.isPrimary).toBe(true);
@@ -255,10 +280,10 @@ describe("resolveEmailCollisions fallback keeper selection", () => {
         return {
             groupKey: "key@x.com",
             name: "Household",
-            address: null,
+            address: { line1: null, line2: null, city: null, state: null, postalCode: null },
             members: [],
             membershipActive: false,
-            source: { familyZohoId: null, inputZohoId: null, rawPrimaryEmail: "" },
+            source: { familyZohoId: null, inputZohoId: null, rawPrimaryEmail: "", rawAddress: null },
             ...p,
         };
     }
@@ -318,7 +343,8 @@ describe("applyImport", () => {
         let nextHouseholdId = 1;
         let nextParticipantId = 1;
         let nextMembershipId = 1;
-        const households = new Map<number, { id: number; name: string; line1: string | null }>();
+        type Addr = { line1: string | null; line2?: string | null; city?: string | null; state?: string | null; postalCode?: string | null };
+        const households = new Map<number, { id: number; name: string } & Addr>();
         const participants = new Map<
             number,
             { id: number; name: string; email: string | null; householdId: number; dateOfBirth: Date | null; lastBackgroundCheck: Date | null; isDeclaredAdult: boolean }
@@ -334,13 +360,13 @@ describe("applyImport", () => {
                 }),
             },
             household: {
-                create: jest.fn(async ({ data }: { data: { name: string; line1: string | null } }) => {
+                create: jest.fn(async ({ data }: { data: { name: string } & Addr }) => {
                     const id = nextHouseholdId++;
                     const h = { id, ...data };
                     households.set(id, h);
                     return h;
                 }),
-                update: jest.fn(async ({ where, data }: { where: { id: number }; data: { name: string; line1: string | null } }) => {
+                update: jest.fn(async ({ where, data }: { where: { id: number }; data: { name: string } & Addr }) => {
                     const h = { ...households.get(where.id)!, ...data };
                     households.set(where.id, h);
                     return h;
