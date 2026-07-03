@@ -41,7 +41,7 @@ describe("ToolManagementPanel", () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
       "/api/shop/tools": [TABLE_SAW, LASER],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -57,7 +57,7 @@ describe("ToolManagementPanel", () => {
         { participantId: 10, toolId: 1, level: "CERTIFIED", participant: { id: 10, name: "Alice" } },
       ],
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -74,7 +74,7 @@ describe("ToolManagementPanel", () => {
     const fetchMock = mockFetchJson({
       "/api/shop/tools/1": { success: true, tool: { ...TABLE_SAW, safetyGuide: "https://new.example.com" } },
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -97,7 +97,7 @@ describe("ToolManagementPanel", () => {
         { participantId: 10, toolId: 1, level: "CERTIFIED", tool: { id: 1, name: "Table Saw" } },
       ],
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: [MEMBERS[0]] },
+      "/api/shop/org-members": { orgMembers: [MEMBERS[0]] },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -120,7 +120,7 @@ describe("ToolManagementPanel", () => {
         },
       ],
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -133,7 +133,7 @@ describe("ToolManagementPanel", () => {
     setSession({ id: 1 });
     mockFetchJson({
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -147,7 +147,7 @@ describe("ToolManagementPanel", () => {
       "/api/shop/certifications?toolId=1": [],
       "/api/shop/certifications": { success: true },
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -175,7 +175,7 @@ describe("ToolManagementPanel", () => {
     const fetchMock = mockFetchJson({
       "/api/shop/certifications?toolId=1": [],
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -195,7 +195,7 @@ describe("ToolManagementPanel", () => {
     mockFetchJson({
       "/api/shop/certifications?toolId=1": [],
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -217,7 +217,7 @@ describe("ToolManagementPanel", () => {
       }
       if (url.includes("/api/shop/certifications?toolId=1")) return { ok: true, json: async () => [] } as Response;
       if (url.includes("/api/shop/tools")) return { ok: true, json: async () => [TABLE_SAW] } as Response;
-      if (url.includes("/api/shop/members")) return { ok: true, json: async () => ({ members: MEMBERS }) } as Response;
+      if (url.includes("/api/shop/org-members")) return { ok: true, json: async () => ({ orgMembers: MEMBERS }) } as Response;
       return { ok: false, status: 404, json: async () => ({}) } as Response;
     });
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -241,7 +241,7 @@ describe("ToolManagementPanel", () => {
         { participantId: 10, toolId: 1, level: "CERTIFIED", participant: { id: 10, name: "Alice" } },
       ],
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -255,7 +255,7 @@ describe("ToolManagementPanel", () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
       "/api/shop/tools": [TABLE_SAW, LASER],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -273,7 +273,7 @@ describe("ToolManagementPanel", () => {
       const url = typeof input === "string" ? input : input.toString();
       if (init?.method === "PATCH") return { ok: false, status: 500, json: async () => ({}) } as Response;
       if (url.includes("/api/shop/tools")) return { ok: true, json: async () => [TABLE_SAW] } as Response;
-      if (url.includes("/api/shop/members")) return { ok: true, json: async () => ({ members: MEMBERS }) } as Response;
+      if (url.includes("/api/shop/org-members")) return { ok: true, json: async () => ({ orgMembers: MEMBERS }) } as Response;
       return { ok: false, status: 404, json: async () => ({}) } as Response;
     });
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -291,7 +291,7 @@ describe("ToolManagementPanel", () => {
       "/api/shop/certifications?toolId=1": [],
       "/api/shop/tools/1": { success: true, tool: { ...TABLE_SAW, safetyGuide: "https://new.example.com" } },
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -313,7 +313,7 @@ describe("ToolManagementPanel", () => {
         { participantId: 10, toolId: 1, level: "CERTIFIED", tool: { id: 1, name: "Table Saw" } },
       ],
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: [MEMBERS[0]] },
+      "/api/shop/org-members": { orgMembers: [MEMBERS[0]] },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -333,7 +333,7 @@ describe("ToolManagementPanel", () => {
       "/api/shop/certifications?participantId=10": [],
       "/api/shop/certifications": { success: true },
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: [MEMBERS[0]] },
+      "/api/shop/org-members": { orgMembers: [MEMBERS[0]] },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -354,7 +354,7 @@ describe("ToolManagementPanel", () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
       "/api/shop/tools": [TABLE_SAW],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 
@@ -373,7 +373,7 @@ describe("ToolManagementPanel", () => {
         },
       ],
       "/api/shop/tools": [TABLE_SAW, LASER],
-      "/api/shop/members": { members: MEMBERS },
+      "/api/shop/org-members": { orgMembers: MEMBERS },
     });
     renderWithProviders(<ToolManagementPanel />);
 

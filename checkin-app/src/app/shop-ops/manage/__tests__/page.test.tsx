@@ -13,7 +13,7 @@ describe("ManageToolsPage", () => {
         setSession({ id: 1, isSysadmin: true });
         mockFetchJson({
             "/api/shop/tools": [],
-            "/api/shop/members": { members: [] },
+            "/api/shop/org-members": { orgMembers: [] },
         });
         renderWithProviders(<ManageToolsPage />);
 

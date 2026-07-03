@@ -225,9 +225,10 @@ defineRoute({
 // name (public) + member-tier — NOT everyones:pii. This deliberately TIGHTENS the
 // pre-migration behavior, which leaked every member's email to any certifier.
 defineRoute({
-    endpoint: 'GET /api/shop/members',
+    endpoint: 'GET /api/shop/org-members',
     authorize: 'certifier',
-    envelope: 'members',
+    // bag-key `Person` (model driving field-strip) vs envelope `orgMembers` (camelCase JSON key) vs path `org-members` (kebab URL) — divergence intentional.
+    envelope: 'orgMembers',
     returns: ['Person'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],

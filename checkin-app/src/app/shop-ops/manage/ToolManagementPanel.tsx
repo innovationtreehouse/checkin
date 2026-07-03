@@ -503,10 +503,10 @@ export function ToolManagementPanel() {
       hasFetched.current = true;
       Promise.all([
         fetch('/api/shop/tools').then(r => r.ok ? r.json() : []),
-        fetch('/api/shop/members').then(r => r.ok ? r.json() : { members: [] }),
+        fetch('/api/shop/org-members').then(r => r.ok ? r.json() : { orgMembers: [] }),
       ]).then(([toolData, memberData]) => {
         setTools(toolData);
-        setMembers(memberData.members ?? []);
+        setMembers(memberData.orgMembers ?? []);
       }).finally(() => setLoading(false));
     }
   }, [ready]);
