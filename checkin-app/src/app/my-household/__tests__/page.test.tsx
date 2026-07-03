@@ -5,7 +5,6 @@ jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
-import { notifications } from "@mantine/notifications";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import HouseholdPage from "../page";
 
@@ -349,7 +348,7 @@ describe("HouseholdPage", () => {
     expect(screen.queryByRole("button", { name: "+ Add Household Member" })).not.toBeInTheDocument();
   });
 
-  it("blocks deleting the last valid emergency contact and notifies instead", async () => {
+  it("blocks deleting the last valid emergency contact via a disabled Remove", async () => {
     setSession({ id: 10, email: "sam@example.com" });
     const fetchMock = mockRoutes({
       "/api/household/emergency-contacts": { contacts: [{ id: 1, name: "Pat Neighbor", phone: "5125551234", email: null, relationship: "Aunt", priority: 1, invalid: false }] },
@@ -357,8 +356,10 @@ describe("HouseholdPage", () => {
     renderWithProviders(<HouseholdPage />);
     await screen.findByRole("heading", { name: "Smith Household", level: 1 });
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ title: "Can't remove last emergency contact" }));
+    // Last valid contact: Remove renders data-disabled and a click is a no-op.
+    const removeBtn = screen.getByRole("button", { name: "Remove" });
+    expect(removeBtn).toHaveAttribute("data-disabled");
+    fireEvent.click(removeBtn);
     expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("/emergency-contacts/1"), expect.objectContaining({ method: "DELETE" }));
   });
 
