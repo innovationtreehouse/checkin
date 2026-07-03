@@ -38,7 +38,7 @@ interface PersonRef {
 interface HouseholdRef {
     id: number;
     name: string | null;
-    leads: { participant: PersonRef }[];
+    leads: { person: PersonRef }[];
 }
 interface TrustedAdult {
     id: number;
@@ -182,7 +182,7 @@ export default function AdminTrustedAdultsPage() {
                         )}
                         {ta.household?.leads?.length ? (
                             <Text size="xs" c="dimmed" mt={2}>
-                                Leads: {ta.household.leads.map((l) => l.participant.name || l.participant.email).join(", ")}
+                                Leads: {ta.household.leads.map((l) => l.person.name || l.person.email).join(", ")}
                             </Text>
                         ) : null}
                         {latest?.reviewBy && (
