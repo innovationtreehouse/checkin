@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, TextInput, Title, Tooltip } from '@mantine/core';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { formatDate, calculateAge } from '@/lib/time';
@@ -523,18 +523,21 @@ export default function HouseholdPage() {
                         </div>
                         <Group gap="xs" wrap="nowrap">
                           <Button size="compact-xs" variant="subtle" color="gray" onClick={() => startEditContact(c)}>Edit</Button>
-                          <Button
-                            size="compact-xs"
-                            variant="subtle"
-                            color="red"
-                            onClick={() => {
-                              if (isLastValid) {
-                                notifications.show({ color: "red", title: "Can't remove last emergency contact", message: "Add a new one first." });
-                                return;
-                              }
-                              handleDeleteContact(c.id);
-                            }}
-                          >Remove</Button>
+                          <Tooltip label="Can't remove last emergency contact. Add a new one first." disabled={!isLastValid}>
+                            <Button
+                              size="compact-xs"
+                              variant="subtle"
+                              color="red"
+                              data-disabled={isLastValid || undefined}
+                              onClick={(e) => {
+                                if (isLastValid) {
+                                  e.preventDefault();
+                                  return;
+                                }
+                                handleDeleteContact(c.id);
+                              }}
+                            >Remove</Button>
+                          </Tooltip>
                         </Group>
                       </Group>
                     </Paper>
