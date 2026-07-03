@@ -564,6 +564,14 @@ export default function MembershipPage() {
 
                   <ChildrenListForm items={children} onAdd={addChild} onUpdate={updateChild} onRemove={removeChild} />
 
+                  {/* Local echo of the page-top banner: intake is a long card, so
+                      the top AlertBanner posts off-screen next to these buttons. */}
+                  {message && (
+                    <Alert color={message.tone === "error" ? "red" : "green"} variant="light">
+                      {message.text}
+                    </Alert>
+                  )}
+
                   <Group gap="md" wrap="wrap">
                     <Button variant="default" disabled={saving} loading={saving} onClick={save}>Save progress</Button>
                     <Button color="green" disabled={saving} loading={saving} onClick={submit}>Submit &amp; continue</Button>
