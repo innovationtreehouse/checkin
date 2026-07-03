@@ -21,7 +21,7 @@ import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
     PENDING_BOARD_REVIEW: { label: "Awaiting board review", color: "yellow" },
-    PENDING_SUBJECT_ACTION: { label: "Board needs more info", color: "orange" },
+    PENDING_SUBJECT_ACTION: { label: "Board needs more info — see email", color: "orange" },
     APPROVED: { label: "Approved", color: "green" },
     DENIED: { label: "Denied", color: "red" },
     EXPIRED: { label: "Expired", color: "gray" },
@@ -218,8 +218,8 @@ export default function TrustedAdultPanel() {
                         error={showContactError ? contactError : undefined}
                     />
                     <Textarea
-                        label="For the board: what may this adult do, and any limits?"
-                        description="Seen only by the board and your household — e.g. relationship, restrictions, custody notes."
+                        label="For the board: your relationship to this adult, and any limits on it"
+                        description="Seen only by the board and your household. Naming a trusted adult creates a Dual Relationship — it lets them have one-on-one contact with your Youth, message them privately, and transport them, without the usual Observable-and-Interruptible, open-communication, and travel rules defined in Treehouse policy. Tell us your relationship to them. If you want to narrow that scope — e.g. no transport, no private messaging, supervised only, or custody/contact restrictions — state it here."
                         minRows={4}
                         autosize
                         value={familyContext}
