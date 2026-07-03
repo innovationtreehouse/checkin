@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Badge, Box, Button, Card, Group, Loader, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { formatDate, isYouth } from "@/lib/time";
+import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 type Member = { id: number; name: string | null; dateOfBirth: string | null };
 type BrokenHousehold = { id: number; name: string; members: Member[] };
@@ -40,6 +41,7 @@ export default function BrokenHouseholdsPage() {
       if (res.ok) {
         notifications.show({ color: "green", message: "Lead assigned." });
         fetchHouseholds();
+        notifyNavRefresh();
       } else {
         const data = await res.json().catch(() => ({}));
         notifications.show({ color: "red", message: data.error || "Failed to assign lead." });
