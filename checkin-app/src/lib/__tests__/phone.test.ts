@@ -24,6 +24,8 @@ describe("isValidPhone", () => {
     it("rejects too few / too many digits, junk, and blanks", () => {
         expect(isValidPhone("123")).toBe(false);
         expect(isValidPhone("555123456")).toBe(false); // 9 digits
+        expect(isValidPhone("1555123456")).toBe(false); // 10 digits, area code can't start with 1
+        expect(isValidPhone("0551234567")).toBe(false); // 10 digits, area code can't start with 0
         expect(isValidPhone("25551234567")).toBe(false); // 11 digits, wrong country code
         expect(isValidPhone("123456789012")).toBe(false); // 12 digits
         expect(isValidPhone("not a phone")).toBe(false);
