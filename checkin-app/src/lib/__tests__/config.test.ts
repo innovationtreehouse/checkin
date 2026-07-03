@@ -185,6 +185,33 @@ describe("shopifyMockActive / shopifyWebhookSecret", () => {
     });
 });
 
+describe("bgMockActive", () => {
+    it("mock active when Averity unset, non-prod, non-production NODE_ENV", () => {
+        delete process.env.AVERITY_CONSENT_URL;
+        process.env.CHECKIN_ENV = "local";
+        (process.env as Record<string, string>).NODE_ENV = "test";
+        expect(config.bgMockActive()).toBe(true);
+    });
+    it("mock inactive when AVERITY_CONSENT_URL is set (real link wins)", () => {
+        process.env.AVERITY_CONSENT_URL = "https://averity.example/consent";
+        process.env.CHECKIN_ENV = "local";
+        (process.env as Record<string, string>).NODE_ENV = "test";
+        expect(config.bgMockActive()).toBe(false);
+    });
+    it("mock inactive on prod checkinEnv", () => {
+        delete process.env.AVERITY_CONSENT_URL;
+        process.env.CHECKIN_ENV = "prod";
+        (process.env as Record<string, string>).NODE_ENV = "test";
+        expect(config.bgMockActive()).toBe(false);
+    });
+    it("mock inactive when NODE_ENV is production", () => {
+        delete process.env.AVERITY_CONSENT_URL;
+        process.env.CHECKIN_ENV = "local";
+        (process.env as Record<string, string>).NODE_ENV = "production";
+        expect(config.bgMockActive()).toBe(false);
+    });
+});
+
 describe("simple optional getters (env-set vs default)", () => {
     it("kioskPublicKey", () => {
         delete process.env.KIOSK_PUBLIC_KEY;
