@@ -99,9 +99,9 @@ Rules:
 ## Migration status
 
 The term-by-term migration plan lives in
-[designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md](designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md);
-the Person-umbrella detail in
-[designs/PERSON_UMBRELLA_INVESTIGATION.md](designs/PERSON_UMBRELLA_INVESTIGATION.md).
+[designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md](designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md).
+
+> **Pattern for big Prisma model renames** (learned from `Participant`→`Person`): a model rename is *atomic* — tsc is red until every accessor/type flips, so it can't merge half-done. Pull everything NOT tied to the model name (local types, then per-model FK renames — Prisma allows `person Participant @relation(fields:[personId])`) into small green PRs first, leaving a final purely-mechanical name flip. See git history #680–#708 (Person) and #735 (OrgMembership).
 
 **✅ Shipped to `main`:**
 - **Youth** — `minor`/`isMinor` → `youth`/`isYouth`; `minor` fully scrubbed from src + tests. #670, #673, #676. (`child` deliberately preserved.)

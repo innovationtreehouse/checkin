@@ -146,7 +146,7 @@ login. The 25yo fixture proves it is **not** age-based.
 | **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `HouseholdLead` | `/api/household/member` |
 | **Program relationship** | Person ↔ **Program** | "participant" | `programParticipant` | `ProgramParticipant` | — |
 
-Key rules: **`participant` means ONLY a program enrollee** (the Program relationship). The umbrella person model is **`Person`**, never "participant"; **admin and volunteers are not participants.** Anything listing MIXED people (schema included) uses `Person`/"people"/role buckets, never "participant." The `/api/household/member` route **stays** (the `/household/` segment qualifies it). **This repositioning shipped** — model + FKs + mixed-people API/UI all renamed (see [PERSON_UMBRELLA_INVESTIGATION.md](PERSON_UMBRELLA_INVESTIGATION.md) for the executed plan; §4/§5 for per-phase PRs).
+Key rules: **`participant` means ONLY a program enrollee** (the Program relationship). The umbrella person model is **`Person`**, never "participant"; **admin and volunteers are not participants.** Anything listing MIXED people (schema included) uses `Person`/"people"/role buckets, never "participant." The `/api/household/member` route **stays** (the `/household/` segment qualifies it). **This repositioning shipped** — model + FKs + mixed-people API/UI all renamed (§4/§5 for per-phase PRs; slicing pattern in VOCABULARY.md's migration-status).
 
 **Person sub-classifications (orthogonal to the relationships):**
 
