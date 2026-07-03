@@ -12,7 +12,7 @@ import { apiError } from "@/lib/api-response";
 // logged-in member; denied households fail closed at authenticateRequest, which
 // closes the old hand-rolled denied bypass), and the registry view — not this
 // query — gates fields. We select only {id, name} (no client needs email), but
-// the registry declares participant email as staff-only (everyones:pii) so the
+// the registry declares person email as staff-only (everyones:pii) so the
 // stripper would gate it if ever added. That converts the endpoint from an
 // IDOR-shaped hand-rolled select into declared policy, so the recurring audit
 // false-positive resolves.
@@ -21,7 +21,7 @@ export const GET = handler('GET /api/shop/certifications', async ({ req, auth })
     const user = auth.user;
 
     const { searchParams } = new URL(req.url);
-    const participantIdParam = searchParams.get('participantId');
+    const personIdParam = searchParams.get('personId');
     const toolIdParam = searchParams.get('toolId');
     const allParam = searchParams.get('all');
 
@@ -43,7 +43,7 @@ export const GET = handler('GET /api/shop/certifications', async ({ req, auth })
         return { ToolStatus: certifications };
     }
 
-    const targetUserId = participantIdParam ? parseInt(participantIdParam, 10) : user.id;
+    const targetUserId = personIdParam ? parseInt(personIdParam, 10) : user.id;
     const whereClause = toolIdParam
         ? { toolId: parseInt(toolIdParam, 10) }
         : { personId: targetUserId };
@@ -70,9 +70,9 @@ export const POST = withAuth({}, async (req, auth) => {
 
     try {
         const body = await req.json();
-        const { participantId, toolId, level } = body;
+        const { personId, toolId, level } = body;
 
-        if (!participantId || !toolId || !level) {
+        if (!personId || !toolId || !level) {
             return apiError("Missing required fields", 400);
         }
 
@@ -114,7 +114,7 @@ export const POST = withAuth({}, async (req, auth) => {
         }
 
         const tId = parseInt(toolId, 10);
-        const pId = parseInt(participantId, 10);
+        const pId = parseInt(personId, 10);
 
         const currentStatus = await prisma.toolStatus.findUnique({
             where: { personId_toolId: { personId: pId, toolId: tId } }
