@@ -50,8 +50,9 @@ function zohoMockActiveEnv(): boolean {
  * Fixed shared secret the dev mock signs its self-fired webhook with (§4a of the
  * design). It guards nothing real — the payload is generated locally — it exists
  * only so verifyZohoToken's real timing-safe compare has a value in dev.
+ * Exported for the same reason as DEV_MOCK_SHOPIFY_WEBHOOK_SECRET below.
  */
-const DEV_MOCK_WEBHOOK_SECRET = 'dev-zoho-mock-webhook-secret';
+export const DEV_MOCK_WEBHOOK_SECRET = 'dev-zoho-mock-webhook-secret';
 
 /** Real Shopify integration is wired only when all three credentials are present. */
 function shopifyConfiguredEnv(): boolean {
@@ -76,8 +77,13 @@ function shopifyMockActiveEnv(): boolean {
  * don't choose), the mock generates the payload locally, so a fixed constant is
  * enough for verifyShopifyHmac's real timing-safe compare — same rationale as
  * DEV_MOCK_WEBHOOK_SECRET. See §4 of the design: fixed ⇔ self-fired mock.
+ *
+ * Exported so tests that assert the mock's self-signed webhook verifies can
+ * import it instead of duplicating the literal: the tests exercise the fallback
+ * wiring, and the exact value is not a contract anything external signs with,
+ * so signer and verifier should track one source of truth.
  */
-const DEV_MOCK_SHOPIFY_WEBHOOK_SECRET = 'dev-shopify-mock-webhook-secret';
+export const DEV_MOCK_SHOPIFY_WEBHOOK_SECRET = 'dev-shopify-mock-webhook-secret';
 
 export const config = {
     // Database
