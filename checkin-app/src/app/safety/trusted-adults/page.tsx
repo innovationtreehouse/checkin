@@ -14,6 +14,7 @@ import {
     Title,
     Tooltip,
 } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
 import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 import { useRequireRole } from "@/hooks/useRequireRole";
@@ -131,7 +132,7 @@ export default function AdminTrustedAdultsPage() {
             if (!res.ok) {
                 setNotices((n) => ({ ...n, [reviewId]: { text: body.error ?? "Decision failed.", tone: "error" } }));
             } else {
-                setNotices((n) => ({ ...n, [reviewId]: { text: `Recorded: ${label(body.status)}.`, tone: "success" } }));
+                notifications.show({ color: "green", message: `Recorded: ${label(body.status)}.` });
                 await load();
                 notifyNavRefresh();
             }

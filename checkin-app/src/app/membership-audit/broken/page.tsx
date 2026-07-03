@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Badge, Box, Button, Card, Group, Loader, Stack, Text } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { formatDate, isYouth } from "@/lib/time";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
@@ -43,7 +44,7 @@ export default function BrokenHouseholdsPage() {
         body: JSON.stringify({ participantId }),
       });
       if (res.ok) {
-        setNotice((n) => ({ ...n, [householdId]: { ok: true, text: "Lead assigned." } }));
+        notifications.show({ color: "green", message: "Lead assigned." });
         fetchHouseholds();
         notifyNavRefresh();
       } else {

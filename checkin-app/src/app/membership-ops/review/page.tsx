@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Alert, Button, Card, Checkbox, Container, Group, Stack, Text, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { type AlertTone } from "@/components/admin/AlertBanner";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
@@ -66,7 +67,7 @@ export default function MembershipReviewPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ processId, text: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified.", tone: "success" });
+        notifications.show({ color: "green", message: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified." });
         await load();
         notifyNavRefresh();
       } else {

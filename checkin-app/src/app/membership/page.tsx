@@ -8,6 +8,7 @@ import {
   Alert, Anchor, Box, Button, Card, Checkbox, Container, Group,
   SimpleGrid, Stack, Text, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
 import MembershipFlowStepper from "@/components/MembershipFlowStepper";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
@@ -221,11 +222,11 @@ export default function MembershipPage() {
         /* best-effort — the Zoho webhook is still a backstop */
       }
       await load();
-      setMessage({
-        text: signedNow
+      notifications.show({
+        color: "green",
+        message: signedNow
           ? "Thanks — your signature was received."
           : "Signature received — finalizing. If it doesn't update shortly, use “Refresh status”.",
-        tone: "success",
       });
     })();
   }, [sessionStatus, load]);
