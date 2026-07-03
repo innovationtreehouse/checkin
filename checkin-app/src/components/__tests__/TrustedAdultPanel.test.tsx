@@ -60,7 +60,7 @@ describe("TrustedAdultPanel", () => {
     fireEvent.change(screen.getByLabelText(/Trusted adult's name/i), { target: { value: "Uncle Bob" } });
     fireEvent.change(screen.getByLabelText(/Their phone/i), { target: { value: "555-222-3333" } });
     fireEvent.change(
-      screen.getByLabelText(/For the board: what may this adult do, and any limits\?/i),
+      screen.getByLabelText(/For the board: your relationship to this adult/i),
       { target: { value: "May pick up on Fridays." } },
     );
 
