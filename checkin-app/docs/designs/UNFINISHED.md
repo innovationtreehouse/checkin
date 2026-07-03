@@ -160,6 +160,38 @@ rename the stale-named `types/participant.ts`. _(VOCAB #8)_
 
 ---
 
+## 🟡 `household` vs `family` — keep the split, or unify?
+
+Code is all `Household`; UI intermittently says "family" (and `TrustedAdult.familyContext`).
+**Default = keep the split** — code `Household`, "family" allowed as warm user copy
+(already recorded in VOCABULARY). To **unify** instead: rename field
+`TrustedAdult.familyContext` → `householdContext` (`prisma/schema.prisma`) + consumers
+(`api/safety/trusted-adults`, `api/trusted-adults/*`, `safety/trusted-adults/page.tsx`,
+security registry + strip tests); "family" → "household" copy across
+my-household / review / register / volunteer-memberships / my-activities;
+`memberFamilies` → `memberHouseholds`. DB wiped on deploy → no data care.
+_(was proposal Phase 5)_
+
+## 🟢 Retire `dependent` + fix intake `children` bucket (BUG-2)
+
+"dependent" is UI jargon for a **non-lead** household member — resolve to "household member".
+- **BUG-2:** `lib/membership/intake.ts` `children` bucket = *every non-lead* (not
+  offspring/age); it's the `children` wire key on `GET /api/membership` (`:131`) +
+  `POST /api/membership/intake` (`:304`), consumed by `membership/page.tsx`
+  (`prefill.children`, `buildPayload().children`). Rename key + type
+  (`ChildInput` → `HouseholdParticipantInput`, `children` → `householdParticipants`/`dependents`)
+  across server + client + page in one commit. **NOT `youth`** — it's a non-lead concept.
+- **Copy:** `communication/page.tsx:11` label, `my-household:443`,
+  `membership-ops/participants/import:138`, `trusted-adults:12`, `pageRegistry:26,66`,
+  `api/programs/[id]/participants:64`, `notifications.ts:86` → "household member".
+- **Persisted key:** `emailDependentCheckins` is a `notificationSettings` **JSON key**
+  (not a column) → `emailHouseholdCheckins` in readers/writers
+  (`notifications.ts:150`, `communication/page.tsx:27,41`, tests
+  `notificationsCheckin.integration.test.ts:43,61` + `.perf.test.ts:28`). DB wiped → no backfill.
+_(was proposal Phase 6)_
+
+---
+
 ## 🔵 Aspirational — not built yet (enforced by policy / no data today)
 
 - **Tool categories + per-level/per-category age gates** (10/13/21; Certified =

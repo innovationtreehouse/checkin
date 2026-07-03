@@ -199,7 +199,7 @@ distinction today; BUG-1 is what would tempt a future violation.
 
 ## 4. Phases — one term, fully, then the next
 
-> **Overall status (against `main`):** Phase 1 (youth), Phase 2 (student), Phase 3 (householdMember), and the **Person umbrella** (model + FKs + mixed-people API/UI) are **✅ shipped**. **Phase 4 (OrgMembership) is mostly shipped** — read-model/price/path/copy done (#729/#731/#732); only the Prisma **model** rename (`Membership`→`OrgMembership`) + `membership-ops/*` propagation remain (scoping via chip `task_9ecbb0f5`). Also shipped: Trusted Adult `counterparty*`→`trustedAdult*` (#734). Remaining: the OrgMembership model rename, **Phase 5 (family — trivial)**, **Phase 6 (dependent + BUG-2)**. Per-PR detail below + in VOCABULARY.md's migration-status.
+> **Overall status (against `main`):** Phase 1 (youth), Phase 2 (student), Phase 3 (householdMember), and the **Person umbrella** (model + FKs + mixed-people API/UI) are **✅ shipped**. **Phase 4 (OrgMembership) is mostly shipped** — read-model/price/path/copy done (#729/#731/#732); only the Prisma **model** rename (`Membership`→`OrgMembership`) + `membership-ops/*` propagation remain (scoping via chip `task_9ecbb0f5`). Also shipped: Trusted Adult `counterparty*`→`trustedAdult*` (#734). Remaining: the OrgMembership model rename (this doc); **family** and **dependent (+BUG-2)** are tracked in [UNFINISHED.md](UNFINISHED.md). Per-PR detail below + in VOCABULARY.md's migration-status.
 
 Each phase carries a single term across all four layers and leaves the tree with
 no half-renamed state. **Recommended order is top-to-bottom**; rationale in §5.
@@ -267,25 +267,8 @@ definition of every people/household term, the code-vs-copy split, and the
 - **Confirm** whether `shopify*VariantId` naming must follow.
 - **Done-when:** no bare `Membership` model/process/enum for the org relationship; all `OrgMembership…`.
 
-### Phase 5 — `household` vs `family` (schema migration if unifying)
-**Goal:** resolve the split. Two branches — pick via §6 Q2.
-
-- **Branch A — keep the split (recommended default, no migration):** document "code = `Household`, user-facing = 'family' where warmth helps". Leave `familyContext`, "Volunteer-only family", "Family Information". Add a short note in this doc / a code comment near `Household`. Done.
-- **Branch B — unify to Household everywhere (full, includes schema):**
-  - **Schema migration:** rename field `TrustedAdult.familyContext`→`householdContext` in `schema.prisma:476`, then `npx prisma migrate dev`. DB is wiped on deploy — don't care whether Prisma emits `RENAME COLUMN` or drop+recreate; just land the right final shape.
-  - **Consumers to move in the same PR:** `api/safety/trusted-adults/route.ts:25`, `api/trusted-adults/route.ts:21,38,73`, `api/trusted-adults/mine/route.ts:24`, `api/trusted-adults/operational/route.ts:10`, `safety/trusted-adults/page.tsx:49,188`, plus the security registry field lists / strip tests referencing `familyContext`.
-  - **Copy:** "family"→"household" in `my-household:353`, `membership-ops/review:137`, `programs/[id]/register:199`, `volunteer-memberships:71`, `membership-ops/participants:278`, `my-activities/*`; internal `memberFamilies`→`memberHouseholds` (`membership-ops/layout.tsx`, `api/nav/todo-counts/route.ts`).
-- **Done-when:** either the split is documented (A) or "family" appears nowhere and the migration is applied (B).
-
-### Phase 6 — `dependent` (retire the word; optional JSON backfill)
-**Goal:** "dependent" stops being UI jargon; it resolves to "household member/participant" (non-lead). Lowest ROI, so last.
-
-- **Intake `children` bucket (BUG-2):** `lib/membership/intake.ts` names its non-lead-participant set `children` and exposes it as the `children` wire key on `GET /api/membership` (`:131`) and `POST /api/membership/intake` (`:304`), consumed by `membership/page.tsx` (`prefill.children`, `buildPayload().children`). DB is wiped on deploy and there's no external client, so rename the key + type (`ChildInput`→`HouseholdParticipantInput`, `children`→`householdParticipants` or `dependents`) across server + client + `page.tsx` in one commit. This is a non-lead concept — do NOT rename it to `youth`.
-- **Copy + comments:** `communication/page.tsx:11` label → "Email me when someone in my household checks in/out"; `my-household/page.tsx:443`, `membership-ops/participants/import/page.tsx:138`, `trusted-adults/page.tsx:12`, `pageRegistry.ts:26,66`, `api/programs/[id]/participants/route.ts:64` comment, `lib/notifications.ts:86` doc → "household member". Test comment `notificationsCheckin…:61`.
-- **Persisted key:** `emailDependentCheckins` is a **key inside the `notificationSettings` JSON blob** (`Participant.notificationSettings`, `schema.prisma:92`), not a column. DB is wiped on deploy, so **no backfill** — just rename the key to `emailHouseholdCheckins` in the readers/writers and old rows vanish with the reset:
-  - `lib/notifications.ts:86,150`, `communication/page.tsx:11,27,41`, tests `notificationsCheckin.integration.test.ts:43,61` + `.perf.test.ts:28`.
-  - No Prisma migration needed (JSON blob has no key-level schema).
-- **Done-when:** "dependent" appears in no user-facing copy and no live identifier; the JSON key reads `emailHouseholdCheckins`.
+### Phases 5 (household/family) & 6 (dependent) — moved to the ledger
+These two remaining items are tracked in [UNFINISHED.md](UNFINISHED.md): 🟡 `household` vs `family` (keep-split default vs unify), and 🟢 retire `dependent` + fix the intake `children` bucket (BUG-2). Small/decision-gated — no longer phased here.
 
 ---
 
@@ -297,12 +280,12 @@ definition of every people/household term, the code-vs-copy split, and the
 - **Person umbrella** — `Participant`→`Person`, `participantId`→`personId`, mixed-people → `people`/`Person`. ✅ **Shipped** (A0 #680 · A1 #692/#691/#686/#690/#681/#684 · A2 #708 · B1–B4 #711/#710/#712/#709). The big one; the A0/A1/A2 slicing landed it green.
 4. **OrgMembership** — read-model + price fields + API path + "Treehouse Member" copy ✅ **shipped** (#729/#731/#732). ⬜ **Remaining:** the Prisma `model Membership`→`OrgMembership` (+ `MembershipProcess`, `MembershipStatus`) and `membership-ops/*` propagation — scoping via chip `task_9ecbb0f5`.
 - **Trusted Adult** — `counterparty*`→`trustedAdult*` ✅ **shipped** (#734, sibling audit).
-5. **Household/Family** — Q2 default = keep the split; effectively a doc-note. ⬜ **Remaining (trivial).**
-6. **Dependent** — key/copy rename + BUG-2 intake `children` bucket, no migration. ⬜ **Remaining (small).**
+
+**Not phased here:** `household`/`family` and `dependent` (+ BUG-2) → tracked in [UNFINISHED.md](UNFINISHED.md).
 
 The scary work is done, and OrgMembership's user-facing surface already shipped —
 only its **model rename + ops propagation** carry residual risk (scope pass in
-flight). Family and Dependent are cleanup.
+flight). The rest is small, decision-gated cleanup in the ledger.
 
 ---
 
