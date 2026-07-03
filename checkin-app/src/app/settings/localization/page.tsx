@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button, Card, Center, Group, Loader, Select, Stack, Text, Title } from "@mantine/core";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { AlertBanner } from "@/components/admin/AlertBanner";
+import { notifications } from "@mantine/notifications";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
 
@@ -76,7 +77,7 @@ export default function LocalizationSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ timezone, locale }),
       });
-      if (res.ok) { flash("Settings saved."); await load(); }
+      if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); await load(); }
       else flash((await res.json()).error || "Save failed.", true);
     } catch { flash("Network error.", true); }
     finally { setSaving(false); }

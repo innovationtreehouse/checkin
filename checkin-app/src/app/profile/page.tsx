@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Anchor, Button, Card, Stack, Text, TextInput, Title } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
+import { notifications } from '@mantine/notifications';
 import { isYouth } from '@/lib/time';
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -69,7 +70,7 @@ export default function ProfilePage() {
       });
 
       if (res.ok) {
-        setMessage({ text: "Profile updated successfully!", tone: "success" });
+        notifications.show({ color: "green", message: "Profile updated successfully!" });
       } else {
         setMessage({ text: "Failed to update profile.", tone: "error" });
       }

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button, Card, Center, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
+import { notifications } from "@mantine/notifications";
 
 interface Designation {
   id: number;
@@ -45,7 +46,7 @@ export default function VolunteerMembershipsPage() {
       const data = await res.json();
       if (res.ok) {
         setNewEmail("");
-        flash(data.warning || "Designation added.", !!data.warning);
+        if (data.warning) { flash(data.warning, true); } else { notifications.show({ color: "green", message: "Designation added." }); }
         await load();
       } else flash(data.error || "Could not add.", true);
     } catch { flash("Network error.", true); }
