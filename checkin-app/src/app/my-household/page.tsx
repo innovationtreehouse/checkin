@@ -8,6 +8,7 @@ import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { formatDate, calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
+import { notifications } from '@mantine/notifications';
 import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isOrgAccount } from '@/lib/orgAccount';
@@ -85,7 +86,6 @@ export default function HouseholdPage() {
   const [addressErrors, setAddressErrors] = useState<Partial<Record<AddressField, string>>>({});
   const [savingSettings, setSavingSettings] = useState(false);
   // Transient "Updated" confirmation shown in the Address card header for 5s.
-  const [addressSaved, setAddressSaved] = useState(false);
 
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [contactForm, setContactForm] = useState(blankContactForm);
@@ -148,8 +148,7 @@ export default function HouseholdPage() {
 
       if (householdRes.ok) {
         ok("Settings updated successfully!");
-        setAddressSaved(true);
-        setTimeout(() => setAddressSaved(false), 5000);
+        notifications.show({ color: "green", message: "Address updated." });
         fetchHousehold();
         notifyNavRefresh();
       } else {
@@ -475,7 +474,6 @@ export default function HouseholdPage() {
           <Card withBorder radius="md" padding="lg">
             <Group justify="space-between" align="center" mb="md">
               <Title order={3} c="blue">Household Address</Title>
-              {addressSaved && <Badge color="green" variant="light">✓ Updated</Badge>}
             </Group>
             <Text size="sm" c="dimmed" mb="sm">The main address associated with this household.</Text>
             <Stack gap="xs">
