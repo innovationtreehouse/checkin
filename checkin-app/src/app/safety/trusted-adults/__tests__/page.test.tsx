@@ -2,12 +2,14 @@
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { notifications } from "@mantine/notifications";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import AdminTrustedAdultsPage from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 const trustedAdults = [
   {
@@ -64,7 +66,7 @@ describe("safety/trusted-adults page", () => {
         }),
       ),
     );
-    expect(await screen.findByText("Recorded: APPROVED.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Recorded: APPROVED." })));
   });
 
   it("redirects a caller without board/sysadmin role, and shows a loader while resolving", () => {
@@ -93,7 +95,7 @@ describe("safety/trusted-adults page", () => {
         expect.objectContaining({ method: "POST", body: JSON.stringify({ reviewId: 9, decision: "DENY" }) }),
       ),
     );
-    expect(await screen.findByText("Recorded: DENIED.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Recorded: DENIED." })));
 
     window.prompt = jest.fn(() => null);
     fireEvent.click(screen.getByRole("button", { name: "Request info" }));

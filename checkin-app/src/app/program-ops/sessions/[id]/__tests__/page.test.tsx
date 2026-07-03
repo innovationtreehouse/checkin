@@ -2,6 +2,8 @@
 import { screen, waitFor, fireEvent, within } from "@testing-library/react";
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
+import { notifications } from "@mantine/notifications";
 import { renderWithProviders, mockFetchJson, setSession, setSearchParams, router, resetRtl } from "@/test-helpers/rtl";
 import EventAdminPage from "../page";
 
@@ -10,7 +12,7 @@ beforeAll(() => {
     window.HTMLElement.prototype.scrollIntoView = jest.fn();
 });
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 // `use(params)` suspends on any promise it hasn't already tracked, even one that
 // resolved microtasks ago — pre-mark it "fulfilled" (React's own thenable-caching
@@ -101,7 +103,7 @@ describe("EventAdminPage", () => {
         expect(screen.getByText("Attending")).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Confirm Attendance" }));
-        expect(await screen.findByText("Attendance confirmed successfully!")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Attendance confirmed successfully!" })));
 
         fireEvent.click(screen.getAllByRole("button", { name: "Manual Edit" })[0]);
         expect(await screen.findByText(/Manual Edit:/)).toBeInTheDocument();
@@ -125,7 +127,7 @@ describe("EventAdminPage", () => {
         expect(screen.getByLabelText(/Apply to Series/)).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Save Time Changes" }));
-        expect(await screen.findByText("Event time updated successfully!")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Event time updated successfully!" })));
 
         fireEvent.click(screen.getByRole("button", { name: "Edit Date / Time" }));
         fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
@@ -160,7 +162,7 @@ describe("EventAdminPage", () => {
 
         expect(await screen.findByText(/by Unknown/)).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Re-confirm" }));
-        expect(await screen.findByText("Attendance confirmed successfully!")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Attendance confirmed successfully!" })));
     });
 
     it("confirm attendance: shows the server error, then a network-error message", async () => {
