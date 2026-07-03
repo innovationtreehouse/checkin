@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, TextInput, Title, Tooltip } from '@mantine/core';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { formatDate, calculateAge } from '@/lib/time';
@@ -12,7 +12,6 @@ import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isOrgAccount } from '@/lib/orgAccount';
 import { pickAddress, validateAddress, type StructuredAddress, type AddressField } from '@/lib/address';
-import { notifications } from '@mantine/notifications';
 import { isValidPhone, formatPhone, PHONE_ERROR } from '@/lib/phone';
 import { isValidEmail } from '@/lib/emergencyContacts/identity';
 import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
@@ -95,6 +94,9 @@ export default function HouseholdPage() {
   // Server/collision errors for the emergency-contact card render inline next to
   // the form, not in the page-top banner which is far off-screen from this section.
   const [contactError, setContactError] = useState("");
+  // Success confirmations for contact actions render inside the card (bottom of
+  // its box), not the page-top banner, so the message stays near the button.
+  const [contactNotice, setContactNotice] = useState("");
   // Per-field client validation (red ring + subtext), checked on Add/Save click
   // so phone/email/name errors never flash while the user is still typing.
   const [contactErrors, setContactErrors] = useState<{ name?: string; phone?: string; email?: string }>({});
@@ -170,6 +172,7 @@ export default function HouseholdPage() {
     if (Object.keys(errs).length > 0) return;
     setSavingContact(true);
     setContactError("");
+    setContactNotice("");
     try {
       const editing = contactForm.id !== null;
       const url = editing ? `/api/household/emergency-contacts/${contactForm.id}` : '/api/household/emergency-contacts';
@@ -180,7 +183,7 @@ export default function HouseholdPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        ok(editing ? "Emergency contact updated." : "Emergency contact added.");
+        setContactNotice(editing ? "Emergency contact updated." : "Emergency contact added.");
         setContactForm(blankContactForm);
         setShowContactForm(false);
         fetchContacts();
@@ -197,11 +200,12 @@ export default function HouseholdPage() {
 
   const handleDeleteContact = async (id: number) => {
     setContactError("");
+    setContactNotice("");
     try {
       const res = await fetch(`/api/household/emergency-contacts/${id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        ok("Emergency contact removed.");
+        setContactNotice("Emergency contact removed.");
         fetchContacts();
         notifyNavRefresh();
       } else {
@@ -214,6 +218,7 @@ export default function HouseholdPage() {
 
   const startAddContact = () => {
     setContactError("");
+    setContactNotice("");
     setContactErrors({});
     setContactForm(blankContactForm);
     setShowContactForm(true);
@@ -229,6 +234,7 @@ export default function HouseholdPage() {
   };
   const startEditContact = (c: EmergencyContact) => {
     setContactError("");
+    setContactNotice("");
     setContactErrors({});
     setContactForm({ id: c.id, name: c.name, phone: c.phone, email: c.email || "", relationship: c.relationship || "" });
     setShowContactForm(true);
@@ -501,6 +507,10 @@ export default function HouseholdPage() {
                   <Alert color="red" variant="light" mb="sm" withCloseButton onClose={() => setContactError("")}>{contactError}</Alert>
                 )}
 
+                {contactNotice && (
+                  <Alert color="green" variant="light" mb="sm" withCloseButton onClose={() => setContactNotice("")}>{contactNotice}</Alert>
+                )}
+
                 {contacts.length === 0 && !showContactForm && (
                   <Alert color="red" variant="light">No emergency contact on file. Add at least one.</Alert>
                 )}
@@ -523,18 +533,21 @@ export default function HouseholdPage() {
                         </div>
                         <Group gap="xs" wrap="nowrap">
                           <Button size="compact-xs" variant="subtle" color="gray" onClick={() => startEditContact(c)}>Edit</Button>
-                          <Button
-                            size="compact-xs"
-                            variant="subtle"
-                            color="red"
-                            onClick={() => {
-                              if (isLastValid) {
-                                notifications.show({ color: "red", title: "Can't remove last emergency contact", message: "Add a new one first." });
-                                return;
-                              }
-                              handleDeleteContact(c.id);
-                            }}
-                          >Remove</Button>
+                          <Tooltip label="Can't remove last emergency contact. Add a new one first." disabled={!isLastValid}>
+                            <Button
+                              size="compact-xs"
+                              variant="subtle"
+                              color="red"
+                              data-disabled={isLastValid || undefined}
+                              onClick={(e) => {
+                                if (isLastValid) {
+                                  e.preventDefault();
+                                  return;
+                                }
+                                handleDeleteContact(c.id);
+                              }}
+                            >Remove</Button>
+                          </Tooltip>
                         </Group>
                       </Group>
                     </Paper>
