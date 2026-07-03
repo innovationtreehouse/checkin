@@ -9,6 +9,8 @@
  *   - replaying the same valid payload twice (Shopify retries at-least-once)
  *   - the membership-process activation branch
  *   - comma-separated multi-participant activation
+ *   - the program-enrollment Shopify-variant guard (fails closed when the
+ *     paid order doesn't contain the program's own variant)
  */
 import crypto from 'crypto';
 import { POST } from '@/app/api/webhooks/shopify/route';
@@ -29,6 +31,8 @@ jest.mock('@/lib/logger', () => ({
 const SECRET = 'shopify-test-secret';
 const TAG = 'shopify-webhook-test';
 const MEMBERSHIP_VARIANT_ID = '778899';
+const PROGRAM_VARIANT_ID = '445566';
+const OTHER_VARIANT_ID = '999999'; // cheapest-item-in-the-store stand-in — never matches the program
 
 function sign(body: string, secret = SECRET): string {
     return crypto.createHmac('sha256', secret).update(body, 'utf8').digest('base64');
@@ -54,8 +58,11 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     let prevMembershipVariantId: string | null = null;
 
     beforeAll(async () => {
+        // shopifyNonOrgMemberVariantId is the variant public-register's checkout
+        // link is built from — seed it so the guard under test has something to
+        // match line_items against.
         const program = await prisma.program.create({
-            data: { name: `Webhook Test Program ${TAG}`, enrollmentStatus: 'OPEN' },
+            data: { name: `Webhook Test Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyNonOrgMemberVariantId: PROGRAM_VARIANT_ID },
         });
         programId = program.id;
 
@@ -104,9 +111,13 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         });
     }
 
-    function programPayload(accountIds: string) {
+    // Defaults to a line item matching the program's own variant, since most
+    // tests here aren't exercising the variant guard — pass variantId: null for
+    // no line items, or an explicit mismatched id, to exercise it.
+    function programPayload(accountIds: string, variantId: string | null = PROGRAM_VARIANT_ID) {
         return JSON.stringify({
             id: 555,
+            ...(variantId ? { line_items: [{ variant_id: variantId }] } : {}),
             note_attributes: [
                 { name: 'CheckMeIn_Account_ID', value: accountIds },
                 { name: 'Program_ID', value: String(programId) },
@@ -182,6 +193,8 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     });
 
     it('activates a PENDING participant and is idempotent across a replayed delivery', async () => {
+        // Line items (via programPayload's default) contain the program's own
+        // Shopify variant — the guard under test is satisfied.
         await setPending(p1);
         const body = programPayload(String(p1));
 
@@ -217,6 +230,55 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         });
         expect(rows).toHaveLength(2);
         expect(rows.every(r => r.status === 'ACTIVE')).toBe(true);
+    });
+
+    it('does NOT activate a PENDING participant when the paid order does not contain the program\'s Shopify variant (fails closed)', async () => {
+        // The core regression test: note_attributes alone (CheckMeIn_Account_ID /
+        // Program_ID) are customer-controlled and must NOT be enough to activate —
+        // the order's line_items have to actually contain the program's variant.
+        // Here they carry an unrelated (cheaper) variant instead.
+        await setPending(p1);
+        const body = programPayload(String(p1), OTHER_VARIANT_ID);
+
+        const res = await POST(webhookReq(body, sign(body)));
+        expect(res.status).toBe(200); // still acks Shopify — only the DB state-change is gated
+
+        const row = await prisma.programParticipant.findUnique({
+            where: { programId_personId: { programId, personId: p1 } },
+        });
+        expect(row?.status).toBe('PENDING');
+        expect(row?.pendingSince).not.toBeNull();
+    });
+
+    it('fails closed when the Program has no Shopify variant configured at all', async () => {
+        // "Cannot verify" must mean "don't activate", not "trust the payload".
+        const noVariantProgram = await prisma.program.create({
+            data: { name: `Webhook Test No-Variant Program ${TAG}`, enrollmentStatus: 'OPEN' },
+        });
+        try {
+            await prisma.programParticipant.create({
+                data: { programId: noVariantProgram.id, personId: p1, status: 'PENDING', pendingSince: new Date() },
+            });
+            const body = JSON.stringify({
+                id: 654,
+                line_items: [{ variant_id: PROGRAM_VARIANT_ID }], // even a "valid-looking" variant can't match — nothing configured
+                note_attributes: [
+                    { name: 'CheckMeIn_Account_ID', value: String(p1) },
+                    { name: 'Program_ID', value: String(noVariantProgram.id) },
+                ],
+            });
+            const res = await POST(webhookReq(body, sign(body)));
+            expect(res.status).toBe(200);
+
+            const row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId: noVariantProgram.id, personId: p1 } },
+            });
+            expect(row?.status).toBe('PENDING');
+            expect(row?.pendingSince).not.toBeNull();
+        } finally {
+            await prisma.programParticipant.deleteMany({ where: { programId: noVariantProgram.id } });
+            await prisma.program.delete({ where: { id: noVariantProgram.id } });
+        }
     });
 
     it('rate-limits a flood (429 + Retry-After) AHEAD of the HMAC check — bad sig still 429, not 401', async () => {

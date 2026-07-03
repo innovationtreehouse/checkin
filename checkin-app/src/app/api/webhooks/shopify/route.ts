@@ -118,6 +118,27 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
             const programId = parseInt(programIdStr, 10);
 
             if (participantIds.length > 0 && !isNaN(programId)) {
+                // Guard mirrors the membership H2 fix above: note_attributes
+                // (CheckMeIn_Account_ID / Program_ID) are entirely
+                // customer-controlled — set from the public cart permalink —
+                // so nothing in the payload itself proves the paid order was
+                // for THIS program at THIS program's price. Without this, an
+                // attacker could self-register (public-register creates a
+                // PENDING participant, no payment) then pay for the cheapest
+                // item in the store with a forged Program_ID/CheckMeIn_Account_ID
+                // attribute and activate (or activate someone else's)
+                // enrollment. Checked by variant id — stable, and the same id
+                // public-register's checkout link is built from — not order
+                // total. Fail CLOSED: no variant configured on the Program, or
+                // no line-item match, means we do NOT activate.
+                const program = await prisma.program.findUnique({ where: { id: programId } });
+                const programVariantIds = new Set(
+                    [program?.shopifyOrgMemberVariantId, program?.shopifyNonOrgMemberVariantId].filter(
+                        (v): v is string => !!v,
+                    ),
+                );
+                const hasProgramItem = (order.line_items ?? []).some((li) => programVariantIds.has(String(li.variant_id)));
+
                 for (const participantId of participantIds) {
                     // Find existing participant
                     const existing = await prisma.programParticipant.findUnique({
@@ -127,6 +148,11 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                     });
 
                     if (existing) {
+                        if (!hasProgramItem) {
+                            logger.warn(`[SHOPIFY WEBHOOK] Paid order ${order.id ?? "?"} for participant ${participantId} / program ${programId} did not contain the program's Shopify variant${programVariantIds.size === 0 ? " (program has no variant configured)" : ""} — participant left PENDING, NOT activated.`);
+                            continue;
+                        }
+
                         await prisma.programParticipant.update({
                             where: {
                                 programId_personId: { programId, personId: participantId }
@@ -136,7 +162,7 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                                 pendingSince: null, // clear out the pending timer
                             }
                         });
-                        
+
                         logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
                     } else {
                         logger.warn(`[SHOPIFY WEBHOOK] Participant ${participantId} not found in Program ${programId}. Ignoring payment.`);
