@@ -78,7 +78,7 @@ These describe *what kind of person*, independent of which relationship you're v
 - **"guardian" / "guardianship"** — a household lead/parent, or a relationship *type* — never this entity.
 - **`familyContext`** — a distinct *attribute* of the record (the board-facing explanation), not another name for it. (Its own fate is the household/family phase.)
 
-Source: `counterparty*` → `trustedAdult*` rename (audit P2-2, branch `claude/vigilant-blackburn-7f713d`; scalar fields + Person FK, RENAME migrations). The schema carries this same glossary inline above `model TrustedAdult`.
+Source: `counterparty*` → `trustedAdult*` rename — **shipped** (audit P2-2, #734; scalar fields + Person FK, RENAME migrations). The schema carries this same glossary inline above `model TrustedAdult`.
 
 ## Program hierarchy (LOCKED)
 
@@ -108,15 +108,17 @@ the Person-umbrella detail in
 - **Student** — age-based `student` identifiers → `youth` (BUG-1). #679. `isStudent`/`studentVisits` = 0.
 - **householdMember** — sense-B bare `member` → `householdMember`; route kept at `/api/household/member`. #674.
 - **Person umbrella** — `model Participant` → `Person`, `participantId` FKs → `personId`, and every mixed-people "participant" requalified to `people`/`Person`. Landed as sliced PRs: A0 #680 → A1a–f (#692/#691/#686/#690/#681/#684) → A2 atomic flip #708; B1 roles envelope #711, B2 `/api/people/search` #710, B3 `Household.householdMembers` #712, B4 cert grid #709. `prisma.participant` = 0; `model Person` at `schema.prisma:62`. `ProgramParticipant.personId` is the accepted end-state (a program-participant row whose person is `personId`).
+- **OrgMembership — read-model + price + path + copy** (Phase 4a/b/c): `lib/membership.ts` → `lib/orgMembership.ts`, `isActiveMember` → `isActiveOrgMember`, `ACTIVE_MEMBER_*` → `ACTIVE_ORG_MEMBER_PERSON_WHERE`/`_INCLUDE` (#729); price fields → `orgMemberOnly`/`orgMemberPriceCents`/`nonOrgMemberPriceCents` (#731); `/api/shop/members` → `/api/shop/org-members` (#732); UI copy → "Treehouse Member" (#729).
+- **Trusted Adult** — `counterparty*` → `trustedAdult*` (scalar fields + Person FK, RENAME migrations); audit P2-2 (#734).
 
 **⬜ Remaining:**
-- **OrgMembership** — `model Membership` (`schema.prisma:296`) → `OrgMembership`; `isActiveMember`/`memberPriceCents`/`memberOnly`/`nonMemberPriceCents` → `orgMember…`; `/api/shop/members` → `/api/shop/org-members`; UI copy → "Treehouse Member". ~51 `member`-price/`isActiveMember` sites. Real schema migration — scope first (see proposal Phase 4).
-- **household / family** — Q2 default is *keep the split* (`Household` in code, "family" in warm copy). `familyContext` (`schema.prisma:479`) stays. Effectively a doc-note unless someone chooses "unify".
+- **OrgMembership — the Prisma model rename** (the rest of Phase 4): `model Membership` (`schema.prisma:296`) → `OrgMembership`, `MembershipProcess` (`:315`) → `OrgMembershipProcess`, the `MembershipStatus` enum, and `membership-ops/*` dir/route/nav propagation. Read-model/price/path/copy already shipped (above). Scoping under investigation (chip `task_9ecbb0f5`).
+- **household / family** — Q2 default is *keep the split* (`Household` in code, "family" in warm copy). `familyContext` (`schema.prisma:498`) stays. Effectively a doc-note unless someone chooses "unify".
 - **dependent** — `emailDependentCheckins` key + copy → household wording; plus BUG-2 (`intake.ts` `children` bucket = non-lead participants). Small.
 
 **Closed:** attendance "volunteer = adult non-keyholder" / "youth = minor" buckets — **won't-change** (intended supervision signal, safety-load-bearing two-deep). Trends age-proxy metric fixed separately. See [designs/AGE_PROXY_BUG_AUDIT.md](designs/AGE_PROXY_BUG_AUDIT.md).
 
-**Related track (sibling audit, not one of the phases above):** Trusted Adult entity naming `counterparty*` → `trustedAdult*` (audit P2-2, branch `claude/vigilant-blackburn-7f713d`). See the Trusted Adult entry above.
+**Related track (sibling audit, not one of the phases above):** Trusted Adult entity naming `counterparty*` → `trustedAdult*` — **shipped** (audit P2-2, #734). See the Trusted Adult entry above.
 
 ## Known semantic bugs (see proposal §3)
 

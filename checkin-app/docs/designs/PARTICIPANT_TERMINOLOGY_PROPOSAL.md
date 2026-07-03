@@ -199,7 +199,7 @@ distinction today; BUG-1 is what would tempt a future violation.
 
 ## 4. Phases — one term, fully, then the next
 
-> **Overall status (against `main`):** Phase 1 (youth), Phase 2 (student), Phase 3 (householdMember), and the **Person umbrella** (model + FKs + mixed-people API/UI) are **✅ shipped**. Remaining: **Phase 4 (OrgMembership)**, **Phase 5 (family — trivial)**, **Phase 6 (dependent + BUG-2)**. Per-PR detail in each phase below and in VOCABULARY.md's migration-status.
+> **Overall status (against `main`):** Phase 1 (youth), Phase 2 (student), Phase 3 (householdMember), and the **Person umbrella** (model + FKs + mixed-people API/UI) are **✅ shipped**. **Phase 4 (OrgMembership) is mostly shipped** — read-model/price/path/copy done (#729/#731/#732); only the Prisma **model** rename (`Membership`→`OrgMembership`) + `membership-ops/*` propagation remain (scoping via chip `task_9ecbb0f5`). Also shipped: Trusted Adult `counterparty*`→`trustedAdult*` (#734). Remaining: the OrgMembership model rename, **Phase 5 (family — trivial)**, **Phase 6 (dependent + BUG-2)**. Per-PR detail below + in VOCABULARY.md's migration-status.
 
 Each phase carries a single term across all four layers and leaves the tree with
 no half-renamed state. **Recommended order is top-to-bottom**; rationale in §5.
@@ -252,15 +252,20 @@ definition of every people/household term, the code-vs-copy split, and the
 - **Done-when:** no bare `member`/`Member` identifier or UI string resolves to the household relationship; all are `householdMember`/"household member". ✅ (#674, branch `claude/determined-bell-70bb18`)
 - **Note:** an earlier spec of this phase (move route → `/api/household/participant`, rename to `participant`) was **backwards** — `participant` is the Program/Person word, not the household word. Superseded by #674; the `/participant` chip branch is discarded.
 
-### Phase 4 — `OrgMembership` (real rename + schema migration)
-**Goal:** the org-membership relationship gets its own qualified name everywhere; the bare word `member`/`Membership` for "belongs to the org" becomes **Org**-qualified. UI word: **"Treehouse Member"** everywhere (locked — one term, no staff variant). Not a mere audit — a schema migration with wide blast radius; **scope it before starting.**
+### Phase 4 — `OrgMembership` (real rename + schema migration) — MOSTLY SHIPPED
+**Goal:** the org-membership relationship gets its own qualified name everywhere; the bare word `member`/`Membership` for "belongs to the org" becomes **Org**-qualified. UI word: **"Treehouse Member"** everywhere (locked — one term, no staff variant).
 
-- **Schema migration (DB wiped on deploy → no data care):** `model Membership` → `OrgMembership`; `MembershipProcess` → `OrgMembershipProcess` (confirm naming); then `npx prisma migrate dev`. Decide whether `membership-ops/*`, `boardAlerts`/renewal/review, and the `MembershipStatus` enum follow the `Org` prefix — big blast radius, list every table + call site first.
-- **Read-model identifiers:** `isActiveMember`→`isActiveOrgMember`; `ACTIVE_MEMBER_PARTICIPANT_WHERE`/`ACTIVE_MEMBER_INCLUDE`/`participantRecordIsActiveMember` → `…OrgMember…` (`lib/membership.ts`).
-- **Program price tiers:** `memberOnly`, `memberPriceCents`, `nonMemberPriceCents` (`schema.prisma:600,612,615,670,673`) → `orgMemberOnly`/`orgMemberPriceCents`/`nonOrgMemberPriceCents`. Confirm whether `shopify*VariantId` naming must follow.
-- **Path:** `/api/shop/members` → `/api/shop/org-members` (consumers: `ToolManagementPanel.tsx:511`, registry `security/registry.ts:226`, strip + integration tests). Keep the bag-key(`Participant`)/envelope(`org-members`) convention; comment it.
-- **UI copy:** "Member Price", "Member-Only"/"Member Only", "become a member", "isn't a member yet", shop-cert "Certified members" → "Treehouse Member" wording.
-- **Done-when:** no bare `member`/`Membership` for the org relationship in code or UI; all are `orgMember…`/`OrgMembership`/"Treehouse Member".
+**✅ Shipped:**
+- **Read-model** (#729): `lib/membership.ts` → `lib/orgMembership.ts`; `isActiveMember`→`isActiveOrgMember`; `ACTIVE_MEMBER_*` → `ACTIVE_ORG_MEMBER_PERSON_WHERE`/`_INCLUDE`.
+- **Price tiers** (#731): `memberOnly`/`memberPriceCents`/`nonMemberPriceCents` → `orgMemberOnly`/`orgMemberPriceCents`/`nonOrgMemberPriceCents` (Program + Fee).
+- **Path** (#732): `/api/shop/members` → `/api/shop/org-members` (path + envelope + consumers).
+- **UI copy** (#729): "Treehouse Member" wording across the shop/membership surfaces.
+
+**⬜ Remaining — the Prisma model rename + ops propagation:**
+- **Schema migration (DB wiped → no data care):** `model Membership` (`schema.prisma:296`) → `OrgMembership`; `MembershipProcess` (`:315`) → `OrgMembershipProcess`; the `MembershipStatus` enum; then `prisma migrate dev`.
+- **Propagation decision:** do `membership-ops/*` (dir/routes/nav) and `boardAlerts`/renewal/review follow the `Org` prefix? Big blast radius — **scoping under investigation** (chip `task_9ecbb0f5`, report `ORG_MEMBERSHIP_INVESTIGATION.md`).
+- **Confirm** whether `shopify*VariantId` naming must follow.
+- **Done-when:** no bare `Membership` model/process/enum for the org relationship; all `OrgMembership…`.
 
 ### Phase 5 — `household` vs `family` (schema migration if unifying)
 **Goal:** resolve the split. Two branches — pick via §6 Q2.
@@ -290,12 +295,14 @@ definition of every people/household term, the code-vs-copy split, and the
 2. **Student** — fixes BUG-1. ✅ **Shipped** (#679).
 3. **householdMember** — sense-B "member". ✅ **Shipped** (#674).
 - **Person umbrella** — `Participant`→`Person`, `participantId`→`personId`, mixed-people → `people`/`Person`. ✅ **Shipped** (A0 #680 · A1 #692/#691/#686/#690/#681/#684 · A2 #708 · B1–B4 #711/#710/#712/#709). The big one; the A0/A1/A2 slicing landed it green.
-4. **OrgMembership** — real schema migration (`Membership`→`OrgMembership`) + path + price fields + UI to "Treehouse Member". ⬜ **Remaining, heaviest.** Wide blast radius — scope first (like the Person umbrella did).
+4. **OrgMembership** — read-model + price fields + API path + "Treehouse Member" copy ✅ **shipped** (#729/#731/#732). ⬜ **Remaining:** the Prisma `model Membership`→`OrgMembership` (+ `MembershipProcess`, `MembershipStatus`) and `membership-ops/*` propagation — scoping via chip `task_9ecbb0f5`.
+- **Trusted Adult** — `counterparty*`→`trustedAdult*` ✅ **shipped** (#734, sibling audit).
 5. **Household/Family** — Q2 default = keep the split; effectively a doc-note. ⬜ **Remaining (trivial).**
 6. **Dependent** — key/copy rename + BUG-2 intake `children` bucket, no migration. ⬜ **Remaining (small).**
 
-The scary work is done. Only OrgMembership carries real risk left — do it
-deliberately (scope pass first), not as a sweep. Family and Dependent are cleanup.
+The scary work is done, and OrgMembership's user-facing surface already shipped —
+only its **model rename + ops propagation** carry residual risk (scope pass in
+flight). Family and Dependent are cleanup.
 
 ---
 
