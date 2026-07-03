@@ -19,7 +19,7 @@ let tokenExpiresAt: number = 0;
 const SHOPIFY_FETCH_TIMEOUT_MS = 20_000;
 
 /** fetch with a hard timeout that surfaces as a clear error instead of hanging. */
-async function shopifyFetch(input: string, init: RequestInit, label: string): Promise<Response> {
+export async function shopifyFetch(input: string, init: RequestInit, label: string): Promise<Response> {
   try {
     return await fetch(input, { ...init, signal: AbortSignal.timeout(SHOPIFY_FETCH_TIMEOUT_MS) });
   } catch (err) {
@@ -40,7 +40,7 @@ export function resetTokenCache() {
  * Fetches a fresh Admin API access token using the client credentials grant.
  * Caches the token and refreshes ~5 minutes before expiry.
  */
-async function getAccessToken(): Promise<string | null> {
+export async function getAccessToken(): Promise<string | null> {
   const storeDomain = config.shopifyStoreDomain();
   const clientId = config.shopifyClientId();
   const clientSecret = config.shopifyClientSecret();
