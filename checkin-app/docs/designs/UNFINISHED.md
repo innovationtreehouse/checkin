@@ -235,6 +235,70 @@ bless it as-is and record that in VOCABULARY. _(Phase 4 OQ-1)_
 
 ---
 
+# Architecture / auth end-state — from the 2026-06-29 codebase audit
+
+Provenance: a 2026-06-29 codebase architecture audit (recorded in git history; the
+auth end-state detail lives in
+[auth-consistency-analysis.md](../security/auth-consistency-analysis.md)), distinct
+from the vocabulary sweep above. **Everything else that audit flagged has
+shipped** — the P0-B auth-consolidation buckets, the P1 near-neighbor fixes, P3-1
+error-path (`apiError` + lint, #728), P3-2 logger (#727), P1-2/6/7/8, P2-1 Person
+rename, P2-2 counterparty→trustedAdult (#734), and the GAP-1 program-roster leak.
+These four are what remain.
+
+## 🔴 Program → Instance → Event — 3-tier restructure (IN DESIGN, do NOT start code)
+
+Domain is **definition → offering → occurrence** but the schema is 2-tier
+(`Program` → `Event`, [schema.prisma:586](../../prisma/schema.prisma#L586)/[:702](../../prisma/schema.prisma#L702)).
+**Decided:** insert `ProgramInstance` between them — `Program` = reusable definition,
+`Instance` = one concrete offering, `Event` = today's leaf (attendance stays on
+`Event`; `RSVP`/`Visit` do not move). Model name `ProgramInstance` in code (never bare
+`instance`; `Session` is off-limits — NextAuth owns it).
+
+**Core open decision:** because `Program` becomes a template, its children
+(`ProgramParticipant` roster, `ProgramVolunteer`, `Fee`, `leadMentorId`, capacity,
+dates) likely **move down to Instance** — you enroll in an offering, not a definition.
+The per-child placement table is the heart of the design.
+
+**Security ripple (large):** the `programsLed` session claim (auth-options / authClaims
+/ next-auth.d.ts, added for the program-ops row gate) becomes `instancesLed`; the
+event→program authorize hop (`access-resolvers`, `events/[id]` inline gate, the GAP-1
+roster gate in `programs/[id]`) becomes event→instance→program. Full design proposal:
+[PROGRAM_INSTANCE_RESTRUCTURE.md](../../../docs/designs/PROGRAM_INSTANCE_RESTRUCTURE.md);
+**do not write code until the child-placement table + phasing are reviewed.**
+Supersedes the P2-3 Event/session naming item (naming resolves as an output).
+
+## 🟡 GAP-2 drift-guard — ban auth/route drift in CI (validators already armed)
+
+The scope validators are **armed + green** ([scopeValidators.test.ts](../../src/security/__tests__/scopeValidators.test.ts),
+#733): they prove every sensitive field is bound and every route grant resolves. The
+**second half is unbuilt by choice** — a CI drift-guard that fails on any new
+`getServerSession`/`authenticateRequest` import outside the wrapper libs
+([lib/auth.ts](../../src/lib/auth.ts)), and any `src/app/api/**` route that calls
+`prisma` without a registered policy. Today: 2 legit `getServerSession`
+(`dev-personas`, `shop/tools`, both optional-session). Without the guard the IDOR/drift
+class can regrow (it already went 2→6→2 once). Re-armable anytime.
+Ref: [auth-consistency-analysis.md](../security/auth-consistency-analysis.md) §9 Step 7.
+
+## 🔵 `handler()` consolidation — the "one authorization rule" end-state
+
+~13 of ~101 routes use the security `handler()` runtime; ~75 use `withAuth` (admission
+only, no field stripping) with row-authorization hand-rolled inline. End-state:
+`handler()` becomes the default, `withAuth` collapses into a degenerate `handler()`
+(permissive `orderedView` → no-op stripper), `withCron`/`withWebhook`/`withKiosk` stay
+the non-session front doors, `authenticateRequest` goes internal-only. This is
+**consolidation, not a security gap** — sequence behind everything else.
+Ref: [auth-consistency-analysis.md](../security/auth-consistency-analysis.md) §4, §9 Steps 5–6.
+
+## 🟢 Response envelope — phase 2 (success bodies)
+
+Error responses route through `apiError()` + a lint guard (#728). **Success** bodies are
+still ad-hoc (~547 raw `NextResponse.json`, varied shapes: `{data}`, `{household}`,
+`{Person}`, …). Standardizing them is deliberately deferred to **ride the `handler()`
+migration** (handler owns the success `envelope`), not a parallel rewrite. Ref: P3-1.
+
+---
+
 ## Considered and dismissed (no drift — recorded so we don't re-audit)
 
 - **RSVP** — `RSVP` / `RSVPStatus`; distinct from Visit (intent vs actual);
