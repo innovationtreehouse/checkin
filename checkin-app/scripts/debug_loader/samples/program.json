@@ -1,0 +1,28 @@
+{
+  "type": "program",
+  "program": {
+    "name": "Fall Woodworking Fundamentals",
+    "leadMentorName": "Alex Admin",
+    "startAt": "2026-09-08",
+    "endAt": "2026-12-15",
+    "orgMemberOnly": false,
+    "minAge": 13,
+    "maxAge": 18,
+    "memberPrice": "25.00",
+    "nonMemberPrice": "40.00",
+    "maxParticipants": 12
+  },
+  "sessions": [
+    {
+      "name": "Woodworking — Tuesday Session",
+      "description": "Weekly hands-on session in the wood shop.",
+      "startDate": "2026-09-08",
+      "startTime": "16:00",
+      "endTime": "18:00",
+      "recurrence": {
+        "daysOfWeek": [2],
+        "until": "2026-12-15"
+      }
+    }
+  ]
+}

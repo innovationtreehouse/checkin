@@ -1,0 +1,36 @@
+{
+  "type": "enrollments",
+  "enrollments": [
+    {
+      "programName": "Spring Woodworking",
+      "attendees": [
+        "child.family@example.com",
+        "parent.family@example.com",
+        "certified.adult@example.com"
+      ]
+    },
+    {
+      "programName": "April Robotics",
+      "attendees": [
+        "child.family@example.com",
+        "parent2.family@example.com",
+        "keyholder2@example.com"
+      ]
+    },
+    {
+      "programName": "May Electronics",
+      "attendees": [
+        "child.family@example.com",
+        "tool.certifier@example.com",
+        "bg.reviewer@example.com"
+      ]
+    },
+    {
+      "programName": "June Ceramics",
+      "attendees": [
+        "parent.family2@example.com",
+        "parent.family@example.com"
+      ]
+    }
+  ]
+}
