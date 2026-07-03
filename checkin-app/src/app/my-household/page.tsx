@@ -219,6 +219,7 @@ export default function HouseholdPage() {
 
   const startAddContact = () => {
     setContactError("");
+    setContactNotice("");
     setContactErrors({});
     setContactForm(blankContactForm);
     setShowContactForm(true);
@@ -234,6 +235,7 @@ export default function HouseholdPage() {
   };
   const startEditContact = (c: EmergencyContact) => {
     setContactError("");
+    setContactNotice("");
     setContactErrors({});
     setContactForm({ id: c.id, name: c.name, phone: c.phone, email: c.email || "", relationship: c.relationship || "" });
     setShowContactForm(true);
@@ -506,6 +508,10 @@ export default function HouseholdPage() {
                   <Alert color="red" variant="light" mb="sm" withCloseButton onClose={() => setContactError("")}>{contactError}</Alert>
                 )}
 
+                {contactNotice && (
+                  <Alert color="green" variant="light" mb="sm" withCloseButton onClose={() => setContactNotice("")}>{contactNotice}</Alert>
+                )}
+
                 {contacts.length === 0 && !showContactForm && (
                   <Alert color="red" variant="light">No emergency contact on file. Add at least one.</Alert>
                 )}
@@ -565,10 +571,6 @@ export default function HouseholdPage() {
                       </Group>
                     </Stack>
                   </form>
-                )}
-
-                {contactNotice && (
-                  <Alert color="green" variant="light" mt="sm" withCloseButton onClose={() => setContactNotice("")}>{contactNotice}</Alert>
                 )}
           </Card>
         )}
