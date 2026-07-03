@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import type { MembershipProcessStatus, MembershipStatus } from "@/generated/prisma/client";
+import type { OrgMembershipProcessStatus, OrgMembershipStatus } from "@/generated/prisma/client";
 import {
   Alert, Anchor, Box, Button, Card, Checkbox, Container, Group,
   SimpleGrid, Stack, Text, TextInput, ThemeIcon, Title,
@@ -39,8 +39,8 @@ interface ExternalStatus {
 
 interface IntakeState {
   hasHousehold: boolean;
-  membershipStatus: MembershipStatus | null;
-  process: { id: number; kind: string; status: MembershipProcessStatus } | null;
+  membershipStatus: OrgMembershipStatus | null;
+  process: { id: number; kind: string; status: OrgMembershipProcessStatus } | null;
   external: ExternalStatus | null;
   prefill: {
     household: ({ name: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactEmail: string | null } & Partial<StructuredAddress>) | null;

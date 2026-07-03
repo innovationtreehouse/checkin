@@ -78,14 +78,14 @@ export async function getExternalStatus(process: {
  * regressed. Mirrors review.ts `attest`.
  */
 export async function advanceExternalIfComplete(processId: number) {
-    const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+    const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) return process;
     if (process.status !== "PENDING_EXTERNAL_ACTION") return process;
     if (!process.contractSignedAt) return process;
     if (!process.bgClearedAt && !process.bgConsentAt) return process;
 
     const advanced = await prisma.$transaction(async (tx) => {
-        const { count } = await tx.membershipProcess.updateMany({
+        const { count } = await tx.orgMembershipProcess.updateMany({
             where: {
                 id: processId,
                 status: "PENDING_EXTERNAL_ACTION",
@@ -99,15 +99,15 @@ export async function advanceExternalIfComplete(processId: number) {
             data: {
                 actorId: SYSTEM_ACTOR,
                 action: "EDIT",
-                tableName: "MembershipProcess",
+                tableName: "OrgMembershipProcess",
                 affectedEntityId: processId,
                 oldData: { status: "PENDING_EXTERNAL_ACTION" },
                 newData: { status: "PENDING_PAYMENT" },
             },
         });
-        return tx.membershipProcess.findUnique({ where: { id: processId } });
+        return tx.orgMembershipProcess.findUnique({ where: { id: processId } });
     });
-    if (!advanced) return prisma.membershipProcess.findUnique({ where: { id: processId } });
+    if (!advanced) return prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
 
     // No valid prior check ⇒ a human review is still needed. Ping the reviewers;
     // the review now proceeds in parallel with payment (log-only until email is configured).
@@ -117,19 +117,19 @@ export async function advanceExternalIfComplete(processId: number) {
 
 /** Record that the membership contract was signed (idempotent), then maybe advance. */
 export async function markContractSigned(processId: number, actorId: number = SYSTEM_ACTOR) {
-    const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+    const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ExternalError("not_found", "Application not found.");
     // Conditional on contractSignedAt: null — two concurrent Zoho webhook retries
     // both see null, but only the winner's updateMany flips it (count === 1), so the
     // audit row is written once.
     await prisma.$transaction(async (tx) => {
-        const { count } = await tx.membershipProcess.updateMany({
+        const { count } = await tx.orgMembershipProcess.updateMany({
             where: { id: processId, contractSignedAt: null },
             data: { contractSignedAt: new Date() },
         });
         if (count !== 1) return;
         await tx.auditLog.create({
-            data: { actorId, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, newData: { contractSignedAt: true } },
+            data: { actorId, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, newData: { contractSignedAt: true } },
         });
     });
     return advanceExternalIfComplete(processId);
@@ -137,17 +137,17 @@ export async function markContractSigned(processId: number, actorId: number = SY
 
 /** Board human-marks that the applicant submitted background-check consent, then maybe advance. */
 export async function markBgConsent(processId: number, actorId: number) {
-    const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+    const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ExternalError("not_found", "Application not found.");
     // Conditional on bgConsentAt: null so concurrent marks write the audit row once.
     await prisma.$transaction(async (tx) => {
-        const { count } = await tx.membershipProcess.updateMany({
+        const { count } = await tx.orgMembershipProcess.updateMany({
             where: { id: processId, bgConsentAt: null },
             data: { bgConsentAt: new Date() },
         });
         if (count !== 1) return;
         await tx.auditLog.create({
-            data: { actorId, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, newData: { bgConsentAt: true } },
+            data: { actorId, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, newData: { bgConsentAt: true } },
         });
     });
     return advanceExternalIfComplete(processId);
@@ -155,18 +155,18 @@ export async function markBgConsent(processId: number, actorId: number) {
 
 /** Associate a Zoho signing request id with a process so its webhook can match. */
 export async function setZohoEnvelope(processId: number, requestId: string, actorId: number) {
-    const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+    const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ExternalError("not_found", "Application not found.");
-    const updated = await prisma.membershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: requestId } });
+    const updated = await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: requestId } });
     await prisma.auditLog.create({
-        data: { actorId, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, newData: { zohoEnvelopeId: requestId } },
+        data: { actorId, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, newData: { zohoEnvelopeId: requestId } },
     });
     return updated;
 }
 
 /** Find the in-flight process tied to a Zoho request id (for webhook matching). */
 export async function findProcessByEnvelope(requestId: string) {
-    return prisma.membershipProcess.findFirst({ where: { zohoEnvelopeId: requestId } });
+    return prisma.orgMembershipProcess.findFirst({ where: { zohoEnvelopeId: requestId } });
 }
 
 /**
@@ -181,10 +181,10 @@ export async function findProcessByEnvelope(requestId: string) {
 export async function syncContractStatus(userId: number): Promise<ExternalStatus | null> {
     const user = await prisma.person.findUnique({
         where: { id: userId },
-        include: { household: { include: { membership: { include: { processes: true } } } } },
+        include: { household: { include: { orgMembership: { include: { processes: true } } } } },
     });
     // Same selection as the signing action: the latest process awaiting external action.
-    const process = latestPendingExternal(user?.household?.membership?.processes);
+    const process = latestPendingExternal(user?.household?.orgMembership?.processes);
     if (!process) return null;
 
     if (!process.contractSignedAt && process.zohoEnvelopeId && config.zohoAvailable()) {
@@ -199,7 +199,7 @@ export async function syncContractStatus(userId: number): Promise<ExternalStatus
     }
 
     // Re-read: markContractSigned may have flipped contractSignedAt (and advanced the phase).
-    const fresh = await prisma.membershipProcess.findUnique({ where: { id: process.id } });
+    const fresh = await prisma.orgMembershipProcess.findUnique({ where: { id: process.id } });
     return fresh ? getExternalStatus(fresh) : null;
 }
 
@@ -223,7 +223,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
         where: { id: userId },
         include: {
             householdLeads: true,
-            household: { include: { membership: { include: { processes: true } } } },
+            household: { include: { orgMembership: { include: { processes: true } } } },
         },
     });
     if (!user) throw new ExternalError("not_found", "Application not found.");
@@ -237,7 +237,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
     // re-sign the agreement fresh each cycle. Gating on status alone keeps this in
     // step with getIntakeState/getExternalStatus, which surface the button for any
     // non-ACTIVE process (a kind filter here would render the button then 409).
-    const process = latestPendingExternal(user.household?.membership?.processes);
+    const process = latestPendingExternal(user.household?.orgMembership?.processes);
     if (!process) throw new ExternalError("wrong_phase", "No application is awaiting your signature.");
 
     const recipientEmail = user.email;
@@ -322,12 +322,12 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
         // re-create on every click and a `zohoEnvelopeId: null`-only claim would
         // always lose — a permanent 409. Overwriting it points the process (and its
         // webhook match) at the embeddable in-app request.
-        const claim = await prisma.membershipProcess.updateMany({
+        const claim = await prisma.orgMembershipProcess.updateMany({
             where: { id: process.id, OR: [{ zohoEnvelopeId: null }, { zohoActionId: null }] },
             data: { zohoEnvelopeId: created.requestId, zohoActionId: created.actionId },
         });
         if (claim.count === 0) {
-            const winner = await prisma.membershipProcess.findUnique({ where: { id: process.id } });
+            const winner = await prisma.orgMembershipProcess.findUnique({ where: { id: process.id } });
             requestId = winner?.zohoEnvelopeId ?? null;
             actionId = winner?.zohoActionId ?? null;
             if (!requestId || !actionId) {
@@ -341,7 +341,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
                 data: {
                     actorId: userId,
                     action: "EDIT",
-                    tableName: "MembershipProcess",
+                    tableName: "OrgMembershipProcess",
                     affectedEntityId: process.id,
                     newData: { zohoEnvelopeId: requestId, zohoActionId: actionId },
                 },

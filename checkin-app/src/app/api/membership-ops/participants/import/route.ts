@@ -105,7 +105,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             householdId: number,
             db: DbClient = prisma,
         ) => {
-            await db.membership.upsert({
+            await db.orgMembership.upsert({
                 where: { householdId },
                 create: { householdId, status: 'ACTIVE' },
                 update: { status: 'ACTIVE' },
@@ -369,7 +369,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                             }
 
                             // Delete memberships and leads from the old source household
-                            await tx.membership.deleteMany({ where: { householdId: sourceHouseholdId } });
+                            await tx.orgMembership.deleteMany({ where: { householdId: sourceHouseholdId } });
                             await tx.householdLead.deleteMany({ where: { householdId: sourceHouseholdId } });
 
                             // Finally delete the source household (empty now, so the

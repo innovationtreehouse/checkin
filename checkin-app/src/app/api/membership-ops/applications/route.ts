@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * envelope preserves the response shape consumers expect.
  */
 export const GET = handler("GET /api/membership-ops/applications", async () => {
-    const processes = await prisma.membershipProcess.findMany({
+    const processes = await prisma.orgMembershipProcess.findMany({
         where: { status: { not: "ACTIVE" } },
         orderBy: { createdAt: "desc" },
         select: {
@@ -27,7 +27,7 @@ export const GET = handler("GET /api/membership-ops/applications", async () => {
             bgClearedAt: true,
             paidAt: true,
             attestations: { select: { id: true, result: true, isMarkedVolunteer: true } },
-            membership: {
+            orgMembership: {
                 select: {
                     householdId: true,
                     isVolunteer: true,
@@ -43,5 +43,5 @@ export const GET = handler("GET /api/membership-ops/applications", async () => {
         },
     });
 
-    return { MembershipProcess: processes };
+    return { OrgMembershipProcess: processes };
 });

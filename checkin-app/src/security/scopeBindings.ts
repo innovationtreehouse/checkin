@@ -52,7 +52,7 @@ export const SCOPE_BINDINGS = {
         their_households: { field: 'householdId', eqCtx: 'householdId' },
         their_own: { field: 'personId', eqCtx: 'selfId' },
     },
-    Membership: { their_households: { field: 'householdId', eqCtx: 'householdId' } },
+    OrgMembership: { their_households: { field: 'householdId', eqCtx: 'householdId' } },
     Program: {
         their_program_participants: { field: 'id', inCtx: ['programsLed', 'programsCoreVolIn'] },
     },
@@ -151,7 +151,7 @@ export const ROW_SCOPE_KEY: Record<string, string> = {
  * it as pending). Removed.
  */
 export const OPT_OUT_PENDING_ROUTE = new Set<string>([
-    'MembershipProcess', // board/admin today; a household-facing status route is plausible
+    'OrgMembershipProcess', // board/admin today; a household-facing status route is plausible
     'BackgroundCheckAttestation', // bind their_own at migration, keep notes `internal`
     'Corporation', // has leads→participantId; a corp-lead view is plausible
     'VolunteerDesignation', // has createdById; confirm whether a self view is warranted

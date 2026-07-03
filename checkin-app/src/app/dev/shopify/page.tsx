@@ -14,22 +14,22 @@ export const dynamic = "force-dynamic";
 export default async function DevShopifyPage() {
     if (!config.shopifyMockActive()) notFound();
 
-    const processes = await prisma.membershipProcess.findMany({
+    const processes = await prisma.orgMembershipProcess.findMany({
         where: { status: "PENDING_PAYMENT" },
         orderBy: { id: "desc" },
-        select: { id: true, membership: { select: { household: { select: { name: true } }, isVolunteer: true } } },
+        select: { id: true, orgMembership: { select: { household: { select: { name: true } }, isVolunteer: true } } },
     });
 
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const hasVariant = !!(settings?.membershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId);
+    const hasVariant = !!(settings?.orgMembershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId);
 
     return (
         <DevShopifyClient
             hasVariant={hasVariant}
             processes={processes.map((p) => ({
                 id: p.id,
-                household: p.membership.household?.name ?? "(unnamed household)",
-                isVolunteer: p.membership.isVolunteer,
+                household: p.orgMembership.household?.name ?? "(unnamed household)",
+                isVolunteer: p.orgMembership.isVolunteer,
             }))}
         />
     );

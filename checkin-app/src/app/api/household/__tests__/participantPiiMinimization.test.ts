@@ -82,7 +82,7 @@ describe("Participant PII minimization (M1, M2)", () => {
                     id: 10,
                     name: "Test Household",
                     leads: [{ householdId: 10, participantId: 1 }],
-                    membership: { id: 1, status: "ACTIVE", memberSince: new Date(), isVolunteer: false, householdId: 10 },
+                    orgMembership: { id: 1, status: "ACTIVE", memberSince: new Date(), isVolunteer: false, householdId: 10 },
                     householdMembers: [projected],
                 },
             });

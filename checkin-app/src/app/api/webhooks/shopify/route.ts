@@ -94,7 +94,7 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
             if (!isNaN(processId)) {
                 const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
                 const membershipVariantIds = new Set(
-                    [settings?.membershipVariantId, settings?.shopifyNormalVariantId, settings?.shopifyVolunteerVariantId].filter(
+                    [settings?.orgMembershipVariantId, settings?.shopifyNormalVariantId, settings?.shopifyVolunteerVariantId].filter(
                         (v): v is string => !!v,
                     ),
                 );

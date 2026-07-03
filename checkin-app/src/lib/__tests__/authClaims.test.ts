@@ -10,7 +10,7 @@ function participant(overrides: Partial<ClaimSourceParticipant> = {}): ClaimSour
         isBackgroundCheckReviewer: true,
         householdId: 99,
         toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
-        household: { membership: { status: 'ACTIVE' } },
+        household: { orgMembership: { status: 'ACTIVE' } },
         ...overrides,
     };
 }
@@ -18,7 +18,7 @@ function participant(overrides: Partial<ClaimSourceParticipant> = {}): ClaimSour
 describe('assignParticipantClaims — household login gate', () => {
     it('forces denied=true and strips every authority flag for a DENIED household', () => {
         const token = {} as JWT;
-        assignParticipantClaims(token, participant({ household: { membership: { status: 'DENIED' } } }));
+        assignParticipantClaims(token, participant({ household: { orgMembership: { status: 'DENIED' } } }));
 
         expect(token.denied).toBe(true);
         expect(token.isSysadmin).toBe(false);
@@ -45,7 +45,7 @@ describe('assignParticipantClaims — household login gate', () => {
         'does not deny for non-DENIED status: %s',
         (status) => {
             const token = {} as JWT;
-            const household = status === undefined ? null : { membership: { status } };
+            const household = status === undefined ? null : { orgMembership: { status } };
             assignParticipantClaims(token, participant({ household }));
 
             expect(token.denied).toBe(false);
@@ -71,7 +71,7 @@ describe('assignParticipantClaims — householdLead claim', () => {
         const token = {} as JWT;
         assignParticipantClaims(token, participant({
             householdLeads: [{ personId: 7 }],
-            household: { membership: { status: 'DENIED' } },
+            household: { orgMembership: { status: 'DENIED' } },
         }));
         expect(token.householdLead).toBe(false);
     });

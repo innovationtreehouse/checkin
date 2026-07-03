@@ -23,7 +23,7 @@ describe('Admin Households API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        await prisma.membership.deleteMany({});
+        await prisma.orgMembership.deleteMany({});
         await prisma.person.deleteMany({
             where: { email: { contains: 'households-api-test' } }
         });
@@ -54,7 +54,7 @@ describe('Admin Households API Integration Tests', () => {
         testUserId = user.id;
 
         // Create an existing active membership for household 2
-        await prisma.membership.create({
+        await prisma.orgMembership.create({
             data: {
                 householdId: testHousehold2Id,
                 status: 'ACTIVE'
@@ -64,7 +64,7 @@ describe('Admin Households API Integration Tests', () => {
 
     afterAll(async () => {
         // Clean up — scope membership deletes to this test's households
-        await prisma.membership.deleteMany({
+        await prisma.orgMembership.deleteMany({
             where: { householdId: { in: [testHousehold1Id, testHousehold2Id] } }
         });
         await prisma.person.deleteMany({
@@ -173,7 +173,7 @@ describe('Admin Households API Integration Tests', () => {
             expect(data.success).toBe(true);
             expect(data.membership.status).toBe('ACTIVE');
 
-            const membership = await prisma.membership.findFirst({
+            const membership = await prisma.orgMembership.findFirst({
                 where: { householdId: testHousehold1Id, status: 'ACTIVE' }
             });
             expect(membership).toBeDefined();
@@ -195,7 +195,7 @@ describe('Admin Households API Integration Tests', () => {
             const data = await res.json();
             expect(data.success).toBe(true);
 
-            const activeMembership = await prisma.membership.findFirst({
+            const activeMembership = await prisma.orgMembership.findFirst({
                 where: { householdId: testHousehold2Id, status: 'ACTIVE' }
             });
             expect(activeMembership).toBeNull(); // Should be deactivated

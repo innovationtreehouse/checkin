@@ -30,7 +30,7 @@ export const GET = withAuth(
                     household: {
                         include: {
                             householdMembers: true,
-                            membership: true,
+                            orgMembership: true,
                         }
                     }
                 }

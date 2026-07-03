@@ -33,7 +33,7 @@ describe('Membership settings + volunteer designations API', () => {
         const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
-            await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
@@ -51,7 +51,7 @@ describe('Membership settings + volunteer designations API', () => {
 
         // A full-price active member, for the designation warning.
         await prisma.person.create({
-            data: { email: `fullmember-${TAG}@example.com`, name: 'Full', household: { create: { name: `Full HH ${TAG}`, membership: { create: { status: 'ACTIVE', isVolunteer: false } } } } },
+            data: { email: `fullmember-${TAG}@example.com`, name: 'Full', household: { create: { name: `Full HH ${TAG}`, orgMembership: { create: { status: 'ACTIVE', isVolunteer: false } } } } },
         });
     });
 

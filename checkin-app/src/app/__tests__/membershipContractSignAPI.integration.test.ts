@@ -53,9 +53,9 @@ describe('POST /api/membership/contract/sign', () => {
         const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
-            await prisma.auditLog.deleteMany({ where: { tableName: 'MembershipProcess', affectedEntityId: { in: ids } } }).catch(() => {});
-            await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
-            await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.auditLog.deleteMany({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: { in: ids } } }).catch(() => {});
+            await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
@@ -72,8 +72,8 @@ describe('POST /api/membership/contract/sign', () => {
         const lead = await prisma.person.create({ data: { email: `lead-${TAG}@example.com`, name: 'Lead Parent', householdId: hh.id } });
         const nonLead = await prisma.person.create({ data: { email: `member-${TAG}@example.com`, name: 'Member', householdId: hh.id } });
         await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
-        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
-        const proc = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
+        const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
         leadId = lead.id;
         nonLeadId = nonLead.id;
         processId = proc.id;
@@ -104,7 +104,7 @@ describe('POST /api/membership/contract/sign', () => {
         expect(zoho.createRequest).toHaveBeenCalledTimes(1);
         // PrintedName is prefilled from the applicant's name.
         expect((zoho.submitRequest as jest.Mock).mock.calls[0][0].prefill).toEqual({ PrintedName: 'Lead Parent' });
-        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.zohoEnvelopeId).toBe('REQ-1');
         expect(p?.zohoActionId).toBe('ACT-1');
     });
@@ -115,7 +115,7 @@ describe('POST /api/membership/contract/sign', () => {
         expect(res.status).toBe(200);
         expect(zoho.createRequest).not.toHaveBeenCalled(); // already created last test
         expect(zoho.getEmbeddedSignUrl).toHaveBeenCalledTimes(1);
-        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.zohoEnvelopeId).toBe('REQ-1'); // unchanged
     });
 
@@ -123,8 +123,8 @@ describe('POST /api/membership/contract/sign', () => {
         const hh = await prisma.household.create({ data: { name: `HH renewal ${TAG}` } });
         const rLead = await prisma.person.create({ data: { email: `rlead-${TAG}@example.com`, name: 'Renewing Lead', householdId: hh.id } });
         await prisma.householdLead.create({ data: { householdId: hh.id, personId: rLead.id } });
-        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
-        await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'RENEWAL', status: 'PENDING_EXTERNAL_ACTION' } });
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
+        await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'RENEWAL', status: 'PENDING_EXTERNAL_ACTION' } });
 
         asUser(rLead.id);
         const res = await SIGN(signReq());
@@ -139,7 +139,7 @@ describe('POST /api/membership/contract/sign', () => {
             n += 1;
             return { requestId: `REQ-C${n}`, actionId: `ACT-C${n}`, documentId: `DOC-C${n}` };
         });
-        await prisma.membershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: null, zohoActionId: null } });
+        await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: null, zohoActionId: null } });
         asUser(leadId);
 
         const [r1, r2] = await Promise.all([SIGN(signReq()), SIGN(signReq())]);
@@ -148,7 +148,7 @@ describe('POST /api/membership/contract/sign', () => {
 
         // Exactly one canonical request persisted, and every embed URL was minted
         // against THAT id — no split brain even if both calls created at Zoho.
-        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.zohoEnvelopeId).toBeTruthy();
         expect(p?.zohoActionId).toBeTruthy();
         for (const call of (zoho.getEmbeddedSignUrl as jest.Mock).mock.calls) {
@@ -158,19 +158,19 @@ describe('POST /api/membership/contract/sign', () => {
 
         // Restore the default create mock + a stored request for later assertions.
         (zoho.createRequest as jest.Mock).mockResolvedValue({ requestId: 'REQ-1', actionId: 'ACT-1', documentId: 'DOC-1' });
-        await prisma.membershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: 'REQ-1', zohoActionId: 'ACT-1' } });
+        await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: 'REQ-1', zohoActionId: 'ACT-1' } });
     });
 
     it('recovers when an envelope id was stored without an action id (legacy admin/email flow)', async () => {
         // setZohoEnvelope stores zohoEnvelopeId WITHOUT an action id — that pair
         // can't be embedded, so the in-app flow must re-create and overwrite it
         // rather than 409 forever on the incomplete pair.
-        await prisma.membershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: 'LEGACY-ENV', zohoActionId: null } });
+        await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: 'LEGACY-ENV', zohoActionId: null } });
         asUser(leadId);
         const res = await SIGN(signReq());
         expect(res.status).toBe(200);
         expect(zoho.createRequest).toHaveBeenCalledTimes(1);
-        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.zohoEnvelopeId).toBe('REQ-1'); // overwritten with the embeddable request
         expect(p?.zohoActionId).toBe('ACT-1');
     });
@@ -181,8 +181,8 @@ describe('POST /api/membership/contract/sign', () => {
         const otherLead = await prisma.person.create({ data: { email: `otherlead-${TAG}@example.com`, name: 'Other Lead', householdId: hh.id } });
         await prisma.householdLead.create({ data: { householdId: hh.id, personId: otherLead.id } });
         const isSysadmin = await prisma.person.create({ data: { email: `isSysadmin-${TAG}@example.com`, name: 'Sys Admin', householdId: hh.id, isSysadmin: true } });
-        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
-        await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
+        await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
 
         asUser(isSysadmin.id); // session isSysadmin flag is irrelevant; the service reads the DB row
         const res = await SIGN(signReq());
@@ -196,8 +196,8 @@ describe('POST /api/membership/contract/sign', () => {
         const hh = await prisma.household.create({ data: { name: `HH noagreement ${TAG}` } });
         const lead = await prisma.person.create({ data: { email: `noagr-lead-${TAG}@example.com`, name: 'NoAgr Lead', householdId: hh.id } });
         await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
-        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
-        await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
+        await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
 
         (loadAgreementPdf as jest.Mock).mockRejectedValueOnce(new AgreementUnavailableError('not ready'));
 
@@ -210,11 +210,11 @@ describe('POST /api/membership/contract/sign', () => {
     });
 
     it('409s when the application is not in the EXTERNAL phase', async () => {
-        await prisma.membershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
+        await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
         asUser(leadId);
         const res = await SIGN(signReq());
         expect(res.status).toBe(409);
-        await prisma.membershipProcess.update({ where: { id: processId }, data: { status: 'PENDING_EXTERNAL_ACTION' } });
+        await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'PENDING_EXTERNAL_ACTION' } });
     });
 
     it('503s when Zoho is not configured (prod — the dev mock is dead here)', async () => {

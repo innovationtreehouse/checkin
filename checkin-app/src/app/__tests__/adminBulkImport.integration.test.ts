@@ -23,7 +23,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
     beforeAll(async () => {
         try {
             // Clean up any leaked state
-            await prisma.membership.deleteMany({});
+            await prisma.orgMembership.deleteMany({});
             await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({
                 where: { email: { contains: 'import-test' } }
@@ -54,7 +54,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
     afterAll(async () => {
         try {
             // Clean up
-            await prisma.membership.deleteMany({});
+            await prisma.orgMembership.deleteMany({});
             await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({
                 where: { email: { contains: 'import-test' } }
@@ -74,7 +74,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
     afterEach(async () => {
         try {
             // Clean up participants created during tests
-            await prisma.membership.deleteMany({});
+            await prisma.orgMembership.deleteMany({});
             await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({
                 where: { email: { contains: 'batch-import-test' } }

@@ -10,8 +10,8 @@ import MembershipSettingsPage from "../page";
 const SETTINGS = {
   normalDuesCents: 15000,
   volunteerDuesCents: 5000,
-  membershipYearBoundary: "2025-09-01T00:00:00.000Z",
-  membershipVariantId: "123456",
+  orgMembershipYearBoundary: "2025-09-01T00:00:00.000Z",
+  orgMembershipVariantId: "123456",
   volunteerDiscountCode: "VOLUNTEER",
   bgRecheckMonths: 24,
 };
@@ -88,7 +88,7 @@ describe("MembershipSettingsPage", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/settings/membership", expect.objectContaining({ method: "PUT" })),
     );
     const [, putOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PUT")!;
-    expect(JSON.parse(putOpts!.body as string)).toEqual(expect.objectContaining({ membershipYearBoundary: "2026-10-15" }));
+    expect(JSON.parse(putOpts!.body as string)).toEqual(expect.objectContaining({ orgMembershipYearBoundary: "2026-10-15" }));
     // A successful save re-locks the boundary field and reloads from the (unchanged)
     // mock settings; wait for that full reload so no state update leaks past the test.
     await waitFor(() => expect(screen.getByDisplayValue("2025-09-01")).toBeDisabled());
@@ -96,7 +96,7 @@ describe("MembershipSettingsPage", () => {
 
   it("shows 'not set' and rolls the boundary label to next year when the stored date has already passed", async () => {
     setSession({ id: 1, isSysadmin: true });
-    mockFetchJson({ "/api/settings/membership": { settings: { ...SETTINGS, membershipYearBoundary: null } } });
+    mockFetchJson({ "/api/settings/membership": { settings: { ...SETTINGS, orgMembershipYearBoundary: null } } });
     renderWithProviders(<MembershipSettingsPage />);
     await screen.findByDisplayValue("150.00");
     expect(screen.getByText("not set")).toBeInTheDocument();
@@ -106,7 +106,7 @@ describe("MembershipSettingsPage", () => {
     jest.useFakeTimers().setSystemTime(new Date("2026-06-30T12:00:00.000Z"));
     setSession({ id: 1, isSysadmin: true });
     // "today" is pinned to 2026-06-30; Jan 15 has already passed this year.
-    mockFetchJson({ "/api/settings/membership": { settings: { ...SETTINGS, membershipYearBoundary: "2025-01-15T00:00:00.000Z" } } });
+    mockFetchJson({ "/api/settings/membership": { settings: { ...SETTINGS, orgMembershipYearBoundary: "2025-01-15T00:00:00.000Z" } } });
     renderWithProviders(<MembershipSettingsPage />);
     await screen.findByDisplayValue("150.00");
     expect(screen.getByText("January 15, 2027")).toBeInTheDocument();

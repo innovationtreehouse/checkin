@@ -89,7 +89,7 @@ function referenceScopesHeld(
             if (personId !== undefined && personId === ctx.selfId) scopes.add('their_own');
             break;
         }
-        case 'Membership': {
+        case 'OrgMembership': {
             const householdId = num(row.householdId);
             if (householdId !== undefined && householdId === ctx.householdId) scopes.add('their_households');
             break;
@@ -254,7 +254,7 @@ const MODELS = [
     'Fee',
     'Tool',
     'BoardSettings',
-    'MembershipProcess',
+    'OrgMembershipProcess',
     'UnknownModelXYZ',
 ];
 

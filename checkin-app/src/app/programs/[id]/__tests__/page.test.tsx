@@ -287,7 +287,7 @@ describe("ProgramEnrollmentPage", () => {
 
     it("redirects to Shopify checkout for a priced enrollment with a configured member variant", async () => {
         setSession({ id: 101 });
-        const memberHousehold = { household: { ...household.household, membership: { status: "ACTIVE" } } };
+        const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
         mockFetchJson({
             "/api/household": memberHousehold,
             "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),

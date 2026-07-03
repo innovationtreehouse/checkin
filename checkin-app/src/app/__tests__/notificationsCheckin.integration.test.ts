@@ -21,9 +21,9 @@ describe("sendCheckinNotifications()", () => {
         await prisma.person.deleteMany({
             where: { email: { contains: "notify-test" } }
         });
-        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { household: { householdMembers: { none: {} } } } } } });
-        await prisma.membershipProcess.deleteMany({ where: { membership: { household: { householdMembers: { none: {} } } } } });
-        await prisma.membership.deleteMany({ where: { household: { householdMembers: { none: {} } } } });
+        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { household: { householdMembers: { none: {} } } } } } });
+        await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { household: { householdMembers: { none: {} } } } } });
+        await prisma.orgMembership.deleteMany({ where: { household: { householdMembers: { none: {} } } } });
         await prisma.household.deleteMany({
             where: { householdMembers: { none: {} } }
         });
@@ -72,9 +72,9 @@ describe("sendCheckinNotifications()", () => {
         await prisma.person.deleteMany({
             where: { email: { contains: "notify-test" } }
         });
-        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { household: { householdMembers: { none: {} } } } } } });
-        await prisma.membershipProcess.deleteMany({ where: { membership: { household: { householdMembers: { none: {} } } } } });
-        await prisma.membership.deleteMany({ where: { household: { householdMembers: { none: {} } } } });
+        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { household: { householdMembers: { none: {} } } } } } });
+        await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { household: { householdMembers: { none: {} } } } } });
+        await prisma.orgMembership.deleteMany({ where: { household: { householdMembers: { none: {} } } } });
         await prisma.household.deleteMany({
             where: { householdMembers: { none: {} } }
         });

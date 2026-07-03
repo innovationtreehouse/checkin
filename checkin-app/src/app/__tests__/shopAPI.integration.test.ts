@@ -47,7 +47,7 @@ describe('Shop API Integration Tests', () => {
             where: { id: { in: existingUserIds } }
         });
         // Memberships belong to the household; remove them before deleting households.
-        await prisma.membership.deleteMany({
+        await prisma.orgMembership.deleteMany({
             where: { householdId: { in: existingHouseholdIds } }
         });
         await prisma.household.deleteMany({
@@ -79,7 +79,7 @@ describe('Shop API Integration Tests', () => {
                 email: 'common-shop-api-test@example.com',
                 name: 'Common',
                 // Volunteer member: the household holds an ACTIVE, isVolunteer membership.
-                household: { create: { membership: { create: { status: 'ACTIVE', isVolunteer: true } } } }
+                household: { create: { orgMembership: { create: { status: 'ACTIVE', isVolunteer: true } } } }
             }
         });
         commonId = commonUser.id;
@@ -128,7 +128,7 @@ describe('Shop API Integration Tests', () => {
             });
             if (householdIds.length > 0) {
                 // Memberships belong to the household; remove them before deleting households.
-                await prisma.membership.deleteMany({
+                await prisma.orgMembership.deleteMany({
                     where: { householdId: { in: householdIds } }
                 });
                 await prisma.household.deleteMany({

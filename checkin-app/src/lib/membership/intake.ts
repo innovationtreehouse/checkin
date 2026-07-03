@@ -15,7 +15,7 @@ import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/li
  * Intake data lives in the real tables (Household + Participant), so the form
  * is naturally resumable: returning applicants are re-served their saved data.
  * A long-lived Membership (status NONE until paid) anchors the per-cycle
- * MembershipProcess that tracks application progress.
+ * OrgMembershipProcess that tracks application progress.
  */
 
 export class IntakeError extends Error {
@@ -65,7 +65,7 @@ async function loadUserWithHousehold(userId: number) {
                 include: {
                     householdMembers: { orderBy: { id: "asc" } },
                     leads: true,
-                    membership: { include: { processes: true } },
+                    orgMembership: { include: { processes: true } },
                     emergencyContacts: { orderBy: [{ priority: "asc" }, { id: "asc" }] },
                 },
             },
@@ -84,7 +84,7 @@ export async function getIntakeState(userId: number) {
     if (!user) throw new IntakeError("no_household", "User not found.");
 
     const household = user.household;
-    const membership = household?.membership ?? null;
+    const membership = household?.orgMembership ?? null;
     // The current in-flight process of any kind (INITIAL or RENEWAL) — anything
     // not yet ACTIVE. During renewal the membership stays ACTIVE while its RENEWAL
     // process cycles, so we surface that here rather than the "you're a member" card.
@@ -136,9 +136,9 @@ export async function getIntakeState(userId: number) {
 /**
  * Begin (or resume) an INITIAL application for the caller's household. Ensures a
  * household exists, anchors a Membership (status NONE), and opens a
- * MembershipProcess at INTAKE. Idempotent: an in-flight process is returned as-is.
+ * OrgMembershipProcess at INTAKE. Idempotent: an in-flight process is returned as-is.
  *
- * The caller's own read of `user.household.membership.processes` (above) is stale
+ * The caller's own read of `user.household.orgMembership.processes` (above) is stale
  * the instant it's read, so a double-click or two tabs can both pass it and both
  * reach the create. Mirrors renewal's createRenewalProcess: the check+create is
  * re-run inside a transaction holding a `SELECT ... FOR UPDATE` lock on the
@@ -153,11 +153,11 @@ export async function startIntake(userId: number) {
     assertLead(user);
     const householdId = user.householdId!;
 
-    if (user.household?.membership?.status === "ACTIVE") {
+    if (user.household?.orgMembership?.status === "ACTIVE") {
         throw new IntakeError("already_member", "Your household is already an active member.");
     }
 
-    const membership = await prisma.membership.upsert({
+    const membership = await prisma.orgMembership.upsert({
         where: { householdId },
         create: { householdId, status: "NONE" },
         update: {},
@@ -166,24 +166,24 @@ export async function startIntake(userId: number) {
     try {
         return await prisma.$transaction(async (tx) => {
             // Lock the membership row so overlapping starts serialize here, not at the INSERT.
-            await tx.$queryRaw`SELECT id FROM "Membership" WHERE id = ${membership.id} FOR UPDATE`;
-            const existing = await tx.membershipProcess.findFirst({
-                where: { membershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+            await tx.$queryRaw`SELECT id FROM "OrgMembership" WHERE id = ${membership.id} FOR UPDATE`;
+            const existing = await tx.orgMembershipProcess.findFirst({
+                where: { orgMembershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
                 orderBy: { id: "desc" },
             });
             if (existing) return existing;
 
-            const process = await tx.membershipProcess.create({
-                data: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
+            const process = await tx.orgMembershipProcess.create({
+                data: { orgMembershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
             });
 
             await tx.auditLog.create({
                 data: {
                     actorId: userId,
                     action: "CREATE",
-                    tableName: "MembershipProcess",
+                    tableName: "OrgMembershipProcess",
                     affectedEntityId: process.id,
-                    newData: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
+                    newData: { orgMembershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
                 },
             });
 
@@ -195,8 +195,8 @@ export async function startIntake(userId: number) {
         // index membership_one_inflight_initial then rejects the duplicate with P2002.
         // Return the winner instead of surfacing a 500 to the applicant (mirrors renewal).
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-            const winner = await prisma.membershipProcess.findFirst({
-                where: { membershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+            const winner = await prisma.orgMembershipProcess.findFirst({
+                where: { orgMembershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
                 orderBy: { id: "desc" },
             });
             if (winner) return winner;
@@ -341,7 +341,7 @@ export async function submitIntake(userId: number) {
     assertLead(user);
 
     const household = user.household!;
-    const process = household.membership?.processes
+    const process = household.orgMembership?.processes
         .filter((p) => p.kind === "INITIAL" && p.status === "INTAKE")
         .sort((a, b) => b.id - a.id)[0];
     if (!process) throw new IntakeError("no_process", "No application is awaiting your information.");
@@ -369,10 +369,10 @@ export async function submitIntake(userId: number) {
     // rule as renewals), auto-clear the BG requirement now — the applicant won't
     // need to consent to or wait on a new check, just sign + pay.
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const boundary = settings?.membershipYearBoundary ? nextBoundary(settings.membershipYearBoundary, new Date()) : new Date();
+    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();
     const bgFresh = await householdBgIsFresh(household.id, boundary, settings?.bgRecheckMonths ?? 0);
 
-    const advanced = await prisma.membershipProcess.update({
+    const advanced = await prisma.orgMembershipProcess.update({
         where: { id: process.id },
         data: {
             status: "PENDING_EXTERNAL_ACTION",
@@ -385,7 +385,7 @@ export async function submitIntake(userId: number) {
         data: {
             actorId: userId,
             action: "EDIT",
-            tableName: "MembershipProcess",
+            tableName: "OrgMembershipProcess",
             affectedEntityId: process.id,
             oldData: { status: "INTAKE" },
             newData: { status: "PENDING_EXTERNAL_ACTION", ...(bgFresh ? { bgClearedAt: true } : {}) },

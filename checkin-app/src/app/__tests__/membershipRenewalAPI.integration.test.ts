@@ -35,17 +35,17 @@ describe('Membership renewal', () => {
         // The guardian is a household lead (drives the 3-yr BG-freshness check).
         const parent = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id, lastBackgroundCheck: parentBg ?? undefined } });
         await prisma.householdLead.create({ data: { householdId: hh.id, personId: parent.id } });
-        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
-        return { householdId: hh.id, membershipId: m.id };
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
+        return { householdId: hh.id, orgMembershipId: m.id };
     }
 
     async function wipe() {
         const hhs = await prisma.household.findMany({ where: { OR: [{ name: { contains: TAG } }, { householdMembers: { some: { email: { contains: TAG } } } }] }, select: { id: true } });
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
-            await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { householdId: { in: ids } } } } });
-            await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
-            await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { householdId: { in: ids } } } } });
+            await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
@@ -59,17 +59,17 @@ describe('Membership renewal', () => {
     async function setBoundary(date: Date | null) {
         await prisma.boardSettings.upsert({
             where: { id: 1 },
-            create: { id: 1, normalDuesCents: 0, volunteerDuesCents: 0, membershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
-            update: { membershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
+            create: { id: 1, normalDuesCents: 0, volunteerDuesCents: 0, orgMembershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
+            update: { orgMembershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
         });
     }
 
     beforeAll(async () => {
         process.env.CRON_SECRET = CRON_SECRET;
-        const maxRow = await prisma.membershipProcess.findFirst({ orderBy: { id: 'desc' }, select: { id: true } });
+        const maxRow = await prisma.orgMembershipProcess.findFirst({ orderBy: { id: 'desc' }, select: { id: true } });
         preMaxProcessId = maxRow?.id ?? 0;
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-        prevBoundary = existing?.membershipYearBoundary ?? null;
+        prevBoundary = existing?.orgMembershipYearBoundary ?? null;
         await wipe();
         const r1 = await prisma.person.create({ data: { email: `rev1-${TAG}@example.com`, name: 'Rev1', isBackgroundCheckReviewer: true, household: { create: { name: `Rev1 HH ${TAG}` } } } });
         rev1 = r1.id;
@@ -79,7 +79,7 @@ describe('Membership renewal', () => {
     afterAll(async () => {
         // Remove every process (and its attestations) this test's global sweeps opened.
         await prisma.backgroundCheckAttestation.deleteMany({ where: { processId: { gt: preMaxProcessId } } });
-        await prisma.membershipProcess.deleteMany({ where: { id: { gt: preMaxProcessId } } });
+        await prisma.orgMembershipProcess.deleteMany({ where: { id: { gt: preMaxProcessId } } });
         await wipe();
         await setBoundary(prevBoundary);
         if (prevSecret === undefined) delete process.env.CRON_SECRET;
@@ -109,12 +109,12 @@ describe('Membership renewal', () => {
 
         const first = await runRenewalSweep(now);
         expect(first.opened).toBeGreaterThanOrEqual(1);
-        const proc = await prisma.membershipProcess.findFirst({ where: { membershipId: m.membershipId } });
+        const proc = await prisma.orgMembershipProcess.findFirst({ where: { orgMembershipId: m.orgMembershipId } });
         expect(proc?.status).toBe('PENDING_RENEWAL');
         expect(proc?.kind).toBe('RENEWAL');
 
         const second = await runRenewalSweep(now);
-        const count = await prisma.membershipProcess.count({ where: { membershipId: m.membershipId } });
+        const count = await prisma.orgMembershipProcess.count({ where: { orgMembershipId: m.orgMembershipId } });
         expect(count).toBe(1); // not duplicated
         expect(second).toBeDefined();
     });
@@ -122,7 +122,7 @@ describe('Membership renewal', () => {
     it('beginRenewal goes straight to payment when a parent BG is fresh', async () => {
         await setBoundary(new Date(Date.UTC(2000, 7, 1)));
         const m = await makeActiveMembership('Fresh', new Date()); // recent BG
-        const proc = await prisma.membershipProcess.create({ data: { membershipId: m.membershipId, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
+        const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.orgMembershipId, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
         const out = await beginRenewal(proc.id);
         expect(out.status).toBe('PENDING_PAYMENT');
     });
@@ -130,7 +130,7 @@ describe('Membership renewal', () => {
     it('beginRenewal requires re-review when BG is stale', async () => {
         await setBoundary(new Date(Date.UTC(2000, 7, 1)));
         const m = await makeActiveMembership('Stale', null); // no BG on record
-        const proc = await prisma.membershipProcess.create({ data: { membershipId: m.membershipId, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
+        const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.orgMembershipId, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
         const out = await beginRenewal(proc.id);
         expect(out.status).toBe('RENEWAL_PENDING_BG');
 

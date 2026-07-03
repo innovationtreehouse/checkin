@@ -43,9 +43,9 @@ describe('Membership Intake API', () => {
         // Include participants created mid-flow (children/second parents lack the TAG email).
         const inHh = await prisma.person.findMany({ where: { householdId: { in: hhIds } }, select: { id: true } });
         const allIds = inHh.map((p) => p.id);
-        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { householdId: { in: hhIds } } } } });
-        await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: hhIds } } } });
-        await prisma.membership.deleteMany({ where: { householdId: { in: hhIds } } });
+        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { householdId: { in: hhIds } } } } });
+        await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: hhIds } } } });
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.householdLead.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: allIds } } });
         await prisma.person.deleteMany({ where: { householdId: { in: hhIds } } });
@@ -71,7 +71,7 @@ describe('Membership Intake API', () => {
             data: {
                 email: `active-${TAG}@example.com`,
                 name: 'Active Lead',
-                household: { create: { name: 'Active Flow HH', membership: { create: { status: 'ACTIVE' } } } },
+                household: { create: { name: 'Active Flow HH', orgMembership: { create: { status: 'ACTIVE' } } } },
             },
         });
         activeLeadId = activeLead.id;
@@ -101,7 +101,7 @@ describe('Membership Intake API', () => {
         expect(data.state.process.kind).toBe('INITIAL');
         expect(data.state.membershipStatus).toBe('NONE');
 
-        const membership = await prisma.membership.findUnique({ where: { householdId: leadHouseholdId } });
+        const membership = await prisma.orgMembership.findUnique({ where: { householdId: leadHouseholdId } });
         expect(membership?.status).toBe('NONE');
     });
 
@@ -110,7 +110,7 @@ describe('Membership Intake API', () => {
         const first = await (await POST(req() as never)).json();
         const second = await (await POST(req() as never)).json();
         expect(second.state.process.id).toBe(first.state.process.id);
-        const count = await prisma.membershipProcess.count({ where: { membership: { householdId: leadHouseholdId } } });
+        const count = await prisma.orgMembershipProcess.count({ where: { orgMembership: { householdId: leadHouseholdId } } });
         expect(count).toBe(1);
     });
 
@@ -191,7 +191,7 @@ describe('Membership Intake API', () => {
         expect(startRes.status).toBe(201);
         const processId = (await startRes.json()).state.process.id;
 
-        const createLog = await expectAuditRow(prisma, { action: 'CREATE', tableName: 'MembershipProcess', affectedEntityId: processId });
+        const createLog = await expectAuditRow(prisma, { action: 'CREATE', tableName: 'OrgMembershipProcess', affectedEntityId: processId });
         expect(createLog.actorId).toBe(lead.id);
         expect(auditJson(createLog.newData).status).toBe('INTAKE');
 
@@ -207,7 +207,7 @@ describe('Membership Intake API', () => {
 
         const submitRes = await SUBMIT(req() as never);
         expect(submitRes.status).toBe(200);
-        const editLog = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'MembershipProcess', affectedEntityId: processId });
+        const editLog = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'OrgMembershipProcess', affectedEntityId: processId });
         expect(editLog.actorId).toBe(lead.id);
         expect(auditJson(editLog.oldData).status).toBe('INTAKE');
         expect(auditJson(editLog.newData).status).toBe('PENDING_EXTERNAL_ACTION');
@@ -217,22 +217,22 @@ describe('Membership Intake API', () => {
         const owner = await prisma.person.create({
             data: {
                 email: `renew-lead-${TAG}@example.com`, name: 'Renew Lead',
-                household: { create: { name: 'Renew HH', membership: { create: { status: 'ACTIVE' } } } },
+                household: { create: { name: 'Renew HH', orgMembership: { create: { status: 'ACTIVE' } } } },
             },
         });
         const householdId = owner.householdId!;
-        const membership = await prisma.membership.findUniqueOrThrow({ where: { householdId } });
+        const membership = await prisma.orgMembership.findUniqueOrThrow({ where: { householdId } });
 
         const proc = await createRenewalProcess(membership.id, householdId, new Date(), { remind: false, boundary: new Date() });
         expect(proc).not.toBeNull();
 
-        const createLog = await expectAuditRow(prisma, { action: 'CREATE', tableName: 'MembershipProcess', affectedEntityId: proc!.id });
+        const createLog = await expectAuditRow(prisma, { action: 'CREATE', tableName: 'OrgMembershipProcess', affectedEntityId: proc!.id });
         expect(createLog.actorId).toBe(0); // SYSTEM_ACTOR — cron, not a person
         expect(auditJson(createLog.newData).status).toBe('PENDING_RENEWAL');
 
         const begun = await beginRenewal(proc!.id);
         expect(begun.status).not.toBe('PENDING_RENEWAL');
-        const editLog = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'MembershipProcess', affectedEntityId: proc!.id });
+        const editLog = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'OrgMembershipProcess', affectedEntityId: proc!.id });
         expect(editLog.actorId).toBe(0); // SYSTEM_ACTOR
         expect(auditJson(editLog.oldData).status).toBe('PENDING_RENEWAL');
     });

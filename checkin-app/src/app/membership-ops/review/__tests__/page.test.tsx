@@ -13,7 +13,7 @@ const queue = {
   queue: [
     {
       id: 100,
-      membership: { household: { name: "The Smiths", leads: [{ participant: { id: 1, name: "Pat Smith", email: "pat@example.com" } }] } },
+      orgMembership: { household: { name: "The Smiths", leads: [{ participant: { id: 1, name: "Pat Smith", email: "pat@example.com" } }] } },
       _count: { attestations: 1 },
     },
   ],

@@ -26,8 +26,8 @@ describe('Membership notifications API', () => {
         const hhs = await prisma.household.findMany({ where: { OR: [{ name: { contains: TAG } }, { householdMembers: { some: { email: { contains: TAG } } } }] }, select: { id: true } });
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
-            await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
-            await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
@@ -42,13 +42,13 @@ describe('Membership notifications API', () => {
 
         // An application awaiting review (eligible for the reviewer — different household).
         const appHh = await prisma.household.create({ data: { name: `App HH ${TAG}` } });
-        const m1 = await prisma.membership.create({ data: { householdId: appHh.id, status: 'NONE' } });
-        await prisma.membershipProcess.create({ data: { membershipId: m1.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } });
+        const m1 = await prisma.orgMembership.create({ data: { householdId: appHh.id, status: 'NONE' } });
+        await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m1.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } });
 
         // A blocked application (for the board).
         const blkHh = await prisma.household.create({ data: { name: `Blk HH ${TAG}` } });
-        const m2 = await prisma.membership.create({ data: { householdId: blkHh.id, status: 'NONE' } });
-        await prisma.membershipProcess.create({ data: { membershipId: m2.id, kind: 'INITIAL', status: 'BLOCKED' } });
+        const m2 = await prisma.orgMembership.create({ data: { householdId: blkHh.id, status: 'NONE' } });
+        await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m2.id, kind: 'INITIAL', status: 'BLOCKED' } });
     });
 
     afterAll(async () => {
