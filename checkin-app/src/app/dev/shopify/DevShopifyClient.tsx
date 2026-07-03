@@ -63,8 +63,11 @@ export default function DevShopifyClient({ hasVariant, processes }: { hasVariant
 
             {!hasVariant && (
                 <p style={{ color: "#b45309", marginTop: "1rem", fontSize: "0.85rem" }}>
-                    No membership variant configured. Set one in <strong>Settings → Membership</strong> first,
-                    or the webhook lands as a no-membership-item anomaly instead of activating.
+                    No membership variant configured. Set one in <strong>Settings → Membership</strong> first —
+                    the mock only needs <em>a</em> value here (any string): it signs a payload carrying that id and
+                    the inbound webhook matches it against this same setting, so it&apos;s a closed loop.
+                    On a real dev store, set this to the store&apos;s actual variant id instead. Without it the
+                    webhook lands as a no-membership-item anomaly instead of activating.
                 </p>
             )}
 

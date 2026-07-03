@@ -159,10 +159,19 @@ Net: **one shared dev store, its webhook subscription owned by cloud-dev; locals
 
 Mirror Zoho #669 exactly. Add a dev-only route — `POST /api/dev/shopify/orders-paid` — that:
 1. 404s unless a `config.shopifyMockActive()` gate is true (non-prod + Shopify real creds unset), same shape as `zohoMockActive`.
-2. Takes a `processId`, synthesizes a realistic `orders/paid` payload (`note_attributes[Membership_Process_ID]`, `line_items` with the seeded membership variant id, an `id`), signs it with a **fixed dev webhook secret** (§4), and **fires the REAL inbound webhook** `POST /api/webhooks/shopify` — so it drives the exact verify → match → `activate()` path prod runs.
+2. Takes a `processId`, synthesizes a realistic `orders/paid` payload (`note_attributes[Membership_Process_ID]`, `line_items` with the configured membership variant id, an `id`), signs it with a **fixed dev webhook secret** (§4), and **fires the REAL inbound webhook** `POST /api/webhooks/shopify` — so it drives the exact verify → match → `activate()` path prod runs.
 3. Surfaced from a dev UI ("Simulate membership payment" button) alongside the existing `/dev` tools ([`src/app/dev`](../../src/app/dev)).
 
 `config.ts` gains a `shopifyMockActive()` + a `SHOPIFY_MOCK_WEBHOOK_SECRET` fallback in `shopifyWebhookSecret()`, both structured identically to the Zoho ones (`config.ts:45–54, 80–81`).
+
+### The variant id is configuration, never hardcoded
+
+A recurring confusion (raised in review): *"how can variant ids in our code align with a real Shopify dev store's variant ids?"* They can't — and they never need to, because **the membership variant id is never in code. It lives in `BoardSettings.orgMembershipVariantId`** (admin-editable via Settings → Membership), set once per environment to whatever that environment needs:
+
+- **In-process mock (local, no Shopify creds):** the value is just a **correlation token**. The mock reads it, echoes it in the synthesized `line_items`, and the inbound handler matches it against the *same* `BoardSettings` — a closed loop. Any string works; it never touches Shopify. Set it once locally (the dev tool's empty-state points you to Settings → Membership).
+- **Real dev store (cloud-dev, real creds):** the value must be the **store's actual variant id**, set once by a human after creating the membership product. A real `orders/paid` then carries that id and the inbound H2 check matches it.
+
+Because both environments read the id from `BoardSettings` (not from code), there is nothing to "align." We deliberately do **not** seed a placeholder id (see O4): a fake id seeded into the shared `BoardSettings` would land on cloud-dev via the dev-dashboard reset and then silently fail the real store's H2 variant check. The one-time "set the variant id" step is identical in shape for both paths — only the *value* differs.
 
 ### Real dev store vs in-process mock
 
