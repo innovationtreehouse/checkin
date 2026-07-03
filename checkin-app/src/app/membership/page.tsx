@@ -461,7 +461,9 @@ export default function MembershipPage() {
         <Button component={Link} href="/" variant="default" onNavigate={(e) => { if (!confirmNav()) e.preventDefault(); }}>← Home</Button>
       </Group>
 
-      <AlertBanner message={message?.text} tone={message?.tone} mb="lg" />
+      {/* Intake echoes `message` in a section-local Alert next to its buttons
+          (long card), so suppress the top banner there to avoid a duplicate. */}
+      <AlertBanner message={isIntake ? undefined : message?.text} tone={message?.tone} mb="lg" />
 
       {warnings.length > 0 && (
         <Alert color="yellow" mb="lg" title="Saved — with a couple of things to know">
