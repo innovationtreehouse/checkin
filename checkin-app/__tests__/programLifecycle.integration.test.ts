@@ -179,9 +179,12 @@ describe('Program Lifecycle Integration Tests', () => {
             create: { programId: testProgramId, personId: testParticipantId, status: 'PENDING', pendingSince: new Date() }
         });
 
-        // 2. Build Shopify webhook payload
+        // 2. Build Shopify webhook payload. line_items must contain the program's
+        // own Shopify variant (shopifyNonOrgMemberVariantId set in beforeAll) —
+        // the route now verifies this before activating (see route.ts).
         const payload = JSON.stringify({
             id: 12345,
+            line_items: [{ variant_id: "test-non-var" }],
             note_attributes: [
                 { name: "CheckMeIn_Account_ID", value: String(testParticipantId) },
                 { name: "Program_ID", value: String(testProgramId) }
