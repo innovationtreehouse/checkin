@@ -14,7 +14,8 @@
     "test:integration": "INTEGRATION_DB=1 jest --ci --testPathIgnorePatterns=/node_modules/ --testRegex \"\\.integration\\.test\\.[jt]sx?$\"",
     "test:coverage": "INTEGRATION_DB=1 jest --ci --coverage --testPathIgnorePatterns \"/node_modules/|/\\.next/|/\\.claude/worktrees/|\\.flow\\.test\\.\"",
     "check-route-coverage": "ts-node --project scripts/tsconfig.json scripts/check-route-coverage.ts",
-    "import:zoho": "tsx scripts/import-zoho.ts"
+    "import:zoho": "tsx scripts/import-zoho.ts",
+    "shopify:webhook": "tsx scripts/register-shopify-webhook.ts"
   },
   "engines": {
     "node": ">=24"
