@@ -47,9 +47,8 @@ export default function LocalizationSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [isError, setIsError] = useState(false);
 
-  const flash = (m: string, err = false) => { setMessage(m); setIsError(err); };
+  const flash = (m: string) => setMessage(m);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,8 +77,8 @@ export default function LocalizationSettingsPage() {
         body: JSON.stringify({ timezone, locale }),
       });
       if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); await load(); }
-      else flash((await res.json()).error || "Save failed.", true);
-    } catch { flash("Network error.", true); }
+      else flash((await res.json()).error || "Save failed.");
+    } catch { flash("Network error."); }
     finally { setSaving(false); }
   };
 
@@ -93,7 +92,7 @@ export default function LocalizationSettingsPage() {
     <Stack>
       <SettingsTabs active="localization" />
 
-      <AlertBanner message={message} tone={isError ? 'warning' : 'success'} />
+      <AlertBanner message={message} tone="warning" />
 
       {loading ? (
         <Center py="xl"><Loader /></Center>
