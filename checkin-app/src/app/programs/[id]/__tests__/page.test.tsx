@@ -2,10 +2,15 @@
 import { screen, waitFor, fireEvent } from "@testing-library/react";
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
+import { notifications } from "@mantine/notifications";
 import { renderWithProviders, mockFetchJson, setSession, router, resetRtl } from "@/test-helpers/rtl";
 import ProgramEnrollmentPage from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => {
+    resetRtl();
+    (notifications.show as jest.Mock).mockClear();
+});
 
 // `use(params)` suspends on any promise it hasn't already tracked, even one that
 // resolved microtasks ago — pre-mark it "fulfilled" (React's own thenable-caching
@@ -74,7 +79,9 @@ describe("ProgramEnrollmentPage", () => {
         expect(screen.getByText("(Too young)")).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
-        expect(await screen.findByText("Successfully enrolled!")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Successfully enrolled!" })),
+        );
     });
 
     it("priced program with no Shopify variant configured falls back to a direct enroll message", async () => {
@@ -92,7 +99,9 @@ describe("ProgramEnrollmentPage", () => {
         await screen.findByText("Which of your household wants to enroll?");
 
         fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
-        expect(await screen.findByText("Enrolled! (Note: No pricing variant configured for this tier)")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Enrolled! (Note: No pricing variant configured for this tier)" })),
+        );
     });
 
     it("shows a not-found card and navigates back to the directory", async () => {
@@ -148,7 +157,9 @@ describe("ProgramEnrollmentPage", () => {
         await screen.findByText("Which of your household wants to enroll?");
 
         fireEvent.click(screen.getByRole("button", { name: /request a payment plan/ }));
-        expect(await screen.findByText(/Requested! Please check your email/)).toBeInTheDocument();
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringMatching(/Requested! Please check your email/) })),
+        );
         expect(fetchMock).toHaveBeenCalledWith("/api/programs/10/request-payment-plan", expect.objectContaining({ method: "POST" }));
     });
 
@@ -221,7 +232,9 @@ describe("ProgramEnrollmentPage", () => {
 
         fireEvent.click(screen.getByLabelText("Too Young"));
         fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
-        expect(await screen.findByText("Successfully enrolled 2 members!")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Successfully enrolled 2 members!" })),
+        );
     });
 
     it("treats a 409 already-enrolled response as a successful outcome without parsing a body", async () => {
@@ -240,7 +253,9 @@ describe("ProgramEnrollmentPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         await screen.findByText("Which of your household wants to enroll?");
         fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
-        expect(await screen.findByText("Successfully enrolled!")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Successfully enrolled!" })),
+        );
     });
 
     it("shows an override prompt when enrollment requires admin override, then force-enrolls", async () => {
@@ -269,7 +284,7 @@ describe("ProgramEnrollmentPage", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "Force Enroll (Override)" }));
         await waitFor(() => expect(screen.queryByText("Warning: Enrollment rules not met.")).not.toBeInTheDocument());
-        expect(screen.getByText("Successfully enrolled!")).toBeInTheDocument();
+        expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Successfully enrolled!" }));
     });
 
     it("shows a network-error message when enrollment throws", async () => {

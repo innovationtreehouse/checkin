@@ -4,6 +4,7 @@ import { use, useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Anchor, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { formatDate, calculateAge } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
@@ -145,7 +146,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       }
 
       if (anyRequested) {
-        setSuccessMessage("Requested! Please check your email for communication from the finance committee of the board.");
+        notifications.show({ color: "green", message: "Requested! Please check your email for communication from the finance committee of the board." });
         fetchProgram();
         notifyNavRefresh();
       }
@@ -205,11 +206,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id);
             return;
           } else {
-            setSuccessMessage("Enrolled! (Note: No pricing variant configured for this tier)");
+            notifications.show({ color: "green", message: "Enrolled! (Note: No pricing variant configured for this tier)" });
+            setSuccessMessage("");
             fetchProgram();
           }
         } else {
-          setSuccessMessage(enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!");
+          notifications.show({ color: "green", message: enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!" });
           setRequiresOverride(false);
           fetchProgram();
         }
