@@ -62,6 +62,9 @@ export function AdminEditHouseholdModal({
   const [members, setMembers] = useState<NonNullable<AdminHousehold["householdMembers"]>>([]);
   const [leadIds, setLeadIds] = useState<number[]>([]);
   const [removingLead, setRemovingLead] = useState<number | null>(null);
+  // Modal-local notice for save-error / lead-remove results, so feedback lands
+  // next to the form instead of a global corner toast behind the modal.
+  const [notice, setNotice] = useState<{ color: string; message: string } | null>(null);
 
   const loadHousehold = useCallback(async (signal?: { cancelled: boolean }) => {
     if (householdId == null) return;
@@ -105,6 +108,7 @@ export function AdminEditHouseholdModal({
 
   const handleRemoveLead = async (participantId: number) => {
     if (leadIds.length <= 1) return; // last-lead guard also enforced server-side
+    setNotice(null);
     setRemovingLead(participantId);
     try {
       const res = await fetch(`/api/household/lead`, {
@@ -113,14 +117,14 @@ export function AdminEditHouseholdModal({
         body: JSON.stringify({ participantId }),
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Lead removed." });
+        setNotice({ color: "green", message: "Lead removed." });
         await loadHousehold();
       } else {
         const data = await res.json().catch(() => ({}));
-        notifications.show({ color: "red", message: data.error || "Failed to remove lead.", autoClose: false });
+        setNotice({ color: "red", message: data.error || "Failed to remove lead." });
       }
     } catch {
-      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+      setNotice({ color: "red", message: "Network error." });
     } finally {
       setRemovingLead(null);
     }
@@ -141,6 +145,7 @@ export function AdminEditHouseholdModal({
 
   const handleSave = async () => {
     if (householdId == null || phoneInvalid) return;
+    setNotice(null);
     setSaving(true);
     try {
       const res = await fetch(`/api/membership-ops/households/${householdId}`, {
@@ -155,10 +160,10 @@ export function AdminEditHouseholdModal({
         onClose();
       } else {
         const data = await res.json().catch(() => ({}));
-        notifications.show({ color: "red", message: data.error || "Failed to update household.", autoClose: false });
+        setNotice({ color: "red", message: data.error || "Failed to update household." });
       }
     } catch {
-      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+      setNotice({ color: "red", message: "Network error." });
     } finally {
       setSaving(false);
     }
@@ -181,6 +186,11 @@ export function AdminEditHouseholdModal({
             <Text size="sm" c="dimmed">
               Admin view — edits apply to the whole household and are recorded in the audit log.
             </Text>
+            {notice && (
+              <Alert color={notice.color} withCloseButton onClose={() => setNotice(null)}>
+                {notice.message}
+              </Alert>
+            )}
             <TextInput
               label="Household Name"
               value={form.name}
