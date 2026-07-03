@@ -18,6 +18,7 @@ import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
 import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
+import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface Review {
     id: number;
@@ -103,6 +104,7 @@ export default function AdminTrustedAdultsPage() {
             } else {
                 setMessage({ text: `Recorded: ${label(body.status)}.`, tone: "success" });
                 await load();
+                notifyNavRefresh();
             }
         } finally {
             setBusyId(null);
@@ -122,6 +124,7 @@ export default function AdminTrustedAdultsPage() {
                 setMessage({ text: body.error ?? "Override failed.", tone: "error" });
             } else {
                 await load();
+                notifyNavRefresh();
             }
         } finally {
             setBusyId(null);
