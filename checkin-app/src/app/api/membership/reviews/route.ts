@@ -25,7 +25,7 @@ const STATUS_FOR: Record<ReviewError["code"], number> = {
  * pii + public only — applicant parents' names/emails, nothing internal). The
  * attestation _count doubles as the approval count for queue rows.
  *
- * The query selects ONLY the household leads' (parents') participant rows — the
+ * The query selects ONLY the household leads' (parents') person rows — the
  * reviewer never needs the children, so their PII never leaves the DB. The
  * stripper is defense-in-depth on top of this narrowing, not the primary filter.
  */

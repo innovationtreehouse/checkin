@@ -114,7 +114,7 @@ export default function MembershipReviewPage() {
       ) : (
         <Stack mt="md">
           {queue.map((item) => {
-            const parents = (item.orgMembership?.household?.leads ?? []).map((l) => l.participant);
+            const parents = (item.orgMembership?.household?.leads ?? []).map((l) => l.person);
             return (
             <Card key={item.id} withBorder radius="md" padding="lg">
               <Text fw={700} fz="lg">
