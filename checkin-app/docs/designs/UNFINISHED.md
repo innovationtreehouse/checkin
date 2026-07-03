@@ -239,7 +239,7 @@ bless it as-is and record that in VOCABULARY. _(Phase 4 OQ-1)_
 
 Provenance: a 2026-06-29 codebase architecture audit (recorded in git history; the
 auth end-state detail lives in
-[auth-consistency-analysis.md](../security/auth-consistency-analysis.md)), distinct
+[auth-consistency-analysis.md](../../../docs/security/auth-consistency-analysis.md)), distinct
 from the vocabulary sweep above. **Everything else that audit flagged has
 shipped** — the P0-B auth-consolidation buckets, the P1 near-neighbor fixes, P3-1
 error-path (`apiError` + lint, #728), P3-2 logger (#727), P1-2/6/7/8, P2-1 Person
@@ -278,7 +278,7 @@ The scope validators are **armed + green** ([scopeValidators.test.ts](../../src/
 `prisma` without a registered policy. Today: 2 legit `getServerSession`
 (`dev-personas`, `shop/tools`, both optional-session). Without the guard the IDOR/drift
 class can regrow (it already went 2→6→2 once). Re-armable anytime.
-Ref: [auth-consistency-analysis.md](../security/auth-consistency-analysis.md) §9 Step 7.
+Ref: [auth-consistency-analysis.md](../../../docs/security/auth-consistency-analysis.md) §9 Step 7.
 
 ## 🔵 `handler()` consolidation — the "one authorization rule" end-state
 
@@ -288,7 +288,7 @@ only, no field stripping) with row-authorization hand-rolled inline. End-state:
 (permissive `orderedView` → no-op stripper), `withCron`/`withWebhook`/`withKiosk` stay
 the non-session front doors, `authenticateRequest` goes internal-only. This is
 **consolidation, not a security gap** — sequence behind everything else.
-Ref: [auth-consistency-analysis.md](../security/auth-consistency-analysis.md) §4, §9 Steps 5–6.
+Ref: [auth-consistency-analysis.md](../../../docs/security/auth-consistency-analysis.md) §4, §9 Steps 5–6.
 
 ## 🟢 Response envelope — phase 2 (success bodies)
 
