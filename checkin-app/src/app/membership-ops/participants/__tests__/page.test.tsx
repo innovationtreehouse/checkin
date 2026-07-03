@@ -267,11 +267,9 @@ describe("AdminParticipantsIndex", () => {
         fireEvent.click(within(bobRow).getByRole("button", { name: "Household" }));
         expect(await screen.findByText(/Edit Household Info/)).toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
-        expect(await screen.findByText("Use admin powers?")).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Yes, save changes" }));
+        fireEvent.click(screen.getByRole("button", { name: "Save Changes — As Admin" }));
 
-        await waitFor(() => expect(screen.queryByText("Use admin powers?")).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.queryByText(/Edit Household Info/)).not.toBeInTheDocument());
         expect(await screen.findByText("The B Family Updated")).toBeInTheDocument();
     });
 
