@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, Card, Flex, ScrollArea, Stack, Text, TextInput } from "@mantine/core";
 import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
+import { notifications } from "@mantine/notifications";
 
 type ToolListItem = {
   id: number;
@@ -40,7 +41,7 @@ export default function CreateToolPage() {
       });
 
       if (res.ok) {
-        setCreateMessage({ text: "New tool added successfully!", tone: "success" });
+        notifications.show({ color: "green", message: "New tool added successfully!" });
         setNewToolName("");
         setNewToolGuide("");
         loadTools();

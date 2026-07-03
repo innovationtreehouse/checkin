@@ -94,7 +94,7 @@ export default function AdminParticipantsIndex() {
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
-    notifications.show({ message, color: type === 'error' ? 'red' : 'green' });
+    notifications.show({ message, color: type === 'error' ? 'red' : 'green', autoClose: type === 'error' ? false : 4000 });
   };
 
   const closeAssign = () => {

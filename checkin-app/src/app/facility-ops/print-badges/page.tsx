@@ -117,7 +117,7 @@ export default function PrintBadgesPage() {
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error(`Failed to generate ${kind} PDF`, e);
-      notifications.show({ color: 'red', message: `Failed to generate ${kind} PDF. Please try again.` });
+      notifications.show({ color: 'red', message: `Failed to generate ${kind} PDF. Please try again.`, autoClose: false });
     } finally {
       setIsGenerating(false);
     }

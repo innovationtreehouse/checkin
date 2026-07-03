@@ -6,6 +6,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconRobot, IconScan, IconSelector } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
+import { notifications } from '@mantine/notifications';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -138,7 +139,7 @@ export default function AdminVisitsPage() {
         })
       });
       if (res.ok) {
-        setMessage({ text: "Visit updated successfully.", tone: "success" });
+        notifications.show({ color: "green", message: "Visit updated successfully." });
         setEditingVisitId(null);
         fetchVisits();
       } else {

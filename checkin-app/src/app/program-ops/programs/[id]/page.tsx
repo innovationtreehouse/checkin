@@ -8,6 +8,7 @@ import { AlertBanner } from '@/components/admin/AlertBanner';
 import { EntityPicker } from '@/components/admin/EntityPicker';
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 import { ProgramRosterTab } from './ProgramRosterTab';
+import { notifications } from '@mantine/notifications';
 import { ProgramEventsTab } from './ProgramEventsTab';
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -77,7 +78,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState<'general' | 'roster' | 'events'>('general');
 
@@ -145,8 +145,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         })
       });
       if (res.ok) {
-        setJustSaved(true);
-        setTimeout(() => setJustSaved(false), 3000);
+        notifications.show({ color: "green", message: "Saved." });
         fetchProgram();
       } else {
         const data = await res.json();
@@ -332,7 +331,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                   <Button type="submit" color="green" disabled={saving || !leadMentorIdInput} loading={saving}>
                     Save Settings
                   </Button>
-                  {justSaved && <Text c="green" fw={500}>✓ Saved</Text>}
                 </Group>
               </Stack>
             </form>

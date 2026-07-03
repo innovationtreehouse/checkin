@@ -1,11 +1,16 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports */
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, waitFor } from "@testing-library/react";
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
+import { notifications } from "@mantine/notifications";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
 import ManualAttendance from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => {
+    resetRtl();
+    (notifications.show as jest.Mock).mockClear();
+});
 
 describe("ManualAttendance", () => {
     it("records a manual visit and shows a success message", async () => {
@@ -20,7 +25,9 @@ describe("ManualAttendance", () => {
         fireEvent.change(screen.getByLabelText(/Arrival Time/), { target: { value: "2026-06-01T10:00" } });
         fireEvent.click(submit);
 
-        expect(await screen.findByText("Visit recorded successfully.")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Visit recorded successfully." })),
+        );
     });
 
     it("shows an error message when the API rejects the entry", async () => {
