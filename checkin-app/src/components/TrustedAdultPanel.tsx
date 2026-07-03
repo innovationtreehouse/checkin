@@ -12,11 +12,10 @@ import {
     Text,
     Textarea,
     TextInput,
-    Tooltip,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconAlertTriangle, IconPlus } from "@tabler/icons-react";
-import { validateContact } from "@/lib/trusted-adult/contact";
+import { normalizePhone, isValidEmail } from "@/lib/emergencyContacts/identity";
 import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
@@ -59,11 +58,17 @@ export default function TrustedAdultPanel() {
     const [opened, { open, close }] = useDisclosure(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [attempted, setAttempted] = useState(false);
 
     const [trustedAdultName, setTrustedAdultName] = useState("");
     const [trustedAdultPhone, setTrustedAdultPhone] = useState("");
     const [trustedAdultEmail, setTrustedAdultEmail] = useState("");
     const [familyContext, setFamilyContext] = useState("");
+
+    const closeModal = useCallback(() => {
+        setAttempted(false);
+        close();
+    }, [close]);
 
     const load = useCallback(() => {
         setLoading(true);
@@ -95,6 +100,7 @@ export default function TrustedAdultPanel() {
             setTrustedAdultPhone("");
             setTrustedAdultEmail("");
             setFamilyContext("");
+            setAttempted(false);
             load();
         } finally {
             setSubmitting(false);
@@ -110,18 +116,22 @@ export default function TrustedAdultPanel() {
         }
     }
 
-    const contactResult = validateContact({ phone: trustedAdultPhone, email: trustedAdultEmail });
-    const contactError = "error" in contactResult ? contactResult.error : null;
-    // Don't nag before they've typed anything in either contact field.
-    const showContactError = (trustedAdultPhone.trim() || trustedAdultEmail.trim()) && contactError;
-    const canSubmit = trustedAdultName.trim() && !contactError && familyContext.trim();
-    const blockedReason = !trustedAdultName.trim()
-        ? "Enter the trusted adult's name."
-        : contactError
-            ? contactError
-            : !familyContext.trim()
-                ? "Add the board context."
-                : "";
+    // Validate phone and email independently so both light up at once when both
+    // are wrong. At least one contact method is required. Errors surface only
+    // after a submit attempt — never while typing.
+    const phoneTrim = trustedAdultPhone.trim();
+    const emailTrim = trustedAdultEmail.trim();
+    const missingContact = !phoneTrim && !emailTrim;
+    const phoneBad = !!phoneTrim && normalizePhone(phoneTrim).length < 10;
+    const emailBad = !!emailTrim && !isValidEmail(emailTrim);
+    const contactInvalid = missingContact || phoneBad || emailBad;
+
+    const nameError = attempted && !trustedAdultName.trim() ? "Enter the trusted adult's name." : undefined;
+    const phoneError = attempted && phoneBad ? "That phone number doesn't look right."
+        : attempted && missingContact ? "Enter a phone number or an email — at least one."
+            : undefined;
+    const emailError = attempted && emailBad ? "That email address doesn't look right." : undefined;
+    const contextError = attempted && !familyContext.trim() ? "Add the board context." : undefined;
 
     return (
         <Stack gap="sm">
@@ -193,12 +203,13 @@ export default function TrustedAdultPanel() {
                 );
             })}
 
-            <Modal opened={opened} onClose={close} title="Add a trusted adult" size="lg">
+            <Modal opened={opened} onClose={closeModal} title="Add a trusted adult" size="lg">
                 <Stack>
                     <TextInput
                         label="Trusted adult's name"
                         value={trustedAdultName}
                         onChange={(e) => setTrustedAdultName(e.currentTarget.value)}
+                        error={nameError}
                         required
                     />
                     <Text c="blue" fw={600} size="sm">
@@ -209,13 +220,14 @@ export default function TrustedAdultPanel() {
                         type="tel"
                         value={trustedAdultPhone}
                         onChange={(e) => setTrustedAdultPhone(e.currentTarget.value)}
+                        error={phoneError}
                     />
                     <TextInput
                         label="Their email"
                         type="email"
                         value={trustedAdultEmail}
                         onChange={(e) => setTrustedAdultEmail(e.currentTarget.value)}
-                        error={showContactError ? contactError : undefined}
+                        error={emailError}
                     />
                     <Textarea
                         label="For the board: your relationship to this adult, and any limits on it"
@@ -224,26 +236,22 @@ export default function TrustedAdultPanel() {
                         autosize
                         value={familyContext}
                         onChange={(e) => setFamilyContext(e.currentTarget.value)}
+                        error={contextError}
                         required
                     />
                     {error && <Text c="red" size="sm">{error}</Text>}
                     <Group justify="flex-end">
-                        <Button variant="default" onClick={close}>Cancel</Button>
-                        <Tooltip label={blockedReason} disabled={!!canSubmit} withArrow>
-                            <Button
-                                onClick={(e) => {
-                                    if (!canSubmit) {
-                                        e.preventDefault();
-                                        return;
-                                    }
-                                    submit();
-                                }}
-                                loading={submitting}
-                                data-disabled={!canSubmit || undefined}
-                            >
-                                Submit for board review
-                            </Button>
-                        </Tooltip>
+                        <Button variant="default" onClick={closeModal}>Cancel</Button>
+                        <Button
+                            onClick={() => {
+                                setAttempted(true);
+                                if (!trustedAdultName.trim() || contactInvalid || !familyContext.trim()) return;
+                                submit();
+                            }}
+                            loading={submitting}
+                        >
+                            Submit for board review
+                        </Button>
                     </Group>
                 </Stack>
             </Modal>
