@@ -84,6 +84,34 @@ describe("ProgramEnrollmentPage", () => {
         );
     });
 
+    it("over-25 adult with only an already-enrolled child sees a no-eligible message, not a DOB error", async () => {
+        setSession({ id: 200 });
+        mockFetchJson({
+            "/api/household": {
+                household: {
+                    householdMembers: [
+                        { id: 200, name: "Parent Adult", dateOfBirth: null, isDeclaredAdult: true },
+                        { id: 201, name: "Only Kid", dateOfBirth: "2015-01-01" },
+                    ],
+                },
+            },
+            "/api/programs/10": baseProgram({ participants: [{ personId: 201, status: "ENROLLED" }], minAge: 5, maxAge: 16 }),
+        });
+        renderPage();
+
+        await screen.findByText("Robotics Club");
+        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+        await screen.findByText("Which of your household wants to enroll?");
+
+        // Declared adult reads as "(Adult)", never the confusing "(DOB missing)".
+        expect(screen.getByText("(Adult)")).toBeInTheDocument();
+        expect(screen.queryByText("(DOB missing)")).not.toBeInTheDocument();
+        expect(screen.getByText("(Already Enrolled)")).toBeInTheDocument();
+        // No enrollable member -> guidance message with the age range, no submit button.
+        expect(screen.getByText("No eligible participants in your household for this program (ages 5–16).")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Complete Enrollment" })).not.toBeInTheDocument();
+    });
+
     it("priced program with no Shopify variant configured falls back to a direct enroll message", async () => {
         setSession({ id: 101 });
         mockFetchJson({
@@ -394,13 +422,17 @@ describe("ProgramEnrollmentPage", () => {
         expect(await screen.findByLabelText("Myself")).toBeInTheDocument();
     });
 
-    it("falls back to the first household member when the signed-in caller isn't a member", async () => {
+    it("falls back to the first eligible household member when the signed-in caller isn't a member", async () => {
         setSession({ id: 999 });
+        // Jamie (id 100) is already enrolled in baseProgram, so the fallback must
+        // skip him and preselect the first enrollable member instead of a member
+        // whose POST would fail.
         mockFetchJson({ "/api/household": household, "/api/programs/10": baseProgram({ minAge: null, maxAge: null }) });
         renderPage();
         await screen.findByText("Robotics Club");
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
-        expect(await screen.findByLabelText("Jamie Guardian")).toBeChecked();
+        expect(await screen.findByLabelText("Kid One")).toBeChecked();
+        expect(screen.getByLabelText("Jamie Guardian")).not.toBeChecked();
     });
 
     it("shows a generic failure message for non-404 program load errors", async () => {
