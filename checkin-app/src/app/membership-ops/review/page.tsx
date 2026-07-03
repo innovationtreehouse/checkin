@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { Button, Card, Checkbox, Container, Group, Stack, Text, Title } from "@mantine/core";
-import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
+import { Alert, Button, Card, Checkbox, Container, Group, Stack, Text, Title } from "@mantine/core";
+import { type AlertTone } from "@/components/admin/AlertBanner";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -30,7 +30,8 @@ export default function MembershipReviewPage() {
   const [forbidden, setForbidden] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [volunteer, setVolunteer] = useState<Record<number, boolean>>({});
-  const [message, setMessage] = useState<{ text: string; tone: AlertTone } | undefined>();
+  // Tagged with the acting row's processId so the result renders in that card, not off-screen at page top.
+  const [message, setMessage] = useState<{ processId: number; text: string; tone: AlertTone } | undefined>();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,14 +66,14 @@ export default function MembershipReviewPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ text: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified.", tone: "success" });
+        setMessage({ processId, text: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified.", tone: "success" });
         await load();
         notifyNavRefresh();
       } else {
-        setMessage({ text: data.error || "Could not record your attestation.", tone: "error" });
+        setMessage({ processId, text: data.error || "Could not record your attestation.", tone: "error" });
       }
     } catch {
-      setMessage({ text: "Network error.", tone: "error" });
+      setMessage({ processId, text: "Network error.", tone: "error" });
     } finally {
       setBusyId(null);
     }
@@ -105,8 +106,6 @@ export default function MembershipReviewPage() {
         reviewers are required. If anything is concerning, choose <strong>Reject</strong> — the
         board is notified and the applicant is not told the reason.
       </Text>
-
-      <AlertBanner message={message?.text} tone={message?.tone} mt="md" />
 
       {queue.length === 0 ? (
         <Card withBorder radius="md" padding="xl" ta="center" mt="md">
@@ -143,6 +142,12 @@ export default function MembershipReviewPage() {
                   Reject
                 </Button>
               </Group>
+
+              {message?.processId === item.id && (
+                <Alert color={message.tone === "success" ? "green" : "red"} variant="light" mt="md">
+                  {message.text}
+                </Alert>
+              )}
             </Card>
             );
           })}
