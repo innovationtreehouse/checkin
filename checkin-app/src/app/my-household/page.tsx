@@ -95,6 +95,9 @@ export default function HouseholdPage() {
   // Server/collision errors for the emergency-contact card render inline next to
   // the form, not in the page-top banner which is far off-screen from this section.
   const [contactError, setContactError] = useState("");
+  // Success confirmations for contact actions render inside the card (bottom of
+  // its box), not the page-top banner, so the message stays near the button.
+  const [contactNotice, setContactNotice] = useState("");
   // Per-field client validation (red ring + subtext), checked on Add/Save click
   // so phone/email/name errors never flash while the user is still typing.
   const [contactErrors, setContactErrors] = useState<{ name?: string; phone?: string; email?: string }>({});
@@ -170,6 +173,7 @@ export default function HouseholdPage() {
     if (Object.keys(errs).length > 0) return;
     setSavingContact(true);
     setContactError("");
+    setContactNotice("");
     try {
       const editing = contactForm.id !== null;
       const url = editing ? `/api/household/emergency-contacts/${contactForm.id}` : '/api/household/emergency-contacts';
@@ -180,7 +184,7 @@ export default function HouseholdPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        ok(editing ? "Emergency contact updated." : "Emergency contact added.");
+        setContactNotice(editing ? "Emergency contact updated." : "Emergency contact added.");
         setContactForm(blankContactForm);
         setShowContactForm(false);
         fetchContacts();
@@ -197,11 +201,12 @@ export default function HouseholdPage() {
 
   const handleDeleteContact = async (id: number) => {
     setContactError("");
+    setContactNotice("");
     try {
       const res = await fetch(`/api/household/emergency-contacts/${id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        ok("Emergency contact removed.");
+        setContactNotice("Emergency contact removed.");
         fetchContacts();
         notifyNavRefresh();
       } else {
@@ -560,6 +565,10 @@ export default function HouseholdPage() {
                       </Group>
                     </Stack>
                   </form>
+                )}
+
+                {contactNotice && (
+                  <Alert color="green" variant="light" mt="sm" withCloseButton onClose={() => setContactNotice("")}>{contactNotice}</Alert>
                 )}
           </Card>
         )}
