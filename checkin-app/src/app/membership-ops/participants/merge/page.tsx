@@ -243,7 +243,7 @@ export default function MergeParticipants() {
         </Text>
       </div>
 
-      <AlertBanner message={error} tone="error" />
+      {!previewMode && <AlertBanner message={error} tone="error" />}
 
       {!previewMode ? (
         <>
@@ -288,6 +288,12 @@ export default function MergeParticipants() {
             <List.Item>Missing personal info on the kept participant will be filled in from the merged participant.</List.Item>
             <List.Item>Raw badge scans will remain on the tombstoned record for audit purposes.</List.Item>
           </List>
+
+          {error && (
+            <Alert color="red" variant="light" mb="md" fw={700}>
+              {error}
+            </Alert>
+          )}
 
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setPreviewMode(false)} disabled={merging}>Cancel</Button>

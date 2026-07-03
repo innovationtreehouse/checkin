@@ -1,4 +1,5 @@
-import { normalizePhone, isValidEmail } from "@/lib/emergencyContacts/identity";
+import { isValidEmail } from "@/lib/emergencyContacts/identity";
+import { isValidPhone } from "@/lib/phone";
 
 export interface ContactInput {
     phone?: string | null;
@@ -18,7 +19,6 @@ export function validateContact({ phone, email }: ContactInput):
     const e = (email ?? "").trim();
     if (!p && !e) return { error: "Enter a phone number or an email for the trusted adult." };
     if (e && !isValidEmail(e)) return { error: "That email address doesn't look right." };
-    // ponytail: 10+ digits = a plausible US number; loosen if intl numbers appear.
-    if (p && normalizePhone(p).length < 10) return { error: "That phone number doesn't look right." };
+    if (p && !isValidPhone(p)) return { error: "That phone number doesn't look right." };
     return { phone: p || null, email: e || null };
 }
