@@ -2,12 +2,15 @@
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, setSearchParams, resetRtl, router } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import NewParticipantPage from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 const household = { id: 9, name: "The Does", householdMembers: [{ id: 1, name: "Jane Doe", email: null }, { id: 2, name: null, email: "john@example.com" }] };
 const emptyHousehold = { id: 8, name: "", householdMembers: [] };
@@ -53,7 +56,7 @@ describe("membership-ops/participants/new page", () => {
         }),
       ),
     );
-    expect(await screen.findByText("Participant Jane Doe successfully!")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Participant Jane Doe successfully!" })));
   });
 
   it("requires a parent email once a student DOB is entered", async () => {
@@ -168,7 +171,7 @@ describe("membership-ops/participants/new page", () => {
         }),
       ),
     );
-    expect(await screen.findByText("Participant member@example.com successfully!")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Participant member@example.com successfully!" })));
   });
 
   it("submits a student with a parent email and no household", async () => {

@@ -2,11 +2,13 @@
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
-import { screen, fireEvent } from "@testing-library/react";
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
+import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, resetRtl } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import CreateToolPage from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 describe("CreateToolPage", () => {
     it("lists existing tools and creates a new one", async () => {
@@ -18,6 +20,6 @@ describe("CreateToolPage", () => {
         fireEvent.change(screen.getByLabelText(/equipment name/i), { target: { value: "Band Saw" } });
         fireEvent.click(screen.getByRole("button", { name: /create tool/i }));
 
-        expect(await screen.findByText("New tool added successfully!")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "New tool added successfully!" })));
     });
 });
