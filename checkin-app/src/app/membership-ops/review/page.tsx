@@ -17,7 +17,7 @@ interface Person {
 // Only the household leads (parents) are returned — children are never sent.
 interface QueueItem {
   id: number;
-  orgMembership: { household: { name: string | null; leads: { participant: Person }[] } | null } | null;
+  orgMembership: { household: { name: string | null; leads: { person: Person }[] } | null } | null;
   _count: { attestations: number };
 }
 
