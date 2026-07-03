@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { Alert, Button, Card, Center, Checkbox, Group, Loader, Modal, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
-import { AlertBanner } from "@/components/admin/AlertBanner";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
 
 interface Settings {
@@ -49,10 +48,8 @@ export default function MembershipSettingsPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [isError, setIsError] = useState(false);
-
-  const flash = (m: string, err = false) => { setMessage(m); setIsError(err); };
+  const [saveNotice, setSaveNotice] = useState<{ text: string; err: boolean } | null>(null);
+  const [renewalNotice, setRenewalNotice] = useState<{ text: string; err: boolean } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,7 +82,7 @@ export default function MembershipSettingsPage() {
 
   const saveSettings = async () => {
     setSaving(true);
-    flash("");
+    setSaveNotice(null);
     try {
       const res = await fetch("/api/settings/membership", {
         method: "PUT",
@@ -99,16 +96,16 @@ export default function MembershipSettingsPage() {
           ...(boundaryUnlocked ? { orgMembershipYearBoundary: boundary || null } : {}),
         }),
       });
-      if (res.ok) { flash("Settings saved."); setBoundaryUnlocked(false); await load(); }
-      else flash((await res.json()).error || "Save failed.", true);
-    } catch { flash("Network error.", true); }
+      if (res.ok) { setSaveNotice({ text: "Settings saved.", err: false }); setBoundaryUnlocked(false); await load(); }
+      else setSaveNotice({ text: (await res.json()).error || "Save failed.", err: true });
+    } catch { setSaveNotice({ text: "Network error.", err: true }); }
     finally { setSaving(false); }
   };
 
   const bulkOpenRenewals = async () => {
     closeConfirmOpenRenewals();
     setSaving(true);
-    flash("");
+    setRenewalNotice(null);
     try {
       const res = await fetch("/api/settings/membership/bulk-open-renewals", {
         method: "POST",
@@ -116,9 +113,9 @@ export default function MembershipSettingsPage() {
         body: JSON.stringify({ sendReminders: bulkReminders }),
       });
       const data = await res.json();
-      if (res.ok) flash(`Opened ${data.opened} renewal(s); ${data.skipped} already in progress.`);
-      else flash(data.error || "Failed.", true);
-    } catch { flash("Network error.", true); }
+      if (res.ok) setRenewalNotice({ text: `Opened ${data.opened} renewal(s); ${data.skipped} already in progress.`, err: false });
+      else setRenewalNotice({ text: data.error || "Failed.", err: true });
+    } catch { setRenewalNotice({ text: "Network error.", err: true }); }
     finally { setSaving(false); }
   };
 
@@ -130,8 +127,6 @@ export default function MembershipSettingsPage() {
   return (
     <Stack>
       <SettingsTabs active="membership" />
-
-      <AlertBanner message={message} tone={isError ? 'warning' : 'success'} />
 
       {loading ? (
         <Center py="xl"><Loader /></Center>
@@ -226,6 +221,12 @@ export default function MembershipSettingsPage() {
               />
             </Alert>
 
+            {saveNotice && (
+              <Alert mt="lg" color={saveNotice.err ? "red" : "green"} variant="light">
+                {saveNotice.text}
+              </Alert>
+            )}
+
             <Button mt="lg" disabled={saving} loading={saving} onClick={saveSettings} style={{ alignSelf: "flex-start" }}>
               Save settings
             </Button>
@@ -244,6 +245,11 @@ export default function MembershipSettingsPage() {
               onChange={(e) => setBulkReminders(e.currentTarget.checked)}
               label="Also email each household a renewal reminder"
             />
+            {renewalNotice && (
+              <Alert mt="md" mb="md" color={renewalNotice.err ? "red" : "green"} variant="light">
+                {renewalNotice.text}
+              </Alert>
+            )}
             <Button color="yellow" disabled={saving} loading={saving} onClick={openConfirmOpenRenewals}>
               Open renewals for all active members
             </Button>
