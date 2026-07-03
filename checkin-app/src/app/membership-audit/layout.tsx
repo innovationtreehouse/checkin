@@ -60,11 +60,11 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
                   badge ? (
                     <Badge
                       size="md"
-                      color={isBroken ? "treehouseGreen" : "gray"}
-                      variant={isBroken ? "filled" : "light"}
+                      color={isBroken ? "treehouseGreen" : "gray.2"}
+                      variant="filled"
                       // Pinned label color so the active tab's green recolor doesn't render the
-                      // count green-on-green (gray informational fill, or black on the green fill).
-                      c={isBroken ? "var(--mantine-color-black)" : "var(--mantine-color-gray-7)"}
+                      // count green-on-green (dark gray on the light-gray fill, or black on the green fill).
+                      c={isBroken ? "var(--mantine-color-black)" : "var(--mantine-color-gray-8)"}
                       aria-label={badge.label}
                     >
                       {badge.count}

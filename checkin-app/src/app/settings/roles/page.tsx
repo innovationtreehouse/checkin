@@ -32,6 +32,7 @@ export default function RoleAssignmentPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [rowError, setRowError] = useState<{ id: number; text: string } | null>(null);
   const [userSearchText, setUserSearchText] = useState("");
   const [hideYouth, setHideYouth] = useState(true);
 
@@ -60,6 +61,7 @@ export default function RoleAssignmentPage() {
   const handleRoleChange = async (userId: number, field: keyof UserRole, value: boolean) => {
     setSavingId(userId);
     setMessage("");
+    setRowError(null);
 
     // Optimistic update
     setUsers(users.map(u => u.id === userId ? { ...u, [field]: value } : u));
@@ -76,12 +78,12 @@ export default function RoleAssignmentPage() {
 
       if (!res.ok) {
         const data = await res.json();
-        setMessage(data.error || "Failed to update role.");
+        setRowError({ id: userId, text: data.error || "Failed to update role." });
         // Revert optimistic update
         fetchUsers();
       }
     } catch {
-      setMessage("Network error updating role.");
+      setRowError({ id: userId, text: "Network error updating role." });
       fetchUsers();
     } finally {
       setSavingId(null);
@@ -142,6 +144,9 @@ export default function RoleAssignmentPage() {
                 <Table.Td>
                   <Text fw={500}>{user.name || 'Unnamed'}</Text>
                   <Text size="sm" c="dimmed">{user.email}</Text>
+                  {rowError?.id === user.id && (
+                    <Text size="xs" c="red">{rowError.text}</Text>
+                  )}
                 </Table.Td>
                 {ROLE_COLUMNS.map((col) => (
                   <Table.Td key={col.field} ta="center">
