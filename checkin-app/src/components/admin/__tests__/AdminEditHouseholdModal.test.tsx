@@ -28,7 +28,7 @@ const household = {
   state: "TX",
   postalCode: "78701",
   emergencyContactName: "Jo Smith",
-  emergencyContactPhone: "5551234",
+  emergencyContactPhone: "555-123-4567",
   householdMembers: [
     { id: 1, name: "Kid A", email: "kid@example.com" },
     { id: 2, name: null, email: null },
@@ -63,7 +63,7 @@ describe("AdminEditHouseholdModal", () => {
     expect(await screen.findByDisplayValue("Smith Family")).toBeInTheDocument();
   });
 
-  it("loads and lets every field be edited, then saves via the confirm dialog", async () => {
+  it("loads and lets every field be edited, then saves as admin", async () => {
     const onSaved = jest.fn();
     const onClose = jest.fn();
     const fetchMock = mockFetchJson({
@@ -85,14 +85,11 @@ describe("AdminEditHouseholdModal", () => {
     fireEvent.change(screen.getByLabelText("State"), { target: { value: "TX" } });
     fireEvent.change(screen.getByLabelText("ZIP"), { target: { value: "78664" } });
     fireEvent.change(screen.getByLabelText("Emergency Contact Name"), { target: { value: "Jo S." } });
-    fireEvent.change(screen.getByLabelText("Emergency Contact Phone"), { target: { value: "5559999" } });
+    fireEvent.change(screen.getByLabelText("Emergency Contact Phone"), { target: { value: "5559999999" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
-    // Mantine's Modal mounts its content on a transition tick, not synchronously.
-    expect(await screen.findByText("Use admin powers?")).toBeInTheDocument();
+    // Admin-power notice is inline; save is a single orange button.
     expect(screen.getByText(/editing/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Yes, save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes — As Admin" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith("/api/membership-ops/households/55", expect.objectContaining({ method: "PATCH" })),
@@ -105,6 +102,21 @@ describe("AdminEditHouseholdModal", () => {
     await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green" })));
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ name: "Smith Fam" }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("shows an inline phone error and blocks save until fixed", async () => {
+    const fetchMock = mockFetchJson({ "/api/membership-ops/households?id=55": { household } });
+    renderWithProviders(<AdminEditHouseholdModal householdId={55} opened={true} onClose={jest.fn()} />);
+    await screen.findByDisplayValue("Smith Family");
+
+    fetchMock.mockClear();
+    fireEvent.change(screen.getByLabelText("Emergency Contact Phone"), { target: { value: "555" } });
+    expect(screen.getByText("Enter a valid 10-digit US phone number.")).toBeInTheDocument();
+
+    const save = screen.getByRole("button", { name: "Save Changes — As Admin" });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/membership-ops/households/55", expect.anything());
   });
 
   it("prompts before discarding unsaved edits, and closes directly when nothing changed", async () => {
@@ -146,17 +158,16 @@ describe("AdminEditHouseholdModal", () => {
     await screen.findByDisplayValue("Smith Family");
 
     global.fetch = jest.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: "Name taken." }) })) as unknown as typeof fetch;
-    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Yes, save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes — As Admin" }));
     await waitFor(() =>
       expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Name taken." })),
     );
-    // The confirm dialog stays open on failure (only success calls onClose/setConfirming(false)).
-    expect(screen.getByText("Use admin powers?")).toBeInTheDocument();
+    // The modal stays open on failure (only success calls onClose).
+    expect(screen.getByText(/Edit Household Info/)).toBeInTheDocument();
 
     (notifications.show as jest.Mock).mockClear();
     global.fetch = jest.fn(() => Promise.reject(new Error("boom"))) as unknown as typeof fetch;
-    fireEvent.click(screen.getByRole("button", { name: "Yes, save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes — As Admin" }));
     await waitFor(() =>
       expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error." })),
     );

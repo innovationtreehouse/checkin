@@ -18,6 +18,7 @@ import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
 import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
+import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface Review {
     id: number;
@@ -38,7 +39,7 @@ interface PersonRef {
 interface HouseholdRef {
     id: number;
     name: string | null;
-    leads: { participant: PersonRef }[];
+    leads: { person: PersonRef }[];
 }
 interface TrustedAdult {
     id: number;
@@ -63,13 +64,42 @@ const STATUS_COLORS: Record<string, string> = {
 };
 const label = (s: string) => s.replace(/_/g, " ");
 
+// The board needs to know the LAST DECISION on a trusted adult so it can update it —
+// not merely whether this row is a "renewal". A withdrawal is an interim state that
+// must NOT hide the prior decision: DENIED → withdrawn → resubmitted should still read
+// "Previously denied", not "Renewal". `decision` survives a withdrawal (withdraw only
+// flips status to REVOKED), so walking the reviews before the in-flight one for the
+// first non-null `decision` gives the true last board decision and skips withdraw-only
+// (decision-less) states. Null → a fresh disclosure or a plain withdraw+resubmit, where
+// the board needs no prior-decision context.
+const PRIOR_DECISION_META: Record<string, { text: string; color: string }> = {
+    APPROVE: { text: "Renewal", color: "blue" },
+    DENY: { text: "Previously denied", color: "red" },
+    REQUEST_INFO: { text: "Previously: more info requested", color: "orange" },
+};
+
+function priorDecisionReview(reviews: Review[]): Review | null {
+    // reviews are id-desc; reviews[0] is the current/in-flight review.
+    for (let i = 1; i < reviews.length; i++) {
+        if (reviews[i].decision) return reviews[i];
+    }
+    return null;
+}
+
+const daysBetween = (aIso: string, bIso: string) =>
+    Math.round((new Date(aIso).getTime() - new Date(bIso).getTime()) / 86400000);
+
 export default function AdminTrustedAdultsPage() {
     const { ready, loading: authLoading, user } = useRequireRole(["isSysadmin", "isBoardMember"]);
     const [items, setItems] = useState<TrustedAdult[]>([]);
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState<number | null>(null);
     const [shared, setShared] = useState<Record<number, string>>({});
-    const [message, setMessage] = useState<{ text: string; tone: AlertTone } | undefined>();
+    // Per-review confirmation, rendered card-local so the notice stays next to the
+    // button that triggered it (a single page-top banner scrolls off-screen on long queues).
+    const [notices, setNotices] = useState<Record<number, { text: string; tone: AlertTone }>>({});
+    const clearNotice = (id: number) =>
+        setNotices((n) => { const c = { ...n }; delete c[id]; return c; });
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -90,7 +120,7 @@ export default function AdminTrustedAdultsPage() {
 
     const decide = async (reviewId: number, decision: string, extra?: Record<string, unknown>) => {
         setBusyId(reviewId);
-        setMessage(undefined);
+        clearNotice(reviewId);
         try {
             const res = await fetch("/api/safety/trusted-adults/decision", {
                 method: "POST",
@@ -99,10 +129,11 @@ export default function AdminTrustedAdultsPage() {
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setMessage({ text: body.error ?? "Decision failed.", tone: "error" });
+                setNotices((n) => ({ ...n, [reviewId]: { text: body.error ?? "Decision failed.", tone: "error" } }));
             } else {
-                setMessage({ text: `Recorded: ${label(body.status)}.`, tone: "success" });
+                setNotices((n) => ({ ...n, [reviewId]: { text: `Recorded: ${label(body.status)}.`, tone: "success" } }));
                 await load();
+                notifyNavRefresh();
             }
         } finally {
             setBusyId(null);
@@ -111,6 +142,7 @@ export default function AdminTrustedAdultsPage() {
 
     const override = async (reviewId: number, action: string, extra?: Record<string, unknown>) => {
         setBusyId(reviewId);
+        clearNotice(reviewId);
         try {
             const res = await fetch("/api/safety/trusted-adults/override", {
                 method: "POST",
@@ -119,9 +151,11 @@ export default function AdminTrustedAdultsPage() {
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setMessage({ text: body.error ?? "Override failed.", tone: "error" });
+                setNotices((n) => ({ ...n, [reviewId]: { text: body.error ?? "Override failed.", tone: "error" } }));
             } else {
+                // Override deliberately shows no success notice — just reload.
                 await load();
+                notifyNavRefresh();
             }
         } finally {
             setBusyId(null);
@@ -149,8 +183,6 @@ export default function AdminTrustedAdultsPage() {
                 </Text>
             </div>
 
-            <AlertBanner message={message?.text} tone={message?.tone} onClose={() => setMessage(undefined)} />
-
             {items.length === 0 && <Text c="dimmed">Nothing in the queue.</Text>}
 
             {items.map((ta) => {
@@ -158,6 +190,15 @@ export default function AdminTrustedAdultsPage() {
                 const status = latest?.status ?? "PENDING_BOARD_REVIEW";
                 const pending = status === "PENDING_BOARD_REVIEW";
                 const sharedVal = latest ? shared[latest.id] ?? "" : "";
+                const prior = priorDecisionReview(ta.reviews);
+                const priorMeta = prior?.decision ? PRIOR_DECISION_META[prior.decision] : null;
+                // A renewal whose prior approval lapsed: how long it sat expired before
+                // this resubmission. A long lapse means it's almost a fresh disclosure —
+                // reviewBy is the approval's expiry date; gap to the resubmit is the age.
+                const lapsedDays =
+                    prior?.decision === "APPROVE" && prior.reviewBy && latest
+                        ? daysBetween(latest.createdAt, prior.reviewBy)
+                        : null;
                 // Conflict of interest: can't review your own household's trusted adult, nor
                 // one where you are the counterparty. Backend enforces the same rule.
                 const isSelf = isTrustedAdultConflict({
@@ -173,7 +214,7 @@ export default function AdminTrustedAdultsPage() {
                             <Text c="dimmed">→</Text>
                             <Text>{ta.trustedAdultPerson?.name || ta.trustedAdultName || "trusted adult"}</Text>
                             <Badge color={STATUS_COLORS[status] ?? "gray"}>{label(status)}</Badge>
-                            {latest && <Badge variant="outline">{label(latest.kind)}</Badge>}
+                            {priorMeta && <Badge variant="outline" color={priorMeta.color}>{priorMeta.text}</Badge>}
                         </Group>
                         <TrustedAdultContact phone={ta.trustedAdultPhone} email={ta.trustedAdultEmail} />
                         <Text size="sm" mt={6}><b>Family context (board only):</b> {ta.familyContext}</Text>
@@ -182,11 +223,17 @@ export default function AdminTrustedAdultsPage() {
                         )}
                         {ta.household?.leads?.length ? (
                             <Text size="xs" c="dimmed" mt={2}>
-                                Leads: {ta.household.leads.map((l) => l.participant.name || l.participant.email).join(", ")}
+                                Leads: {ta.household.leads.map((l) => l.person.name || l.person.email).join(", ")}
                             </Text>
                         ) : null}
                         {latest?.reviewBy && (
                             <Text size="xs" c="dimmed" mt={2}>Review by {latest.reviewBy.slice(0, 10)}</Text>
+                        )}
+                        {lapsedDays !== null && lapsedDays > 0 && (
+                            <Text size="xs" c={lapsedDays > 365 ? "orange" : "dimmed"} mt={2}>
+                                Prior approval expired {prior!.reviewBy!.slice(0, 10)} · lapsed {lapsedDays} day{lapsedDays === 1 ? "" : "s"} before this resubmission
+                                {lapsedDays > 365 ? " — treat as near-new" : ""}
+                            </Text>
                         )}
                         <Text size="xs" c="dimmed" mt={2}>
                             Disclosed {ta.createdAt.slice(0, 10)} · {label(ta.origin)}
@@ -195,6 +242,7 @@ export default function AdminTrustedAdultsPage() {
                         {pending && latest && (
                             <Stack mt="md" gap="xs">
                                 <Textarea
+                                    withAsterisk
                                     label="Shared note — what keyholders & program leads should know (required to approve)"
                                     placeholder="e.g. Grandma (Jane Doe) may pick up Bobby and Sue."
                                     autosize
@@ -208,15 +256,22 @@ export default function AdminTrustedAdultsPage() {
                                     disabled={!isSelf}
                                 >
                                     <Group gap="xs">
-                                        <Button
-                                            size="xs" fz={15}
-                                            color="green"
-                                            loading={busyId === latest.id}
-                                            disabled={isSelf || !sharedVal.trim()}
-                                            onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
+                                        <Tooltip
+                                            label="Needs Shared Note to Approve"
+                                            disabled={isSelf || !!sharedVal.trim()}
                                         >
-                                            Approve
-                                        </Button>
+                                            <span>
+                                                <Button
+                                                    size="xs" fz={15}
+                                                    color="green"
+                                                    loading={busyId === latest.id}
+                                                    disabled={isSelf || !sharedVal.trim()}
+                                                    onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
+                                                >
+                                                    Approve
+                                                </Button>
+                                            </span>
+                                        </Tooltip>
                                         <Button size="xs" fz={15} color="red" loading={busyId === latest.id} disabled={isSelf} onClick={() => decide(latest.id, "DENY")}>
                                             Deny
                                         </Button>
@@ -259,6 +314,15 @@ export default function AdminTrustedAdultsPage() {
                                     Revoke
                                 </Button>
                             </Group>
+                        )}
+
+                        {latest && notices[latest.id] && (
+                            <AlertBanner
+                                message={notices[latest.id].text}
+                                tone={notices[latest.id].tone}
+                                mt="xs"
+                                onClose={() => clearNotice(latest.id)}
+                            />
                         )}
                     </Card>
                 );

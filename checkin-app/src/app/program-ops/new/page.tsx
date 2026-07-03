@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alert, Box, Button, Card, Checkbox, Group, NumberInput, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
-import { AlertBanner } from '@/components/admin/AlertBanner';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
@@ -33,7 +32,6 @@ export default function CreateProgramPage() {
   const [saving, setSaving] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState<"success" | "error">("success");
 
   // Lead Mentor selection state (the EntityPicker owns the transient query/results)
   const [leadMentorId, setLeadMentorId] = useState("");
@@ -74,12 +72,10 @@ export default function CreateProgramPage() {
       } else {
         const data = await res.json();
         setMessage(data.error || "Failed to create program.");
-        setMessageType("error");
         setSaving(false);
       }
     } catch {
       setMessage("Network error creating program.");
-      setMessageType("error");
       setSaving(false);
     }
   };
@@ -107,8 +103,6 @@ export default function CreateProgramPage() {
         <Text c="dimmed" mb="lg">
           Create a new program. You can configure the roster and schedule events later.
         </Text>
-
-        <AlertBanner message={message} tone={messageType === 'success' ? 'success' : 'error'} mb="md" />
 
         <form onSubmit={handleCreate}>
           <Stack>
@@ -213,6 +207,10 @@ export default function CreateProgramPage() {
               label="Treehouse Members-Only Program"
               description="If checked, this program will only be visible to logged-in users with active memberships."
             />
+
+            {message && (
+              <Alert color="red" variant="light" title="Couldn't create program">{message}</Alert>
+            )}
 
             <Group justify="flex-end">
               <Button type="submit" color="green" disabled={saving || !name.trim() || !leadMentorId || datesInvalid} loading={saving}>

@@ -8,6 +8,7 @@ import { EntityPicker } from '@/components/admin/EntityPicker';
 import { isYouth } from '@/lib/time';
 import { Button, Card, Checkbox, Container, Paper, Stack, Text, TextInput } from '@mantine/core';
 import { AlertBanner } from '@/components/admin/AlertBanner';
+import { notifications } from '@mantine/notifications';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type HouseholdOption = {
@@ -97,7 +98,7 @@ function NewParticipantForm() {
       const data = await res.json();
 
       if (res.ok) {
-        setMessage(`Participant ${name || data.participant.email || 'created'} successfully!`);
+        notifications.show({ color: "green", message: `Participant ${name || data.participant.email || 'created'} successfully!` });
         setName("");
         setEmail("");
         setParentEmail("");

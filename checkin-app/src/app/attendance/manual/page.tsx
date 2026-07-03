@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Alert, Button, Card, Stack, Text, TextInput, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { AttendanceTabs } from "../AttendanceTabs";
@@ -13,13 +14,11 @@ export default function ManualAttendance() {
   const [departedAt, setDeparted] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
-    setSuccess("");
 
     try {
       const res = await fetch("/api/attendance/manual", {
@@ -32,7 +31,7 @@ export default function ManualAttendance() {
       if (!res.ok) {
         setError(data.error || "Failed to record manual visit.");
       } else {
-        setSuccess("Visit recorded successfully.");
+        notifications.show({ color: "green", message: "Visit recorded successfully." });
         setArrived("");
         setDeparted("");
       }
@@ -60,7 +59,6 @@ export default function ManualAttendance() {
         </Text>
 
         {error && !departureError && <Alert color="red" mb="md">{error}</Alert>}
-        {success && <Alert color="green" mb="md">{success}</Alert>}
 
         <form onSubmit={handleSubmit}>
           <Stack>
