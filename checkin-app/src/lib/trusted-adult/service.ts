@@ -173,7 +173,13 @@ export async function hideTrustedAdult(id: number, actorId: number) {
     });
 }
 
-/** A household lead withdraws a Trusted Adult — sets the latest review REVOKED. */
+/**
+ * A household lead withdraws a Trusted Adult — REVOKES every review that isn't
+ * already revoked, not just the latest. A renewal opens a new review while the
+ * prior APPROVED row lingers, and the pickup list (/operational) shows a TA while
+ * ANY review is APPROVED. Revoking only the latest would leave a stale approval
+ * live, so the adult keeps showing up on the pickup list after withdrawal.
+ */
 export async function withdrawTrustedAdult(id: number, actorId: number) {
     const ta = await prisma.trustedAdult.findUnique({ where: { id }, select: { id: true, householdId: true } });
     if (!ta) throw new TrustedAdultError("not_found", "Trusted adult not found.");
@@ -182,11 +188,19 @@ export async function withdrawTrustedAdult(id: number, actorId: number) {
     // Lock the parent so withdraw serializes against renew and decide on the same TA.
     return prisma.$transaction(async (tx) => {
         await lockTrustedAdult(tx, ta.id);
-        const latest = await tx.trustedAdultReview.findFirst({ where: { trustedAdultId: ta.id }, orderBy: { id: "desc" } });
-        if (!latest || latest.status === "REVOKED") throw new TrustedAdultError("wrong_phase", "Nothing to withdraw.");
-        const updated = await tx.trustedAdultReview.update({ where: { id: latest.id }, data: { status: "REVOKED" } });
-        await audit(tx, actorId, ta.id, { status: latest.status }, { status: "REVOKED" });
-        return updated;
+        const live = await tx.trustedAdultReview.findMany({
+            where: { trustedAdultId: ta.id, status: { not: "REVOKED" } },
+            orderBy: { id: "desc" },
+        });
+        if (live.length === 0) throw new TrustedAdultError("wrong_phase", "Nothing to withdraw.");
+        await tx.trustedAdultReview.updateMany({
+            where: { id: { in: live.map((r) => r.id) } },
+            data: { status: "REVOKED" },
+        });
+        for (const r of live) {
+            await audit(tx, actorId, ta.id, { status: r.status }, { status: "REVOKED" });
+        }
+        return { ...live[0], status: "REVOKED" as const };
     });
 }
 
