@@ -159,18 +159,14 @@ describe("AdminEditHouseholdModal", () => {
 
     global.fetch = jest.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: "Name taken." }) })) as unknown as typeof fetch;
     fireEvent.click(screen.getByRole("button", { name: "Save Changes — As Admin" }));
-    await waitFor(() =>
-      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Name taken." })),
-    );
+    // Failure routes to a modal-local Alert next to the form, not a corner toast.
+    expect(await screen.findByText("Name taken.")).toBeInTheDocument();
     // The modal stays open on failure (only success calls onClose).
     expect(screen.getByText(/Edit Household Info/)).toBeInTheDocument();
 
-    (notifications.show as jest.Mock).mockClear();
     global.fetch = jest.fn(() => Promise.reject(new Error("boom"))) as unknown as typeof fetch;
     fireEvent.click(screen.getByRole("button", { name: "Save Changes — As Admin" }));
-    await waitFor(() =>
-      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error." })),
-    );
+    expect(await screen.findByText("Network error.")).toBeInTheDocument();
   });
 
   it("removes a lead (reloading after success) and blocks removing the last lead", async () => {
@@ -198,7 +194,7 @@ describe("AdminEditHouseholdModal", () => {
         expect.objectContaining({ method: "DELETE", body: JSON.stringify({ participantId: 1 }) }),
       ),
     );
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green" })));
+    expect(await screen.findByText("Lead removed.")).toBeInTheDocument();
 
     // Now down to a single lead: the last remaining Remove-lead button is disabled
     // and the "must keep at least one lead" copy shows.
@@ -214,16 +210,11 @@ describe("AdminEditHouseholdModal", () => {
 
     global.fetch = jest.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: "Cannot remove." }) })) as unknown as typeof fetch;
     fireEvent.click(screen.getAllByRole("button", { name: "Remove lead" })[0]);
-    await waitFor(() =>
-      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Cannot remove." })),
-    );
+    expect(await screen.findByText("Cannot remove.")).toBeInTheDocument();
 
-    (notifications.show as jest.Mock).mockClear();
     global.fetch = jest.fn(() => Promise.reject(new Error("net"))) as unknown as typeof fetch;
     fireEvent.click(screen.getAllByRole("button", { name: "Remove lead" })[0]);
-    await waitFor(() =>
-      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error." })),
-    );
+    expect(await screen.findByText("Network error.")).toBeInTheDocument();
   });
 
   it("shows the no-leads state for a household with no household leads", async () => {
