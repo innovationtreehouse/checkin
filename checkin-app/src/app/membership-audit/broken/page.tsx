@@ -34,7 +34,7 @@ export default function BrokenHouseholdsPage() {
 
   const makeLead = async (householdId: number, participantId: number) => {
     setPromoting(participantId);
-    setNotice(({ [householdId]: _, ...rest }) => rest);
+    setNotice((n) => { const next = { ...n }; delete next[householdId]; return next; });
     try {
       const res = await fetch("/api/household/lead", {
         method: "POST",
@@ -73,7 +73,7 @@ export default function BrokenHouseholdsPage() {
                 <Text fw={600} mb="xs">{h.name}</Text>
                 {notice[h.id] && (
                   <Alert color={notice[h.id].ok ? "green" : "red"} variant="light" mb="xs" withCloseButton
-                    onClose={() => setNotice(({ [h.id]: _, ...rest }) => rest)}>
+                    onClose={() => setNotice((n) => { const next = { ...n }; delete next[h.id]; return next; })}>
                     {notice[h.id].text}
                   </Alert>
                 )}
