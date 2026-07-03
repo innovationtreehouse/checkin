@@ -121,6 +121,67 @@ describe("safety/trusted-adults page", () => {
     expect(await screen.findByText("Nothing in the queue.")).toBeInTheDocument();
   });
 
+  it("badges the last real decision on a resubmit, seeing past an interim withdrawal", async () => {
+    setSession({ id: 1, isBoardMember: true, householdId: 1 });
+    // reviews are id-desc; [0] is the in-flight resubmit. Prior chain: DENIED, then
+    // withdrawn (REVOKED keeps decision=DENY). Board must read "Previously denied".
+    const deniedThenWithdrawn = [
+      {
+        ...trustedAdults[0],
+        reviews: [
+          { id: 30, kind: "RENEWAL", status: "PENDING_BOARD_REVIEW", decision: null, decisionNote: null, sharedNote: null, effectiveFrom: null, reviewBy: null, createdAt: "2026-03-01T00:00:00.000Z" },
+          { id: 20, kind: "INITIAL", status: "REVOKED", decision: "DENY", decisionNote: "No.", sharedNote: null, effectiveFrom: null, reviewBy: null, createdAt: "2026-02-01T00:00:00.000Z" },
+          { id: 10, kind: "INITIAL", status: "DENIED", decision: "DENY", decisionNote: "No.", sharedNote: null, effectiveFrom: null, reviewBy: null, createdAt: "2026-01-01T00:00:00.000Z" },
+        ],
+      },
+    ];
+    mockFetchJson({ "/api/safety/trusted-adults": { trustedAdults: deniedThenWithdrawn } });
+    renderWithProviders(<AdminTrustedAdultsPage />);
+    await screen.findByText("Guardian House");
+    expect(screen.getByText("Previously denied")).toBeInTheDocument();
+    expect(screen.queryByText("Renewal")).not.toBeInTheDocument();
+  });
+
+  it("shows no prior-decision badge on a plain withdraw-and-resubmit, but 'Renewal' after an approval", async () => {
+    setSession({ id: 1, isBoardMember: true, householdId: 1 });
+    const cases = [
+      // Withdrawn while never decided (decision=null) → nothing.
+      [
+        { id: 42, kind: "RENEWAL", status: "PENDING_BOARD_REVIEW", decision: null, decisionNote: null, sharedNote: null, effectiveFrom: null, reviewBy: null, createdAt: "2026-03-01T00:00:00.000Z" },
+        { id: 41, kind: "INITIAL", status: "REVOKED", decision: null, decisionNote: null, sharedNote: null, effectiveFrom: null, reviewBy: null, createdAt: "2026-02-01T00:00:00.000Z" },
+      ],
+    ];
+    mockFetchJson({ "/api/safety/trusted-adults": { trustedAdults: [{ ...trustedAdults[0], reviews: cases[0] }] } });
+    const { unmount } = renderWithProviders(<AdminTrustedAdultsPage />);
+    await screen.findByText("Guardian House");
+    expect(screen.queryByText("Previously denied")).not.toBeInTheDocument();
+    expect(screen.queryByText("Renewal")).not.toBeInTheDocument();
+    unmount();
+
+    // Approved → expired 2026-01-01 → renewed 2026-03-01: "Renewal" + 59-day lapse.
+    const renewed = [
+      { id: 52, kind: "RENEWAL", status: "PENDING_BOARD_REVIEW", decision: null, decisionNote: null, sharedNote: null, effectiveFrom: null, reviewBy: null, createdAt: "2026-03-01T00:00:00.000Z" },
+      { id: 51, kind: "INITIAL", status: "EXPIRED", decision: "APPROVE", decisionNote: null, sharedNote: "Grandma picks up.", effectiveFrom: "2025-01-01T00:00:00.000Z", reviewBy: "2026-01-01T00:00:00.000Z", createdAt: "2025-01-01T00:00:00.000Z" },
+    ];
+    mockFetchJson({ "/api/safety/trusted-adults": { trustedAdults: [{ ...trustedAdults[0], reviews: renewed }] } });
+    const { unmount: unmount2 } = renderWithProviders(<AdminTrustedAdultsPage />);
+    await screen.findByText("Guardian House");
+    expect(screen.getByText("Renewal")).toBeInTheDocument();
+    expect(screen.getByText(/expired 2026-01-01 · lapsed 59 days/)).toBeInTheDocument();
+    unmount2();
+
+    // Resubmitted 2025-06-01 while still approved (reviewBy 2026-01-01, future): no lapse line.
+    const early = [
+      { id: 62, kind: "RENEWAL", status: "PENDING_BOARD_REVIEW", decision: null, decisionNote: null, sharedNote: null, effectiveFrom: null, reviewBy: null, createdAt: "2025-06-01T00:00:00.000Z" },
+      { id: 61, kind: "INITIAL", status: "APPROVED", decision: "APPROVE", decisionNote: null, sharedNote: "Grandma picks up.", effectiveFrom: "2025-01-01T00:00:00.000Z", reviewBy: "2026-01-01T00:00:00.000Z", createdAt: "2025-01-01T00:00:00.000Z" },
+    ];
+    mockFetchJson({ "/api/safety/trusted-adults": { trustedAdults: [{ ...trustedAdults[0], reviews: early }] } });
+    renderWithProviders(<AdminTrustedAdultsPage />);
+    await screen.findByText("Guardian House");
+    expect(screen.getByText("Renewal")).toBeInTheDocument();
+    expect(screen.queryByText(/lapsed/)).not.toBeInTheDocument();
+  });
+
   it("shows the fallback failure message on a decision error, and dismisses the alert", async () => {
     setSession({ id: 1, isBoardMember: true, householdId: 1 });
     mockFetchJson({ "/api/safety/trusted-adults": { trustedAdults } });
