@@ -291,7 +291,7 @@ The term-by-term migration plan lives in
 
 **⚠️ Open (deferred, not yet decided):** **admin** role-set (sysadmin vs sysadmin+board — security-sensitive) and **review/reviewer** overload. Both in UNFINISHED.md.
 
-**Closed:** attendance "volunteer = adult non-keyholder" / "youth = minor" buckets — **won't-change** (intended supervision signal, safety-load-bearing two-deep). Trends age-proxy metric fixed separately. See [designs/AGE_PROXY_BUG_AUDIT.md](designs/AGE_PROXY_BUG_AUDIT.md).
+**Closed:** attendance "volunteer = adult non-keyholder" / "youth = minor" buckets — **won't-change** (intended supervision signal, safety-load-bearing two-deep; do not enrollment-ify). Trends age-proxy metric fixed separately. Recorded in [designs/UNFINISHED.md](designs/UNFINISHED.md) "Considered and dismissed".
 
 **Related track (sibling audit, not one of the phases above):** Trusted Adult entity naming `counterparty*` → `trustedAdult*` — **shipped** (audit P2-2, #734). See the Trusted Adult entry above.
 

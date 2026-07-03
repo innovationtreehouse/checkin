@@ -222,3 +222,12 @@ rename the stale-named `types/participant.ts`. _(VOCAB #8)_
   (`@map("participant_id")` + "user") is the SessionUser dedup item above.
 - **AttestationResult / MembershipStatus / ProgramPhase / EnrollmentStatus** —
   well-scoped status enums; no cross-layer drift.
+- **Attendance "volunteer" / "youth" buckets** — `getFullAttendance` +
+  `attendance/current` bucket live visitors by age + keyholder flag
+  (`volunteer` = adult non-keyholder, `youth` = minor), NOT by real
+  `ProgramVolunteer` / enrollment. **Won't-change:** it's the intended
+  "adults-on-the-floor vs youth" **supervision** signal (already labelled
+  "Volunteers/Adults" in the UI), and that age split is **safety-load-bearing** —
+  the two-deep / unaccompanied-youth banner depends on `adult = !isYouth`. Do NOT
+  "enrollment-ify" these buckets. (The separate `facility/trends` age-proxy
+  *metric* WAS a real bug and was fixed independently.)
