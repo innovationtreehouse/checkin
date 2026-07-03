@@ -152,7 +152,8 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         // real — the symmetry /api/dev/shopify/orders-paid relies on. Bad signature
         // still 401s; a correctly mock-signed body passes verification (200).
         delete process.env.SHOPIFY_WEBHOOK_SECRET;
-        // Imported (not hardcoded) so this test fails fast if the mock secret ever changes.
+        // Imported so signer and verifier track the same constant — the value
+        // itself is not a contract; this test asserts the fallback wiring.
         const MOCK_SECRET = DEV_MOCK_SHOPIFY_WEBHOOK_SECRET;
         try {
             const body = programPayload(String(p1));

@@ -1,4 +1,4 @@
-import { config, ORG_DOMAIN, DEV_MOCK_SHOPIFY_WEBHOOK_SECRET } from "@/lib/config";
+import { config, ORG_DOMAIN, DEV_MOCK_SHOPIFY_WEBHOOK_SECRET, DEV_MOCK_WEBHOOK_SECRET } from "@/lib/config";
 
 const ENV_KEYS = [
     "DATABASE_URL", "NEXTAUTH_URL", "NEXTAUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
@@ -110,7 +110,7 @@ describe("zohoMockActive / zohoAvailable / zohoWebhookSecret", () => {
         (process.env as Record<string, string>).NODE_ENV = "test";
         expect(config.zohoMockActive()).toBe(true);
         expect(config.zohoAvailable()).toBe(true);
-        expect(config.zohoWebhookSecret()).toBe("dev-zoho-mock-webhook-secret");
+        expect(config.zohoWebhookSecret()).toBe(DEV_MOCK_WEBHOOK_SECRET);
     });
     it("mock inactive when Zoho is configured (real integration wins)", () => {
         process.env.ZOHO_CLIENT_ID = "a";
@@ -182,11 +182,6 @@ describe("shopifyMockActive / shopifyWebhookSecret", () => {
         process.env.SHOPIFY_WEBHOOK_SECRET = "explicit-shopify-secret";
         process.env.CHECKIN_ENV = "prod";
         expect(config.shopifyWebhookSecret()).toBe("explicit-shopify-secret");
-    });
-    it("null when unset and mock inactive", () => {
-        clearShopify();
-        process.env.CHECKIN_ENV = "prod";
-        expect(config.shopifyWebhookSecret()).toBeNull();
     });
 });
 

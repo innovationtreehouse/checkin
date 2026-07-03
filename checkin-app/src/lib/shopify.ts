@@ -18,6 +18,9 @@ let tokenExpiresAt: number = 0;
  */
 const SHOPIFY_FETCH_TIMEOUT_MS = 20_000;
 
+/** Admin API version for every REST call here and in scripts/register-shopify-webhook.ts — bump it in one place. */
+export const SHOPIFY_API_VERSION = "2026-01";
+
 /** fetch with a hard timeout that surfaces as a clear error instead of hanging. */
 export async function shopifyFetch(input: string, init: RequestInit, label: string): Promise<Response> {
   try {
@@ -107,7 +110,7 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
     const productTitle = `Program Enrollment: ${name}`;
 
     // 1. Create Product
-    const productRes = await shopifyFetch(`https://${storeDomain}/admin/api/2026-01/products.json`, {
+    const productRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products.json`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -162,7 +165,7 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
 
     if (variants.length > 0) {
         for (const variant of variants) {
-            const variantRes = await shopifyFetch(`https://${storeDomain}/admin/api/2026-01/products/${productId}/variants.json`, {
+            const variantRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products/${productId}/variants.json`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -183,14 +186,14 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
                 if (maxParticipants && variantData.variant.inventory_item_id) {
                     try {
                         // Get the store's primary location
-                        const locRes = await shopifyFetch(`https://${storeDomain}/admin/api/2026-01/locations.json`, {
+                        const locRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/locations.json`, {
                             headers: { 'X-Shopify-Access-Token': accessToken },
                         }, "Shopify get locations");
                         if (locRes.ok) {
                             const locData = await locRes.json();
                             const locationId = locData.locations?.[0]?.id;
                             if (locationId) {
-                                const invRes = await shopifyFetch(`https://${storeDomain}/admin/api/2026-01/inventory_levels/set.json`, {
+                                const invRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/set.json`, {
                                     method: 'POST',
                                     headers: {
                                         'Content-Type': 'application/json',

@@ -1,8 +1,8 @@
 # Shopify Dev-Store Webhook — Implementation Plan
 
-**Status:** Plan — no code written.
+**Status:** Partially executed — Phase 0 (mock) landed via #730; the Phase-3 registration script shipped in #740 (built ahead of O2, see Phase 3). Store setup (Phases 1–2), registration (Phase 3), and secret wiring (Phase 4) remain ops work.
 **Companion:** [`SHOPIFY_DEV_STORE_WEBHOOK.md`](./SHOPIFY_DEV_STORE_WEBHOOK.md) (design/rationale).
-**Fallback mock:** `origin/claude/wonderful-tesla-621492` @ `455362c2` (in-process orders/paid mock).
+**Fallback mock:** landed on `main` via #730 (in-process orders/paid mock).
 
 ---
 
@@ -24,8 +24,8 @@ There is **no webhook-registration code anywhere in `src/`** (`grep webhooks.jso
 
 ---
 
-## Phase 0 — land the mock (prereq)
-Merge `origin/claude/wonderful-tesla-621492` (455362c2). Its `shopifyMockActive()` gate is the entire mock↔real switch. Setting real creds opts an instance out of the mock automatically — no branch. Nothing to build.
+## Phase 0 — land the mock (prereq) — ✅ done
+Landed on `main` via #730 (with follow-up fixes; the original `claude/wonderful-tesla-621492` branch is superseded — don't merge it). Its `shopifyMockActive()` gate is the entire mock↔real switch. Setting real creds opts an instance out of the mock automatically — no branch. Nothing left to build.
 
 ## Phase 1 — stand up ONE shared dev store (ops)
 **Hard blocker: O1 — do we own a Shopify Partner org?** Needs an owner before anything below.
@@ -40,7 +40,7 @@ Merge `origin/claude/wonderful-tesla-621492` (455362c2). Its `shopifyMockActive(
 | `SHOPIFY_STORE_DOMAIN` | Settings → Domains (the `*.myshopify.com`) | raw myshopify domain, not a pretty domain |
 | `SHOPIFY_CLIENT_ID` | app → API credentials | shown directly |
 | `SHOPIFY_CLIENT_SECRET` | app → API credentials | reveal-once, copy now |
-| `SHOPIFY_WEBHOOK_SECRET` | Settings → Notifications → Webhooks (bottom of page: "signed with…") | store-admin path, matches prod |
+| `SHOPIFY_WEBHOOK_SECRET` | Settings → Notifications → Webhooks (bottom of page: "signed with…") | store-admin path, matches prod. **If the subscription was created via the Phase-3 script instead, use the app client secret** — Shopify signs API-created subscriptions with it, not the store signing secret |
 
 Verify token before trusting creds:
 ```
@@ -56,7 +56,7 @@ https://{cloud-dev-host}/api/webhooks/shopify
 ```
 That callback is the **only** URL Shopify calls into. Checkout is async (cart permalink → webhook), no return/redirect URL to app.
 
-**Optional script (build ONLY if O2 says cloud-dev URL rotates on redeploy):** `npm run shopify:webhook -- <url>` — idempotent upsert via Admin API `POST/PUT /admin/api/2026-01/webhooks.json`, reusing `shopify.ts`'s `getAccessToken` + `shopifyFetch`. Prod proves manual is enough; don't build this unless the URL churns.
+**Script (shipped in #740, ahead of O2 — its immediate use is local-tunnel churn, design §3):** `npm run shopify:webhook -- --url <url> [--commit]` — idempotent upsert via the Admin API, reusing `shopify.ts`'s `getAccessToken` + `shopifyFetch`; dry-run by default. Manual admin registration stays the recommended cloud-dev path. **Secret caveat:** Shopify signs deliveries to an API-created subscription with the **app client secret**, so an instance relying on a script-registered webhook needs `SHOPIFY_WEBHOOK_SECRET` set to that value, not the store signing secret (design §2/§4). The Admin API also only lists subscriptions created by this app — a manually registered webhook is invisible to the script and keeps firing on its own.
 
 ## Phase 4 — secret wiring (AWS, NOT this repo)
 Prod/dev run on **AWS ECS** (`us-east-2`), deployed via GitHub OIDC ([`deploy-dev.yml`](/.github/workflows/deploy-dev.yml)). Secrets are **not** in `.env`, compose, or the workflow — they're injected at runtime by the **ECS task-def `secrets:` block → AWS Secrets Manager / SSM**, defined in Terraform at `~/projects/treehouse/aws/infra/modules/checkin/` (external repo).
@@ -88,7 +88,7 @@ Locals keep the in-process mock (Phase 0). Tunnel (`cloudflared`/`ngrok` → cal
 | **O6** | Bogus Gateway enough for payment testing? | yes |
 
 ## Net new work
-- **This repo:** ~0 lines (optionally: one idempotent registration script, only if O2 fails).
+- **This repo:** shipped in #740 — the registration script + unit tests, dev orders/paid route hardening + integration suite, and the Shopify config-fuse tests.
 - **Infra repo:** add dev-store secrets to Secrets Manager + task-def `secrets:` mapping.
 - **Ops:** Partner org → dev store → app → product/variant/discount → manual `orders/paid` subscription.
 

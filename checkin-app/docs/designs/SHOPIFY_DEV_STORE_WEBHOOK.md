@@ -1,6 +1,6 @@
 # Shopify Development Store + Webhooks in Dev/Local
 
-**Status:** Proposal — for review. No code written.
+**Status:** Implemented in part — the in-process mock (§6) landed via #730; mock hardening + the §3 registration script via #740. The real dev store (§2–§5) remains ops work, blocked on O1/O2.
 **Author:** design pass, 2026-07-02 (revised 2026-07-02 after grepping prod deploy + `src/`)
 **Related:** [`ZOHO_SIGN_DEV_MOCK.md`](./ZOHO_SIGN_DEV_MOCK.md) (#669, in-process sign mock), #665 (email dev inbox), #278 (checkout-token honor-system TODO), #624/#625 (order-amount / price-alignment safety), #683 (Shopify env routed through `config.ts`)
 **Implementation plan:** [`SHOPIFY_DEV_STORE_WEBHOOK_PLAN.md`](./SHOPIFY_DEV_STORE_WEBHOOK_PLAN.md) (concrete steps + two prod-grounded corrections folded back into §2/§4 below).
@@ -17,7 +17,7 @@ Unlike Zoho (which got a fully in-process mock), the ask here is to connect to a
 
 Trace from checkout link to activation:
 
-1. **Build the checkout link** — [`payment.ts › ensurePaymentLink`](../../src/lib/membership/payment.ts) reads `BoardSettings.membershipVariantId` + `config.shopifyStoreDomain()` and calls `buildMembershipCheckoutUrl`, producing a Shopify **cart permalink**:
+1. **Build the checkout link** — [`payment.ts › ensurePaymentLink`](../../src/lib/membership/payment.ts) reads `BoardSettings.orgMembershipVariantId` + `config.shopifyStoreDomain()` and calls `buildMembershipCheckoutUrl`, producing a Shopify **cart permalink**:
    ```
    https://{SHOPIFY_STORE_DOMAIN}/cart/{variantId}:1?discount={code}&attributes[Membership_Process_ID]={processId}
    ```
@@ -29,7 +29,7 @@ Trace from checkout link to activation:
 
 4. **HMAC verify** — `verifyShopifyHmac` computes `HMAC-SHA256(rawBody, config.shopifyWebhookSecret())` in base64 and `timingSafeEqual`s it against `x-shopify-hmac-sha256`. Unset secret → **500** (config error); missing/wrong sig → **401**. Verified over the exact raw bytes before parse.
 
-5. **Match by cart attribute** — handler scans `note_attributes` for `Membership_Process_ID`, then checks the order's `line_items` actually contain a known membership variant (`membershipVariantId` / `shopifyNormalVariantId` / `shopifyVolunteerVariantId` from `BoardSettings`) — the #624/H2 guard against paying for an unrelated item that totals the same.
+5. **Match by cart attribute** — handler scans `note_attributes` for `Membership_Process_ID`, then checks the order's `line_items` actually contain a known membership variant (`orgMembershipVariantId` / `shopifyNormalVariantId` / `shopifyVolunteerVariantId` from `BoardSettings`) — the #624/H2 guard against paying for an unrelated item that totals the same.
 
 6. **`activate()`** ([`payment.ts`](../../src/lib/membership/payment.ts), via `activateByProcessId`) — `FOR UPDATE` row lock, idempotent on webhook retry. Flips `ACTIVE` if the background check already cleared (else holds `PENDING_BG_CLEARANCE`); handles paid-while-`BLOCKED` and no-membership-item as board-alerted anomalies rather than silent no-ops. On `ACTIVE`, sends the one congrats email.
 
@@ -40,7 +40,7 @@ Everything upstream of the handler. Concretely:
 | Gap | Symptom in dev |
 |-----|----------------|
 | No `SHOPIFY_STORE_DOMAIN/CLIENT_ID/CLIENT_SECRET` set | `shopify.ts` logs "integration disabled"; no Admin API; product/variant creation is a no-op |
-| No `BoardSettings.membershipVariantId` (seed does **not** set it — grep of `prisma/seed.ts` is empty) | `ensurePaymentLink` returns `checkoutUrl: null`; nothing to click |
+| No `BoardSettings.orgMembershipVariantId` (seed does **not** set it — grep of `prisma/seed.ts` is empty) | `ensurePaymentLink` returns `checkoutUrl: null`; nothing to click |
 | No `SHOPIFY_WEBHOOK_SECRET` | inbound webhook 500s (`verifyShopifyHmac` config-error branch) |
 | No public URL | even a real store can't reach `localhost:4000` |
 
@@ -72,7 +72,7 @@ Our client uses the **Client Credentials Grant** (`shopify.ts › getAccessToken
 **Webhook subscription(s)**
 Subscribe **`orders/paid`** (primary; the handler also tolerates `orders/create`) pointed at `{instance}/api/webhooks/shopify`. Two ways:
 - Admin **Settings → Notifications → Webhooks** (manual, per-store) — **recommended, mirrors prod**, or
-- Admin API `POST /admin/api/2026-01/webhooks.json` (scriptable — only worth building if the callback URL rotates, §3/O2).
+- Admin API via `npm run shopify:webhook -- --url <callback> [--commit]` (shipped in #740, primarily for the §3 local-tunnel churn; dry-run by default). **Caveat:** Shopify signs deliveries to an API-created subscription with the **app client secret**, so pairing it with the store signing secret in `SHOPIFY_WEBHOOK_SECRET` 401s every delivery — pick one path and keep the matching secret.
 
 > **Prod precedent (verified by grep):** there is **no webhook-registration code anywhere in `src/`** — `grep webhooks.json` returns zero hits, and `shopify.ts` only creates product variants. So prod's `orders/paid` subscription was **registered by hand in the store admin**, meaning prod uses the **store webhook signing secret** path. Mirror it for the dev store: register manually, paste the store's signing secret into `SHOPIFY_WEBHOOK_SECRET`. Build the Admin-API script (§3) **only** if O2 shows cloud-dev's URL rotates and needs unattended re-registration.
 
@@ -88,8 +88,8 @@ Shopify shows the **webhook signing secret** once per store → env `SHOPIFY_WEB
 |-------|------|-----|
 | `SHOPIFY_CLIENT_ID`, `_CLIENT_SECRET`, `_WEBHOOK_SECRET` (+ server-side `SHOPIFY_STORE_DOMAIN`) | **AWS Secrets Manager → ECS task-def `secrets:`** (see §4) | prod/dev run on ECS; `config.ts` reads them from `process.env` at runtime — this app repo stores nothing |
 | `NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN` (client bundle only) | **GitHub repo `vars` → build-arg** | public, baked into the client bundle at build time (non-secret); how prod already sets it ([`deploy-dev.yml`](/.github/workflows/deploy-dev.yml)) |
-| `membershipVariantId`, `shopifyNormalVariantId`, `shopifyVolunteerVariantId`, `volunteerDiscountCode`, `normalDuesCents`, `volunteerDuesCents` | **`BoardSettings`** (row id 1) | admin-editable via [`settings/membership`](../../src/app/settings/membership/page.tsx) |
-| dev defaults for those `BoardSettings` | **seed** (`prisma/seed.ts`) — *new* | seed currently sets none; a dev store's variant/discount ids should be seeded (or set once via the settings UI) so a fresh local DB has a clickable link |
+| `orgMembershipVariantId`, `volunteerDiscountCode`, `normalDuesCents`, `volunteerDuesCents` | **`BoardSettings`** (row id 1) | admin-editable via [`settings/membership`](../../src/app/settings/membership/page.tsx). (`shopifyNormalVariantId` / `shopifyVolunteerVariantId` are also matched by the webhook's H2 check but have **no UI writer** — DB-only legacy fields) |
+| dev defaults for those `BoardSettings` | **none — deliberately not seeded** (O4, §6) | a placeholder id seeded into the shared `BoardSettings` would land on cloud-dev via the dev-dashboard reset and silently fail the real store's H2 variant check; set once per environment via `settings/membership` |
 
 > **No OAuth redirect/callback URL to configure.** The client uses the Client Credentials Grant (server-to-server, `shopify.ts › getAccessToken`), so custom-app setup needs no redirect URI. The only URL Shopify calls into is the webhook callback `{host}/api/webhooks/shopify`; checkout is an async cart permalink with no return-to-app URL.
 
@@ -107,7 +107,7 @@ Already public. Subscribe `{cloud-dev-host}/api/webhooks/shopify` in the dev sto
 ### Local laptop — needs a tunnel
 `localhost:4000` isn't reachable. Put a tunnel in front:
 - **Cloudflare Tunnel** (`cloudflared tunnel --url http://localhost:4000`) or **ngrok** (`ngrok http 4000`). Either yields an `https://<random>.trycloudflare.com` / `.ngrok-free.app` URL.
-- Register that URL as the store's `orders/paid` subscription. **The URL changes each tunnel restart** (unless you pay for a reserved subdomain / named Cloudflare tunnel) → re-register the subscription each session. A tiny `npm run shopify:webhook -- <url>` helper that upserts the subscription via Admin API keeps it a one-liner (not built here — noted for impl).
+- Register that URL as the store's `orders/paid` subscription. **The URL changes each tunnel restart** (unless you pay for a reserved subdomain / named Cloudflare tunnel) → re-register the subscription each session. The `npm run shopify:webhook -- --url <url> [--commit]` helper (shipped in #740) upserts the subscription via the Admin API and keeps it a one-liner — mind the app-client-secret caveat in §2.
 - **Worktree note:** local dev binds `4000`; per the worktree-port convention throwaway services get a suffix, but the app port itself is fixed at 4000 — point the tunnel there.
 
 ### Recommended split
@@ -162,7 +162,7 @@ Mirror Zoho #669 exactly. Add a dev-only route — `POST /api/dev/shopify/orders
 2. Takes a `processId`, synthesizes a realistic `orders/paid` payload (`note_attributes[Membership_Process_ID]`, `line_items` with the configured membership variant id, an `id`), signs it with a **fixed dev webhook secret** (§4), and **fires the REAL inbound webhook** `POST /api/webhooks/shopify` — so it drives the exact verify → match → `activate()` path prod runs.
 3. Surfaced from a dev UI ("Simulate membership payment" button) alongside the existing `/dev` tools ([`src/app/dev`](../../src/app/dev)).
 
-`config.ts` gains a `shopifyMockActive()` + a `SHOPIFY_MOCK_WEBHOOK_SECRET` fallback in `shopifyWebhookSecret()`, both structured identically to the Zoho ones (`config.ts:45–54, 80–81`).
+`config.ts` gains a `shopifyMockActive()` gate + a fixed `DEV_MOCK_SHOPIFY_WEBHOOK_SECRET` fallback in `shopifyWebhookSecret()` (a constant, not an env var), both structured identically to the Zoho ones ([`config.ts`](../../src/lib/config.ts)).
 
 ### The variant id is configuration, never hardcoded
 

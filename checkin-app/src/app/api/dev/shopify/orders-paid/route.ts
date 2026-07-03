@@ -26,7 +26,9 @@ export const POST = withAuth({}, async (req, auth) => {
     if (!config.shopifyMockActive()) return apiError("Not available", 404);
     if (auth.type !== "session") return apiError("Unauthorized", 401);
 
-    const { processId } = await req.json().catch(() => ({ processId: undefined }));
+    // .catch covers unparseable bodies; ?. covers parseable non-objects (`null`, `42`).
+    const body = await req.json().catch(() => null);
+    const processId = body?.processId;
     if (typeof processId !== "number" || !Number.isInteger(processId)) {
         return apiError("Missing or invalid processId", 400);
     }
@@ -50,8 +52,10 @@ export const POST = withAuth({}, async (req, auth) => {
     }
 
     // Shape mirrors the subset the inbound handler reads: note_attributes (where
-    // Shopify maps cart attributes) + line_items + an order id. Stable id so a
-    // re-fire is an idempotent webhook retry, exactly like Shopify's own retries.
+    // Shopify maps cart attributes) + line_items + an order id. Stable id so two
+    // overlapping fires for the same process (both inside the pre-check window
+    // above) collapse into one idempotent webhook retry on the handler side;
+    // sequential re-fires are blocked by the PENDING_PAYMENT gate.
     const payload = {
         id: `dev-mock-order-${processId}`,
         note_attributes: [{ name: "Membership_Process_ID", value: String(processId) }],

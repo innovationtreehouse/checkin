@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface PendingProcess {
     id: number;
@@ -16,6 +17,7 @@ interface PendingProcess {
  * Page 404s off a dev instance.
  */
 export default function DevShopifyClient({ hasVariant, processes }: { hasVariant: boolean; processes: PendingProcess[] }) {
+    const router = useRouter();
     const [busy, setBusy] = useState<number | null>(null);
     const [result, setResult] = useState<{ id: number; status: string | null } | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -36,6 +38,9 @@ export default function DevShopifyClient({ hasVariant, processes }: { hasVariant
                 return;
             }
             setResult({ id: processId, status: data.status ?? null });
+            // The fired process is no longer PENDING_PAYMENT — refresh the
+            // server-rendered list so its row (and 404-on-re-click) disappears.
+            router.refresh();
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         } finally {

@@ -75,7 +75,19 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
         });
     }
 
+    // The mock gate needs the three real-store creds ABSENT for every test but the
+    // first — and a dev following the runbook has them in .env. Snapshot + clear up
+    // front (restored in afterAll) so the suite neither depends on the wiping test
+    // running first nor permanently erases ambient creds for later suites.
+    const SHOPIFY_ENV_KEYS = ['SHOPIFY_STORE_DOMAIN', 'SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET'] as const;
+    let prevShopifyEnv: Record<string, string | undefined> = {};
+
     beforeAll(async () => {
+        // Capture before anything fallible so afterAll can't restore `undefined`.
+        originalFetch = global.fetch;
+        prevShopifyEnv = Object.fromEntries(SHOPIFY_ENV_KEYS.map((k) => [k, process.env[k]]));
+        for (const k of SHOPIFY_ENV_KEYS) delete process.env[k];
+
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
         prevSettings = existing
             ? {
@@ -86,16 +98,30 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
             : null;
         await wipe();
 
-        originalFetch = global.fetch;
         global.fetch = jest.fn(async (input, init) => {
-            const req = new Request(String(input), init as RequestInit);
+            const url = String(input);
+            // Only the self-fired inbound webhook may pass; anything else reaching
+            // global fetch in this suite is a bug — fail it loudly, not by feeding
+            // it the webhook handler's response.
+            if (!url.endsWith('/api/webhooks/shopify')) throw new Error(`Unexpected fetch in dev-shopify suite: ${url}`);
+            const req = new Request(url, init as RequestInit);
             return WEBHOOK_POST(req as never) as unknown as Response;
         }) as unknown as typeof fetch;
     });
 
     afterAll(async () => {
         await wipe();
-        if (prevSettings) await prisma.boardSettings.update({ where: { id: 1 }, data: prevSettings });
+        if (prevSettings) {
+            await prisma.boardSettings.update({ where: { id: 1 }, data: prevSettings });
+        } else {
+            // Row didn't exist before this suite — remove what setVariant created
+            // so the worker DB is left as found (AGENTS.md: suites self-clean).
+            await prisma.boardSettings.deleteMany({ where: { id: 1 } });
+        }
+        for (const k of SHOPIFY_ENV_KEYS) {
+            if (prevShopifyEnv[k] === undefined) delete process.env[k];
+            else process.env[k] = prevShopifyEnv[k];
+        }
         global.fetch = originalFetch;
         await prisma.$disconnect();
     });
