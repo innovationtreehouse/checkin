@@ -38,7 +38,7 @@ interface PersonRef {
 interface HouseholdRef {
     id: number;
     name: string | null;
-    leads: { participant: PersonRef }[];
+    leads: { person: PersonRef }[];
 }
 interface TrustedAdult {
     id: number;
@@ -94,7 +94,11 @@ export default function AdminTrustedAdultsPage() {
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState<number | null>(null);
     const [shared, setShared] = useState<Record<number, string>>({});
-    const [message, setMessage] = useState<{ text: string; tone: AlertTone } | undefined>();
+    // Per-review confirmation, rendered card-local so the notice stays next to the
+    // button that triggered it (a single page-top banner scrolls off-screen on long queues).
+    const [notices, setNotices] = useState<Record<number, { text: string; tone: AlertTone }>>({});
+    const clearNotice = (id: number) =>
+        setNotices((n) => { const c = { ...n }; delete c[id]; return c; });
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -115,7 +119,7 @@ export default function AdminTrustedAdultsPage() {
 
     const decide = async (reviewId: number, decision: string, extra?: Record<string, unknown>) => {
         setBusyId(reviewId);
-        setMessage(undefined);
+        clearNotice(reviewId);
         try {
             const res = await fetch("/api/safety/trusted-adults/decision", {
                 method: "POST",
@@ -124,9 +128,9 @@ export default function AdminTrustedAdultsPage() {
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setMessage({ text: body.error ?? "Decision failed.", tone: "error" });
+                setNotices((n) => ({ ...n, [reviewId]: { text: body.error ?? "Decision failed.", tone: "error" } }));
             } else {
-                setMessage({ text: `Recorded: ${label(body.status)}.`, tone: "success" });
+                setNotices((n) => ({ ...n, [reviewId]: { text: `Recorded: ${label(body.status)}.`, tone: "success" } }));
                 await load();
             }
         } finally {
@@ -136,6 +140,7 @@ export default function AdminTrustedAdultsPage() {
 
     const override = async (reviewId: number, action: string, extra?: Record<string, unknown>) => {
         setBusyId(reviewId);
+        clearNotice(reviewId);
         try {
             const res = await fetch("/api/safety/trusted-adults/override", {
                 method: "POST",
@@ -144,8 +149,9 @@ export default function AdminTrustedAdultsPage() {
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setMessage({ text: body.error ?? "Override failed.", tone: "error" });
+                setNotices((n) => ({ ...n, [reviewId]: { text: body.error ?? "Override failed.", tone: "error" } }));
             } else {
+                // Override deliberately shows no success notice — just reload.
                 await load();
             }
         } finally {
@@ -173,8 +179,6 @@ export default function AdminTrustedAdultsPage() {
                     keyholders and program leads will see.
                 </Text>
             </div>
-
-            <AlertBanner message={message?.text} tone={message?.tone} onClose={() => setMessage(undefined)} />
 
             {items.length === 0 && <Text c="dimmed">Nothing in the queue.</Text>}
 
@@ -216,7 +220,7 @@ export default function AdminTrustedAdultsPage() {
                         )}
                         {ta.household?.leads?.length ? (
                             <Text size="xs" c="dimmed" mt={2}>
-                                Leads: {ta.household.leads.map((l) => l.participant.name || l.participant.email).join(", ")}
+                                Leads: {ta.household.leads.map((l) => l.person.name || l.person.email).join(", ")}
                             </Text>
                         ) : null}
                         {latest?.reviewBy && (
@@ -307,6 +311,15 @@ export default function AdminTrustedAdultsPage() {
                                     Revoke
                                 </Button>
                             </Group>
+                        )}
+
+                        {latest && notices[latest.id] && (
+                            <AlertBanner
+                                message={notices[latest.id].text}
+                                tone={notices[latest.id].tone}
+                                mt="xs"
+                                onClose={() => clearNotice(latest.id)}
+                            />
                         )}
                     </Card>
                 );

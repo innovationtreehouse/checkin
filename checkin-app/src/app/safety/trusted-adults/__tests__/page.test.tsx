@@ -200,7 +200,7 @@ describe("safety/trusted-adults page", () => {
     const conflicted = [
       {
         ...trustedAdults[0],
-        household: { id: 1, name: "Guardian House", leads: [{ participant: { name: "Lead Lucy", email: "lucy@example.com" } }] },
+        household: { id: 1, name: "Guardian House", leads: [{ person: { name: "Lead Lucy", email: "lucy@example.com" } }] },
         reviews: [{ ...trustedAdults[0].reviews[0], sharedNote: "Already shared.", reviewBy: "2026-02-01T00:00:00.000Z" }],
       },
     ];

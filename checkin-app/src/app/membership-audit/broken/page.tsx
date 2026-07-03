@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Box, Button, Card, Group, Loader, Stack, Text } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
+import { Alert, Badge, Box, Button, Card, Group, Loader, Stack, Text } from "@mantine/core";
 import { formatDate, isYouth } from "@/lib/time";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
@@ -13,6 +12,10 @@ export default function BrokenHouseholdsPage() {
   const [households, setHouseholds] = useState<BrokenHousehold[]>([]);
   const [loading, setLoading] = useState(true);
   const [promoting, setPromoting] = useState<number | null>(null);
+  // Per-household lead-assign result, shown in a card-local Alert. A page-corner
+  // toast reads as "nothing happened" for a card far down; the card also doesn't
+  // reliably vanish on success. Keyed by household id, cleared on the next click.
+  const [notice, setNotice] = useState<Record<number, { ok: boolean; text: string }>>({});
 
   const fetchHouseholds = useCallback(async () => {
     try {
@@ -30,8 +33,9 @@ export default function BrokenHouseholdsPage() {
     fetchHouseholds();
   }, [fetchHouseholds]);
 
-  const makeLead = async (participantId: number) => {
+  const makeLead = async (householdId: number, participantId: number) => {
     setPromoting(participantId);
+    setNotice((n) => { const next = { ...n }; delete next[householdId]; return next; });
     try {
       const res = await fetch("/api/household/lead", {
         method: "POST",
@@ -39,15 +43,15 @@ export default function BrokenHouseholdsPage() {
         body: JSON.stringify({ participantId }),
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Lead assigned." });
+        setNotice((n) => ({ ...n, [householdId]: { ok: true, text: "Lead assigned." } }));
         fetchHouseholds();
         notifyNavRefresh();
       } else {
         const data = await res.json().catch(() => ({}));
-        notifications.show({ color: "red", message: data.error || "Failed to assign lead." });
+        setNotice((n) => ({ ...n, [householdId]: { ok: false, text: data.error || "Failed to assign lead." } }));
       }
     } catch {
-      notifications.show({ color: "red", message: "Network error." });
+      setNotice((n) => ({ ...n, [householdId]: { ok: false, text: "Network error." } }));
     } finally {
       setPromoting(null);
     }
@@ -69,6 +73,12 @@ export default function BrokenHouseholdsPage() {
             {households.map((h) => (
               <Card key={h.id} withBorder radius="md" padding="md">
                 <Text fw={600} mb="xs">{h.name}</Text>
+                {notice[h.id] && (
+                  <Alert color={notice[h.id].ok ? "green" : "red"} variant="light" mb="xs" withCloseButton
+                    onClose={() => setNotice((n) => { const next = { ...n }; delete next[h.id]; return next; })}>
+                    {notice[h.id].text}
+                  </Alert>
+                )}
                 {h.members.length > 0 ? (
                   <Stack gap={6}>
                     {h.members.map((m) => (
@@ -85,7 +95,7 @@ export default function BrokenHouseholdsPage() {
                             size="compact-xs"
                             variant="light"
                             loading={promoting === m.id}
-                            onClick={() => makeLead(m.id)}
+                            onClick={() => makeLead(h.id, m.id)}
                           >
                             Make Lead
                           </Button>
