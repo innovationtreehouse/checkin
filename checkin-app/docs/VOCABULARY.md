@@ -96,6 +96,171 @@ Rules:
 - The middle layer's model name is **`ProgramInstance`** in code; bare `instance`/`instanceId` is banned (ambiguous).
 - `Event` is unchanged — it remains the check-in leaf; the Instance layer is inserted **above** it, not in place of it.
 
+---
+
+# Additions from the 2026-07-02 vocabulary sweep
+
+Source: the 2026-07-02 vocabulary sweep. The followup ledger of the renames these
+entries imply — plus open items and dismissed candidates — is
+[designs/UNFINISHED.md](designs/UNFINISHED.md). Terms below are **product-owner
+decided**; where the code hasn't caught up yet it's marked *(rename pending)* and
+tracked in UNFINISHED.md.
+
+## Volunteer & program roles
+
+**Never a bare `volunteer`** — the word is one umbrella over three distinct
+children. And **the Treehouse is 100% volunteer: there is no "staff."**
+
+| Concept | Meaning | Code | UI |
+|---|---|---|---|
+| **Treehouse Volunteer** | umbrella: a BG-checked, board-approved adult who volunteers — **program-optional** (a bookkeeper is one, with no program) | — | "volunteer" |
+| **Volunteer Family** | a Member Family with **no youth/student enrolled**, whose adults volunteer → **reduced membership fee** | `Membership.isVolunteer` (rate) + `VolunteerDesignation` (email pre-auth) — **one concept** | "Volunteer-only family" |
+| **Program Volunteer** | a Treehouse Volunteer assigned to a **specific program** | `ProgramVolunteer` (`isCore` → **Core Volunteer**) | "Volunteer" / "Core Volunteer" |
+| **(attendance) volunteer bucket** | courtesy label for present adults — **not a role**; deliberately loose, UI-safe | derived in attendance | "Volunteers/Adults" |
+
+Program roles (all Treehouse Volunteers):
+
+| Role | Meaning | Code | Notes |
+|---|---|---|---|
+| **Program Leader** | the person responsible for a program | `programLeaderId` *(rename pending from `leadMentorId`)* | policy term; **retire "lead mentor"** |
+| **Program Volunteer** | program helper; **Core Volunteer** = the authorized subset who can run it | `ProgramVolunteer.isCore` | Core's legal-authority rules are organizational (out of software scope) |
+
+**Retired words (do not use):** `staff` / "program staff" (→ Treehouse
+Volunteers), `mentor` and `lead mentor` (→ Program Leader / Program Volunteer;
+program-specific "mentor" language is external), "program instructor"
+(→ see Certification — `instructor` is **tool-only**).
+
+## Shop & Certification vocabulary
+
+`Tool` = the **equipment**. A person's competency **on** a tool is their
+**certification level** (`ToolStatus`); the rungs are the **certification levels**
+(`ToolLevel`; policy word: "tool rating"). Color and word **align intentionally**
+(the dot-color UI view bridges them) — interchangeable, record both:
+
+| Rank | Color | Enum (`ToolLevel`) | Label | Meaning | Min age |
+|---|---|---|---|---|---|
+| 0 | No Dot | *(no `ToolStatus`)* | "Uncertified" | hasn't used the tool here | — |
+| 1 | Red | `BASIC` | "Basic" | knows basic safety | 10 |
+| 2 | Green | `CERTIFIED` | "Certified" | safe & successful; solo only with a **Tripod** | category-based |
+| 3 | Yellow | `DOF` | "DOF" | **Defender of the Finger** — keeps their head when things go wrong | 13 |
+| 4 | Blue | `INSTRUCTOR` | "Instructor" | can teach others | 13 |
+| 5 | — | `MAY_CERTIFY_OTHERS` | **"Tool Certifier"** | board-appointed; can change a user's certification level | 21 |
+
+Rules:
+- **Canonical top label = "Tool Certifier"** *(retire "Shop Certifier")*.
+- **`instructor` is tool-only** — "program instructor" is banned.
+- **Enum rank ≠ declaration order** — real rank is `BASIC < CERTIFIED < DOF <
+  INSTRUCTOR < MAY_CERTIFY_OTHERS`; make it explicit in the enum *(pending)*.
+- **Tool Certifier is per-tool for *granting*** (you may only certify others on a
+  tool you certify); it's treated as a global flag for *nav/visibility* only —
+  accepted (small group).
+- **Age gates + tool categories are policy-enforced outside the software** today
+  (aspirational to model).
+
+## Money vocabulary
+
+**The canonical money word is `fee`.** Kinds: **membership fee** *(rename pending
+from "dues": `normalDuesCents`→`standardMembershipFeeCents`,
+`volunteerDuesCents`→`volunteerMembershipFeeCents`)*, **program fee** (`Fee`),
+plus **shop fee** and **facility fee** (shop and facility are billed separately).
+`price` = the cents **amount** on a fee, not a rival concept.
+
+**Payment vs relief** (keep separate):
+- **Manual payment** — payment landed **outside Shopify** (recorded in QuickBooks),
+  so a membership activates without a Shopify order. `via: "manual"` /
+  `manualPaymentById` *(rename pending from `"certified"` / `certifiedById` —
+  which collided with tool certification)*. **Not** a comp.
+- **Payment Plan** — installments (`isPaymentPlanRequested`).
+- **Scholarship** — a board comp (fee waived). Unnamed in code today.
+
+## Attendance / check-in
+
+One activity, a pipeline of distinct stages — name each; keep the scoped verbs:
+
+**scan** (badge tap at a **kiosk**) → **`RawBadgeLog`** (raw event) → **`Visit`**
+(the attendance record; `VisitSource`) → **attendance** (the rollup view).
+
+- **"check-in" / "check-out"** = the **action**; **"attendance"** = the **view**;
+  `Visit` = the internal record. Both "check-in" and "attendance" are canonical in
+  their own scope — do not collapse.
+
+## Shop vs Facility (distinct billable domains — not a collision)
+
+- **Shop** = the makerspace: tools, certifications, shop safety; billed separately.
+- **Facility** = the building / attendance / access domain; billed separately.
+- These are intentionally distinct (separate billing + the shop's own safety
+  rules). The only real overlap to disambiguate: **Shopify** also uses "shop".
+
+## Roles & accounts
+
+- **Keyholder** (`isKeyholder`) — a **board-anointed policy role**: a Member who
+  can open a Treehouse Facility; carries facility-rules/emergency responsibility.
+  It's a standing role, not a presence status (attendance code merely reads it).
+- **Board Member** (`isBoardMember`) — a governance role; **distinct from the
+  OrgMembership "Treehouse Member"** (a Board Member need not be a Treehouse
+  Member). Not the bare-`member` this dictionary bans.
+- **Treehouse Account** — an internal org-domain (`@innovationtreehouse.org`)
+  account; not a real Member Family. `isTreehouseAccount` *(rename pending from
+  `isStaffAccount`; also `STAFF_ENTERED`)*.
+- **Admin** — ⚠️ **UNRESOLVED / do not rely on.** "admin" is a loose derived label
+  (no `isAdmin` column) that means `isSysadmin` in some files and
+  `isSysadmin || isBoardMember` in others. Security-sensitive; deferred to its own
+  discussion — see [designs/UNFINISHED.md](designs/UNFINISHED.md).
+- **Review / Reviewer** — ⚠️ overloaded across BG-reviewer role, attestation
+  reviewer, membership review, and trusted-adult "decider"; a lower-priority
+  followup (UNFINISHED.md). Never use "review" bare until resolved.
+
+## Person sub-terms (additions)
+
+| Term | Meaning | Code |
+|---|---|---|
+| **Adult** | 18 or older (policy); normally derived from `dateOfBirth` | — |
+| **Declared Adult** | a **self-asserted "25+"** with **no DoB captured** (PII minimization) — a valid subset of Adult. 25 (not 18) = the age past which no program-run restriction applies (Close-in-Age safe line) | `isDeclaredAdult` |
+| **Visitor** | a person who is **not a Member** (a non-member at a Location/Event) | `isStaffAccount`-adjacent; scope `all_current_visitors` |
+
+**`Visitor` vs `Visit`** — a **non-member person** vs an **attendance record**;
+they share a root but are unrelated. Accepted near-collision — no rename, just
+know the difference.
+
+## Supervision terms (safety vocabulary)
+
+- **Tripod** — the presence of **3 Members, each ≥ 9 years old**, in an area that
+  is **Observable and Interruptible**; lets a Certified (Green) work solo. *(policy
+  term; not modeled in code)*
+- **Two Deep** — two unrelated, non-Student adult Treehouse Volunteers from
+  different households. *(the attendance keyholder/volunteer buckets implement this)*
+- **Observable and Interruptible** — no locked doors; another adult can see or
+  hear and could enter. *(not modeled)*
+- **"dedicated" (DOF/Instructor)** — means "actively watching you use the tool"
+  (not wandering). **Not software-enforceable — ignore in code.**
+
+## Named entities (additions)
+
+- **Emergency Contact vs Trusted Adult** — both are non-household people attached
+  to a household, and **may be the same person, but the sets are not identical —
+  do not merge.** Emergency Contact (`EmergencyContact`) = **who we call in a bad
+  situation**; Trusted Adult (`TrustedAdult`, UI "Pickup") = **who may pick up /
+  transport / be alone with a child.**
+- **MembershipProcess = the membership "application"** — technically an intake
+  process, called an **"application"** because it includes a background check
+  (vendor **Averity**) and **can be rejected**. One `MembershipProcess` = one
+  cycle (`INITIAL` or `RENEWAL`); `INTAKE` is its first stage.
+- **Corporation** (`Corporation` / `CorporationLead` / `CorporationMember`) —
+  **aspirational**, for the policy's **Organizational Partner Member** (partner
+  orgs running programs). No corporate partners today; keep as scaffolding, and
+  qualify the bare `CorporationMember` when it's built.
+
+## Reference facts
+
+- **Membership Year** = **Sept 1 – Aug 31** (policy); `membershipYearBoundary`
+  stays configurable by design.
+- **Single facility** — check-in happens only at the one Treehouse Facility;
+  multi-location is not on the roadmap (`RawBadgeLog.location` free-text is fine).
+- **Integration vendors** — **Averity** (background check; aka "VERITY"), **Zoho**
+  (e-sign / import), **Shopify** (payment).
+- **Treehouse Card** — any corporate/business/debit/credit card opened on the
+  Treehouse EIN (reserved for future financial rules).
+
 ## Migration status
 
 The term-by-term migration plan lives in
@@ -115,6 +280,16 @@ The term-by-term migration plan lives in
 - **OrgMembership — the Prisma model rename** (the rest of Phase 4): `model Membership` (`schema.prisma:296`) → `OrgMembership`, `MembershipProcess` (`:315`) → `OrgMembershipProcess`, the `MembershipStatus` enum, and `membership-ops/*` dir/route/nav propagation. Read-model/price/path/copy already shipped (above). Scoping under investigation (chip `task_9ecbb0f5`).
 - **household / family** — Q2 default is *keep the split* (`Household` in code, "family" in warm copy). `familyContext` (`schema.prisma:498`) stays. Effectively a doc-note unless someone chooses "unify".
 - **dependent** — `emailDependentCheckins` key + copy → household wording; plus BUG-2 (`intake.ts` `children` bucket = non-lead participants). Small.
+
+**⬜ Remaining (from the 2026-07-02 sweep — see [designs/UNFINISHED.md](designs/UNFINISHED.md)):**
+- **Program Leader** — `leadMentorId`→`programLeaderId`, relation `ProgramLeadMentor`→`ProgramLeader`, `leadMentorNotificationSettings`→`programLeaderNotificationSettings`, "Lead Mentor" UI→"Program Leader" (~256 refs). Retire "lead mentor"/"mentor".
+- **Retire "staff"** — "program staff"→Treehouse Volunteers; `isStaffAccount`→`isTreehouseAccount` + `STAFF_ENTERED` (account sense = **Treehouse Account**).
+- **Money → fee** — "dues"→"membership fee" (`normalDuesCents`→`standardMembershipFeeCents`, `volunteerDuesCents`→`volunteerMembershipFeeCents`).
+- **Manual payment** — `via:"certified"`→`via:"manual"`, `certifiedById`→`manualPaymentById` (was colliding with tool certification).
+- **Tool Certifier** — retire "Shop Certifier" label; make `ToolLevel` rank explicit in the enum.
+- **`SessionUser`** — consolidate the ≥4 inline redeclarations into one export; rename stale `types/participant.ts`.
+
+**⚠️ Open (deferred, not yet decided):** **admin** role-set (sysadmin vs sysadmin+board — security-sensitive) and **review/reviewer** overload. Both in UNFINISHED.md.
 
 **Closed:** attendance "volunteer = adult non-keyholder" / "youth = minor" buckets — **won't-change** (intended supervision signal, safety-load-bearing two-deep). Trends age-proxy metric fixed separately. See [designs/AGE_PROXY_BUG_AUDIT.md](designs/AGE_PROXY_BUG_AUDIT.md).
 
