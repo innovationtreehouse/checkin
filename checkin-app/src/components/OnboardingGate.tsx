@@ -144,7 +144,6 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                 placeholder="(555) 123-4567"
                 value={phone}
                 onChange={(e) => setPhone(e.currentTarget.value)}
-                error={phone && !isValidPhone(phone) ? PHONE_ERROR : undefined}
                 required
               />
             )}
@@ -172,7 +171,6 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                     placeholder="(555) 987-6543"
                     value={emergencyContactPhone}
                     onChange={(e) => setEmergencyContactPhone(e.currentTarget.value)}
-                    error={emergencyContactPhone && !isValidPhone(emergencyContactPhone) ? PHONE_ERROR : undefined}
                     required
                   />
                   <TextInput
