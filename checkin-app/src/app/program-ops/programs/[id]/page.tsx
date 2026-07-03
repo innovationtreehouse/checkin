@@ -78,6 +78,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState<'general' | 'roster' | 'events'>('general');
 
@@ -127,7 +128,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setMessage("");
+    setSaveError("");
     try {
       const res = await fetch(`/api/programs/${id}`, {
         method: 'PATCH',
@@ -149,10 +150,10 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         fetchProgram();
       } else {
         const data = await res.json();
-        setMessage(data.error || "Failed to save settings.");
+        setSaveError(data.error || "Failed to save settings.");
       }
     } catch {
-      setMessage("Network error.");
+      setSaveError("Network error.");
     } finally {
       setSaving(false);
     }
@@ -327,6 +328,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                     ]} />
                 </SimpleGrid>
 
+                {saveError && <Alert color="red" variant="light">{saveError}</Alert>}
                 <Group gap="sm">
                   <Button type="submit" color="green" disabled={saving || !leadMentorIdInput} loading={saving}>
                     Save Settings
@@ -342,7 +344,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
               programId={id}
               program={program}
               isSysAdminOrBoard={!!isSysAdminOrBoard}
-              setMessage={setMessage}
               fetchProgram={fetchProgram}
             />
           </Tabs.Panel>
