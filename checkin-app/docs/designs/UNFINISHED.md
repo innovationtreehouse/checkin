@@ -192,6 +192,38 @@ _(was proposal Phase 6)_
 
 ---
 
+## 🟡 The `'member'` field-visibility TIER — left unrenamed by Phase 4 (decide if it ever should be)
+
+Phase 4 renamed the org-membership **model/relationship** (`Membership` →
+`OrgMembership`, price fields → `orgMember*`, `/api/shop/org-members`, "Treehouse
+Member" copy — shipped #729/#731/#732/#735). It **deliberately did NOT touch** the
+separate `'member'` **security field-visibility tier**, which is a different axis
+(a typed access contract, not the membership noun):
+
+- `Tier = 'public' | 'member' | SensitiveTier | 'secret'` and
+  `Token = 'public' | 'member' | …` ([security/core.ts:41,55](../../src/security/core.ts#L41)).
+  Semantics: a `member`-tier field is visible to a member view; a member view holds
+  BOTH `'member'` and `'public'`, anon holds only `'public'`
+  ([core.ts:6-10,241](../../src/security/core.ts#L6)).
+- Surface if ever renamed to `'orgMember'`: ~34 `'member'` tokens across
+  [registry.ts](../../src/security/registry.ts) scope arrays; the one
+  `@sensitivity:member` schema tag ([schema.prisma:144](../../prisma/schema.prisma#L144),
+  on `ToolStatus`); `level: 'member'` in generated
+  [classifications.ts](../../src/security/generated/classifications.ts); parser
+  guards ([scopes.ts:260](../../src/security/scopes.ts#L260), core.ts).
+
+**Why deferred:** it's a security contract, **partly tsc-blind** (bare string
+literals in scope arrays + `@sensitivity:` comment) — a rename needs the full jest
+security suite (registry/strip/scope oracles) as the net, and carries real
+over/under-grant risk if botched. Its own slice if done.
+
+**Open question (🟡):** is a rename even wanted? `'member'` as a *visibility* tier
+reads fine ("member-visible") and isn't the org-membership noun — it may
+legitimately stay forever. Decide: rename to `orgMember` for dictionary purity, or
+bless it as-is and record that in VOCABULARY. _(Phase 4 OQ-1)_
+
+---
+
 ## 🔵 Aspirational — not built yet (enforced by policy / no data today)
 
 - **Tool categories + per-level/per-category age gates** (10/13/21; Certified =
@@ -214,8 +246,16 @@ _(was proposal Phase 6)_
 - **Audit / Error / Metric / Integration / Dev logs** — internal, self-describing.
 - **Account / Session / VerificationToken** — standard NextAuth; only smell
   (`@map("participant_id")` + "user") is the SessionUser dedup item above.
-- **AttestationResult / MembershipStatus / ProgramPhase / EnrollmentStatus** —
-  well-scoped status enums; no cross-layer drift.
+- **AttestationResult / OrgMembershipStatus / ProgramPhase / EnrollmentStatus** —
+  well-scoped status enums; no cross-layer drift. (Was `MembershipStatus`; renamed
+  with the model in Phase 4 #735.)
+- **`membership-ops/*` + `membership-audit/*` route/dir/nav paths — kept, not
+  Org-prefixed (Phase 4 OQ-7).** Phase 4 Org-prefixed the model, price fields, shop
+  path, and user copy but left these admin **ops-surface** paths as `membership-ops`
+  / `membership-audit` (the model/prisma references *inside* those files did rename).
+  Deliberate — renaming the dirs/routes/nav would cascade into `pageRegistry`, nav
+  tests, and every internal `router.push`, for no user-visible gain. Recorded so
+  nobody re-audits it as leftover drift.
 - **Attendance "volunteer" / "youth" buckets** — `getFullAttendance` +
   `attendance/current` bucket live visitors by age + keyholder flag
   (`volunteer` = adult non-keyholder, `youth` = minor), NOT by real
