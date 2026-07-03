@@ -12,7 +12,6 @@ import TodoCard from '@/components/TodoCard';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isOrgAccount } from '@/lib/orgAccount';
 import { pickAddress, validateAddress, type StructuredAddress, type AddressField } from '@/lib/address';
-import { notifications } from '@mantine/notifications';
 import { isValidPhone, formatPhone, PHONE_ERROR } from '@/lib/phone';
 import { isValidEmail } from '@/lib/emergencyContacts/identity';
 import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
