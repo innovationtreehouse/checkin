@@ -106,7 +106,8 @@ describe("EventAdminPage", () => {
         fireEvent.click(screen.getAllByRole("button", { name: "Manual Edit" })[0]);
         expect(await screen.findByText(/Manual Edit:/)).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Save" }));
-        expect(await screen.findByText("Attendance updated successfully!")).toBeInTheDocument();
+        // Success closes the modal (no page-level message); the refreshed roster shows the change.
+        await waitFor(() => expect(screen.queryByText(/Manual Edit:/)).not.toBeInTheDocument());
     });
 
     it("future event: edit mode saves a time change and cancels the event", async () => {
