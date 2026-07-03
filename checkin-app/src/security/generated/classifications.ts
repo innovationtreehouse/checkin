@@ -133,6 +133,7 @@ export const classifications = {
         disclosedById: 'internal',
         createdAt: 'public',
         updatedAt: 'internal',
+        hiddenAt: 'internal',
     },
     TrustedAdultReview: {
         id: 'public',

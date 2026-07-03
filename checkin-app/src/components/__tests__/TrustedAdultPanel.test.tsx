@@ -93,4 +93,13 @@ describe("TrustedAdultPanel", () => {
       ),
     );
   });
+
+  it("offers Delete (not Withdraw) once an entry is withdrawn", async () => {
+    mockFetchJson({ "/api/trusted-adults/mine": { trustedAdults: [trustedAdult({ status: "REVOKED" })] } });
+    renderWithProviders(<TrustedAdultPanel />);
+
+    const card = (await screen.findByText("Jane Doe")).closest(".mantine-Card-root") as HTMLElement;
+    expect(within(card).getByRole("button", { name: /Delete/i })).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: /Withdraw/i })).not.toBeInTheDocument();
+  });
 });

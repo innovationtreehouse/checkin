@@ -14,6 +14,7 @@ import {
     TextInput,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
+import { modals } from "@mantine/modals";
 import { IconAlertTriangle, IconPlus } from "@tabler/icons-react";
 import { normalizePhone, isValidEmail } from "@/lib/emergencyContacts/identity";
 import { TrustedAdultContact } from "@/components/TrustedAdultContact";
@@ -107,13 +108,30 @@ export default function TrustedAdultPanel() {
         }
     }
 
-    async function act(id: number, action: "renew" | "withdraw") {
+    async function act(id: number, action: "renew" | "withdraw" | "hide") {
         const res = await fetch(`/api/trusted-adults/${id}/${action}`, { method: "POST" });
         if (res.ok) load();
         else {
             const body = await res.json().catch(() => ({}));
             setError(body.error ?? "Action failed.");
         }
+    }
+
+    // Permanently hides a withdrawn trusted adult from the household's view. The
+    // record is kept for the board/audit — confirm because it can't be undone here.
+    function confirmDelete(ta: TrustedAdult) {
+        modals.openConfirmModal({
+            title: "Delete this trusted adult?",
+            children: (
+                <Text size="sm">
+                    This permanently removes <strong>{ta.trustedAdultName || "this trusted adult"}</strong> from your
+                    list. You won&apos;t see it again. The board keeps a record for its files.
+                </Text>
+            ),
+            labels: { confirm: "Delete", cancel: "Cancel" },
+            confirmProps: { color: "red" },
+            onConfirm: () => act(ta.id, "hide"),
+        });
     }
 
     // Validate phone and email independently so both light up at once when both
@@ -195,6 +213,11 @@ export default function TrustedAdultPanel() {
                                 {latest && status !== "REVOKED" && (
                                     <Button size="xs" fz={15} variant="subtle" color="red" onClick={() => act(ta.id, "withdraw")}>
                                         Withdraw
+                                    </Button>
+                                )}
+                                {status === "REVOKED" && (
+                                    <Button size="xs" fz={15} variant="subtle" color="red" onClick={() => confirmDelete(ta)}>
+                                        Delete
                                     </Button>
                                 )}
                             </Group>

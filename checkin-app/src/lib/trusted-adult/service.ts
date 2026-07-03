@@ -149,6 +149,30 @@ export async function renewTrustedAdult(id: number, actorId: number) {
     return review;
 }
 
+/**
+ * A household lead permanently hides a WITHDRAWN trusted adult from their own
+ * view. The row stays in the DB (board history / audit); only the member-facing
+ * /mine list filters on hiddenAt. Allowed only once the latest review is REVOKED —
+ * matches the UI, and blocks a direct POST from hiding an active/pending record.
+ */
+export async function hideTrustedAdult(id: number, actorId: number) {
+    const ta = await prisma.trustedAdult.findUnique({ where: { id }, select: { id: true, householdId: true, hiddenAt: true } });
+    if (!ta) throw new TrustedAdultError("not_found", "Trusted adult not found.");
+    await assertHouseholdLead(ta.householdId, actorId);
+    if (ta.hiddenAt) return ta; // already hidden — idempotent
+
+    return prisma.$transaction(async (tx) => {
+        await lockTrustedAdult(tx, ta.id);
+        const latest = await tx.trustedAdultReview.findFirst({ where: { trustedAdultId: ta.id }, orderBy: { id: "desc" } });
+        if (!latest || latest.status !== "REVOKED") {
+            throw new TrustedAdultError("wrong_phase", "Only a withdrawn trusted adult can be hidden.");
+        }
+        const updated = await tx.trustedAdult.update({ where: { id: ta.id }, data: { hiddenAt: new Date() } });
+        await audit(tx, actorId, ta.id, { hiddenAt: null }, { hiddenAt: updated.hiddenAt });
+        return updated;
+    });
+}
+
 /** A household lead withdraws a Trusted Adult — sets the latest review REVOKED. */
 export async function withdrawTrustedAdult(id: number, actorId: number) {
     const ta = await prisma.trustedAdult.findUnique({ where: { id }, select: { id: true, householdId: true } });
