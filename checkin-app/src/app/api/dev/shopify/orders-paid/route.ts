@@ -17,15 +17,25 @@ export const dynamic = "force-dynamic";
  * inbound webhook — so it exercises the same HMAC-verify → match-by-cart-attribute
  * → activate() path prod runs (mirrors the Zoho mock, ZOHO_SIGN_DEV_MOCK.md §4a).
  *
- * 404s whenever the mock isn't active — always in prod.
+ * 404s whenever the mock isn't active — always in prod. Also 404s a processId
+ * that doesn't exist or isn't PENDING_PAYMENT: the dev UI only ever lists
+ * PENDING_PAYMENT processes, so the API fails closed on anything else rather
+ * than firing a webhook for a process that was never awaiting payment.
  */
 export const POST = withAuth({}, async (req, auth) => {
     if (!config.shopifyMockActive()) return apiError("Not available", 404);
     if (auth.type !== "session") return apiError("Unauthorized", 401);
 
-    const { processId } = await req.json().catch(() => ({ processId: undefined }));
+    // .catch covers unparseable bodies; ?. covers parseable non-objects (`null`, `42`).
+    const body = await req.json().catch(() => null);
+    const processId = body?.processId;
     if (typeof processId !== "number" || !Number.isInteger(processId)) {
         return apiError("Missing or invalid processId", 400);
+    }
+
+    const existing = await prisma.orgMembershipProcess.findUnique({ where: { id: processId }, select: { status: true } });
+    if (!existing || existing.status !== "PENDING_PAYMENT") {
+        return apiError("Process not found or not awaiting payment", 404);
     }
 
     const secret = config.shopifyWebhookSecret();
@@ -42,8 +52,10 @@ export const POST = withAuth({}, async (req, auth) => {
     }
 
     // Shape mirrors the subset the inbound handler reads: note_attributes (where
-    // Shopify maps cart attributes) + line_items + an order id. Stable id so a
-    // re-fire is an idempotent webhook retry, exactly like Shopify's own retries.
+    // Shopify maps cart attributes) + line_items + an order id. Stable id so two
+    // overlapping fires for the same process (both inside the pre-check window
+    // above) collapse into one idempotent webhook retry on the handler side;
+    // sequential re-fires are blocked by the PENDING_PAYMENT gate.
     const payload = {
         id: `dev-mock-order-${processId}`,
         note_attributes: [{ name: "Membership_Process_ID", value: String(processId) }],
