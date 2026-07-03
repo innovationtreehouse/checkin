@@ -9,7 +9,14 @@ import { notifications } from "@mantine/notifications";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import HouseholdPage from "../page";
 
-beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
+// Successes toast via notifications.show (no inline banner); assert on the mock.
+const expectToast = (message: string) =>
+  expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message }));
+
+beforeEach(() => {
+  resetRtl();
+  (notifications.show as jest.Mock).mockClear();
+});
 
 // `mockFetchJson`/`mockRoutes` always answer a matched url with 200, and one value
 // per url regardless of method. Several branches below need a specific method
@@ -110,7 +117,7 @@ describe("HouseholdPage", () => {
         expect.objectContaining({ method: "PATCH" }),
       ),
     );
-    expect(await screen.findByText("Settings updated successfully!")).toBeInTheDocument();
+    expectToast("Settings updated successfully!");
   });
 
   it("adds an emergency contact", async () => {
@@ -291,7 +298,7 @@ describe("HouseholdPage", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
     expect(screen.queryByLabelText("Household Lead")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByText("Household member updated successfully!")).toBeInTheDocument();
+    await waitFor(() => expectToast("Household member updated successfully!"));
   });
 
   it("promotes a household member to lead, and shows a server error on failure", async () => {
@@ -322,7 +329,7 @@ describe("HouseholdPage", () => {
         expect.objectContaining({ method: "POST", body: JSON.stringify({ participantId: 12 }) }),
       ),
     );
-    expect(await screen.findByText("Household member promoted to lead successfully!")).toBeInTheDocument();
+    await waitFor(() => expectToast("Household member promoted to lead successfully!"));
 
     fireEvent.click(screen.getByRole("button", { name: "Make Lead" }));
     expect(await screen.findByText("Already a lead.")).toBeInTheDocument();

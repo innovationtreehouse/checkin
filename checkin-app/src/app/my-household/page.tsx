@@ -65,7 +65,9 @@ export default function HouseholdPage() {
   const [message, setMessage] = useState<{ text: string; tone: AlertTone } | null>(null);
   // Explicit tone per outcome so a real error can never render green (was
   // decided by `message.includes('success')`).
-  const ok = (text: string) => setMessage({ text, tone: "success" });
+  // Successes toast in the corner (no layout shift); errors/warnings stay in
+  // the page banner where they can't be missed.
+  const ok = (text: string) => notifications.show({ color: "green", message: text });
   const err = (text: string) => setMessage({ text, tone: "error" });
   const warn = (text: string) => setMessage({ text, tone: "warning" });
   const [addingHouseholdMember, setAddingHouseholdMember] = useState(false);
@@ -145,7 +147,6 @@ export default function HouseholdPage() {
 
       if (householdRes.ok) {
         ok("Settings updated successfully!");
-        notifications.show({ color: "green", message: "Address updated." });
         fetchHousehold();
         notifyNavRefresh();
       } else {
