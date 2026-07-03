@@ -19,9 +19,12 @@ export const ZOHO_WEBHOOK_HEADER = "x-zoho-webhook-token";
 export function verifyZohoToken(headerToken: string | null | undefined): boolean {
     const secret = config.zohoWebhookSecret();
     if (!secret || !headerToken) return false;
-    const a = Buffer.from(headerToken);
-    const b = Buffer.from(secret);
-    return a.length === b.length && crypto.timingSafeEqual(a, b);
+
+    // Hash both values to ensure fixed length before comparison to avoid leaking the secret length
+    const a = crypto.createHash('sha256').update(headerToken).digest();
+    const b = crypto.createHash('sha256').update(secret).digest();
+
+    return crypto.timingSafeEqual(a, b);
 }
 
 export interface ZohoWebhookResult {

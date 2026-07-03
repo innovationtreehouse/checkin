@@ -21,10 +21,12 @@ export function requireCronSecret(req: Request): NextResponse | null {
     }
 
     const expectedHeader = `Bearer ${cronSecret}`;
-    const providedBuffer = Buffer.from(authHeader);
-    const expectedBuffer = Buffer.from(expectedHeader);
 
-    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
+    // Hash both values to ensure fixed length before comparison to avoid leaking the secret length
+    const providedBuffer = crypto.createHash('sha256').update(authHeader).digest();
+    const expectedBuffer = crypto.createHash('sha256').update(expectedHeader).digest();
+
+    if (!crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
