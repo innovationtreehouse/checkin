@@ -191,7 +191,7 @@ Product-owner decision — **design to these; do not relitigate the names or sha
 
 ## Migration status
 
-The term-by-term migration is essentially complete. Remaining odds-and-ends — and the followup renames the *(rename pending)* entries above imply — live in [designs/UNFINISHED.md](designs/UNFINISHED.md).
+The core term-by-term migration (person / member / participant / youth / OrgMembership) is **complete and shipped**. What's left is the followup ledger — the renames the *(rename pending)* entries above imply, plus open decisions — in [designs/UNFINISHED.md](designs/UNFINISHED.md).
 
 > **Pattern for big Prisma model renames** (learned from `Participant`→`Person`): a model rename is *atomic* — tsc is red until every accessor/type flips, so it can't merge half-done. Pull everything NOT tied to the model name (local types, then per-model FK renames — Prisma allows `person Participant @relation(fields:[personId])`) into small green PRs first, leaving a final purely-mechanical name flip. See git history #680–#708 (Person) and #735 (OrgMembership).
 
@@ -200,10 +200,10 @@ The term-by-term migration is essentially complete. Remaining odds-and-ends — 
 - **Student** — age-based `student` identifiers → `youth`, fixing BUG-1 (#679).
 - **householdMember** — sense-B bare `member` → `householdMember`; route kept at `/api/household/member` (#674).
 - **Person umbrella** — `model Participant` → `Person`, `participantId` FKs → `personId`, every mixed-people "participant" requalified to `people`/`Person`. Sliced: A0 #680 → A1a–f (#692/#691/#686/#690/#681/#684) → A2 atomic flip #708; B1 roles envelope #711, B2 `/api/people/search` #710, B3 `Household.householdMembers` #712, B4 cert grid #709. `ProgramParticipant.personId` is the accepted end-state.
-- **OrgMembership (read-model + price + path + copy)** — `lib/membership.ts`→`lib/orgMembership.ts`, `isActiveMember`→`isActiveOrgMember`, `ACTIVE_ORG_MEMBER_PERSON_WHERE`/`_INCLUDE` (#729); price fields → `orgMember…` (#731); `/api/shop/members`→`/api/shop/org-members` (#732); "Treehouse Member" copy (#729).
+- **OrgMembership** — read-model (`lib/orgMembership.ts`, `isActiveOrgMember`, `ACTIVE_ORG_MEMBER_PERSON_WHERE`) + "Treehouse Member" copy (#729); price fields → `orgMember…` (#731); `/api/shop/members`→`/api/shop/org-members` (#732); **and the Prisma model rename** `Membership`→`OrgMembership`, `MembershipProcess`→`OrgMembershipProcess`, `MembershipStatus` enum + `membership-ops/*` (Phase 4d, #735). Complete.
 - **Trusted Adult** — `counterparty*` → `trustedAdult*` (audit P2-2, #734).
 
-**⬜ Remaining:** the OrgMembership **Prisma model** rename — `model Membership`→`OrgMembership`, `MembershipProcess`→`OrgMembershipProcess`, `MembershipStatus` enum, `membership-ops/*` propagation (#735, in the merge queue). Everything else — household/family split, retire `dependent` (+BUG-2), Program Leader, retire "staff", money→fee, manual-payment, Tool Certifier, `SessionUser` dedup, and the ⚠️ open **admin** / **review** questions — is in [designs/UNFINISHED.md](designs/UNFINISHED.md).
+**⬜ Remaining:** none in the *core* migration — it's done. What's left is the followup ledger: retire `dependent` (+BUG-2), the household/family split decision, Program Leader (`leadMentorId`→`programLeaderId`), retire "staff", money→fee (`dues`→membership fee), manual-payment rename, Tool Certifier label + explicit `ToolLevel` rank, `SessionUser` dedup, and the ⚠️ open **admin** / **review** questions. All in [designs/UNFINISHED.md](designs/UNFINISHED.md).
 
 **Closed:** attendance "volunteer = adult non-keyholder" / "youth = minor" buckets — **won't-change** (intended supervision signal, safety-load-bearing two-deep; do not enrollment-ify). Recorded in UNFINISHED.md "Considered and dismissed", along with the `facility/trends` age-proxy metric (fixed separately) and the two known bugs: **BUG-1** (student=age → fixed, #679) and **BUG-2** (`intake.ts` `children` bucket = non-lead → tracked with `dependent`).
 </content>
