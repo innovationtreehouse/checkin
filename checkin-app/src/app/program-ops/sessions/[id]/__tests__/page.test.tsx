@@ -41,10 +41,10 @@ function baseEvent(overrides: Record<string, unknown> = {}) {
             name: "Robotics",
             leadMentorId: 1,
             volunteers: [
-                { participantId: 2, participant: { id: 2, name: "Val Volunteer", email: "val@example.com" }, isCore: true },
+                { personId: 2, person: { id: 2, name: "Val Volunteer", email: "val@example.com" }, isCore: true },
             ],
             participants: [
-                { participantId: 3, participant: { id: 3, name: "Pat Participant", email: "pat@example.com" } },
+                { personId: 3, person: { id: 3, name: "Pat Participant", email: "pat@example.com" } },
             ],
         },
         visits: [{ id: 1, personId: 3, arrivedAt: "2020-01-01T18:05:00.000Z", departedAt: null }],
@@ -350,12 +350,12 @@ describe("EventAdminPage", () => {
             program: {
                 id: 10, name: "Robotics", leadMentorId: 1,
                 volunteers: [
-                    { participantId: 2, participant: { id: 2, name: "Val Volunteer", email: "val@example.com" }, isCore: true },
+                    { personId: 2, person: { id: 2, name: "Val Volunteer", email: "val@example.com" }, isCore: true },
                 ],
                 participants: [
-                    { participantId: 3, participant: { id: 3, name: "Pat Participant", email: "pat@example.com" } },
-                    { participantId: 4, participant: { id: 4, name: "Sam Sub", email: "sam@example.com" } },
-                    { participantId: 6, participant: { id: 6, name: "Robin Roster", email: "robin@example.com" } },
+                    { personId: 3, person: { id: 3, name: "Pat Participant", email: "pat@example.com" } },
+                    { personId: 4, person: { id: 4, name: "Sam Sub", email: "sam@example.com" } },
+                    { personId: 6, person: { id: 6, name: "Robin Roster", email: "robin@example.com" } },
                 ],
             },
             visits: [{ id: 1, personId: 2, arrivedAt: "2020-01-01T18:05:00.000Z", departedAt: "2020-01-01T19:00:00.000Z" }],
