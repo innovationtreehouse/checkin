@@ -1,10 +1,11 @@
-import { config, ORG_DOMAIN } from "@/lib/config";
+import { config, ORG_DOMAIN, DEV_MOCK_SHOPIFY_WEBHOOK_SECRET } from "@/lib/config";
 
 const ENV_KEYS = [
     "DATABASE_URL", "NEXTAUTH_URL", "NEXTAUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
     "KIOSK_PUBLIC_KEY", "RESEND_API_KEY", "EMAIL_FROM", "AVERITY_CONSENT_URL", "ZOHO_WEBHOOK_SECRET",
     "AWS_REGION", "AGREEMENT_PDF_S3_BUCKET", "AGREEMENT_PDF_S3_KEY", "ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET",
     "ZOHO_REFRESH_TOKEN", "ZOHO_ACCOUNTS_URL", "ZOHO_SIGN_API", "CHECKIN_ENV", "VERCEL_URL", "NODE_ENV",
+    "SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_WEBHOOK_SECRET",
 ];
 
 let saved: Record<string, string | undefined>;
@@ -26,6 +27,13 @@ function clearZoho() {
     delete process.env.ZOHO_CLIENT_SECRET;
     delete process.env.ZOHO_REFRESH_TOKEN;
     delete process.env.ZOHO_WEBHOOK_SECRET;
+}
+
+function clearShopify() {
+    delete process.env.SHOPIFY_STORE_DOMAIN;
+    delete process.env.SHOPIFY_CLIENT_ID;
+    delete process.env.SHOPIFY_CLIENT_SECRET;
+    delete process.env.SHOPIFY_WEBHOOK_SECRET;
 }
 
 describe("requireEnv-backed getters", () => {
@@ -136,6 +144,49 @@ describe("zohoMockActive / zohoAvailable / zohoWebhookSecret", () => {
         clearZoho();
         process.env.CHECKIN_ENV = "prod";
         expect(config.zohoWebhookSecret()).toBeNull();
+    });
+});
+
+describe("shopifyMockActive / shopifyWebhookSecret", () => {
+    it("mock active when unconfigured, non-prod, non-production NODE_ENV", () => {
+        clearShopify();
+        process.env.CHECKIN_ENV = "local";
+        (process.env as Record<string, string>).NODE_ENV = "test";
+        expect(config.shopifyMockActive()).toBe(true);
+        expect(config.shopifyWebhookSecret()).toBe(DEV_MOCK_SHOPIFY_WEBHOOK_SECRET);
+    });
+    it("mock inactive when Shopify is configured (real integration wins)", () => {
+        process.env.SHOPIFY_STORE_DOMAIN = "shop.myshopify.com";
+        process.env.SHOPIFY_CLIENT_ID = "a";
+        process.env.SHOPIFY_CLIENT_SECRET = "b";
+        process.env.CHECKIN_ENV = "local";
+        (process.env as Record<string, string>).NODE_ENV = "test";
+        expect(config.shopifyMockActive()).toBe(false);
+    });
+    it("mock inactive on prod checkinEnv", () => {
+        clearShopify();
+        process.env.CHECKIN_ENV = "prod";
+        (process.env as Record<string, string>).NODE_ENV = "test";
+        expect(config.shopifyMockActive()).toBe(false);
+        expect(config.shopifyWebhookSecret()).toBeNull();
+    });
+    it("mock inactive when NODE_ENV is production", () => {
+        clearShopify();
+        process.env.CHECKIN_ENV = "local";
+        (process.env as Record<string, string>).NODE_ENV = "production";
+        expect(config.shopifyMockActive()).toBe(false);
+        expect(config.shopifyWebhookSecret()).toBeNull();
+    });
+    it("SHOPIFY_WEBHOOK_SECRET env wins regardless of mock state", () => {
+        clearShopify();
+        process.env.SHOPIFY_WEBHOOK_SECRET = "explicit-shopify-secret";
+        process.env.CHECKIN_ENV = "prod";
+        expect(config.shopifyWebhookSecret()).toBe("explicit-shopify-secret");
+    });
+    it("null when unset and mock inactive", () => {
+        clearShopify();
+        process.env.CHECKIN_ENV = "prod";
+        expect(config.shopifyWebhookSecret()).toBeNull();
     });
 });
 

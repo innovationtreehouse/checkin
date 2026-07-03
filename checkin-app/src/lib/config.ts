@@ -76,8 +76,13 @@ function shopifyMockActiveEnv(): boolean {
  * don't choose), the mock generates the payload locally, so a fixed constant is
  * enough for verifyShopifyHmac's real timing-safe compare — same rationale as
  * DEV_MOCK_WEBHOOK_SECRET. See §4 of the design: fixed ⇔ self-fired mock.
+ *
+ * Exported (unlike DEV_MOCK_WEBHOOK_SECRET) so tests that assert the mock's
+ * self-signed webhook verifies can import the real value instead of duplicating
+ * the literal — a copy-pasted string would silently stop testing anything if
+ * this constant ever changed.
  */
-const DEV_MOCK_SHOPIFY_WEBHOOK_SECRET = 'dev-shopify-mock-webhook-secret';
+export const DEV_MOCK_SHOPIFY_WEBHOOK_SECRET = 'dev-shopify-mock-webhook-secret';
 
 export const config = {
     // Database

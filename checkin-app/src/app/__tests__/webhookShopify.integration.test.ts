@@ -14,6 +14,7 @@ import crypto from 'crypto';
 import { POST } from '@/app/api/webhooks/shopify/route';
 import prisma from '@/lib/prisma';
 import { activateByProcessId } from '@/lib/membership/payment';
+import { DEV_MOCK_SHOPIFY_WEBHOOK_SECRET } from '@/lib/config';
 
 jest.mock('@/lib/membership/payment', () => ({
     activateByProcessId: jest.fn().mockResolvedValue(undefined),
@@ -140,7 +141,8 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         // real — the symmetry /api/dev/shopify/orders-paid relies on. Bad signature
         // still 401s; a correctly mock-signed body passes verification (200).
         delete process.env.SHOPIFY_WEBHOOK_SECRET;
-        const MOCK_SECRET = 'dev-shopify-mock-webhook-secret';
+        // Imported (not hardcoded) so this test fails fast if the mock secret ever changes.
+        const MOCK_SECRET = DEV_MOCK_SHOPIFY_WEBHOOK_SECRET;
         try {
             const body = programPayload(String(p1));
             expect((await POST(webhookReq(body, sign(body)))).status).toBe(401); // signed with the wrong secret
