@@ -12,12 +12,12 @@ type ProgramRosterTabProps = {
   programId: string;
   program: Pick<ProgramDetail, 'volunteers' | 'participants' | 'startAt' | 'minAge' | 'maxAge'>;
   isSysAdminOrBoard: boolean;
-  setMessage: (msg: string) => void;
   fetchProgram: () => Promise<void>;
 };
 
-export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMessage, fetchProgram }: ProgramRosterTabProps) {
+export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchProgram }: ProgramRosterTabProps) {
   const [saving, setSaving] = useState(false);
+  const [enrollError, setEnrollError] = useState("");
   const [newVolId, setNewVolId] = useState("");
   const [volLabel, setVolLabel] = useState("");
   const [newPartId, setNewPartId] = useState("");
@@ -96,7 +96,7 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMes
   const doAddParticipant = async () => {
     closeConfirmAddPart();
     setSaving(true);
-    setMessage("");
+    setEnrollError("");
     try {
       const res = await fetch(`/api/programs/${programId}/participants`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -105,7 +105,7 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMes
       if (res.ok) { setNewPartId(""); setPartLabel(""); fetchProgram(); }
       else {
         const data = await res.json();
-        setMessage(data.error || "Failed to enroll participant.");
+        setEnrollError(data.error || "Failed to enroll participant.");
       }
     } finally {
       setSaving(false);
@@ -208,6 +208,8 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, setMes
             )}
           </Group>
         </form>
+
+        {enrollError && <Alert color="red" variant="light" mb="lg">{enrollError}</Alert>}
 
         {activeParticipants.length === 0 ? <Text c="dimmed">No active participants yet.</Text> : (
           <Stack gap="xs">
