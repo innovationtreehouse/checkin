@@ -60,6 +60,7 @@ export default function AdminMembershipPage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+  const [messageId, setMessageId] = useState<number | null>(null);
   const [isError, setIsError] = useState(false);
 
   const load = useCallback(async () => {
@@ -79,6 +80,7 @@ export default function AdminMembershipPage() {
 
   const act = async (processId: number, action: string, extra?: Record<string, unknown>) => {
     setBusyId(processId);
+    setMessageId(processId);
     setMessage("");
     try {
       const res = await fetch("/api/membership-ops/applications/external", {
@@ -106,6 +108,7 @@ export default function AdminMembershipPage() {
 
   const override = async (processId: number, action: "reset" | "approve") => {
     setBusyId(processId);
+    setMessageId(processId);
     setMessage("");
     try {
       const res = await fetch("/api/membership-ops/applications/review-override", {
@@ -133,6 +136,7 @@ export default function AdminMembershipPage() {
 
   const certify = async (processId: number) => {
     setBusyId(processId);
+    setMessageId(processId);
     setMessage("");
     try {
       const res = await fetch("/api/membership-ops/applications/certify-payment", {
@@ -175,8 +179,6 @@ export default function AdminMembershipPage() {
         or that background-check consent was received. (The contract is also confirmed
         automatically once the Zoho webhook is configured.)
       </Text>
-
-      <AlertBanner message={message} tone={isError ? 'error' : 'success'} />
 
       {!loading && rows.length > 0 && (
         <>
@@ -279,6 +281,10 @@ export default function AdminMembershipPage() {
                     </Button>
                   </Group>
                 </Alert>
+              )}
+
+              {messageId === r.id && (
+                <AlertBanner message={message} tone={isError ? 'error' : 'success'} mt="md" />
               )}
             </Card>
           ))}
