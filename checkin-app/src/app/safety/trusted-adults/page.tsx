@@ -199,6 +199,7 @@ export default function AdminTrustedAdultsPage() {
                         {pending && latest && (
                             <Stack mt="md" gap="xs">
                                 <Textarea
+                                    withAsterisk
                                     label="Shared note — what keyholders & program leads should know (required to approve)"
                                     placeholder="e.g. Grandma (Jane Doe) may pick up Bobby and Sue."
                                     autosize
@@ -212,15 +213,22 @@ export default function AdminTrustedAdultsPage() {
                                     disabled={!isSelf}
                                 >
                                     <Group gap="xs">
-                                        <Button
-                                            size="xs" fz={15}
-                                            color="green"
-                                            loading={busyId === latest.id}
-                                            disabled={isSelf || !sharedVal.trim()}
-                                            onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
+                                        <Tooltip
+                                            label="Needs Shared Note to Approve"
+                                            disabled={isSelf || !!sharedVal.trim()}
                                         >
-                                            Approve
-                                        </Button>
+                                            <span>
+                                                <Button
+                                                    size="xs" fz={15}
+                                                    color="green"
+                                                    loading={busyId === latest.id}
+                                                    disabled={isSelf || !sharedVal.trim()}
+                                                    onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
+                                                >
+                                                    Approve
+                                                </Button>
+                                            </span>
+                                        </Tooltip>
                                         <Button size="xs" fz={15} color="red" loading={busyId === latest.id} disabled={isSelf} onClick={() => decide(latest.id, "DENY")}>
                                             Deny
                                         </Button>
