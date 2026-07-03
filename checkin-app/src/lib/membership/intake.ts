@@ -46,7 +46,7 @@ export type IntakeRejection = {
     message: string;
 };
 
-type ParentInput = { id?: number; name?: string; email?: string; dob?: string | null; allergies?: string | null };
+type ParentInput = { id?: number; name?: string; email?: string; dob?: string | null; over25?: boolean; allergies?: string | null };
 type ChildInput = { id?: number; name?: string; email?: string | null; dob?: string | null; allergies?: string | null };
 
 export interface IntakeSaveInput {
@@ -99,11 +99,12 @@ export async function getIntakeState(userId: number) {
     const primary = parents.find((p) => p.id === userId) ?? null;
     const secondary = parents.find((p) => p.id !== userId) ?? null;
 
-    const shape = (p: { id: number; name: string | null; email: string | null; dateOfBirth: Date | null; allergies: string | null }) => ({
+    const shape = (p: { id: number; name: string | null; email: string | null; dateOfBirth: Date | null; isDeclaredAdult: boolean; allergies: string | null }) => ({
         id: p.id,
         name: p.name,
         email: p.email,
         dob: p.dateOfBirth ? p.dateOfBirth.toISOString().slice(0, 10) : null,
+        over25: !p.dateOfBirth && !!p.isDeclaredAdult,
         allergies: p.allergies,
     });
 
@@ -266,6 +267,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             data: {
                 ...(input.primaryParent.name !== undefined && { name: input.primaryParent.name }),
                 ...(input.primaryParent.dob !== undefined && { dateOfBirth: toDate(input.primaryParent.dob) }),
+                ...(input.primaryParent.over25 !== undefined && { isDeclaredAdult: input.primaryParent.dob ? false : !!input.primaryParent.over25 }),
                 ...(input.primaryParent.allergies !== undefined && { allergies: input.primaryParent.allergies }),
             },
         });
@@ -280,6 +282,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 data: {
                     ...(sp.name !== undefined && { name: sp.name }),
                     ...(sp.dob !== undefined && { dateOfBirth: toDate(sp.dob) }),
+                    ...(sp.over25 !== undefined && { isDeclaredAdult: sp.dob ? false : !!sp.over25 }),
                     ...(sp.allergies !== undefined && { allergies: sp.allergies }),
                 },
             });
@@ -292,6 +295,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     name: sp.name ?? null,
                     ...(sp.email && { email: sp.email.toLowerCase() }),
                     dateOfBirth: toDate(sp.dob),
+                    isDeclaredAdult: sp.dob ? false : !!sp.over25,
                     allergies: sp.allergies ?? null,
                 },
             });

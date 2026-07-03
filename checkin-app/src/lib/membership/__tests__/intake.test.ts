@@ -295,7 +295,7 @@ describe('saveIntake', () => {
         await saveIntake(1, { secondaryParent: { name: 'New Parent', email: 'NEW@X.com' } });
 
         expect(prisma.person.create).toHaveBeenCalledWith({
-            data: { householdId: 7, name: 'New Parent', email: 'new@x.com', dateOfBirth: null, allergies: null },
+            data: { householdId: 7, name: 'New Parent', email: 'new@x.com', dateOfBirth: null, isDeclaredAdult: false, allergies: null },
         });
         expect(addHouseholdLead).toHaveBeenCalledWith(prisma, 7, 55);
     });

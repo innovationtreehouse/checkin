@@ -3,9 +3,9 @@ import { serializeMembershipForm } from "@/app/membership/page";
 const base = {
   address: { line1: "1 A St", line2: "", city: "Austin", state: "TX", postalCode: "78701" },
   emName: "Jo", emPhone: "555", emEmail: "",
-  primaryName: "Pat", primaryDob: "1990-01-01", primaryAllergies: "",
+  primaryName: "Pat", primaryDob: "1990-01-01", primaryOver25: false, primaryAllergies: "",
   hasSecondary: false, secondaryId: undefined,
-  secondaryName: "", secondaryEmail: "", secondaryDob: "", secondaryAllergies: "",
+  secondaryName: "", secondaryEmail: "", secondaryDob: "", secondaryOver25: false, secondaryAllergies: "",
   children: [{ id: 1, name: "Kid", email: "", dob: "2015-02-02", allergies: "peanuts" }],
 };
 
