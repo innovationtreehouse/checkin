@@ -63,6 +63,31 @@ const STATUS_COLORS: Record<string, string> = {
 };
 const label = (s: string) => s.replace(/_/g, " ");
 
+// The board needs to know the LAST DECISION on a trusted adult so it can update it —
+// not merely whether this row is a "renewal". A withdrawal is an interim state that
+// must NOT hide the prior decision: DENIED → withdrawn → resubmitted should still read
+// "Previously denied", not "Renewal". `decision` survives a withdrawal (withdraw only
+// flips status to REVOKED), so walking the reviews before the in-flight one for the
+// first non-null `decision` gives the true last board decision and skips withdraw-only
+// (decision-less) states. Null → a fresh disclosure or a plain withdraw+resubmit, where
+// the board needs no prior-decision context.
+const PRIOR_DECISION_META: Record<string, { text: string; color: string }> = {
+    APPROVE: { text: "Renewal", color: "blue" },
+    DENY: { text: "Previously denied", color: "red" },
+    REQUEST_INFO: { text: "Previously: more info requested", color: "orange" },
+};
+
+function priorDecisionReview(reviews: Review[]): Review | null {
+    // reviews are id-desc; reviews[0] is the current/in-flight review.
+    for (let i = 1; i < reviews.length; i++) {
+        if (reviews[i].decision) return reviews[i];
+    }
+    return null;
+}
+
+const daysBetween = (aIso: string, bIso: string) =>
+    Math.round((new Date(aIso).getTime() - new Date(bIso).getTime()) / 86400000);
+
 export default function AdminTrustedAdultsPage() {
     const { ready, loading: authLoading, user } = useRequireRole(["isSysadmin", "isBoardMember"]);
     const [items, setItems] = useState<TrustedAdult[]>([]);
@@ -162,6 +187,15 @@ export default function AdminTrustedAdultsPage() {
                 const status = latest?.status ?? "PENDING_BOARD_REVIEW";
                 const pending = status === "PENDING_BOARD_REVIEW";
                 const sharedVal = latest ? shared[latest.id] ?? "" : "";
+                const prior = priorDecisionReview(ta.reviews);
+                const priorMeta = prior?.decision ? PRIOR_DECISION_META[prior.decision] : null;
+                // A renewal whose prior approval lapsed: how long it sat expired before
+                // this resubmission. A long lapse means it's almost a fresh disclosure —
+                // reviewBy is the approval's expiry date; gap to the resubmit is the age.
+                const lapsedDays =
+                    prior?.decision === "APPROVE" && prior.reviewBy && latest
+                        ? daysBetween(latest.createdAt, prior.reviewBy)
+                        : null;
                 // Conflict of interest: can't review your own household's trusted adult, nor
                 // one where you are the counterparty. Backend enforces the same rule.
                 const isSelf = isTrustedAdultConflict({
@@ -177,7 +211,7 @@ export default function AdminTrustedAdultsPage() {
                             <Text c="dimmed">→</Text>
                             <Text>{ta.trustedAdultPerson?.name || ta.trustedAdultName || "trusted adult"}</Text>
                             <Badge color={STATUS_COLORS[status] ?? "gray"}>{label(status)}</Badge>
-                            {latest && <Badge variant="outline">{label(latest.kind)}</Badge>}
+                            {priorMeta && <Badge variant="outline" color={priorMeta.color}>{priorMeta.text}</Badge>}
                         </Group>
                         <TrustedAdultContact phone={ta.trustedAdultPhone} email={ta.trustedAdultEmail} />
                         <Text size="sm" mt={6}><b>Family context (board only):</b> {ta.familyContext}</Text>
@@ -191,6 +225,12 @@ export default function AdminTrustedAdultsPage() {
                         ) : null}
                         {latest?.reviewBy && (
                             <Text size="xs" c="dimmed" mt={2}>Review by {latest.reviewBy.slice(0, 10)}</Text>
+                        )}
+                        {lapsedDays !== null && lapsedDays > 0 && (
+                            <Text size="xs" c={lapsedDays > 365 ? "orange" : "dimmed"} mt={2}>
+                                Prior approval expired {prior!.reviewBy!.slice(0, 10)} · lapsed {lapsedDays} day{lapsedDays === 1 ? "" : "s"} before this resubmission
+                                {lapsedDays > 365 ? " — treat as near-new" : ""}
+                            </Text>
                         )}
                         <Text size="xs" c="dimmed" mt={2}>
                             Disclosed {ta.createdAt.slice(0, 10)} · {label(ta.origin)}
