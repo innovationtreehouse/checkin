@@ -8,34 +8,51 @@ interface PendingProcess {
     isVolunteer: boolean;
 }
 
+interface PendingEnrollment {
+    programId: number;
+    programName: string;
+    personId: number;
+    personName: string;
+    hasVariant: boolean;
+}
+
 /**
- * Dev Shopify orders/paid mock UI. Picks a PENDING_PAYMENT process and fires a
- * synthesized-but-real orders/paid webhook at it (via /api/dev/shopify/orders-paid),
- * driving PENDING_PAYMENT → ACTIVE (or → PENDING_BG_CLEARANCE) the same way a real
- * Shopify payment would. Inline styles match the sibling dev tools (dev/zoho-sign).
- * Page 404s off a dev instance.
+ * Dev Shopify orders/paid mock UI. Picks a PENDING_PAYMENT membership process or
+ * a PENDING program enrollment and fires a synthesized-but-real orders/paid
+ * webhook at it (via /api/dev/shopify/orders-paid), driving it to ACTIVE the same
+ * way a real Shopify payment would. Inline styles match the sibling dev tools
+ * (dev/zoho-sign). Page 404s off a dev instance.
  */
-export default function DevShopifyClient({ hasVariant, processes }: { hasVariant: boolean; processes: PendingProcess[] }) {
-    const [busy, setBusy] = useState<number | null>(null);
-    const [result, setResult] = useState<{ id: number; status: string | null } | null>(null);
+export default function DevShopifyClient({
+    hasVariant,
+    processes,
+    enrollments,
+}: {
+    hasVariant: boolean;
+    processes: PendingProcess[];
+    enrollments: PendingEnrollment[];
+}) {
+    // Busy key is unique per row across both tables: "m:<id>" / "p:<programId>:<personId>".
+    const [busy, setBusy] = useState<string | null>(null);
+    const [result, setResult] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    async function fire(processId: number) {
-        setBusy(processId);
+    async function fire(key: string, body: unknown, describe: (data: Record<string, unknown>) => string) {
+        setBusy(key);
         setError(null);
         setResult(null);
         try {
             const res = await fetch("/api/dev/shopify/orders-paid", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ processId }),
+                body: JSON.stringify(body),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
                 setError(data.error ? `${data.error} (${res.status})` : `Webhook failed (${res.status}). Check server logs.`);
                 return;
             }
-            setResult({ id: processId, status: data.status ?? null });
+            setResult(describe(data));
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         } finally {
@@ -52,63 +69,114 @@ export default function DevShopifyClient({ hasVariant, processes }: { hasVariant
         fontWeight: 600,
         cursor: "pointer",
     };
+    const th: React.CSSProperties = { padding: "0.4rem", textAlign: "left" };
 
     return (
-        <div style={{ maxWidth: 640 }}>
+        <div style={{ maxWidth: 720 }}>
             <h1 style={{ fontSize: "1.5rem", fontWeight: 600, margin: 0 }}>Shopify orders/paid (mock)</h1>
             <p style={{ opacity: 0.7, fontSize: "0.85rem", marginTop: "0.5rem" }}>
                 Shopify is mocked on this instance (no store credentials). Firing a payment sends a
                 real signed <code>orders/paid</code> webhook — <strong>DEV, NO REAL MONEY</strong>.
             </p>
 
+            {error && <p style={{ color: "#b91c1c", marginTop: "1rem" }}>{error}</p>}
+            {result && <p style={{ color: "#059669", marginTop: "1rem" }}>{result}</p>}
+
+            <h2 style={{ fontSize: "1.1rem", fontWeight: 600, marginTop: "1.75rem" }}>Membership applications</h2>
             {!hasVariant && (
-                <p style={{ color: "#b45309", marginTop: "1rem", fontSize: "0.85rem" }}>
+                <p style={{ color: "#b45309", marginTop: "0.5rem", fontSize: "0.85rem" }}>
                     No membership variant configured. Set one in <strong>Settings → Membership</strong> first,
                     or the webhook lands as a no-membership-item anomaly instead of activating.
                 </p>
             )}
-
-            {error && <p style={{ color: "#b91c1c", marginTop: "1rem" }}>{error}</p>}
-            {result && (
-                <p style={{ color: "#059669", marginTop: "1rem" }}>
-                    Fired for process {result.id} → status <strong>{result.status ?? "unknown"}</strong>
-                </p>
-            )}
-
-            <div style={{ marginTop: "1.5rem" }}>
-                {processes.length === 0 ? (
-                    <p style={{ fontSize: "0.9rem", opacity: 0.7 }}>No applications awaiting payment.</p>
-                ) : (
-                    <table style={{ borderCollapse: "collapse", width: "100%" }}>
-                        <thead>
-                            <tr style={{ textAlign: "left", fontSize: "0.8rem", opacity: 0.6 }}>
-                                <th style={{ padding: "0.4rem" }}>Process</th>
-                                <th style={{ padding: "0.4rem" }}>Household</th>
-                                <th style={{ padding: "0.4rem" }}>Tier</th>
-                                <th />
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {processes.map((p) => (
-                                <tr key={p.id} style={{ borderTop: "1px solid #e5e7eb" }}>
+            {processes.length === 0 ? (
+                <p style={{ fontSize: "0.9rem", opacity: 0.7 }}>No applications awaiting payment.</p>
+            ) : (
+                <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                    <thead>
+                        <tr style={{ fontSize: "0.8rem", opacity: 0.6 }}>
+                            <th style={th}>Process</th>
+                            <th style={th}>Household</th>
+                            <th style={th}>Tier</th>
+                            <th />
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {processes.map((p) => {
+                            const key = `m:${p.id}`;
+                            return (
+                                <tr key={key} style={{ borderTop: "1px solid #e5e7eb" }}>
                                     <td style={{ padding: "0.4rem" }}>#{p.id}</td>
                                     <td style={{ padding: "0.4rem" }}>{p.household}</td>
                                     <td style={{ padding: "0.4rem" }}>{p.isVolunteer ? "Volunteer" : "Normal"}</td>
                                     <td style={{ padding: "0.4rem", textAlign: "right" }}>
                                         <button
-                                            onClick={() => fire(p.id)}
+                                            onClick={() => fire(key, { processId: p.id }, (d) => `Fired for process ${p.id} → status ${d.status ?? "unknown"}`)}
                                             disabled={busy !== null}
                                             style={{ ...btn, opacity: busy !== null ? 0.5 : 1 }}
                                         >
-                                            {busy === p.id ? "Firing…" : "Fire orders/paid"}
+                                            {busy === key ? "Firing…" : "Fire orders/paid"}
                                         </button>
                                     </td>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-            </div>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            )}
+
+            <h2 style={{ fontSize: "1.1rem", fontWeight: 600, marginTop: "1.75rem" }}>Program enrollments</h2>
+            {enrollments.length === 0 ? (
+                <p style={{ fontSize: "0.9rem", opacity: 0.7 }}>No enrollments awaiting payment.</p>
+            ) : (
+                <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                    <thead>
+                        <tr style={{ fontSize: "0.8rem", opacity: 0.6 }}>
+                            <th style={th}>Program</th>
+                            <th style={th}>Participant</th>
+                            <th />
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {enrollments.map((e) => {
+                            const key = `p:${e.programId}:${e.personId}`;
+                            return (
+                                <tr key={key} style={{ borderTop: "1px solid #e5e7eb" }}>
+                                    <td style={{ padding: "0.4rem" }}>
+                                        #{e.programId} {e.programName}
+                                        {!e.hasVariant && (
+                                            <span style={{ color: "#b45309", fontSize: "0.75rem", marginLeft: "0.4rem" }}>
+                                                (no variant — set one in program-ops)
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td style={{ padding: "0.4rem" }}>{e.personName}</td>
+                                    <td style={{ padding: "0.4rem", textAlign: "right" }}>
+                                        <button
+                                            onClick={() =>
+                                                fire(
+                                                    key,
+                                                    { programId: e.programId, participantIds: [e.personId] },
+                                                    (d) => {
+                                                        const parts = (d.participants as { personId: number; status: string }[] | undefined) ?? [];
+                                                        const me = parts.find((p) => p.personId === e.personId);
+                                                        return `Fired for ${e.personName} → status ${me?.status ?? "unknown"}`;
+                                                    },
+                                                )
+                                            }
+                                            disabled={busy !== null || !e.hasVariant}
+                                            style={{ ...btn, opacity: busy !== null || !e.hasVariant ? 0.5 : 1 }}
+                                            title={e.hasVariant ? undefined : "Program has no Shopify variant; webhook would leave the participant PENDING"}
+                                        >
+                                            {busy === key ? "Firing…" : "Fire orders/paid"}
+                                        </button>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            )}
         </div>
     );
 }
