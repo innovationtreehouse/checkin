@@ -49,7 +49,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const [requiresOverride, setRequiresOverride] = useState(false);
 
   const [showEnrollmentSelection, setShowEnrollmentSelection] = useState(false);
-  const [householdMembers, setHouseholdMembers] = useState<{ id: number; name: string | null; dateOfBirth: string | null }[]>([]);
+  const [householdMembers, setHouseholdMembers] = useState<{ id: number; name: string | null; dateOfBirth: string | null; isDeclaredAdult?: boolean }[]>([]);
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<number[]>([]);
   const [loadingHousehold, setLoadingHousehold] = useState(false);
 
@@ -75,6 +75,24 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     fetchProgram();
   }, [fetchProgram]);
 
+  // Why a member can't be enrolled. Shared by the default selection and the row
+  // render so an ineligible member is never auto-selected and then POSTed (which
+  // returned a confusing "Date of Birth is missing" for over-25 adults).
+  const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'age' | 'dob' | null; label: string } => {
+    if ((program?.participants ?? []).some(p => p.personId === member.id)) return { reason: 'enrolled', label: 'Already Enrolled' };
+    if (program && (program.minAge !== null || program.maxAge !== null)) {
+      if (!member.dateOfBirth) {
+        // A declared over-25 adult is simply outside a child age range — not a
+        // missing-data problem the household needs to fix.
+        return member.isDeclaredAdult ? { reason: 'age', label: 'Adult' } : { reason: 'dob', label: 'DOB missing' };
+      }
+      const age = calculateAge(member.dateOfBirth, program.startAt ?? undefined);
+      if (program.minAge !== null && age < program.minAge) return { reason: 'age', label: 'Too young' };
+      if (program.maxAge !== null && age > program.maxAge) return { reason: 'age', label: 'Too old' };
+    }
+    return { reason: null, label: '' };
+  };
+
   const startEnrollmentProcess = async () => {
     if (!session) {
       router.push('/');
@@ -89,9 +107,15 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       if (res.ok) {
         const data = await res.json();
         if (data.household && data.household.householdMembers) {
-          setHouseholdMembers(data.household.householdMembers);
-          const me = data.household.householdMembers.find((p: { id: number }) => p.id === currentUserId);
-          setSelectedParticipantIds([me ? me.id : (data.household.householdMembers[0]?.id || currentUserId)]);
+          const members = data.household.householdMembers;
+          setHouseholdMembers(members);
+          // Default to me if I'm eligible, else the first eligible member, else
+          // none — never auto-select someone who'd fail the age/DOB check.
+          const me = members.find((p: { id: number }) => p.id === currentUserId);
+          const def = me && enrollBlock(me).reason === null
+            ? me.id
+            : members.find((m: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }) => enrollBlock(m).reason === null)?.id;
+          setSelectedParticipantIds(def != null ? [def] : []);
         } else {
           setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
           setSelectedParticipantIds([currentUserId]);
@@ -246,6 +270,11 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.orgMemberPriceCents || program.nonOrgMemberPriceCents);
 
+  const enrollableMembers = householdMembers.filter(m => enrollBlock(m).reason === null);
+  const ageRange = program.minAge !== null && program.maxAge !== null ? `ages ${program.minAge}–${program.maxAge}`
+    : program.minAge !== null ? `ages ${program.minAge} and up`
+    : program.maxAge !== null ? `ages ${program.maxAge} and under` : null;
+
   // Why is enrollment closed? Full wins over phase.
   const enrolledCount = program._count?.participants ?? program.participants?.length ?? 0;
   const isFull = program.maxParticipants != null && enrolledCount >= program.maxParticipants;
@@ -331,20 +360,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 >
                   <Stack>
                     {householdMembers.map((member) => {
-                      const alreadyEnrolled = (program.participants ?? []).some(p => p.personId === member.id);
-
-                      let ageError: string | null = null;
-                      if (program.minAge !== null || program.maxAge !== null) {
-                        if (!member.dateOfBirth) {
-                          ageError = "DOB missing";
-                        } else {
-                          const age = calculateAge(member.dateOfBirth, program.startAt ?? undefined);
-                          if (program.minAge !== null && age < program.minAge) ageError = "Too young";
-                          if (program.maxAge !== null && age > program.maxAge) ageError = "Too old";
-                        }
-                      }
-
-                      const disabled = alreadyEnrolled || ageError !== null;
+                      const { reason, label } = enrollBlock(member);
+                      const disabled = reason !== null;
 
                       return (
                         <Card key={member.id} withBorder radius="md" padding="sm" opacity={disabled ? 0.5 : 1}>
@@ -354,8 +371,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                               disabled={disabled}
                               label={member.name || 'Unnamed Participant'}
                             />
-                            {alreadyEnrolled && <Text size="sm" c="green">(Already Enrolled)</Text>}
-                            {!alreadyEnrolled && ageError && <Text size="sm" c="red">({ageError})</Text>}
+                            {reason === 'enrolled' && <Text size="sm" c="green">({label})</Text>}
+                            {disabled && reason !== 'enrolled' && <Text size="sm" c="red">({label})</Text>}
                           </Group>
                         </Card>
                       );
@@ -364,6 +381,11 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 </Checkbox.Group>
               )}
 
+              {!loadingHousehold && householdMembers.length > 0 && enrollableMembers.length === 0 ? (
+                <Alert color="blue" variant="light">
+                  No eligible participants in your household for this program{ageRange ? ` (${ageRange})` : ''}.
+                </Alert>
+              ) : (
               <Stack align="center">
                 <Button
                   fullWidth
@@ -381,6 +403,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   </Anchor>
                 )}
               </Stack>
+              )}
 
               {requiresOverride && canManage && (
                 <Alert color="yellow" variant="light" mt="lg" title="Warning: Enrollment rules not met.">
