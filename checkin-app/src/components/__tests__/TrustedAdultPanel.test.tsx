@@ -6,9 +6,9 @@ beforeEach(() => resetRtl());
 
 const trustedAdult = (overrides: Partial<{ id: number; status: string }> = {}) => ({
   id: overrides.id ?? 1,
-  counterpartyName: "Jane Doe",
-  counterpartyPhone: "555-010-0000",
-  counterpartyEmail: null,
+  trustedAdultName: "Jane Doe",
+  trustedAdultPhone: "555-010-0000",
+  trustedAdultEmail: null,
   familyContext: "Aunt, may pick up the kids.",
   createdAt: "2026-01-01T00:00:00.000Z",
   reviews: [

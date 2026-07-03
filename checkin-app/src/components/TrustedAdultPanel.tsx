@@ -39,9 +39,9 @@ interface Review {
 }
 interface TrustedAdult {
     id: number;
-    counterpartyName: string | null;
-    counterpartyPhone: string | null;
-    counterpartyEmail: string | null;
+    trustedAdultName: string | null;
+    trustedAdultPhone: string | null;
+    trustedAdultEmail: string | null;
     familyContext: string;
     createdAt: string;
     reviews: Review[];
@@ -60,9 +60,9 @@ export default function TrustedAdultPanel() {
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [counterpartyName, setCounterpartyName] = useState("");
-    const [counterpartyPhone, setCounterpartyPhone] = useState("");
-    const [counterpartyEmail, setCounterpartyEmail] = useState("");
+    const [trustedAdultName, setTrustedAdultName] = useState("");
+    const [trustedAdultPhone, setTrustedAdultPhone] = useState("");
+    const [trustedAdultEmail, setTrustedAdultEmail] = useState("");
     const [familyContext, setFamilyContext] = useState("");
 
     const load = useCallback(() => {
@@ -83,7 +83,7 @@ export default function TrustedAdultPanel() {
             const res = await fetch("/api/trusted-adults", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ counterpartyName, counterpartyPhone, counterpartyEmail, familyContext }),
+                body: JSON.stringify({ trustedAdultName, trustedAdultPhone, trustedAdultEmail, familyContext }),
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
@@ -91,9 +91,9 @@ export default function TrustedAdultPanel() {
                 return;
             }
             close();
-            setCounterpartyName("");
-            setCounterpartyPhone("");
-            setCounterpartyEmail("");
+            setTrustedAdultName("");
+            setTrustedAdultPhone("");
+            setTrustedAdultEmail("");
             setFamilyContext("");
             load();
         } finally {
@@ -110,12 +110,12 @@ export default function TrustedAdultPanel() {
         }
     }
 
-    const contactResult = validateContact({ phone: counterpartyPhone, email: counterpartyEmail });
+    const contactResult = validateContact({ phone: trustedAdultPhone, email: trustedAdultEmail });
     const contactError = "error" in contactResult ? contactResult.error : null;
     // Don't nag before they've typed anything in either contact field.
-    const showContactError = (counterpartyPhone.trim() || counterpartyEmail.trim()) && contactError;
-    const canSubmit = counterpartyName.trim() && !contactError && familyContext.trim();
-    const blockedReason = !counterpartyName.trim()
+    const showContactError = (trustedAdultPhone.trim() || trustedAdultEmail.trim()) && contactError;
+    const canSubmit = trustedAdultName.trim() && !contactError && familyContext.trim();
+    const blockedReason = !trustedAdultName.trim()
         ? "Enter the trusted adult's name."
         : contactError
             ? contactError
@@ -159,10 +159,10 @@ export default function TrustedAdultPanel() {
                         <Group justify="space-between" align="flex-start" wrap="nowrap">
                             <div>
                                 <Group gap="xs">
-                                    <Text fw={600} size="sm">{ta.counterpartyName || "Trusted adult"}</Text>
+                                    <Text fw={600} size="sm">{ta.trustedAdultName || "Trusted adult"}</Text>
                                     <Badge color={meta.color} size="sm">{meta.label}</Badge>
                                 </Group>
-                                <TrustedAdultContact phone={ta.counterpartyPhone} email={ta.counterpartyEmail} />
+                                <TrustedAdultContact phone={ta.trustedAdultPhone} email={ta.trustedAdultEmail} />
                                 <Text size="sm" mt={4}>{ta.familyContext}</Text>
                                 {latest?.sharedNote && (
                                     <Text size="sm" mt={4} c="teal">
@@ -197,8 +197,8 @@ export default function TrustedAdultPanel() {
                 <Stack>
                     <TextInput
                         label="Trusted adult's name"
-                        value={counterpartyName}
-                        onChange={(e) => setCounterpartyName(e.currentTarget.value)}
+                        value={trustedAdultName}
+                        onChange={(e) => setTrustedAdultName(e.currentTarget.value)}
                         required
                     />
                     <Text c="blue" fw={600} size="sm">
@@ -207,14 +207,14 @@ export default function TrustedAdultPanel() {
                     <TextInput
                         label="Their phone"
                         type="tel"
-                        value={counterpartyPhone}
-                        onChange={(e) => setCounterpartyPhone(e.currentTarget.value)}
+                        value={trustedAdultPhone}
+                        onChange={(e) => setTrustedAdultPhone(e.currentTarget.value)}
                     />
                     <TextInput
                         label="Their email"
                         type="email"
-                        value={counterpartyEmail}
-                        onChange={(e) => setCounterpartyEmail(e.currentTarget.value)}
+                        value={trustedAdultEmail}
+                        onChange={(e) => setTrustedAdultEmail(e.currentTarget.value)}
                         error={showContactError ? contactError : undefined}
                     />
                     <Textarea

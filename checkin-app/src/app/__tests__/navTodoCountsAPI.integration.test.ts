@@ -76,8 +76,8 @@ describe('Nav todo-counts API', () => {
         const slAction = await prisma.trustedAdult.create({
             data: {
                 householdId: householdAId,
-                counterpartyName: 'Counterparty One',
-                counterpartyEmail: 'one@example.com',
+                trustedAdultName: 'Counterparty One',
+                trustedAdultEmail: 'one@example.com',
                 familyContext: 'needs info',
                 disclosedById: leadId,
                 reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'PENDING_SUBJECT_ACTION' } },
@@ -86,8 +86,8 @@ describe('Nav todo-counts API', () => {
         const slExpiring = await prisma.trustedAdult.create({
             data: {
                 householdId: householdAId,
-                counterpartyName: 'Counterparty Two',
-                counterpartyEmail: 'two@example.com',
+                trustedAdultName: 'Counterparty Two',
+                trustedAdultEmail: 'two@example.com',
                 familyContext: 'expiring soon',
                 disclosedById: leadId,
                 reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'APPROVED', sharedNote: 'note', effectiveFrom: daysFromNow(-355), reviewBy: daysFromNow(10) } },
@@ -97,8 +97,8 @@ describe('Nav todo-counts API', () => {
         const slPending = await prisma.trustedAdult.create({
             data: {
                 householdId: householdAId,
-                counterpartyName: 'Counterparty Three',
-                counterpartyEmail: 'three@example.com',
+                trustedAdultName: 'Counterparty Three',
+                trustedAdultEmail: 'three@example.com',
                 familyContext: 'pending board review',
                 disclosedById: leadId,
                 reviews: { create: { householdId: householdAId, kind: 'INITIAL', status: 'PENDING_BOARD_REVIEW' } },

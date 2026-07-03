@@ -11,11 +11,11 @@ export function isTrustedAdultConflict(args: {
     actorParticipantId: number | null | undefined;
     actorHouseholdId: number | null | undefined;
     taHouseholdId: number | null | undefined;
-    taCounterpartyParticipantId: number | null | undefined;
+    taTrustedAdultPersonId: number | null | undefined;
 }): boolean {
-    const { actorParticipantId, actorHouseholdId, taHouseholdId, taCounterpartyParticipantId } = args;
+    const { actorParticipantId, actorHouseholdId, taHouseholdId, taTrustedAdultPersonId } = args;
     return (
         (actorHouseholdId != null && actorHouseholdId === taHouseholdId) ||
-        (actorParticipantId != null && actorParticipantId === taCounterpartyParticipantId)
+        (actorParticipantId != null && actorParticipantId === taTrustedAdultPersonId)
     );
 }

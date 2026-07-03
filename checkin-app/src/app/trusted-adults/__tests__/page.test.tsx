@@ -13,7 +13,7 @@ describe("TrustedAdultsPage", () => {
         mockFetchJson({
             "/api/trusted-adults/mine": {
                 trustedAdults: [
-                    { id: 1, counterpartyName: "Aunt Jo", counterpartyPhone: null, counterpartyEmail: null, familyContext: "Pickup", createdAt: "2026-01-01", reviews: [] },
+                    { id: 1, trustedAdultName: "Aunt Jo", trustedAdultPhone: null, trustedAdultEmail: null, familyContext: "Pickup", createdAt: "2026-01-01", reviews: [] },
                 ],
             },
         });

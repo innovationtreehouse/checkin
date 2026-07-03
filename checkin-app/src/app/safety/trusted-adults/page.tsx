@@ -42,14 +42,14 @@ interface HouseholdRef {
 }
 interface TrustedAdult {
     id: number;
-    counterpartyName: string | null;
-    counterpartyPhone: string | null;
-    counterpartyEmail: string | null;
+    trustedAdultName: string | null;
+    trustedAdultPhone: string | null;
+    trustedAdultEmail: string | null;
     familyContext: string;
     origin: string;
     createdAt: string;
     household: HouseholdRef | null;
-    counterparty: PersonRef | null;
+    trustedAdultPerson: PersonRef | null;
     reviews: Review[];
 }
 
@@ -164,18 +164,18 @@ export default function AdminTrustedAdultsPage() {
                     actorParticipantId: user?.id,
                     actorHouseholdId: user?.householdId,
                     taHouseholdId: ta.household?.id,
-                    taCounterpartyParticipantId: ta.counterparty?.id,
+                    taTrustedAdultPersonId: ta.trustedAdultPerson?.id,
                 });
                 return (
                     <Card key={ta.id} withBorder radius="md" padding="md">
                         <Group gap="xs">
                             <Text fw={600}>{ta.household?.name || `Household ${ta.household?.id}`}</Text>
                             <Text c="dimmed">→</Text>
-                            <Text>{ta.counterparty?.name || ta.counterpartyName || "trusted adult"}</Text>
+                            <Text>{ta.trustedAdultPerson?.name || ta.trustedAdultName || "trusted adult"}</Text>
                             <Badge color={STATUS_COLORS[status] ?? "gray"}>{label(status)}</Badge>
                             {latest && <Badge variant="outline">{label(latest.kind)}</Badge>}
                         </Group>
-                        <TrustedAdultContact phone={ta.counterpartyPhone} email={ta.counterpartyEmail} />
+                        <TrustedAdultContact phone={ta.trustedAdultPhone} email={ta.trustedAdultEmail} />
                         <Text size="sm" mt={6}><b>Family context (board only):</b> {ta.familyContext}</Text>
                         {latest?.sharedNote && (
                             <Text size="sm" c="teal" mt={2}>Shared note (keyholders/program leads): {latest.sharedNote}</Text>

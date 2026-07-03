@@ -12,14 +12,14 @@ beforeEach(() => resetRtl());
 const trustedAdults = [
   {
     id: 1,
-    counterpartyName: "Gary Guardian",
-    counterpartyPhone: null,
-    counterpartyEmail: null,
+    trustedAdultName: "Gary Guardian",
+    trustedAdultPhone: null,
+    trustedAdultEmail: null,
     familyContext: "Family friend, watches the kids after school.",
     origin: "SELF_DISCLOSED",
     createdAt: "2026-01-01T00:00:00.000Z",
     household: { id: 5, name: "Guardian House", leads: [] },
-    counterparty: null,
+    trustedAdultPerson: null,
     reviews: [{ id: 9, kind: "SELF_DISCLOSED", status: "PENDING_BOARD_REVIEW", decision: null, decisionNote: null, sharedNote: null, effectiveFrom: null, reviewBy: null, createdAt: "2026-01-01T00:00:00.000Z" }],
   },
 ];

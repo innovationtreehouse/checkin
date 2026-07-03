@@ -90,30 +90,30 @@ describe('Trusted Adults API', () => {
 
     it('defaults the household to the caller and returns 201', async () => {
         as(leadId, familyHh);
-        const res = await CREATE(post('/api/trusted-adults', { counterpartyName: 'Grandma', counterpartyPhone: '555-555-0100', familyContext: 'Maternal grandmother.' }));
+        const res = await CREATE(post('/api/trusted-adults', { trustedAdultName: 'Grandma', trustedAdultPhone: '555-555-0100', familyContext: 'Maternal grandmother.' }));
         expect(res.status).toBe(201);
         const ta = await prisma.trustedAdult.findFirst({ where: { householdId: familyHh }, include: { reviews: true } });
-        expect(ta?.counterpartyPhone).toBe('555-555-0100');
-        expect(ta?.counterpartyEmail).toBeNull();
+        expect(ta?.trustedAdultPhone).toBe('555-555-0100');
+        expect(ta?.trustedAdultEmail).toBeNull();
         expect(ta?.origin).toBe('SELF_DISCLOSED');
         expect(ta?.reviews[0].status).toBe('PENDING_BOARD_REVIEW');
     });
 
     it('forbids a non-staff member disclosing for a different household', async () => {
         as(leadId, familyHh);
-        const res = await CREATE(post('/api/trusted-adults', { householdId: boardHh, counterpartyName: 'X', counterpartyPhone: '5555550100', familyContext: 'x' }));
+        const res = await CREATE(post('/api/trusted-adults', { householdId: boardHh, trustedAdultName: 'X', trustedAdultPhone: '5555550100', familyContext: 'x' }));
         expect(res.status).toBe(403);
     });
 
     it('rejects a disclosure with neither phone nor email', async () => {
         as(leadId, familyHh);
-        const res = await CREATE(post('/api/trusted-adults', { counterpartyName: 'No Contact', familyContext: 'x' }));
+        const res = await CREATE(post('/api/trusted-adults', { trustedAdultName: 'No Contact', familyContext: 'x' }));
         expect(res.status).toBe(400);
     });
 
     it('rejects a malformed email', async () => {
         as(leadId, familyHh);
-        const res = await CREATE(post('/api/trusted-adults', { counterpartyName: 'Bad Email', counterpartyEmail: 'not-an-email', familyContext: 'x' }));
+        const res = await CREATE(post('/api/trusted-adults', { trustedAdultName: 'Bad Email', trustedAdultEmail: 'not-an-email', familyContext: 'x' }));
         expect(res.status).toBe(400);
     });
 
@@ -146,7 +146,7 @@ describe('Trusted Adults API', () => {
         const body = await (await OPERATIONAL(get('/api/trusted-adults/operational'))).json();
         const row = body.trustedAdults.find((t: { householdId: number }) => t.householdId === familyHh);
         expect(row).toBeTruthy();
-        expect(row.counterpartyName).toBe('Grandma');
+        expect(row.trustedAdultName).toBe('Grandma');
         expect(row.reviews[0].sharedNote).toBe(SHARED);
         expect(row.familyContext).toBeUndefined(); // pii — never to keyholders
     });
@@ -171,7 +171,7 @@ describe('Trusted Adults API', () => {
         // Fresh disclosure so this runs independently of the approve test's review.
         const ta = await prisma.trustedAdult.create({
             data: {
-                householdId: familyHh, counterpartyName: 'Grandpa', counterpartyPhone: '555-0200',
+                householdId: familyHh, trustedAdultName: 'Grandpa', trustedAdultPhone: '555-0200',
                 familyContext: 'Paternal grandfather.', origin: 'SELF_DISCLOSED', disclosedById: leadId,
                 reviews: { create: { householdId: familyHh, kind: 'INITIAL', status: 'PENDING_BOARD_REVIEW' } },
             },

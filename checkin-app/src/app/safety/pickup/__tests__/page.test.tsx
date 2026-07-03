@@ -17,9 +17,9 @@ describe("safety/pickup page", () => {
           {
             id: 1,
             householdId: 5,
-            counterpartyName: "Gary Guardian",
-            counterpartyPhone: "5551234567",
-            counterpartyEmail: "gary@example.com",
+            trustedAdultName: "Gary Guardian",
+            trustedAdultPhone: "5551234567",
+            trustedAdultEmail: "gary@example.com",
             household: { id: 5, name: "Guardian House" },
             reviews: [{ id: 9, status: "APPROVED", sharedNote: "May pick up Bobby.", reviewBy: "2026-01-01T00:00:00.000Z" }],
           },
