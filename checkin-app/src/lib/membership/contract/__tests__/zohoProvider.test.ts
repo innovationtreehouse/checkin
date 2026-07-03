@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { config } from "@/lib/config";
+import { config, DEV_MOCK_WEBHOOK_SECRET } from "@/lib/config";
 import { zohoSign } from "@/lib/membership/contract/zohoProvider";
 
 const ORIGINAL_ENV = { ...process.env };
@@ -29,7 +29,7 @@ describe("zoho mock fuse (config)", () => {
             expect(config.zohoAvailable()).toBe(true);
             expect(config.zohoConfigured()).toBe(false);
             // Dev default webhook secret so the self-fired webhook verifies with zero setup.
-            expect(config.zohoWebhookSecret()).toBe("dev-zoho-mock-webhook-secret");
+            expect(config.zohoWebhookSecret()).toBe(DEV_MOCK_WEBHOOK_SECRET);
         }
     });
 
