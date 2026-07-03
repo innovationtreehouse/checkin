@@ -24,15 +24,15 @@ const TAG = 'external-concurrency-test';
 /** A fresh applicant household + membership + a process in the EXTERNAL phase. */
 async function makeExternalProcess(data: Record<string, unknown> = {}): Promise<number> {
     const hh = await prisma.household.create({ data: { name: `Applicant ${TAG}` } });
-    const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
-    const proc = await prisma.membershipProcess.create({
-        data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION', ...data },
+    const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
+    const proc = await prisma.orgMembershipProcess.create({
+        data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION', ...data },
     });
     return proc.id;
 }
 
 async function advanceAudits(processId: number): Promise<number> {
-    const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true } });
+    const audits = await prisma.auditLog.findMany({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId }, select: { newData: true } });
     return audits.filter((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"status":"PENDING_PAYMENT"')).length;
 }
 
@@ -40,8 +40,8 @@ async function wipe() {
     const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
     const ids = hhs.map((h) => h.id);
     if (ids.length) {
-        await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
-        await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
 }
@@ -63,7 +63,7 @@ describe('EXTERNAL advance concurrency', () => {
             markBgConsent(processId, 1),
         ]);
 
-        const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(proc?.status).toBe('PENDING_PAYMENT');
 
         // Exactly one advance audit row + exactly one reviewer ping.
@@ -72,7 +72,7 @@ describe('EXTERNAL advance concurrency', () => {
 
         // Each mutation's audit row carries its own actor: SYSTEM_ACTOR for the contract sign
         // (default), the board member's id (1) for the bg-consent mark.
-        const all = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true, actorId: true } });
+        const all = await prisma.auditLog.findMany({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId }, select: { newData: true, actorId: true } });
         expect(all.find((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"contractSignedAt":true'))?.actorId).toBe(0);
         expect(all.find((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"bgConsentAt":true'))?.actorId).toBe(1);
     });
@@ -82,7 +82,7 @@ describe('EXTERNAL advance concurrency', () => {
 
         await Promise.all([markContractSigned(processId), markContractSigned(processId)]);
 
-        const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true, actorId: true } });
+        const audits = await prisma.auditLog.findMany({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId }, select: { newData: true, actorId: true } });
         const signed = audits.filter((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"contractSignedAt":true'));
         expect(signed).toHaveLength(1);
         expect(signed[0].actorId).toBe(0); // markContractSigned default actor = SYSTEM_ACTOR
@@ -99,7 +99,7 @@ describe('EXTERNAL advance concurrency', () => {
         const result = await advanceExternalIfComplete(processId);
 
         expect(result?.status).toBe('BLOCKED');
-        const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(proc?.status).toBe('BLOCKED');
         expect(await advanceAudits(processId)).toBe(0);
         expect(notifyReviewers as jest.Mock).not.toHaveBeenCalled();

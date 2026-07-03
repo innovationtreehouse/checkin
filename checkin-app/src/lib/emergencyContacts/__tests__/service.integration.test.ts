@@ -29,8 +29,8 @@ async function wipe() {
     const hhIds = tagged.map((h) => h.id);
     if (hhIds.length === 0) return;
     await prisma.emergencyContact.deleteMany({ where: { householdId: { in: hhIds } } });
-    await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: hhIds } } } });
-    await prisma.membership.deleteMany({ where: { householdId: { in: hhIds } } });
+    await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: hhIds } } } });
+    await prisma.orgMembership.deleteMany({ where: { householdId: { in: hhIds } } });
     await prisma.householdLead.deleteMany({ where: { householdId: { in: hhIds } } });
     await prisma.person.deleteMany({ where: { householdId: { in: hhIds } } });
     await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
@@ -259,8 +259,8 @@ describe("countHouseholdsMissingValidContact — admin alarm", () => {
 
         // In-intake household with a flagged (invalid) contact -> should count.
         const hh = await makeHousehold("alarm-intake");
-        const m = await prisma.membership.create({ data: { householdId: hh, status: "NONE" } });
-        await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: "INITIAL", status: "INTAKE" } });
+        const m = await prisma.orgMembership.create({ data: { householdId: hh, status: "NONE" } });
+        await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: "INITIAL", status: "INTAKE" } });
         await createContact(prisma, hh, { name: "Aunt May", phone: "555-555-2000" });
         await addMember(hh, { name: "Aunt May", phone: "555-555-2000" });
         await reconcileHouseholdConflicts(prisma, hh);
@@ -278,7 +278,7 @@ describe("countHouseholdsMissingValidContact — admin alarm", () => {
     it("also scopes an ACTIVE membership with no in-flight process", async () => {
         const before = await findHouseholdsMissingValidContact(prisma);
         const hh = await makeHousehold("alarm-active");
-        await prisma.membership.create({ data: { householdId: hh, status: "ACTIVE" } });
+        await prisma.orgMembership.create({ data: { householdId: hh, status: "ACTIVE" } });
         const after = await findHouseholdsMissingValidContact(prisma);
         expect(after.length).toBe(before.length + 1);
         expect(after).toContain(hh);

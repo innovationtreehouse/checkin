@@ -45,7 +45,7 @@ const householdData = {
     { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01" },
     { id: 11, name: "Jamie Smith", email: "", dateOfBirth: "2012-05-01" },
   ],
-  membership: { status: "ACTIVE", memberSince: "2024-01-01T00:00:00.000Z", isVolunteer: false },
+  orgMembership: { status: "ACTIVE", memberSince: "2024-01-01T00:00:00.000Z", isVolunteer: false },
   line1: "123 Main St", line2: "", city: "Austin", state: "TX", postalCode: "78701",
 };
 
@@ -134,7 +134,7 @@ describe("HouseholdPage", () => {
 
   it("prompts a lead to join when the household isn't a member yet", async () => {
     setSession({ id: 10, email: "sam@example.com" });
-    mockRoutes({ "/api/household": { household: { ...householdData, membership: null } } });
+    mockRoutes({ "/api/household": { household: { ...householdData, orgMembership: null } } });
     renderWithProviders(<HouseholdPage />);
     await screen.findByRole("heading", { name: "Smith Household", level: 1 });
 
@@ -145,7 +145,7 @@ describe("HouseholdPage", () => {
 
   it("shows a volunteer-only badge when memberSince is absent", async () => {
     setSession({ id: 10, email: "sam@example.com" });
-    mockRoutes({ "/api/household": { household: { ...householdData, membership: { status: "ACTIVE", isVolunteer: true } } } });
+    mockRoutes({ "/api/household": { household: { ...householdData, orgMembership: { status: "ACTIVE", isVolunteer: true } } } });
     renderWithProviders(<HouseholdPage />);
     await screen.findByRole("heading", { name: "Smith Household", level: 1 });
 

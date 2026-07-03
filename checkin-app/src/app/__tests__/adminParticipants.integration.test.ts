@@ -46,7 +46,7 @@ describe('Admin Participants API Integration Tests', () => {
         const rows = await prisma.person.findMany({ where: { OR: filters }, select: { householdId: true } });
         const householdIds = [...new Set(rows.map((r) => r.householdId).filter((id): id is number => id != null))];
         if (householdIds.length) {
-            await prisma.membership.deleteMany({ where: { householdId: { in: householdIds } } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: { in: householdIds } } });
             await prisma.householdLead.deleteMany({ where: { householdId: { in: householdIds } } });
         }
         await prisma.person.deleteMany({ where: { OR: filters } });
@@ -175,7 +175,7 @@ describe('Admin Participants API Integration Tests', () => {
             expect(household?.name).toBe('Adult Household');
 
             // D4.5: admin-created participants default to visitors (no membership)
-            const membership = await prisma.membership.findUnique({
+            const membership = await prisma.orgMembership.findUnique({
                 where: { householdId: updatedParticipant!.householdId! }
             });
             expect(membership).toBeNull();
@@ -202,7 +202,7 @@ describe('Admin Participants API Integration Tests', () => {
             const created = await prisma.person.findUnique({
                 where: { id: data.participant.id }
             });
-            const membership = await prisma.membership.findUnique({
+            const membership = await prisma.orgMembership.findUnique({
                 where: { householdId: created!.householdId! }
             });
             expect(membership?.status).toBe('ACTIVE');

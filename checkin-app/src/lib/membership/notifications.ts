@@ -22,7 +22,7 @@ export async function getMembershipNotifications(user: {
     const pendingReviews = canReviewBackgroundChecks(user) ? (await eligibleReviewProcessIds(user.id)).length : 0;
     const blocked =
         user.isSysadmin || user.isBoardMember
-            ? await prisma.membershipProcess.count({ where: { status: "BLOCKED" } })
+            ? await prisma.orgMembershipProcess.count({ where: { status: "BLOCKED" } })
             : 0;
     return { pendingReviews, blocked };
 }

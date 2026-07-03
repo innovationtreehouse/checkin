@@ -29,8 +29,8 @@ async function wipe() {
     const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
     const ids = hhs.map((h) => h.id);
     if (ids.length) {
-        await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
-        await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
@@ -58,15 +58,15 @@ describe('intake start concurrency', () => {
         // Both return the SAME winning process — the loser re-checked under the lock.
         expect(results[0].id).toBe(results[1].id);
 
-        const inflight = await prisma.membershipProcess.findMany({
-            where: { membership: { householdId }, kind: 'INITIAL', status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+        const inflight = await prisma.orgMembershipProcess.findMany({
+            where: { orgMembership: { householdId }, kind: 'INITIAL', status: { in: IN_FLIGHT_INITIAL_STATUSES } },
             select: { id: true },
         });
         expect(inflight).toHaveLength(1); // no duplicate from the loser
 
         // Exactly one CREATE audit row for the winner — no orphan from the loser.
         const created = await prisma.auditLog.count({
-            where: { tableName: 'MembershipProcess', action: 'CREATE', affectedEntityId: results[0].id },
+            where: { tableName: 'OrgMembershipProcess', action: 'CREATE', affectedEntityId: results[0].id },
         });
         expect(created).toBe(1);
     });

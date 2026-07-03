@@ -36,7 +36,7 @@ describe('Individual Program API Integration Tests', () => {
         const existingUserIds = existingUsers.map(u => u.id);
         const existingHouseholdIds = existingUsers.map(u => u.householdId);
 
-        await prisma.membership.deleteMany({
+        await prisma.orgMembership.deleteMany({
             where: { householdId: { in: existingHouseholdIds } }
         });
 
@@ -77,7 +77,7 @@ describe('Individual Program API Integration Tests', () => {
                 name: 'Member',
                 household: {
                     create: {
-                        membership: {
+                        orgMembership: {
                             create: {
                                 status: 'ACTIVE',
                                 memberSince: new Date()
@@ -117,7 +117,7 @@ describe('Individual Program API Integration Tests', () => {
         const existingUserIds = [adminId, leadId, commonId, memberId, enrolledId];
 
         if (memberHouseholdId) {
-            await prisma.membership.deleteMany({
+            await prisma.orgMembership.deleteMany({
                 where: { householdId: memberHouseholdId }
             });
         }

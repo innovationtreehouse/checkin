@@ -538,15 +538,15 @@ export async function applyImport(
 
         // ACTIVE membership only where they paid AND signed in Zoho.
         if (h.membershipActive) {
-            const before = await tx.membership.findUnique({ where: { householdId } });
-            const membership = await tx.membership.upsert({
+            const before = await tx.orgMembership.findUnique({ where: { householdId } });
+            const membership = await tx.orgMembership.upsert({
                 where: { householdId },
                 create: { householdId, status: "ACTIVE" },
                 update: { status: "ACTIVE" },
             });
             if (!before || before.status !== "ACTIVE") {
                 res.membershipsActivated++;
-                await audit(tx, actorId, before ? "EDIT" : "CREATE", "Membership", membership.id, {
+                await audit(tx, actorId, before ? "EDIT" : "CREATE", "OrgMembership", membership.id, {
                     status: "ACTIVE",
                     source: { system: "Zoho import" },
                 });

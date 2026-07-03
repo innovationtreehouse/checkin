@@ -14,7 +14,7 @@ jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
         person: { findUnique: jest.fn() },
-        membershipProcess: { findUnique: jest.fn(), update: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
+        orgMembershipProcess: { findUnique: jest.fn(), update: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
         auditLog: { create: jest.fn() },
     },
 }));
@@ -67,17 +67,17 @@ beforeEach(() => {
 
 describe('setZohoEnvelope', () => {
     it('not_found when the process does not exist', async () => {
-        prisma.membershipProcess.findUnique.mockResolvedValue(null);
+        prisma.orgMembershipProcess.findUnique.mockResolvedValue(null);
         await expect(setZohoEnvelope(1, 'req-1', 5)).rejects.toBeInstanceOf(ExternalError);
     });
 
     it('updates the envelope id and writes an audit row', async () => {
-        prisma.membershipProcess.findUnique.mockResolvedValue({ id: 1 });
-        prisma.membershipProcess.update.mockResolvedValue({ id: 1, zohoEnvelopeId: 'req-1' });
+        prisma.orgMembershipProcess.findUnique.mockResolvedValue({ id: 1 });
+        prisma.orgMembershipProcess.update.mockResolvedValue({ id: 1, zohoEnvelopeId: 'req-1' });
 
         const result = await setZohoEnvelope(1, 'req-1', 5);
 
-        expect(prisma.membershipProcess.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { zohoEnvelopeId: 'req-1' } });
+        expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { zohoEnvelopeId: 'req-1' } });
         expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
         expect(result).toEqual({ id: 1, zohoEnvelopeId: 'req-1' });
     });
@@ -85,9 +85,9 @@ describe('setZohoEnvelope', () => {
 
 describe('findProcessByEnvelope', () => {
     it('looks up the process by zohoEnvelopeId', async () => {
-        prisma.membershipProcess.findFirst.mockResolvedValue({ id: 9 });
+        prisma.orgMembershipProcess.findFirst.mockResolvedValue({ id: 9 });
         const result = await findProcessByEnvelope('req-9');
-        expect(prisma.membershipProcess.findFirst).toHaveBeenCalledWith({ where: { zohoEnvelopeId: 'req-9' } });
+        expect(prisma.orgMembershipProcess.findFirst).toHaveBeenCalledWith({ where: { zohoEnvelopeId: 'req-9' } });
         expect(result).toEqual({ id: 9 });
     });
 });
@@ -101,7 +101,7 @@ describe('getOrCreateContractSigningUrl', () => {
         email: 'lead@example.com',
         name: 'Lead Person',
         householdLeads: [{ householdId: 7 }],
-        household: { membership: { processes: [pendingProcess] } },
+        household: { orgMembership: { processes: [pendingProcess] } },
     };
 
     it('not_configured when Zoho is unavailable', async () => {
@@ -126,7 +126,7 @@ describe('getOrCreateContractSigningUrl', () => {
     });
 
     it('wrong_phase when there is no process awaiting external action', async () => {
-        prisma.person.findUnique.mockResolvedValue({ ...leadUser, household: { membership: { processes: [] } } });
+        prisma.person.findUnique.mockResolvedValue({ ...leadUser, household: { orgMembership: { processes: [] } } });
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'wrong_phase' });
     });
 
@@ -136,7 +136,7 @@ describe('getOrCreateContractSigningUrl', () => {
         zohoSign.createRequest.mockResolvedValue({ requestId: 'req-1', actionId: 'act-1', documentId: 'doc-1' });
         zohoSign.submitRequest.mockResolvedValue(undefined);
         zohoSign.getEmbeddedSignUrl.mockResolvedValue('https://sign.example/embed');
-        prisma.membershipProcess.updateMany.mockResolvedValue({ count: 1 });
+        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
 
         const url = await getOrCreateContractSigningUrl(1);
 
@@ -151,7 +151,7 @@ describe('getOrCreateContractSigningUrl', () => {
     it('already claimed ids → skips create/submit and goes straight to the embed URL', async () => {
         prisma.person.findUnique.mockResolvedValue({
             ...leadUser,
-            household: { membership: { processes: [{ ...pendingProcess, zohoEnvelopeId: 'req-existing', zohoActionId: 'act-existing' }] } },
+            household: { orgMembership: { processes: [{ ...pendingProcess, zohoEnvelopeId: 'req-existing', zohoActionId: 'act-existing' }] } },
         });
         zohoSign.getAccessToken.mockResolvedValue('token-1');
         zohoSign.getEmbeddedSignUrl.mockResolvedValue('https://sign.example/embed-existing');

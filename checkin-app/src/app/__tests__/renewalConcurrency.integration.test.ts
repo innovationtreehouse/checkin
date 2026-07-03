@@ -27,8 +27,8 @@ async function wipe() {
     const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
     const ids = hhs.map((h) => h.id);
     if (ids.length) {
-        await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
-        await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
@@ -36,7 +36,7 @@ async function wipe() {
 }
 
 describe('renewal opening concurrency', () => {
-    let membershipId = 0;
+    let orgMembershipId = 0;
     let householdId = 0;
 
     beforeAll(async () => {
@@ -45,7 +45,7 @@ describe('renewal opening concurrency', () => {
         householdId = hh.id;
         const lead = await prisma.person.create({ data: { name: 'Lead', email: `lead-${TAG}@ex.com`, householdId: hh.id } });
         await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
-        membershipId = (await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } })).id;
+        orgMembershipId = (await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } })).id;
     });
 
     afterAll(wipe);
@@ -54,16 +54,16 @@ describe('renewal opening concurrency', () => {
         const now = new Date();
         const boundary = new Date();
         const results = await Promise.all([
-            createRenewalProcess(membershipId, householdId, now, { remind: true, boundary }),
-            createRenewalProcess(membershipId, householdId, now, { remind: true, boundary }),
+            createRenewalProcess(orgMembershipId, householdId, now, { remind: true, boundary }),
+            createRenewalProcess(orgMembershipId, householdId, now, { remind: true, boundary }),
         ]);
 
         // Exactly one create won; the other lost the race and no-op'd (null).
         expect(results.filter(Boolean)).toHaveLength(1);
         expect(results.filter((r) => r === null)).toHaveLength(1);
 
-        const inflight = await prisma.membershipProcess.findMany({
-            where: { membershipId, kind: 'RENEWAL', status: { in: ['PENDING_RENEWAL', 'RENEWAL_PENDING_BG', 'PENDING_PAYMENT'] } },
+        const inflight = await prisma.orgMembershipProcess.findMany({
+            where: { orgMembershipId, kind: 'RENEWAL', status: { in: ['PENDING_RENEWAL', 'RENEWAL_PENDING_BG', 'PENDING_PAYMENT'] } },
             select: { id: true },
         });
         expect(inflight).toHaveLength(1); // the loser's P2002 no-op'd, not a second process
@@ -73,7 +73,7 @@ describe('renewal opening concurrency', () => {
 
         // Exactly one CREATE audit row for the winning process — no orphan from the loser.
         const created = await prisma.auditLog.count({
-            where: { tableName: 'MembershipProcess', action: 'CREATE', affectedEntityId: inflight[0].id },
+            where: { tableName: 'OrgMembershipProcess', action: 'CREATE', affectedEntityId: inflight[0].id },
         });
         expect(created).toBe(1);
     });

@@ -12,7 +12,7 @@ export type AdminHousehold = {
   emergencyContactPhone: string | null;
   householdMembers?: Array<{ id: number; name: string | null; email: string | null }>;
   householdLeads?: Array<{ personId: number }>;
-  membership?: { memberSince: string | null } | null;
+  orgMembership?: { memberSince: string | null } | null;
 } & Partial<StructuredAddress>;
 
 type FormState = {
@@ -78,7 +78,7 @@ export function AdminEditHouseholdModal({
           emergencyContactName: h.emergencyContactName || "",
           emergencyContactPhone: h.emergencyContactPhone || "",
           // date-only slice of the membership's join date (ISO → YYYY-MM-DD)
-          memberSince: h.membership?.memberSince ? h.membership.memberSince.slice(0, 10) : "",
+          memberSince: h.orgMembership?.memberSince ? h.orgMembership.memberSince.slice(0, 10) : "",
         };
         setForm(loaded);
         setInitial(loaded);

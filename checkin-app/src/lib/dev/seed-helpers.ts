@@ -236,7 +236,7 @@ export async function createFamily(prisma: Db): Promise<string> {
     const household = await prisma.household.create({
         data: { name: `Test Family ${tag}`, line1: `${tag} Maker Way` },
     });
-    await prisma.membership.create({
+    await prisma.orgMembership.create({
         data: { householdId: household.id, status: "ACTIVE" },
     });
     const lead = await prisma.person.create({

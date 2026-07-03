@@ -127,10 +127,10 @@ defineRoute({
     endpoint: 'GET /api/membership-ops/applications',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: 'processes',
-    // Bag: { MembershipProcess } with attestations (BackgroundCheckAttestation),
-    // membership (Membership → household Household → participants Person,
+    // Bag: { OrgMembershipProcess } with attestations (BackgroundCheckAttestation),
+    // membership (OrgMembership → household Household → participants Person,
     // leads HouseholdLead).
-    returns: ['MembershipProcess', 'BackgroundCheckAttestation', 'Membership', 'Household', 'Person', 'HouseholdLead'],
+    returns: ['OrgMembershipProcess', 'BackgroundCheckAttestation', 'OrgMembership', 'Household', 'Person', 'HouseholdLead'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
@@ -145,9 +145,9 @@ defineRoute({
     endpoint: 'GET /api/membership/reviews',
     authorize: { anyRole: ['isBackgroundCheckReviewer', 'isBoardMember'] },
     envelope: 'queue',
-    // Bag: { MembershipProcess } with membership (Membership → household Household
+    // Bag: { OrgMembershipProcess } with membership (OrgMembership → household Household
     // → leads HouseholdLead → participant Person).
-    returns: ['MembershipProcess', 'Membership', 'Household', 'HouseholdLead', 'Person'],
+    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'HouseholdLead', 'Person'],
     orderedView: [
         ['isBackgroundCheckReviewer', ['everyones:pii', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'member', 'public']],

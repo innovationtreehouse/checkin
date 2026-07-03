@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import type { MembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
+import type { OrgMembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
 import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/service";
 import { ORG_DOMAIN } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
@@ -22,7 +22,7 @@ import { apiError } from "@/lib/api-response";
 // Membership process statuses the household itself must act on. Mirrors
 // IN_FLIGHT_INITIAL_STATUSES minus the reviewer/board states, plus the
 // member-driven PENDING_RENEWAL.
-const MEMBER_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["INTAKE", "PENDING_EXTERNAL_ACTION", "PENDING_PAYMENT", "PENDING_RENEWAL"];
+const MEMBER_ACTIONABLE_MEMBERSHIP: OrgMembershipProcessStatus[] = ["INTAKE", "PENDING_EXTERNAL_ACTION", "PENDING_PAYMENT", "PENDING_RENEWAL"];
 
 // Membership statuses the board itself can act on. The board's only
 // membership-queue action is overriding/resetting a BLOCKED application
@@ -31,7 +31,7 @@ const MEMBER_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["INTAKE", "PEND
 // role isBackgroundCheckReviewer) work, surfaced by the reviewer notifications
 // badge (src/lib/membership/notifications.ts) — NOT the board. The board can
 // still SEE those in the applications list, but they don't count here.
-const BOARD_ACTIONABLE_MEMBERSHIP: MembershipProcessStatus[] = ["BLOCKED"];
+const BOARD_ACTIONABLE_MEMBERSHIP: OrgMembershipProcessStatus[] = ["BLOCKED"];
 
 const APPROVED_STATUSES: TrustedAdultReviewStatus[] = ["APPROVED"];
 
@@ -150,8 +150,8 @@ export const GET = withAuth({}, async (_req, auth) => {
                       select: { id: true, name: true },
                   })
                 : Promise.resolve([]),
-            prisma.membershipProcess.findMany({
-                where: { membership: { householdId }, status: { in: MEMBER_ACTIONABLE_MEMBERSHIP } },
+            prisma.orgMembershipProcess.findMany({
+                where: { orgMembership: { householdId }, status: { in: MEMBER_ACTIONABLE_MEMBERSHIP } },
                 select: { id: true, status: true },
             }),
             prisma.trustedAdultReview.count({
@@ -322,11 +322,11 @@ export const GET = withAuth({}, async (_req, auth) => {
     // ---- Admin surface (board's own queue) — only for board/isSysadmin ----
     if (user.isSysadmin || user.isBoardMember) {
         const [membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies] = await Promise.all([
-            prisma.membershipProcess.count({
+            prisma.orgMembershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
             // Every in-flight application the Applications page lists (status != ACTIVE).
-            prisma.membershipProcess.count({
+            prisma.orgMembershipProcess.count({
                 where: { status: { not: "ACTIVE" } },
             }),
             prisma.programParticipant.count({

@@ -38,14 +38,14 @@ const TAG = 'contract-sync-test';
 /**
  * A fresh applicant: household + membership + a process in the EXTERNAL phase, and
  * a participant (the lead) wired to that household so syncContractStatus(userId)
- * resolves the process via user.household.membership.processes.
+ * resolves the process via user.household.orgMembership.processes.
  */
 async function makeApplicant(data: Record<string, unknown> = {}): Promise<{ userId: number; processId: number }> {
     const hh = await prisma.household.create({ data: { name: `Applicant ${TAG}` } });
-    const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
-    const proc = await prisma.membershipProcess.create({
+    const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
+    const proc = await prisma.orgMembershipProcess.create({
         data: {
-            membershipId: m.id,
+            orgMembershipId: m.id,
             kind: 'INITIAL',
             status: 'PENDING_EXTERNAL_ACTION',
             zohoEnvelopeId: `zoho-${TAG}`,
@@ -61,7 +61,7 @@ async function makeApplicant(data: Record<string, unknown> = {}): Promise<{ user
 /** Audit rows for a process, split by the field they record. */
 async function audits(processId: number) {
     const rows = await prisma.auditLog.findMany({
-        where: { tableName: 'MembershipProcess', affectedEntityId: processId },
+        where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId },
         select: { actorId: true, newData: true },
     });
     return {
@@ -74,8 +74,8 @@ async function wipe() {
     const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
     const ids = hhs.map((h) => h.id);
     if (ids.length) {
-        await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
-        await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
@@ -113,7 +113,7 @@ describe('syncContractStatus', () => {
         const status = await syncContractStatus(userId);
 
         expect(status?.contractSigned).toBe(true);
-        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.contractSignedAt).not.toBeNull();
         expect(p?.status).toBe('PENDING_PAYMENT');
 
@@ -130,7 +130,7 @@ describe('syncContractStatus', () => {
 
         await syncContractStatus(userId);
 
-        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.contractSignedAt).not.toBeNull();
         expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
     });
@@ -142,7 +142,7 @@ describe('syncContractStatus', () => {
         const status = await syncContractStatus(userId);
 
         expect(status?.contractSigned).toBe(false);
-        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.contractSignedAt).toBeNull();
         expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
         const a = await audits(processId);
@@ -157,7 +157,7 @@ describe('syncContractStatus', () => {
         // Second call: Zoho would still say "signed", but the contract is already recorded.
         await syncContractStatus(userId);
 
-        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.status).toBe('PENDING_PAYMENT');
         const a = await audits(processId);
         expect(a.signed).toHaveLength(1);
@@ -172,7 +172,7 @@ describe('syncContractStatus', () => {
 
         expect(status).not.toBeNull();
         expect(status?.contractSigned).toBe(false);
-        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.contractSignedAt).toBeNull();
         expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
     });
@@ -184,7 +184,7 @@ describe('syncContractStatus', () => {
         expect(await syncContractStatus(userId)).toBeNull();
         // Zoho never consulted, nothing signed.
         expect(mockGetRequestStatus).not.toHaveBeenCalled();
-        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.contractSignedAt).toBeNull();
     });
 

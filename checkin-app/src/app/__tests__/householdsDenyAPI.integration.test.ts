@@ -64,7 +64,7 @@ describe('POST /api/membership-ops/households — Deny Membership', () => {
             where: { email: { contains: TAG } }, select: { id: true, householdId: true },
         });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: ids.map(u => u.id) } } });
-        await prisma.membership.deleteMany({ where: { householdId: { in: ids.map(u => u.householdId) } } });
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids.map(u => u.householdId) } } });
         await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
         await prisma.household.deleteMany({ where: { id: { in: ids.map(u => u.householdId) } } });
     });
@@ -82,7 +82,7 @@ describe('POST /api/membership-ops/households — Deny Membership', () => {
         const res = await post({ householdId: plainHouseholdId, deny: true });
         expect(res.status).toBe(403);
 
-        const membership = await prisma.membership.findUnique({ where: { householdId: plainHouseholdId } });
+        const membership = await prisma.orgMembership.findUnique({ where: { householdId: plainHouseholdId } });
         expect(membership?.status).not.toBe('DENIED');
     });
 
@@ -94,7 +94,7 @@ describe('POST /api/membership-ops/households — Deny Membership', () => {
         const data = await res.json();
         expect(data.error).toContain('board member');
 
-        const membership = await prisma.membership.findUnique({ where: { householdId: boardHouseholdId } });
+        const membership = await prisma.orgMembership.findUnique({ where: { householdId: boardHouseholdId } });
         expect(membership?.status).not.toBe('DENIED');
     });
 
@@ -104,11 +104,11 @@ describe('POST /api/membership-ops/households — Deny Membership', () => {
         const res = await post({ householdId: plainHouseholdId, deny: true });
         expect(res.status).toBe(200);
 
-        const membership = await prisma.membership.findUnique({ where: { householdId: plainHouseholdId } });
+        const membership = await prisma.orgMembership.findUnique({ where: { householdId: plainHouseholdId } });
         expect(membership?.status).toBe('DENIED');
 
         const audit = await prisma.auditLog.findFirst({
-            where: { actorId: boardId, tableName: 'Membership', affectedEntityId: membership!.id },
+            where: { actorId: boardId, tableName: 'OrgMembership', affectedEntityId: membership!.id },
             orderBy: { id: 'desc' },
         });
         expect(audit).not.toBeNull();
@@ -130,7 +130,7 @@ describe('POST /api/membership-ops/households — Deny Membership', () => {
         const res = await post({ householdId: plainHouseholdId, deny: false });
         expect(res.status).toBe(200);
 
-        const membership = await prisma.membership.findUnique({ where: { householdId: plainHouseholdId } });
+        const membership = await prisma.orgMembership.findUnique({ where: { householdId: plainHouseholdId } });
         expect(membership?.status).toBe('NONE');
     });
 });

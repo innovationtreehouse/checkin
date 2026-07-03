@@ -15,8 +15,8 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
 
 /**
  * PUT /api/settings/membership — update board settings.
- * Body may include: normalDuesCents, volunteerDuesCents, membershipYearBoundary (ISO|null),
- * membershipVariantId (string|null), volunteerDiscountCode (string|null).
+ * Body may include: normalDuesCents, volunteerDuesCents, orgMembershipYearBoundary (ISO|null),
+ * orgMembershipVariantId (string|null), volunteerDiscountCode (string|null).
  * Dues must be finite and >= 0; an invalid value rejects the whole update (400) so the
  * previous value survives rather than silently collapsing to zero. (The Averity consent
  * link is an env var, not a board setting.)
@@ -26,8 +26,8 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     let body: {
         normalDuesCents?: number;
         volunteerDuesCents?: number;
-        membershipYearBoundary?: string | null;
-        membershipVariantId?: string | null;
+        orgMembershipYearBoundary?: string | null;
+        orgMembershipVariantId?: string | null;
         volunteerDiscountCode?: string | null;
         bgRecheckMonths?: number;
     };
@@ -47,13 +47,13 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         if (invalidDues(body.volunteerDuesCents)) return apiError("volunteerDuesCents must be a number >= 0", 400);
         data.volunteerDuesCents = Math.round(body.volunteerDuesCents);
     }
-    if (body.membershipYearBoundary !== undefined) {
-        data.membershipYearBoundary = body.membershipYearBoundary ? new Date(body.membershipYearBoundary) : null;
+    if (body.orgMembershipYearBoundary !== undefined) {
+        data.orgMembershipYearBoundary = body.orgMembershipYearBoundary ? new Date(body.orgMembershipYearBoundary) : null;
     }
-    if (body.membershipVariantId !== undefined) {
-        const variantId = body.membershipVariantId?.trim();
-        if (variantId && !/^\d+$/.test(variantId)) return apiError("membershipVariantId must be a numeric Shopify variant ID", 400);
-        data.membershipVariantId = variantId || null;
+    if (body.orgMembershipVariantId !== undefined) {
+        const variantId = body.orgMembershipVariantId?.trim();
+        if (variantId && !/^\d+$/.test(variantId)) return apiError("orgMembershipVariantId must be a numeric Shopify variant ID", 400);
+        data.orgMembershipVariantId = variantId || null;
     }
     if (body.volunteerDiscountCode !== undefined) {
         data.volunteerDiscountCode = body.volunteerDiscountCode?.trim() || null;
@@ -72,7 +72,7 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
             action: "EDIT",
             tableName: "BoardSettings",
             affectedEntityId: 1,
-            // data holds a Date (membershipYearBoundary); clone to a JSON-safe object.
+            // data holds a Date (orgMembershipYearBoundary); clone to a JSON-safe object.
             newData: JSON.parse(JSON.stringify(data)),
         },
     });

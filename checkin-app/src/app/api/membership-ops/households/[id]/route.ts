@@ -44,18 +44,18 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
         // "Member since" lives on the household's Membership (1:1). Treat the date
         // as date-only: parse at UTC midnight and only act on a real change, so an
         // unchanged field re-sent by the form never writes a spurious audit row.
-        let memberSinceChange: { membershipId: number; oldValue: Date; newValue: Date } | null = null;
+        let memberSinceChange: { orgMembershipId: number; oldValue: Date; newValue: Date } | null = null;
         if (typeof body.memberSince === "string" && body.memberSince !== "") {
             const parsed = new Date(`${body.memberSince}T00:00:00.000Z`);
             if (isNaN(parsed.getTime())) {
                 return apiError("Invalid member-since date", 400);
             }
-            const membership = await prisma.membership.findUnique({ where: { householdId: id } });
+            const membership = await prisma.orgMembership.findUnique({ where: { householdId: id } });
             if (!membership) {
                 return apiError("Household has no membership record", 400);
             }
             if (membership.memberSince.toISOString().slice(0, 10) !== body.memberSince) {
-                memberSinceChange = { membershipId: membership.id, oldValue: membership.memberSince, newValue: parsed };
+                memberSinceChange = { orgMembershipId: membership.id, oldValue: membership.memberSince, newValue: parsed };
             }
         }
 
@@ -97,16 +97,16 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
         // Separate audit row for the membership edit — a legible before/after of the
         // join date on its own record, rather than folded into the Household row.
         if (memberSinceChange) {
-            await prisma.membership.update({
-                where: { id: memberSinceChange.membershipId },
+            await prisma.orgMembership.update({
+                where: { id: memberSinceChange.orgMembershipId },
                 data: { memberSince: memberSinceChange.newValue },
             });
             await prisma.auditLog.create({
                 data: {
                     actorId: auth.user.id,
                     action: "EDIT",
-                    tableName: "Membership",
-                    affectedEntityId: memberSinceChange.membershipId,
+                    tableName: "OrgMembership",
+                    affectedEntityId: memberSinceChange.orgMembershipId,
                     secondaryAffectedEntity: id,
                     oldData: { memberSince: memberSinceChange.oldValue },
                     newData: { memberSince: memberSinceChange.newValue },

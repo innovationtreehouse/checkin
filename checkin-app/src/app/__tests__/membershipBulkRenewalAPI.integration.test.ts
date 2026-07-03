@@ -35,7 +35,7 @@ describe('Bulk renewal migration', () => {
 
     async function makeActive(label: string) {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
-        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
         return m.id;
     }
 
@@ -43,8 +43,8 @@ describe('Bulk renewal migration', () => {
         const hhs = await prisma.household.findMany({ where: { OR: [{ name: { contains: TAG } }, { householdMembers: { some: { email: { contains: TAG } } } }] }, select: { id: true } });
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
-            await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
-            await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
@@ -52,7 +52,7 @@ describe('Bulk renewal migration', () => {
     }
 
     beforeAll(async () => {
-        const maxRow = await prisma.membershipProcess.findFirst({ orderBy: { id: 'desc' }, select: { id: true } });
+        const maxRow = await prisma.orgMembershipProcess.findFirst({ orderBy: { id: 'desc' }, select: { id: true } });
         preMaxProcessId = maxRow?.id ?? 0;
         await wipe();
         sysId = (await prisma.person.create({ data: { email: `sys-${TAG}@example.com`, name: 'Sys', isSysadmin: true, household: { create: { name: `Sys HH ${TAG}` } } } })).id;
@@ -63,7 +63,7 @@ describe('Bulk renewal migration', () => {
     });
 
     afterAll(async () => {
-        await prisma.membershipProcess.deleteMany({ where: { id: { gt: preMaxProcessId } } });
+        await prisma.orgMembershipProcess.deleteMany({ where: { id: { gt: preMaxProcessId } } });
         await wipe();
         await prisma.$disconnect();
     });
@@ -84,8 +84,8 @@ describe('Bulk renewal migration', () => {
         expect(data.success).toBe(true);
         expect(data.opened).toBeGreaterThanOrEqual(2);
 
-        const a = await prisma.membershipProcess.findFirst({ where: { membershipId: mA } });
-        const b = await prisma.membershipProcess.findFirst({ where: { membershipId: mB } });
+        const a = await prisma.orgMembershipProcess.findFirst({ where: { orgMembershipId: mA } });
+        const b = await prisma.orgMembershipProcess.findFirst({ where: { orgMembershipId: mB } });
         expect(a?.status).toBe('PENDING_RENEWAL');
         expect(b?.status).toBe('PENDING_RENEWAL');
         expect(sendEmail as jest.Mock).not.toHaveBeenCalled();
@@ -93,7 +93,7 @@ describe('Bulk renewal migration', () => {
         // Idempotent: a second press opens nothing new.
         const second = await BULK(jsonReq({ sendReminders: false }));
         expect((await second.json()).opened).toBe(0);
-        const count = await prisma.membershipProcess.count({ where: { membershipId: mA } });
+        const count = await prisma.orgMembershipProcess.count({ where: { orgMembershipId: mA } });
         expect(count).toBe(1);
     });
 

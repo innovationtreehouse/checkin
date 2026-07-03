@@ -60,7 +60,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 });
                 await addHouseholdLead(prisma, parent.householdId, parent.id);
                 if (alreadyMember) {
-                    await prisma.membership.create({
+                    await prisma.orgMembership.create({
                         data: {
                             householdId: parent.householdId,
                             status: 'ACTIVE',
@@ -100,7 +100,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             await addHouseholdLead(prisma, newParticipant.householdId, newParticipant.id);
 
             if (alreadyMember) {
-                await prisma.membership.create({
+                await prisma.orgMembership.create({
                     data: {
                         householdId: newParticipant.householdId,
                         status: 'ACTIVE',

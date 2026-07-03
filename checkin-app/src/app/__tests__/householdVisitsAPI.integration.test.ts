@@ -38,7 +38,7 @@ describe('Household Visits API Integration Tests', () => {
             where: { personId: { in: existingUserIds } }
         });
         
-        await prisma.membership.deleteMany({
+        await prisma.orgMembership.deleteMany({
             where: { householdId: { in: existingHouseholdIds } }
         });
         
@@ -126,7 +126,7 @@ describe('Household Visits API Integration Tests', () => {
             where: { personId: { in: currentIds } }
         });
         
-        await prisma.membership.deleteMany({
+        await prisma.orgMembership.deleteMany({
             where: { householdId: { in: validHouseholdIds } }
         });
         

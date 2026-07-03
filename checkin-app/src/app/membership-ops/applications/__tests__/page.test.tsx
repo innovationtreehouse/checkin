@@ -23,7 +23,7 @@ const rows = [
         bgClearedAt: null,
         paidAt: null,
         attestations: [],
-        membership: { householdId: 1, isVolunteer: false, household: household("Awaiting Family", 1) },
+        orgMembership: { householdId: 1, isVolunteer: false, household: household("Awaiting Family", 1) },
     },
     {
         id: 2,
@@ -36,7 +36,7 @@ const rows = [
         bgClearedAt: null,
         paidAt: null,
         attestations: [{ id: 1, result: "APPROVE", isMarkedVolunteer: false }],
-        membership: { householdId: 2, isVolunteer: true, household: household("Payment Family", 2) },
+        orgMembership: { householdId: 2, isVolunteer: true, household: household("Payment Family", 2) },
     },
     {
         id: 3,
@@ -49,7 +49,7 @@ const rows = [
         bgClearedAt: null,
         paidAt: "2026-01-03T00:00:00.000Z",
         attestations: [],
-        membership: { householdId: 3, isVolunteer: false, household: household("Blocked Family", 3) },
+        orgMembership: { householdId: 3, isVolunteer: false, household: household("Blocked Family", 3) },
     },
 ];
 

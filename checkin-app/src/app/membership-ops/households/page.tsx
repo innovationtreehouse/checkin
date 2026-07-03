@@ -13,7 +13,7 @@ import { PageLoader } from "@/components/ui/PageLoader";
 type Household = {
   id: number;
   name?: string | null;
-  membership?: { status: string } | null;
+  orgMembership?: { status: string } | null;
   householdMembers?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean }[] | null;
 };
 
@@ -153,7 +153,7 @@ export default function AdminHouseholdsPage() {
           </Table.Thead>
           <Table.Tbody>
             {filtered.map((household) => {
-              const status = household.membership?.status;
+              const status = household.orgMembership?.status;
               const hasActiveMembership = status === "ACTIVE";
               const isDenied = status === "DENIED";
               const hasBoardMember = household.householdMembers?.some((p) => p.isBoardMember) ?? false;

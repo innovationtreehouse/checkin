@@ -34,7 +34,7 @@ export const GET = withAuth(
                             select: { id: true, name: true, email: true }
                         },
                         leads: { select: { personId: true } },
-                        membership: true,
+                        orgMembership: true,
                         emergencyContacts: {
                             where: PRIMARY_CONTACT_WHERE,
                             orderBy: [{ priority: "asc" }, { id: "asc" }],
@@ -62,7 +62,7 @@ export const GET = withAuth(
                     householdMembers: {
                         select: { id: true, name: true, email: true, isBoardMember: true }
                     },
-                    membership: true,
+                    orgMembership: true,
                     emergencyContacts: {
                         where: PRIMARY_CONTACT_WHERE,
                         orderBy: [{ priority: "asc" }, { id: "asc" }],
@@ -95,7 +95,7 @@ export const POST = withAuth(
                 return apiError("Household ID is required", 400);
             }
 
-            const existingMembership = await prisma.membership.findUnique({
+            const existingMembership = await prisma.orgMembership.findUnique({
                 where: { householdId }
             });
 
@@ -116,7 +116,7 @@ export const POST = withAuth(
                 }
 
                 const newStatus = deny ? "DENIED" : "NONE";
-                const membership = await prisma.membership.upsert({
+                const membership = await prisma.orgMembership.upsert({
                     where: { householdId },
                     create: { householdId, status: newStatus },
                     update: { status: newStatus }
@@ -127,7 +127,7 @@ export const POST = withAuth(
                         data: {
                             actorId: auth.user.id,
                             action: "EDIT",
-                            tableName: "Membership",
+                            tableName: "OrgMembership",
                             affectedEntityId: membership.id,
                             secondaryAffectedEntity: householdId,
                             oldData: { status: existingMembership?.status ?? "NONE" },
@@ -140,7 +140,7 @@ export const POST = withAuth(
             }
 
             if (active) {
-                const membership = await prisma.membership.upsert({
+                const membership = await prisma.orgMembership.upsert({
                     where: { householdId },
                     create: { householdId, status: "ACTIVE" },
                     update: { status: "ACTIVE" }
@@ -150,7 +150,7 @@ export const POST = withAuth(
                         data: {
                             actorId: auth.user.id,
                             action: "EDIT",
-                            tableName: "Membership",
+                            tableName: "OrgMembership",
                             affectedEntityId: membership.id,
                             secondaryAffectedEntity: householdId,
                             oldData: { status: existingMembership?.status ?? "NONE" },
@@ -160,7 +160,7 @@ export const POST = withAuth(
                 }
                 return NextResponse.json({ success: true, membership });
             } else if (existingMembership && existingMembership.status === "ACTIVE") {
-                const membership = await prisma.membership.update({
+                const membership = await prisma.orgMembership.update({
                     where: { householdId },
                     data: { status: "REVOKED" }
                 });
@@ -169,7 +169,7 @@ export const POST = withAuth(
                         data: {
                             actorId: auth.user.id,
                             action: "EDIT",
-                            tableName: "Membership",
+                            tableName: "OrgMembership",
                             affectedEntityId: membership.id,
                             secondaryAffectedEntity: householdId,
                             oldData: { status: "ACTIVE" },

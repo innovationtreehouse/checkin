@@ -18,7 +18,7 @@ describe('Admin Participant Household API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        await prisma.membership.deleteMany({});
+        await prisma.orgMembership.deleteMany({});
         await prisma.householdLead.deleteMany({});
         await prisma.person.deleteMany({
             where: { email: { contains: 'household-api-test' } }
@@ -44,7 +44,7 @@ describe('Admin Participant Household API Integration Tests', () => {
     });
 
     afterAll(async () => {
-        await prisma.membership.deleteMany({});
+        await prisma.orgMembership.deleteMany({});
         await prisma.householdLead.deleteMany({});
         await prisma.person.deleteMany({
             where: { email: { contains: 'household-api-test' } }
@@ -62,7 +62,7 @@ describe('Admin Participant Household API Integration Tests', () => {
     });
 
     afterEach(async () => {
-        await prisma.membership.deleteMany({});
+        await prisma.orgMembership.deleteMany({});
         await prisma.householdLead.deleteMany({});
         await prisma.person.deleteMany({
             where: { name: 'Subject Test' }

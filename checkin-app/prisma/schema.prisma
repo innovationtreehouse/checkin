@@ -168,7 +168,7 @@ model Household {
 
   householdMembers  Person[]
   leads             HouseholdLead[]
-  membership        Membership?
+  orgMembership     OrgMembership?
   trustedAdults     TrustedAdult[]
   emergencyContacts EmergencyContact[]
 }
@@ -231,7 +231,7 @@ model HouseholdLead {
   @@id([householdId, personId])
 }
 
-enum MembershipStatus {
+enum OrgMembershipStatus {
   NONE
   ACTIVE
   REVOKED
@@ -242,12 +242,12 @@ enum MembershipStatus {
   DENIED
 }
 
-enum MembershipProcessKind {
+enum OrgMembershipProcessKind {
   INITIAL
   RENEWAL
 }
 
-enum MembershipProcessStatus {
+enum OrgMembershipProcessStatus {
   INTAKE
   PENDING_EXTERNAL_ACTION
   PENDING_BG_REVIEW
@@ -293,35 +293,35 @@ enum TrustedAdultDecisionKind {
   REQUEST_INFO
 }
 
-model Membership {
+model OrgMembership {
   /// @sensitivity:public
-  id          Int              @id @default(autoincrement())
+  id          Int                 @id @default(autoincrement())
   /// @sensitivity:public
-  memberSince DateTime         @default(now())
+  memberSince DateTime            @default(now())
   /// @sensitivity:public
-  status      MembershipStatus @default(NONE)
+  status      OrgMembershipStatus @default(NONE)
   /// @sensitivity:public
-  isVolunteer Boolean          @default(false)
+  isVolunteer Boolean             @default(false)
 
   /// @sensitivity:public
   householdId Int       @unique
   household   Household @relation(fields: [householdId], references: [id])
 
-  processes MembershipProcess[]
+  processes OrgMembershipProcess[]
 
   @@index([status])
 }
 
-model MembershipProcess {
+model OrgMembershipProcess {
   /// @sensitivity:public
-  id                    Int                     @id @default(autoincrement())
+  id                    Int                        @id @default(autoincrement())
   /// @sensitivity:public
-  membershipId          Int
-  membership            Membership              @relation(fields: [membershipId], references: [id])
+  orgMembershipId       Int
+  orgMembership         OrgMembership              @relation(fields: [orgMembershipId], references: [id])
   /// @sensitivity:public
-  kind                  MembershipProcessKind
+  kind                  OrgMembershipProcessKind
   /// @sensitivity:internal
-  status                MembershipProcessStatus
+  status                OrgMembershipProcessStatus
   /// @sensitivity:internal
   stageEnteredAt        DateTime?               @default(now())
   /// @sensitivity:public
@@ -355,7 +355,7 @@ model MembershipProcess {
 
   attestations BackgroundCheckAttestation[]
 
-  @@index([membershipId])
+  @@index([orgMembershipId])
   @@index([status])
 }
 
@@ -364,7 +364,7 @@ model BackgroundCheckAttestation {
   id              Int               @id @default(autoincrement())
   /// @sensitivity:public
   processId       Int
-  process         MembershipProcess @relation(fields: [processId], references: [id])
+  process         OrgMembershipProcess @relation(fields: [processId], references: [id])
   /// @sensitivity:public
   reviewerId      Int
   reviewer        Person       @relation("BgAttestations", fields: [reviewerId], references: [id])
@@ -397,15 +397,15 @@ model BoardSettings {
   /// @sensitivity:public
   volunteerDuesCents         Int       @default(0)
   /// @sensitivity:public
-  membershipYearBoundary     DateTime?
+  orgMembershipYearBoundary  DateTime?
   /// Shopify variant ID of the membership product everyone checks out through.
   /// The "Pay with Shopify" link is built from it SERVER-SIDE (ensurePaymentLink
   /// in lib/membership/payment.ts) as
-  /// https://<SHOPIFY_STORE_DOMAIN>/cart/<membershipVariantId>:1; the client only
+  /// https://<SHOPIFY_STORE_DOMAIN>/cart/<orgMembershipVariantId>:1; the client only
   /// receives the derived checkoutUrl, never this raw field — hence internal, not
   /// public (contrast Program.shopify*VariantId, which the browser builds from).
   /// @sensitivity:internal
-  membershipVariantId        String?
+  orgMembershipVariantId     String?
   /// Discount code (created in Shopify by the board) appended to the checkout
   /// link for volunteer households so Shopify applies their discount.
   /// @sensitivity:internal
@@ -415,7 +415,7 @@ model BoardSettings {
   /// @sensitivity:public
   bgRecheckMonths            Int       @default(0)
   /// @sensitivity:internal
-  shopifyMembershipProductId String?
+  shopifyOrgMembershipProductId String?
   /// @sensitivity:internal
   shopifyNormalVariantId     String?
   /// @sensitivity:internal
@@ -448,7 +448,7 @@ model AppSettings {
 /// relationship — familial, romantic, guardianship, financial, legal-restriction,
 /// etc. — with a counterparty who may be another Person or someone outside
 /// the org. The durable relationship facts live here, entered once; each annual
-/// review cycle is a TrustedAdultReview row (like Membership/MembershipProcess), so
+/// review cycle is a TrustedAdultReview row (like OrgMembership/OrgMembershipProcess), so
 /// a renewal reuses the facts without re-entry.
 ///
 /// NAMING GLOSSARY (one entity, several names — read before renaming; audit P2-2).
