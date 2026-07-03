@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Divider, Group, Loader, Modal, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
 export type AdminHousehold = {
   id: number;
@@ -55,7 +56,6 @@ export function AdminEditHouseholdModal({
 }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [initial, setInitial] = useState<FormState>(EMPTY);
   const [displayName, setDisplayName] = useState("");
@@ -87,7 +87,7 @@ export function AdminEditHouseholdModal({
         setLeadIds((h.householdLeads ?? []).map((l) => l.personId));
       }
     } catch {
-      notifications.show({ color: "red", message: "Failed to load household." });
+      notifications.show({ color: "red", message: "Failed to load household.", autoClose: false });
     }
   }, [householdId]);
 
@@ -95,7 +95,6 @@ export function AdminEditHouseholdModal({
     if (!opened || householdId == null) return;
     const signal = { cancelled: false };
     setLoading(true);
-    setConfirming(false);
     loadHousehold(signal).finally(() => {
       if (!signal.cancelled) setLoading(false);
     });
@@ -118,10 +117,10 @@ export function AdminEditHouseholdModal({
         await loadHousehold();
       } else {
         const data = await res.json().catch(() => ({}));
-        notifications.show({ color: "red", message: data.error || "Failed to remove lead." });
+        notifications.show({ color: "red", message: data.error || "Failed to remove lead.", autoClose: false });
       }
     } catch {
-      notifications.show({ color: "red", message: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setRemovingLead(null);
     }
@@ -137,8 +136,11 @@ export function AdminEditHouseholdModal({
     onClose();
   };
 
+  // Phone is optional here, so only a non-empty malformed value is an error.
+  const phoneInvalid = form.emergencyContactPhone.trim() !== "" && !isValidPhone(form.emergencyContactPhone);
+
   const handleSave = async () => {
-    if (householdId == null) return;
+    if (householdId == null || phoneInvalid) return;
     setSaving(true);
     try {
       const res = await fetch(`/api/membership-ops/households/${householdId}`, {
@@ -150,14 +152,13 @@ export function AdminEditHouseholdModal({
         const data = await res.json();
         notifications.show({ color: "green", message: "Household updated." });
         onSaved?.(data.household);
-        setConfirming(false);
         onClose();
       } else {
         const data = await res.json().catch(() => ({}));
-        notifications.show({ color: "red", message: data.error || "Failed to update household." });
+        notifications.show({ color: "red", message: data.error || "Failed to update household.", autoClose: false });
       }
     } catch {
-      notifications.show({ color: "red", message: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }
@@ -216,6 +217,7 @@ export function AdminEditHouseholdModal({
                 value={form.emergencyContactPhone}
                 onChange={(e) => update({ emergencyContactPhone: e.currentTarget.value })}
                 placeholder="(555) 555-5555"
+                error={phoneInvalid ? PHONE_ERROR : undefined}
               />
             </SimpleGrid>
             <TextInput
@@ -256,37 +258,20 @@ export function AdminEditHouseholdModal({
               )}
             </Stack>
 
-            <Group justify="flex-end" mt="md">
-              <Button variant="default" onClick={requestClose}>
+            <Alert color="orange" mt="md">
+              You&apos;re editing <strong>{displayName}</strong>, a household you&apos;re not a member of. This
+              uses your administrative privileges and is recorded in the audit log.
+            </Alert>
+            <Group justify="flex-end">
+              <Button variant="default" onClick={requestClose} disabled={saving}>
                 Cancel
               </Button>
-              <Button color="green" onClick={() => setConfirming(true)}>
-                Save Changes
+              <Button color="orange" onClick={handleSave} loading={saving} disabled={phoneInvalid}>
+                Save Changes — As Admin
               </Button>
             </Group>
           </Stack>
         )}
-      </Modal>
-
-      <Modal
-        opened={confirming}
-        onClose={() => setConfirming(false)}
-        size="sm"
-        zIndex={1100}
-        title={<Text fw={600}>Use admin powers?</Text>}
-      >
-        <Alert color="orange" mb="md">
-          You&apos;re editing <strong>{displayName}</strong>, a household you&apos;re not a member of. This
-          uses your administrative privileges and is recorded in the audit log.
-        </Alert>
-        <Group justify="flex-end">
-          <Button variant="default" onClick={() => setConfirming(false)} disabled={saving}>
-            Cancel
-          </Button>
-          <Button color="orange" onClick={handleSave} loading={saving}>
-            Yes, save changes
-          </Button>
-        </Group>
       </Modal>
     </>
   );

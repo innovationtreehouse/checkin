@@ -6,6 +6,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconRobot, IconScan, IconSelector } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
+import { notifications } from '@mantine/notifications';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -69,8 +70,9 @@ export default function AdminVisitsPage() {
 
   const [editingVisitId, setEditingVisitId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ arrivedAt: "", departedAt: "" });
-  // Save/error result shown inline in the edited row's Actions cell — the page-top
-  // banner lands off-screen on long tables and reads as "nothing happened".
+  // Save error shown inline in the edited row's Actions cell — the row stays in
+  // edit mode on failure, and the page-top banner lands off-screen on long tables
+  // and reads as "nothing happened". Success uses the standard corner toast.
   const [rowNotice, setRowNotice] = useState<{ id: number; text: string; tone: AlertTone } | null>(null);
 
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'arrivedAt', dir: 'desc' });
@@ -153,7 +155,7 @@ export default function AdminVisitsPage() {
         })
       });
       if (res.ok) {
-        setRowNotice({ id, text: "Visit updated successfully.", tone: "success" });
+        notifications.show({ color: "green", message: "Visit updated successfully." });
         setEditingVisitId(null);
         fetchVisits();
       } else {
@@ -238,10 +240,7 @@ export default function AdminVisitsPage() {
                       ) : <Text component="span" c="yellow">Active</Text>}
                     </Table.Td>
                     <Table.Td>
-                      <Stack gap={6}>
-                        <Button size="xs" fz={15} variant="light" onClick={() => handleEditClick(v)}>Edit</Button>
-                        <RowNotice notice={rowNotice} id={v.id} onClose={() => setRowNotice(null)} />
-                      </Stack>
+                      <Button size="xs" fz={15} variant="light" onClick={() => handleEditClick(v)}>Edit</Button>
                     </Table.Td>
                   </>
                 )}

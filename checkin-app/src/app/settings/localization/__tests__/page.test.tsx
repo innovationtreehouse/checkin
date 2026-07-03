@@ -2,11 +2,13 @@
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
-import { screen, fireEvent } from "@testing-library/react";
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
+import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import LocalizationSettingsPage from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 describe("LocalizationSettingsPage", () => {
     it("loads current settings and saves an update", async () => {
@@ -19,6 +21,6 @@ describe("LocalizationSettingsPage", () => {
         const saveButton = await screen.findByRole("button", { name: /save settings/i });
         fireEvent.click(saveButton);
 
-        expect(await screen.findByText("Settings saved.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Settings saved." })));
     });
 });
