@@ -223,25 +223,6 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         });
     }
 
-    // ponytail: deliberate deviation from SHOPIFY_DEV_STORE_WEBHOOK.md's O4 recommendation
-    // ("leave null, document manual setup") — a placeholder membership variant makes the
-    // dev Shopify orders/paid mock immediately clickable on a fresh DB, no settings-page
-    // detour first. Obviously-fake ids; upgrade path: once a real dev store exists, set
-    // real ids via Settings → Membership (update: {} leaves a hand-set value alone).
-    await prisma.boardSettings.upsert({
-        where: { id: 1 },
-        create: {
-            id: 1,
-            orgMembershipVariantId: "dev-mock-variant-normal",
-            shopifyNormalVariantId: "dev-mock-variant-normal",
-            shopifyVolunteerVariantId: "dev-mock-variant-volunteer",
-            volunteerDiscountCode: "DEV-VOLUNTEER",
-            normalDuesCents: 10000,
-            volunteerDuesCents: 2500,
-        },
-        update: {},
-    });
-
     console.log("🎉 Seed complete — 9 debug personas, tools, and a sample program are ready.");
 }
 

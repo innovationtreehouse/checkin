@@ -192,7 +192,7 @@ Same posture as Zoho:
 - **O1.** Do we already own a **Shopify Partner org**? Creating a dev store needs one (or merchant dev-permissions). If not, someone must create it — blocks §2. *(decision + owner needed)*
 - **O2.** Is **cloud-dev's URL stable** enough to hold a standing `orders/paid` subscription, or does it rotate on redeploy? If it rotates, cloud-dev also needs the Admin-API re-register helper from §3. *(needs infra answer)*
 - **O3.** **Build the mock (§6) first and defer the real store** — confirm this ordering. Recommendation: yes.
-- **O4.** Seed `BoardSettings` variant/discount: leave null + document manual one-time setup (recommended), or read from env? *(§2 note)* **Resolved otherwise:** implementation seeds obviously-fake placeholder ids (`dev-mock-variant-normal` / `-volunteer`, a placeholder discount code, non-zero dues) in `seedBaseline` (`src/lib/dev/seed-helpers.ts`) via an idempotent `upsert(..., update: {})`, so a fresh local DB has the in-process mock (§6) immediately clickable with zero manual setup. Deliberate deviation from the "leave null" recommendation above — real dev-store ids (once one exists) overwrite these via the Settings → Membership UI, same as prod.
+- **O4.** Seed `BoardSettings` variant/discount: leave null + document manual one-time setup (recommended), or read from env? *(§2 note)*
 - **O5.** Volunteer discount / per-process checkout token (#278) is still honor-system. A dev store lets us *test* the flow but doesn't fix the token gap — confirm that's out of scope here (it is; #278 tracks it).
 - **O6.** Bogus Gateway acceptable for all dev payment testing, or do we need a real (test-mode) gateway for any card-level fidelity? Bogus is almost certainly enough.
 

@@ -69,7 +69,7 @@ So "env wiring" = an **infra-repo change**, not an edit here:
 **This repo needs zero change for secret wiring** — getters already read `process.env`.
 > Exact Secrets Manager keys / task-def `secrets:` names live in the external infra repo — not visible from this checkout.
 
-`BoardSettings` variant/discount ids (O4): ~~leave null in seed; set once via [`settings/membership`](../../src/app/settings/membership/page.tsx) after the store exists. Matches how prod is configured. No seed change.~~ **Superseded:** `seedBaseline` now upserts placeholder ids (`dev-mock-variant-normal`/`-volunteer`, a placeholder discount code, non-zero dues) so the in-process mock is clickable with zero setup on a fresh DB — a deliberate deviation, called out inline in `seed-helpers.ts`. Real dev-store ids still overwrite these via `settings/membership` once a store exists.
+`BoardSettings` variant/discount ids (O4): leave null in seed; set once via [`settings/membership`](../../src/app/settings/membership/page.tsx) after the store exists. Matches how prod is configured. No seed change.
 
 ## Phase 5 — local = mock by default
 Locals keep the in-process mock (Phase 0). Tunnel (`cloudflared`/`ngrok` → callback `https://<random>.trycloudflare.com/api/webhooks/shopify`) is **opt-in only** for checkout-UI-fidelity work. A store has **one** `orders/paid` URL — cloud-dev owns it; sending locals to the mock removes subscription contention.
