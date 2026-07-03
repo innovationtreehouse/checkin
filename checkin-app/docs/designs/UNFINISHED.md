@@ -171,44 +171,6 @@ rename the stale-named `types/participant.ts`. _(VOCAB #8)_
 
 ---
 
-## 📖 Record-in-dictionary only (no code change)
-
-- **Certification levels** — full ladder (No Dot/Red/Green/Yellow/Blue/Tool
-  Certifier), color↔word synonyms, ranks, ages, DOF = "Defender of the Finger".
-- **Volunteer taxonomy** — Treehouse Volunteer umbrella + Volunteer Family (A+B),
-  Program Volunteer (C), attendance courtesy bucket (D). Never bare "volunteer".
-- **Supervision terms** — Tripod (3 Members ≥9yo, Observable & Interruptible),
-  Two Deep, Observable & Interruptible. ("dedicated" = attentive supervision;
-  ignore in code, not enforceable.)
-- **Attendance pipeline** — scan → RawBadgeLog → Visit → attendance; "check-in" =
-  action, "attendance" = view.
-- **Shop vs Facility** — distinct billable domains; shop = makerspace + tool
-  safety, facility = building/attendance.
-- **Program roles** — Program Leader / Program Volunteer. "Mentor" is NOT a
-  separate role (= Leader or Volunteer; program-specific "mentor" language is
-  external). "Core Volunteer" = the authorized subset who can run the program
-  (legal-authority rules are organizational, out of software scope). "Instructor"
-  is tool-only; "program instructor" banned.
-- **MembershipProcess = "application"** — an intake process, called "application"
-  because it includes a BG check and can be rejected.
-- **Integration vendors** — **Averity** (background check; aka "VERITY"), **Zoho**
-  (e-sign / import), **Shopify** (payment). Proper nouns, record for reference.
-- **Visitor vs `Visit`** — accepted near-collision (non-member person vs
-  attendance record); no rename.
-- **Declared Adult** (`isDeclaredAdult`) — self-asserted "25+", no DoB captured
-  (PII minimization); a subset of Adult (18+). 25 = age past which no program-run
-  restriction (Close-in-Age safe line).
-- **Membership Year** — canonical; Sept 1–Aug 31 policy dates, but
-  `membershipYearBoundary` stays configurable by design.
-- **Emergency Contact vs Trusted Adult** — intersecting, not identical; may be the
-  same person; don't merge. Emergency Contact = who we call; Trusted Adult = who
-  may pick up / transport / be alone with a child.
-- **Single facility** — check-in only at the one Treehouse Facility; multi-location
-  not on the roadmap (`RawBadgeLog.location` free-text is fine as-is).
-- **Treehouse Card** — any card on the Treehouse EIN (future financial rules).
-
----
-
 ## Considered and dismissed (no drift — recorded so we don't re-audit)
 
 - **RSVP** — `RSVP` / `RSVPStatus`; distinct from Visit (intent vs actual);
