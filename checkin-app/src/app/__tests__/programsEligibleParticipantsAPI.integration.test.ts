@@ -48,7 +48,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
 
         // Memberships live on the household now; scope cleanup to this test's households.
-        await prisma.membership.deleteMany({
+        await prisma.orgMembership.deleteMany({
              where: { householdId: { in: existingHouseholdIds } }
         });
 
@@ -89,7 +89,7 @@ describe('Eligible Participants API Integration Tests', () => {
                 name: 'Active Member Candidate',
                 household: {
                     create: {
-                        membership: {
+                        orgMembership: {
                             create: {
                                 status: 'ACTIVE',
                                 memberSince: new Date()
@@ -105,7 +105,7 @@ describe('Eligible Participants API Integration Tests', () => {
         const household = await prisma.household.create({
             data: {
                 name: 'Elig API Test Household',
-                membership: {
+                orgMembership: {
                     create: {
                         status: 'ACTIVE',
                         memberSince: new Date()
@@ -186,7 +186,7 @@ describe('Eligible Participants API Integration Tests', () => {
             ));
 
             if (testHouseholdIds.length > 0) {
-                await prisma.membership.deleteMany({
+                await prisma.orgMembership.deleteMany({
                      where: { householdId: { in: testHouseholdIds } }
                 });
             }

@@ -45,7 +45,7 @@ describe('Bulk import: preview vs commit consistency', () => {
 
     const cleanup = async () => {
         try {
-            await prisma.membership.deleteMany({});
+            await prisma.orgMembership.deleteMany({});
             await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({ where: { email: { contains: 'consist-import-test' } } });
             await prisma.person.deleteMany({ where: { name: { contains: 'Consist Import Test' } } });

@@ -48,22 +48,22 @@ export function buildMembershipCheckoutUrl(
 /**
  * Resolve the dues amount and the Shopify checkout link for a process in
  * PENDING_PAYMENT. The link is built from SHOPIFY_STORE_DOMAIN +
- * BoardSettings.membershipVariantId, with the volunteer discount code appended
+ * BoardSettings.orgMembershipVariantId, with the volunteer discount code appended
  * for volunteer households. If the store domain or variant isn't configured,
  * returns the amount with a null link.
  */
 export async function ensurePaymentLink(processId: number): Promise<{ amountCents: number; checkoutUrl: string | null }> {
-    const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+    const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!proc) throw new PaymentError("not_found", "Application not found.");
     if (proc.status !== "PENDING_PAYMENT") throw new PaymentError("wrong_phase", "This application is not awaiting payment.");
 
-    const membership = await prisma.membership.findUnique({ where: { id: proc.membershipId }, select: { isVolunteer: true } });
+    const membership = await prisma.orgMembership.findUnique({ where: { id: proc.orgMembershipId }, select: { isVolunteer: true } });
     if (!membership) throw new PaymentError("not_found", "Membership not found.");
 
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const amountCents = membership.isVolunteer ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
 
-    const variantId = settings?.membershipVariantId;
+    const variantId = settings?.orgMembershipVariantId;
     const storeDomain = config.shopifyStoreDomain();
     if (!variantId || !storeDomain) return { amountCents, checkoutUrl: null };
 
@@ -81,8 +81,8 @@ export async function ensurePaymentLink(processId: number): Promise<{ amountCent
 export async function ensurePaymentLinkForUser(userId: number) {
     const user = await prisma.person.findUnique({ where: { id: userId }, select: { householdId: true } });
     if (!user?.householdId) throw new PaymentError("not_found", "You are not in a household.");
-    const process = await prisma.membershipProcess.findFirst({
-        where: { membership: { householdId: user.householdId }, status: "PENDING_PAYMENT" },
+    const process = await prisma.orgMembershipProcess.findFirst({
+        where: { orgMembership: { householdId: user.householdId }, status: "PENDING_PAYMENT" },
         orderBy: { id: "desc" },
     });
     if (!process) throw new PaymentError("wrong_phase", "No application is awaiting payment.");
@@ -117,14 +117,14 @@ export async function activate(
     opts: { via: "payment" | "certified"; actorId?: number; shopifyOrderId?: string; hasMembershipItem?: boolean },
 ) {
     const result = await prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT id FROM "MembershipProcess" WHERE id = ${processId} FOR UPDATE`;
-        const process = await tx.membershipProcess.findUnique({ where: { id: processId } });
+        await tx.$queryRaw`SELECT id FROM "OrgMembershipProcess" WHERE id = ${processId} FOR UPDATE`;
+        const process = await tx.orgMembershipProcess.findUnique({ where: { id: processId } });
         if (!process) throw new PaymentError("not_found", "Application not found.");
         // Already recorded this payment (webhook retry) or already active → nothing to do.
         if (process.paidAt || process.status === "ACTIVE") {
             return { kind: "noop" as const };
         }
-        const membership = await tx.membership.findUnique({ where: { id: process.membershipId }, select: { householdId: true, isVolunteer: true } });
+        const membership = await tx.orgMembership.findUnique({ where: { id: process.orgMembershipId }, select: { householdId: true, isVolunteer: true } });
         if (!membership) throw new PaymentError("not_found", "Membership not found.");
 
         const now = new Date();
@@ -136,12 +136,12 @@ export async function activate(
         // Reject landed before the payment: record the payment but stay BLOCKED
         // (don't resurrect / don't bump stageEnteredAt) and flag for refund.
         if (process.status === "BLOCKED") {
-            await tx.membershipProcess.update({ where: { id: processId }, data: { paidAt: now, ...payMeta } });
+            await tx.orgMembershipProcess.update({ where: { id: processId }, data: { paidAt: now, ...payMeta } });
             await tx.auditLog.create({
                 data: {
                     actorId: opts.actorId ?? SYSTEM_ACTOR,
                     action: "EDIT",
-                    tableName: "MembershipProcess",
+                    tableName: "OrgMembershipProcess",
                     affectedEntityId: processId,
                     oldData: { status: "BLOCKED" },
                     newData: { status: "BLOCKED", via: opts.via, paid: true, refundNeeded: true },
@@ -180,7 +180,7 @@ export async function activate(
                 data: {
                     actorId: SYSTEM_ACTOR,
                     action: "EDIT",
-                    tableName: "MembershipProcess",
+                    tableName: "OrgMembershipProcess",
                     affectedEntityId: processId,
                     oldData: { status: "PENDING_PAYMENT" },
                     newData: { status: "PENDING_PAYMENT", via: opts.via, noMembershipItem: true, shopifyOrderId: opts.shopifyOrderId ?? null },
@@ -196,18 +196,18 @@ export async function activate(
         }
 
         const activating = !!process.bgClearedAt;
-        await tx.membershipProcess.update({
+        await tx.orgMembershipProcess.update({
             where: { id: processId },
             data: { paidAt: now, stageEnteredAt: now, ...payMeta, status: activating ? "ACTIVE" : "PENDING_BG_CLEARANCE" },
         });
         if (activating) {
-            await tx.membership.update({ where: { id: process.membershipId }, data: { status: "ACTIVE" } });
+            await tx.orgMembership.update({ where: { id: process.orgMembershipId }, data: { status: "ACTIVE" } });
         }
         await tx.auditLog.create({
             data: {
                 actorId: opts.actorId ?? SYSTEM_ACTOR,
                 action: "EDIT",
-                tableName: "MembershipProcess",
+                tableName: "OrgMembershipProcess",
                 affectedEntityId: processId,
                 oldData: { status: process.status },
                 newData: activating ? { status: "ACTIVE", via: opts.via } : { status: "PENDING_BG_CLEARANCE", via: opts.via, paid: true },
@@ -220,7 +220,7 @@ export async function activate(
     // the write, and only the call that actually recorded the change emits one.
     if (result.kind === "active") await sendCongrats(result.householdId);
     if (result.kind === "paid_while_blocked" || result.kind === "underpaid") await notifyBoardPaidReject(processId);
-    return prisma.membershipProcess.findUnique({ where: { id: processId } });
+    return prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
 }
 
 /** Board override: certify a payment plan and activate without a Shopify payment. */
@@ -230,7 +230,7 @@ export async function certifyPaymentPlan(processId: number, actorId: number) {
     // certifying an already-ACTIVE or still-in-review grant surfaces a 409
     // instead of a misleading success. activate()'s own conditional flip stays
     // idempotent for the webhook/self-serve callers.
-    const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+    const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new PaymentError("not_found", "Application not found.");
     if (process.status !== "PENDING_PAYMENT") throw new PaymentError("wrong_phase", "This application is not awaiting payment.");
     return activate(processId, { via: "certified", actorId });

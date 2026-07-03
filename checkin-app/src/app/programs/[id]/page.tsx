@@ -194,7 +194,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           let isMember = false;
           if (householdRes.ok) {
             const householdData = await householdRes.json();
-            isMember = householdData.household?.membership?.status === "ACTIVE" || false;
+            isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
           }
 
           const variantId = isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId;

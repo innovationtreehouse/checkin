@@ -17,7 +17,7 @@ interface Person {
 // Only the household leads (parents) are returned — children are never sent.
 interface QueueItem {
   id: number;
-  membership: { household: { name: string | null; leads: { participant: Person }[] } | null } | null;
+  orgMembership: { household: { name: string | null; leads: { participant: Person }[] } | null } | null;
   _count: { attestations: number };
 }
 
@@ -115,11 +115,11 @@ export default function MembershipReviewPage() {
       ) : (
         <Stack mt="md">
           {queue.map((item) => {
-            const parents = (item.membership?.household?.leads ?? []).map((l) => l.participant);
+            const parents = (item.orgMembership?.household?.leads ?? []).map((l) => l.participant);
             return (
             <Card key={item.id} withBorder radius="md" padding="lg">
               <Text fw={700} fz="lg">
-                {item.membership?.household?.name || `Household (application #${item.id})`}
+                {item.orgMembership?.household?.name || `Household (application #${item.id})`}
               </Text>
               <Text size="sm" c="dimmed" mt={4}>
                 {parents.length > 0

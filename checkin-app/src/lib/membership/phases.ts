@@ -1,4 +1,4 @@
-import type { MembershipProcess, MembershipProcessStatus } from "@/generated/prisma/client";
+import type { OrgMembershipProcess, OrgMembershipProcessStatus } from "@/generated/prisma/client";
 
 /**
  * Applicant-facing phases of an INITIAL membership application, in order.
@@ -12,7 +12,7 @@ import type { MembershipProcess, MembershipProcessStatus } from "@/generated/pri
  * (never shown as their own step).
  */
 export interface IntakePhase {
-    status: MembershipProcessStatus;
+    status: OrgMembershipProcessStatus;
     label: string;
     description: string;
 }
@@ -30,7 +30,7 @@ export const INITIAL_PHASES: IntakePhase[] = [
  * Member — payment shows complete, Member is the pending current step. BLOCKED
  * and other off-track statuses return -1 (handled with an inline alert).
  */
-export function stepperActiveIndex(status: MembershipProcessStatus | null): number {
+export function stepperActiveIndex(status: OrgMembershipProcessStatus | null): number {
     switch (status) {
         case "INTAKE": return 0;
         case "PENDING_EXTERNAL_ACTION": return 1;
@@ -47,7 +47,7 @@ export function stepperActiveIndex(status: MembershipProcessStatus | null): numb
  * part of the INITIAL flow. PENDING_BG_REVIEW is retained for any legacy rows;
  * the live flow uses PENDING_BG_CLEARANCE for the paid-awaiting-check state.
  */
-export const IN_FLIGHT_INITIAL_STATUSES: MembershipProcessStatus[] = [
+export const IN_FLIGHT_INITIAL_STATUSES: OrgMembershipProcessStatus[] = [
     "INTAKE",
     "PENDING_EXTERNAL_ACTION",
     "PENDING_BG_REVIEW",
@@ -63,7 +63,7 @@ export const IN_FLIGHT_INITIAL_STATUSES: MembershipProcessStatus[] = [
  * the button then 409. Highest id == most recent (autoincrement). Returns
  * undefined when nothing is awaiting action — callers guard for that.
  */
-export function latestPendingExternal<T extends Pick<MembershipProcess, "id" | "status">>(
+export function latestPendingExternal<T extends Pick<OrgMembershipProcess, "id" | "status">>(
     processes: T[] | null | undefined,
 ): T | undefined {
     return [...(processes ?? [])]

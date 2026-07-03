@@ -36,7 +36,7 @@ async function main() {
         });
 
         // Create membership
-        await prisma.membership.create({
+        await prisma.orgMembership.create({
             data: {
                 status: 'ACTIVE',
                 householdId: household.id

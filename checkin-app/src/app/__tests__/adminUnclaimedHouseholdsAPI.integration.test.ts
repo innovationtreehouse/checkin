@@ -25,7 +25,7 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
     let testClaimedHouseholdId: number;
 
     const cleanup = async () => {
-        await prisma.membership.deleteMany({});
+        await prisma.orgMembership.deleteMany({});
         await prisma.householdLead.deleteMany({
             where: { household: { name: { contains: 'Unclaimed API Test' } } }
         });

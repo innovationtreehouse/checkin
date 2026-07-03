@@ -37,9 +37,9 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
     let warning: string | undefined;
     const participant = await prisma.person.findFirst({
         where: { email: { equals: email, mode: "insensitive" } },
-        select: { household: { select: { membership: { select: { status: true, isVolunteer: true } } } } },
+        select: { household: { select: { orgMembership: { select: { status: true, isVolunteer: true } } } } },
     });
-    const m = participant?.household?.membership;
+    const m = participant?.household?.orgMembership;
     if (m?.status === "ACTIVE" && !m.isVolunteer) {
         warning = "Heads up: this email already has an active full-price membership. The system can't change that — this designation only applies to their next membership cycle.";
     }

@@ -1,4 +1,4 @@
-import type { MembershipStatus, Prisma } from "@/generated/prisma/client";
+import type { OrgMembershipStatus, Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 
 /**
@@ -10,7 +10,7 @@ import prisma from "@/lib/prisma";
  * through here so a child or second parent in an active household is honored.
  */
 export const ACTIVE_ORG_MEMBER_PERSON_WHERE: Prisma.PersonWhereInput = {
-    household: { membership: { status: "ACTIVE" } },
+    household: { orgMembership: { status: "ACTIVE" } },
 };
 
 /**
@@ -20,7 +20,7 @@ export const ACTIVE_ORG_MEMBER_PERSON_WHERE: Prisma.PersonWhereInput = {
  * without an extra round-trip.
  */
 export const ACTIVE_ORG_MEMBER_INCLUDE = {
-    household: { include: { membership: true } },
+    household: { include: { orgMembership: true } },
 } satisfies Prisma.PersonInclude;
 
 /**
@@ -43,9 +43,9 @@ export async function isActiveOrgMember(personId: number): Promise<boolean> {
  * membership; a missing household or membership reads as "not an org member".
  */
 export function personRecordIsActiveOrgMember(p: {
-    household?: { membership?: { status: MembershipStatus } | null } | null;
+    household?: { orgMembership?: { status: OrgMembershipStatus } | null } | null;
 }): boolean {
-    return p.household?.membership?.status === "ACTIVE";
+    return p.household?.orgMembership?.status === "ACTIVE";
 }
 
 /**
@@ -57,7 +57,7 @@ export function personRecordIsActiveOrgMember(p: {
  * it so a board "Deny Membership" action takes effect for every member of the household.
  */
 export function orgMembershipStatusBlocksLogin(
-    status: MembershipStatus | null | undefined,
+    status: OrgMembershipStatus | null | undefined,
 ): boolean {
     return status === "DENIED";
 }

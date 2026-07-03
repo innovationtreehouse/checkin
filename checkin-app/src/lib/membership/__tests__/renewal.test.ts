@@ -13,8 +13,8 @@ jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
         person: { findFirst: jest.fn() },
-        membershipProcess: { findUnique: jest.fn() },
-        membership: { findUnique: jest.fn() },
+        orgMembershipProcess: { findUnique: jest.fn() },
+        orgMembership: { findUnique: jest.fn() },
         boardSettings: { findUnique: jest.fn() },
     },
 }));
@@ -69,7 +69,7 @@ describe('householdBgIsFresh', () => {
 
 describe('beginRenewal', () => {
     it('throws RenewalError wrong_phase when the process is not PENDING_RENEWAL', async () => {
-        prisma.membershipProcess.findUnique.mockResolvedValue({ id: 5, status: 'PENDING_PAYMENT', membershipId: 9 });
+        prisma.orgMembershipProcess.findUnique.mockResolvedValue({ id: 5, status: 'PENDING_PAYMENT', orgMembershipId: 9 });
 
         await expect(beginRenewal(5)).rejects.toMatchObject({
             name: 'RenewalError',
@@ -79,7 +79,7 @@ describe('beginRenewal', () => {
     });
 
     it('throws RenewalError not_found when the process does not exist', async () => {
-        prisma.membershipProcess.findUnique.mockResolvedValue(null);
+        prisma.orgMembershipProcess.findUnique.mockResolvedValue(null);
         await expect(beginRenewal(5)).rejects.toMatchObject({ code: 'not_found' });
     });
 });

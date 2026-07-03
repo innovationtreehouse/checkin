@@ -51,7 +51,7 @@ type HouseholdData = {
   name?: string;
   leads?: Array<{ personId: number }>;
   householdMembers?: HouseholdMember[];
-  membership?: { status?: string; memberSince?: string; isVolunteer?: boolean } | null;
+  orgMembership?: { status?: string; memberSince?: string; isVolunteer?: boolean } | null;
 } & Partial<StructuredAddress> | null;
 
 const blankContactForm = { id: null as number | null, name: "", phone: "", email: "", relationship: "" };
@@ -350,11 +350,11 @@ export default function HouseholdPage() {
           <Title order={1} mb="md">{household?.name || 'My Household'}</Title>
 
           {household && (
-            household.membership?.status === 'ACTIVE' ? (
+            household.orgMembership?.status === 'ACTIVE' ? (
               <Alert color="green" mb="lg">
                 <Group gap="xs" wrap="wrap">
-                  <Text fw={600}>✓ Member{household.membership.memberSince ? ` since ${formatDate(household.membership.memberSince)}` : ''}</Text>
-                  {household.membership.isVolunteer && <Badge color="green" variant="light">Volunteer-only family</Badge>}
+                  <Text fw={600}>✓ Member{household.orgMembership.memberSince ? ` since ${formatDate(household.orgMembership.memberSince)}` : ''}</Text>
+                  {household.orgMembership.isVolunteer && <Badge color="green" variant="light">Volunteer-only family</Badge>}
                 </Group>
               </Alert>
             ) : (

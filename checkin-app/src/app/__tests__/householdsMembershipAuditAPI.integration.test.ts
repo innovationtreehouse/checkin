@@ -54,7 +54,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
             data: { email: `active-${TAG}@example.com`, name: 'Active Member', household: { create: {} } },
         });
         activeHouseholdId = active.householdId;
-        await prisma.membership.create({ data: { householdId: activeHouseholdId, status: 'ACTIVE' } });
+        await prisma.orgMembership.create({ data: { householdId: activeHouseholdId, status: 'ACTIVE' } });
     });
 
     afterAll(async () => {
@@ -62,7 +62,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
             where: { email: { contains: TAG } }, select: { id: true, householdId: true },
         });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: ids.map(u => u.id) } } });
-        await prisma.membership.deleteMany({ where: { householdId: { in: ids.map(u => u.householdId) } } });
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids.map(u => u.householdId) } } });
         await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
         await prisma.household.deleteMany({ where: { id: { in: ids.map(u => u.householdId) } } });
     });
@@ -73,11 +73,11 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         const res = await post({ householdId: inactiveHouseholdId, active: true });
         expect(res.status).toBe(200);
 
-        const membership = await prisma.membership.findUnique({ where: { householdId: inactiveHouseholdId } });
+        const membership = await prisma.orgMembership.findUnique({ where: { householdId: inactiveHouseholdId } });
         expect(membership?.status).toBe('ACTIVE');
 
         const audit = await prisma.auditLog.findFirst({
-            where: { actorId: boardId, tableName: 'Membership', affectedEntityId: membership!.id },
+            where: { actorId: boardId, tableName: 'OrgMembership', affectedEntityId: membership!.id },
             orderBy: { id: 'desc' },
         });
         expect(audit).not.toBeNull();
@@ -91,11 +91,11 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         const res = await post({ householdId: activeHouseholdId, active: false });
         expect(res.status).toBe(200);
 
-        const membership = await prisma.membership.findUnique({ where: { householdId: activeHouseholdId } });
+        const membership = await prisma.orgMembership.findUnique({ where: { householdId: activeHouseholdId } });
         expect(membership?.status).toBe('REVOKED');
 
         const audit = await prisma.auditLog.findFirst({
-            where: { actorId: boardId, tableName: 'Membership', affectedEntityId: membership!.id },
+            where: { actorId: boardId, tableName: 'OrgMembership', affectedEntityId: membership!.id },
             orderBy: { id: 'desc' },
         });
         expect(audit).not.toBeNull();

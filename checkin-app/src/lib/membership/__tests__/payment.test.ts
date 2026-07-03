@@ -13,8 +13,8 @@ import { activate, activateByProcessId } from '@/lib/membership/payment';
 
 jest.mock('@/lib/prisma', () => {
     const mock = {
-        membershipProcess: { findUnique: jest.fn(), update: jest.fn() },
-        membership: { findUnique: jest.fn(), update: jest.fn() },
+        orgMembershipProcess: { findUnique: jest.fn(), update: jest.fn() },
+        orgMembership: { findUnique: jest.fn(), update: jest.fn() },
         boardSettings: { findUnique: jest.fn() },
         auditLog: { create: jest.fn() },
         householdLead: { findMany: jest.fn().mockResolvedValue([]) },
@@ -39,18 +39,18 @@ const MEMBERSHIP_ID = 9;
 beforeEach(() => {
     jest.clearAllMocks();
     prisma.boardSettings.findUnique.mockResolvedValue({ normalDuesCents: 10000, volunteerDuesCents: 2500 });
-    prisma.membership.findUnique.mockResolvedValue({ householdId: 3, isVolunteer: false });
+    prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 3, isVolunteer: false });
 });
 
 it('does NOT activate a PENDING_PAYMENT process when the order has no membership item', async () => {
-    prisma.membershipProcess.findUnique.mockResolvedValue({
-        id: PROCESS_ID, status: 'PENDING_PAYMENT', paidAt: null, bgClearedAt: null, membershipId: MEMBERSHIP_ID,
+    prisma.orgMembershipProcess.findUnique.mockResolvedValue({
+        id: PROCESS_ID, status: 'PENDING_PAYMENT', paidAt: null, bgClearedAt: null, orgMembershipId: MEMBERSHIP_ID,
     });
 
     await activateByProcessId(PROCESS_ID, 'order-1', false);
 
-    expect(prisma.membershipProcess.update).not.toHaveBeenCalled();
-    expect(prisma.membership.update).not.toHaveBeenCalled();
+    expect(prisma.orgMembershipProcess.update).not.toHaveBeenCalled();
+    expect(prisma.orgMembership.update).not.toHaveBeenCalled();
     expect(notifyBoardPaidReject).toHaveBeenCalledWith(PROCESS_ID);
     expect(prisma.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -62,16 +62,16 @@ it('does NOT activate a PENDING_PAYMENT process when the order has no membership
 });
 
 it('activates a PENDING_PAYMENT process when the order contains the membership item', async () => {
-    prisma.membershipProcess.findUnique.mockResolvedValue({
-        id: PROCESS_ID, status: 'PENDING_PAYMENT', paidAt: null, bgClearedAt: new Date(), membershipId: MEMBERSHIP_ID,
+    prisma.orgMembershipProcess.findUnique.mockResolvedValue({
+        id: PROCESS_ID, status: 'PENDING_PAYMENT', paidAt: null, bgClearedAt: new Date(), orgMembershipId: MEMBERSHIP_ID,
     });
 
     await activateByProcessId(PROCESS_ID, 'order-2', true);
 
-    expect(prisma.membershipProcess.update).toHaveBeenCalledWith(
+    expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'ACTIVE' }) }),
     );
-    expect(prisma.membership.update).toHaveBeenCalledWith(
+    expect(prisma.orgMembership.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: MEMBERSHIP_ID }, data: { status: 'ACTIVE' } }),
     );
     expect(notifyBoardPaidReject).not.toHaveBeenCalled();
@@ -80,13 +80,13 @@ it('activates a PENDING_PAYMENT process when the order contains the membership i
 it('a certified (board) activation is exempt from the membership-item check', async () => {
     // certifyPaymentPlan never has a Shopify order to check (via !== "payment"),
     // so it activates even though no hasMembershipItem is passed at all.
-    prisma.membershipProcess.findUnique.mockResolvedValue({
-        id: PROCESS_ID, status: 'PENDING_PAYMENT', paidAt: null, bgClearedAt: new Date(), membershipId: MEMBERSHIP_ID,
+    prisma.orgMembershipProcess.findUnique.mockResolvedValue({
+        id: PROCESS_ID, status: 'PENDING_PAYMENT', paidAt: null, bgClearedAt: new Date(), orgMembershipId: MEMBERSHIP_ID,
     });
 
     await activate(PROCESS_ID, { via: 'certified', actorId: 1 });
 
-    expect(prisma.membershipProcess.update).toHaveBeenCalledWith(
+    expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'ACTIVE' }) }),
     );
     expect(notifyBoardPaidReject).not.toHaveBeenCalled();

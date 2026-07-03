@@ -74,11 +74,11 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         // configured membership variant id(s) — seed one so the routing test
         // below can prove a matching order activates.
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-        prevMembershipVariantId = existing?.membershipVariantId ?? null;
+        prevMembershipVariantId = existing?.orgMembershipVariantId ?? null;
         await prisma.boardSettings.upsert({
             where: { id: 1 },
-            create: { id: 1, membershipVariantId: MEMBERSHIP_VARIANT_ID },
-            update: { membershipVariantId: MEMBERSHIP_VARIANT_ID },
+            create: { id: 1, orgMembershipVariantId: MEMBERSHIP_VARIANT_ID },
+            update: { orgMembershipVariantId: MEMBERSHIP_VARIANT_ID },
         });
     });
 
@@ -88,7 +88,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     });
 
     afterAll(async () => {
-        await prisma.boardSettings.update({ where: { id: 1 }, data: { membershipVariantId: prevMembershipVariantId } });
+        await prisma.boardSettings.update({ where: { id: 1 }, data: { orgMembershipVariantId: prevMembershipVariantId } });
         await prisma.integrationErrorLog.deleteMany({ where: { source: 'shopify-webhook' } });
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.delete({ where: { id: programId } });

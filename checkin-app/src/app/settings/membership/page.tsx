@@ -10,8 +10,8 @@ import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvid
 interface Settings {
   normalDuesCents: number;
   volunteerDuesCents: number;
-  membershipYearBoundary: string | null;
-  membershipVariantId: string | null;
+  orgMembershipYearBoundary: string | null;
+  orgMembershipVariantId: string | null;
   volunteerDiscountCode: string | null;
   bgRecheckMonths: number;
 }
@@ -64,8 +64,8 @@ export default function MembershipSettingsPage() {
           normalDues: dollars(settings.normalDuesCents),
           volunteerDues: dollars(settings.volunteerDuesCents),
           bgRecheckMonths: String(settings.bgRecheckMonths ?? 0),
-          boundary: settings.membershipYearBoundary ? settings.membershipYearBoundary.slice(0, 10) : "",
-          variantId: settings.membershipVariantId ?? "",
+          boundary: settings.orgMembershipYearBoundary ? settings.orgMembershipYearBoundary.slice(0, 10) : "",
+          variantId: settings.orgMembershipVariantId ?? "",
           discountCode: settings.volunteerDiscountCode ?? "",
         };
         setNormalDues(snap.normalDues);
@@ -93,10 +93,10 @@ export default function MembershipSettingsPage() {
         body: JSON.stringify({
           normalDuesCents: Math.round(parseFloat(normalDues || "0") * 100),
           volunteerDuesCents: Math.round(parseFloat(volunteerDues || "0") * 100),
-          membershipVariantId: variantId.trim() || null,
+          orgMembershipVariantId: variantId.trim() || null,
           volunteerDiscountCode: discountCode.trim() || null,
           bgRecheckMonths: Math.round(parseInt(bgRecheckMonths || "0", 10)),
-          ...(boundaryUnlocked ? { membershipYearBoundary: boundary || null } : {}),
+          ...(boundaryUnlocked ? { orgMembershipYearBoundary: boundary || null } : {}),
         }),
       });
       if (res.ok) { flash("Settings saved."); setBoundaryUnlocked(false); await load(); }

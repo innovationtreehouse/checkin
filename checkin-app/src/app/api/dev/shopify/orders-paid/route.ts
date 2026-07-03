@@ -36,7 +36,7 @@ export const POST = withAuth({}, async (req, auth) => {
     // the membership product (#624/H2). The mock must echo a configured variant id
     // or the webhook lands as a no-membership-item anomaly, not an activation.
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const variantId = settings?.membershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId;
+    const variantId = settings?.orgMembershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId;
     if (!variantId) {
         return apiError("No membership variant configured. Set one in Settings → Membership first (design §2, O4a).", 409);
     }
@@ -64,6 +64,6 @@ export const POST = withAuth({}, async (req, auth) => {
 
     // Report the resulting status so the tool can show whether it activated, held
     // for background clearance, etc. (the webhook itself always 200s to Shopify).
-    const proc = await prisma.membershipProcess.findUnique({ where: { id: processId }, select: { status: true } });
+    const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId }, select: { status: true } });
     return NextResponse.json({ ok: true, status: proc?.status ?? null });
 });

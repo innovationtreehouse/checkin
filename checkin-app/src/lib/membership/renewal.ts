@@ -46,17 +46,17 @@ function monthsBefore(date: Date, months: number): Date {
  */
 export async function runRenewalSweep(now: Date) {
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    if (!settings?.membershipYearBoundary) {
+    if (!settings?.orgMembershipYearBoundary) {
         return { opened: 0, skipped: 0, reason: "no membership-year boundary configured" };
     }
 
-    const boundary = nextBoundary(settings.membershipYearBoundary, now);
+    const boundary = nextBoundary(settings.orgMembershipYearBoundary, now);
     const windowStart = monthsBefore(boundary, RENEWAL_LEAD_MONTHS);
     if (now.getTime() < windowStart.getTime()) {
         return { opened: 0, skipped: 0, reason: "not yet within renewal window" };
     }
 
-    const memberships = await prisma.membership.findMany({
+    const memberships = await prisma.orgMembership.findMany({
         where: { status: "ACTIVE" },
         // "Already open" = an in-flight RENEWAL by status (matches the partial unique
         // index + openRenewalsForAllActive), not the leakier createdAt window.
@@ -80,14 +80,14 @@ export async function runRenewalSweep(now: Date) {
  * from PENDING_RENEWAL.
  */
 export async function beginRenewal(processId: number) {
-    const process = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+    const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new RenewalError("not_found", "Renewal not found.");
     if (process.status !== "PENDING_RENEWAL") throw new RenewalError("wrong_phase", "This renewal is not awaiting your confirmation.");
 
-    const membership = await prisma.membership.findUnique({ where: { id: process.membershipId }, select: { householdId: true } });
+    const membership = await prisma.orgMembership.findUnique({ where: { id: process.orgMembershipId }, select: { householdId: true } });
     if (!membership) throw new RenewalError("not_found", "Membership not found.");
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const boundary = settings?.membershipYearBoundary ? nextBoundary(settings.membershipYearBoundary, new Date()) : new Date();
+    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();
     const bgFresh = await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0);
 
     const nextStatus = bgFresh ? "PENDING_PAYMENT" : "RENEWAL_PENDING_BG";
@@ -98,17 +98,17 @@ export async function beginRenewal(processId: number) {
     // consent step / reviewer queue for a fresh renewal). Without this the renewal
     // pays and parks at PENDING_BG_CLEARANCE forever. Re-review renewals
     // (RENEWAL_PENDING_BG) get bgClearedAt from clearBackgroundCheck instead.
-    const { count } = await prisma.membershipProcess.updateMany({
+    const { count } = await prisma.orgMembershipProcess.updateMany({
         where: { id: processId, status: "PENDING_RENEWAL" },
         data: { status: nextStatus, stageEnteredAt: new Date(), ...(bgFresh ? { bgClearedAt: new Date() } : {}) },
     });
     if (count === 1) {
         await prisma.auditLog.create({
-            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "MembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: nextStatus, ...(bgFresh ? { bgClearedAt: true } : {}) } },
+            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: nextStatus, ...(bgFresh ? { bgClearedAt: true } : {}) } },
         });
         if (nextStatus === "RENEWAL_PENDING_BG") await notifyReviewers();
     }
-    return prisma.membershipProcess.findUniqueOrThrow({ where: { id: processId } });
+    return prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id: processId } });
 }
 
 /**
@@ -123,34 +123,34 @@ export async function beginRenewal(processId: number) {
  * integration test DBs don't have it). The index stays as defense-in-depth and the
  * P2002 catch as a backstop. Returns null when this call lost the race.
  */
-export async function createRenewalProcess(membershipId: number, householdId: number, now: Date, opts: { remind: boolean; boundary: Date }) {
+export async function createRenewalProcess(orgMembershipId: number, householdId: number, now: Date, opts: { remind: boolean; boundary: Date }) {
     let process;
     try {
         process = await prisma.$transaction(async (tx) => {
             // Lock the membership row so overlapping opens serialize here, not at the INSERT.
-            await tx.$queryRaw`SELECT id FROM "Membership" WHERE id = ${membershipId} FOR UPDATE`;
-            const existing = await tx.membershipProcess.findFirst({
-                where: { membershipId, kind: "RENEWAL", status: { in: ["PENDING_RENEWAL", "RENEWAL_PENDING_BG", "PENDING_PAYMENT"] } },
+            await tx.$queryRaw`SELECT id FROM "OrgMembership" WHERE id = ${orgMembershipId} FOR UPDATE`;
+            const existing = await tx.orgMembershipProcess.findFirst({
+                where: { orgMembershipId, kind: "RENEWAL", status: { in: ["PENDING_RENEWAL", "RENEWAL_PENDING_BG", "PENDING_PAYMENT"] } },
                 select: { id: true },
             });
             if (existing) return null; // someone else already opened the renewal
-            const created = await tx.membershipProcess.create({
-                data: { membershipId, kind: "RENEWAL", status: "PENDING_RENEWAL", renewalReminderSentAt: opts.remind ? now : null },
+            const created = await tx.orgMembershipProcess.create({
+                data: { orgMembershipId, kind: "RENEWAL", status: "PENDING_RENEWAL", renewalReminderSentAt: opts.remind ? now : null },
             });
             await tx.auditLog.create({
-                data: { actorId: SYSTEM_ACTOR, action: "CREATE", tableName: "MembershipProcess", affectedEntityId: created.id, newData: { kind: "RENEWAL", status: "PENDING_RENEWAL" } },
+                data: { actorId: SYSTEM_ACTOR, action: "CREATE", tableName: "OrgMembershipProcess", affectedEntityId: created.id, newData: { kind: "RENEWAL", status: "PENDING_RENEWAL" } },
             });
             return created;
         });
     } catch (e) {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-            logger.info("Renewal already in flight for membership %d — concurrent open, skipping", membershipId);
+            logger.info("Renewal already in flight for membership %d — concurrent open, skipping", orgMembershipId);
             return null;
         }
         throw e;
     }
     if (!process) {
-        logger.info("Renewal already in flight for membership %d — concurrent open, skipping", membershipId);
+        logger.info("Renewal already in flight for membership %d — concurrent open, skipping", orgMembershipId);
         return null;
     }
     if (opts.remind) await remindHousehold(householdId, opts.boundary);
@@ -165,9 +165,9 @@ export async function createRenewalProcess(membershipId: number, householdId: nu
  */
 export async function openRenewalsForAllActive(now: Date, opts: { sendReminders?: boolean } = {}) {
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const boundary = settings?.membershipYearBoundary ? nextBoundary(settings.membershipYearBoundary, now) : now;
+    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, now) : now;
 
-    const memberships = await prisma.membership.findMany({
+    const memberships = await prisma.orgMembership.findMany({
         where: { status: "ACTIVE" },
         select: {
             id: true,
@@ -190,8 +190,8 @@ export async function openRenewalsForAllActive(now: Date, opts: { sendReminders?
 export async function beginRenewalForUser(userId: number) {
     const user = await prisma.person.findUnique({ where: { id: userId }, select: { householdId: true } });
     if (!user?.householdId) throw new RenewalError("not_found", "You are not in a household.");
-    const process = await prisma.membershipProcess.findFirst({
-        where: { membership: { householdId: user.householdId }, status: "PENDING_RENEWAL" },
+    const process = await prisma.orgMembershipProcess.findFirst({
+        where: { orgMembership: { householdId: user.householdId }, status: "PENDING_RENEWAL" },
         orderBy: { id: "desc" },
     });
     if (!process) throw new RenewalError("wrong_phase", "No renewal is awaiting your confirmation.");

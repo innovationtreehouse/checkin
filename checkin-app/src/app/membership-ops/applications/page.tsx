@@ -26,7 +26,7 @@ interface ProcessRow {
   bgClearedAt: string | null;
   paidAt: string | null;
   attestations: Attestation[];
-  membership: {
+  orgMembership: {
     householdId: number;
     isVolunteer: boolean;
     household: { name: string | null; householdMembers: Person[]; leads: { personId: number }[] } | null;
@@ -159,11 +159,11 @@ export default function AdminMembershipPage() {
   };
 
   const householdLabel = (r: ProcessRow) => {
-    const hh = r.membership?.household;
-    if (!hh) return `Household #${r.membership?.householdId ?? "?"}`;
+    const hh = r.orgMembership?.household;
+    if (!hh) return `Household #${r.orgMembership?.householdId ?? "?"}`;
     const leadIds = new Set((hh.leads || []).map((l) => l.personId));
     const parents = (hh.householdMembers || []).filter((p) => leadIds.has(p.id)).map((p) => p.name || p.email).filter(Boolean);
-    return hh.name || parents.join(" & ") || `Household #${r.membership?.householdId}`;
+    return hh.name || parents.join(" & ") || `Household #${r.orgMembership?.householdId}`;
   };
 
   const statusCounts = rows.reduce<Record<string, number>>((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
@@ -211,7 +211,7 @@ export default function AdminMembershipPage() {
                   <Text fw={700} fz="lg">{householdLabel(r)}</Text>
                   <Text size="xs" c="dimmed">
                     {r.kind} · application #{r.id}
-                    {r.membership?.isVolunteer && <Text component="span" c="green"> · volunteer</Text>}
+                    {r.orgMembership?.isVolunteer && <Text component="span" c="green"> · volunteer</Text>}
                   </Text>
                 </div>
                 <Badge color={statusColor(r.status)}>{statusLabel(r.status)}</Badge>

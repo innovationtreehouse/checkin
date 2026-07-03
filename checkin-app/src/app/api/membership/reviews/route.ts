@@ -32,12 +32,12 @@ const STATUS_FOR: Record<ReviewError["code"], number> = {
 export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
     if (auth.type !== "session") throw unauthorized();
     const ids = await eligibleReviewProcessIds(auth.user.id);
-    const queue = await prisma.membershipProcess.findMany({
+    const queue = await prisma.orgMembershipProcess.findMany({
         where: { id: { in: ids } },
         orderBy: { stageEnteredAt: "asc" },
         select: {
             id: true,
-            membership: {
+            orgMembership: {
                 select: {
                     household: {
                         select: {
@@ -50,7 +50,7 @@ export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
             _count: { select: { attestations: true } },
         },
     });
-    return { MembershipProcess: queue };
+    return { OrgMembershipProcess: queue };
 });
 
 // POST /api/membership/reviews — submit an attestation { processId, result, isMarkedVolunteer }.

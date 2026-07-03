@@ -61,16 +61,16 @@ export const classifications = {
         householdId: 'public',
         personId: 'public',
     },
-    Membership: {
+    OrgMembership: {
         id: 'public',
         memberSince: 'public',
         status: 'public',
         isVolunteer: 'public',
         householdId: 'public',
     },
-    MembershipProcess: {
+    OrgMembershipProcess: {
         id: 'public',
-        membershipId: 'public',
+        orgMembershipId: 'public',
         kind: 'public',
         status: 'internal',
         stageEnteredAt: 'internal',
@@ -105,11 +105,11 @@ export const classifications = {
         id: 'public',
         normalDuesCents: 'public',
         volunteerDuesCents: 'public',
-        membershipYearBoundary: 'public',
-        membershipVariantId: 'internal',
+        orgMembershipYearBoundary: 'public',
+        orgMembershipVariantId: 'internal',
         volunteerDiscountCode: 'internal',
         bgRecheckMonths: 'public',
-        shopifyMembershipProductId: 'internal',
+        shopifyOrgMembershipProductId: 'internal',
         shopifyNormalVariantId: 'internal',
         shopifyVolunteerVariantId: 'internal',
         shopifyPriceSyncedAt: 'internal',
@@ -353,7 +353,7 @@ export const relations = {
     Household: {
         householdMembers: { model: 'Person', isList: true },
         leads: { model: 'HouseholdLead', isList: true },
-        membership: { model: 'Membership', isList: false },
+        orgMembership: { model: 'OrgMembership', isList: false },
         trustedAdults: { model: 'TrustedAdult', isList: true },
         emergencyContacts: { model: 'EmergencyContact', isList: true },
     },
@@ -364,16 +364,16 @@ export const relations = {
         household: { model: 'Household', isList: false },
         person: { model: 'Person', isList: false },
     },
-    Membership: {
+    OrgMembership: {
         household: { model: 'Household', isList: false },
-        processes: { model: 'MembershipProcess', isList: true },
+        processes: { model: 'OrgMembershipProcess', isList: true },
     },
-    MembershipProcess: {
-        membership: { model: 'Membership', isList: false },
+    OrgMembershipProcess: {
+        orgMembership: { model: 'OrgMembership', isList: false },
         attestations: { model: 'BackgroundCheckAttestation', isList: true },
     },
     BackgroundCheckAttestation: {
-        process: { model: 'MembershipProcess', isList: false },
+        process: { model: 'OrgMembershipProcess', isList: false },
         reviewer: { model: 'Person', isList: false },
     },
     VolunteerDesignation: {

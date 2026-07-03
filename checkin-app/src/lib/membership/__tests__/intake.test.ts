@@ -15,15 +15,15 @@ import { Prisma } from '@/generated/prisma/client';
 const txMembershipProcess = { findFirst: jest.fn(), create: jest.fn() };
 const txAuditLog = { create: jest.fn() };
 const txQueryRaw = jest.fn();
-const tx = { $queryRaw: txQueryRaw, membershipProcess: txMembershipProcess, auditLog: txAuditLog };
+const tx = { $queryRaw: txQueryRaw, orgMembershipProcess: txMembershipProcess, auditLog: txAuditLog };
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
         person: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
         household: { update: jest.fn() },
-        membership: { upsert: jest.fn() },
-        membershipProcess: { findFirst: jest.fn(), update: jest.fn() },
+        orgMembership: { upsert: jest.fn() },
+        orgMembershipProcess: { findFirst: jest.fn(), update: jest.fn() },
         boardSettings: { findUnique: jest.fn() },
         auditLog: { create: jest.fn() },
         $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
@@ -60,18 +60,18 @@ const user = {
     householdId: 7,
     isSysadmin: false,
     householdLeads: [{ householdId: 7 }],
-    household: { membership: null },
+    household: { orgMembership: null },
 };
 
 beforeEach(() => {
     jest.clearAllMocks();
     prisma.person.findUnique.mockResolvedValue(user);
-    prisma.membership.upsert.mockResolvedValue({ id: 42, householdId: 7, status: 'NONE' });
+    prisma.orgMembership.upsert.mockResolvedValue({ id: 42, householdId: 7, status: 'NONE' });
 });
 
 describe('startIntake race guard', () => {
     it('a second in-flight INITIAL start (existing found under the lock) returns the existing process, no duplicate create', async () => {
-        const existingProcess = { id: 99, membershipId: 42, kind: 'INITIAL', status: 'INTAKE' };
+        const existingProcess = { id: 99, orgMembershipId: 42, kind: 'INITIAL', status: 'INTAKE' };
         txMembershipProcess.findFirst.mockResolvedValue(existingProcess);
 
         const result = await startIntake(1);
@@ -86,14 +86,14 @@ describe('startIntake race guard', () => {
 
     it('no in-flight process → creates one INTAKE process + audit row inside the same transaction', async () => {
         txMembershipProcess.findFirst.mockResolvedValue(null);
-        const created = { id: 100, membershipId: 42, kind: 'INITIAL', status: 'INTAKE' };
+        const created = { id: 100, orgMembershipId: 42, kind: 'INITIAL', status: 'INTAKE' };
         txMembershipProcess.create.mockResolvedValue(created);
 
         const result = await startIntake(1);
 
         expect(result).toBe(created);
         expect(txMembershipProcess.create).toHaveBeenCalledWith({
-            data: { membershipId: 42, kind: 'INITIAL', status: 'INTAKE' },
+            data: { orgMembershipId: 42, kind: 'INITIAL', status: 'INTAKE' },
         });
         expect(txAuditLog.create).toHaveBeenCalledTimes(1);
     });
@@ -108,7 +108,7 @@ describe('startIntake race guard', () => {
     it('already_member: household membership is already ACTIVE', async () => {
         prisma.person.findUnique.mockResolvedValue({
             ...user,
-            household: { membership: { status: 'ACTIVE' } },
+            household: { orgMembership: { status: 'ACTIVE' } },
         });
 
         await expect(startIntake(1)).rejects.toMatchObject({ code: 'already_member' });
@@ -116,10 +116,10 @@ describe('startIntake race guard', () => {
     });
 
     it('P2002 race loser: the FOR UPDATE lock lost to a pre-fix instance, winner found on re-query', async () => {
-        const winner = { id: 101, membershipId: 42, kind: 'INITIAL', status: 'INTAKE' };
+        const winner = { id: 101, orgMembershipId: 42, kind: 'INITIAL', status: 'INTAKE' };
         const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '7.8.0' });
         prisma.$transaction.mockRejectedValueOnce(p2002);
-        prisma.membershipProcess.findFirst.mockResolvedValue(winner);
+        prisma.orgMembershipProcess.findFirst.mockResolvedValue(winner);
 
         const result = await startIntake(1);
 
@@ -129,7 +129,7 @@ describe('startIntake race guard', () => {
     it('P2002 race loser: no winner found on re-query rethrows the original error', async () => {
         const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '7.8.0' });
         prisma.$transaction.mockRejectedValueOnce(p2002);
-        prisma.membershipProcess.findFirst.mockResolvedValue(null);
+        prisma.orgMembershipProcess.findFirst.mockResolvedValue(null);
 
         await expect(startIntake(1)).rejects.toBe(p2002);
     });
@@ -171,7 +171,7 @@ describe('getIntakeState', () => {
                     { id: 2, name: 'Secondary', email: 's@x.com', dateOfBirth: null, allergies: 'peanuts' },
                     { id: 3, name: 'Kid', email: null, dateOfBirth: null, allergies: null },
                 ],
-                membership: {
+                orgMembership: {
                     status: 'NONE',
                     processes: [
                         { id: 10, kind: 'INITIAL', status: 'ACTIVE' },
@@ -206,7 +206,7 @@ describe('getIntakeState', () => {
                 name: 'H', line1: null, line2: null, city: null, state: null, postalCode: null,
                 leads: [{ personId: 1 }],
                 householdMembers: [{ id: 1, name: 'P', email: null, dateOfBirth: null, allergies: null }],
-                membership: { status: 'ACTIVE', processes: [{ id: 5, kind: 'INITIAL', status: 'ACTIVE' }] },
+                orgMembership: { status: 'ACTIVE', processes: [{ id: 5, kind: 'INITIAL', status: 'ACTIVE' }] },
                 emergencyContacts: [],
             },
         });
@@ -229,7 +229,7 @@ describe('saveIntake', () => {
             line1: null, line2: null, city: null, state: null, postalCode: null,
             leads: [{ personId: 1 }],
             householdMembers: [{ id: 1 }, { id: 4 }],
-            membership: null,
+            orgMembership: null,
             emergencyContacts: [],
         },
     };
@@ -345,20 +345,20 @@ describe('submitIntake', () => {
             line1: '1 Main St',
             emergencyContacts: [{ conflictParticipantId: null, name: 'Aunt May', phone: '555-555-2000' }],
             householdMembers: [{ id: 1, name: 'Primary' }],
-            membership: { processes: [{ id: 11, kind: 'INITIAL', status: 'INTAKE' }] },
+            orgMembership: { processes: [{ id: 11, kind: 'INITIAL', status: 'INTAKE' }] },
         },
     };
 
     beforeEach(() => {
         prisma.person.findUnique.mockResolvedValue(inFlightUser);
         prisma.boardSettings.findUnique.mockResolvedValue(null);
-        prisma.membershipProcess.update.mockResolvedValue({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
+        prisma.orgMembershipProcess.update.mockResolvedValue({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
     });
 
     it('no_process when there is no INTAKE-status INITIAL process', async () => {
         prisma.person.findUnique.mockResolvedValue({
             ...inFlightUser,
-            household: { ...inFlightUser.household, membership: { processes: [] } },
+            household: { ...inFlightUser.household, orgMembership: { processes: [] } },
         });
 
         await expect(submitIntake(1)).rejects.toMatchObject({ code: 'no_process' });
@@ -381,7 +381,7 @@ describe('submitIntake', () => {
 
         await submitIntake(1);
 
-        expect(prisma.membershipProcess.update).toHaveBeenCalledWith({
+        expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith({
             where: { id: 11 },
             data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
         });
@@ -392,7 +392,7 @@ describe('submitIntake', () => {
 
         const result = await submitIntake(1);
 
-        expect(prisma.membershipProcess.update).toHaveBeenCalledWith({
+        expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith({
             where: { id: 11 },
             data: expect.objectContaining({ status: 'PENDING_EXTERNAL_ACTION', bgClearedAt: expect.any(Date) }),
         });

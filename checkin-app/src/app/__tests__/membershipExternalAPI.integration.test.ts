@@ -55,9 +55,9 @@ describe('Membership EXTERNAL phase API', () => {
 
     async function makeProcess(name: string, envelopeId: string) {
         const hh = await prisma.household.create({ data: { name } });
-        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
-        const p = await prisma.membershipProcess.create({
-            data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION', zohoEnvelopeId: envelopeId },
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
+        const p = await prisma.orgMembershipProcess.create({
+            data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION', zohoEnvelopeId: envelopeId },
         });
         return { householdId: hh.id, processId: p.id };
     }
@@ -66,8 +66,8 @@ describe('Membership EXTERNAL phase API', () => {
         const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
-            await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
-            await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
@@ -110,7 +110,7 @@ describe('Membership EXTERNAL phase API', () => {
         asBoard(boardId);
         const res = await BOARD_EXTERNAL(boardReq({ processId: procA, action: 'mark-contract' }) as never);
         expect(res.status).toBe(200);
-        const p = await prisma.membershipProcess.findUnique({ where: { id: procA } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: procA } });
         expect(p?.contractSignedAt).not.toBeNull();
         expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
     });
@@ -119,7 +119,7 @@ describe('Membership EXTERNAL phase API', () => {
         asBoard(boardId);
         const res = await BOARD_EXTERNAL(boardReq({ processId: procA, action: 'mark-bg-consent' }) as never);
         expect(res.status).toBe(200);
-        const p = await prisma.membershipProcess.findUnique({ where: { id: procA } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: procA } });
         expect(p?.bgConsentAt).not.toBeNull();
         expect(p?.status).toBe('PENDING_PAYMENT');
     });
@@ -150,7 +150,7 @@ describe('Membership EXTERNAL phase API', () => {
     it('a valid completed Zoho webhook records the contract as signed', async () => {
         const res = await ZOHO_WEBHOOK(zohoReq({ requests: { request_id: 'zoho-B', request_status: 'completed' } }, SECRET));
         expect(res.status).toBe(200);
-        const p = await prisma.membershipProcess.findUnique({ where: { id: procB } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: procB } });
         expect(p?.contractSignedAt).not.toBeNull();
         // BG consent not yet given → still EXTERNAL.
         expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
@@ -171,7 +171,7 @@ describe('Membership EXTERNAL phase API', () => {
             process.env.ZOHO_WEBHOOK_SECRET = SECRET;
             process.env.CHECKIN_ENV = prevEnv;
         }
-        const p = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.contractSignedAt).toBeNull();
         expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
     });
@@ -181,11 +181,11 @@ describe('Membership EXTERNAL phase API', () => {
         const req = () => ZOHO_WEBHOOK(zohoReq({ requests: { request_id: 'zoho-D', request_status: 'completed' } }, SECRET));
         // Fresh process: the contract-signed webhook is the only thing that audits it.
         const auditCount = () =>
-            prisma.auditLog.count({ where: { tableName: 'MembershipProcess', affectedEntityId: processId } });
+            prisma.auditLog.count({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId } });
 
         const first = await req();
         expect(first.status).toBe(200);
-        const afterFirst = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const afterFirst = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(afterFirst?.contractSignedAt).not.toBeNull();
         expect(afterFirst?.status).toBe('PENDING_EXTERNAL_ACTION'); // no BG consent → stays EXTERNAL
         expect(await auditCount()).toBe(1);
@@ -193,7 +193,7 @@ describe('Membership EXTERNAL phase API', () => {
         // Zoho retries at-least-once: replay the identical signed payload.
         const second = await req();
         expect(second.status).toBe(200);
-        const afterSecond = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        const afterSecond = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         // State identical: same signed timestamp, same phase, no second audit row.
         expect(afterSecond?.contractSignedAt?.getTime()).toBe(afterFirst?.contractSignedAt?.getTime());
         expect(afterSecond?.status).toBe(afterFirst?.status);
@@ -211,7 +211,7 @@ describe('Membership EXTERNAL phase API', () => {
         asBoard(boardId);
         const res = await BOARD_EXTERNAL(boardReq({ processId: procB, action: 'set-envelope', envelopeId: 'zoho-B2' }) as never);
         expect(res.status).toBe(200);
-        const p = await prisma.membershipProcess.findUnique({ where: { id: procB } });
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: procB } });
         expect(p?.zohoEnvelopeId).toBe('zoho-B2');
     });
 
@@ -233,7 +233,7 @@ describe('Membership EXTERNAL phase API', () => {
         const ids = data.processes.map((p: { id: number }) => p.id);
         expect(ids).toEqual(expect.arrayContaining([procA, procB]));
         const a = data.processes.find((p: { id: number }) => p.id === procA);
-        expect(a.membership.householdId).toBe(hhA);
+        expect(a.orgMembership.householdId).toBe(hhA);
         expect(a.status).toBe('PENDING_PAYMENT');
     });
 });

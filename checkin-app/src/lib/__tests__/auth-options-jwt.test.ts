@@ -84,7 +84,7 @@ function dbParticipant(overrides: Record<string, unknown> = {}) {
         isBackgroundCheckReviewer: true,
         householdId: 99,
         toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
-        household: { membership: { status: 'ACTIVE' } },
+        household: { orgMembership: { status: 'ACTIVE' } },
         ...overrides,
     };
 }
@@ -113,7 +113,7 @@ describe('jwt() callback — revocation enforcement on refresh', () => {
 
     it('DENIED membership ⇒ denied=true and every role flag forced false', async () => {
         mockFindUnique.mockResolvedValue(
-            dbParticipant({ household: { membership: { status: 'DENIED' } } }),
+            dbParticipant({ household: { orgMembership: { status: 'DENIED' } } }),
         );
 
         const result = (await callRefresh({
