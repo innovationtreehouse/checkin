@@ -14,6 +14,7 @@ import {
     decideReview,
     renewTrustedAdult,
     withdrawTrustedAdult,
+    hideTrustedAdult,
     overrideReview,
     runExpirySweep,
 } from '@/lib/trusted-adult/service';
@@ -253,6 +254,27 @@ describe('Trusted Adults service', () => {
         const revokeAudit = await latestAudit(ta2.id);
         expect(revokeAudit?.actorId).toBe(boardId);
         expect(normalizeAuditData(revokeAudit?.newData)).toMatchObject({ status: 'REVOKED', override: 'revoke' });
+    });
+
+    it('hide only works on a withdrawn TA; sets hiddenAt so /mine filters it, and is idempotent', async () => {
+        const ta = await discloseOne();
+        // Not yet withdrawn — hide is refused, row stays visible.
+        await expect(hideTrustedAdult(ta.id, leadId)).rejects.toMatchObject({ code: 'wrong_phase' });
+
+        await withdrawTrustedAdult(ta.id, leadId);
+        const hidden = await hideTrustedAdult(ta.id, leadId);
+        expect(hidden.hiddenAt).toBeInstanceOf(Date);
+
+        // The record is KEPT, just flagged — /mine's `hiddenAt: null` filter drops it.
+        const still = await prisma.trustedAdult.findUnique({ where: { id: ta.id } });
+        expect(still?.hiddenAt).toBeInstanceOf(Date);
+
+        // Idempotent: hiding again returns without error or a second timestamp change.
+        const again = await hideTrustedAdult(ta.id, leadId);
+        expect(again.hiddenAt).toEqual(hidden.hiddenAt);
+
+        const audit = await latestAudit(ta.id);
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ hiddenAt: expect.anything() });
     });
 
     // overrideReview's defining job: force a terminal state regardless of the review's

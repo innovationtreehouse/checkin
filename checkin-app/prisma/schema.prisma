@@ -505,6 +505,11 @@ model TrustedAdult {
   createdAt                 DateTime           @default(now())
   /// @sensitivity:internal
   updatedAt                 DateTime           @updatedAt
+  /// When the household chose to permanently hide a withdrawn trusted adult from
+  /// their own view. The row is KEPT (board history / audit); the member-facing
+  /// /mine list filters it out. Board & sysadmin views still see it.
+  /// @sensitivity:internal
+  hiddenAt                  DateTime?
 
   reviews TrustedAdultReview[]
 
