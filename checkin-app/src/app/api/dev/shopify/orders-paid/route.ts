@@ -17,7 +17,10 @@ export const dynamic = "force-dynamic";
  * inbound webhook — so it exercises the same HMAC-verify → match-by-cart-attribute
  * → activate() path prod runs (mirrors the Zoho mock, ZOHO_SIGN_DEV_MOCK.md §4a).
  *
- * 404s whenever the mock isn't active — always in prod.
+ * 404s whenever the mock isn't active — always in prod. Also 404s a processId
+ * that doesn't exist or isn't PENDING_PAYMENT: the dev UI only ever lists
+ * PENDING_PAYMENT processes, so the API fails closed on anything else rather
+ * than firing a webhook for a process that was never awaiting payment.
  */
 export const POST = withAuth({}, async (req, auth) => {
     if (!config.shopifyMockActive()) return apiError("Not available", 404);
@@ -26,6 +29,11 @@ export const POST = withAuth({}, async (req, auth) => {
     const { processId } = await req.json().catch(() => ({ processId: undefined }));
     if (typeof processId !== "number" || !Number.isInteger(processId)) {
         return apiError("Missing or invalid processId", 400);
+    }
+
+    const existing = await prisma.orgMembershipProcess.findUnique({ where: { id: processId }, select: { status: true } });
+    if (!existing || existing.status !== "PENDING_PAYMENT") {
+        return apiError("Process not found or not awaiting payment", 404);
     }
 
     const secret = config.shopifyWebhookSecret();
