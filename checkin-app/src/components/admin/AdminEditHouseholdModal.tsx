@@ -87,7 +87,7 @@ export function AdminEditHouseholdModal({
         setLeadIds((h.householdLeads ?? []).map((l) => l.personId));
       }
     } catch {
-      notifications.show({ color: "red", message: "Failed to load household." });
+      notifications.show({ color: "red", message: "Failed to load household.", autoClose: false });
     }
   }, [householdId]);
 
@@ -118,10 +118,10 @@ export function AdminEditHouseholdModal({
         await loadHousehold();
       } else {
         const data = await res.json().catch(() => ({}));
-        notifications.show({ color: "red", message: data.error || "Failed to remove lead." });
+        notifications.show({ color: "red", message: data.error || "Failed to remove lead.", autoClose: false });
       }
     } catch {
-      notifications.show({ color: "red", message: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setRemovingLead(null);
     }
@@ -154,10 +154,10 @@ export function AdminEditHouseholdModal({
         onClose();
       } else {
         const data = await res.json().catch(() => ({}));
-        notifications.show({ color: "red", message: data.error || "Failed to update household." });
+        notifications.show({ color: "red", message: data.error || "Failed to update household.", autoClose: false });
       }
     } catch {
-      notifications.show({ color: "red", message: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }

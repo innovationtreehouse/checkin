@@ -60,10 +60,10 @@ export default function AdminHouseholdsPage() {
       if (res.ok) {
         fetchHouseholds();
       } else {
-        notifications.show({ color: 'red', message: 'Failed to update membership.' });
+        notifications.show({ color: 'red', message: 'Failed to update membership.', autoClose: false });
       }
     } catch {
-      notifications.show({ color: 'red', message: 'Network error.' });
+      notifications.show({ color: 'red', message: 'Network error.', autoClose: false });
     }
   };
 
@@ -90,10 +90,10 @@ export default function AdminHouseholdsPage() {
         fetchHouseholds();
       } else {
         const data = await res.json().catch(() => ({}));
-        notifications.show({ color: 'red', message: data.error || 'Failed to update membership.' });
+        notifications.show({ color: 'red', message: data.error || 'Failed to update membership.', autoClose: false });
       }
     } catch {
-      notifications.show({ color: 'red', message: 'Network error.' });
+      notifications.show({ color: 'red', message: 'Network error.', autoClose: false });
     }
   };
 

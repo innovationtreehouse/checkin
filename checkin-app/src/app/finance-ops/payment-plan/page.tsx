@@ -76,10 +76,10 @@ export default function PendingParticipantsPage() {
         notifyNavRefresh();
       } else {
         const data = await res.json();
-        notifications.show({ color: 'red', message: data.error || "Failed to approve." });
+        notifications.show({ color: 'red', message: data.error || "Failed to approve.", autoClose: false });
       }
     } catch {
-      notifications.show({ color: 'red', message: "Network error processing approval." });
+      notifications.show({ color: 'red', message: "Network error processing approval.", autoClose: false });
     }
   };
 

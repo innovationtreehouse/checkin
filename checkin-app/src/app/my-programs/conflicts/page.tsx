@@ -36,10 +36,10 @@ export default function ConflictsPage() {
         refresh();
         notifyNavRefresh();
       } else {
-        notifications.show({ color: "red", message: data.error || "Failed to delete visit." });
+        notifications.show({ color: "red", message: data.error || "Failed to delete visit.", autoClose: false });
       }
     } catch {
-      notifications.show({ color: "red", message: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setDeleting(null);
     }
