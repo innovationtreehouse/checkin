@@ -263,8 +263,7 @@ know the difference.
 
 ## Migration status
 
-The term-by-term migration plan lives in
-[designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md](designs/PARTICIPANT_TERMINOLOGY_PROPOSAL.md).
+The term-by-term migration is essentially complete (see the PR list below); remaining odds-and-ends live in [designs/UNFINISHED.md](designs/UNFINISHED.md).
 
 > **Pattern for big Prisma model renames** (learned from `Participant`→`Person`): a model rename is *atomic* — tsc is red until every accessor/type flips, so it can't merge half-done. Pull everything NOT tied to the model name (local types, then per-model FK renames — Prisma allows `person Participant @relation(fields:[personId])`) into small green PRs first, leaving a final purely-mechanical name flip. See git history #680–#708 (Person) and #735 (OrgMembership).
 
@@ -295,8 +294,8 @@ The term-by-term migration plan lives in
 
 **Related track (sibling audit, not one of the phases above):** Trusted Adult entity naming `counterparty*` → `trustedAdult*` — **shipped** (audit P2-2, #734). See the Trusted Adult entry above.
 
-## Known semantic bugs (see proposal §3)
+## Known semantic bugs
 
-- **BUG-1:** attendance/facility "student" is computed from age (`isYouth`), not enrollment — should be `youth`. Fixed in Phase 2.
-- **BUG-2:** `intake.ts` `children` bucket = every non-lead participant (really *dependents*, not offspring/age). Addressed in Phase 6.
+- **BUG-1:** attendance/facility "student" was computed from age (`isYouth`), not enrollment. **Fixed** (student→youth, #679).
+- **BUG-2:** `intake.ts` `children` bucket = every non-lead participant (really *dependents*, not offspring/age). Tracked in [designs/UNFINISHED.md](designs/UNFINISHED.md) (retire `dependent`).
 </content>

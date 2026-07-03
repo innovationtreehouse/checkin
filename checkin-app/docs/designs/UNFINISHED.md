@@ -225,3 +225,12 @@ _(was proposal Phase 6)_
   the two-deep / unaccompanied-youth banner depends on `adult = !isYouth`. Do NOT
   "enrollment-ify" these buckets. (The separate `facility/trends` age-proxy
   *metric* WAS a real bug and was fixed independently.)
+- **Security handler `{ Model: rows }` bag key vs `envelope`** — a stripper route
+  returns its rows keyed by the **model name** (that drives field-tier stripping in
+  `security/handler.ts`), then re-wraps under the route's `envelope` for the wire
+  (e.g. `/api/shop/org-members` → `{ org-members: [...] }`). The bag key reading
+  differently from the wire key is **intentional**, not a mismatch — do not "fix" it.
+- **`student` / `youth` == non-lead** — checked, **NOT** a logic conflation. It
+  lives only in vocabulary (`dependent` ≈ non-lead; old `student` ≈ minor);
+  promotion allows a non-lead **adult** → lead (`my-household`). Behavior preserves
+  the distinction. Recorded so nobody re-audits it as a bug.
