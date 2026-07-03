@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Group, Modal, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
+import { Alert, Button, Group, Modal, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconRobot, IconScan, IconSelector } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
@@ -37,6 +37,17 @@ const SourceIcon = ({ via }: { via?: VisitSource | null }) => {
   );
 };
 
+type RowNoticeState = { id: number; text: string; tone: AlertTone } | null;
+
+const RowNotice = ({ notice, id, onClose }: { notice: RowNoticeState; id: number; onClose: () => void }) => {
+  if (notice?.id !== id) return null;
+  return (
+    <Alert py={4} px="xs" color={notice.tone === 'success' ? 'green' : 'red'} variant="light" withCloseButton onClose={onClose}>
+      {notice.text}
+    </Alert>
+  );
+};
+
 type SortKey = 'id' | 'participant' | 'event' | 'arrivedAt' | 'departedAt';
 
 const sortValue = (v: Visit, key: SortKey): string | number => {
@@ -58,6 +69,9 @@ export default function AdminVisitsPage() {
 
   const [editingVisitId, setEditingVisitId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ arrivedAt: "", departedAt: "" });
+  // Save/error result shown inline in the edited row's Actions cell — the page-top
+  // banner lands off-screen on long tables and reads as "nothing happened".
+  const [rowNotice, setRowNotice] = useState<{ id: number; text: string; tone: AlertTone } | null>(null);
 
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'arrivedAt', dir: 'desc' });
   const [confirmEditOpened, { open: openConfirmEdit, close: closeConfirmEdit }] = useDisclosure(false);
@@ -118,6 +132,7 @@ export default function AdminVisitsPage() {
   const confirmEditClick = () => {
     if (!pendingEditVisit) return;
     closeConfirmEdit();
+    setRowNotice(null);
     setEditingVisitId(pendingEditVisit.id);
     setEditForm({
       arrivedAt: toDatetimeLocal(pendingEditVisit.arrivedAt),
@@ -138,14 +153,14 @@ export default function AdminVisitsPage() {
         })
       });
       if (res.ok) {
-        setMessage({ text: "Visit updated successfully.", tone: "success" });
+        setRowNotice({ id, text: "Visit updated successfully.", tone: "success" });
         setEditingVisitId(null);
         fetchVisits();
       } else {
-        setMessage({ text: "Failed to update visit.", tone: "error" });
+        setRowNotice({ id, text: "Failed to update visit.", tone: "error" });
       }
     } catch {
-      setMessage({ text: "Network error saving visit.", tone: "error" });
+      setRowNotice({ id, text: "Network error saving visit.", tone: "error" });
     }
   };
 
@@ -197,10 +212,13 @@ export default function AdminVisitsPage() {
                       />
                     </Table.Td>
                     <Table.Td>
-                      <Group gap="xs" wrap="nowrap">
-                        <Button size="xs" fz={15} color="green" onClick={() => handleSaveEdit(v.id)}>Save</Button>
-                        <Button size="xs" fz={15} variant="default" onClick={() => setEditingVisitId(null)}>Cancel</Button>
-                      </Group>
+                      <Stack gap={6}>
+                        <Group gap="xs" wrap="nowrap">
+                          <Button size="xs" fz={15} color="green" onClick={() => handleSaveEdit(v.id)}>Save</Button>
+                          <Button size="xs" fz={15} variant="default" onClick={() => setEditingVisitId(null)}>Cancel</Button>
+                        </Group>
+                        <RowNotice notice={rowNotice} id={v.id} onClose={() => setRowNotice(null)} />
+                      </Stack>
                     </Table.Td>
                   </>
                 ) : (
@@ -220,7 +238,10 @@ export default function AdminVisitsPage() {
                       ) : <Text component="span" c="yellow">Active</Text>}
                     </Table.Td>
                     <Table.Td>
-                      <Button size="xs" fz={15} variant="light" onClick={() => handleEditClick(v)}>Edit</Button>
+                      <Stack gap={6}>
+                        <Button size="xs" fz={15} variant="light" onClick={() => handleEditClick(v)}>Edit</Button>
+                        <RowNotice notice={rowNotice} id={v.id} onClose={() => setRowNotice(null)} />
+                      </Stack>
                     </Table.Td>
                   </>
                 )}
