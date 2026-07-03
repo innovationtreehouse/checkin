@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports */
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, waitFor } from "@testing-library/react";
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 import { renderWithProviders, mockFetchJson, resetRtl } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import AdminMembershipPage from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 function household(name: string, id: number) {
     return { name, householdMembers: [{ id: 1, name: "Lead One", email: "lead@example.com" }], leads: [{ personId: 1 }], householdId: id };
@@ -82,18 +84,18 @@ describe("AdminMembershipPage", () => {
         await screen.findByText("Awaiting Family");
 
         fireEvent.click(screen.getByRole("button", { name: "Confirm contract signed" }));
-        expect(await screen.findByText("Updated.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Updated." })));
 
         fireEvent.click(screen.getByRole("button", { name: "Confirm BG consent" }));
-        expect(await screen.findByText("Updated.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Updated." })));
 
         fireEvent.click(screen.getByRole("button", { name: /Certify payment plan/ }));
-        expect(await screen.findByText("Certified — membership activated.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Certified — membership activated." })));
 
         fireEvent.click(screen.getByRole("button", { name: "Reset for re-review" }));
-        expect(await screen.findByText("Sent back for re-review.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Sent back for re-review." })));
 
         fireEvent.click(screen.getByRole("button", { name: /Override/ }));
-        expect(await screen.findByText("Overridden to payment.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Overridden to payment." })));
     });
 });

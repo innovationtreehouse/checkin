@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
+import { notifications } from "@mantine/notifications";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface Person {
@@ -88,8 +89,7 @@ export default function AdminMembershipPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setIsError(false);
-        setMessage("Updated.");
+        notifications.show({ color: "green", message: "Updated." });
         await load();
         notifyNavRefresh();
       } else {
@@ -115,8 +115,7 @@ export default function AdminMembershipPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setIsError(false);
-        setMessage(action === "reset" ? "Sent back for re-review." : "Overridden to payment.");
+        notifications.show({ color: "green", message: action === "reset" ? "Sent back for re-review." : "Overridden to payment." });
         await load();
         notifyNavRefresh();
       } else {
@@ -142,8 +141,7 @@ export default function AdminMembershipPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setIsError(false);
-        setMessage("Certified — membership activated.");
+        notifications.show({ color: "green", message: "Certified — membership activated." });
         await load();
         notifyNavRefresh();
       } else {

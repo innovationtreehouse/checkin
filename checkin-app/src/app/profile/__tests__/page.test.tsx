@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports */
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, waitFor } from "@testing-library/react";
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import ProfilePage from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 describe("ProfilePage", () => {
     it("loads an adult's profile and saves an edit", async () => {
@@ -23,7 +25,7 @@ describe("ProfilePage", () => {
         fireEvent.change(nameInput, { target: { value: "Jamie Updated" } });
         fireEvent.click(screen.getByRole("button", { name: "Save Profile" }));
 
-        expect(await screen.findByText("Profile updated successfully!")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Profile updated successfully!" })));
         expect(fetchMock).toHaveBeenCalledWith("/api/profile", expect.objectContaining({ method: "PATCH" }));
     });
 
