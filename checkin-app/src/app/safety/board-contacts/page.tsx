@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Card, Center, Stack, Table, Text, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { formatPhone } from "@/lib/phone";
 
@@ -31,7 +32,7 @@ export default function BoardContactInfoPage() {
       }
     } catch (e) {
       console.error(e);
-      setError("Network error loading board contacts.");
+      notifications.show({ color: "red", message: "Network error loading board contacts.", autoClose: false });
     } finally {
       setLoading(false);
     }
