@@ -49,6 +49,7 @@ export default function MembershipSettingsPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{ normalDues?: string; volunteerDues?: string; variantId?: string }>({});
   const [saveNotice, setSaveNotice] = useState<{ text: string; err: boolean } | null>(null);
   const [renewalNotice, setRenewalNotice] = useState<{ text: string; err: boolean } | null>(null);
 
@@ -82,8 +83,14 @@ export default function MembershipSettingsPage() {
   useEffect(() => { load(); }, [load]);
 
   const saveSettings = async () => {
-    setSaving(true);
     setSaveNotice(null);
+    setFieldErrors({});
+    const fe: { normalDues?: string; volunteerDues?: string; variantId?: string } = {};
+    const nd = parseFloat(normalDues); if (normalDues.trim() === "" || isNaN(nd) || nd < 0) fe.normalDues = "Enter a dollar amount of 0 or more.";
+    const vd = parseFloat(volunteerDues); if (volunteerDues.trim() === "" || isNaN(vd) || vd < 0) fe.volunteerDues = "Enter a dollar amount of 0 or more.";
+    if (variantId.trim() !== "" && !/^\d+$/.test(variantId.trim())) fe.variantId = "Must be a numeric Shopify variant ID.";
+    if (fe.normalDues || fe.volunteerDues || fe.variantId) { setFieldErrors(fe); return; }
+    setSaving(true);
     try {
       const res = await fetch("/api/settings/membership", {
         method: "PUT",
@@ -141,16 +148,18 @@ export default function MembershipSettingsPage() {
                 leftSection="$"
                 inputMode="decimal"
                 w={160}
+                error={fieldErrors.normalDues}
                 value={normalDues}
-                onChange={(e) => setNormalDues(e.currentTarget.value)}
+                onChange={(e) => { setNormalDues(e.currentTarget.value); setFieldErrors((f) => ({ ...f, normalDues: undefined })); }}
               />
               <TextInput
                 label="Annual dues (volunteer)"
                 leftSection="$"
                 inputMode="decimal"
                 w={160}
+                error={fieldErrors.volunteerDues}
                 value={volunteerDues}
-                onChange={(e) => setVolunteerDues(e.currentTarget.value)}
+                onChange={(e) => { setVolunteerDues(e.currentTarget.value); setFieldErrors((f) => ({ ...f, volunteerDues: undefined })); }}
               />
               <TextInput
                 label="Background check valid for"
@@ -185,8 +194,9 @@ export default function MembershipSettingsPage() {
                 description="The Shopify variant ID of the membership product. We build the “Pay with Shopify” link from it as https://<store>/cart/<variantId>:1."
                 placeholder="1234567890"
                 w={260}
+                error={fieldErrors.variantId}
                 value={variantId}
-                onChange={(e) => setVariantId(e.currentTarget.value)}
+                onChange={(e) => { setVariantId(e.currentTarget.value); setFieldErrors((f) => ({ ...f, variantId: undefined })); }}
               />
               <TextInput
                 label="Volunteer discount code"
