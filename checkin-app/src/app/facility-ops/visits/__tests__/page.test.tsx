@@ -47,7 +47,9 @@ describe("facility-ops/visits page", () => {
     renderWithProviders(<AdminVisitsPage />);
     await screen.findByText("Val Volunteer");
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    // Edit the already-closed row (id 1) — sort is arrivedAt desc so it's second.
+    // Both times are set, so the save passes the client pre-check and fires the PATCH.
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[1]);
     const confirmModal = await screen.findByRole("dialog", { name: "Edit Past Visit Record" });
     fireEvent.click(within(confirmModal).getByRole("button", { name: "Continue" }));
 
