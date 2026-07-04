@@ -131,8 +131,8 @@ describe("ProgramEnrollmentPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "+ Add child" }));
         fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "New Kid" } });
         fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "2015-01-01" } });
-        fireEvent.change(screen.getByLabelText("Emergency contact name"), { target: { value: "Aunt May" } });
-        fireEvent.change(screen.getByLabelText("Emergency contact phone"), { target: { value: "5125550000" } });
+        fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt May" } });
+        fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "5125550000" } });
         fireEvent.click(screen.getByRole("button", { name: "Save & continue to enroll" }));
 
         // Back to member-select with the now-enrollable child preselected.

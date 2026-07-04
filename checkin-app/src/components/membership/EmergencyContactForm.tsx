@@ -17,8 +17,8 @@ export default function EmergencyContactForm({
 }) {
   return (
     <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md">
-      <TextInput label="Emergency contact name" value={emName} error={errors.emName} onChange={(e) => { setEmName(e.currentTarget.value); clearErr("emName"); }} />
-      <TextInput label="Emergency contact phone" value={emPhone} error={errors.emPhone} onChange={(e) => { setEmPhone(e.currentTarget.value); clearErr("emPhone"); }} />
+      <TextInput withAsterisk label="Emergency contact name" value={emName} error={errors.emName} onChange={(e) => { setEmName(e.currentTarget.value); clearErr("emName"); }} />
+      <TextInput withAsterisk label="Emergency contact phone" value={emPhone} error={errors.emPhone} onChange={(e) => { setEmPhone(e.currentTarget.value); clearErr("emPhone"); }} />
       <TextInput type="email" label="Emergency contact email (optional)" value={emEmail} error={errors.emEmail} onChange={(e) => { setEmEmail(e.currentTarget.value); clearErr("emEmail"); }} />
     </SimpleGrid>
   );
