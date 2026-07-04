@@ -40,6 +40,25 @@ jobs:
         with:
           ref: ${{ inputs.ref }}   # empty on push/PR = default ref; the tag when called by deploy-prod
           fetch-depth: 0
+
+      # Guards against a repeat of PR #791 (commit 5cf40d2a): .gitignore's
+      # "node_modules/" pattern is directory-only and doesn't match a symlink
+      # of that name, so `git add -A` from a worktree with a symlinked
+      # node_modules silently committed two symlinks pointing at an absolute
+      # host path. Turbopack then panicked in the flow-test docker job
+      # ("Symlink checkin-app/node_modules is invalid, it points out of the
+      # filesystem root"). Lives in this job (not `test`/`deploy-build`)
+      # because `changes` has no path-filter `if:` and always runs, checkout
+      # already happened above, and failing here is instant — no need to
+      # wait on npm ci / docker build to catch it.
+      - name: Check for committed symlinks
+        run: |
+          SYMLINKS=$(git ls-files -s | awk '$1 == "120000" {print $4}')
+          if [ -n "$SYMLINKS" ]; then
+            echo "::error::Committed symlink(s) found (mode 120000):"; echo "$SYMLINKS"
+            exit 1
+          fi
+
       - id: detect
         env:
           EVENT_NAME: ${{ github.event_name }}
