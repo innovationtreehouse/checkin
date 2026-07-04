@@ -15,11 +15,15 @@ export default function ChildrenListForm({
   onAdd,
   onUpdate,
   onRemove,
+  hideEmail = false,
 }: {
   items: ChildForm[];
   onAdd: () => void;
   onUpdate: (i: number, field: keyof ChildForm, value: string) => void;
   onRemove: (i: number) => void;
+  // Program-first-time intake collects a child's email later (on the household
+  // screen), so it hides the email input here; membership intake keeps it.
+  hideEmail?: boolean;
 }) {
   return (
     <section>
@@ -36,10 +40,14 @@ export default function ChildrenListForm({
               <Button variant="subtle" color="red" size="compact-sm" onClick={() => onRemove(i)}>Remove</Button>
             </Group>
             <TextInput label="Full name" value={child.name} onChange={(e) => onUpdate(i, "name", e.currentTarget.value)} />
-            <SimpleGrid cols={{ base: 1, sm: 2 }} mt="sm">
-              <TextInput type="date" label="Date of birth" value={child.dob} onChange={(e) => onUpdate(i, "dob", e.currentTarget.value)} />
-              <TextInput type="email" label="Email (optional)" value={child.email} onChange={(e) => onUpdate(i, "email", e.currentTarget.value)} />
-            </SimpleGrid>
+            {hideEmail ? (
+              <TextInput type="date" mt="sm" label="Date of birth" value={child.dob} onChange={(e) => onUpdate(i, "dob", e.currentTarget.value)} />
+            ) : (
+              <SimpleGrid cols={{ base: 1, sm: 2 }} mt="sm">
+                <TextInput type="date" label="Date of birth" value={child.dob} onChange={(e) => onUpdate(i, "dob", e.currentTarget.value)} />
+                <TextInput type="email" label="Email (optional)" value={child.email} onChange={(e) => onUpdate(i, "email", e.currentTarget.value)} />
+              </SimpleGrid>
+            )}
             <TextInput mt="sm" label="Allergies (optional)" value={child.allergies} onChange={(e) => onUpdate(i, "allergies", e.currentTarget.value)} />
           </Card>
         ))}
