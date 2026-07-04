@@ -2,12 +2,14 @@
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { notifications } from "@mantine/notifications";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
 import MembershipReviewPage from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 const queue = {
   queue: [
@@ -47,7 +49,7 @@ describe("membership-ops/review page", () => {
         }),
       ),
     );
-    expect(await screen.findByText("Attestation recorded — thank you.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Attestation recorded — thank you." })));
   });
 
   it("shows the forbidden card when the queue endpoint returns 403", async () => {

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Badge, Button, Card, Checkbox, Container, Group, Modal, Select, SimpleGrid, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 import type { RSVPStatus } from '@/types/rsvp';
@@ -126,7 +127,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           router.push('/my-programs');
           return;
         }
-        setAttendanceNotice({ ok: true, msg: "Attendance confirmed successfully!" });
+        notifications.show({ color: "green", message: "Attendance confirmed successfully!" });
         fetchEvent();
       } else {
         const data = await res.json();
@@ -152,7 +153,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         body: JSON.stringify({ action: 'editTime', startAt: startIso, endAt: endIso, applyToFuture })
       });
       if (res.ok) {
-        setTimeNotice({ ok: true, msg: "Event time updated successfully!" });
+        notifications.show({ color: "green", message: "Event time updated successfully!" });
         setEditMode(false);
         fetchEvent();
       } else {

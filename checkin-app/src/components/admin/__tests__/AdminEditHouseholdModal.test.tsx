@@ -194,7 +194,7 @@ describe("AdminEditHouseholdModal", () => {
         expect.objectContaining({ method: "DELETE", body: JSON.stringify({ participantId: 1 }) }),
       ),
     );
-    expect(await screen.findByText("Lead removed.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Lead removed." })));
 
     // Now down to a single lead: the last remaining Remove-lead button is disabled
     // and the "must keep at least one lead" copy shows.

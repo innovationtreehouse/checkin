@@ -117,7 +117,7 @@ export function AdminEditHouseholdModal({
         body: JSON.stringify({ participantId }),
       });
       if (res.ok) {
-        setNotice({ color: "green", message: "Lead removed." });
+        notifications.show({ color: "green", message: "Lead removed." });
         await loadHousehold();
       } else {
         const data = await res.json().catch(() => ({}));

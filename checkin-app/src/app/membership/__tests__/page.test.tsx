@@ -2,12 +2,14 @@
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { notifications } from "@mantine/notifications";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
 import MembershipPage from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 afterEach(() => window.history.pushState({}, "", "/"));
 
 const emptyPrefill = { household: null, primaryParent: null, secondaryParent: null, children: [] };
@@ -220,7 +222,7 @@ describe("membership page", () => {
     });
     renderWithProviders(<MembershipPage />);
 
-    expect(await screen.findByText("Thanks — your signature was received.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Thanks — your signature was received." })));
     expect(window.location.search).toBe("");
   });
 
@@ -236,7 +238,7 @@ describe("membership page", () => {
     });
     renderWithProviders(<MembershipPage />);
 
-    expect(await screen.findByText("Signature received — finalizing.", { exact: false })).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: expect.stringContaining("Signature received — finalizing.") })));
   });
 
   it("falls back to a finalizing message when the sync request itself errors", async () => {
@@ -255,7 +257,7 @@ describe("membership page", () => {
     global.fetch = fetchMock as unknown as typeof fetch;
     renderWithProviders(<MembershipPage />);
 
-    expect(await screen.findByText("Signature received — finalizing.", { exact: false })).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: expect.stringContaining("Signature received — finalizing.") })));
   });
 
   // ── PENDING_PAYMENT dues fetch branches ──────────────────────────────────────
