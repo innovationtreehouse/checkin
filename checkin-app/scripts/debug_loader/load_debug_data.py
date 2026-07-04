@@ -186,8 +186,8 @@ def _resolve_tool_id(api, row, cache):
 
 def _participant_id_by_ref(api, ref):
     """Resolve a participant by exact name OR exact email."""
-    found = api.get("/api/participants/search?q=" + urllib.parse.quote(ref))
-    people = found.get("participants", [])
+    found = api.get("/api/people/search?q=" + urllib.parse.quote(ref))
+    people = found.get("people", [])
     r = ref.lower()
     exact = [p for p in people
              if p.get("name", "").lower() == r or p.get("email", "").lower() == r]
@@ -223,7 +223,7 @@ def load_certifications(api, doc, actor):
         }
         r = api.post_json("/api/shop/certifications", body)
         cert = r.get("certification", {})
-        print(f"  cert participant {cert.get('participantId')} tool {cert.get('toolId')}"
+        print(f"  cert person {cert.get('personId')} tool {cert.get('toolId')}"
               f" -> {cert.get('level')}")
 
 
