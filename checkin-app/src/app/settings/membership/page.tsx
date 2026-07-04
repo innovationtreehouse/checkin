@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Alert, Button, Card, Center, Checkbox, Group, Loader, Modal, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
+import { notifications } from "@mantine/notifications";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
 
@@ -96,7 +97,7 @@ export default function MembershipSettingsPage() {
           ...(boundaryUnlocked ? { orgMembershipYearBoundary: boundary || null } : {}),
         }),
       });
-      if (res.ok) { setSaveNotice({ text: "Settings saved.", err: false }); setBoundaryUnlocked(false); await load(); }
+      if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); setBoundaryUnlocked(false); await load(); }
       else setSaveNotice({ text: (await res.json()).error || "Save failed.", err: true });
     } catch { setSaveNotice({ text: "Network error.", err: true }); }
     finally { setSaving(false); }
