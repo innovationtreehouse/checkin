@@ -90,6 +90,22 @@ describe("AppFrame", () => {
     expect(screen.queryByText("Membership Audit")).not.toBeInTheDocument();
   });
 
+  it("badges the reviewer-only Membership Ops nav with the green can-act-on count", () => {
+    setSession({ id: 3, isBackgroundCheckReviewer: true });
+    mockedUseTodoCounts.mockReturnValue({
+      member: { household: [], programs: [] },
+      building: 0,
+      buildingHousehold: 0,
+      activePrograms: 0,
+      review: { canActOn: 4, approvedAwaitingSecond: 0 },
+    });
+    renderFrame();
+
+    // Badge keys off the section href (/membership-ops), not the per-role /review
+    // destination — the green count must reach a reviewer-only user's nav item.
+    expect(screen.getByLabelText("4 background checks you can review now")).toHaveTextContent("4");
+  });
+
   it("highlights the active nav item based on pathname", () => {
     setSession({ id: 1 });
     setPathname("/attendance");
