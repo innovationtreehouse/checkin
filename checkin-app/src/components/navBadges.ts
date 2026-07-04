@@ -64,14 +64,17 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
     }
     case '/programs':
       return gray(counts.activePrograms, `${counts.activePrograms} active programs`);
-    case '/membership-ops':
+    case '/membership-ops': {
       // Board's BLOCKED queue (green) plus the viewer's own background-check
       // review counts — the Review tab lives under this nav item, so its badges
-      // surface here too.
+      // surface here too. Gray mirrors the Applications tab's total in-flight count.
+      const apps = counts.admin ? counts.admin.applicationsTotal : 0;
       return [
         ...green(counts.admin ? counts.admin.membership : 0, 'Pending membership reviews'),
+        ...gray(apps, `${apps} application${plural(apps, '', 's')}`),
         ...reviewBadges(counts),
       ];
+    }
     case '/membership-audit': {
       // Green: leadless households the board must fix (assign a lead). Gray: gaps
       // the household must close — missing emergency contacts plus accounts created
