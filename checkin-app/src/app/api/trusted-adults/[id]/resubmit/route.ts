@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
-import { withdrawTrustedAdult, TrustedAdultError } from "@/lib/trusted-adult/service";
+import { resubmitWithChanges, TrustedAdultError } from "@/lib/trusted-adult/service";
 import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +15,9 @@ const STATUS_FOR: Record<TrustedAdultError["code"], number> = {
 };
 
 /**
- * POST /api/trusted-adults/[id]/withdraw — subject (or their household lead)
- * retracts a disclosure. Body { scope }: "change" cancels only the pending change
- * on top (keeping a live prior approval); default "all" revokes every live review.
+ * POST /api/trusted-adults/[id]/resubmit — resubmit with CHANGED info. Body carries
+ * the edited name/contact/context. Opens a MODIFIED board review that holds the
+ * proposed edits; a live prior approval is untouched until the board approves. Household lead only.
  */
 export const POST = withAuth({}, async (req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
@@ -25,13 +25,18 @@ export const POST = withAuth({}, async (req, auth) => {
     if (isNaN(id)) return apiError("Invalid id", 400);
     try {
         const body = await req.json().catch(() => ({}));
-        await withdrawTrustedAdult(id, auth.user.id, { latestReviewOnly: body.scope === "change" });
-        return NextResponse.json({ ok: true });
+        const review = await resubmitWithChanges(id, auth.user.id, {
+            trustedAdultName: body.trustedAdultName,
+            trustedAdultPhone: body.trustedAdultPhone,
+            trustedAdultEmail: body.trustedAdultEmail,
+            familyContext: body.familyContext,
+        });
+        return NextResponse.json({ reviewId: review.id });
     } catch (error) {
         if (error instanceof TrustedAdultError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: STATUS_FOR[error.code] });
         }
-        logger.error("Trusted adult withdraw error:", error);
+        logger.error("Trusted adult resubmit error:", error);
         return apiError("Internal Server Error", 500);
     }
 });

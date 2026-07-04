@@ -32,6 +32,10 @@ interface Review {
     sharedNote: string | null;
     effectiveFrom: string | null;
     reviewBy: string | null;
+    proposedName: string | null;
+    proposedPhone: string | null;
+    proposedEmail: string | null;
+    proposedContext: string | null;
     createdAt: string;
 }
 interface PersonRef {
@@ -224,6 +228,15 @@ export default function AdminTrustedAdultsPage() {
                 const sharedVal = latest ? shared[latest.id] ?? "" : "";
                 const prior = priorDecisionReview(ta.reviews);
                 const priorMeta = prior?.decision ? PRIOR_DECISION_META[prior.decision] : null;
+                // A MODIFIED resubmission carries CHANGED facts (vs a plain renewal that
+                // reuses them). Flag it on top of the prior-decision text, e.g.
+                // "Renewal — info updated" / "Previously denied — info updated".
+                const infoUpdated = latest?.kind === "MODIFIED";
+                const changeBadge = priorMeta
+                    ? { text: priorMeta.text + (infoUpdated ? " — info updated" : ""), color: priorMeta.color }
+                    : infoUpdated
+                        ? { text: "Info updated", color: "blue" }
+                        : null;
                 // "Previously dispositioned" note the board sent to staff — only APPROVE sets a
                 // sharedNote. When present on a renewal, offer to re-use it (gated by a radio).
                 const priorNote = prior?.sharedNote?.trim() || null;
@@ -244,6 +257,11 @@ export default function AdminTrustedAdultsPage() {
                     taHouseholdId: ta.household?.id,
                     taTrustedAdultPersonId: ta.trustedAdultPerson?.id,
                 });
+                // A live approval exists underneath this pending review (mirrors
+                // /operational: any APPROVED review = still authorized). Then denying is
+                // ambiguous — reject just this submission, or the adult outright — so the
+                // board gets both "Deny" (approval stands) and "Deny & Revoke".
+                const hasLivePriorApproval = ta.reviews.some((r) => r.status === "APPROVED");
                 return (
                     <Card key={ta.id} withBorder radius="md" padding="md">
                         <Group gap="xs">
@@ -251,10 +269,19 @@ export default function AdminTrustedAdultsPage() {
                             <Text c="dimmed">→</Text>
                             <Text>{ta.trustedAdultPerson?.name || ta.trustedAdultName || "trusted adult"}</Text>
                             <Badge color={STATUS_COLORS[status] ?? "gray"}>{label(status)}</Badge>
-                            {priorMeta && <Badge variant="filled" color={priorMeta.color}>{priorMeta.text}</Badge>}
+                            {changeBadge && <Badge variant="filled" color={changeBadge.color}>{changeBadge.text}</Badge>}
                         </Group>
                         <TrustedAdultContact phone={ta.trustedAdultPhone} email={ta.trustedAdultEmail} />
                         <Text size="sm" mt={6}><b>Family context (board only):</b> {ta.familyContext}</Text>
+                        {latest?.kind === "MODIFIED" && (
+                            <Card withBorder radius="sm" padding="xs" mt={6} bg="var(--mantine-color-blue-light)">
+                                <Text size="sm" fw={600} c="blue">Proposed changes — not in effect until you approve</Text>
+                                <Text size="sm">Name: {latest.proposedName}</Text>
+                                <TrustedAdultContact phone={latest.proposedPhone} email={latest.proposedEmail} />
+                                <Text size="sm">Context: {latest.proposedContext}</Text>
+                                <Text size="xs" c="dimmed" mt={2}>The facts above are the family&apos;s current record; these replace them on approval.</Text>
+                            </Card>
+                        )}
                         {latest?.sharedNote && (
                             <Text size="sm" c="teal" mt={2}>Shared note (keyholders/program leads): {latest.sharedNote}</Text>
                         )}
@@ -330,9 +357,18 @@ export default function AdminTrustedAdultsPage() {
                                                 </Button>
                                             </span>
                                         </Tooltip>
-                                        <Button size="xs" fz={15} color="red" loading={busyId === latest.id} disabled={isSelf} onClick={() => decide(latest.id, "DENY")}>
-                                            Deny
-                                        </Button>
+                                        <Tooltip label="Reject this submission; the existing approval stays in effect." disabled={isSelf || !hasLivePriorApproval} multiline w={260}>
+                                            <Button size="xs" fz={15} color="red" loading={busyId === latest.id} disabled={isSelf} onClick={() => decide(latest.id, "DENY")}>
+                                                Deny
+                                            </Button>
+                                        </Tooltip>
+                                        {hasLivePriorApproval && (
+                                            <Tooltip label="Reject the changes AND revoke the existing approval — the adult is no longer authorized." multiline w={260} disabled={isSelf}>
+                                                <Button size="xs" fz={15} color="red" variant="filled" loading={busyId === latest.id} disabled={isSelf} onClick={() => decide(latest.id, "DENY", { revokePriorApprovals: true })}>
+                                                    Deny &amp; Revoke
+                                                </Button>
+                                            </Tooltip>
+                                        )}
                                         <Button
                                             size="xs" fz={15}
                                             variant="light"

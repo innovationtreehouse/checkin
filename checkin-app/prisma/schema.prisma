@@ -276,6 +276,13 @@ enum TrustedAdultOrigin {
 enum TrustedAdultReviewKind {
   INITIAL
   RENEWAL
+  // Resubmission where the family CHANGED the trusted adult's facts (name/contact/
+  // context) rather than reusing them (RENEWAL). The proposed edits ride on the
+  // review (proposed* fields) and only promote onto the parent on approval, so a
+  // still-live prior approval keeps its OWN facts for the front desk. The board's
+  // prior-decision walk still yields "Renewal"/"Previously denied"; this only adds
+  // the "— info updated" flag.
+  MODIFIED
 }
 
 enum TrustedAdultReviewStatus {
@@ -553,6 +560,18 @@ model TrustedAdultReview {
   /// When the 30-day-before-expiry reminder email was sent (once).
   /// @sensitivity:internal
   expiryWarningSentAt  DateTime?
+  /// Proposed edits carried by a MODIFIED resubmission. Held HERE, not on the
+  /// parent, so a still-live prior approval keeps its own facts for the front desk
+  /// until/unless the board approves these. Promoted onto the parent on approval,
+  /// discarded on deny. Same bands as the parent's live facts.
+  /// @sensitivity:personal
+  proposedName         String?
+  /// @sensitivity:personal
+  proposedPhone        String?
+  /// @sensitivity:personal
+  proposedEmail        String?
+  /// @sensitivity:pii
+  proposedContext      String?
   /// @sensitivity:public
   createdAt            DateTime               @default(now())
   /// @sensitivity:internal
