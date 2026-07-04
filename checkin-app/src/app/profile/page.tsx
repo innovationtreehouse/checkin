@@ -72,7 +72,8 @@ export default function ProfilePage() {
       if (res.ok) {
         notifications.show({ color: "green", message: "Profile updated successfully!" });
       } else {
-        setMessage({ text: "Failed to update profile.", tone: "error" });
+        const data = await res.json().catch(() => ({}));
+        setMessage({ text: data.error || "Failed to update profile.", tone: "error" });
       }
     } catch {
       notifications.show({ color: "red", message: "Network error saving profile.", autoClose: false });

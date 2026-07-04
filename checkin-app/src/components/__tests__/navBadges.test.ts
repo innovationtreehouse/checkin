@@ -1,4 +1,4 @@
-import { navBadgeFor, tabBadgeFor, reviewBadges, leadsAnyProgram, leadPendingCount } from '@/components/navBadges';
+import { navBadgeFor, tabBadgeFor, reviewBadges, leadsAnyProgram, leadPendingCount, leadConflictCount } from '@/components/navBadges';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 
 const base: TodoCounts = {
@@ -55,6 +55,22 @@ describe('My Programs badge count', () => {
   it('singularizes the label for a single pending item', () => {
     const counts: TodoCounts = { ...base, lead: { programs: [prog(1, 'A', [item(10)])] } };
     expect(navBadgeFor('/my-programs', counts)[0].label).toBe('1 attendance item to confirm');
+  });
+
+  it('shows a red conflict badge left of the green pending badge', () => {
+    const counts: TodoCounts = { ...base, lead: { programs: [prog(1, 'A', [item(10)])], conflicts: 2 } };
+    expect(leadConflictCount(counts)).toBe(2);
+    expect(navBadgeFor('/my-programs', counts)).toEqual([
+      { count: 2, color: 'red', label: '2 attendance conflicts to resolve' },
+      { count: 1, color: 'treehouseGreen', label: '1 attendance item to confirm' },
+    ]);
+  });
+
+  it('shows only the red badge when there are conflicts but nothing pending', () => {
+    const counts: TodoCounts = { ...base, lead: { programs: [prog(1, 'A')], conflicts: 1 } };
+    expect(navBadgeFor('/my-programs', counts)).toEqual([
+      { count: 1, color: 'red', label: '1 attendance conflict to resolve' },
+    ]);
   });
 });
 

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button, Card, Center, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifications } from "@mantine/notifications";
+import { isValidEmail } from "@/lib/emergencyContacts/identity";
 
 interface Designation {
   id: number;
@@ -17,6 +18,7 @@ export default function VolunteerMembershipsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [emailError, setEmailError] = useState<string | undefined>(undefined);
 
   const flash = (m: string) => setMessage(m);
 
@@ -33,7 +35,9 @@ export default function VolunteerMembershipsPage() {
   useEffect(() => { load(); }, [load]);
 
   const addDesignation = async () => {
+    setEmailError(undefined);
     if (!newEmail.trim()) return;
+    if (!isValidEmail(newEmail)) { setEmailError("A valid email is required."); return; }
     setSaving(true);
     flash("");
     try {
@@ -74,7 +78,8 @@ export default function VolunteerMembershipsPage() {
           <TextInput
             w={320}
             value={newEmail}
-            onChange={(e) => setNewEmail(e.currentTarget.value)}
+            onChange={(e) => { setNewEmail(e.currentTarget.value); setEmailError(undefined); }}
+            error={emailError}
             placeholder="volunteer@example.com"
           />
           <Button disabled={saving} onClick={addDesignation}>Add</Button>

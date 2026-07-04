@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import type { OrgMembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
 import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/service";
 import { canReviewBackgroundChecks, reviewQueueCounts } from "@/lib/membership/review";
+import { getLeadConflicts } from "@/lib/attendanceConflicts";
 import { pickAddress, validateAddress } from "@/lib/address";
 import { ORG_DOMAIN } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
@@ -72,7 +73,9 @@ export type TodoCounts = {
     // visibility and its green badge (sum of pending attendance to confirm).
     // `pending` mirrors the post-event email's targets (ended events not yet
     // confirmed), deep-linked to the existing confirm screen. No new capability.
-    lead?: { programs: LedProgram[] };
+    // `conflicts` = overlapping-visit conflicts across the caller's led programs;
+    // drives the red badge on the "My Programs" nav item and the Conflicts subtab.
+    lead?: { programs: LedProgram[]; conflicts?: number };
 };
 
 /** RSVP tally (Yes/Maybe/No; NO_RESPONSE omitted). */
@@ -245,7 +248,7 @@ export const GET = withAuth({}, async (_req, auth) => {
     if (ledPrograms.length > 0) {
         const ledIds = ledPrograms.map((p) => p.id);
         const now = new Date();
-        const [pendingEvents, enrolledCounts, futureEvents, volunteerRows] = await Promise.all([
+        const [pendingEvents, enrolledCounts, futureEvents, volunteerRows, conflicts] = await Promise.all([
             prisma.event.findMany({
                 where: { programId: { in: ledIds }, endAt: { lte: now }, attendanceConfirmedAt: null },
                 select: { id: true, name: true, programId: true },
@@ -268,6 +271,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 where: { programId: { in: ledIds } },
                 select: { programId: true, personId: true },
             }),
+            getLeadConflicts(user.id),
         ]);
         // (programId, personId) keys that belong to a volunteer; everyone else on a roster is a participant.
         const volunteerKeys = new Set(volunteerRows.map((v) => `${v.programId}:${v.personId}`));
@@ -332,6 +336,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                     return { eventId: e.id, name: e.name, startAt: e.startAt.toISOString(), participants: t.participants, volunteers: t.volunteers };
                 }),
             })),
+            conflicts: conflicts.length,
         };
     }
 
