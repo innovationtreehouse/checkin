@@ -1,4 +1,4 @@
-import { navBadgeFor, tabBadgeFor, reviewBadges, leadsAnyProgram, leadPendingCount, leadConflictCount } from '@/components/navBadges';
+import { navBadgeFor, tabBadgeFor, reviewBadges, settingsMisconfigBadge, leadsAnyProgram, leadPendingCount, leadConflictCount } from '@/components/navBadges';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 
 const base: TodoCounts = {
@@ -85,6 +85,7 @@ const admin = (over: Partial<NonNullable<TodoCounts['admin']>> = {}): TodoCounts
     unclaimedHouseholds: 0,
     brokenHouseholds: 0,
     memberFamilies: 0,
+    settingsMisconfig: 0,
     ...over,
   },
 });
@@ -119,6 +120,26 @@ describe('reviewBadges (Review tab + Membership Ops nav)', () => {
       { count: 2, color: 'treehouseGreen', label: 'Pending membership reviews' },
       { count: 1, color: 'treehouseGreen', label: '1 background check you can review now' },
     ]);
+  });
+});
+
+describe('settings misconfig red pill', () => {
+  it('is null off the admin surface (non-board viewer)', () => {
+    expect(settingsMisconfigBadge(base)).toBeNull();
+    expect(settingsMisconfigBadge(null)).toBeNull();
+    expect(navBadgeFor('/settings', base)).toEqual([]);
+  });
+
+  it('hidden when both settings are configured', () => {
+    expect(settingsMisconfigBadge(admin({ settingsMisconfig: 0 }))).toBeNull();
+    expect(navBadgeFor('/settings', admin({ settingsMisconfig: 0 }))).toEqual([]);
+  });
+
+  it('red pill with the unset count, singular label at 1', () => {
+    expect(settingsMisconfigBadge(admin({ settingsMisconfig: 1 })))
+      .toEqual({ count: 1, color: 'red', label: '1 required checkout setting not configured' });
+    expect(navBadgeFor('/settings', admin({ settingsMisconfig: 2 })))
+      .toEqual([{ count: 2, color: 'red', label: '2 required checkout settings not configured' }]);
   });
 });
 

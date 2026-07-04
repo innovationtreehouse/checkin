@@ -5,6 +5,9 @@ import { useSession } from "next-auth/react";
 import { Tabs } from "@mantine/core";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { useConfirmNav } from "@/components/UnsavedChangesProvider";
+import { useTodoCounts } from "@/hooks/useTodoCounts";
+import { settingsMisconfigBadge } from "@/components/navBadges";
+import { CountBadge } from "@/components/ui/CountBadge";
 
 export type SettingsTab = "membership" | "roles" | "localization";
 
@@ -26,6 +29,9 @@ export function SettingsTabs({ active }: { active: SettingsTab }) {
   const { data: session } = useSession();
   const isSysadmin = !!session?.user?.isSysadmin;
   const tabs = TABS.filter((t) => !t.sysadminOnly || isSysadmin);
+  // Red pill on Membership Settings when a required checkout setting is unset. Same
+  // shared counts as the nav badge, so tab and nav can't diverge.
+  const misconfig = settingsMisconfigBadge(useTodoCounts(!!session));
   return (
     <Tabs
       value={active}
@@ -40,7 +46,17 @@ export function SettingsTabs({ active }: { active: SettingsTab }) {
     >
       <ScrollableTabsList>
         {tabs.map((t) => (
-          <Tabs.Tab key={t.value} value={t.value}>
+          <Tabs.Tab
+            key={t.value}
+            value={t.value}
+            rightSection={
+              t.value === "membership" && misconfig ? (
+                <CountBadge intent="alert" size="sm" aria-label={misconfig.label}>
+                  {misconfig.count}
+                </CountBadge>
+              ) : undefined
+            }
+          >
             {t.label}
           </Tabs.Tab>
         ))}
