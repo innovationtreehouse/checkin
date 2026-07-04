@@ -72,7 +72,7 @@ export default function HouseholdPage() {
   const warn = (text: string) => setMessage({ text, tone: "warning" });
   const [addingHouseholdMember, setAddingHouseholdMember] = useState(false);
 
-  const [householdMemberForm, setHouseholdMemberForm] = useState({ name: "", email: "", dob: "", over25: false });
+  const [householdMemberForm, setHouseholdMemberForm] = useState({ name: "", email: "", dob: "", over25: false, allergies: "" });
   const [householdMemberErrors, setHouseholdMemberErrors] = useState<{ name?: string; email?: string; dob?: string }>({});
 
   const [editingHouseholdMemberId, setEditingHouseholdMemberId] = useState<number | null>(null);
@@ -243,11 +243,11 @@ export default function HouseholdPage() {
       const res = await fetch('/api/household', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberName: householdMemberForm.name, memberEmail: householdMemberForm.email, memberDob: householdMemberForm.over25 ? "" : householdMemberForm.dob, memberOver25: householdMemberForm.over25 })
+        body: JSON.stringify({ memberName: householdMemberForm.name, memberEmail: householdMemberForm.email, memberDob: householdMemberForm.over25 ? "" : householdMemberForm.dob, memberOver25: householdMemberForm.over25, memberAllergies: householdMemberForm.allergies })
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setHouseholdMemberForm({ name: "", email: "", dob: "", over25: false });
+        setHouseholdMemberForm({ name: "", email: "", dob: "", over25: false, allergies: "" });
         setHouseholdMemberErrors({});
         setAddingHouseholdMember(false);
         fetchHousehold();
@@ -454,6 +454,7 @@ export default function HouseholdPage() {
                       {!householdMemberForm.over25 && (
                         <TextInput type="date" label="Date of Birth" value={householdMemberForm.dob} error={householdMemberErrors.dob} onChange={(e) => { setHouseholdMemberForm({ ...householdMemberForm, dob: e.currentTarget.value }); setHouseholdMemberErrors({ ...householdMemberErrors, dob: undefined }); }} />
                       )}
+                      <TextInput label="Allergies (optional)" value={householdMemberForm.allergies} onChange={(e) => setHouseholdMemberForm({ ...householdMemberForm, allergies: e.currentTarget.value })} />
                       <Group grow>
                         <Button type="submit" color="green">Save / Invite Household Member</Button>
                         <Button type="button" variant="default" onClick={() => { setAddingHouseholdMember(false); setHouseholdMemberErrors({}); }}>Cancel</Button>
