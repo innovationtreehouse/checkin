@@ -17,6 +17,7 @@ const emptyPrefill = { household: null, primaryParent: null, secondaryParent: nu
 function state(overrides: Record<string, unknown>) {
   return {
     hasHousehold: false,
+    isLead: true,
     membershipStatus: null,
     process: null,
     external: null,
@@ -56,6 +57,15 @@ describe("membership page", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/membership", expect.objectContaining({ method: "POST" })),
     );
     expect(await screen.findByText("Your household")).toBeInTheDocument();
+  });
+
+  it("hides the Start button and shows a note for a non-lead member", async () => {
+    setSession({ id: 2 });
+    mockFetchJson({ "/api/membership": state({ isLead: false }) });
+    renderWithProviders(<MembershipPage />);
+
+    expect(await screen.findByText("Only a household lead can start the membership application.", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start application" })).not.toBeInTheDocument();
   });
 
   it("fills the intake form and saves progress", async () => {
