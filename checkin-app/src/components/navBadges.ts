@@ -15,6 +15,11 @@ export function leadPendingCount(counts: TodoCounts | null): number {
   return counts?.lead?.programs.reduce((sum, p) => sum + p.pending.length, 0) ?? 0;
 }
 
+/** Overlapping-visit conflicts across the caller's led programs (red badge count). */
+export function leadConflictCount(counts: TodoCounts | null): number {
+  return counts?.lead?.conflicts ?? 0;
+}
+
 /**
  * Background-check Review badges (0, 1, or 2), shared by the left-nav Membership
  * Ops item and the Review sub-tab so both stay in lockstep: green = applications
@@ -48,9 +53,12 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
     case '/my-household':
       return green(counts.member.household.length, `${counts.member.household.length} items need attention`);
     case '/my-programs': {
-      // Pending attendance the lead must confirm, summed across their programs.
+      // Red conflicts first (left of green), then pending attendance the lead
+      // must confirm — mirrors the Conflicts/Attendance subtab badges.
+      const c = leadConflictCount(counts);
+      const red = c > 0 ? [{ count: c, color: 'red', label: `${c} attendance ${c === 1 ? 'conflict' : 'conflicts'} to resolve` }] : [];
       const n = leadPendingCount(counts);
-      return green(n, `${n} attendance ${n === 1 ? 'item' : 'items'} to confirm`);
+      return [...red, ...green(n, `${n} attendance ${n === 1 ? 'item' : 'items'} to confirm`)];
     }
     case '/attendance': {
       const mine = counts.buildingHousehold;
