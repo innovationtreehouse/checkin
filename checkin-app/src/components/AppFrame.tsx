@@ -54,6 +54,7 @@ type SessionUser = {
   isSysadmin?: boolean;
   isBoardMember?: boolean;
   isKeyholder?: boolean;
+  isBackgroundCheckReviewer?: boolean;
   toolStatuses?: Array<{ level: string }>;
 };
 
@@ -64,6 +65,9 @@ type NavItem = {
   // counts is passed so computed-role items (e.g. the staff "My Programs" home,
   // gated on leading ≥1 program) can decide visibility from the todo-counts payload.
   visible: (user: SessionUser | undefined, signedIn: boolean, counts: TodoCounts | null) => boolean;
+  // Per-role destination override. The hub (/membership-ops) redirects to the admin-only
+  // first tab, so a reviewer-only user must be pointed straight at their one reachable tab.
+  hrefFor?: (user: SessionUser | undefined) => string;
   // Dev-instance-only item (hidden in prod). The target route 404s off a dev instance anyway;
   // this just keeps it out of the prod nav. Gated on useIsDevInstance() at render, not `visible`.
   devOnly?: boolean;
@@ -110,7 +114,13 @@ const NAV_ITEMS: NavItem[] = [
     href: '/membership-ops',
     label: 'Membership Ops',
     icon: <IconUsers size={18} />,
-    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
+    // Reviewers get in for the Background-check Review tab; other tabs 403 independently.
+    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember || !!u?.isBackgroundCheckReviewer,
+    // Admins land on the hub (→ first tab); a reviewer-only user has just the Review tab.
+    hrefFor: (u) =>
+      !u?.isSysadmin && !u?.isBoardMember && u?.isBackgroundCheckReviewer
+        ? '/membership-ops/review'
+        : '/membership-ops',
   },
   {
     href: '/membership-audit',
@@ -301,16 +311,17 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
           }
         >
           {visibleItems.map((item) => {
-            const active = isActive(pathname, item.href);
+            const href = item.hrefFor?.(user) ?? item.href;
+            const active = isActive(pathname, href);
             // On the colored sidebar all text is white; the 'light' variant gives a soft
             // translucent overlay on the active item rather than a harsh solid fill.
             const sidebarText = onColoredSidebar ? 'var(--mantine-color-white)' : undefined;
-            const badges = navBadgeFor(item.href, todoCounts);
+            const badges = navBadgeFor(href, todoCounts);
             return (
               <NavLink
                 key={item.href}
                 component={Link}
-                href={item.href}
+                href={href}
                 onNavigate={guardNav}
                 label={item.label}
                 leftSection={item.icon}
