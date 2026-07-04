@@ -12,7 +12,7 @@ import { apiError } from "@/lib/api-response";
 // logged-in member; denied households fail closed at authenticateRequest, which
 // closes the old hand-rolled denied bypass), and the registry view — not this
 // query — gates fields. We select only {id, name} (no client needs email), but
-// the registry declares participant email as staff-only (everyones:pii) so the
+// the registry declares person email as staff-only (everyones:pii) so the
 // stripper would gate it if ever added. That converts the endpoint from an
 // IDOR-shaped hand-rolled select into declared policy, so the recurring audit
 // false-positive resolves.
