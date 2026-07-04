@@ -39,8 +39,12 @@ env:
   AWS_REGION: us-east-2
   ECR_REGISTRY: 639595353568.dkr.ecr.us-east-2.amazonaws.com
   ECR_REPOSITORY: checkin-prod
-  ECS_CLUSTER: checkin-prod
+  # Prod runs on the shared Managed-Instances cluster, not a dedicated
+  # checkin-prod cluster (infra #104 destroyed that one). Names below come from
+  # the infra repo — see the "prod infra" note in the PR description.
+  ECS_CLUSTER: treehouse-prod
   ECS_SERVICE: checkin-prod
+  ECS_CAPACITY_PROVIDER: treehouse-prod-c6g
   APP_TASK_FAMILY: checkin-prod
   MIGRATE_TASK_FAMILY: checkin-migrate-prod
   DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-prod
@@ -131,12 +135,6 @@ jobs:
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered migrate task def: $MIGRATE_ARN"
 
-          # Reuse the service's own network config (subnets / SG / public IP) so
-          # the one-off task lands exactly where the service runs.
-          NETWORK_CONFIG=$(aws ecs describe-services \
-            --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
-            --query 'services[0].networkConfiguration' --output json)
-
           # The shared Aurora cluster is Serverless v2 with min capacity 0 and
           # auto-pause: if it's idle at deploy time, the first connection races
           # the ~30s resume and Prisma fails fast with P1001. Override the
@@ -151,11 +149,17 @@ jobs:
           }
           EOF
 
+          # treehouse-prod is ECS Managed Instances: the app + migrate task defs
+          # are host-networked/EC2-compatible here (modules/checkin/compute.tf),
+          # and the service itself has no networkConfiguration (its dynamic
+          # block is empty on Managed Instances) — unlike dev's Fargate/awsvpc
+          # path, there is no network config to copy and no FARGATE launch type
+          # to use. Launch via the cluster's capacity provider instead, with no
+          # --network-configuration at all.
           TASK_ARN=$(aws ecs run-task \
             --cluster "$ECS_CLUSTER" \
             --task-definition "$MIGRATE_ARN" \
-            --launch-type FARGATE \
-            --network-configuration "$NETWORK_CONFIG" \
+            --capacity-provider-strategy capacityProvider=$ECS_CAPACITY_PROVIDER,weight=1 \
             --overrides "file://$RUNNER_TEMP/migrate-overrides.json" \
             --query 'tasks[0].taskArn' --output text)
           echo "Migration task: $TASK_ARN"
@@ -166,8 +170,22 @@ jobs:
             --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
             --query 'tasks[0].containers[0].exitCode' --output text)
           echo "Migration exit code: $EXIT_CODE"
+
+          # Surface the container's own output either way — without this, a failure
+          # only shows the exit code here and the real Prisma error (P3009 etc.)
+          # hides in CloudWatch, which is how the 2026-07-02 P3009 wedge went
+          # undiagnosed for a day (mirrors deploy-dev.yml).
+          TASK_ID="${TASK_ARN##*/}"
+          echo "--- migrate container logs (/ecs/checkin-migrate-prod) ---"
+          aws logs get-log-events \
+            --log-group-name /ecs/checkin-migrate-prod \
+            --log-stream-name "ecs/checkin-migrate/$TASK_ID" \
+            --start-from-head --limit 200 \
+            --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+          echo "--- end migrate container logs ---"
+
           if [ "$EXIT_CODE" != "0" ]; then
-            echo "::error::Database migration failed (exit $EXIT_CODE)"
+            echo "::error::Database migration failed (exit $EXIT_CODE) — see migrate container logs above"
             exit 1
           fi
 
