@@ -85,6 +85,20 @@ function shopifyMockActiveEnv(): boolean {
  */
 export const DEV_MOCK_SHOPIFY_WEBHOOK_SECRET = 'dev-shopify-mock-webhook-secret';
 
+/**
+ * The dev/local background-check MOCK is active when the real Averity consent link
+ * is unconfigured (AVERITY_CONSENT_URL unset) AND we're on a non-prod instance.
+ * Same two server-only fuses as the Zoho/Shopify mocks — CHECKIN_ENV (fails safe to
+ * prod) and NODE_ENV — so no mock path is reachable in prod by construction. It hands
+ * the applicant an in-app consent link (/dev/bg-consent) instead of Averity's hosted
+ * page, so the check can be started in debug mode; board members then sign off through
+ * the normal two-reviewer attestation. Setting AVERITY_CONSENT_URL opts back into the
+ * real link. See docs/designs/BG_CHECK_DEV_MOCK.md.
+ */
+function bgMockActiveEnv(): boolean {
+    return !process.env.AVERITY_CONSENT_URL && readCheckinEnv() !== 'prod' && process.env.NODE_ENV !== 'production';
+}
+
 export const config = {
     // Database
     databaseUrl: () => requireEnv('DATABASE_URL'),
@@ -159,6 +173,11 @@ export const config = {
     // True when the dev/local mock stands in for a real Shopify store (creds unset,
     // non-prod). Gates /api/dev/shopify/* + the dev tool. Always false in prod.
     shopifyMockActive: (): boolean => shopifyMockActiveEnv(),
+
+    // True when the dev/local background-check mock stands in for Averity (consent URL
+    // unset, non-prod). Selects the mock provider (in-app consent link) and gates
+    // /dev/bg-consent + its complete route. Always false in prod. See bgMockActiveEnv.
+    bgMockActive: (): boolean => bgMockActiveEnv(),
 
     // App
     checkinEnv: (): CheckinEnv => readCheckinEnv(),
