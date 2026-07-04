@@ -26,7 +26,7 @@ const prismaAdapterClient = {
 
 // Every participant must belong to a household (Participant.householdId is
 // required), so new sign-ups get a single-person household they lead.
-async function createParticipantWithHousehold(data: {
+export async function createParticipantWithHousehold(data: {
     name?: string | null;
     email?: string | null;
     image?: string | null;
