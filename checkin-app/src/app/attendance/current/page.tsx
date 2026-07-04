@@ -11,6 +11,7 @@ import {
 import { formatTime, isYouth } from "@/lib/time";
 import { formatPhone } from "@/lib/phone";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
+import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { AttendanceTabs } from "../AttendanceTabs";
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -194,6 +195,8 @@ function KioskDisplayInner() {
       setData(json);
       if (json.signedRequest) setIsKioskMode(true);
     }
+    // Refresh nav/sub-tab building counts too — they read a separate cached fetch.
+    notifyNavRefresh();
   };
 
   const handleForceCheckout = async (visitId: number, isSelf: boolean = false) => {
