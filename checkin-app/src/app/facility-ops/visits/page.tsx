@@ -159,7 +159,8 @@ export default function AdminVisitsPage() {
         setEditingVisitId(null);
         fetchVisits();
       } else {
-        setRowNotice({ id, text: "Failed to update visit.", tone: "error" });
+        const data = await res.json().catch(() => ({}));
+        setRowNotice({ id, text: data.error || "Failed to update visit.", tone: "error" });
       }
     } catch {
       notifications.show({ color: "red", message: "Network error saving visit.", autoClose: false });

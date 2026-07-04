@@ -398,6 +398,10 @@ export default function MembershipPage() {
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.url) {
         window.location.href = data.url;
+      } else if (data.code === "not_configured" || data.code === "agreement_unavailable") {
+        // Zoho e-sign isn't set up yet (503) — retrying won't help.
+        flash("Signing is temporarily unavailable — please check back soon.", true);
+        setSaving(false);
       } else {
         flash(apiError(data, "Couldn't open the signing form. Please try again."), true);
         setSaving(false);
