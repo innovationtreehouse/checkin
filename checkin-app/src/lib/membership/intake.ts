@@ -6,6 +6,7 @@ import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
 import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/lib/address";
+import { INTAKE_PROFILES, missingRequiredFields } from "@/lib/intake/profiles";
 
 /**
  * Membership intake service — the write/read model behind the "Join the
@@ -350,17 +351,15 @@ export async function submitIntake(userId: number) {
         .sort((a, b) => b.id - a.id)[0];
     if (!process) throw new IntakeError("no_process", "No application is awaiting your information.");
 
-    // Each missing requirement carries the form field key to highlight + a label
-    // for the summary message.
-    const missing: { field: string; label: string }[] = [];
-    if (!household.line1?.trim()) missing.push({ field: "address", label: "home address" });
-    // A household must keep >= 1 valid (non-member, complete) emergency contact.
-    const hasValidContact = household.emergencyContacts.some(
-        (c) => c.conflictParticipantId === null && c.name.trim() && c.phone.trim(),
-    );
-    if (!hasValidContact) missing.push({ field: "emergencyContact", label: "a valid emergency contact (someone outside the household)" });
+    // Required-field validation is driven by the membership-initial profile (one
+    // declarative source of truth shared across intake surfaces), not inline
+    // literals. Field keys + labels + order are unchanged from the hardcoded set.
     const primary = household.householdMembers.find((p) => p.id === userId);
-    if (!primary?.name?.trim()) missing.push({ field: "primaryName", label: "primary parent name" });
+    const missing = missingRequiredFields(INTAKE_PROFILES["membership-initial"], {
+        addressLine1: household.line1,
+        emergencyContacts: household.emergencyContacts,
+        primaryName: primary?.name,
+    });
     if (missing.length) {
         throw new IntakeError(
             "incomplete",
