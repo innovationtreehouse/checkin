@@ -44,7 +44,6 @@ function NewParticipantForm() {
   const [alreadyMember, setAlreadyMember] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [isError, setIsError] = useState(false);
 
   // Handle deep linked household
   useEffect(() => {
@@ -79,7 +78,6 @@ function NewParticipantForm() {
     e.preventDefault();
     setSaving(true);
     setMessage("");
-    setIsError(false);
 
     try {
       const res = await fetch('/api/membership-ops/participants', {
@@ -107,11 +105,9 @@ function NewParticipantForm() {
         setHouseholdSearch("");
         setAlreadyMember(false);
       } else {
-        setIsError(true);
         setMessage(data.error || "Failed to create participant");
       }
     } catch {
-      setIsError(true);
       setMessage("Network error");
     } finally {
       setSaving(false);
@@ -131,7 +127,7 @@ function NewParticipantForm() {
           this profile.
         </Text>
 
-        <AlertBanner message={message} tone={isError ? 'error' : 'success'} mb="md" />
+        <AlertBanner message={message} tone="error" mb="md" />
 
         <form onSubmit={handleSubmit}>
           <Stack>

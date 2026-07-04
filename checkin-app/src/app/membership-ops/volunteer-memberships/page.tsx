@@ -17,9 +17,8 @@ export default function VolunteerMembershipsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [isError, setIsError] = useState(false);
 
-  const flash = (m: string, err = false) => { setMessage(m); setIsError(err); };
+  const flash = (m: string) => setMessage(m);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,10 +45,10 @@ export default function VolunteerMembershipsPage() {
       const data = await res.json();
       if (res.ok) {
         setNewEmail("");
-        if (data.warning) { flash(data.warning, true); } else { notifications.show({ color: "green", message: "Designation added." }); }
+        if (data.warning) { flash(data.warning); } else { notifications.show({ color: "green", message: "Designation added." }); }
         await load();
-      } else flash(data.error || "Could not add.", true);
-    } catch { flash("Network error.", true); }
+      } else flash(data.error || "Could not add.");
+    } catch { flash("Network error."); }
     finally { setSaving(false); }
   };
 
@@ -63,7 +62,7 @@ export default function VolunteerMembershipsPage() {
 
   return (
     <Stack>
-      <AlertBanner message={message} tone={isError ? 'warning' : 'success'} />
+      <AlertBanner message={message} tone="warning" />
 
       <Card withBorder radius="md" padding="lg">
         <Title order={3} mb="xs">Volunteer-only designated emails</Title>

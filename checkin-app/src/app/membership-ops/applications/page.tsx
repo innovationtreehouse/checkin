@@ -62,7 +62,6 @@ export default function AdminMembershipPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [messageId, setMessageId] = useState<number | null>(null);
-  const [isError, setIsError] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,11 +94,9 @@ export default function AdminMembershipPage() {
         await load();
         notifyNavRefresh();
       } else {
-        setIsError(true);
         setMessage(data.error || "Action failed.");
       }
     } catch {
-      setIsError(true);
       setMessage("Network error.");
     } finally {
       setBusyId(null);
@@ -122,11 +119,9 @@ export default function AdminMembershipPage() {
         await load();
         notifyNavRefresh();
       } else {
-        setIsError(true);
         setMessage(data.error || "Override failed.");
       }
     } catch {
-      setIsError(true);
       setMessage("Network error.");
     } finally {
       setBusyId(null);
@@ -149,11 +144,9 @@ export default function AdminMembershipPage() {
         await load();
         notifyNavRefresh();
       } else {
-        setIsError(true);
         setMessage(data.error || "Certification failed.");
       }
     } catch {
-      setIsError(true);
       setMessage("Network error.");
     } finally {
       setBusyId(null);
@@ -282,7 +275,7 @@ export default function AdminMembershipPage() {
               )}
 
               {messageId === r.id && (
-                <AlertBanner message={message} tone={isError ? 'error' : 'success'} mt="md" />
+                <AlertBanner message={message} tone="error" mt="md" />
               )}
             </Card>
           ))}
