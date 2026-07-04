@@ -52,7 +52,7 @@ export default function BrokenHouseholdsPage() {
         setNotice((n) => ({ ...n, [householdId]: { ok: false, text: data.error || "Failed to assign lead." } }));
       }
     } catch {
-      setNotice((n) => ({ ...n, [householdId]: { ok: false, text: "Network error." } }));
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setPromoting(null);
     }

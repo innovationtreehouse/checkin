@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Card, Checkbox, Stack, Text, Title, Tooltip } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
+import { notifications } from '@mantine/notifications';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 const OPTIONS = [
@@ -48,7 +49,7 @@ export default function CommunicationPage() {
         setMessage("Failed to load settings.");
       }
     } catch {
-      setMessage("Network error loading settings.");
+      notifications.show({ color: "red", message: "Network error loading settings.", autoClose: false });
     } finally {
       setLoading(false);
     }
