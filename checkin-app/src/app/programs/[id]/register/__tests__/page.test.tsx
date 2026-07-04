@@ -2,12 +2,14 @@
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, resetRtl, resolvedParams, router } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import PublicRegistrationPage from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 const program = {
   name: "Robotics Club",
@@ -208,7 +210,11 @@ describe("PublicRegistrationPage", () => {
 
     global.fetch = jest.fn().mockRejectedValue(new Error("down"));
     fireEvent.click(screen.getByRole("button", { name: "Pay & Register via Shopify" }));
-    expect(await screen.findByText("Network error occurred.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Network error occurred.", autoClose: false }),
+      ),
+    );
   });
 
   it("navigates back to the program from the Cancel button", async () => {
