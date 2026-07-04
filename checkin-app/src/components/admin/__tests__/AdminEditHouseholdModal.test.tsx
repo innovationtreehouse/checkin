@@ -166,7 +166,7 @@ describe("AdminEditHouseholdModal", () => {
 
     global.fetch = jest.fn(() => Promise.reject(new Error("boom"))) as unknown as typeof fetch;
     fireEvent.click(screen.getByRole("button", { name: "Save Changes — As Admin" }));
-    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
   });
 
   it("removes a lead (reloading after success) and blocks removing the last lead", async () => {
@@ -214,7 +214,7 @@ describe("AdminEditHouseholdModal", () => {
 
     global.fetch = jest.fn(() => Promise.reject(new Error("net"))) as unknown as typeof fetch;
     fireEvent.click(screen.getAllByRole("button", { name: "Remove lead" })[0]);
-    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
   });
 
   it("shows the no-leads state for a household with no household leads", async () => {

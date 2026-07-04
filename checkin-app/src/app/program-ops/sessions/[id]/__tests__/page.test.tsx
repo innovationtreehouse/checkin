@@ -177,7 +177,7 @@ describe("EventAdminPage", () => {
 
         fetchEventThenPatchWith(baseEvent(), () => { throw new Error("boom"); });
         fireEvent.click(screen.getByRole("button", { name: "Confirm Attendance" }));
-        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
     });
 
     it("edit time: shows the server error, then a network-error message", async () => {
@@ -194,7 +194,7 @@ describe("EventAdminPage", () => {
 
         fetchEventThenPatchWith(future, () => { throw new Error("boom"); });
         fireEvent.click(screen.getByRole("button", { name: "Save Time Changes" }));
-        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
     });
 
     it("manual edit: a member with a visit defaults to Present with time fields; toggling to Absent hides them and saves null times", async () => {
@@ -262,7 +262,7 @@ describe("EventAdminPage", () => {
         fireEvent.click(screen.getAllByRole("button", { name: "Manual Edit" })[0]);
         fetchEventThenPatchWith(baseEvent(), () => { throw new Error("boom"); });
         fireEvent.click(screen.getByRole("button", { name: "Save" }));
-        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
     });
 
     it("cancel event: declining the confirm() dialog skips the request; accepting shows the server error", async () => {
@@ -300,7 +300,7 @@ describe("EventAdminPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
         let modal = await screen.findByRole("dialog", { name: "Cancel Event" });
         fireEvent.click(within(modal).getByRole("button", { name: "Cancel Event(s)" }));
-        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
         await waitFor(() => expect(screen.queryByRole("dialog", { name: "Cancel Event" })).not.toBeInTheDocument());
 
         fetchEventThenPatchWith(future, () => ({ ok: true, json: async () => ({}) } as Response));
