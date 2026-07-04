@@ -49,7 +49,7 @@ import { useTodoCounts } from '@/hooks/useTodoCounts';
 import { useConfirmNav } from '@/components/UnsavedChangesProvider';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 import { navBadgeFor, leadsAnyProgram } from '@/components/navBadges';
-import { CountBadge } from '@/components/ui/CountBadge';
+import { CountBadge, badgeIntentFor } from '@/components/ui/CountBadge';
 
 type SessionUser = {
   isSysadmin?: boolean;
@@ -337,8 +337,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                         // info color CountBadge doesn't model, so it stays inline (filled + black
                         // text, same as before). NavLink forces section text white on the colored
                         // sidebar, so the dark label is pinned explicitly.
-                        const intent =
-                          badge.color === 'gray' ? 'info' : badge.color === 'treehouseGreen' ? 'action' : badge.color === 'red' ? 'alert' : null;
+                        const intent = badgeIntentFor(badge.color);
                         return intent ? (
                           <CountBadge key={badge.color} intent={intent} aria-label={badge.label}>
                             {badge.count}

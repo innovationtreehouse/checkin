@@ -133,9 +133,9 @@ describe('tabBadgeFor', () => {
       .toEqual({ count: 40, color: 'gray', label: '40 applications' });
   });
 
-  it('broken-households tab is green (board action), the other audit tabs gray', () => {
+  it('broken-households tab is red (board action, blocking), the other audit tabs gray', () => {
     expect(tabBadgeFor('/membership-audit/broken', admin({ brokenHouseholds: 2 })))
-      .toEqual({ count: 2, color: 'treehouseGreen', label: '2 households without a lead' });
+      .toEqual({ count: 2, color: 'red', label: '2 households without a lead' });
     expect(tabBadgeFor('/membership-audit/emergency-contacts', admin({ householdsMissingContact: 1 })))
       .toEqual({ count: 1, color: 'gray', label: '1 household missing an emergency contact' });
     expect(tabBadgeFor('/membership-audit/unclaimed', admin({ unclaimedHouseholds: 3 })))
@@ -154,19 +154,19 @@ describe('tabBadgeFor', () => {
 });
 
 // The /membership-audit section badge is a roll-up of its tabs; keep them in lockstep.
-// Green section total == broken tab; gray section total == emergency + unclaimed tabs.
+// Red section total == broken tab; gray section total == emergency + unclaimed tabs.
 describe('membership-audit nav ↔ tab agreement', () => {
   it('section badges equal the sum of their tab badges', () => {
     const counts = admin({ brokenHouseholds: 2, householdsMissingContact: 3, unclaimedHouseholds: 4 });
     const nav = navBadgeFor('/membership-audit', counts);
-    const navGreen = nav.find((b) => b.color === 'treehouseGreen')?.count ?? 0;
+    const navRed = nav.find((b) => b.color === 'red')?.count ?? 0;
     const navGray = nav.find((b) => b.color === 'gray')?.count ?? 0;
 
     const broken = tabBadgeFor('/membership-audit/broken', counts)?.count ?? 0;
     const emergency = tabBadgeFor('/membership-audit/emergency-contacts', counts)?.count ?? 0;
     const unclaimed = tabBadgeFor('/membership-audit/unclaimed', counts)?.count ?? 0;
 
-    expect(navGreen).toBe(broken);
+    expect(navRed).toBe(broken);
     expect(navGray).toBe(emergency + unclaimed);
   });
 });

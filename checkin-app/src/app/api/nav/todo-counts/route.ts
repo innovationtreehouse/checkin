@@ -59,7 +59,7 @@ export type TodoCounts = {
     // `membership` = board-actionable (BLOCKED, green). `applicationsTotal` =
     // every in-flight (non-ACTIVE) application, the gray count shown on the
     // Applications tab — mirrors what /api/admin/membership lists.
-    // `brokenHouseholds` = households with no lead at all (green).
+    // `brokenHouseholds` = households with no lead at all (red — blocking board action).
     // `memberFamilies` = total member families (gray), shown on the Manage Memberships tab:
     // households with >=1 non-org-email (or null-email) participant. Staff households hold
     // only the org-email lead, so they fall out.

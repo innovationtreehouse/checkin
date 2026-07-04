@@ -84,12 +84,15 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
       ];
     }
     case '/membership-audit': {
-      // Green: leadless households the board must fix (assign a lead). Gray: gaps
-      // the household must close — missing emergency contacts plus accounts created
-      // at registration but never claimed.
+      // Red: leadless households the board must fix (assign a lead) — blocking, so
+      // it's an alert not a routine action. Gray: gaps the household must close —
+      // missing emergency contacts plus accounts created at registration but never
+      // claimed.
+      const red = (n: number, label: string): NavBadge[] =>
+        n > 0 ? [{ count: n, color: 'red', label }] : [];
       const grayTotal = counts.admin ? counts.admin.householdsMissingContact + counts.admin.unclaimedHouseholds : 0;
       return [
-        ...green(counts.admin ? counts.admin.brokenHouseholds : 0, 'Leadless households needing a lead assigned'),
+        ...red(counts.admin ? counts.admin.brokenHouseholds : 0, 'Leadless households needing a lead assigned'),
         ...gray(grayTotal, 'Households missing an emergency contact or with an unclaimed account'),
       ];
     }
@@ -136,11 +139,13 @@ export function tabBadgeFor(href: string, counts: TodoCounts | null): NavBadge |
     case '/membership-ops/applications':
       return gray(admin.applicationsTotal, `${admin.applicationsTotal} application${plural(admin.applicationsTotal, '', 's')}`);
     // Membership Audit — mirrors the /membership-audit section badge: broken is
-    // green (board must assign a lead), the other two gray (household's own gaps).
+    // red (board must assign a lead — blocking), the other two gray (household's own gaps).
     case '/membership-audit/emergency-contacts':
       return gray(admin.householdsMissingContact, `${admin.householdsMissingContact} household${plural(admin.householdsMissingContact, '', 's')} missing an emergency contact`);
     case '/membership-audit/broken':
-      return green(admin.brokenHouseholds, `${admin.brokenHouseholds} household${plural(admin.brokenHouseholds, '', 's')} without a lead`);
+      return admin.brokenHouseholds > 0
+        ? { count: admin.brokenHouseholds, color: 'red', label: `${admin.brokenHouseholds} household${plural(admin.brokenHouseholds, '', 's')} without a lead` }
+        : null;
     case '/membership-audit/unclaimed':
       return gray(admin.unclaimedHouseholds, `${admin.unclaimedHouseholds} unclaimed account household${plural(admin.unclaimedHouseholds, '', 's')}`);
     // Safety — same count as the /safety section badge.
