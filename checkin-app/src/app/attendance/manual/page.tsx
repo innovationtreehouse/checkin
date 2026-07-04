@@ -5,6 +5,7 @@ import { Alert, Button, Card, Stack, Text, TextInput, Title } from "@mantine/cor
 import { notifications } from "@mantine/notifications";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { AttendanceTabs } from "../AttendanceTabs";
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -34,6 +35,8 @@ export default function ManualAttendance() {
         notifications.show({ color: "green", message: "Visit recorded successfully." });
         setArrived("");
         setDeparted("");
+        // Building occupancy badges (attendance nav) count this new visit — refresh them.
+        notifyNavRefresh();
       }
     } catch {
       setError("Network error occurred.");
