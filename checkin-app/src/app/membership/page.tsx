@@ -41,6 +41,7 @@ interface ExternalStatus {
 
 interface IntakeState {
   hasHousehold: boolean;
+  isLead: boolean;
   membershipStatus: OrgMembershipStatus | null;
   process: { id: number; kind: string; status: OrgMembershipProcessStatus } | null;
   external: ExternalStatus | null;
@@ -495,7 +496,11 @@ export default function MembershipPage() {
               family, then walk you through signing a contract, a background check, and payment. You
               can stop and resume anytime.
             </Text>
-            <Button disabled={saving} loading={saving} onClick={startApplication}>Start application</Button>
+            {state?.isLead ? (
+              <Button disabled={saving} loading={saving} onClick={startApplication}>Start application</Button>
+            ) : (
+              <Text c="dimmed">Only a household lead can start the membership application. Ask your household&apos;s lead to begin.</Text>
+            )}
           </Card>
         )
       ) : isRenewal && inStatus === "PENDING_RENEWAL" ? (
