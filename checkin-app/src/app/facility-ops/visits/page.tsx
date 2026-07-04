@@ -116,7 +116,7 @@ export default function AdminVisitsPage() {
         setMessage({ text: "Failed to load visits.", tone: "error" });
       }
     } catch {
-      setMessage({ text: "Network error loading visits.", tone: "error" });
+      notifications.show({ color: "red", message: "Network error loading visits.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -162,7 +162,7 @@ export default function AdminVisitsPage() {
         setRowNotice({ id, text: "Failed to update visit.", tone: "error" });
       }
     } catch {
-      setRowNotice({ id, text: "Network error saving visit.", tone: "error" });
+      notifications.show({ color: "red", message: "Network error saving visit.", autoClose: false });
     }
   };
 
