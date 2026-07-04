@@ -48,7 +48,7 @@ export default function PendingParticipantsPage() {
         setMessage("Failed to load requests. You may not have access.");
       }
     } catch {
-      setMessage("Network error loading requests.");
+      notifications.show({ color: "red", message: "Network error loading requests.", autoClose: false });
     } finally {
       setLoading(false);
     }

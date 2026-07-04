@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Stack } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
@@ -40,7 +41,7 @@ export default function AdminBadgesPage() {
         setMessage({ text: "Failed to load badge events.", tone: "error" });
       }
     } catch {
-      setMessage({ text: "Network error loading badges.", tone: "error" });
+      notifications.show({ color: "red", message: "Network error loading badges.", autoClose: false });
     } finally {
       setLoading(false);
     }

@@ -107,7 +107,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         setMessage("Failed to load program.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -149,11 +149,11 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         notifications.show({ color: "green", message: "Saved." });
         fetchProgram();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setSaveError(data.error || "Failed to save settings.");
       }
     } catch {
-      setSaveError("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }
