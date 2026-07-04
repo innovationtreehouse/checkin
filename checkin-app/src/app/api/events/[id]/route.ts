@@ -5,6 +5,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
+import { parseVisitTime, departureAfterArrival } from "@/lib/visitTimes";
 
 // FAIL-CLOSED, staff-only. This payload is fundamentally a roster — who is
 // enrolled / RSVP'd / attended — and a participant's name, id, and the very
@@ -250,6 +251,20 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     return apiError("Arrival time is required for Present status", 400);
                 }
 
+                const now = new Date();
+                const ar = parseVisitTime(arrivedAt, "arrival", now);
+                if (!ar.ok) return apiError(ar.error, 400);
+
+                let dep: Date | null = null;
+                if (departedAt) {
+                    const dr = parseVisitTime(departedAt, "departure", now);
+                    if (!dr.ok) return apiError(dr.error, 400);
+                    if (!departureAfterArrival(ar.value, dr.value)) {
+                        return apiError("Departure time must be after arrival time", 400);
+                    }
+                    dep = dr.value;
+                }
+
                 // Check if there is an existing visit
                 const existingVisit = await prisma.visit.findFirst({
                     where: {
@@ -262,8 +277,8 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     await prisma.visit.update({
                         where: { id: existingVisit.id },
                         data: {
-                            arrivedAt: new Date(arrivedAt),
-                            departedAt: departedAt ? new Date(departedAt) : null,
+                            arrivedAt: ar.value,
+                            departedAt: dep,
                             arrivedVia: "WEB",
                             departedVia: departedAt ? "WEB" : null
                         }
@@ -273,8 +288,8 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                         data: {
                             personId: Number(participantId),
                             associatedEventId: eventId,
-                            arrivedAt: new Date(arrivedAt),
-                            departedAt: departedAt ? new Date(departedAt) : null,
+                            arrivedAt: ar.value,
+                            departedAt: dep,
                             arrivedVia: "WEB",
                             departedVia: departedAt ? "WEB" : null
                         }
