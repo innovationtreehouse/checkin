@@ -21,6 +21,21 @@ export function leadConflictCount(counts: TodoCounts | null): number {
 }
 
 /**
+ * Red pill for unconfigured required Shopify-checkout board settings (the
+ * membership variant ID and the volunteer discount code). Count is 1 or 2, or
+ * null when both are set. Red (alert) — not green/gray — because until it's
+ * fixed membership checkout is broken. Shown on the Settings nav item and the
+ * Membership Settings sub-tab, both board/sysadmin-only (the people who can fix
+ * it). Returns null off the admin surface (non-board viewers never see it).
+ */
+export function settingsMisconfigBadge(counts: TodoCounts | null): NavBadge | null {
+  const n = counts?.admin?.settingsMisconfig ?? 0;
+  return n > 0
+    ? { count: n, color: 'red', label: `${n} required checkout setting${n === 1 ? '' : 's'} not configured` }
+    : null;
+}
+
+/**
  * Background-check Review badges (0, 1, or 2), shared by the left-nav Membership
  * Ops item and the Review sub-tab so both stay in lockstep: green = applications
  * this reviewer can act on now; gray = ones they approved awaiting a second
@@ -99,6 +114,11 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
     case '/safety':
       // Trusted-adult disclosures awaiting board review.
       return green(counts.admin ? counts.admin.trustedAdults : 0, 'Trusted-adult disclosures to review');
+    case '/settings': {
+      // Red: required Shopify-checkout settings still unset (variant ID, volunteer code).
+      const b = settingsMisconfigBadge(counts);
+      return b ? [b] : [];
+    }
     // System Status has no badge: every count it could show (membership,
     // payment-plan, trusted-adult) belongs to another nav item that already
     // badges it. A roll-up here just duplicates those numbers under an

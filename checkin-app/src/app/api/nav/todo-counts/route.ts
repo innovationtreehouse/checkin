@@ -63,7 +63,10 @@ export type TodoCounts = {
     // `memberFamilies` = total member families (gray), shown on the Manage Memberships tab:
     // households with >=1 non-org-email (or null-email) participant. Staff households hold
     // only the org-email lead, so they fall out.
-    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number };
+    // `settingsMisconfig` = how many required Shopify-checkout board settings are still
+    // unset (0–2): the membership variant ID and the volunteer discount code. Red pill on
+    // the Settings nav + Membership Settings tab — checkout is broken until both are set.
+    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number; settingsMisconfig: number };
     // Background-check reviewer surface (reviewers + board, per-viewer). `canActOn`
     // = applications this reviewer may attest now (green). `approvedAwaitingSecond`
     // = ones they approved that still need a second reviewer (gray).
@@ -342,7 +345,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // ---- Admin surface (board's own queue) — only for board/isSysadmin ----
     if (user.isSysadmin || user.isBoardMember) {
-        const [membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies] = await Promise.all([
+        const [membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, boardSettings] = await Promise.all([
             prisma.orgMembershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -387,8 +390,16 @@ export const GET = withAuth({}, async (_req, auth) => {
                     },
                 },
             }),
+            // Required Shopify-checkout settings — count how many are still unset so the
+            // board sees a red pill until both are configured. Empty string counts as unset.
+            prisma.boardSettings.findUnique({
+                where: { id: 1 },
+                select: { orgMembershipVariantId: true, volunteerDiscountCode: true },
+            }),
         ]);
-        result.admin = { membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies };
+        const settingsMisconfig =
+            (boardSettings?.orgMembershipVariantId ? 0 : 1) + (boardSettings?.volunteerDiscountCode ? 0 : 1);
+        result.admin = { membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, settingsMisconfig };
     }
 
     // ---- Reviewer surface (per-viewer background-check queue) ----
