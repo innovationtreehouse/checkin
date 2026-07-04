@@ -44,7 +44,7 @@ function ageBadge(p: HouseholdMember): { label: string; color: string; variant: 
   return { label: 'Age Unavailable', color: 'red', variant: 'filled' };
 }
 
-type HouseholdMember = { id: number; name?: string; email?: string; dateOfBirth?: string; phone?: string; isDeclaredAdult?: boolean };
+type HouseholdMember = { id: number; name?: string; email?: string; dateOfBirth?: string; phone?: string; isDeclaredAdult?: boolean; allergies?: string | null };
 type EmergencyContact = { id: number; name: string; phone: string; email?: string | null; relationship?: string | null; priority: number; invalid: boolean };
 type HouseholdData = {
   id?: number;
@@ -76,7 +76,7 @@ export default function HouseholdPage() {
   const [householdMemberErrors, setHouseholdMemberErrors] = useState<{ name?: string; email?: string; dob?: string }>({});
 
   const [editingHouseholdMemberId, setEditingHouseholdMemberId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", email: "", dob: "", phone: "", isLead: false, over25: false });
+  const [editForm, setEditForm] = useState({ name: "", email: "", dob: "", phone: "", isLead: false, over25: false, allergies: "" });
   // Errors for the inline edit form. phone shown only after a Save attempt, so
   // the red ring never appears mid-typing.
   const [editErrors, setEditErrors] = useState<{ name?: string; email?: string; dob?: string; phone?: string }>({});
@@ -271,7 +271,7 @@ export default function HouseholdPage() {
       const res = await fetch('/api/household/member', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ participantId, name: editForm.name, email: editForm.email, dob: editForm.over25 ? "" : editForm.dob, phone: editForm.phone, isLead: editForm.isLead, over25: editForm.over25 })
+        body: JSON.stringify({ participantId, name: editForm.name, email: editForm.email, dob: editForm.over25 ? "" : editForm.dob, phone: editForm.phone, isLead: editForm.isLead, over25: editForm.over25, allergies: editForm.allergies })
       });
       const data = await res.json();
       if (res.ok) {
@@ -396,6 +396,7 @@ export default function HouseholdPage() {
                               <TextInput size="xs" type="date" label="Date of Birth" value={editForm.dob} error={editErrors.dob} onChange={(e) => { setEditForm({ ...editForm, dob: e.currentTarget.value }); setEditErrors({ ...editErrors, dob: undefined }); }} />
                             )}
                             <TextInput size="xs" type="tel" label="Phone" value={editForm.phone} error={editErrors.phone} onChange={(e) => { setEditForm({ ...editForm, phone: e.currentTarget.value }); setEditErrors({ ...editErrors, phone: undefined }); }} />
+                            <TextInput size="xs" label="Allergies (optional)" value={editForm.allergies} onChange={(e) => setEditForm({ ...editForm, allergies: e.currentTarget.value })} />
                             {p.id !== userId && (editForm.over25 || (editForm.dob && calculateAge(editForm.dob) >= 18)) && (
                               <Checkbox label="Household Lead" checked={editForm.isLead} onChange={(e) => setEditForm({ ...editForm, isLead: e.currentTarget.checked })} />
                             )}
@@ -413,6 +414,7 @@ export default function HouseholdPage() {
                           </Group>
                           {p.email && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>{p.email}</Text>}
                           {p.phone && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>{formatPhone(p.phone)}</Text>}
+                          {p.allergies && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>Allergies: {p.allergies}</Text>}
                           {leadMissingPhone && <Badge color="red" variant="filled" mt="xs">TODO: Add phone number</Badge>}
                           <Group gap="xs" mt="sm">
                             {householdMemberIsLead && <Badge color="grape" variant="light">Household Lead</Badge>}
@@ -423,7 +425,7 @@ export default function HouseholdPage() {
                               <Button size="compact-xs" variant="subtle" color="gray" onClick={() => {
                                 setEditingHouseholdMemberId(p.id);
                                 setEditErrors({});
-                                setEditForm({ name: p.name || "", email: p.email || "", dob: p.dateOfBirth ? new Date(p.dateOfBirth).toISOString().split('T')[0] : "", phone: p.phone || "", isLead: householdMemberIsLead, over25: !p.dateOfBirth && !!p.isDeclaredAdult });
+                                setEditForm({ name: p.name || "", email: p.email || "", dob: p.dateOfBirth ? new Date(p.dateOfBirth).toISOString().split('T')[0] : "", phone: p.phone || "", isLead: householdMemberIsLead, over25: !p.dateOfBirth && !!p.isDeclaredAdult, allergies: p.allergies || "" });
                               }}>Edit</Button>
                             )}
                           </Group>
