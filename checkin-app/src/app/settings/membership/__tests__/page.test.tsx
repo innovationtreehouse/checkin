@@ -18,7 +18,10 @@ const SETTINGS = {
   bgRecheckMonths: 24,
 };
 
-beforeEach(() => resetRtl());
+beforeEach(() => {
+  resetRtl();
+  (notifications.show as jest.Mock).mockClear();
+});
 afterEach(() => jest.useRealTimers());
 
 describe("MembershipSettingsPage", () => {
@@ -135,7 +138,9 @@ describe("MembershipSettingsPage", () => {
 
     global.fetch = jest.fn(() => Promise.reject(new Error("net"))) as unknown as typeof fetch;
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
-    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error." })),
+    );
   });
 
   it("opens renewals for all active members after confirming, with reminders toggled on", async () => {
@@ -189,6 +194,8 @@ describe("MembershipSettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open renewals for all active members" }));
     modal = await screen.findByRole("dialog", { name: "Open Renewals For All Active Members" });
     fireEvent.click(within(modal).getByRole("button", { name: "Open Renewals" }));
-    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error." })),
+    );
   });
 });
