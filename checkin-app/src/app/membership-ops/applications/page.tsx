@@ -118,6 +118,9 @@ export default function AdminMembershipPage() {
         notifications.show({ color: "green", message: action === "reset" ? "Sent back for re-review." : "Overridden to payment." });
         await load();
         notifyNavRefresh();
+      } else if (data.code === "wrong_phase") {
+        notifications.show({ color: "red", message: data.error || "This application is no longer blocked.", autoClose: 4000 });
+        await load();
       } else {
         setMessage(data.error || "Override failed.");
       }
@@ -143,6 +146,9 @@ export default function AdminMembershipPage() {
         notifications.show({ color: "green", message: "Certified — membership activated." });
         await load();
         notifyNavRefresh();
+      } else if (data.code === "wrong_phase") {
+        notifications.show({ color: "red", message: data.error || "This application is no longer awaiting payment.", autoClose: 4000 });
+        await load();
       } else {
         setMessage(data.error || "Certification failed.");
       }
