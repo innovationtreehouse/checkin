@@ -199,7 +199,7 @@ describe('Household API Integration Tests', () => {
 
             const req = new Request('http://localhost:4000/api/household', {
                 method: 'PATCH',
-                body: JSON.stringify({ memberName: 'New Child', memberEmail: 'new-child-household-api-test@example.com', memberDob: '2015-01-01' })
+                body: JSON.stringify({ memberName: 'New Child', memberEmail: 'new-child-household-api-test@example.com', memberDob: '2015-01-01', memberAllergies: 'Peanuts' })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
@@ -213,6 +213,24 @@ describe('Household API Integration Tests', () => {
             // PII minimization) — verify the attachment directly against the DB instead.
             const created = await prisma.person.findUnique({ where: { id: data.member.id } });
             expect(created?.householdId).toBe(householdId);
+            // Allergies (safety data) must persist on the ADD path, no second edit.
+            expect(created?.allergies).toBe('Peanuts');
+        });
+
+        it('should default allergies to null when omitted on add', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
+
+            const req = new Request('http://localhost:4000/api/household', {
+                method: 'PATCH',
+                body: JSON.stringify({ memberName: 'No Allergies Child', memberDob: '2016-01-01' })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            const created = await prisma.person.findUnique({ where: { id: data.member.id } });
+            expect(created?.allergies).toBeNull();
         });
 
         it('should reject a new member with neither a DoB nor a 25+ declaration (400)', async () => {

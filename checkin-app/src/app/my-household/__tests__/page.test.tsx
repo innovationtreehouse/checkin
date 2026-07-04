@@ -90,6 +90,8 @@ describe("HouseholdPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add Household Member" }));
     fireEvent.change(screen.getByLabelText("Full Name"), { target: { value: "Robin Smith" } });
     fireEvent.click(screen.getByLabelText("Individual is over 25"));
+    // Allergies (safety data) must be capturable on ADD, not only on a later edit.
+    fireEvent.change(screen.getByLabelText("Allergies (optional)"), { target: { value: "Bees" } });
     fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
 
     await waitFor(() =>
@@ -97,7 +99,7 @@ describe("HouseholdPage", () => {
         "/api/household",
         expect.objectContaining({
           method: "PATCH",
-          body: JSON.stringify({ memberName: "Robin Smith", memberEmail: "", memberDob: "", memberOver25: true }),
+          body: JSON.stringify({ memberName: "Robin Smith", memberEmail: "", memberDob: "", memberOver25: true, memberAllergies: "Bees" }),
         }),
       ),
     );

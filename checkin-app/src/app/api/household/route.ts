@@ -54,7 +54,7 @@ export const PATCH = withAuth(
             }
 
             const body = await req.json();
-            const { memberName, memberEmail, memberDob, memberOver25 } = body;
+            const { memberName, memberEmail, memberDob, memberOver25, memberAllergies } = body;
 
             const hh = await householdLeadship(userId);
 
@@ -101,6 +101,7 @@ export const PATCH = withAuth(
                             ...(memberEmail && { email: memberEmail.toLowerCase() }),
                             dateOfBirth: memberDob ? new Date(memberDob) : null,
                             isDeclaredAdult: !memberDob && !!memberOver25,
+                            allergies: memberAllergies || null,
                             householdId,
                         },
                         select: HOUSEHOLD_PEER_SELECT,
