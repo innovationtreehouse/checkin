@@ -169,14 +169,37 @@ describe('Nav todo-counts API', () => {
         const res = await callAs({ id: leadId, householdId: householdAId });
         expect(res.status).toBe(200);
         const data = await res.json();
-        // emergency contact (1) + PENDING_PAYMENT (1) + PENDING_SUBJECT_ACTION (1)
-        // + expiring trusted adult (1) = 4. RENEWAL_PENDING_BG is reviewer-owned → excluded.
-        expect(data.member.household).toHaveLength(4);
+        // emergency contact (1) + missing address (1) + PENDING_PAYMENT (1)
+        // + PENDING_SUBJECT_ACTION (1) + expiring trusted adult (1) = 5.
+        // RENEWAL_PENDING_BG is reviewer-owned → excluded.
+        expect(data.member.household).toHaveLength(5);
         expect(data.member.programs).toHaveLength(2);
         // Items carry a label + a deep link so the UI can show *what* is due.
         expect(data.member.household).toEqual(
-            expect.arrayContaining([expect.objectContaining({ label: 'Pay your membership dues', href: '/membership' })]),
+            expect.arrayContaining([
+                expect.objectContaining({ label: 'Pay your membership dues', href: '/membership' }),
+                expect.objectContaining({ key: 'household-address', href: '/my-household' }),
+            ]),
         );
+    });
+
+    it('drops the address todo once the household has a full valid address', async () => {
+        await prisma.household.update({
+            where: { id: householdAId },
+            data: { line1: '1 Main St', city: 'Austin', state: 'TX', postalCode: '78701' },
+        });
+        try {
+            const res = await callAs({ id: leadId, householdId: householdAId });
+            const data = await res.json();
+            expect(data.member.household).not.toEqual(
+                expect.arrayContaining([expect.objectContaining({ key: 'household-address' })]),
+            );
+        } finally {
+            await prisma.household.update({
+                where: { id: householdAId },
+                data: { line1: null, city: null, state: null, postalCode: null },
+            });
+        }
     });
 
     it('surfaces a lead bucket with only ended-and-unconfirmed attendance', async () => {

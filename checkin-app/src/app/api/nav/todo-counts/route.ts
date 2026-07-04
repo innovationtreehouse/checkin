@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import type { OrgMembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
 import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/service";
+import { pickAddress, validateAddress } from "@/lib/address";
 import { ORG_DOMAIN } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
 
@@ -124,6 +125,13 @@ export const GET = withAuth({}, async (_req, auth) => {
                 ? prisma.household.findUnique({
                       where: { id: householdId },
                       select: {
+                          // Address fields: a missing/invalid address (per validateAddress,
+                          // the same check the household form runs) is a lead-actionable todo.
+                          line1: true,
+                          line2: true,
+                          city: true,
+                          state: true,
+                          postalCode: true,
                           // A household needs the todo when it has no valid (non-member,
                           // complete) emergency contact. Emergency contacts are their own entity.
                           emergencyContacts: {
@@ -172,6 +180,9 @@ export const GET = withAuth({}, async (_req, auth) => {
 
         if (!!hh && hh.emergencyContacts.length === 0) {
             householdTodos.push({ key: "emergency-contact", label: "Add a household emergency contact", href: "/my-household#emergency-contact" });
+        }
+        if (!!hh && Object.keys(validateAddress(pickAddress(hh))).length > 0) {
+            householdTodos.push({ key: "household-address", label: "Add or complete your household address", href: "/my-household" });
         }
         for (const l of leadsMissingPhone) {
             householdTodos.push({ key: `lead-phone-${l.person.id}`, label: `Add a phone number for ${l.person.name ?? "the household lead"}`, href: "/my-household" });
