@@ -80,6 +80,16 @@ describe("AppFrame", () => {
     expect(screen.queryByText("Facility Ops")).not.toBeInTheDocument();
   });
 
+  it("shows Membership Ops to a reviewer-only user, linking straight to the Review tab", () => {
+    setSession({ id: 3, isBackgroundCheckReviewer: true });
+    renderFrame();
+
+    const link = screen.getByText("Membership Ops").closest("a");
+    expect(link).toHaveAttribute("href", "/membership-ops/review");
+    // Reviewer-only: the admin-gated siblings stay hidden.
+    expect(screen.queryByText("Membership Audit")).not.toBeInTheDocument();
+  });
+
   it("highlights the active nav item based on pathname", () => {
     setSession({ id: 1 });
     setPathname("/attendance");
