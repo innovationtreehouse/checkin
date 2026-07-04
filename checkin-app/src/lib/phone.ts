@@ -14,12 +14,15 @@ export function normalizePhone(phone: string | null | undefined): string {
 /**
  * A valid US phone is exactly 10 digits, or 11 digits with a leading country
  * code of 1. Formatting characters (spaces, dashes, parens, +) are ignored, so
- * "(555) 123-4567" and "5551234567" both pass. Blank/missing fails — callers
- * that allow an optional phone must short-circuit on empty before calling.
+ * "(555) 123-4567" and "5551234567" both pass. Per the NANP the area code must
+ * start 2-9, so a leading-1 10-digit number ("1" + 9 digits) is rejected.
+ * Blank/missing fails — callers that allow an optional phone must short-circuit
+ * on empty before calling.
  */
 export function isValidPhone(phone: string | null | undefined): boolean {
     const d = normalizePhone(phone);
-    return d.length === 10 || (d.length === 11 && d.startsWith("1"));
+    const ten = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+    return ten.length === 10 && /[2-9]/.test(ten[0]);
 }
 
 /**
