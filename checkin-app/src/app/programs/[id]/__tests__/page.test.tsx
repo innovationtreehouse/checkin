@@ -243,7 +243,9 @@ describe("ProgramEnrollmentPage", () => {
 
         global.fetch = jest.fn().mockRejectedValue(new Error("down"));
         fireEvent.click(screen.getByRole("button", { name: /request a payment plan/ }));
-        expect(await screen.findByText("Network error requesting payment plan.")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error requesting payment plan.", autoClose: false })),
+        );
     });
 
     it("enrolls multiple selected household members and reports the plural success message", async () => {
@@ -325,7 +327,9 @@ describe("ProgramEnrollmentPage", () => {
 
         global.fetch = jest.fn().mockRejectedValue(new Error("down"));
         fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
-        expect(await screen.findByText("Network error during enrollment.")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error during enrollment.", autoClose: false })),
+        );
     });
 
     it("redirects to Shopify checkout for a priced enrollment with a configured member variant", async () => {
@@ -444,7 +448,9 @@ describe("ProgramEnrollmentPage", () => {
     it("shows a network-error message when the program fetch throws", async () => {
         global.fetch = jest.fn().mockRejectedValue(new Error("down"));
         renderPage();
-        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })),
+        );
     });
 
     it("falls back to a bare Not Found card when the program response has no message", async () => {
