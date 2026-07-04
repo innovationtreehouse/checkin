@@ -43,7 +43,9 @@ describe("PublicRegistrationPage", () => {
     // reach the submit handler; dispatch the submit event directly to bypass it.
     const form = screen.getByRole("button", { name: "Pay & Register via Shopify" }).closest("form")!;
     fireEvent.submit(form);
-    expect(await screen.findByText("Primary parent/guardian information is required.")).toBeInTheDocument();
+    // All five required fields (parent name/email/phone + EC name/phone) now
+    // render an inline "Required" beneath the input instead of one banner.
+    expect(await screen.findAllByText("Required")).toHaveLength(5);
   });
 
   it("submits a fully filled-out registration", async () => {
@@ -122,7 +124,8 @@ describe("PublicRegistrationPage", () => {
 
     const form = screen.getByRole("button", { name: "Pay & Register via Shopify" }).closest("form")!;
     fireEvent.submit(form);
-    expect(await screen.findByText("Emergency contact is required.")).toBeInTheDocument();
+    // Parent fields filled; only the two EC fields flag "Required" inline.
+    expect(await screen.findAllByText("Required")).toHaveLength(2);
   });
 
   it("rejects an emergency contact phone that matches a parent's phone", async () => {
@@ -134,7 +137,7 @@ describe("PublicRegistrationPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Pay & Register via Shopify" }));
     expect(
-      await screen.findByText("Emergency contact phone must be different from parent/guardian phone numbers."),
+      await screen.findByText("Must differ from parent/guardian phone"),
     ).toBeInTheDocument();
   });
 
@@ -146,7 +149,7 @@ describe("PublicRegistrationPage", () => {
 
     const form = screen.getByRole("button", { name: "Pay & Register via Shopify" }).closest("form")!;
     fireEvent.submit(form);
-    expect(await screen.findByText("Participant 1 is missing a name.")).toBeInTheDocument();
+    expect(await screen.findByText("Required")).toBeInTheDocument();
   });
 
   it("requires a Date of Birth for age-restricted programs unless the participant matches a parent's name", async () => {
@@ -161,7 +164,7 @@ describe("PublicRegistrationPage", () => {
 
     const form = screen.getByRole("button", { name: "Pay & Register via Shopify" }).closest("form")!;
     fireEvent.submit(form);
-    expect(await screen.findByText("Participant 1 needs a Date of Birth for age verification.")).toBeInTheDocument();
+    expect(await screen.findByText("Date of birth required for age verification")).toBeInTheDocument();
 
     fireEvent.change(screen.getAllByLabelText("Date of Birth", { exact: false })[0], { target: { value: "2015-01-01" } });
     fireEvent.click(screen.getByRole("button", { name: "Pay & Register via Shopify" }));

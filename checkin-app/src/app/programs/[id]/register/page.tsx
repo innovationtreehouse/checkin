@@ -47,6 +47,10 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ parentName?: string; parentEmail?: string; parentPhone?: string; ecName?: string; ecPhone?: string }>({});
+  const [participantErrors, setParticipantErrors] = useState<{ name?: string; dob?: string }[]>([]);
+  const clearFieldErr = (k: keyof typeof fieldErrors) => setFieldErrors(fe => { if (!fe[k]) return fe; const c = { ...fe }; delete c[k]; return c; });
+  const clearParticipantErr = (i: number, k: 'name' | 'dob') => setParticipantErrors(pe => { if (!pe[i]?.[k]) return pe; const c = pe.map(x => ({ ...x })); if (c[i]) delete c[i][k]; return c; });
 
   // Public page: no app sidebar, so the native beforeunload from the guard infra
   // is the whole protection. Dirty once any field is typed; cleared on submit so
@@ -99,31 +103,28 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
 
   const validateForm = () => {
     setError("");
-    if (!parents[0].name || !parents[0].email || !parents[0].phone) {
-      setError("Primary parent/guardian information is required.");
-      return false;
+    setFieldErrors({});
+    setParticipantErrors([]);
+    const fe: typeof fieldErrors = {};
+    if (!parents[0].name) fe.parentName = "Required";
+    if (!parents[0].email) fe.parentEmail = "Required";
+    if (!parents[0].phone) fe.parentPhone = "Required";
+    if (!emergencyContact.name) fe.ecName = "Required";
+    if (!emergencyContact.phone) fe.ecPhone = "Required";
+    if (!fe.ecPhone && parents.some(p => p.phone && p.phone.replace(/\D/g, '') === emergencyContact.phone.replace(/\D/g, ''))) {
+      fe.ecPhone = "Must differ from parent/guardian phone";
     }
-    if (!emergencyContact.name || !emergencyContact.phone) {
-      setError("Emergency contact is required.");
-      return false;
-    }
-    if (parents.some(p => p.phone && p.phone.replace(/\D/g, '') === emergencyContact.phone.replace(/\D/g, ''))) {
-      setError("Emergency contact phone must be different from parent/guardian phone numbers.");
-      return false;
-    }
-    for (let i = 0; i < participants.length; i++) {
-      if (!participants[i].name) {
-        setError(`Participant ${i + 1} is missing a name.`);
-        return false;
+    if (Object.keys(fe).length) { setFieldErrors(fe); return false; }
+
+    const pe: { name?: string; dob?: string }[] = participants.map(() => ({}));
+    participants.forEach((pt, i) => {
+      if (!pt.name) pe[i].name = "Required";
+      if (!pt.dob && (program?.minAge !== null || program?.maxAge !== null)) {
+        const isMatchingParent = parents.some(parent => parent.name.toLowerCase().trim() === pt.name.toLowerCase().trim());
+        if (!isMatchingParent) pe[i].dob = "Date of birth required for age verification";
       }
-      if (!participants[i].dob && (program?.minAge !== null || program?.maxAge !== null)) {
-        const isMatchingParent = parents.some(parent => parent.name.toLowerCase().trim() === participants[i].name.toLowerCase().trim());
-        if (!isMatchingParent) {
-          setError(`Participant ${i + 1} needs a Date of Birth for age verification.`);
-          return false;
-        }
-      }
-    }
+    });
+    if (pe.some(x => x.name || x.dob)) { setParticipantErrors(pe); return false; }
     return true;
   };
 
@@ -208,9 +209,9 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
                     )}
                     <Text fw={600} mb="sm">{index === 0 ? 'Primary Guardian' : 'Secondary Guardian (Optional)'}</Text>
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                      <TextInput label="Full Name" required={index === 0} value={parent.name} onChange={e => handleParentChange(index, 'name', e.currentTarget.value)} placeholder="Jane Doe" />
-                      <TextInput type="email" label="Email Address" required={index === 0} value={parent.email} onChange={e => handleParentChange(index, 'email', e.currentTarget.value)} placeholder="jane@example.com" />
-                      <TextInput type="tel" label="Phone Number" required={index === 0} value={parent.phone} onChange={e => handleParentChange(index, 'phone', e.currentTarget.value)} placeholder="(555) 123-4567" />
+                      <TextInput label="Full Name" required={index === 0} error={index === 0 ? fieldErrors.parentName : undefined} value={parent.name} onChange={e => { handleParentChange(index, 'name', e.currentTarget.value); if (index === 0) clearFieldErr('parentName'); }} placeholder="Jane Doe" />
+                      <TextInput type="email" label="Email Address" required={index === 0} error={index === 0 ? fieldErrors.parentEmail : undefined} value={parent.email} onChange={e => { handleParentChange(index, 'email', e.currentTarget.value); if (index === 0) clearFieldErr('parentEmail'); }} placeholder="jane@example.com" />
+                      <TextInput type="tel" label="Phone Number" required={index === 0} error={index === 0 ? fieldErrors.parentPhone : undefined} value={parent.phone} onChange={e => { handleParentChange(index, 'phone', e.currentTarget.value); if (index === 0) clearFieldErr('parentPhone'); }} placeholder="(555) 123-4567" />
                     </SimpleGrid>
                   </Card>
                 ))}
@@ -226,8 +227,8 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
             <Card withBorder radius="md" padding="lg">
               <SectionHeader title="Emergency Contact" description="Someone outside the immediate household we can call." />
               <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md">
-                <TextInput label="Contact Name" required value={emergencyContact.name} onChange={e => setEmergencyContact({ ...emergencyContact, name: e.currentTarget.value })} placeholder="John Smith" />
-                <TextInput type="tel" label="Contact Phone" required value={emergencyContact.phone} onChange={e => setEmergencyContact({ ...emergencyContact, phone: e.currentTarget.value })} placeholder="(555) 987-6543" />
+                <TextInput label="Contact Name" required error={fieldErrors.ecName} value={emergencyContact.name} onChange={e => { setEmergencyContact({ ...emergencyContact, name: e.currentTarget.value }); clearFieldErr('ecName'); }} placeholder="John Smith" />
+                <TextInput type="tel" label="Contact Phone" required error={fieldErrors.ecPhone} value={emergencyContact.phone} onChange={e => { setEmergencyContact({ ...emergencyContact, phone: e.currentTarget.value }); clearFieldErr('ecPhone'); }} placeholder="(555) 987-6543" />
               </SimpleGrid>
             </Card>
 
@@ -244,13 +245,14 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
                     )}
                     <Text fw={600} mb="sm">Participant {index + 1}</Text>
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                      <TextInput label="Full Name" required value={p.name} onChange={e => handleParticipantChange(index, 'name', e.currentTarget.value)} placeholder="Child or Adult Name" />
+                      <TextInput label="Full Name" required error={participantErrors[index]?.name} value={p.name} onChange={e => { handleParticipantChange(index, 'name', e.currentTarget.value); clearParticipantErr(index, 'name'); }} placeholder="Child or Adult Name" />
                       <TextInput
                         type="date"
                         label="Date of Birth (Optional for Adults)"
                         required={!parents.some(parent => parent.name.toLowerCase().trim() === p.name.toLowerCase().trim()) && (program?.minAge !== null || program?.maxAge !== null)}
+                        error={participantErrors[index]?.dob}
                         value={p.dob}
-                        onChange={e => handleParticipantChange(index, 'dob', e.currentTarget.value)}
+                        onChange={e => { handleParticipantChange(index, 'dob', e.currentTarget.value); clearParticipantErr(index, 'dob'); }}
                       />
                     </SimpleGrid>
                   </Card>
