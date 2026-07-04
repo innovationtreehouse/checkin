@@ -27,6 +27,7 @@ interface PersonPrefill {
   name: string | null;
   email: string | null;
   dob: string | null;
+  over25: boolean;
   allergies: string | null;
 }
 
@@ -62,9 +63,9 @@ interface ChildForm {
 interface FormValues {
   address: StructuredAddress;
   emName: string; emPhone: string; emEmail: string;
-  primaryName: string; primaryDob: string; primaryAllergies: string;
+  primaryName: string; primaryDob: string; primaryOver25: boolean; primaryAllergies: string;
   hasSecondary: boolean; secondaryId?: number;
-  secondaryName: string; secondaryEmail: string; secondaryDob: string; secondaryAllergies: string;
+  secondaryName: string; secondaryEmail: string; secondaryDob: string; secondaryOver25: boolean; secondaryAllergies: string;
   children: ChildForm[];
 }
 
@@ -74,8 +75,8 @@ export const serializeMembershipForm = (v: FormValues) =>
   JSON.stringify([
     v.address.line1, v.address.line2, v.address.city, v.address.state, v.address.postalCode,
     v.emName, v.emPhone, v.emEmail,
-    v.primaryName, v.primaryDob, v.primaryAllergies,
-    v.hasSecondary, v.secondaryId, v.secondaryName, v.secondaryEmail, v.secondaryDob, v.secondaryAllergies,
+    v.primaryName, v.primaryDob, v.primaryOver25, v.primaryAllergies,
+    v.hasSecondary, v.secondaryId, v.secondaryName, v.secondaryEmail, v.secondaryDob, v.secondaryOver25, v.secondaryAllergies,
     v.children.map((c) => [c.id, c.name, c.email, c.dob, c.allergies]),
   ]);
 
@@ -116,12 +117,14 @@ export default function MembershipPage() {
   const [emEmail, setEmEmail] = useState("");
   const [primaryName, setPrimaryName] = useState("");
   const [primaryDob, setPrimaryDob] = useState("");
+  const [primaryOver25, setPrimaryOver25] = useState(false);
   const [primaryAllergies, setPrimaryAllergies] = useState("");
   const [hasSecondary, setHasSecondary] = useState(false);
   const [secondaryId, setSecondaryId] = useState<number | undefined>(undefined);
   const [secondaryName, setSecondaryName] = useState("");
   const [secondaryEmail, setSecondaryEmail] = useState("");
   const [secondaryDob, setSecondaryDob] = useState("");
+  const [secondaryOver25, setSecondaryOver25] = useState(false);
   const [secondaryAllergies, setSecondaryAllergies] = useState("");
   const [children, setChildren] = useState<ChildForm[]>([]);
   const [payment, setPayment] = useState<{ amountCents: number; checkoutUrl: string | null } | null>(null);
@@ -140,6 +143,7 @@ export default function MembershipPage() {
     const p = s.prefill.primaryParent;
     setPrimaryName(p?.name ?? "");
     setPrimaryDob(p?.dob ?? "");
+    setPrimaryOver25(!!p?.over25);
     setPrimaryAllergies(p?.allergies ?? "");
     const sec = s.prefill.secondaryParent;
     if (sec) {
@@ -148,6 +152,7 @@ export default function MembershipPage() {
       setSecondaryName(sec.name ?? "");
       setSecondaryEmail(sec.email ?? "");
       setSecondaryDob(sec.dob ?? "");
+      setSecondaryOver25(!!sec.over25);
       setSecondaryAllergies(sec.allergies ?? "");
     }
     const nextChildren = s.prefill.children.map((c) => ({
@@ -167,12 +172,14 @@ export default function MembershipPage() {
       emEmail: h?.emergencyContactEmail ?? "",
       primaryName: p?.name ?? "",
       primaryDob: p?.dob ?? "",
+      primaryOver25: !!p?.over25,
       primaryAllergies: p?.allergies ?? "",
       hasSecondary: !!sec,
       secondaryId: sec?.id,
       secondaryName: sec?.name ?? "",
       secondaryEmail: sec?.email ?? "",
       secondaryDob: sec?.dob ?? "",
+      secondaryOver25: !!sec?.over25,
       secondaryAllergies: sec?.allergies ?? "",
       children: nextChildren,
     }));
@@ -304,9 +311,9 @@ export default function MembershipPage() {
 
   const buildPayload = () => ({
     household: { ...address, emergencyContactName: emName, emergencyContactPhone: emPhone, emergencyContactEmail: emEmail },
-    primaryParent: { name: primaryName, dob: primaryDob || null, allergies: primaryAllergies || null },
+    primaryParent: { name: primaryName, dob: primaryOver25 ? null : (primaryDob || null), over25: primaryOver25, allergies: primaryAllergies || null },
     secondaryParent: hasSecondary
-      ? { id: secondaryId, name: secondaryName, email: secondaryEmail || undefined, dob: secondaryDob || null, allergies: secondaryAllergies || null }
+      ? { id: secondaryId, name: secondaryName, email: secondaryEmail || undefined, dob: secondaryOver25 ? null : (secondaryDob || null), over25: secondaryOver25, allergies: secondaryAllergies || null }
       : null,
     children: children
       .filter((c) => c.name.trim())
@@ -424,8 +431,8 @@ export default function MembershipPage() {
 
   const currentForm = serializeMembershipForm({
     address, emName, emPhone, emEmail,
-    primaryName, primaryDob, primaryAllergies,
-    hasSecondary, secondaryId, secondaryName, secondaryEmail, secondaryDob, secondaryAllergies,
+    primaryName, primaryDob, primaryOver25, primaryAllergies,
+    hasSecondary, secondaryId, secondaryName, secondaryEmail, secondaryDob, secondaryOver25, secondaryAllergies,
     children,
   });
   // Dirty once the user edits past the loaded snapshot. Re-hydrate after a
@@ -541,8 +548,16 @@ export default function MembershipPage() {
                   <section>
                     <Title order={2} mb="sm">Primary parent / guardian</Title>
                     <TextInput label="Full name" value={primaryName} error={fieldErrors.primaryName} onChange={(e) => { setPrimaryName(e.currentTarget.value); clearErr("primaryName"); }} />
+                    <Checkbox
+                      mt="md"
+                      label="Individual is over 25"
+                      checked={primaryOver25}
+                      onChange={(e) => { setPrimaryOver25(e.currentTarget.checked); if (e.currentTarget.checked) setPrimaryDob(""); }}
+                    />
                     <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md">
-                      <TextInput type="date" label="Date of birth" value={primaryDob} onChange={(e) => setPrimaryDob(e.currentTarget.value)} />
+                      {!primaryOver25 && (
+                        <TextInput type="date" label="Date of birth" value={primaryDob} onChange={(e) => setPrimaryDob(e.currentTarget.value)} />
+                      )}
                       <TextInput label="Allergies (optional)" value={primaryAllergies} onChange={(e) => setPrimaryAllergies(e.currentTarget.value)} />
                     </SimpleGrid>
                   </section>
@@ -556,9 +571,16 @@ export default function MembershipPage() {
                     {hasSecondary && (
                       <Stack mt="sm">
                         <TextInput label="Full name" value={secondaryName} onChange={(e) => setSecondaryName(e.currentTarget.value)} />
+                        <Checkbox
+                          label="Individual is over 25"
+                          checked={secondaryOver25}
+                          onChange={(e) => { setSecondaryOver25(e.currentTarget.checked); if (e.currentTarget.checked) setSecondaryDob(""); }}
+                        />
                         <SimpleGrid cols={{ base: 1, sm: 2 }}>
                           <TextInput type="email" label="Email (optional)" value={secondaryEmail} onChange={(e) => setSecondaryEmail(e.currentTarget.value)} />
-                          <TextInput type="date" label="Date of birth" value={secondaryDob} onChange={(e) => setSecondaryDob(e.currentTarget.value)} />
+                          {!secondaryOver25 && (
+                            <TextInput type="date" label="Date of birth" value={secondaryDob} onChange={(e) => setSecondaryDob(e.currentTarget.value)} />
+                          )}
                         </SimpleGrid>
                         <TextInput label="Allergies (optional)" value={secondaryAllergies} onChange={(e) => setSecondaryAllergies(e.currentTarget.value)} />
                       </Stack>
