@@ -8,6 +8,7 @@ import {
     Center,
     Group,
     Loader,
+    Radio,
     Stack,
     Text,
     Textarea,
@@ -96,6 +97,9 @@ export default function AdminTrustedAdultsPage() {
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState<number | null>(null);
     const [shared, setShared] = useState<Record<number, string>>({});
+    // When a prior board note exists, force the board to pick "reuse" or "write new"
+    // before approving — no default, so submitting is a deliberate choice, not a stale carry-over.
+    const [noteChoice, setNoteChoice] = useState<Record<number, "reuse" | "new">>({});
     // Per-review confirmation, rendered card-local so the notice stays next to the
     // button that triggered it (a single page-top banner scrolls off-screen on long queues).
     const [notices, setNotices] = useState<Record<number, { text: string; tone: AlertTone }>>({});
@@ -193,6 +197,11 @@ export default function AdminTrustedAdultsPage() {
                 const sharedVal = latest ? shared[latest.id] ?? "" : "";
                 const prior = priorDecisionReview(ta.reviews);
                 const priorMeta = prior?.decision ? PRIOR_DECISION_META[prior.decision] : null;
+                // "Previously dispositioned" note the board sent to staff — only APPROVE sets a
+                // sharedNote. When present on a renewal, offer to re-use it (gated by a radio).
+                const priorNote = prior?.sharedNote?.trim() || null;
+                const choice = latest ? noteChoice[latest.id] : undefined;
+                const needsChoice = pending && !!priorNote;
                 // A renewal whose prior approval lapsed: how long it sat expired before
                 // this resubmission. A long lapse means it's almost a fresh disclosure —
                 // reviewBy is the approval's expiry date; gap to the resubmit is the age.
@@ -242,12 +251,33 @@ export default function AdminTrustedAdultsPage() {
 
                         {pending && latest && (
                             <Stack mt="md" gap="xs">
+                                {priorNote && (
+                                    <Radio.Group
+                                        label="This trusted adult was previously dispositioned. Re-use the prior shared note, or write a new one?"
+                                        withAsterisk
+                                        value={choice ?? null}
+                                        onChange={(v) => {
+                                            const c = v as "reuse" | "new";
+                                            setNoteChoice((m) => ({ ...m, [latest.id]: c }));
+                                            // reuse -> load the prior note; new -> clear for fresh entry.
+                                            setShared((s) => ({ ...s, [latest.id]: c === "reuse" ? priorNote : "" }));
+                                        }}
+                                    >
+                                        <Stack gap={4} mt={4}>
+                                            <Radio value="reuse" label={`Re-use existing message: “${priorNote}”`} />
+                                            <Radio value="new" label="Write a new message" />
+                                        </Stack>
+                                    </Radio.Group>
+                                )}
                                 <Textarea
                                     withAsterisk
                                     label="Shared note — what keyholders & program leads should know (required to approve)"
                                     placeholder="e.g. Grandma (Jane Doe) may pick up Bobby and Sue."
                                     autosize
                                     minRows={2}
+                                    // Until a choice is made on a previously-dispositioned item, keep the box locked
+                                    // so the board can't sidestep the reuse/new decision.
+                                    disabled={needsChoice && !choice}
                                     value={sharedVal}
                                     onChange={(e) => { const value = e.currentTarget.value; setShared((s) => ({ ...s, [latest.id]: value })); }}
                                 />
@@ -258,15 +288,15 @@ export default function AdminTrustedAdultsPage() {
                                 >
                                     <Group gap="xs">
                                         <Tooltip
-                                            label="Needs Shared Note to Approve"
-                                            disabled={isSelf || !!sharedVal.trim()}
+                                            label={needsChoice && !choice ? "Choose re-use or write a new message first" : "Needs Shared Note to Approve"}
+                                            disabled={isSelf || (!!sharedVal.trim() && !(needsChoice && !choice))}
                                         >
                                             <span>
                                                 <Button
                                                     size="xs" fz={15}
                                                     color="green"
                                                     loading={busyId === latest.id}
-                                                    disabled={isSelf || !sharedVal.trim()}
+                                                    disabled={isSelf || !sharedVal.trim() || (needsChoice && !choice)}
                                                     onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
                                                 >
                                                     Approve
