@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import type { OrgMembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
 import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/service";
+import { canReviewBackgroundChecks, reviewQueueCounts } from "@/lib/membership/review";
 import { pickAddress, validateAddress } from "@/lib/address";
 import { ORG_DOMAIN } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
@@ -62,6 +63,10 @@ export type TodoCounts = {
     // households with >=1 non-org-email (or null-email) participant. Staff households hold
     // only the org-email lead, so they fall out.
     admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number };
+    // Background-check reviewer surface (reviewers + board, per-viewer). `canActOn`
+    // = applications this reviewer may attest now (green). `approvedAwaitingSecond`
+    // = ones they approved that still need a second reviewer (gray).
+    review?: { canActOn: number; approvedAwaitingSecond: number };
     // Lead surface: programs the caller runs (program.leadMentorId). Present only
     // when they lead ≥1 program — drives the staff "My Programs" nav item's
     // visibility and its green badge (sum of pending attendance to confirm).
@@ -379,6 +384,13 @@ export const GET = withAuth({}, async (_req, auth) => {
             }),
         ]);
         result.admin = { membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies };
+    }
+
+    // ---- Reviewer surface (per-viewer background-check queue) ----
+    // canReviewBackgroundChecks: explicit reviewers + board (implicit). Returns
+    // zeros for non-reviewers, so gate on the role to avoid the query entirely.
+    if (canReviewBackgroundChecks(user)) {
+        result.review = await reviewQueueCounts(user.id);
     }
 
     return NextResponse.json(result);

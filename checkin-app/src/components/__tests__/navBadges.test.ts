@@ -1,4 +1,4 @@
-import { navBadgeFor, tabBadgeFor, leadsAnyProgram, leadPendingCount } from '@/components/navBadges';
+import { navBadgeFor, tabBadgeFor, reviewBadges, leadsAnyProgram, leadPendingCount } from '@/components/navBadges';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 
 const base: TodoCounts = {
@@ -71,6 +71,39 @@ const admin = (over: Partial<NonNullable<TodoCounts['admin']>> = {}): TodoCounts
     memberFamilies: 0,
     ...over,
   },
+});
+
+describe('reviewBadges (Review tab + Membership Ops nav)', () => {
+  it('no badges without a review block, or when both are zero', () => {
+    expect(reviewBadges(base)).toEqual([]);
+    expect(reviewBadges(null)).toEqual([]);
+    expect(reviewBadges({ ...base, review: { canActOn: 0, approvedAwaitingSecond: 0 } })).toEqual([]);
+  });
+
+  it('green for can-act-on, gray for approved-awaiting-second', () => {
+    const counts: TodoCounts = { ...base, review: { canActOn: 3, approvedAwaitingSecond: 2 } };
+    expect(reviewBadges(counts)).toEqual([
+      { count: 3, color: 'treehouseGreen', label: '3 background checks you can review now' },
+      { count: 2, color: 'gray', label: '2 you approved, awaiting a second reviewer' },
+    ]);
+  });
+
+  it('singularizes the green label; hides each half independently at 0', () => {
+    expect(reviewBadges({ ...base, review: { canActOn: 1, approvedAwaitingSecond: 0 } })).toEqual([
+      { count: 1, color: 'treehouseGreen', label: '1 background check you can review now' },
+    ]);
+    expect(reviewBadges({ ...base, review: { canActOn: 0, approvedAwaitingSecond: 4 } })).toEqual([
+      { count: 4, color: 'gray', label: '4 you approved, awaiting a second reviewer' },
+    ]);
+  });
+
+  it('surfaces on the Membership Ops nav item alongside the board BLOCKED count', () => {
+    const counts: TodoCounts = { ...admin({ membership: 2 }), review: { canActOn: 1, approvedAwaitingSecond: 0 } };
+    expect(navBadgeFor('/membership-ops', counts)).toEqual([
+      { count: 2, color: 'treehouseGreen', label: 'Pending membership reviews' },
+      { count: 1, color: 'treehouseGreen', label: '1 background check you can review now' },
+    ]);
+  });
 });
 
 describe('tabBadgeFor', () => {

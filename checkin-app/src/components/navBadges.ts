@@ -16,6 +16,23 @@ export function leadPendingCount(counts: TodoCounts | null): number {
 }
 
 /**
+ * Background-check Review badges (0, 1, or 2), shared by the left-nav Membership
+ * Ops item and the Review sub-tab so both stay in lockstep: green = applications
+ * this reviewer can act on now; gray = ones they approved awaiting a second
+ * reviewer. Each hides at 0.
+ */
+export function reviewBadges(counts: TodoCounts | null): NavBadge[] {
+  const r = counts?.review;
+  if (!r) return [];
+  const out: NavBadge[] = [];
+  if (r.canActOn > 0)
+    out.push({ count: r.canActOn, color: 'treehouseGreen', label: `${r.canActOn} background check${r.canActOn === 1 ? '' : 's'} you can review now` });
+  if (r.approvedAwaitingSecond > 0)
+    out.push({ count: r.approvedAwaitingSecond, color: 'gray', label: `${r.approvedAwaitingSecond} you approved, awaiting a second reviewer` });
+  return out;
+}
+
+/**
  * Badges for a nav item (0, 1, or 2). Green = action the viewer must take, or
  * the viewer's own household; gray = live informational count (others'
  * occupancy, running programs). Attendance shows two: my household vs everyone
@@ -48,8 +65,13 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
     case '/programs':
       return gray(counts.activePrograms, `${counts.activePrograms} active programs`);
     case '/membership-ops':
-      // Pending membership applications awaiting board review.
-      return green(counts.admin ? counts.admin.membership : 0, 'Pending membership reviews');
+      // Board's BLOCKED queue (green) plus the viewer's own background-check
+      // review counts — the Review tab lives under this nav item, so its badges
+      // surface here too.
+      return [
+        ...green(counts.admin ? counts.admin.membership : 0, 'Pending membership reviews'),
+        ...reviewBadges(counts),
+      ];
     case '/membership-audit': {
       // Green: leadless households the board must fix (assign a lead). Gray: gaps
       // the household must close — missing emergency contacts plus accounts created
