@@ -393,7 +393,7 @@ describe("membership page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Sign your membership agreement/ }));
 
-    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
   });
 
   // ── startApplication failures ─────────────────────────────────────────────
@@ -422,7 +422,7 @@ describe("membership page", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Start application" }));
 
-    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
   });
 
   // ── save() failures + warnings branches ──────────────────────────────────
@@ -457,7 +457,7 @@ describe("membership page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save progress" }));
 
-    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
   });
 
   it("surfaces save warnings for parts of the update the server rejected", async () => {
@@ -611,7 +611,7 @@ describe("membership page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Submit & continue" }));
 
-    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
   });
 
   // ── renew() failures ──────────────────────────────────────────────────────
@@ -642,7 +642,7 @@ describe("membership page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Renew now" }));
 
-    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
   });
 
   // ── hydrate() with a prefilled secondary parent + children ───────────────

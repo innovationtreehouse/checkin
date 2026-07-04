@@ -124,7 +124,7 @@ export function AdminEditHouseholdModal({
         setNotice({ color: "red", message: data.error || "Failed to remove lead." });
       }
     } catch {
-      setNotice({ color: "red", message: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setRemovingLead(null);
     }
@@ -163,7 +163,7 @@ export function AdminEditHouseholdModal({
         setNotice({ color: "red", message: data.error || "Failed to update household." });
       }
     } catch {
-      setNotice({ color: "red", message: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }

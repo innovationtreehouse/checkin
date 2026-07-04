@@ -299,11 +299,11 @@ export default function MembershipPage() {
     flash("");
     try {
       const res = await fetch("/api/membership", { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) { hydrate(data.state); notifyNavRefresh(); }
       else flash(apiError(data, "Could not start your application."), true);
     } catch {
-      flash("Network error.", true);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }
@@ -329,14 +329,14 @@ export default function MembershipPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(buildPayload()),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         hydrate(data.state);
         flash("Progress saved.");
         setWarnings((data.rejections ?? []).map((r: { message: string }) => r.message));
       } else flash(apiError(data, "Could not save."), true);
     } catch {
-      flash("Network error.", true);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }
@@ -367,7 +367,7 @@ export default function MembershipPage() {
       }
       const saveWarnings: string[] = (saveData.rejections ?? []).map((r: { message: string }) => r.message);
       const res = await fetch("/api/membership/intake/submit", { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setFieldErrors({});
         hydrate(data.state);
@@ -381,7 +381,7 @@ export default function MembershipPage() {
         flash(apiError(data, "Could not submit."), true);
       }
     } catch {
-      flash("Network error.", true);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }
@@ -395,7 +395,7 @@ export default function MembershipPage() {
     flash("");
     try {
       const res = await fetch("/api/membership/contract/sign", { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.url) {
         window.location.href = data.url;
       } else {
@@ -403,7 +403,7 @@ export default function MembershipPage() {
         setSaving(false);
       }
     } catch {
-      flash("Network error.", true);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
       setSaving(false);
     }
     // On success we navigate away, so we intentionally leave `saving` true.
@@ -414,11 +414,11 @@ export default function MembershipPage() {
     flash("");
     try {
       const res = await fetch("/api/membership/renew", { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) { await load(); notifyNavRefresh(); flash("Renewal started."); }
       else flash(apiError(data, "Could not start renewal."), true);
     } catch {
-      flash("Network error.", true);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }
