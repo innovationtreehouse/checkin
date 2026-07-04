@@ -120,7 +120,7 @@ export default function HouseholdPage() {
         setInitialAddress(loaded);
       }
     } catch {
-      err("Network error loading household.");
+      notifications.show({ color: "red", message: "Network error loading household.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -153,7 +153,7 @@ export default function HouseholdPage() {
         err("Failed to update some settings.");
       }
     } catch {
-      err("Network error saving settings.");
+      notifications.show({ color: "red", message: "Network error saving settings.", autoClose: false });
     } finally {
       setSavingSettings(false);
     }
@@ -177,7 +177,7 @@ export default function HouseholdPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: contactForm.name, phone: contactForm.phone, email: contactForm.email, relationship: contactForm.relationship }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: editing ? "Emergency contact updated." : "Emergency contact added." });
         setContactForm(blankContactForm);
@@ -188,7 +188,7 @@ export default function HouseholdPage() {
         setContactError(data.error || "Failed to save emergency contact.");
       }
     } catch {
-      setContactError("Network error saving emergency contact.");
+      notifications.show({ color: "red", message: "Network error saving emergency contact.", autoClose: false });
     } finally {
       setSavingContact(false);
     }
@@ -207,7 +207,7 @@ export default function HouseholdPage() {
         setContactError(data.error || "Failed to remove emergency contact.");
       }
     } catch {
-      setContactError("Network error removing emergency contact.");
+      notifications.show({ color: "red", message: "Network error removing emergency contact.", autoClose: false });
     }
   };
 
@@ -245,7 +245,7 @@ export default function HouseholdPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ memberName: householdMemberForm.name, memberEmail: householdMemberForm.email, memberDob: householdMemberForm.over25 ? "" : householdMemberForm.dob, memberOver25: householdMemberForm.over25 })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setHouseholdMemberForm({ name: "", email: "", dob: "", over25: false });
         setHouseholdMemberErrors({});
@@ -256,7 +256,7 @@ export default function HouseholdPage() {
         err(data.error || "Failed to add household member.");
       }
     } catch {
-      err("Network error adding household member.");
+      notifications.show({ color: "red", message: "Network error adding household member.", autoClose: false });
     }
   };
 
@@ -273,7 +273,7 @@ export default function HouseholdPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participantId, name: editForm.name, email: editForm.email, dob: editForm.over25 ? "" : editForm.dob, phone: editForm.phone, isLead: editForm.isLead, over25: editForm.over25, allergies: editForm.allergies })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setEditErrors({});
         setEditingHouseholdMemberId(null);
@@ -291,7 +291,7 @@ export default function HouseholdPage() {
         err(data.error || "Failed to update household member.");
       }
     } catch {
-      err("Network error updating household member.");
+      notifications.show({ color: "red", message: "Network error updating household member.", autoClose: false });
     }
   };
 
@@ -299,7 +299,7 @@ export default function HouseholdPage() {
     setMessage(null);
     try {
       const res = await fetch('/api/household/lead', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId }) });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         ok("Household member promoted to lead successfully!");
         fetchHousehold();
@@ -307,7 +307,7 @@ export default function HouseholdPage() {
         err(data.error || "Failed to promote household member.");
       }
     } catch {
-      err("Network error promoting household member.");
+      notifications.show({ color: "red", message: "Network error promoting household member.", autoClose: false });
     }
   };
 

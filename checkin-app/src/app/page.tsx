@@ -20,6 +20,7 @@ import {
   IconAddressBook,
   IconUrgent,
 } from '@tabler/icons-react';
+import { notifications } from "@mantine/notifications";
 import DevLoginPicker from '@/components/DevLoginPicker';
 import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
 import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
@@ -107,7 +108,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participantId })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setMessage(`${data.type === 'checkin' ? 'Successfully checked in!' : 'Successfully checked out!'}`);
         await checkAttendanceStatus(); // Re-fetch the status securely
@@ -115,7 +116,7 @@ export default function Home() {
         setMessage(`Error: ${data.error || 'Failed to update attendance'}`);
       }
     } catch {
-      setMessage("Failed to connect to API");
+      notifications.show({ color: "red", message: "Failed to connect to API", autoClose: false });
     }
     setLoading(false);
   };

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Center, Checkbox, Group, Stack, Table, Text, TextInput } from '@mantine/core';
+import { notifications } from "@mantine/notifications";
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { SettingsTabs } from '@/components/admin/SettingsTabs';
 import { AlertBanner } from '@/components/admin/AlertBanner';
@@ -48,7 +49,7 @@ export default function RoleAssignmentPage() {
         setMessage("Failed to load user list.");
       }
     } catch {
-      setMessage("Network error loading users.");
+      notifications.show({ color: "red", message: "Network error loading users.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -77,13 +78,13 @@ export default function RoleAssignmentPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setRowError({ id: userId, text: data.error || "Failed to update role." });
         // Revert optimistic update
         fetchUsers();
       }
     } catch {
-      setRowError({ id: userId, text: "Network error updating role." });
+      notifications.show({ color: "red", message: "Network error updating role.", autoClose: false });
       fetchUsers();
     } finally {
       setSavingId(null);
