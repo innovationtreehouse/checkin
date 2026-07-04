@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface PendingProcess {
     id: number;
@@ -32,6 +33,7 @@ export default function DevShopifyClient({
     processes: PendingProcess[];
     enrollments: PendingEnrollment[];
 }) {
+    const router = useRouter();
     // Busy key is unique per row across both tables: "m:<id>" / "p:<programId>:<personId>".
     const [busy, setBusy] = useState<string | null>(null);
     const [result, setResult] = useState<string | null>(null);
@@ -53,6 +55,9 @@ export default function DevShopifyClient({
                 return;
             }
             setResult(describe(data));
+            // The fired row is no longer awaiting payment — refresh the
+            // server-rendered lists so it (and its 404-on-re-click) disappears.
+            router.refresh();
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         } finally {
@@ -85,8 +90,11 @@ export default function DevShopifyClient({
             <h2 style={{ fontSize: "1.1rem", fontWeight: 600, marginTop: "1.75rem" }}>Membership applications</h2>
             {!hasVariant && (
                 <p style={{ color: "#b45309", marginTop: "0.5rem", fontSize: "0.85rem" }}>
-                    No membership variant configured. Set one in <strong>Settings → Membership</strong> first,
-                    or the webhook lands as a no-membership-item anomaly instead of activating.
+                    No membership variant configured. Set one in <strong>Settings → Membership</strong> first —
+                    the mock only needs <em>a</em> value here (any string): it signs a payload carrying that id and
+                    the inbound webhook matches it against this same setting, so it&apos;s a closed loop.
+                    On a real dev store, set this to the store&apos;s actual variant id instead. Without it the
+                    webhook lands as a no-membership-item anomaly instead of activating.
                 </p>
             )}
             {processes.length === 0 ? (
