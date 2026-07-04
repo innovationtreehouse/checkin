@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Badge, Button, Group } from "@mantine/core";
+import { Button, Group } from "@mantine/core";
+import { CountBadge } from "@/components/ui/CountBadge";
 
 interface NotificationData {
   membership: { pendingReviews: number; blocked: number };
@@ -43,7 +44,7 @@ export default function Notifications() {
           href="/membership-ops/applications"
           variant="light"
           color="red"
-          rightSection={<Badge size="md" color="red" c="var(--mantine-color-white)">{m.blocked}</Badge>}
+          rightSection={<CountBadge intent="alert">{m.blocked}</CountBadge>}
         >
           🚨 Blocked applications
         </Button>

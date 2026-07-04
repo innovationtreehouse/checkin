@@ -2,10 +2,11 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Badge, Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
+import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { tabBadgeFor } from "@/components/navBadges";
+import { CountBadge } from "@/components/ui/CountBadge";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { PageContainer } from "@/components/ui/PageContainer";
 
@@ -58,17 +59,9 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
                 leftSection={<span>{link.icon}</span>}
                 rightSection={
                   badge ? (
-                    <Badge
-                      size="md"
-                      color={isBroken ? "treehouseGreen" : "gray.2"}
-                      variant="filled"
-                      // Pinned label color so the active tab's green recolor doesn't render the
-                      // count green-on-green (dark gray on the light-gray fill, or black on the green fill).
-                      c={isBroken ? "var(--mantine-color-black)" : "var(--mantine-color-gray-8)"}
-                      aria-label={badge.label}
-                    >
+                    <CountBadge intent={isBroken ? "action" : "info"} aria-label={badge.label}>
                       {badge.count}
-                    </Badge>
+                    </CountBadge>
                   ) : undefined
                 }
               >
