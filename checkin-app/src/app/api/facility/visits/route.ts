@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { parseVisitTime, departureAfterArrival } from "@/lib/visitTimes";
 
 export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
@@ -36,11 +37,39 @@ export const PATCH = withAuth(
                 return apiError("visitId is required.", 400);
             }
 
+            const existing = await prisma.visit.findUnique({ where: { id: visitId } });
+            if (!existing) {
+                return apiError("Visit not found.", 404); // also turns a bad id into a clean 404
+            }
+
+            const now = new Date();
+            let nextArrived = existing.arrivedAt;
+            let nextDeparted = existing.departedAt;
+
+            if (arrivedAt) {
+                const r = parseVisitTime(arrivedAt, "arrival", now);
+                if (!r.ok) return apiError(r.error, 400);
+                nextArrived = r.value;
+            }
+            if (departedAt) {
+                const r = parseVisitTime(departedAt, "departure", now);
+                if (!r.ok) return apiError(r.error, 400);
+                nextDeparted = r.value;
+            }
+
+            // Result must be closed: can close an open visit, never reopen a closed one.
+            if (nextDeparted === null) {
+                return apiError("Departure time is required to close this visit.", 400);
+            }
+            if (!departureAfterArrival(nextArrived, nextDeparted)) {
+                return apiError("Departure time must be after arrival time", 400);
+            }
+
             const updatedVisit = await prisma.visit.update({
                 where: { id: visitId },
                 data: {
-                    ...(arrivedAt ? { arrivedAt: new Date(arrivedAt), arrivedVia: "WEB" } : {}),
-                    ...(departedAt ? { departedAt: new Date(departedAt), departedVia: "WEB" } : {}),
+                    ...(arrivedAt ? { arrivedAt: nextArrived, arrivedVia: "WEB" } : {}),
+                    ...(departedAt ? { departedAt: nextDeparted, departedVia: "WEB" } : {}),
                 },
             });
 
