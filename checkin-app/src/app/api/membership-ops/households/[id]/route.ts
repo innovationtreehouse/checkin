@@ -50,6 +50,10 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
             if (isNaN(parsed.getTime())) {
                 return apiError("Invalid member-since date", 400);
             }
+            // Org didn't exist before this date, so no membership can predate it.
+            if (parsed.getTime() < Date.UTC(2023, 10, 1)) {
+                return apiError("Member-since cannot be before Nov 1, 2023", 400);
+            }
             const membership = await prisma.orgMembership.findUnique({ where: { householdId: id } });
             if (!membership) {
                 return apiError("Household has no membership record", 400);
