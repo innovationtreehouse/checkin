@@ -83,6 +83,57 @@ function SvgLineChart({ data }: { data: DailyStat[] }) {
   );
 }
 
+type ConfigCheck = { id: string; label: string; ok: boolean; detail: string };
+
+/**
+ * System-config health — one row per check (Zoho e-sign, agreement PDF, webhook
+ * secret, email). Fed by GET /api/system-status/config-health (admins + board only).
+ * Green dot = configured/healthy (detail may note a dev-mock state); red = a real gap
+ * whose detail names the env var to set. See lib/configHealth.ts.
+ */
+export function ConfigHealthBox() {
+  const [checks, setChecks] = useState<ConfigCheck[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/system-status/config-health')
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => setChecks(data.checks as ConfigCheck[]))
+      .catch(() => setFailed(true));
+  }, []);
+
+  const openIssues = checks?.filter((c) => !c.ok).length ?? 0;
+
+  return (
+    <Card withBorder radius="md" padding="lg">
+      <Group gap="sm" mb="md">
+        <Title order={4}>Integration Config</Title>
+        {openIssues > 0 && <Badge color="red" circle title={`${openIssues} config issue(s)`} />}
+      </Group>
+
+      {failed ? (
+        <Text c="yellow">Unable to load config health.</Text>
+      ) : !checks ? (
+        <Text c="dimmed">Checking configuration…</Text>
+      ) : (
+        <List spacing="sm" listStyleType="none">
+          {checks.map((c) => (
+            <List.Item key={c.id}>
+              <Group justify="space-between" wrap="nowrap" align="flex-start">
+                <span>{c.label}</span>
+                <Text c={c.ok ? 'green' : 'red'} fw={c.ok ? undefined : 700} ta="right">
+                  ● {c.ok ? 'Configured' : 'NOT configured'}
+                </Text>
+              </Group>
+              <Text size="xs" c="dimmed">{c.detail}</Text>
+            </List.Item>
+          ))}
+        </List>
+      )}
+    </Card>
+  );
+}
+
 type GithubCommit = {
   sha: string;
   html_url: string;

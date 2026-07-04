@@ -122,10 +122,19 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
       const b = settingsMisconfigBadge(counts);
       return b ? [b] : [];
     }
-    // System Status has no badge: every count it could show (membership,
-    // payment-plan, trusted-adult) belongs to another nav item that already
-    // badges it. A roll-up here just duplicates those numbers under an
-    // unrelated label.
+    case '/system-status': {
+      // Red alert: number of failing system-config checks (env-var/deploy gaps,
+      // e.g. Zoho e-sign unconfigured). Distinct from the green/gray queue badges —
+      // this is "infra broken," not "you have a task." Admins + board only (the
+      // count is absent from the payload for everyone else). Links to the page,
+      // where the full per-check list lives. See lib/configHealth.ts.
+      const n = counts.configHealth?.openIssues ?? 0;
+      return n > 0
+        ? [{ count: n, color: 'red', label: `${n} config ${n === 1 ? 'issue' : 'issues'}` }]
+        : [];
+    }
+    // Other admin roll-ups have no badge here: every queue count belongs to another
+    // nav item that already badges it, so a roll-up would just duplicate numbers.
     default:
       return [];
   }

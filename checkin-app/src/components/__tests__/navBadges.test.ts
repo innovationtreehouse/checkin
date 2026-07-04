@@ -176,6 +176,23 @@ describe('tabBadgeFor', () => {
 
 // The /membership-audit section badge is a roll-up of its tabs; keep them in lockstep.
 // Red section total == broken tab; gray section total == emergency + unclaimed tabs.
+describe('system-status config-health badge', () => {
+  it('no badge when the payload has no configHealth (non-admin) or zero issues', () => {
+    expect(navBadgeFor('/system-status', base)).toEqual([]);
+    expect(navBadgeFor('/system-status', { ...base, configHealth: { openIssues: 0 } })).toEqual([]);
+  });
+
+  it('red alert badge counting open config issues', () => {
+    const badges = navBadgeFor('/system-status', { ...base, configHealth: { openIssues: 2 } });
+    expect(badges).toEqual([{ count: 2, color: 'red', label: '2 config issues' }]);
+  });
+
+  it('singularizes the label at one issue', () => {
+    const badges = navBadgeFor('/system-status', { ...base, configHealth: { openIssues: 1 } });
+    expect(badges[0].label).toBe('1 config issue');
+  });
+});
+
 describe('membership-audit nav ↔ tab agreement', () => {
   it('section badges equal the sum of their tab badges', () => {
     const counts = admin({ brokenHouseholds: 2, householdsMissingContact: 3, unclaimedHouseholds: 4 });

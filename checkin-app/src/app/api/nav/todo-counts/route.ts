@@ -7,6 +7,7 @@ import { canReviewBackgroundChecks, reviewQueueCounts } from "@/lib/membership/r
 import { getLeadConflicts } from "@/lib/attendanceConflicts";
 import { pickAddress, validateAddress } from "@/lib/address";
 import { ORG_DOMAIN } from "@/lib/config";
+import { openConfigIssues } from "@/lib/configHealth";
 import { apiError } from "@/lib/api-response";
 
 /**
@@ -67,6 +68,10 @@ export type TodoCounts = {
     // unset (0–2): the membership variant ID and the volunteer discount code. Red pill on
     // the Settings nav + Membership Settings tab — checkout is broken until both are set.
     admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number; settingsMisconfig: number };
+    // Config-health gaps (admins + board only): number of failing system-config checks
+    // (e.g. Zoho e-sign unconfigured). Drives the red System Status nav badge; the full
+    // list lives at /api/system-status/config-health. See lib/configHealth.ts.
+    configHealth?: { openIssues: number };
     // Background-check reviewer surface (reviewers + board, per-viewer). `canActOn`
     // = applications this reviewer may attest now (green). `approvedAwaitingSecond`
     // = ones they approved that still need a second reviewer (gray).
@@ -400,6 +405,9 @@ export const GET = withAuth({}, async (_req, auth) => {
         const settingsMisconfig =
             (boardSettings?.orgMembershipVariantId ? 0 : 1) + (boardSettings?.volunteerDiscountCode ? 0 : 1);
         result.admin = { membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, settingsMisconfig };
+        // System-config health (env-var/deploy gaps). Synchronous, no DB — just presence
+        // checks. Same admin+board gate as the rest of this block.
+        result.configHealth = { openIssues: openConfigIssues() };
     }
 
     // ---- Reviewer surface (per-viewer background-check queue) ----
