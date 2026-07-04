@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
+import { notifications } from '@mantine/notifications';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isValidEmail } from '@/lib/emergencyContacts/identity';
 import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
@@ -104,11 +105,11 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
         await checkStatus();
         notifyNavRefresh();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setError(data.error || 'Failed to save information');
       }
     } catch {
-      setError('Network error');
+      notifications.show({ color: "red", message: "Network error", autoClose: false });
     } finally {
       setSaving(false);
     }

@@ -101,7 +101,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         setMessage("Failed to load event.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -130,11 +130,11 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         notifications.show({ color: "green", message: "Attendance confirmed successfully!" });
         fetchEvent();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setAttendanceNotice({ ok: false, msg: data.error || "Failed to confirm attendance." });
       }
     } catch {
-      setAttendanceNotice({ ok: false, msg: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setActionLoading(false);
     }
@@ -157,11 +157,11 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         setEditMode(false);
         fetchEvent();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setTimeNotice({ ok: false, msg: data.error || "Failed to edit event." });
       }
     } catch {
-      setTimeNotice({ ok: false, msg: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setActionLoading(false);
     }
@@ -189,11 +189,11 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         fetchEvent();
       } else {
         // Keep the modal open so the error is visible next to Save.
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setManualNotice({ ok: false, msg: data.error || "Failed to update attendance." });
       }
     } catch {
-      setManualNotice({ ok: false, msg: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setActionLoading(false);
     }
@@ -211,11 +211,11 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
       if (res.ok) {
         router.push(eventData?.program?.id ? `/program-ops/programs/${eventData.program.id}` : '/program-ops/programs');
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setMessage(data.error || "Failed to cancel event.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setActionLoading(false);
     }
