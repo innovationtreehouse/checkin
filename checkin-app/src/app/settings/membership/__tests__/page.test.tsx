@@ -2,9 +2,11 @@
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import MembershipSettingsPage from "../page";
 
 const SETTINGS = {
@@ -46,7 +48,9 @@ describe("MembershipSettingsPage", () => {
     const [, putOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PUT")!;
     expect(JSON.parse(putOpts!.body as string)).toEqual(expect.objectContaining({ normalDuesCents: 20000 }));
 
-    expect(await screen.findByText("Settings saved.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Settings saved." })),
+    );
   });
 
   it("shows a warning when the background-check interval is unset, and edits every remaining field", async () => {
