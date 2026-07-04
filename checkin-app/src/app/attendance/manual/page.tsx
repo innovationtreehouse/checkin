@@ -46,6 +46,8 @@ export default function ManualAttendance() {
   if (!ready) return null;
 
   const departureError = error === "Departure time is required for past arrivals.";
+  const arrivalError = error === "Arrival time cannot be in the future.";
+  const fieldError = departureError || arrivalError;
 
   return (
     <PageContainer>
@@ -58,7 +60,7 @@ export default function ManualAttendance() {
           currently in the building, leave the departure time blank.
         </Text>
 
-        {error && !departureError && <Alert color="red" mb="md">{error}</Alert>}
+        {error && !fieldError && <Alert color="red" mb="md">{error}</Alert>}
 
         <form onSubmit={handleSubmit}>
           <Stack>
@@ -67,6 +69,7 @@ export default function ManualAttendance() {
               label="Arrival Time (Required)"
               value={arrivedAt}
               onChange={(e) => setArrived(e.currentTarget.value)}
+              error={arrivalError ? error : undefined}
               required
             />
             <TextInput
