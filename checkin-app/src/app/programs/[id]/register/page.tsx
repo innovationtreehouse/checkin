@@ -3,6 +3,7 @@
 import { use, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alert, Button, Card, Container, Group, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core';
+import { notifications } from "@mantine/notifications";
 import { formatCents } from '@inventory/money';
 import { useUnsavedGuard } from '@/components/UnsavedChangesProvider';
 import { isRegistrationDirty } from './dirty';
@@ -142,7 +143,7 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
         body: JSON.stringify({ parents, emergencyContact, participants })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setSubmitted(true); // clears the unsaved-changes guard before any redirect
         if (data.checkoutUrl) {
@@ -159,7 +160,7 @@ export default function PublicRegistrationPage({ params }: { params: Promise<{ i
         setSubmitting(false);
       }
     } catch {
-      setError("Network error occurred.");
+      notifications.show({ color: "red", message: "Network error occurred.", autoClose: false });
       setSubmitting(false);
     }
   };
