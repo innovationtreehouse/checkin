@@ -6,7 +6,7 @@ import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { tabBadgeFor } from "@/components/navBadges";
-import { CountBadge } from "@/components/ui/CountBadge";
+import { CountBadge, badgeIntentFor } from "@/components/ui/CountBadge";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { PageContainer } from "@/components/ui/PageContainer";
 
@@ -42,8 +42,8 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
       .sort((a, b) => b.href.length - a.href.length)
       .find((l) => pathname === l.href || pathname.startsWith(l.href + "/"))?.href ?? null;
 
-  // Emergency/Unclaimed are gray (gaps on the household), Broken is green (board must
-  // assign a lead) — derived in navBadges.tabBadgeFor so nav and tab agree.
+  // Emergency/Unclaimed are gray (gaps on the household), Broken is red (board must
+  // assign a lead — blocking) — derived in navBadges.tabBadgeFor so nav and tab agree.
   return (
     <PageContainer>
       <Stack>
@@ -51,15 +51,15 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
         <ScrollableTabsList>
           {NAV_LINKS.map((link) => {
             const badge = tabBadgeFor(link.href, todoCounts);
-            const isBroken = badge?.color === "treehouseGreen";
+            const intent = badge ? badgeIntentFor(badge.color) : null;
             return (
               <Tabs.Tab
                 key={link.href}
                 value={link.href}
                 leftSection={<span>{link.icon}</span>}
                 rightSection={
-                  badge ? (
-                    <CountBadge intent={isBroken ? "action" : "info"} aria-label={badge.label}>
+                  badge && intent ? (
+                    <CountBadge intent={intent} aria-label={badge.label}>
                       {badge.count}
                     </CountBadge>
                   ) : undefined

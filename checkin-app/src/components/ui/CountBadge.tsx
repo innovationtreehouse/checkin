@@ -21,6 +21,25 @@ const INTENT: Record<'action' | 'info' | 'alert', { color: string; c: string }> 
   alert: { color: 'red', c: 'var(--mantine-color-white)' },
 };
 
+/**
+ * Maps a NavBadge.color (from navBadges.ts) to a CountBadge intent, so the
+ * left-nav and section-tab consumers can't drift on the color→look mapping.
+ * Returns null for colors CountBadge doesn't model (e.g. 'blue'), which the
+ * caller renders inline.
+ */
+export function badgeIntentFor(color: string): 'action' | 'info' | 'alert' | null {
+  switch (color) {
+    case 'treehouseGreen':
+      return 'action';
+    case 'gray':
+      return 'info';
+    case 'red':
+      return 'alert';
+    default:
+      return null;
+  }
+}
+
 export function CountBadge({
   intent,
   size = 'md',
