@@ -4,7 +4,7 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { notifications } from "@mantine/notifications";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import AdminTrustedAdultsPage from "../page";
@@ -79,7 +79,7 @@ describe("safety/trusted-adults page", () => {
     expect(router.push).toHaveBeenCalledWith("/");
   });
 
-  it("denies a review, and requests info via a prompt (skipping when the prompt is cancelled)", async () => {
+  it("denies a review, and requests info via a modal (skipping when the modal is cancelled)", async () => {
     setSession({ id: 1, isBoardMember: true, householdId: 1 });
     const fetchMock = mockFetchJson({
       "/api/safety/trusted-adults/decision": { status: "DENIED" },
@@ -97,17 +97,20 @@ describe("safety/trusted-adults page", () => {
     );
     await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Recorded: DENIED." })));
 
-    window.prompt = jest.fn(() => null);
+    // Cancelling the modal must NOT fire a decision (the old window.prompt returned null,
+    // which `?? ""` swallowed into an empty-note REQUEST_INFO).
     fireEvent.click(screen.getByRole("button", { name: "Request info" }));
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/safety/trusted-adults/decision",
-        expect.objectContaining({ body: JSON.stringify({ reviewId: 9, decision: "REQUEST_INFO", note: "" }) }),
-      ),
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/safety/trusted-adults/decision",
+      expect.objectContaining({ body: expect.stringContaining("REQUEST_INFO") }),
     );
 
-    window.prompt = jest.fn(() => "Need proof of ID.");
     fireEvent.click(screen.getByRole("button", { name: "Request info" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Need proof of ID." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/safety/trusted-adults/decision",
@@ -237,13 +240,14 @@ describe("safety/trusted-adults page", () => {
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
     expect(screen.getByText("Override:")).toBeInTheDocument();
 
-    window.prompt = jest.fn(() => "");
+    // Empty note: Submit stays disabled, so force-approve can't fire.
     fireEvent.click(screen.getByRole("button", { name: "Force approve" }));
-    await waitFor(() => expect(window.prompt).toHaveBeenCalled());
+    const forceDialog = await screen.findByRole("dialog");
+    expect(within(forceDialog).getByRole("button", { name: "Submit" })).toBeDisabled();
     expect(fetchMock).not.toHaveBeenCalledWith("/api/safety/trusted-adults/override", expect.anything());
 
-    window.prompt = jest.fn(() => "Confirmed with family.");
-    fireEvent.click(screen.getByRole("button", { name: "Force approve" }));
+    fireEvent.change(within(forceDialog).getByRole("textbox"), { target: { value: "Confirmed with family." } });
+    fireEvent.click(within(forceDialog).getByRole("button", { name: "Submit" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/safety/trusted-adults/override",
