@@ -219,7 +219,7 @@ function KioskDisplayInner() {
         body: JSON.stringify({ visitId }),
       });
       if (res.ok) refreshAttendance();
-      else alert(isSelf ? "Failed to check out." : "Failed to force checkout.");
+      else notifications.show({ color: "red", message: isSelf ? "Failed to check out." : "Failed to force checkout.", autoClose: false });
     } catch (e) {
       console.error(e);
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
@@ -249,8 +249,8 @@ function KioskDisplayInner() {
         setSearchResults([]);
         refreshAttendance();
       } else {
-        const d = await res.json();
-        alert(`Error: ${d.error}`);
+        const d = await res.json().catch(() => ({}));
+        notifications.show({ color: "red", message: d.error || "Action failed.", autoClose: false });
       }
     } catch (e) {
       console.error(e);
