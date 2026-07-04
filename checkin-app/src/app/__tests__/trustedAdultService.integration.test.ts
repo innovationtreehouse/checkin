@@ -256,6 +256,26 @@ describe('Trusted Adults service', () => {
         expect(normalizeAuditData(revokeAudit?.newData)).toMatchObject({ status: 'REVOKED', override: 'revoke' });
     });
 
+    // Regression: a renewal after approval leaves TWO APPROVED reviews (renew doesn't
+    // retire the prior approval). Withdraw must revoke BOTH — the pickup list shows a
+    // TA while ANY review is APPROVED, so revoking only the latest kept it on the list.
+    it('withdraw revokes every APPROVED review, so a renewed-then-approved TA leaves none live', async () => {
+        const ta = await discloseOne();
+        await decideReview(ta.reviews[0].id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
+
+        // Resubmit while the first approval is still live → a second review, also approved.
+        const renewed = await renewTrustedAdult(ta.id, leadId);
+        await decideReview(renewed.id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
+        expect(await prisma.trustedAdultReview.count({ where: { trustedAdultId: ta.id, status: 'APPROVED' } })).toBe(2);
+
+        await withdrawTrustedAdult(ta.id, leadId);
+
+        // No APPROVED review survives — the /operational `some: APPROVED` filter now drops it.
+        expect(await prisma.trustedAdultReview.count({ where: { trustedAdultId: ta.id, status: 'APPROVED' } })).toBe(0);
+        const remaining = await prisma.trustedAdultReview.findMany({ where: { trustedAdultId: ta.id } });
+        expect(remaining.every((r) => r.status === 'REVOKED')).toBe(true);
+    });
+
     it('hide only works on a withdrawn TA; sets hiddenAt so /mine filters it, and is idempotent', async () => {
         const ta = await discloseOne();
         // Not yet withdrawn — hide is refused, row stays visible.
