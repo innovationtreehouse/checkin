@@ -224,7 +224,7 @@ export default function AdminTrustedAdultsPage() {
                             <Text c="dimmed">→</Text>
                             <Text>{ta.trustedAdultPerson?.name || ta.trustedAdultName || "trusted adult"}</Text>
                             <Badge color={STATUS_COLORS[status] ?? "gray"}>{label(status)}</Badge>
-                            {priorMeta && <Badge variant="outline" color={priorMeta.color}>{priorMeta.text}</Badge>}
+                            {priorMeta && <Badge variant="filled" color={priorMeta.color}>{priorMeta.text}</Badge>}
                         </Group>
                         <TrustedAdultContact phone={ta.trustedAdultPhone} email={ta.trustedAdultEmail} />
                         <Text size="sm" mt={6}><b>Family context (board only):</b> {ta.familyContext}</Text>
