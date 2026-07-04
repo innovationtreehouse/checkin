@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useDisclosure } from "@mantine/hooks";
+import { notifications } from "@mantine/notifications";
 import {
   Alert, Anchor, Badge, Box, Button, Card, Center, Group, Loader, Modal, Paper,
   SimpleGrid, Stack, Text, TextInput, Title,
@@ -118,7 +119,7 @@ function KioskDisplayInner() {
         }
 
         const res = await fetch("/api/attendance", { headers });
-        const json = await res.json();
+        const json = await res.json().catch(() => ({}));
         if (res.ok && (json.access === "full" || json.access === "limited")) {
           setData(json);
           setError(null);
@@ -128,7 +129,7 @@ function KioskDisplayInner() {
         }
       } catch (error) {
         console.error("Failed to fetch attendance:", error);
-        setError("Network error");
+        notifications.show({ color: "red", message: "Network error", autoClose: false });
       } finally {
         setLoading(false);
       }
@@ -220,7 +221,7 @@ function KioskDisplayInner() {
       else alert(isSelf ? "Failed to check out." : "Failed to force checkout.");
     } catch (e) {
       console.error(e);
-      alert("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setCheckingOut(null);
     }
@@ -252,7 +253,7 @@ function KioskDisplayInner() {
       }
     } catch (e) {
       console.error(e);
-      alert("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setCheckingInId(null);
     }
