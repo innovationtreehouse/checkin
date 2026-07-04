@@ -63,6 +63,7 @@ export function AdminEditHouseholdModal({
   const [leadIds, setLeadIds] = useState<number[]>([]);
   const [removingLead, setRemovingLead] = useState<number | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ memberSince?: string }>({});
+  const [hasMembership, setHasMembership] = useState(false);
   // Modal-local notice for save-error / lead-remove results, so feedback lands
   // next to the form instead of a global corner toast behind the modal.
   const [notice, setNotice] = useState<{ color: string; message: string } | null>(null);
@@ -86,6 +87,7 @@ export function AdminEditHouseholdModal({
         };
         setForm(loaded);
         setInitial(loaded);
+        setHasMembership(!!h.orgMembership);
         setDisplayName(h.name || `Household #${h.id}`);
         setMembers(h.householdMembers ?? []);
         setLeadIds((h.householdLeads ?? []).map((l) => l.personId));
@@ -246,14 +248,18 @@ export function AdminEditHouseholdModal({
                 error={phoneInvalid ? PHONE_ERROR : undefined}
               />
             </SimpleGrid>
-            <TextInput
-              type="date"
-              label="Member since"
-              description="Household's membership start date. Editing this is recorded in the audit log."
-              value={form.memberSince}
-              onChange={(e) => { update({ memberSince: e.currentTarget.value }); setFieldErrors({}); }}
-              error={fieldErrors.memberSince}
-            />
+            {hasMembership ? (
+              <TextInput
+                type="date"
+                label="Member since"
+                description="Household's membership start date. Editing this is recorded in the audit log."
+                value={form.memberSince}
+                onChange={(e) => { update({ memberSince: e.currentTarget.value }); setFieldErrors({}); }}
+                error={fieldErrors.memberSince}
+              />
+            ) : (
+              <Text size="sm" c="dimmed">This household isn&apos;t an org member — no membership date.</Text>
+            )}
             <Divider label="Household Leads" labelPosition="left" mt="sm" />
             <Stack gap="xs">
               {leadIds.length === 0 && (
