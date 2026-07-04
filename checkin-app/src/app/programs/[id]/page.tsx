@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Anchor, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
@@ -9,6 +9,7 @@ import { formatDate, calculateAge } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { aggregateEnrollOutcomes, buildShopifyCheckoutUrl, type EnrollOutcome } from './enroll';
+import FirstTimeIntakePanel from './FirstTimeIntakePanel';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type ProgramDetail = {
@@ -52,6 +53,11 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const [householdMembers, setHouseholdMembers] = useState<{ id: number; name: string | null; dateOfBirth: string | null; isDeclaredAdult?: boolean }[]>([]);
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<number[]>([]);
   const [loadingHousehold, setLoadingHousehold] = useState(false);
+  // First-time gap: a freshly-signed-in user has a single-person household with
+  // no enrollable participant and/or no emergency contact. When set, we offer the
+  // intake panel instead of the dead-end "no eligible participants" alert.
+  const [needsSetup, setNeedsSetup] = useState(false);
+  const [showIntake, setShowIntake] = useState(false);
 
   const fetchProgram = useCallback(async () => {
     try {
@@ -93,44 +99,69 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     return { reason: null, label: '' };
   };
 
+  // Load the caller's household into the member-select, and decide whether they
+  // still need first-time setup (no enrollable participant, or no valid emergency
+  // contact). Shared by the initial "Enroll" click and the post-intake re-fetch.
+  const populateHousehold = async () => {
+    const currentUserId = (session!.user as SessionUser).id;
+    setLoadingHousehold(true);
+    try {
+      const res = await fetch(`/api/household`);
+      let members: { id: number; name: string | null; dateOfBirth: string | null; isDeclaredAdult?: boolean }[] =
+        [{ id: currentUserId, name: "Myself", dateOfBirth: null }];
+      if (res.ok) {
+        const data = await res.json();
+        if (data.household?.householdMembers) members = data.household.householdMembers;
+      }
+      setHouseholdMembers(members);
+      // Default to me if I'm eligible, else the first eligible member, else none —
+      // never auto-select someone who'd fail the age/DOB check.
+      const me = members.find((p) => p.id === currentUserId);
+      const def = me && enrollBlock(me).reason === null
+        ? me.id
+        : members.find((m) => enrollBlock(m).reason === null)?.id;
+      setSelectedParticipantIds(def != null ? [def] : []);
+
+      const hasEnrollable = members.some((m) => enrollBlock(m).reason === null);
+      // Emergency contact isn't in /api/household; probe the process-free intake
+      // state for it. Fail open (treat as present) if the probe can't answer, so
+      // a household with an enrollable member is never blocked by an EC hiccup.
+      let hasValidEmergencyContact = true;
+      try {
+        const ir = await fetch(`/api/household/intake`);
+        if (ir.ok) {
+          const s = await ir.json();
+          if (s && "prefill" in s) {
+            const h = s.prefill?.household;
+            hasValidEmergencyContact = !!(h?.emergencyContactName?.trim() && h?.emergencyContactPhone?.trim());
+          }
+        }
+      } catch {
+        /* fail open */
+      }
+      setNeedsSetup(!hasEnrollable || !hasValidEmergencyContact);
+    } catch {
+      setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
+      setSelectedParticipantIds([currentUserId]);
+    } finally {
+      setLoadingHousehold(false);
+    }
+  };
+
   const startEnrollmentProcess = async () => {
     if (!session) {
       router.push('/');
       return;
     }
     setShowEnrollmentSelection(true);
-    setLoadingHousehold(true);
+    await populateHousehold();
+  };
 
-    try {
-      const currentUserId = (session.user as SessionUser).id;
-      const res = await fetch(`/api/household`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.household && data.household.householdMembers) {
-          const members = data.household.householdMembers;
-          setHouseholdMembers(members);
-          // Default to me if I'm eligible, else the first eligible member, else
-          // none — never auto-select someone who'd fail the age/DOB check.
-          const me = members.find((p: { id: number }) => p.id === currentUserId);
-          const def = me && enrollBlock(me).reason === null
-            ? me.id
-            : members.find((m: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }) => enrollBlock(m).reason === null)?.id;
-          setSelectedParticipantIds(def != null ? [def] : []);
-        } else {
-          setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
-          setSelectedParticipantIds([currentUserId]);
-        }
-      } else {
-        setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
-        setSelectedParticipantIds([currentUserId]);
-      }
-    } catch {
-      const currentUserId = (session.user as SessionUser).id;
-      setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
-      setSelectedParticipantIds([currentUserId]);
-    } finally {
-      setLoadingHousehold(false);
-    }
+  // Back from the first-time intake panel: reload the household (the new child /
+  // emergency contact are now saved) and drop into the normal member-select.
+  const handleIntakeSaved = async () => {
+    setShowIntake(false);
+    await populateHousehold();
   };
 
   const handleRequestPaymentPlan = async () => {
@@ -270,7 +301,6 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.orgMemberPriceCents || program.nonOrgMemberPriceCents);
 
-  const enrollableMembers = householdMembers.filter(m => enrollBlock(m).reason === null);
   const ageRange = program.minAge !== null && program.maxAge !== null ? `ages ${program.minAge}–${program.maxAge}`
     : program.minAge !== null ? `ages ${program.minAge} and up`
     : program.maxAge !== null ? `ages ${program.maxAge} and under` : null;
@@ -338,16 +368,24 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   {isClosed ? <>Enrollment Closed{closedSuffix}</> : "Enroll"}
                 </Button>
               ) : (
-                <>
-                  <Button size="md" onClick={() => router.push('/')}>Log In To Enroll</Button>
-                  <Button size="md" color="green" onClick={() => router.push(`/programs/${program.id}/register`)} disabled={isClosed}>
-                    {isClosed ? <>Registration Closed{closedSuffix}</> : "Register (New User)"}
-                  </Button>
-                </>
+                // Auth-first: sign in with Google BEFORE any intake, so account
+                // existence is resolved by NextAuth (googleId), never leaked by a
+                // public API response. First-time users are then filled in by the
+                // intake panel below rather than the anonymous register form.
+                <Button size="md" onClick={() => signIn("google", { callbackUrl: `/programs/${program.id}` })} disabled={isClosed}>
+                  {isClosed ? <>Enrollment Closed{closedSuffix}</> : "Sign in to enroll"}
+                </Button>
               )}
             </Group>
           ) : (
-            <Card withBorder radius="md" padding="lg" w="100%" maw={500}>
+            <Card withBorder radius="md" padding="lg" w="100%" maw={showIntake ? 640 : 500}>
+              {showIntake ? (
+                <FirstTimeIntakePanel
+                  ageGated={program.minAge !== null || program.maxAge !== null}
+                  onSaved={handleIntakeSaved}
+                />
+              ) : (
+              <>
               <Title order={4} mb="lg">Which of your household wants to enroll?</Title>
 
               {loadingHousehold ? (
@@ -381,10 +419,17 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 </Checkbox.Group>
               )}
 
-              {!loadingHousehold && householdMembers.length > 0 && enrollableMembers.length === 0 ? (
-                <Alert color="blue" variant="light">
-                  No eligible participants in your household for this program{ageRange ? ` (${ageRange})` : ''}.
-                </Alert>
+              {!loadingHousehold && needsSetup ? (
+                // Replaces the old dead-end "no eligible participants" alert: a
+                // first-time user finishes their household here, then enrolls.
+                <Stack align="center" gap="sm">
+                  <Text c="dimmed" size="sm" ta="center">
+                    Finish setting up your household to enroll{ageRange ? ` (${ageRange})` : ''}.
+                  </Text>
+                  <Button fullWidth size="md" onClick={() => setShowIntake(true)}>
+                    Finish setting up your household to enroll
+                  </Button>
+                </Stack>
               ) : (
               <Stack align="center">
                 <Button
@@ -415,6 +460,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                     Force Enroll (Override)
                   </Button>
                 </Alert>
+              )}
+              </>
               )}
             </Card>
           )}
