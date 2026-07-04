@@ -17,7 +17,7 @@ export const PATCH = withAuth(
             const userId = auth.user.id;
 
             const body = await req.json();
-            const { participantId, name, email, dob, phone, isLead, over25 } = body;
+            const { participantId, name, email, dob, phone, isLead, over25, allergies } = body;
 
             if (!participantId) {
                 return apiError("Participant ID is required", 400);
@@ -55,6 +55,7 @@ export const PATCH = withAuth(
                         phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
                         // A real DoB supersedes the 25+ flag; otherwise honor the checkbox.
                         isDeclaredAdult: over25 !== undefined ? (dob ? false : !!over25) : undefined,
+                        allergies: allergies !== undefined ? (allergies === "" ? null : allergies) : undefined,
                     },
                     select: HOUSEHOLD_PEER_SELECT,
                 });

@@ -18,4 +18,7 @@ export const HOUSEHOLD_PEER_SELECT = {
     // peer legitimately needs it to render each member's age badge / pre-fill the edit
     // form (my-household). It's an age-status flag, not a role/audit/security flag.
     isDeclaredAdult: true,
+    // Collected per-person at membership intake; household peers view/edit it on
+    // the my-household cards. Same @sensitivity:personal tier as name/email/phone.
+    allergies: true,
 } satisfies Prisma.PersonSelect;
