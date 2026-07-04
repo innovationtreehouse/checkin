@@ -257,7 +257,7 @@ describe('Shop API Integration Tests', () => {
         it('should return 403 for common users attempting a certification grant', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'BASIC' } });
+             const req = createReq('POST', { body: { personId: commonId, toolId: mockToolId, level: 'BASIC' } });
              const res = await postCerts(req) as Response;
              expect(res.status).toBe(403);
         });
@@ -265,7 +265,7 @@ describe('Shop API Integration Tests', () => {
         it('should allow Certifiers to update a status for someone else on their specific tool', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: certifierId } });
 
-             const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'BASIC' } });
+             const req = createReq('POST', { body: { personId: commonId, toolId: mockToolId, level: 'BASIC' } });
              const res = await postCerts(req) as Response;
              expect(res.status).toBe(200);
              
@@ -291,7 +291,7 @@ describe('Shop API Integration Tests', () => {
              const tool = await prisma.tool.create({ data: { name: 'Shop Test Tool Denied' } });
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: certifierId, denied: true } });
 
-             const req = createReq('POST', { body: { participantId: commonId, toolId: tool.id, level: 'BASIC' } });
+             const req = createReq('POST', { body: { personId: commonId, toolId: tool.id, level: 'BASIC' } });
              const res = await postCerts(req) as Response;
              expect(res.status).toBe(401);
 
@@ -305,7 +305,7 @@ describe('Shop API Integration Tests', () => {
         it('should forbid a Certifier from promoting someone to MAY_CERTIFY_OTHERS', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: certifierId } });
 
-             const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' } });
+             const req = createReq('POST', { body: { personId: commonId, toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' } });
              const res = await postCerts(req) as Response;
              // Only admins/board may grant the Certifier level.
              expect(res.status).toBe(403);
@@ -314,7 +314,7 @@ describe('Shop API Integration Tests', () => {
         it('should allow an admin to grant MAY_CERTIFY_OTHERS', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const req = createReq('POST', { body: { participantId: commonId, toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' } });
+             const req = createReq('POST', { body: { personId: commonId, toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' } });
              const res = await postCerts(req) as Response;
              expect(res.status).toBe(200);
 
@@ -352,13 +352,13 @@ describe('Shop API Integration Tests', () => {
 
                 // First grant: BASIC → CREATE (no prior status).
                 const createRes = await postCerts(
-                    createReq('POST', { body: { participantId: target.id, toolId: tool.id, level: 'BASIC' } }),
+                    createReq('POST', { body: { personId: target.id, toolId: tool.id, level: 'BASIC' } }),
                 ) as Response;
                 expect(createRes.status).toBe(200);
 
                 // Re-cert: BASIC → CERTIFIED → EDIT with the prior status snapshotted.
                 const editRes = await postCerts(
-                    createReq('POST', { body: { participantId: target.id, toolId: tool.id, level: 'CERTIFIED' } }),
+                    createReq('POST', { body: { personId: target.id, toolId: tool.id, level: 'CERTIFIED' } }),
                 ) as Response;
                 expect(editRes.status).toBe(200);
                 expect((await editRes.json()).certification.level).toBe('CERTIFIED');
