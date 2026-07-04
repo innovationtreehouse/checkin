@@ -48,11 +48,13 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
       return (
         <Badge
           size="md"
-          color="gray"
-          variant="light"
+          color="gray.2"
+          variant="filled"
           // Active tab recolors its content to the tabs color (green); pin a readable
           // label color so the count isn't rendered green-on-green on the active tab.
-          c="var(--mantine-color-gray-7)"
+          // gray.2 filled + gray-8 text (matches the membership-audit tab badges) for
+          // legible contrast — the light tint read too faint.
+          c="var(--mantine-color-gray-8)"
           aria-label={badge.label}
         >
           {badge.count}
@@ -63,12 +65,11 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
       return (
         <Badge
           size="md"
-          // Dark-gray total counter: gray.8 is dark enough for white text (plain
-          // gray filled = gray.6 ≈ #868e96, where white fails contrast). Pinned white
-          // also survives the active tab's green recolor.
-          color="gray.8"
+          // Gray total counter, matching the other gray tab badges: gray.2 fill +
+          // gray-8 text (pinned so it survives the active tab's green recolor).
+          color="gray.2"
           variant="filled"
-          c="white"
+          c="var(--mantine-color-gray-8)"
           aria-label={`${memberFamilies} org member famil${memberFamilies === 1 ? "y" : "ies"}`}
         >
           {memberFamilies}

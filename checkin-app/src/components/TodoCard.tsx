@@ -29,7 +29,7 @@ export default function TodoCard() {
                     </ThemeIcon>
                     <Text fw={700} c="black">Things to do</Text>
                 </Group>
-                <Badge color="treehouseGreen" variant="filled">
+                <Badge color="treehouseGreen" variant="filled" size="md" c="var(--mantine-color-black)">
                     {items.length}
                 </Badge>
             </Group>
