@@ -508,13 +508,20 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         centered
       >
         <Stack>
-          <Select
-            label="Status"
-            value={manualStatus}
-            onChange={(v) => setManualStatus((v as "Present" | "Absent") ?? "Present")}
-            allowDeselect={false}
-            data={[{ value: "Present", label: "Present" }, { value: "Absent", label: "Absent" }]}
-          />
+          {(() => {
+            const editingVisit = editingAttendance ? eventData.visits.find(v => v.personId === editingAttendance.personId) : undefined;
+            const isCheckedIn = !!(editingVisit && !editingVisit.departedAt);
+            return (
+              <Select
+                label="Status"
+                value={manualStatus}
+                onChange={(v) => setManualStatus((v as "Present" | "Absent") ?? "Present")}
+                allowDeselect={false}
+                data={[{ value: "Present", label: "Present" }, { value: "Absent", label: "Absent", disabled: isCheckedIn }]}
+                description={isCheckedIn ? "Check them out first to mark Absent." : undefined}
+              />
+            );
+          })()}
           {manualStatus === "Present" && (
             <>
               <TextInput type="datetime-local" label="Arrived Time" value={manualArrived} onChange={(e) => setManualArrived(e.currentTarget.value)} />
