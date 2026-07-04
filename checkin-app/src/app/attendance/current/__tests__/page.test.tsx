@@ -22,7 +22,7 @@ const attendanceData = {
 
 const householdData = {
   household: {
-    leads: [{ participantId: 1 }],
+    leads: [{ personId: 1 }],
     householdMembers: [{ id: 90, name: "Jamie Kid", email: "jamie@example.com" }],
   },
 };

@@ -49,7 +49,7 @@ function KioskDisplayInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState<number | null>(null);
-  const [household, setHousehold] = useState<{ leads: { participantId: number }[], householdMembers: Person[] } | null>(null);
+  const [household, setHousehold] = useState<{ leads: { personId: number }[], householdMembers: Person[] } | null>(null);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [searchSignOutQuery, setSearchSignOutQuery] = useState("");
   const [selectedParticipant, setSelectedParticipant] = useState<Person | null>(null);
@@ -307,7 +307,7 @@ function KioskDisplayInner() {
 
   const canCheckoutVisit = (visit: Visit): boolean => Boolean(
     visit.participant.id === (session?.user as SessionUser)?.id ||
-    (household?.leads?.some((l) => l.participantId === (session?.user as SessionUser)?.id) &&
+    (household?.leads?.some((l) => l.personId === (session?.user as SessionUser)?.id) &&
       visit.participant.householdId === currentUserHouseholdId)
   );
 
@@ -368,7 +368,7 @@ function KioskDisplayInner() {
         </Group>
 
         {/* Household check-in buttons — hidden in kiosk mode */}
-        {!isKioskMode && canCheckInHousehold && household && household.leads?.some((l) => l.participantId === userId) && (
+        {!isKioskMode && canCheckInHousehold && household && household.leads?.some((l) => l.personId === userId) && (
           <Box mb="lg">
             <Title order={4} c="blue" mb="sm">Check In Household Members</Title>
             <Group gap="xs" wrap="wrap">
