@@ -35,7 +35,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             });
 
             if (existingUser) {
-                return apiError("A participant with this email already exists", 409);
+                return NextResponse.json({ error: "A participant with this email already exists", fields: ["email"] }, { status: 409 });
             }
         }
 
