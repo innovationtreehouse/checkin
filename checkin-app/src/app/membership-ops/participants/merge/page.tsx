@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Box, Button, Card, Group, List, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { formatPhone } from "@/lib/phone";
 
@@ -110,14 +111,14 @@ export default function MergeParticipants() {
           mergeId: keepId === pA?.id ? pB?.id : pA?.id
         })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setSuccess(true);
       } else {
         setError(data.error || "Failed to merge");
       }
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Network error");
+    } catch {
+      notifications.show({ color: "red", message: "Network error", autoClose: false });
     } finally {
       setMerging(false);
     }

@@ -64,7 +64,7 @@ export default function MembershipReviewPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ processId, result, isMarkedVolunteer: !!volunteer[processId] }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified." });
         await load();
@@ -73,7 +73,7 @@ export default function MembershipReviewPage() {
         setMessage({ processId, text: data.error || "Could not record your attestation.", tone: "error" });
       }
     } catch {
-      setMessage({ processId, text: "Network error.", tone: "error" });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setBusyId(null);
     }

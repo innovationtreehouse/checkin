@@ -2,12 +2,14 @@
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import MergeParticipants from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 const participantA = {
   id: 1, name: "Alice Adams", email: "alice@example.com", phone: null, googleId: "g1",
@@ -220,13 +222,16 @@ describe("membership-ops/participants/merge page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
     expect(await screen.findByText("Cannot merge.")).toBeInTheDocument();
 
+    // Network failure surfaces as a persistent toast, and never leaks the raw JS error text.
     global.fetch = jest.fn(() => Promise.reject(new Error("Connection lost"))) as unknown as typeof fetch;
     fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
-    expect(await screen.findByText("Connection lost")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(
+      expect.objectContaining({ color: "red", message: "Network error", autoClose: false })));
+    expect(screen.queryByText("Connection lost")).not.toBeInTheDocument();
 
     global.fetch = jest.fn(() => Promise.reject("not an Error")) as unknown as typeof fetch;
     fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
-    expect(await screen.findByText("Network error")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledTimes(2));
   });
 
   it("resets back to the search screen after Merge More", async () => {

@@ -93,7 +93,7 @@ function NewParticipantForm() {
         })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (res.ok) {
         notifications.show({ color: "green", message: `Participant ${name || data.participant.email || 'created'} successfully!` });
@@ -108,7 +108,7 @@ function NewParticipantForm() {
         setMessage(data.error || "Failed to create participant");
       }
     } catch {
-      setMessage("Network error");
+      notifications.show({ color: "red", message: "Network error", autoClose: false });
     } finally {
       setSaving(false);
     }
