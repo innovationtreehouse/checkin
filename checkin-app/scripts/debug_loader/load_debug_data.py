@@ -217,7 +217,8 @@ def load_certifications(api, doc, actor):
     cache = {"tools": None}
     for c in doc["certifications"]:
         body = {
-            "participantId": _resolve_participant_id(api, c),
+            # API renamed the field participant->person; enrollments still take participantId.
+            "personId": _resolve_participant_id(api, c),
             "toolId": _resolve_tool_id(api, c, cache),
             "level": c["level"],
         }
