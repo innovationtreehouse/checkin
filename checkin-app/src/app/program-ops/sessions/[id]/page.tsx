@@ -12,8 +12,8 @@ import type { RSVPStatus } from '@/types/rsvp';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type ParticipantDetail = {
-  participantId: number;
-  participant: {
+  personId: number;
+  person: {
     id: number;
     name: string | null;
     email: string;
@@ -177,7 +177,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'manualEditAttendance',
-          participantId: editingAttendance.participantId,
+          participantId: editingAttendance.personId,
           status: manualStatus,
           arrivedAt: manualStatus === 'Present' ? fromDatetimeLocal(manualArrived) : null,
           departedAt: manualStatus === 'Present' && manualDeparted ? fromDatetimeLocal(manualDeparted) : null
@@ -242,7 +242,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
   const userId = user?.id;
   const isSysAdminOrBoard = user?.isSysadmin || user?.isBoardMember;
   const isLeadMentor = eventData.program?.leadMentorId === userId;
-  const isCoreVolunteer = eventData.program?.volunteers?.some(v => v.participantId === userId && v.isCore) || false;
+  const isCoreVolunteer = eventData.program?.volunteers?.some(v => v.personId === userId && v.isCore) || false;
 
   const canManageAttendance = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
   const canManageEventInfo = isSysAdminOrBoard || isLeadMentor;
@@ -261,7 +261,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
 
     allRoster.sort((a, b) => {
       if (ROLE_RANK[a.role] !== ROLE_RANK[b.role]) return ROLE_RANK[a.role] - ROLE_RANK[b.role];
-      return (a.participant.name || "").localeCompare(b.participant.name || "");
+      return (a.person.name || "").localeCompare(b.person.name || "");
     });
 
     return (
@@ -276,7 +276,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           </Table.Thead>
           <Table.Tbody>
             {allRoster.map((member) => {
-              const visit = eventData.visits.find(v => v.personId === member.participantId);
+              const visit = eventData.visits.find(v => v.personId === member.personId);
               let statusEl;
               if (visit) {
                 const arriveTime = new Date(visit.arrivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -287,10 +287,10 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
               }
 
               return (
-                <Table.Tr key={`${member.role}-${member.participantId}`}>
+                <Table.Tr key={`${member.role}-${member.personId}`}>
                   <Table.Td>
-                    <Text fw={500}>{member.participant.name || 'Unnamed'}</Text>
-                    <Text size="xs" c="dimmed">{member.participant.email}</Text>
+                    <Text fw={500}>{member.person.name || 'Unnamed'}</Text>
+                    <Text size="xs" c="dimmed">{member.person.email}</Text>
                   </Table.Td>
                   <Table.Td>
                     <Badge color={member.role === 'Participant' ? 'cyan' : 'yellow'} variant="light">{member.role}</Badge>
@@ -341,7 +341,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
     roster.sort((a, b) =>
       ROLE_RANK[a.role] !== ROLE_RANK[b.role]
         ? ROLE_RANK[a.role] - ROLE_RANK[b.role]
-        : (a.participant.name || "").localeCompare(b.participant.name || "")
+        : (a.person.name || "").localeCompare(b.person.name || "")
     );
 
     return (
@@ -358,12 +358,12 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
             </Table.Thead>
             <Table.Tbody>
               {roster.map((member) => {
-                const badge = RSVP_BADGE[statusByParticipant.get(member.participantId) ?? 'NO_RESPONSE'];
+                const badge = RSVP_BADGE[statusByParticipant.get(member.personId) ?? 'NO_RESPONSE'];
                 return (
-                  <Table.Tr key={`${member.role}-${member.participantId}`}>
+                  <Table.Tr key={`${member.role}-${member.personId}`}>
                     <Table.Td>
-                      <Text fw={500}>{member.participant.name || 'Unnamed'}</Text>
-                      <Text size="xs" c="dimmed">{member.participant.email}</Text>
+                      <Text fw={500}>{member.person.name || 'Unnamed'}</Text>
+                      <Text size="xs" c="dimmed">{member.person.email}</Text>
                     </Table.Td>
                     <Table.Td>
                       <Badge color={member.role === 'Participant' ? 'cyan' : 'yellow'} variant="light">{member.role}</Badge>
@@ -504,7 +504,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
       <Modal
         opened={!!editingAttendance}
         onClose={() => !actionLoading && (setEditingAttendance(null), setManualNotice(null))}
-        title={<Text span fw={700} fz="lg">Manual Edit: {editingAttendance?.participant.name}</Text>}
+        title={<Text span fw={700} fz="lg">Manual Edit: {editingAttendance?.person.name}</Text>}
         centered
       >
         <Stack>
