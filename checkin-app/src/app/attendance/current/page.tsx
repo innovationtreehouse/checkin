@@ -250,7 +250,12 @@ function KioskDisplayInner() {
         refreshAttendance();
       } else {
         const d = await res.json().catch(() => ({}));
-        notifications.show({ color: "red", message: d.error || "Action failed.", autoClose: false });
+        if (d.error === "User is already checked in") {
+          notifications.show({ color: "red", message: d.error, autoClose: 4000 });
+          refreshAttendance();
+        } else {
+          notifications.show({ color: "red", message: d.error || "Action failed.", autoClose: false });
+        }
       }
     } catch (e) {
       console.error(e);

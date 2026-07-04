@@ -143,7 +143,12 @@ export default function AdminTrustedAdultsPage() {
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setNotices((n) => ({ ...n, [reviewId]: { text: body.error ?? "Decision failed.", tone: "error" } }));
+                if (body.code === "wrong_phase") {
+                    notifications.show({ color: "red", message: body.error ?? "This review is no longer awaiting board review.", autoClose: 4000 });
+                    await load();
+                } else {
+                    setNotices((n) => ({ ...n, [reviewId]: { text: body.error ?? "Decision failed.", tone: "error" } }));
+                }
             } else {
                 notifications.show({ color: "green", message: `Recorded: ${label(body.status)}.` });
                 await load();

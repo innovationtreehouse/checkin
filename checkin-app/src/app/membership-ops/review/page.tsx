@@ -69,6 +69,9 @@ export default function MembershipReviewPage() {
         notifications.show({ color: "green", message: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified." });
         await load();
         notifyNavRefresh();
+      } else if (data.code === "already_attested") {
+        notifications.show({ color: "red", message: data.error || "Already attested.", autoClose: 4000 });
+        await load();
       } else {
         setMessage({ processId, text: data.error || "Could not record your attestation.", tone: "error" });
       }

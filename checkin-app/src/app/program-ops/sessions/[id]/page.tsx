@@ -158,7 +158,13 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         fetchEvent();
       } else {
         const data = await res.json().catch(() => ({}));
-        setTimeNotice({ ok: false, msg: data.error || "Failed to edit event." });
+        if (data.error === "Cannot edit a past event") {
+          notifications.show({ color: "red", message: data.error, autoClose: 4000 });
+          setEditMode(false);
+          fetchEvent();
+        } else {
+          setTimeNotice({ ok: false, msg: data.error || "Failed to edit event." });
+        }
       }
     } catch {
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
