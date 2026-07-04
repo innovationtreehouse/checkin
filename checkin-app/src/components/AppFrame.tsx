@@ -49,6 +49,7 @@ import { useTodoCounts } from '@/hooks/useTodoCounts';
 import { useConfirmNav } from '@/components/UnsavedChangesProvider';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 import { navBadgeFor, leadsAnyProgram } from '@/components/navBadges';
+import { CountBadge } from '@/components/ui/CountBadge';
 
 type SessionUser = {
   isSysadmin?: boolean;
@@ -329,20 +330,26 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                   badges.length > 0 ? (
                     <Group gap={4} wrap="nowrap">
                       {badges.map((badge) => {
-                        // Green action badges = green fill + black text. Gray informational badges
-                        // = SOLID gray.2 fill + gray-8 text, matching the section-tab gray badges.
-                        // The nav sits on a dark purple sidebar, so the 'light' variant (a
-                        // translucent tint) reads dark there — a solid light shade keeps the badge
-                        // actually light-gray. The NavLink also forces section text white on the
-                        // colored sidebar, so pin the dark label explicitly.
-                        const isGray = badge.color === 'gray';
-                        return (
+                        // Green action + gray info badges go through the shared CountBadge
+                        // (treehouseGreen/black and gray.2/gray-8 respectively). The gray solid
+                        // fill is deliberate: on the dark purple sidebar a 'light' translucent
+                        // tint reads dark. The 'blue' household-in-building badge is a one-off
+                        // info color CountBadge doesn't model, so it stays inline (filled + black
+                        // text, same as before). NavLink forces section text white on the colored
+                        // sidebar, so the dark label is pinned explicitly.
+                        const intent =
+                          badge.color === 'gray' ? 'info' : badge.color === 'treehouseGreen' ? 'action' : null;
+                        return intent ? (
+                          <CountBadge key={badge.color} intent={intent} aria-label={badge.label}>
+                            {badge.count}
+                          </CountBadge>
+                        ) : (
                           <Badge
                             key={badge.color}
                             size="md"
-                            color={isGray ? 'gray.2' : badge.color}
+                            color={badge.color}
                             variant="filled"
-                            c={isGray ? 'var(--mantine-color-gray-8)' : 'var(--mantine-color-black)'}
+                            c="var(--mantine-color-black)"
                             aria-label={badge.label}
                           >
                             {badge.count}

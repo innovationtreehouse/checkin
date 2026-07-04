@@ -16,6 +16,7 @@ import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { AttendanceTabs } from "../AttendanceTabs";
 
 import { PageLoader } from "@/components/ui/PageLoader";
+import { CountBadge } from "@/components/ui/CountBadge";
 type Person = {
   id: number;
   email: string;
@@ -367,7 +368,7 @@ function KioskDisplayInner() {
                 Sign out a user
               </Button>
             )}
-            <Badge size="lg" color="gray.2" variant="filled" c="var(--mantine-color-gray-8)" leftSection="●">{counts.total} People Present</Badge>
+            <CountBadge intent="info" size="lg" leftSection="●">{counts.total} People Present</CountBadge>
           </Group>
         </Group>
 

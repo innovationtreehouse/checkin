@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Badge, Tabs, Text } from "@mantine/core";
+import { Tabs, Text } from "@mantine/core";
+import { CountBadge } from "@/components/ui/CountBadge";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
@@ -60,13 +61,13 @@ export default function MyProgramsLayout({ children }: { children: React.ReactNo
         <ScrollableTabsList>
           <Tabs.Tab
             value="/my-programs/attendance"
-            rightSection={pending > 0 ? <Badge size="md" color="treehouseGreen" c="var(--mantine-color-black)">{pending}</Badge> : undefined}
+            rightSection={pending > 0 ? <CountBadge intent="action">{pending}</CountBadge> : undefined}
           >
             Attendance
           </Tabs.Tab>
           <Tabs.Tab
             value="/my-programs/conflicts"
-            rightSection={conflictCount > 0 ? <Badge size="md" color="red" c="var(--mantine-color-white)">{conflictCount}</Badge> : undefined}
+            rightSection={conflictCount > 0 ? <CountBadge intent="alert">{conflictCount}</CountBadge> : undefined}
           >
             Conflicts
           </Tabs.Tab>

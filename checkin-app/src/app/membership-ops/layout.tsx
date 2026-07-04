@@ -1,11 +1,12 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { Badge, Box, Center, Group, Loader, Stack, Text } from "@mantine/core";
+import { Box, Center, Group, Loader, Stack, Text } from "@mantine/core";
 import { MEMBERSHIP_OPS_NAV_LINKS } from "@/lib/membershipOpsNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { tabBadgeFor, reviewBadges } from "@/components/navBadges";
+import { CountBadge } from "@/components/ui/CountBadge";
 import { SectionTabs } from "@/components/ui/SectionTabs";
 import { PageContainer } from "@/components/ui/PageContainer";
 
@@ -50,60 +51,34 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
     if (href === "/membership-ops/review") {
       const badges = reviewBadges(todoCounts);
       if (badges.length === 0) return undefined;
+      // Same mapping as the left-nav (AppFrame): green = action, gray = info,
+      // both through the shared CountBadge so the tab count matches everywhere.
       return (
         <Group gap={4} wrap="nowrap">
-          {badges.map((b) => {
-            const isGray = b.color === "gray";
-            return (
-              <Badge
-                key={b.color}
-                size="md"
-                color={isGray ? "gray" : b.color}
-                variant={isGray ? "light" : "filled"}
-                // Dark text: black on the green fill (matches other green count
-                // circles), gray-7 on the light-gray bubble. Also survives the
-                // active tab's green recolor.
-                c={isGray ? "var(--mantine-color-gray-7)" : "var(--mantine-color-black)"}
-                aria-label={b.label}
-              >
-                {b.count}
-              </Badge>
-            );
-          })}
+          {badges.map((b) => (
+            <CountBadge key={b.color} intent={b.color === "gray" ? "info" : "action"} aria-label={b.label}>
+              {b.count}
+            </CountBadge>
+          ))}
         </Group>
       );
     }
     const badge = tabBadgeFor(href, todoCounts);
     if (badge) {
       return (
-        <Badge
-          size="md"
-          color="gray.2"
-          variant="filled"
-          // Active tab recolors its content to the tabs color (green); pin a readable
-          // label color so the count isn't rendered green-on-green on the active tab.
-          // gray.2 filled + gray-8 text (matches the membership-audit tab badges) for
-          // legible contrast — the light tint read too faint.
-          c="var(--mantine-color-gray-8)"
-          aria-label={badge.label}
-        >
+        <CountBadge intent="info" aria-label={badge.label}>
           {badge.count}
-        </Badge>
+        </CountBadge>
       );
     }
     if (href === "/membership-ops/households" && memberFamilies !== null) {
       return (
-        <Badge
-          size="md"
-          // Gray total counter, matching the other gray tab badges: gray.2 fill +
-          // gray-8 text (pinned so it survives the active tab's green recolor).
-          color="gray.2"
-          variant="filled"
-          c="var(--mantine-color-gray-8)"
+        <CountBadge
+          intent="info"
           aria-label={`${memberFamilies} org member famil${memberFamilies === 1 ? "y" : "ies"}`}
         >
           {memberFamilies}
-        </Badge>
+        </CountBadge>
       );
     }
     return undefined;

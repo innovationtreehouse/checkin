@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Card, Group, Stack, Text, ThemeIcon, Badge, Anchor } from "@mantine/core";
+import { Card, Group, Stack, Text, ThemeIcon, Anchor } from "@mantine/core";
 import { IconChecklist, IconChevronRight } from "@tabler/icons-react";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
+import { CountBadge } from "@/components/ui/CountBadge";
 
 /**
  * "Things to do" — the member's open todo items, each with a direct link to the
@@ -29,9 +30,9 @@ export default function TodoCard() {
                     </ThemeIcon>
                     <Text fw={700} c="black">Things to do</Text>
                 </Group>
-                <Badge color="treehouseGreen" variant="filled" size="md" c="var(--mantine-color-black)">
+                <CountBadge intent="action">
                     {items.length}
-                </Badge>
+                </CountBadge>
             </Group>
             <Stack gap="xs">
                 {items.map((item) => (
