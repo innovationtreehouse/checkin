@@ -144,6 +144,15 @@ export default function AdminVisitsPage() {
   };
 
   const handleSaveEdit = async (id: number) => {
+    // Instant feedback only — server remains the trust boundary.
+    if (!editForm.departedAt) {
+      setRowNotice({ id, text: "Departure time is required to close this visit.", tone: "error" });
+      return;
+    }
+    if (editForm.arrivedAt && Date.parse(editForm.departedAt) <= Date.parse(editForm.arrivedAt)) {
+      setRowNotice({ id, text: "Departure time must be after arrival time", tone: "error" });
+      return;
+    }
     try {
       const res = await fetch(`/api/facility/visits`, {
         method: 'PATCH',

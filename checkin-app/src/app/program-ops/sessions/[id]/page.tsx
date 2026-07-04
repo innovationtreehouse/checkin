@@ -169,6 +169,12 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
 
   const handleSaveManualAttendance = async () => {
     if (!editingAttendance) return;
+    // Instant feedback only — server remains the trust boundary.
+    if (manualStatus === 'Present' && manualArrived && manualDeparted &&
+        Date.parse(manualDeparted) <= Date.parse(manualArrived)) {
+      setManualNotice({ ok: false, msg: "Departure time must be after arrival time" });
+      return;
+    }
     setActionLoading(true);
     setManualNotice(null);
     try {
