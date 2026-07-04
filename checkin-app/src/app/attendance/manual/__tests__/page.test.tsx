@@ -22,7 +22,9 @@ describe("ManualAttendance", () => {
         expect(submit).toBeDisabled();
 
         // "required" adds a visually-hidden "*" to the label text, so match by substring.
+        // Supply a departure after arrival so client-side validation passes for a past date.
         fireEvent.change(screen.getByLabelText(/Arrival Time/), { target: { value: "2026-06-01T10:00" } });
+        fireEvent.change(screen.getByLabelText(/Departure Time/), { target: { value: "2026-06-01T11:00" } });
         fireEvent.click(submit);
 
         await waitFor(() =>
@@ -36,7 +38,9 @@ describe("ManualAttendance", () => {
         renderWithProviders(<ManualAttendance />);
 
         // "required" adds a visually-hidden "*" to the label text, so match by substring.
+        // Supply a departure after arrival so client-side validation passes for a past date.
         fireEvent.change(screen.getByLabelText(/Arrival Time/), { target: { value: "2026-06-01T10:00" } });
+        fireEvent.change(screen.getByLabelText(/Departure Time/), { target: { value: "2026-06-01T11:00" } });
         fireEvent.click(screen.getByRole("button", { name: "Record Time Entry" }));
 
         expect(await screen.findByText("Failed to record manual visit.")).toBeInTheDocument();
