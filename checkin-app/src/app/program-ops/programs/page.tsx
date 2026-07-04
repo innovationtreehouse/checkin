@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Anchor, Badge, Button, Checkbox, Group, Stack, Text } from "@mantine/core";
+import { Anchor, Badge, Button, Checkbox, Group, Stack, Text, Tooltip } from "@mantine/core";
 import { DataTable, type DataTableColumn } from "@/components/admin/DataTable";
+import { isProgramCheckoutBroken } from "@/lib/programCheckout";
 
 type Program = {
   id: number;
@@ -14,6 +15,10 @@ type Program = {
   orgMemberOnly?: boolean;
   startAt?: string | null;
   endAt?: string | null;
+  orgMemberPriceCents?: number | null;
+  nonOrgMemberPriceCents?: number | null;
+  shopifyOrgMemberVariantId?: string | null;
+  shopifyNonOrgMemberVariantId?: string | null;
   _count?: { participants?: number; events?: number };
 };
 
@@ -72,7 +77,16 @@ export default function AdminProgramsIndex() {
   const columns: DataTableColumn<Program>[] = [
     {
       header: "Program",
-      render: (p) => <Text fw={600}>{p.name}</Text>,
+      render: (p) => (
+        <Group gap="xs" wrap="nowrap">
+          <Text fw={600}>{p.name}</Text>
+          {isProgramCheckoutBroken(p) && (
+            <Tooltip label="Priced but no Shopify checkout variant — paid enrollment will not work. Open the program to sync.">
+              <Badge color="red" variant="filled">⚠️ Broken checkout</Badge>
+            </Tooltip>
+          )}
+        </Group>
+      ),
       sortBy: (p) => p.name,
     },
     {
@@ -130,6 +144,9 @@ export default function AdminProgramsIndex() {
     },
   ];
 
+  // Count over all programs (not just the visible filter) so it matches the nav pill.
+  const brokenCheckoutCount = programs.filter(isProgramCheckoutBroken).length;
+
   return (
     <Stack>
       <Group justify="space-between" align="flex-start" wrap="wrap">
@@ -138,6 +155,12 @@ export default function AdminProgramsIndex() {
           + New Program
         </Button>
       </Group>
+
+      {brokenCheckoutCount > 0 && (
+        <Badge color="red" variant="filled" size="lg">
+          ⚠️ {brokenCheckoutCount} program{brokenCheckoutCount === 1 ? '' : 's'} with broken checkout
+        </Badge>
+      )}
 
       <Group gap="lg">
         <Checkbox

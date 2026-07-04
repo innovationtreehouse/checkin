@@ -38,6 +38,20 @@ export function settingsMisconfigBadge(counts: TodoCounts | null): NavBadge | nu
 }
 
 /**
+ * Red pill for programs that have a price but no matching Shopify variant — paid
+ * enrollment silently can't check out (parent can't pay; the participant stays
+ * PENDING). Red (alert) — checkout is broken until synced. Shown on the Program
+ * Ops "All Programs" tab, admin/board-gated (the count is absent from the payload
+ * for everyone else). Returns null at 0 or off the admin surface.
+ */
+export function programsMisconfigBadge(counts: TodoCounts | null): NavBadge | null {
+  const n = counts?.admin?.programsMisconfig ?? 0;
+  return n > 0
+    ? { count: n, color: 'red', label: `${n} program${n === 1 ? '' : 's'} with broken checkout` }
+    : null;
+}
+
+/**
  * Background-check Review badges (0, 1, or 2), shared by the left-nav Membership
  * Ops item and the Review sub-tab so both stay in lockstep: green = applications
  * this reviewer can act on now; gray = ones they approved awaiting a second

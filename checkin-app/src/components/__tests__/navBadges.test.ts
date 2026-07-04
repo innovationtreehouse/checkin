@@ -1,4 +1,4 @@
-import { navBadgeFor, tabBadgeFor, reviewBadges, settingsMisconfigBadge, leadsAnyProgram, leadPendingCount, leadConflictCount } from '@/components/navBadges';
+import { navBadgeFor, tabBadgeFor, reviewBadges, settingsMisconfigBadge, programsMisconfigBadge, leadsAnyProgram, leadPendingCount, leadConflictCount } from '@/components/navBadges';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 
 const base: TodoCounts = {
@@ -86,6 +86,7 @@ const admin = (over: Partial<NonNullable<TodoCounts['admin']>> = {}): TodoCounts
     brokenHouseholds: 0,
     memberFamilies: 0,
     settingsMisconfig: 0,
+    programsMisconfig: 0,
     ...over,
   },
 });
@@ -140,6 +141,24 @@ describe('settings misconfig red pill', () => {
       .toEqual({ count: 1, color: 'red', label: '1 required membership setting not configured' });
     expect(navBadgeFor('/settings', admin({ settingsMisconfig: 4 })))
       .toEqual([{ count: 4, color: 'red', label: '4 required membership settings not configured' }]);
+  });
+});
+
+describe('programs misconfig red pill', () => {
+  it('is null off the admin surface (non-board viewer)', () => {
+    expect(programsMisconfigBadge(base)).toBeNull();
+    expect(programsMisconfigBadge(null)).toBeNull();
+  });
+
+  it('hidden when no program is broken', () => {
+    expect(programsMisconfigBadge(admin({ programsMisconfig: 0 }))).toBeNull();
+  });
+
+  it('red pill with the broken count, singular label at 1', () => {
+    expect(programsMisconfigBadge(admin({ programsMisconfig: 1 })))
+      .toEqual({ count: 1, color: 'red', label: '1 program with broken checkout' });
+    expect(programsMisconfigBadge(admin({ programsMisconfig: 3 })))
+      .toEqual({ count: 3, color: 'red', label: '3 programs with broken checkout' });
   });
 });
 

@@ -10,6 +10,7 @@ import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 import { ProgramRosterTab } from './ProgramRosterTab';
 import { notifications } from '@mantine/notifications';
 import { ProgramEventsTab } from './ProgramEventsTab';
+import { isProgramCheckoutBroken } from '@/lib/programCheckout';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 export type ProgramDetail = {
@@ -41,6 +42,8 @@ export type ProgramDetail = {
   orgMemberPriceCents: number | null;
   nonOrgMemberPriceCents: number | null;
   shopifyProductId: string | null;
+  shopifyOrgMemberVariantId: string | null;
+  shopifyNonOrgMemberVariantId: string | null;
 };
 
 export type ParticipantOption = { id: number; name: string | null; email: string; dateOfBirth?: string | null };
@@ -72,12 +75,19 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   const [memberPrice, setMemberPrice] = useState("");
   const [nonMemberPrice, setNonMemberPrice] = useState("");
 
+  // Shopify identifiers, editable by sysadmin/board only (manual repair when
+  // there's no live Shopify to sync against).
+  const [shopifyProductIdInput, setShopifyProductIdInput] = useState("");
+  const [orgVariantInput, setOrgVariantInput] = useState("");
+  const [nonOrgVariantInput, setNonOrgVariantInput] = useState("");
+
   // EntityPicker owns the transient query/results/loading; we keep only the selected id + its display label.
   const [mentorSearch, setMentorSearch] = useState("");
   const [isEditingMentor, setIsEditingMentor] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState<'general' | 'roster' | 'events'>('general');
@@ -100,6 +110,9 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         setMemberPrice(data.orgMemberPriceCents !== null ? String(data.orgMemberPriceCents / 100) : "");
         setNonMemberPrice(data.nonOrgMemberPriceCents !== null ? String(data.nonOrgMemberPriceCents / 100) : "");
         setMentorSearch(data.leadMentor ? `${data.leadMentor.name || 'Unnamed'} (${data.leadMentor.email})` : "");
+        setShopifyProductIdInput(data.shopifyProductId ?? "");
+        setOrgVariantInput(data.shopifyOrgMemberVariantId ?? "");
+        setNonOrgVariantInput(data.shopifyNonOrgMemberVariantId ?? "");
         setIsEditingMentor(false);
       } else if (res.status === 404) {
         setMessage("Program not found.");
@@ -156,6 +169,50 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveShopifyIds = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/programs/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shopifyProductId: shopifyProductIdInput || null,
+          shopifyOrgMemberVariantId: orgVariantInput || null,
+          shopifyNonOrgMemberVariantId: nonOrgVariantInput || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ color: "green", message: "Shopify identifiers saved." });
+        fetchProgram();
+      } else {
+        notifications.show({ color: "red", message: data.error || "Failed to save.", autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleSyncShopify = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/programs/${id}/sync-shopify`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ color: "green", message: "Shopify checkout configured." });
+        fetchProgram();
+      } else {
+        notifications.show({ color: "red", message: data.error || "Failed to sync to Shopify.", autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -247,8 +304,43 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                   </Group>
                 </Card>
 
-                {program.shopifyProductId && (
+                {isProgramCheckoutBroken(program) ? (
+                  <Alert color="red" variant="light" title="⚠️ Broken checkout">
+                    <Stack gap="xs" align="flex-start">
+                      <Text size="sm">
+                        This program has a price but no Shopify checkout variant — paid enrollment will not work
+                        (parents can&apos;t pay and enrollments stay pending). This happens when a program is priced
+                        after it was first created.
+                      </Text>
+                      {isSysAdminOrBoard && (
+                        <Button color="red" variant="filled" size="xs" loading={syncing} onClick={handleSyncShopify}>
+                          Sync to Shopify
+                        </Button>
+                      )}
+                    </Stack>
+                  </Alert>
+                ) : program.shopifyProductId && (
                   <Alert color="green" variant="light">✓ Pre-configured for Shopify Checkout (Product ID: {program.shopifyProductId})</Alert>
+                )}
+
+                {isSysAdminOrBoard && (
+                  <Card withBorder radius="md" padding="md">
+                    <Text fw={500} mb={4}>Shopify Checkout Identifiers</Text>
+                    <Text size="xs" c="dimmed" mb="sm">
+                      Admin/Board only. A priced tier needs its variant ID or paid enrollment can&apos;t check out.
+                      Set these manually here (e.g. local/testing where there is no live Shopify), or use “Sync to Shopify” above to create them.
+                    </Text>
+                    <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                      <TextInput label="Member Variant ID" value={orgVariantInput} onChange={e => setOrgVariantInput(e.currentTarget.value)} placeholder="e.g. 40123456789" />
+                      <TextInput label="Non-Member Variant ID" value={nonOrgVariantInput} onChange={e => setNonOrgVariantInput(e.currentTarget.value)} placeholder="e.g. 40123456790" />
+                    </SimpleGrid>
+                    <TextInput mt="sm" label="Product ID (optional)" value={shopifyProductIdInput} onChange={e => setShopifyProductIdInput(e.currentTarget.value)} placeholder="e.g. 80123456789" />
+                    <Group mt="sm">
+                      <Button type="button" variant="light" size="xs" loading={syncing} onClick={handleSaveShopifyIds}>
+                        Save Shopify IDs
+                      </Button>
+                    </Group>
+                  </Card>
                 )}
               </Stack>
 
