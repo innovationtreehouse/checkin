@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Alert, Button, Card, Checkbox, Container, Group, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -90,7 +89,6 @@ export default function MembershipReviewPage() {
         <Card withBorder radius="md" padding="xl" ta="center">
           <Title order={2}>Background-check review</Title>
           <Text c="dimmed" my="md">This area is for background-check reviewers only.</Text>
-          <Button component={Link} href="/">Home</Button>
         </Card>
       </Container>
     );
@@ -98,10 +96,6 @@ export default function MembershipReviewPage() {
 
   return (
     <Container size="md" pb="md">
-      <Group justify="space-between" align="center" wrap="wrap" mb="md">
-        <Button component={Link} href="/" variant="default">← Home</Button>
-      </Group>
-
       <Text c="dimmed">
         Review each applicant&apos;s background check on Averity, then attest below. Two independent
         reviewers are required. If anything is concerning, choose <strong>Reject</strong> — the
