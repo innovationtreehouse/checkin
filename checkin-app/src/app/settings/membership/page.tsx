@@ -98,8 +98,8 @@ export default function MembershipSettingsPage() {
         }),
       });
       if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); setBoundaryUnlocked(false); await load(); }
-      else setSaveNotice({ text: (await res.json()).error || "Save failed.", err: true });
-    } catch { setSaveNotice({ text: "Network error.", err: true }); }
+      else { const d = await res.json().catch(() => ({})); setSaveNotice({ text: d.error || "Save failed.", err: true }); }
+    } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
   };
 
@@ -113,10 +113,10 @@ export default function MembershipSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sendReminders: bulkReminders }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) setRenewalNotice({ text: `Opened ${data.opened} renewal(s); ${data.skipped} already in progress.`, err: false });
       else setRenewalNotice({ text: data.error || "Failed.", err: true });
-    } catch { setRenewalNotice({ text: "Network error.", err: true }); }
+    } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
   };
 

@@ -28,7 +28,7 @@ export default function ManualAttendance() {
         body: JSON.stringify({ arrivedAt, departedAt }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error || "Failed to record manual visit.");
       } else {
@@ -39,7 +39,7 @@ export default function ManualAttendance() {
         notifyNavRefresh();
       }
     } catch {
-      setError("Network error occurred.");
+      notifications.show({ color: "red", message: "Network error occurred.", autoClose: false });
     } finally {
       setLoading(false);
     }

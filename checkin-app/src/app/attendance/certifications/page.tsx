@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { Alert, Badge, Box, Card, Center, Group, Loader, Text, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { useAutoCycle } from "../../../hooks/useAutoCycle";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { ToolLevelBadge, toToolLevel, toolLevelDot } from "@/components/ToolLevelBadge";
@@ -67,7 +68,7 @@ function KioskCertificationsInner() {
       }
 
       const res = await fetch(`/api/kioskdisplay/certifications?limit_to_present=${limitToPresent}`, { headers });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.participants && data.tools) {
         setParticipants(data.participants);
         setTools(data.tools);
@@ -80,7 +81,7 @@ function KioskCertificationsInner() {
       }
     } catch (error) {
       console.error("Failed to fetch certifications data:", error);
-      setError("Network error");
+      notifications.show({ color: "red", message: "Network error", autoClose: false });
     } finally {
       setLoading(false);
     }

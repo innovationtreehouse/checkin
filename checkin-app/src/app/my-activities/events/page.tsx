@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Group, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { notifications } from "@mantine/notifications";
 import { formatDateTime, formatTime } from '@/lib/time';
 import type { RSVPStatus } from '@/types/rsvp';
 
@@ -57,7 +58,7 @@ export default function ParticipantEventsDashboard() {
         setMessage("Failed to load your events.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setLoading(false);
     }
