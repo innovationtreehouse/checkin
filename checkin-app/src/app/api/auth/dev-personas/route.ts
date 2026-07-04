@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import prisma from "@/lib/prisma";
 import { config } from "@/lib/config";
-import { authOptions } from "@/lib/auth-options";
+import { authOptions, createParticipantWithHousehold } from "@/lib/auth-options";
 import { apiError } from "@/lib/api-response";
 
 export const dynamic = 'force-dynamic';
@@ -63,4 +63,30 @@ export async function GET() {
     });
 
     return NextResponse.json({ personas });
+}
+
+/**
+ * POST /api/auth/dev-personas
+ *
+ * Mints a BRAND-NEW empty registrant (single-person household, no children / emergency
+ * contact / membership) so the auth-first first-time intake path can be tested on a laptop
+ * that has no Google identity. This CREATES a login, so it is gated STRICTER than GET: it
+ * must be reachable ONLY on a local laptop — never on cloud 'dev' or prod, where forging a
+ * fresh session is out of the question. The server generates the identity; it NEVER accepts
+ * a caller-supplied email, so it cannot target or collide with a real person.
+ */
+export async function POST() {
+    if (process.env.NODE_ENV === 'production' || config.checkinEnv() !== 'local') {
+        return apiError("Not available", 404);
+    }
+
+    // Date.now() is a fine per-mint uniquifier for local dev; @example.com passes authorize()'s
+    // filter and the fresh row is impersonated via the existing persona-mint (evaluateMint
+    // already relaxes the caller gate on local) — no authorize/evaluateMint change needed.
+    const n = Date.now();
+    const person = await createParticipantWithHousehold({
+        name: `New Family ${n}`,
+        email: `newfamily+${n}@example.com`,
+    });
+    return NextResponse.json({ personaId: person.id });
 }
