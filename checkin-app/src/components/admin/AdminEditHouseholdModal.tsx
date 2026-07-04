@@ -62,6 +62,7 @@ export function AdminEditHouseholdModal({
   const [members, setMembers] = useState<NonNullable<AdminHousehold["householdMembers"]>>([]);
   const [leadIds, setLeadIds] = useState<number[]>([]);
   const [removingLead, setRemovingLead] = useState<number | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ memberSince?: string }>({});
   // Modal-local notice for save-error / lead-remove results, so feedback lands
   // next to the form instead of a global corner toast behind the modal.
   const [notice, setNotice] = useState<{ color: string; message: string } | null>(null);
@@ -146,6 +147,21 @@ export function AdminEditHouseholdModal({
   const handleSave = async () => {
     if (householdId == null || phoneInvalid) return;
     setNotice(null);
+    setFieldErrors({});
+    // Client-side date checks so a bad member-since highlights the field before
+    // the server round-trip (server still re-checks as defense-in-depth).
+    if (form.memberSince) {
+      const t = new Date(`${form.memberSince}T00:00:00.000Z`).getTime();
+      if (isNaN(t)) {
+        setFieldErrors({ memberSince: "Invalid member-since date" });
+        return;
+      }
+      // Org didn't exist before this date, so no membership can predate it.
+      if (t < Date.UTC(2023, 10, 1)) {
+        setFieldErrors({ memberSince: "Member-since cannot be before Nov 1, 2023" });
+        return;
+      }
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/membership-ops/households/${householdId}`, {
@@ -235,7 +251,8 @@ export function AdminEditHouseholdModal({
               label="Member since"
               description="Household's membership start date. Editing this is recorded in the audit log."
               value={form.memberSince}
-              onChange={(e) => update({ memberSince: e.currentTarget.value })}
+              onChange={(e) => { update({ memberSince: e.currentTarget.value }); setFieldErrors({}); }}
+              error={fieldErrors.memberSince}
             />
             <Divider label="Household Leads" labelPosition="left" mt="sm" />
             <Stack gap="xs">

@@ -357,6 +357,7 @@ export default function AdminTrustedAdultsPage() {
                                     size="xs" fz={15}
                                     variant="subtle"
                                     color="green"
+                                    disabled={isSelf && !user?.isSysadmin}
                                     loading={busyId === latest.id}
                                     onClick={() => openPrompt({
                                         title: "Shared note (required to force-approve)",
@@ -365,10 +366,10 @@ export default function AdminTrustedAdultsPage() {
                                 >
                                     Force approve
                                 </Button>
-                                <Button size="xs" fz={15} variant="subtle" color="red" loading={busyId === latest.id} onClick={() => override(latest.id, "deny")}>
+                                <Button size="xs" fz={15} variant="subtle" color="red" disabled={isSelf && !user?.isSysadmin} loading={busyId === latest.id} onClick={() => override(latest.id, "deny")}>
                                     Force deny
                                 </Button>
-                                <Button size="xs" fz={15} variant="subtle" color="gray" loading={busyId === latest.id} onClick={() => override(latest.id, "revoke")}>
+                                <Button size="xs" fz={15} variant="subtle" color="gray" disabled={isSelf && !user?.isSysadmin} loading={busyId === latest.id} onClick={() => override(latest.id, "revoke")}>
                                     Revoke
                                 </Button>
                             </Group>

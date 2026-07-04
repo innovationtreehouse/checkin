@@ -338,7 +338,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                         // text, same as before). NavLink forces section text white on the colored
                         // sidebar, so the dark label is pinned explicitly.
                         const intent =
-                          badge.color === 'gray' ? 'info' : badge.color === 'treehouseGreen' ? 'action' : null;
+                          badge.color === 'gray' ? 'info' : badge.color === 'treehouseGreen' ? 'action' : badge.color === 'red' ? 'alert' : null;
                         return intent ? (
                           <CountBadge key={badge.color} intent={intent} aria-label={badge.label}>
                             {badge.count}

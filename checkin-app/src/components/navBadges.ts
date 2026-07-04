@@ -15,6 +15,11 @@ export function leadPendingCount(counts: TodoCounts | null): number {
   return counts?.lead?.programs.reduce((sum, p) => sum + p.pending.length, 0) ?? 0;
 }
 
+/** Overlapping-visit conflicts across the caller's led programs (red badge count). */
+export function leadConflictCount(counts: TodoCounts | null): number {
+  return counts?.lead?.conflicts ?? 0;
+}
+
 /**
  * Background-check Review badges (0, 1, or 2), shared by the left-nav Membership
  * Ops item and the Review sub-tab so both stay in lockstep: green = applications
@@ -48,9 +53,12 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
     case '/my-household':
       return green(counts.member.household.length, `${counts.member.household.length} items need attention`);
     case '/my-programs': {
-      // Pending attendance the lead must confirm, summed across their programs.
+      // Red conflicts first (left of green), then pending attendance the lead
+      // must confirm — mirrors the Conflicts/Attendance subtab badges.
+      const c = leadConflictCount(counts);
+      const red = c > 0 ? [{ count: c, color: 'red', label: `${c} attendance ${c === 1 ? 'conflict' : 'conflicts'} to resolve` }] : [];
       const n = leadPendingCount(counts);
-      return green(n, `${n} attendance ${n === 1 ? 'item' : 'items'} to confirm`);
+      return [...red, ...green(n, `${n} attendance ${n === 1 ? 'item' : 'items'} to confirm`)];
     }
     case '/attendance': {
       const mine = counts.buildingHousehold;
@@ -64,14 +72,17 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
     }
     case '/programs':
       return gray(counts.activePrograms, `${counts.activePrograms} active programs`);
-    case '/membership-ops':
+    case '/membership-ops': {
       // Board's BLOCKED queue (green) plus the viewer's own background-check
       // review counts — the Review tab lives under this nav item, so its badges
-      // surface here too.
+      // surface here too. Gray mirrors the Applications tab's total in-flight count.
+      const apps = counts.admin ? counts.admin.applicationsTotal : 0;
       return [
         ...green(counts.admin ? counts.admin.membership : 0, 'Pending membership reviews'),
+        ...gray(apps, `${apps} application${plural(apps, '', 's')}`),
         ...reviewBadges(counts),
       ];
+    }
     case '/membership-audit': {
       // Green: leadless households the board must fix (assign a lead). Gray: gaps
       // the household must close — missing emergency contacts plus accounts created
