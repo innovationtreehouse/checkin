@@ -2,12 +2,14 @@
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, setSearchParams, resetRtl } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import KioskDisplay from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 const attendanceData = {
   access: "full",
@@ -224,7 +226,11 @@ describe("attendance/current page", () => {
     global.fetch = jest.fn(async () => { throw new Error("down"); }) as unknown as typeof fetch;
     renderWithProviders(<KioskDisplay />);
 
-    expect(await screen.findByText("Network error")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Network error", autoClose: false }),
+      ),
+    );
   });
 
   it("switches to kiosk mode automatically when the server flags a signed request", async () => {
@@ -390,7 +396,11 @@ describe("attendance/current page", () => {
     fireEvent.click(within(modal).getAllByRole("button", { name: "Sign Out" })[0]);
     const confirmModal2 = await screen.findByRole("dialog", { name: "Force Checkout" });
     fireEvent.click(within(confirmModal2).getByRole("button", { name: "Force Checkout" }));
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith("Network error."));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Network error.", autoClose: false }),
+      ),
+    );
   });
 
   it("alerts on a server failure and then a network error during manual check-in", async () => {
@@ -414,7 +424,11 @@ describe("attendance/current page", () => {
 
     failMode = "network";
     fireEvent.click(screen.getByRole("button", { name: "Check Me In" }));
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith("Network error."));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Network error.", autoClose: false }),
+      ),
+    );
   });
 
   it("opens the emergency-contact modal with multiple contacts, then a no-contact fallback", async () => {
