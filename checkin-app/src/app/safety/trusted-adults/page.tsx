@@ -8,6 +8,7 @@ import {
     Center,
     Group,
     Loader,
+    Modal,
     Radio,
     Stack,
     Text,
@@ -105,6 +106,14 @@ export default function AdminTrustedAdultsPage() {
     const [notices, setNotices] = useState<Record<number, { text: string; tone: AlertTone }>>({});
     const clearNotice = (id: number) =>
         setNotices((n) => { const c = { ...n }; delete c[id]; return c; });
+    // Native in-app prompt (replaces window.prompt): cancel closes without acting,
+    // so no decision fires unless the board submits a note.
+    const [prompt, setPrompt] = useState<{ title: string; onSubmit: (note: string) => void } | null>(null);
+    const [promptVal, setPromptVal] = useState("");
+    const openPrompt = (cfg: { title: string; onSubmit: (note: string) => void }) => {
+        setPromptVal("");
+        setPrompt(cfg);
+    };
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -179,6 +188,24 @@ export default function AdminTrustedAdultsPage() {
 
     return (
         <Stack p="md">
+            <Modal opened={!!prompt} onClose={() => setPrompt(null)} title={prompt?.title} centered>
+                <Textarea
+                    data-autofocus
+                    autosize
+                    minRows={3}
+                    value={promptVal}
+                    onChange={(e) => setPromptVal(e.currentTarget.value)}
+                />
+                <Group justify="flex-end" mt="md">
+                    <Button variant="default" onClick={() => setPrompt(null)}>Cancel</Button>
+                    <Button
+                        disabled={!promptVal.trim()}
+                        onClick={() => { prompt?.onSubmit(promptVal); setPrompt(null); }}
+                    >
+                        Submit
+                    </Button>
+                </Group>
+            </Modal>
             <div>
                 <Title order={2}>Trusted Adults — Board Review</Title>
                 <Text c="dimmed" size="sm">
@@ -311,10 +338,10 @@ export default function AdminTrustedAdultsPage() {
                                             variant="light"
                                             loading={busyId === latest.id}
                                             disabled={isSelf}
-                                            onClick={() => {
-                                                const note = window.prompt("What information do you need from the family?") ?? "";
-                                                decide(latest.id, "REQUEST_INFO", { note });
-                                            }}
+                                            onClick={() => openPrompt({
+                                                title: "What information do you need from the family?",
+                                                onSubmit: (note) => decide(latest.id, "REQUEST_INFO", { note }),
+                                            })}
                                         >
                                             Request info
                                         </Button>
@@ -331,10 +358,10 @@ export default function AdminTrustedAdultsPage() {
                                     variant="subtle"
                                     color="green"
                                     loading={busyId === latest.id}
-                                    onClick={() => {
-                                        const note = window.prompt("Shared note (required to force-approve):") ?? "";
-                                        if (note.trim()) override(latest.id, "approve", { sharedNote: note });
-                                    }}
+                                    onClick={() => openPrompt({
+                                        title: "Shared note (required to force-approve)",
+                                        onSubmit: (note) => override(latest.id, "approve", { sharedNote: note }),
+                                    })}
                                 >
                                     Force approve
                                 </Button>
