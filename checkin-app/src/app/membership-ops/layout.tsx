@@ -1,11 +1,11 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { Badge, Box, Center, Loader, Stack, Text } from "@mantine/core";
+import { Badge, Box, Center, Group, Loader, Stack, Text } from "@mantine/core";
 import { MEMBERSHIP_OPS_NAV_LINKS } from "@/lib/membershipOpsNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
-import { tabBadgeFor } from "@/components/navBadges";
+import { tabBadgeFor, reviewBadges } from "@/components/navBadges";
 import { SectionTabs } from "@/components/ui/SectionTabs";
 import { PageContainer } from "@/components/ui/PageContainer";
 
@@ -16,11 +16,13 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
   // Reviewers are let in so they can reach the Review tab (linked from their notifications);
   // the admin tools below stay scoped to sysadmin/board and each page 403s independently.
   const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember", "isBackgroundCheckReviewer"]);
-  const todoCounts = useTodoCounts(isAdmin);
 
   // Review tab is for reviewers + board members (implicit reviewers); all other tabs
   // are admin-only. A reviewer-only user therefore sees just the Review tab.
   const canReview = !!(sessionUser?.isBackgroundCheckReviewer || sessionUser?.isBoardMember);
+  // Fetch counts for reviewers too (not just admins), so the Review tab badges
+  // work for a reviewer-only user.
+  const todoCounts = useTodoCounts(isAdmin || canReview);
   const navLinks = MEMBERSHIP_OPS_NAV_LINKS.filter((l) =>
     l.href === "/membership-ops/review" ? canReview : isAdmin,
   );
@@ -43,6 +45,34 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
 
   // Right-aligned count badge for a tab: pending applications, or the member-family total.
   const badgeFor = (href: string): React.ReactNode => {
+    // Review tab shows two viewer-scoped badges: green (can act on now), gray
+    // (approved, awaiting a second reviewer). Colors match the left-nav badges.
+    if (href === "/membership-ops/review") {
+      const badges = reviewBadges(todoCounts);
+      if (badges.length === 0) return undefined;
+      return (
+        <Group gap={4} wrap="nowrap">
+          {badges.map((b) => {
+            const isGray = b.color === "gray";
+            return (
+              <Badge
+                key={b.color}
+                size="md"
+                color={isGray ? "gray" : b.color}
+                variant={isGray ? "light" : "filled"}
+                // Dark text: black on the green fill (matches other green count
+                // circles), gray-7 on the light-gray bubble. Also survives the
+                // active tab's green recolor.
+                c={isGray ? "var(--mantine-color-gray-7)" : "var(--mantine-color-black)"}
+                aria-label={b.label}
+              >
+                {b.count}
+              </Badge>
+            );
+          })}
+        </Group>
+      );
+    }
     const badge = tabBadgeFor(href, todoCounts);
     if (badge) {
       return (

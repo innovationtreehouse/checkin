@@ -143,6 +143,24 @@ export async function eligibleReviewProcessIds(reviewerId: number): Promise<numb
 }
 
 /**
+ * Reviewer-scoped badge counts for the Review tab / nav:
+ *   - canActOn: applications this reviewer may attest right now (green).
+ *   - approvedAwaitingSecond: applications this reviewer already approved that
+ *     still await a second reviewer (gray). An awaiting process only ever holds
+ *     APPROVE attestations and needs 2 to clear, so "this reviewer has an
+ *     attestation on it" == "approved by me, not yet done".
+ */
+export async function reviewQueueCounts(reviewerId: number): Promise<{ canActOn: number; approvedAwaitingSecond: number }> {
+    const reviewer = await loadReviewer(reviewerId);
+    if (!reviewer || !canReviewBackgroundChecks(reviewer)) return { canActOn: 0, approvedAwaitingSecond: 0 };
+    const [canActOnIds, approvedAwaitingSecond] = await Promise.all([
+        eligibleReviewProcessIds(reviewerId),
+        prisma.orgMembershipProcess.count({ where: { ...AWAITING_BG_WHERE, attestations: { some: { reviewerId } } } }),
+    ]);
+    return { canActOn: canActOnIds.length, approvedAwaitingSecond };
+}
+
+/**
  * Record a reviewer's attestation. Validates eligibility, then on REJECT blocks
  * the application and on the 2nd APPROVE clears the check — activating the
  * membership if dues are already paid, else leaving it at PENDING_PAYMENT.
