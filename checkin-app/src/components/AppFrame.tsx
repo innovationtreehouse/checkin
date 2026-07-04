@@ -317,7 +317,10 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
             // On the colored sidebar all text is white; the 'light' variant gives a soft
             // translucent overlay on the active item rather than a harsh solid fill.
             const sidebarText = onColoredSidebar ? 'var(--mantine-color-white)' : undefined;
-            const badges = navBadgeFor(href, todoCounts);
+            // Badge keys off the canonical section href, not the per-role
+            // destination — a reviewer-only user's link points at /review, but its
+            // badges live under the /membership-ops case.
+            const badges = navBadgeFor(item.href, todoCounts);
             return (
               <NavLink
                 key={item.href}
