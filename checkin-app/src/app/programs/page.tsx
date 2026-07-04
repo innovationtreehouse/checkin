@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Checkbox, Divider, Group, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { formatDate } from '@/lib/time';
 import { PageContainer } from '@/components/ui/PageContainer';
 
@@ -46,7 +47,7 @@ export default function PublicProgramsDirectory() {
           setMessage("Failed to load program directory.");
         }
       } catch {
-        setMessage("Network error loading programs.");
+        notifications.show({ color: "red", message: "Network error loading programs.", autoClose: false });
       } finally {
         setLoading(false);
       }

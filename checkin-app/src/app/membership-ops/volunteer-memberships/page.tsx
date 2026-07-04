@@ -42,13 +42,13 @@ export default function VolunteerMembershipsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: newEmail }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setNewEmail("");
         if (data.warning) { flash(data.warning); } else { notifications.show({ color: "green", message: "Designation added." }); }
         await load();
       } else flash(data.error || "Could not add.");
-    } catch { flash("Network error."); }
+    } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
   };
 

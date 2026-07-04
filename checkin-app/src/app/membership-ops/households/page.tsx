@@ -39,7 +39,7 @@ export default function AdminHouseholdsPage() {
         setError("Failed to fetch households.");
       }
     } catch {
-      setError("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setLoading(false);
     }

@@ -88,7 +88,7 @@ export default function AdminMembershipPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ processId, action, ...extra }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: "Updated." });
         await load();
@@ -97,7 +97,7 @@ export default function AdminMembershipPage() {
         setMessage(data.error || "Action failed.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setBusyId(null);
     }
@@ -113,7 +113,7 @@ export default function AdminMembershipPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ processId, action }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: action === "reset" ? "Sent back for re-review." : "Overridden to payment." });
         await load();
@@ -122,7 +122,7 @@ export default function AdminMembershipPage() {
         setMessage(data.error || "Override failed.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setBusyId(null);
     }
@@ -138,7 +138,7 @@ export default function AdminMembershipPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ processId }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: "Certified — membership activated." });
         await load();
@@ -147,7 +147,7 @@ export default function AdminMembershipPage() {
         setMessage(data.error || "Certification failed.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setBusyId(null);
     }

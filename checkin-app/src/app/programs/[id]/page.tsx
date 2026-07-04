@@ -65,7 +65,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         setMessage("Failed to load program details.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -176,7 +176,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       }
       if (errors.length > 0) setMessage(errors.join(" "));
     } catch {
-      setMessage("Network error requesting payment plan.");
+      notifications.show({ color: "red", message: "Network error requesting payment plan.", autoClose: false });
     } finally {
       setEnrolling(false);
     }
@@ -244,7 +244,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       if (needsOverride) setRequiresOverride(true);
       if (errors.length > 0) setMessage(errors.join(" "));
     } catch {
-      setMessage("Network error during enrollment.");
+      notifications.show({ color: "red", message: "Network error during enrollment.", autoClose: false });
     } finally {
       if (!isPayingOnShopify) setEnrolling(false);
     }
