@@ -32,6 +32,17 @@ export const POST = withAuth({}, async (req, auth) => {
         if (isNaN(arrivalTime.getTime())) {
             return apiError("Invalid arrival time", 400);
         }
+
+        // No future arrivals. Allow a 5-min skew (clock drift, the minute it takes
+        // to fill the form) and clamp anything inside that window back to now, so a
+        // slightly-future time records as-of-now instead of being rejected.
+        const now = new Date();
+        if (arrivalTime.getTime() > now.getTime() + 5 * 60 * 1000) {
+            return apiError("Arrival time cannot be in the future.", 400);
+        }
+        if (arrivalTime.getTime() > now.getTime()) {
+            arrivalTime.setTime(now.getTime());
+        }
         if (departureTime && isNaN(departureTime.getTime())) {
             return apiError("Invalid departure time", 400);
         }
@@ -46,7 +57,6 @@ export const POST = withAuth({}, async (req, auth) => {
         // arrival with no departure would create a permanent open visit nobody
         // scanned out of, so require a departure for it.
         if (!departureTime) {
-            const now = new Date();
             const withinSixHours = now.getTime() - arrivalTime.getTime() <= 6 * 60 * 60 * 1000;
             const sameDay = arrivalTime.toDateString() === now.toDateString();
             if (!withinSixHours && !sameDay) {
