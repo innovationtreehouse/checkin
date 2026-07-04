@@ -144,9 +144,6 @@ export default function AdminProgramsIndex() {
     },
   ];
 
-  // Count over all programs (not just the visible filter) so it matches the nav pill.
-  const brokenCheckoutCount = programs.filter(isProgramCheckoutBroken).length;
-
   return (
     <Stack>
       <Group justify="space-between" align="flex-start" wrap="wrap">
@@ -155,12 +152,6 @@ export default function AdminProgramsIndex() {
           + New Program
         </Button>
       </Group>
-
-      {brokenCheckoutCount > 0 && (
-        <Badge color="red" variant="filled" size="lg">
-          ⚠️ {brokenCheckoutCount} program{brokenCheckoutCount === 1 ? '' : 's'} with broken checkout
-        </Badge>
-      )}
 
       <Group gap="lg">
         <Checkbox
