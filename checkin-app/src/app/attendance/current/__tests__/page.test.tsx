@@ -390,7 +390,11 @@ describe("attendance/current page", () => {
     fireEvent.click(within(modal).getAllByRole("button", { name: "Sign Out" })[0]);
     const confirmModal = await screen.findByRole("dialog", { name: "Force Checkout" });
     fireEvent.click(within(confirmModal).getByRole("button", { name: "Force Checkout" }));
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith("Failed to force checkout."));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Failed to force checkout.", autoClose: false }),
+      ),
+    );
 
     failMode = "network";
     fireEvent.click(within(modal).getAllByRole("button", { name: "Sign Out" })[0]);
@@ -420,7 +424,11 @@ describe("attendance/current page", () => {
     await screen.findByText("3 People Present");
 
     fireEvent.click(screen.getByRole("button", { name: "Check Me In" }));
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith("Error: Already checked in"));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Already checked in", autoClose: false }),
+      ),
+    );
 
     failMode = "network";
     fireEvent.click(screen.getByRole("button", { name: "Check Me In" }));
@@ -580,7 +588,11 @@ describe("attendance/current page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Out" }));
     // isSelf → no window.confirm prompt, and the "check out" (not "force checkout") wording.
     expect(window.confirm).not.toHaveBeenCalled();
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith("Failed to check out."));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Failed to check out.", autoClose: false }),
+      ),
+    );
   });
 
   it("shows a critical two-deep-violation banner over the last-keyholder warning", async () => {
