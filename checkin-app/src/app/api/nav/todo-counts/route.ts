@@ -8,6 +8,7 @@ import { getLeadConflicts } from "@/lib/attendanceConflicts";
 import { pickAddress, validateAddress } from "@/lib/address";
 import { ORG_DOMAIN } from "@/lib/config";
 import { openConfigIssues } from "@/lib/configHealth";
+import { PROGRAM_CHECKOUT_BROKEN_WHERE } from "@/lib/programCheckout";
 import { apiError } from "@/lib/api-response";
 
 /**
@@ -67,7 +68,9 @@ export type TodoCounts = {
     // `settingsMisconfig` = how many required Shopify-checkout board settings are still
     // unset (0–2): the membership variant ID and the volunteer discount code. Red pill on
     // the Settings nav + Membership Settings tab — checkout is broken until both are set.
-    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number; settingsMisconfig: number };
+    // `programsMisconfig` = how many programs have a price but no matching Shopify variant
+    // (paid enrollment silently can't check out). Red pill on the Program Ops Programs tab.
+    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number; settingsMisconfig: number; programsMisconfig: number };
     // Config-health gaps (admins + board only): number of failing system-config checks
     // (e.g. Zoho e-sign unconfigured). Drives the red System Status nav badge; the full
     // list lives at /api/system-status/config-health. See lib/configHealth.ts.
@@ -350,7 +353,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // ---- Admin surface (board's own queue) — only for board/isSysadmin ----
     if (user.isSysadmin || user.isBoardMember) {
-        const [membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, boardSettings] = await Promise.all([
+        const [membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, programsMisconfig, boardSettings] = await Promise.all([
             prisma.orgMembershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -395,6 +398,10 @@ export const GET = withAuth({}, async (_req, auth) => {
                     },
                 },
             }),
+            // Programs priced on a tier with no matching Shopify variant — paid enrollment
+            // silently can't check out. Same condition as the list/detail UI, shared via
+            // PROGRAM_CHECKOUT_BROKEN_WHERE (see lib/programCheckout.ts).
+            prisma.program.count({ where: PROGRAM_CHECKOUT_BROKEN_WHERE }),
             // Required membership settings — count how many are still unset so the board
             // sees a red pill until all are configured. Empty string counts as unset for
             // the Shopify fields; bgRecheckMonths <= 0 means the re-check interval is unset;
@@ -409,7 +416,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             (boardSettings?.volunteerDiscountCode ? 0 : 1) +
             ((boardSettings?.bgRecheckMonths ?? 0) > 0 ? 0 : 1) +
             (boardSettings?.orgMembershipYearBoundary ? 0 : 1);
-        result.admin = { membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, settingsMisconfig };
+        result.admin = { membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, settingsMisconfig, programsMisconfig };
         // System-config health (env-var/deploy gaps). Synchronous, no DB — just presence
         // checks. Same admin+board gate as the rest of this block.
         result.configHealth = { openIssues: openConfigIssues() };

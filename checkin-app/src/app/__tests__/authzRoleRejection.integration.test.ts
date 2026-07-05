@@ -34,6 +34,7 @@ import { PATCH as SHOP_TOOL_PATCH } from '@/app/api/shop/tools/[id]/route';
 import { GET as EVENT_GET, PATCH as EVENT_PATCH } from '@/app/api/events/[id]/route';
 import { GET as EVENTS_LIST_GET } from '@/app/api/events/route';
 import { POST as PROGRAMS_POST } from '@/app/api/programs/route';
+import { POST as PROGRAM_SYNC_SHOPIFY_POST } from '@/app/api/programs/[id]/sync-shopify/route';
 import { GET as NOTIFICATIONS_GET } from '@/app/api/notifications/route';
 import { POST as CONTRACT_SYNC_POST } from '@/app/api/membership/contract/sync/route';
 import { POST as ONBOARDING_POST } from '@/app/api/profile/onboarding/route';
@@ -165,6 +166,7 @@ describe('Protected-route role rejection', () => {
         // (finance-ops/payment-plans POST is covered in programPaymentPlansAPI; its GET is now a handler().)
         { name: 'GET /api/events (standalone list)', invoke: () => EVENTS_LIST_GET(nreq('http://localhost/api/events')) },
         { name: 'POST /api/programs', invoke: () => PROGRAMS_POST(nreq('http://localhost/api/programs', 'POST', {})) },
+        { name: 'POST /api/programs/[id]/sync-shopify', invoke: () => PROGRAM_SYNC_SHOPIFY_POST(nreq('http://localhost/api/programs/1/sync-shopify', 'POST', {}), idCtx(1)) },
 
         // ---- drift-guard sweep: one row per method of each role-gated route ----
         // The withAuth roles gate fires before any body/param work, so dummy
