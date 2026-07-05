@@ -155,9 +155,13 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
         ...gray(grayTotal, 'Households missing an emergency contact or with an unclaimed account'),
       ];
     }
-    case '/finance-ops':
-      // Pending participants awaiting payment-plan approval.
-      return green(counts.admin ? counts.admin.paymentPlanPending : 0, 'Pending payment-plan approvals');
+    case '/finance-ops': {
+      // Both queues fold into one green pill (program + membership payment-plan
+      // approvals) — matching how /membership-ops collapses its counts.
+      const program = counts.admin ? counts.admin.paymentPlanPending : 0;
+      const membership = counts.admin ? counts.admin.membershipPaymentPlanPending : 0;
+      return green(program + membership, 'Pending payment-plan approvals');
+    }
     case '/safety':
       // Trusted-adult disclosures awaiting board review.
       return green(counts.admin ? counts.admin.trustedAdults : 0, 'Trusted-adult disclosures to review');
@@ -221,6 +225,11 @@ export function tabBadgeFor(href: string, counts: TodoCounts | null): NavBadge |
         : null;
     case '/membership-audit/unclaimed':
       return gray(admin.unclaimedHouseholds, `${admin.unclaimedHouseholds} unclaimed account household${plural(admin.unclaimedHouseholds, '', 's')}`);
+    // Finance Ops — one green pill per tab, so both queues badge consistently.
+    case '/finance-ops/payment-plan':
+      return green(admin.paymentPlanPending, `${admin.paymentPlanPending} program payment-plan approval${plural(admin.paymentPlanPending, '', 's')}`);
+    case '/finance-ops/membership-payment-plan':
+      return green(admin.membershipPaymentPlanPending, `${admin.membershipPaymentPlanPending} membership payment-plan approval${plural(admin.membershipPaymentPlanPending, '', 's')}`);
     // Safety — same count as the /safety section badge.
     case '/safety/trusted-adults':
       return green(admin.trustedAdults, `${admin.trustedAdults} trusted-adult disclosure${plural(admin.trustedAdults, '', 's')} to review`);

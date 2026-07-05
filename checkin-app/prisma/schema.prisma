@@ -365,6 +365,8 @@ model OrgMembershipProcess {
   certifiedById         Int?
   /// @sensitivity:internal
   renewalReminderSentAt DateTime?
+  /// @sensitivity:internal
+  isPaymentPlanRequested Boolean @default(false)
 
   attestations BackgroundCheckAttestation[]
 
