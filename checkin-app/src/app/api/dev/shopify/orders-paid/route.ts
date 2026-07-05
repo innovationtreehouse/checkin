@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { config } from "@/lib/config";
+import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 import { logger } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 
@@ -21,13 +21,15 @@ export const dynamic = "force-dynamic";
  *   { processId }                     → membership activation
  *   { programId, participantIds[] }   → program-enrollment activation
  *
- * 404s whenever the mock isn't active — always in prod. Each path also fails
+ * ENV GATE: LOCAL ONLY. shopifyMockActive() is true iff CHECKIN_ENV=local, so this
+ * route 404s on BOTH dev and prod — dev and prod pay through their real Shopify
+ * store, which fires the real orders/paid webhook itself. Each path also fails
  * CLOSED when its target isn't actually awaiting payment (process not
  * PENDING_PAYMENT / participants not PENDING): the dev UI only ever lists
  * awaiting-payment rows, so the API refuses to fire a webhook for anything else.
  */
 export const POST = withAuth({}, async (req, auth) => {
-    if (!config.shopifyMockActive()) return apiError("Not available", 404);
+    if (!config.shopifyMockActive()) return apiError("Not available", 404); // local only; 404 on dev + prod
     if (auth.type !== "session") return apiError("Unauthorized", 401);
 
     if (!config.shopifyWebhookSecret()) return apiError("No webhook secret", 500);
@@ -71,10 +73,9 @@ async function fireMembership(processId: number): Promise<NextResponse> {
     // the membership product (#624/H2). The mock must echo a configured variant id
     // or the webhook lands as a no-membership-item anomaly, not an activation.
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const variantId = settings?.orgMembershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId;
-    if (!variantId) {
-        return apiError("No membership variant configured. Set one in Settings → Membership first (design §2, O4a).", 409);
-    }
+    // Mock stands in for the manual BoardSettings variant a local seed never sets;
+    // the inbound handler echoes the same fallback so the order matches (config).
+    const variantId = settings?.orgMembershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId ?? DEV_MOCK_MEMBERSHIP_VARIANT_ID;
 
     // Shape mirrors the subset the inbound handler reads: note_attributes (where
     // Shopify maps cart attributes) + line_items + an order id. Stable id so two

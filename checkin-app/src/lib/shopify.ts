@@ -94,14 +94,13 @@ export async function getAccessToken(): Promise<string | null> {
 }
 
 export async function createShopifyProgramVariants(name: string, orgMemberPriceCents: number | null, nonOrgMemberPriceCents: number | null, maxParticipants: number | null = null) {
-  // Dev/local mock: the real Shopify store is unreachable with no creds, so a
-  // locally-seeded paid program would store null variant ids and the orders/paid
-  // dev tool would then refuse to fire (route.ts: "No Shopify variant configured").
-  // Mirror the inbound webhook mock — synthesize the ids the real store would
-  // return so the create → checkout → webhook path works end-to-end with zero env.
-  // Only priced tiers get a variant, exactly like the real branch below. Ids need
-  // not be globally unique: the inbound handler resolves the program by id, then
-  // matches line-items against that program's own variant set.
+  // ENV GATE: LOCAL ONLY (shopifyMockActive() ⇔ CHECKIN_ENV=local). No real store,
+  // so synthesize the variant ids the real store would return — otherwise a paid
+  // program stores null variants and the checkout → webhook path can't match. Only
+  // priced tiers get a variant, exactly like the real (dev/prod) branch below. Ids
+  // need not be globally unique: the inbound handler resolves the program by id, then
+  // matches line-items against that program's own variant set. dev/prod fall through
+  // to the real Shopify Admin API call below.
   if (config.shopifyMockActive()) {
     const slug = name.replace(/\W+/g, "-").toLowerCase().slice(0, 24);
     return {
