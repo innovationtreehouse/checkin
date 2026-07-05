@@ -166,6 +166,12 @@ model Household {
   /// @sensitivity:personal
   postalCode String?
 
+  /// Freeform "Anything else we should know?" captured at intake. Where a
+  /// volunteer-only household types the note that tells a background-check
+  /// reviewer to mark them volunteer. pii (not personal): reviewers must read it.
+  /// @sensitivity:pii
+  intakeNotes String?
+
   householdMembers  Person[]
   leads             HouseholdLead[]
   orgMembership     OrgMembership?

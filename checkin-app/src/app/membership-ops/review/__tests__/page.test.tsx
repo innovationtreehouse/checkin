@@ -15,7 +15,7 @@ const queue = {
   queue: [
     {
       id: 100,
-      orgMembership: { household: { name: "The Smiths", leads: [{ person: { id: 1, name: "Pat Smith", email: "pat@example.com" } }] } },
+      orgMembership: { household: { name: "The Smiths", intakeNotes: "We're volunteer only — no students.", leads: [{ person: { id: 1, name: "Pat Smith", email: "pat@example.com" } }] } },
       _count: { attestations: 1 },
     },
   ],
@@ -30,6 +30,8 @@ describe("membership-ops/review page", () => {
     expect(await screen.findByText("The Smiths")).toBeInTheDocument();
     expect(screen.getByText("Pat Smith <pat@example.com>", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("1/2 approvals so far.")).toBeInTheDocument();
+    // The applicant's freeform note is surfaced on the card (the volunteer signal).
+    expect(screen.getByText("We're volunteer only — no students.")).toBeInTheDocument();
   });
 
   it("approves an attestation", async () => {
