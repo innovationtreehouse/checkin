@@ -5,8 +5,11 @@ import { useSession } from "next-auth/react";
 import { useEffect } from "react";
 import { Box, Center, Loader, Stack, Text } from "@mantine/core";
 import { SectionTabs } from "@/components/ui/SectionTabs";
+import { CountBadge } from "@/components/ui/CountBadge";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PROGRAM_NAV_LINKS } from "@/lib/programNav";
+import { useTodoCounts } from "@/hooks/useTodoCounts";
+import { programsMisconfigBadge } from "@/components/navBadges";
 
 // A program-edit URL (/program-ops/programs/[id]) carries a PROGRAM id, so the
 // layout can gate it precisely against the caller's led-program set. Session URLs
@@ -27,6 +30,17 @@ export default function ProgramOpsLayout({ children }: { children: React.ReactNo
 
   const user = session?.user;
   const isGlobalAdmin = !!(user?.isSysadmin || user?.isBoardMember);
+
+  // Red pill on the Programs tab for priced programs missing their Shopify variant.
+  // The count is only in the payload for admin/board, so gate the fetch on that.
+  const todoCounts = useTodoCounts(isGlobalAdmin);
+  const badgeFor = (href: string): React.ReactNode => {
+    if (href !== "/program-ops/programs") return undefined;
+    const badge = programsMisconfigBadge(todoCounts);
+    return badge ? (
+      <CountBadge intent="alert" aria-label={badge.label}>{badge.count}</CountBadge>
+    ) : undefined;
+  };
 
   // Row-aware: a lead mentor reaches program-edit only for the programs they lead.
   const editProgramId = programEditId(pathname);
@@ -64,7 +78,7 @@ export default function ProgramOpsLayout({ children }: { children: React.ReactNo
 
   return (
     <PageContainer>
-      <SectionTabs links={PROGRAM_NAV_LINKS} prefixMatch mb="md" />
+      <SectionTabs links={PROGRAM_NAV_LINKS} prefixMatch badgeFor={badgeFor} mb="md" />
       <Box style={{ minWidth: 0 }}>{children}</Box>
     </PageContainer>
   );
