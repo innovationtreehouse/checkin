@@ -79,7 +79,7 @@ describe("membership page", () => {
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save progress" }));
@@ -102,7 +102,7 @@ describe("membership page", () => {
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Submit & continue" }));
@@ -525,7 +525,7 @@ describe("membership page", () => {
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Emergency contact email (optional)"), { target: { value: "not-an-email" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
@@ -564,7 +564,7 @@ describe("membership page", () => {
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Submit & continue" }));
@@ -592,7 +592,7 @@ describe("membership page", () => {
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Submit & continue" }));
@@ -616,7 +616,7 @@ describe("membership page", () => {
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Submit & continue" }));
@@ -662,7 +662,7 @@ describe("membership page", () => {
       "/api/membership": state({
         process: { id: 1, kind: "INITIAL", status: "INTAKE" },
         prefill: {
-          household: { name: null, emergencyContactName: "Aunt Jo", emergencyContactPhone: "555-1234", emergencyContactEmail: null, line1: "1 Treehouse Ln", line2: null, city: "Austin", state: "TX", postalCode: "78701" },
+          household: { name: null, emergencyContactName: "Aunt Jo", emergencyContactPhone: "512-555-1234", emergencyContactEmail: null, line1: "1 Treehouse Ln", line2: null, city: "Austin", state: "TX", postalCode: "78701" },
           primaryParent: { id: 1, name: "Pat Parent", email: "pat@example.com", dob: "1980-01-01", allergies: null },
           // Sam has every field null except name/id — exercises the `sec.x ?? ""`
           // fallback side of hydrate() (the "fills every intake field" test below
@@ -704,7 +704,7 @@ describe("membership page", () => {
     fireEvent.change(screen.getByLabelText("State"), { target: { value: "TX" } });
     fireEvent.change(screen.getByPlaceholderText("78701"), { target: { value: "78701" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Emergency contact email (optional)"), { target: { value: "jo@example.com" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
     fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "1980-01-01" } });
