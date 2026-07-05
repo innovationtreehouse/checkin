@@ -420,7 +420,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           </Button>
         </Group>
 
-        <AlertBanner message={message} tone="info" mb="lg" />
+        <AlertBanner message={message} tone="error" mb="lg" />
 
         {/* PAST EVENT: ATTENDANCE CONFIRMATION */}
         {isPastEvent && canManageAttendance && (

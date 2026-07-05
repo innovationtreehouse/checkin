@@ -17,10 +17,11 @@ export default function VolunteerMembershipsPage() {
   const [newEmail, setNewEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; tone: "warning" | "error" } | undefined>();
   const [emailError, setEmailError] = useState<string | undefined>(undefined);
 
-  const flash = (m: string) => setMessage(m);
+  const flash = (text: string, tone: "warning" | "error" = "error") =>
+    setMessage(text ? { text, tone } : undefined);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,7 +50,7 @@ export default function VolunteerMembershipsPage() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setNewEmail("");
-        if (data.warning) { flash(data.warning); } else { notifications.show({ color: "green", message: "Designation added." }); }
+        if (data.warning) { flash(data.warning, "warning"); } else { notifications.show({ color: "green", message: "Designation added." }); }
         await load();
       } else flash(data.error || "Could not add.");
     } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
@@ -66,7 +67,7 @@ export default function VolunteerMembershipsPage() {
 
   return (
     <Stack>
-      <AlertBanner message={message} tone="warning" />
+      <AlertBanner message={message?.text} tone={message?.tone} />
 
       <Card withBorder radius="md" padding="lg">
         <Title order={3} mb="xs">Volunteer-only designated emails</Title>
