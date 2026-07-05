@@ -78,8 +78,8 @@ describe("membership page", () => {
     await screen.findByText("Your household");
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact name"), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact phone"), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save progress" }));
@@ -101,8 +101,8 @@ describe("membership page", () => {
     await screen.findByText("Your household");
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact name"), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact phone"), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Submit & continue" }));
@@ -524,8 +524,8 @@ describe("membership page", () => {
     await screen.findByText("Your household");
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact name"), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact phone"), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
     fireEvent.change(screen.getByLabelText("Emergency contact email (optional)"), { target: { value: "not-an-email" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
@@ -563,8 +563,8 @@ describe("membership page", () => {
     await screen.findByText("Your household");
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact name"), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact phone"), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Submit & continue" }));
@@ -591,8 +591,8 @@ describe("membership page", () => {
     await screen.findByText("Your household");
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact name"), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact phone"), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Submit & continue" }));
@@ -615,8 +615,8 @@ describe("membership page", () => {
     await screen.findByText("Your household");
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact name"), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact phone"), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Submit & continue" }));
@@ -703,8 +703,8 @@ describe("membership page", () => {
     fireEvent.change(screen.getByLabelText("City"), { target: { value: "Austin" } });
     fireEvent.change(screen.getByLabelText("State"), { target: { value: "TX" } });
     fireEvent.change(screen.getByPlaceholderText("78701"), { target: { value: "78701" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact name"), { target: { value: "Aunt Jo" } });
-    fireEvent.change(screen.getByLabelText("Emergency contact phone"), { target: { value: "555-1234" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "555-1234" } });
     fireEvent.change(screen.getByLabelText("Emergency contact email (optional)"), { target: { value: "jo@example.com" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
     fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "1980-01-01" } });

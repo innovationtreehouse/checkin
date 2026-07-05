@@ -172,7 +172,7 @@ async function checkOne(
       const failedStr = failedAt ? failedAt.toISOString() : "unknown";
       // Service-supplied error text is untrusted: collapse newlines/control chars before it
       // lands in the operator-facing alert summary (log-forging / markdown-injection guard).
-      // eslint-disable-next-line no-control-regex
+
       const errExcerpt = error ? ` Last error: ${error.replace(/[\x00-\x1f\x7f]+/g, " ").slice(0, 300)}.` : "";
       await safeRecord(
         {

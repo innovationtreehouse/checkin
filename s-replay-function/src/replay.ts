@@ -63,7 +63,7 @@ export async function replay(prisma: PrismaClient, args: ReplayArgs): Promise<Re
     try {
       // Stream in id ASC order so the newest payload for a gid is projected last —
       // the final live-table state matches the most recent event.
-      // eslint-disable-next-line no-constant-condition
+
       while (true) {
         const rows = await prisma.shopifyRawEvent.findMany({
           where,

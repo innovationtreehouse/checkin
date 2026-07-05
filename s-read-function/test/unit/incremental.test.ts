@@ -3,7 +3,7 @@
  * the INCREMENTAL source and the run id, and sums their counts into the result.
  * withSyncRun and the streams are mocked so only the orchestration is under test.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@inventory/s-ingest-core", () => ({
   EventSource: { INCREMENTAL: "INCREMENTAL" },
