@@ -7,16 +7,27 @@ import { apiError } from "@/lib/api-response";
 
 export const dynamic = 'force-dynamic';
 
+// Cap the result set so the picker never has to render every seeded row — the
+// search box narrows to what the developer actually wants.
+const PERSONA_LIMIT = 50;
+
 /**
- * GET /api/auth/dev-personas
+ * GET /api/auth/dev-personas[?q=…]
  *
- * Returns @example.com personas (with role flags) that feed the persona picker. Available on
- * the dev instance and local laptops only. Middleware exempts /api, so on the cloud dev instance
- * we additionally require a session here — otherwise an anonymous visitor could enumerate the
- * persona list, violating the "not world-readable" rule. On local no session is required (the
- * logged-out picker is the initial login path).
+ * Returns the seeded @example.com personas (with role flags) that feed the persona picker.
+ * The impersonation surface is deliberately limited to these disposable test users — a caller
+ * can never mint a real participant, even one that exists in the dev DB (mirrored by the same
+ * suffix filter in persona-mint's authorize()). An optional `q` filters those personas by
+ * name/email (case-insensitive substring) so the caller can search rather than scroll a
+ * cramped list — note personas render by NAME, so searching by email is the reliable way to
+ * find one (e.g. "bg.reviewer" surfaces "BG Reviewer"). Results are capped at PERSONA_LIMIT.
+ *
+ * Available on the dev instance and local laptops only. Middleware exempts /api, so on the
+ * cloud dev instance we additionally require a session here — otherwise an anonymous visitor
+ * could enumerate the persona list, violating the "not world-readable" rule. On local no
+ * session is required (the logged-out picker is the initial login path).
  */
-export async function GET() {
+export async function GET(request: Request) {
     // Gate on CHECKIN_ENV only (via isDevInstance) — NOT NODE_ENV. The cloud dev instance is a
     // prod build (NODE_ENV=production, CHECKIN_ENV=dev), so a NODE_ENV check would 404 the picker
     // there. isDevInstance() already fails safe to prod. Mirrors the shared dev fence (guard.ts).
@@ -38,10 +49,26 @@ export async function GET() {
         }
     }
 
+    const q = new URL(request.url).searchParams.get("q")?.trim();
+
+    // The persona picker only ever exposes seeded @example.com test users; `q` searches WITHIN
+    // that set (name or email), never widening it to real participants.
+    const exampleOnly = { email: { endsWith: "@example.com" } };
+
     const personas = await prisma.person.findMany({
-        where: {
-            email: { endsWith: "@example.com" },
-        },
+        where: q
+            ? {
+                  AND: [
+                      exampleOnly,
+                      {
+                          OR: [
+                              { name: { contains: q, mode: "insensitive" } },
+                              { email: { contains: q, mode: "insensitive" } },
+                          ],
+                      },
+                  ],
+              }
+            : exampleOnly,
         select: {
             id: true,
             email: true,
@@ -59,7 +86,8 @@ export async function GET() {
                 },
             },
         },
-        orderBy: { id: "asc" },
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        take: PERSONA_LIMIT,
     });
 
     return NextResponse.json({ personas });
