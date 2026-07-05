@@ -14,6 +14,7 @@ import MembershipFlowStepper from "@/components/MembershipFlowStepper";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 import { useUnsavedGuard, useConfirmNav } from "@/components/UnsavedChangesProvider";
 import AddressForm from "@/components/membership/AddressForm";
 import EmergencyContactForm from "@/components/membership/EmergencyContactForm";
@@ -274,6 +275,7 @@ export default function MembershipPage() {
     if (!address.line1?.trim()) errs.address = "Home address is required.";
     if (!emName.trim()) errs.emName = "Emergency contact name is required.";
     if (!emPhone.trim()) errs.emPhone = "Emergency contact phone is required.";
+    else if (!isValidPhone(emPhone)) errs.emPhone = PHONE_ERROR;
     if (emEmail.trim() && !isValidEmail(emEmail)) errs.emEmail = "That email address doesn't look right.";
     if (!primaryName.trim()) errs.primaryName = "Your name is required.";
     return errs;
