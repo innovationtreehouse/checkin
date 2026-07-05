@@ -74,6 +74,16 @@ function isAwaitingBgReview(p: { status: OrgMembershipProcessStatus; bgConsentAt
     return false;
 }
 
+/**
+ * PERSON_BG is attestable at the SERVICE level (attest() still accepts it, so the
+ * two-reviewer gate is exercised + tested) but must NOT surface as an actionable
+ * row in the reviewer QUEUE until Phase 3 renders the subject + consent. The queue
+ * GET only shows a household's leads; a PERSON_BG row would render blank yet stay
+ * attestable — a reviewer could blind-approve an unidentified person. So the queue
+ * listing + badge counts exclude it (warn-only Phase 2); the gate machinery stays.
+ */
+const QUEUE_EXCLUDES_PERSON_BG: Prisma.OrgMembershipProcessWhereInput = { kind: { not: "PERSON_BG" } };
+
 /** Prisma `where` matching the same predicate as isAwaitingBgReview, for queue queries. */
 export const AWAITING_BG_WHERE: Prisma.OrgMembershipProcessWhereInput = {
     bgClearedAt: null,
@@ -143,7 +153,7 @@ export async function eligibleReviewProcessIds(reviewerId: number): Promise<numb
     if (!reviewer || !canReviewBackgroundChecks(reviewer)) return [];
 
     const processes = await prisma.orgMembershipProcess.findMany({
-        where: AWAITING_BG_WHERE,
+        where: { ...AWAITING_BG_WHERE, ...QUEUE_EXCLUDES_PERSON_BG },
         orderBy: { stageEnteredAt: "asc" },
         select: {
             id: true,
@@ -178,7 +188,7 @@ export async function reviewQueueCounts(reviewerId: number): Promise<{ canActOn:
     if (!reviewer || !canReviewBackgroundChecks(reviewer)) return { canActOn: 0, approvedAwaitingSecond: 0 };
     const [canActOnIds, approvedAwaitingSecond] = await Promise.all([
         eligibleReviewProcessIds(reviewerId),
-        prisma.orgMembershipProcess.count({ where: { ...AWAITING_BG_WHERE, attestations: { some: { reviewerId } } } }),
+        prisma.orgMembershipProcess.count({ where: { ...AWAITING_BG_WHERE, ...QUEUE_EXCLUDES_PERSON_BG, attestations: { some: { reviewerId } } } }),
     ]);
     return { canActOn: canActOnIds.length, approvedAwaitingSecond };
 }

@@ -11,7 +11,7 @@
  */
 
 import { runPersonBgAnnualSweep } from '@/lib/membership/personBgTriggers';
-import { attest, ReviewError } from '@/lib/membership/review';
+import { attest, eligibleReviewProcessIds, ReviewError } from '@/lib/membership/review';
 import { activate } from '@/lib/membership/payment';
 import prisma from '@/lib/prisma';
 
@@ -210,6 +210,27 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
         await expect(attest(insider.id, proc.id, { result: 'APPROVE' })).rejects.toMatchObject({
             code: 'same_household_applicant',
         } as Partial<ReviewError>);
+    });
+
+    it('PERSON_BG is non-actionable in the reviewer queue (excluded from the listing) though attest() still gates it', async () => {
+        // Subject in a household distinct from the reviewers → would otherwise be eligible.
+        const subjHh = await makeHousehold('queueSubjHh');
+        const subject = await makePerson('queue-subject', subjHh.id, { dateOfBirth: ADULT_DOB });
+        const personBg = await prisma.orgMembershipProcess.create({
+            data: { kind: 'PERSON_BG', subjectPersonId: subject.id, orgMembershipId: null, status: 'PENDING_BG_REVIEW' },
+        });
+        // Control: a household INITIAL at the same review status DOES surface.
+        const appHh = await makeHousehold('queueAppHh');
+        const appLead = await makePerson('queue-app-lead', appHh.id);
+        await prisma.householdLead.create({ data: { householdId: appHh.id, personId: appLead.id } });
+        const appMembership = await prisma.orgMembership.create({ data: { householdId: appHh.id, status: 'NONE' } });
+        const household = await prisma.orgMembershipProcess.create({
+            data: { orgMembershipId: appMembership.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' },
+        });
+
+        const ids = await eligibleReviewProcessIds(rev1);
+        expect(ids).not.toContain(personBg.id); // never offered as an actionable queue row
+        expect(ids).toContain(household.id); // household review is unaffected
     });
 
     it('gate: a REJECT moves the PERSON_BG to BLOCKED', async () => {
