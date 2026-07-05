@@ -260,11 +260,9 @@ export default function MembershipPage() {
     if (error || msg === "") setWarnings([]);
   };
 
-  // Build an error message from an API response, appending the dev-only `detail`
-  // (the real server failure) when present so an "Internal Server Error" isn't a
-  // dead end. Falls back to a friendly default when the body carries nothing.
-  const apiError = (data: { error?: string; detail?: string } | null | undefined, fallback: string) =>
-    [data?.error, data?.detail].filter(Boolean).join(" — ") || fallback;
+  // Prefer the API's user-facing error string; fall back to a friendly default.
+  const apiError = (data: { error?: string } | null | undefined, fallback: string) =>
+    data?.error || fallback;
 
   // Local dev has no Shopify store, so instead of a checkout redirect we fire the
   // mock orders/paid webhook in-app (same endpoint the Debug → Shopify tool uses),

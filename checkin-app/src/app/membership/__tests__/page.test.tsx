@@ -370,10 +370,10 @@ describe("membership page", () => {
     expect(await screen.findByText("Couldn't open the signing form. Please try again.")).toBeInTheDocument();
   });
 
-  it("shows the server's error and detail when signing fails", async () => {
+  it("shows the server's error when signing fails", async () => {
     setSession({ id: 1 });
     const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
-      if (String(input).includes("contract/sign")) return { ok: false, json: async () => ({ error: "Signing closed", detail: "zoho maintenance" }) } as Response;
+      if (String(input).includes("contract/sign")) return { ok: false, json: async () => ({ error: "Signing closed" }) } as Response;
       return {
         ok: true,
         json: async () => state({
@@ -388,7 +388,7 @@ describe("membership page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Sign your membership agreement/ }));
 
-    expect(await screen.findByText("Signing closed — zoho maintenance")).toBeInTheDocument();
+    expect(await screen.findByText("Signing closed")).toBeInTheDocument();
   });
 
   it("shows a network error when starting to sign throws", async () => {
@@ -442,12 +442,12 @@ describe("membership page", () => {
   });
 
   // ── save() failures + warnings branches ──────────────────────────────────
-  it("shows the server detail when saving progress fails", async () => {
+  it("shows the server error when saving progress fails", async () => {
     setSession({ id: 1 });
     const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/membership/intake") && init?.method === "PATCH") {
-        return { ok: false, json: async () => ({ detail: "constraint violated" }) } as Response;
+        return { ok: false, json: async () => ({ error: "constraint violated" }) } as Response;
       }
       return { ok: true, json: async () => state({ process: { id: 1, kind: "INITIAL", status: "INTAKE" } }) } as Response;
     });
@@ -562,7 +562,7 @@ describe("membership page", () => {
     const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/membership/intake") && init?.method === "PATCH") {
-        return { ok: false, json: async () => ({ error: "Save failed", detail: "timeout" }) } as Response;
+        return { ok: false, json: async () => ({ error: "Save failed" }) } as Response;
       }
       if (url.includes("/api/membership/intake/submit")) return { ok: true, json: async () => ({ state: state({}) }) } as Response;
       return { ok: true, json: async () => state({ process: { id: 1, kind: "INITIAL", status: "INTAKE" } }) } as Response;
@@ -581,7 +581,7 @@ describe("membership page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Submit & continue" }));
 
-    expect(await screen.findByText("Save failed — timeout")).toBeInTheDocument();
+    expect(await screen.findByText("Save failed")).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/api/membership/intake/submit"))).toBe(false);
   });
 
