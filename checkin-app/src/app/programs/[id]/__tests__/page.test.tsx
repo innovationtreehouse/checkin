@@ -203,7 +203,7 @@ describe("ProgramEnrollmentPage", () => {
         expect(router.push).toHaveBeenCalledWith("/programs");
     });
 
-    it("prompts a logged-out visitor to sign in with Google before enrolling (auth-first)", async () => {
+    it("routes a logged-out visitor through /signin (carrying the return URL) before enrolling (auth-first)", async () => {
         setSession(null, "unauthenticated");
         mockFetchJson({ "/api/programs/10": baseProgram() });
         renderPage();
@@ -214,7 +214,9 @@ describe("ProgramEnrollmentPage", () => {
         expect(screen.queryByRole("button", { name: "Register (New User)" })).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Sign in to enroll" }));
-        expect(signIn).toHaveBeenCalledWith("google", { callbackUrl: "/programs/10" });
+        // LOCAL never calls Google directly; /signin decides Google vs. the dev picker by env.
+        expect(signIn).not.toHaveBeenCalled();
+        expect(router.push).toHaveBeenCalledWith("/signin?callbackUrl=/programs/10");
     });
 
     it("navigates back and to the manage screen for authorized managers", async () => {

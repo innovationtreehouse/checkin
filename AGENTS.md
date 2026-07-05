@@ -3,6 +3,16 @@
 Orientation for agents working in this repo. The app is a Next.js + Prisma +
 PostgreSQL membership/check-in system under `checkin-app/`.
 
+## Editing files
+
+Before a multi-file edit sweep, Read every target file first — batch all the
+Reads in one round — then Edit. Don't interleave read/edit/read/edit; the
+harness rejects any Edit/Write on a file you haven't Read this session ("File
+has not been read yet"), so front-loading the Reads avoids a stall per file.
+After a `git merge`/`rebase`/`cherry-pick` (or any external write) touches a
+file you're about to edit, re-Read it first — it counts as modified since your
+last Read.
+
 ## Test classes
 
 There are **three** classes of tests. Run all commands from `checkin-app/`.

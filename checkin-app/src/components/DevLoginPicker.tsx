@@ -22,7 +22,7 @@ interface Persona {
  * DevLoginPicker — renders a list of debug personas for quick login.
  * Only rendered in dev mode when the user is NOT signed in.
  */
-export default function DevLoginPicker() {
+export default function DevLoginPicker({ callbackUrl = "/" }: { callbackUrl?: string }) {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [loading, setLoading] = useState(true);
   const [signingIn, setSigningIn] = useState<string | null>(null);
@@ -47,7 +47,7 @@ export default function DevLoginPicker() {
     setSigningIn(persona.email);
     // Initial local login: no current session, so the mint is a plain login as this persona
     // (impersonatedBy stays null). The same flow handles impersonation once signed in.
-    signIn("persona-mint", { personaId: String(persona.id), mode: "impersonate", callbackUrl: "/" });
+    signIn("persona-mint", { personaId: String(persona.id), mode: "impersonate", callbackUrl });
   };
 
   // Local only: mint a brand-new empty registrant (server generates the identity), then log in
@@ -57,7 +57,7 @@ export default function DevLoginPicker() {
     const res = await fetch("/api/auth/dev-personas", { method: "POST" });
     if (!res.ok) { setSigningIn(null); return; }
     const { personaId } = await res.json();
-    signIn("persona-mint", { personaId: String(personaId), mode: "impersonate", callbackUrl: "/" });
+    signIn("persona-mint", { personaId: String(personaId), mode: "impersonate", callbackUrl });
   };
 
   const getRoleBadges = (p: Persona): { label: string; color: string }[] => {
