@@ -33,6 +33,11 @@ function anonymous() {
 function jsonReq(body?: unknown) {
     return new Request('http://localhost:4000/api/dev/shopify/orders-paid', {
         method: 'POST',
+        // A real local browser always carries the session cookie; without it, the
+        // local (CHECKIN_ENV=local) kiosk fallback in authenticateRequest treats the
+        // cookieless request as a kiosk and withAuth 403s it. Send one so auth resolves
+        // to the mocked session, as it would in the app.
+        headers: { cookie: 'next-auth.session-token=test' },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
 }
@@ -81,10 +86,15 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
     // running first nor permanently erases ambient creds for later suites.
     const SHOPIFY_ENV_KEYS = ['SHOPIFY_STORE_DOMAIN', 'SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET'] as const;
     let prevShopifyEnv: Record<string, string | undefined> = {};
+    // The mock is gated EXPLICITLY on CHECKIN_ENV=local (config.shopifyMockActiveEnv);
+    // the suite default is 'dev'. Run as local so shopifyMockActive() is true.
+    let prevCheckinEnv: string | undefined;
 
     beforeAll(async () => {
         // Capture before anything fallible so afterAll can't restore `undefined`.
         originalFetch = global.fetch;
+        prevCheckinEnv = process.env.CHECKIN_ENV;
+        process.env.CHECKIN_ENV = 'local';
         prevShopifyEnv = Object.fromEntries(SHOPIFY_ENV_KEYS.map((k) => [k, process.env[k]]));
         for (const k of SHOPIFY_ENV_KEYS) delete process.env[k];
 
@@ -122,6 +132,8 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
             if (prevShopifyEnv[k] === undefined) delete process.env[k];
             else process.env[k] = prevShopifyEnv[k];
         }
+        if (prevCheckinEnv === undefined) delete process.env.CHECKIN_ENV;
+        else process.env.CHECKIN_ENV = prevCheckinEnv;
         global.fetch = originalFetch;
         await prisma.$disconnect();
     });
@@ -130,18 +142,14 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
         jest.clearAllMocks();
     });
 
-    it('404s when the mock is inactive (real Shopify creds configured)', async () => {
+    it('404s when not local (dev/prod pay through the real store, not this route)', async () => {
         asSession();
-        process.env.SHOPIFY_STORE_DOMAIN = 'test.myshopify.com';
-        process.env.SHOPIFY_CLIENT_ID = 'test-client-id';
-        process.env.SHOPIFY_CLIENT_SECRET = 'test-client-secret';
+        process.env.CHECKIN_ENV = 'dev';
         try {
             const res = await POST(jsonReq({ processId: 1 }));
             expect(res.status).toBe(404);
         } finally {
-            delete process.env.SHOPIFY_STORE_DOMAIN;
-            delete process.env.SHOPIFY_CLIENT_ID;
-            delete process.env.SHOPIFY_CLIENT_SECRET;
+            process.env.CHECKIN_ENV = 'local';
         }
     });
 

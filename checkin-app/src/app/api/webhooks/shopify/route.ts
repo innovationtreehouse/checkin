@@ -49,7 +49,13 @@ function verifyShopifyHmac(req: Request, rawBody: string): { ok: true } | { ok: 
 }
 
 // Shopify Webhook for `orders/paid` or `orders/create`
-// Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE
+// Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE.
+//
+// ENV: this handler runs in ALL environments — dev/prod receive it from the real
+// Shopify store; local receives it from the self-fired mock (/api/dev/shopify/orders-paid).
+// The HMAC secret differs per env (config.shopifyWebhookSecret). The only env-branched
+// logic is the synthetic dev-mock variant fallback, gated on config.shopifyMockActive()
+// (⇔ CHECKIN_ENV=local) below.
 export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac }, async (_req, order: ShopifyOrder) => {
         // Iterate through line items to find CheckMeIn_Account_ID and Program_ID
         // We set these custom attributes in the permalink URL:

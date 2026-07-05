@@ -54,10 +54,11 @@ describe('createShopifyProgramVariants', () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('returns synthetic variant ids for priced tiers when the dev mock is active', async () => {
-        // Non-prod + no creds → shopifyMockActive: stand in for the real store so
-        // the seed → checkout → orders/paid dev tool works with zero env.
-        process.env.CHECKIN_ENV = 'dev';
+    it('returns synthetic variant ids for priced tiers on local (mock active)', async () => {
+        // CHECKIN_ENV=local → shopifyMockActive: stand in for the real store so the
+        // seed → checkout → orders/paid dev tool works with zero env. Gated on the
+        // env, not on cred presence.
+        process.env.CHECKIN_ENV = 'local';
         delete process.env.SHOPIFY_STORE_DOMAIN;
         delete process.env.SHOPIFY_CLIENT_ID;
         delete process.env.SHOPIFY_CLIENT_SECRET;

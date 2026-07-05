@@ -232,12 +232,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       // instead of creating a free, unchargeable enrollment.
       let variantId: string | null = null;
       let storeDomain: string | undefined;
-      // LOCAL only: no real Shopify store, so the mock (config.shopifyMockActive)
-      // stands in. Redirecting to a nonexistent store would dead-end, so we settle the
-      // charge in-app via the Debug section's orders/paid webhook instead. Dev/prod
-      // hit their real stores (storeDomain set → redirect below). Variant is still
-      // required — the mock synthesizes dev-mock-variant ids, so a null one is a real
-      // config gap even locally.
+      // ENV GATE (mirrors server config.shopifyMockActive ⇔ CHECKIN_ENV=local):
+      //   local     → mockPay: settle the charge in-app via the Debug orders/paid
+      //               webhook, no redirect (there is no local Shopify store).
+      //   dev/prod  → redirect to the real store (storeDomain required).
+      // Variant is always required — local synthesizes dev-mock-variant ids, so a null
+      // one is a real config gap in every env.
       let mockPay = false;
       if (isPayingOnShopify && program) {
         const householdRes = await fetch('/api/household');
@@ -248,8 +248,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         }
         variantId = isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId;
         storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
-        mockPay = !storeDomain && isLocalInstance;
-        if (!variantId || (!storeDomain && !mockPay)) {
+        mockPay = isLocalInstance;
+        if (!variantId || (!mockPay && !storeDomain)) {
           notifications.show({ color: "red", autoClose: false, message: variantId
             ? "Cannot enroll: Shopify store domain not configured. Contact an admin."
             : "Cannot enroll: no pricing variant set for this program tier — set one in program-ops." });

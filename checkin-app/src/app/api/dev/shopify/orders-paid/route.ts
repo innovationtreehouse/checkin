@@ -21,13 +21,15 @@ export const dynamic = "force-dynamic";
  *   { processId }                     → membership activation
  *   { programId, participantIds[] }   → program-enrollment activation
  *
- * 404s whenever the mock isn't active — always in prod. Each path also fails
+ * ENV GATE: LOCAL ONLY. shopifyMockActive() is true iff CHECKIN_ENV=local, so this
+ * route 404s on BOTH dev and prod — dev and prod pay through their real Shopify
+ * store, which fires the real orders/paid webhook itself. Each path also fails
  * CLOSED when its target isn't actually awaiting payment (process not
  * PENDING_PAYMENT / participants not PENDING): the dev UI only ever lists
  * awaiting-payment rows, so the API refuses to fire a webhook for anything else.
  */
 export const POST = withAuth({}, async (req, auth) => {
-    if (!config.shopifyMockActive()) return apiError("Not available", 404);
+    if (!config.shopifyMockActive()) return apiError("Not available", 404); // local only; 404 on dev + prod
     if (auth.type !== "session") return apiError("Unauthorized", 401);
 
     if (!config.shopifyWebhookSecret()) return apiError("No webhook secret", 500);
