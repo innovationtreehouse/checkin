@@ -177,7 +177,15 @@ export const authOptions: NextAuthOptions = {
         // lives in evaluateMint(); this provider just supplies the caller's claims and the target.
         // (Replaces the old local-only "Offline Login" provider — local mints are the
         // unauthenticated-caller case in evaluateMint.)
-        ...(config.isDevInstance() && process.env.NODE_ENV !== 'production' ? [
+        //
+        // Registration gates on CHECKIN_ENV only (via isDevInstance) — NOT NODE_ENV. The cloud dev
+        // instance runs the prod image (NODE_ENV=production, CHECKIN_ENV=dev; see Dockerfile +
+        // deploy-dev.yml), so a NODE_ENV clause here (added by #280) unregistered the provider on
+        // the very instance impersonation is designed for, and every mint failed. isDevInstance()
+        // fails safe to prod (unset CHECKIN_ENV → 'prod'), matching the shared dev fence
+        // (lib/dev/guard.ts), and evaluateMint independently denies prod even if the provider
+        // somehow runs — both covered in auth-options-authorize.test.ts.
+        ...(config.isDevInstance() ? [
             CredentialsProvider({
                 id: PERSONA_MINT_PROVIDER_ID,
                 name: "Persona",

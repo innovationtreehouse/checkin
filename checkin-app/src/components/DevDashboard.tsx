@@ -73,6 +73,7 @@ export default function DevDashboard() {
     const [toast, setToast] = useState<string | null>(null);
     const [activity, setActivity] = useState<Entry[]>([]);
     const [personas, setPersonas] = useState<PersonaOption[]>([]);
+    const [query, setQuery] = useState("");
     const [switching, setSwitching] = useState(false);
     const [pending, startTransition] = useTransition();
 
@@ -87,11 +88,23 @@ export default function DevDashboard() {
     useEffect(() => {
         if (!isDevInstance || !signedIn || !open) return;
         loadActivity();
-        fetch("/api/auth/dev-personas", { cache: "no-store" })
-            .then((res) => (res.ok ? res.json() : { personas: [] }))
-            .then((data) => setPersonas(data.personas || []))
-            .catch(() => setPersonas([]));
     }, [isDevInstance, signedIn, open, loadActivity]);
+
+    // Search the seeded @example.com personas (debounced). The server applies the suffix filter +
+    // cap and narrows by `q`; we just re-fetch as the query changes. Personas render by name, so
+    // searching by email is the reliable way to reach one (e.g. "bg.reviewer" → "BG Reviewer").
+    useEffect(() => {
+        if (!isDevInstance || !signedIn || !open) return;
+        const handle = setTimeout(() => {
+            const q = query.trim();
+            const url = q ? `/api/auth/dev-personas?q=${encodeURIComponent(q)}` : "/api/auth/dev-personas";
+            fetch(url, { cache: "no-store" })
+                .then((res) => (res.ok ? res.json() : { personas: [] }))
+                .then((data) => setPersonas(data.personas || []))
+                .catch(() => setPersonas([]));
+        }, 200);
+        return () => clearTimeout(handle);
+    }, [isDevInstance, signedIn, open, query]);
 
     if (!isDevInstance || !signedIn) return null;
 
@@ -269,10 +282,30 @@ export default function DevDashboard() {
                                 🔓 Logged out
                             </button>
                         </div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", maxHeight: "9.5rem", overflowY: "auto" }}>
+                        <input
+                            type="text"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Search personas by name or email…"
+                            aria-label="Search test personas to impersonate"
+                            style={{
+                                width: "100%",
+                                boxSizing: "border-box",
+                                padding: "0.45rem 0.6rem",
+                                marginBottom: "0.5rem",
+                                borderRadius: 8,
+                                background: "rgba(255,255,255,0.06)",
+                                border: "1px solid rgba(255,255,255,0.18)",
+                                color: "white",
+                                fontSize: "0.8rem",
+                            }}
+                        />
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", maxHeight: "15rem", overflowY: "auto" }}>
                             {personas.length === 0 && (
                                 <span style={{ fontSize: "0.78rem", color: "#9ca3af" }}>
-                                    No personas yet — run the + Family macro or the seed.
+                                    {query.trim()
+                                        ? `No personas match “${query.trim()}”.`
+                                        : "No personas yet — run the + Family macro or the seed."}
                                 </span>
                             )}
                             {personas.map((p) => (
@@ -282,14 +315,23 @@ export default function DevDashboard() {
                                     disabled={switching}
                                     style={{
                                         ...macroBtn(switching),
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "flex-start",
+                                        gap: "0.1rem",
                                         textAlign: "left",
-                                        whiteSpace: "nowrap",
                                         overflow: "hidden",
-                                        textOverflow: "ellipsis",
                                     }}
                                     title={p.email}
                                 >
-                                    🎭 {p.name || p.email}
+                                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+                                        🎭 {p.name || p.email}
+                                    </span>
+                                    {p.name && p.email && (
+                                        <span style={{ fontSize: "0.68rem", color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+                                            {p.email}
+                                        </span>
+                                    )}
                                 </button>
                             ))}
                         </div>
