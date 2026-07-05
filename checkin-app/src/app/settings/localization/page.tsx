@@ -92,7 +92,7 @@ export default function LocalizationSettingsPage() {
     <Stack>
       <SettingsTabs active="localization" />
 
-      <AlertBanner message={message} tone="warning" />
+      <AlertBanner message={message} tone="error" />
 
       {loading ? (
         <Center py="xl"><Loader /></Center>
