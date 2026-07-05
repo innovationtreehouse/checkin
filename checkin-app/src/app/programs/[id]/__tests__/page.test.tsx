@@ -174,9 +174,9 @@ describe("ProgramEnrollmentPage", () => {
         expect(screen.queryByRole("button", { name: "Complete Enrollment" })).not.toBeInTheDocument();
     });
 
-    it("priced program with no Shopify variant configured falls back to a direct enroll message", async () => {
+    it("priced program with no Shopify variant configured aborts before enrolling", async () => {
         setSession({ id: 101 });
-        mockFetchJson({
+        const fetchMock = mockFetchJson({
             "/api/programs/10/participants": { ok: true },
             "/api/household": household,
             "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 7000, minAge: null, maxAge: null }),
@@ -189,9 +189,15 @@ describe("ProgramEnrollmentPage", () => {
         await screen.findByText("Which of your household wants to enroll?");
 
         fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
+        // No chargeable variant → persistent error, and NO enrollment is created.
         await waitFor(() =>
-            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Enrolled! (Note: No pricing variant configured for this tier)" })),
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({
+                color: "red",
+                autoClose: false,
+                message: "Cannot enroll: no pricing variant set for this program tier — set one in program-ops.",
+            })),
         );
+        expect(fetchMock).not.toHaveBeenCalledWith("/api/programs/10/participants", expect.anything());
     });
 
     it("shows a not-found card and navigates back to the directory", async () => {
@@ -397,19 +403,25 @@ describe("ProgramEnrollmentPage", () => {
 
     it("redirects to Shopify checkout for a priced enrollment with a configured member variant", async () => {
         setSession({ id: 101 });
-        const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
-        mockFetchJson({
-            "/api/household": memberHousehold,
-            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
-            "/api/programs/10/participants": { ok: true },
-        });
-        renderPage();
-        await screen.findByText("Robotics Club");
-        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
-        await screen.findByText("Which of your household wants to enroll?");
-        fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
+        const prevDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+        process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN = "shop.example.com"; // redirect requires a store domain
+        try {
+            const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
+            mockFetchJson({
+                "/api/household": memberHousehold,
+                "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
+                "/api/programs/10/participants": { ok: true },
+            });
+            renderPage();
+            await screen.findByText("Robotics Club");
+            fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+            await screen.findByText("Which of your household wants to enroll?");
+            fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
 
-        expect(await screen.findByText("Redirecting to Shopify for secure payment...")).toBeInTheDocument();
+            expect(await screen.findByText("Redirecting to Shopify for secure payment...")).toBeInTheDocument();
+        } finally {
+            process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN = prevDomain;
+        }
     });
 
     it("shows different closed-enrollment reasons depending on fullness, phase, and count source", async () => {
