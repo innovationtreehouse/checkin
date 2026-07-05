@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { isActiveOrgMember } from "@/lib/orgMembership";
+import { notifyNewProgramAnnounced } from "@/lib/notifications";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { validateProgramAgeBounds } from "@/lib/programAge";
@@ -173,6 +174,14 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
                 newData: updatedProgram
             }
         });
+
+        // Announce only on the transition INTO (UPCOMING && OPEN) — not on every
+        // save while already there, and not when only one of the two is set.
+        const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
+        const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
+        if (!wasAnnounced && nowAnnounced) {
+            await notifyNewProgramAnnounced(updatedProgram.name);
+        }
 
         return NextResponse.json({ success: true, program: updatedProgram });
     } catch (error) {
