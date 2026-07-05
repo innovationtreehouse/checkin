@@ -41,7 +41,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
     });
 
     // Fire-and-forget: send check-in notifications
-    sendCheckinNotifications(participant.id, 'checkin').catch(err =>
+    sendCheckinNotifications(participant.id, 'checkin', 'SCANNER').catch(err =>
         console.error('Checkin notification error:', err)
     );
 
