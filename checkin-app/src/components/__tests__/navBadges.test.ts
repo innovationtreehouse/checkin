@@ -115,12 +115,30 @@ describe('reviewBadges (Review tab + Membership Ops nav)', () => {
     ]);
   });
 
-  it('surfaces on the Membership Ops nav item alongside the board BLOCKED count', () => {
+  it('folds board queue + can-act-on into ONE green pill on the Membership Ops nav item', () => {
     const counts: TodoCounts = { ...admin({ membership: 2 }), review: { canActOn: 1, approvedAwaitingSecond: 0 } };
     expect(navBadgeFor('/membership-ops', counts)).toEqual([
-      { count: 2, color: 'treehouseGreen', label: 'Pending membership reviews' },
-      { count: 1, color: 'treehouseGreen', label: '1 background check you can review now' },
+      { count: 3, color: 'treehouseGreen', label: '2 pending membership reviews; 1 background check you can review now' },
     ]);
+  });
+
+  it('collapses to exactly one green + one gray, each summing its two parts', () => {
+    const counts: TodoCounts = {
+      ...admin({ membership: 2, applicationsTotal: 40 }),
+      review: { canActOn: 1, approvedAwaitingSecond: 3 },
+    };
+    expect(navBadgeFor('/membership-ops', counts)).toEqual([
+      { count: 3, color: 'treehouseGreen', label: '2 pending membership reviews; 1 background check you can review now' },
+      { count: 43, color: 'gray', label: '40 in-flight applications; 3 you approved awaiting a second reviewer' },
+    ]);
+  });
+
+  it('hides each pill independently when its parts sum to zero', () => {
+    // Only info counts present → green hidden, gray shown.
+    expect(navBadgeFor('/membership-ops', { ...admin({ applicationsTotal: 40 }), review: { canActOn: 0, approvedAwaitingSecond: 3 } }))
+      .toEqual([{ count: 43, color: 'gray', label: '40 in-flight applications; 3 you approved awaiting a second reviewer' }]);
+    // Nothing anywhere → no badges.
+    expect(navBadgeFor('/membership-ops', { ...admin(), review: { canActOn: 0, approvedAwaitingSecond: 0 } })).toEqual([]);
   });
 });
 
