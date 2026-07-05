@@ -3,6 +3,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus } from "@/lib/membership/external";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
+import { applyVolunteerStatus } from "@/lib/membership/review";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
 import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/lib/address";
@@ -404,6 +405,10 @@ export async function submitIntake(userId: number) {
             newData: { status: "PENDING_EXTERNAL_ACTION", ...(bgFresh ? { bgClearedAt: true } : {}) },
         },
     });
+
+    // Fresh-check shortcut ⇒ clearBackgroundCheck never runs this cycle, so match
+    // the volunteer-designation allowlist here or it would never be applied (#874).
+    if (bgFresh) await applyVolunteerStatus(prisma, process.orgMembershipId, household.id, false);
 
     return advanced;
 }

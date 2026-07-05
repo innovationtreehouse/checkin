@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
-import { notifyReviewers } from "@/lib/membership/review";
+import { notifyReviewers, applyVolunteerStatus } from "@/lib/membership/review";
 import { config } from "@/lib/config";
 
 /**
@@ -107,6 +107,10 @@ export async function beginRenewal(processId: number) {
             data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: nextStatus, ...(bgFresh ? { bgClearedAt: true } : {}) } },
         });
         if (nextStatus === "RENEWAL_PENDING_BG") await notifyReviewers();
+        // Fresh check ⇒ clearBackgroundCheck never runs this cycle, so a household
+        // designated volunteer since last cycle would pay full dues — match the
+        // allowlist at this PENDING_PAYMENT transition too (#874).
+        if (bgFresh) await applyVolunteerStatus(prisma, process.orgMembershipId, membership.householdId, false);
     }
     return prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id: processId } });
 }

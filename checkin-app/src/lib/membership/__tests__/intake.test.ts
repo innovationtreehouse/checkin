@@ -43,6 +43,7 @@ jest.mock('@/lib/membership/renewal', () => ({
     householdBgIsFresh: jest.fn(),
     nextBoundary: jest.fn(),
 }));
+jest.mock('@/lib/membership/review', () => ({ applyVolunteerStatus: jest.fn() }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const prisma = require('@/lib/prisma').default;
@@ -54,6 +55,8 @@ const { upsertPrimaryContact, reconcileHouseholdConflicts } = require('@/lib/eme
 const { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } = require('@/lib/household/leads');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { householdBgIsFresh } = require('@/lib/membership/renewal');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { applyVolunteerStatus } = require('@/lib/membership/review');
 
 const user = {
     id: 1,
@@ -359,7 +362,7 @@ describe('submitIntake', () => {
             postalCode: '78701',
             emergencyContacts: [{ conflictParticipantId: null, name: 'Aunt May', phone: '555-555-2000' }],
             householdMembers: [{ id: 1, name: 'Primary' }],
-            orgMembership: { processes: [{ id: 11, kind: 'INITIAL', status: 'INTAKE' }] },
+            orgMembership: { processes: [{ id: 11, orgMembershipId: 42, kind: 'INITIAL', status: 'INTAKE' }] },
         },
     };
 
@@ -390,7 +393,7 @@ describe('submitIntake', () => {
         });
     });
 
-    it('complete + bgFresh=false → no bgClearedAt stamp', async () => {
+    it('complete + bgFresh=false → no bgClearedAt stamp, allowlist deferred to the external advance', async () => {
         householdBgIsFresh.mockResolvedValue(false);
 
         await submitIntake(1);
@@ -399,9 +402,10 @@ describe('submitIntake', () => {
             where: { id: 11 },
             data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
         });
+        expect(applyVolunteerStatus).not.toHaveBeenCalled();
     });
 
-    it('complete + bgFresh=true → stamps bgClearedAt and advances to PENDING_EXTERNAL_ACTION', async () => {
+    it('complete + bgFresh=true → stamps bgClearedAt, advances, and matches the volunteer allowlist (#874)', async () => {
         householdBgIsFresh.mockResolvedValue(true);
 
         const result = await submitIntake(1);
@@ -411,6 +415,9 @@ describe('submitIntake', () => {
             data: expect.objectContaining({ status: 'PENDING_EXTERNAL_ACTION', bgClearedAt: expect.any(Date) }),
         });
         expect(prisma.auditLog.create).toHaveBeenCalled();
+        // Fresh-check shortcut skips clearBackgroundCheck for the whole cycle, so
+        // the designation allowlist must be matched here or never.
+        expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 42, 7, false);
         expect(result).toEqual({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
     });
 });

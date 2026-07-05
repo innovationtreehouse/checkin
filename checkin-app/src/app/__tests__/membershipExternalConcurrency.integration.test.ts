@@ -17,7 +17,10 @@ import { notifyReviewers } from '@/lib/membership/review';
 import prisma from '@/lib/prisma';
 
 jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
-jest.mock('@/lib/membership/review', () => ({ notifyReviewers: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('@/lib/membership/review', () => ({
+    ...jest.requireActual('@/lib/membership/review'),
+    notifyReviewers: jest.fn().mockResolvedValue(undefined),
+}));
 
 const TAG = 'external-concurrency-test';
 

@@ -5,7 +5,9 @@
  * Unit tests for renewal.ts edge logic (prisma mocked, no DB):
  *   - householdBgIsFresh: the recheckMonths<=0 short-circuit, and the `gte`
  *     threshold boundary (a check exactly at the threshold counts as fresh).
- *   - beginRenewal: a process not in PENDING_RENEWAL → RenewalError wrong_phase.
+ *   - beginRenewal: a process not in PENDING_RENEWAL → RenewalError wrong_phase;
+ *     the fresh-check path stamps bgClearedAt AND matches the volunteer
+ *     allowlist at its PENDING_PAYMENT transition (#874).
  */
 import { householdBgIsFresh, beginRenewal, RenewalError } from '@/lib/membership/renewal';
 
@@ -13,14 +15,22 @@ jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
         person: { findFirst: jest.fn() },
-        orgMembershipProcess: { findUnique: jest.fn() },
+        orgMembershipProcess: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), updateMany: jest.fn() },
         orgMembership: { findUnique: jest.fn() },
         boardSettings: { findUnique: jest.fn() },
+        auditLog: { create: jest.fn() },
     },
+}));
+
+jest.mock('@/lib/membership/review', () => ({
+    notifyReviewers: jest.fn().mockResolvedValue(undefined),
+    applyVolunteerStatus: jest.fn().mockResolvedValue(undefined),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const prisma = require('@/lib/prisma').default;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { notifyReviewers, applyVolunteerStatus } = require('@/lib/membership/review');
 
 // Mirrors the module-private monthsBefore in renewal.ts.
 function monthsBefore(date: Date, months: number): Date {
@@ -81,5 +91,57 @@ describe('beginRenewal', () => {
     it('throws RenewalError not_found when the process does not exist', async () => {
         prisma.orgMembershipProcess.findUnique.mockResolvedValue(null);
         await expect(beginRenewal(5)).rejects.toMatchObject({ code: 'not_found' });
+    });
+
+    describe('from PENDING_RENEWAL', () => {
+        const pending = { id: 5, status: 'PENDING_RENEWAL', orgMembershipId: 9 };
+
+        beforeEach(() => {
+            prisma.orgMembershipProcess.findUnique.mockResolvedValue(pending);
+            prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7 });
+            prisma.boardSettings.findUnique.mockResolvedValue({ orgMembershipYearBoundary: new Date(Date.UTC(2026, 8, 1)), bgRecheckMonths: 12 });
+            prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
+            prisma.orgMembershipProcess.findUniqueOrThrow.mockResolvedValue({ ...pending, status: 'PENDING_PAYMENT' });
+        });
+
+        it('fresh check → PENDING_PAYMENT + bgClearedAt + volunteer allowlist matched (#874), no reviewer ping', async () => {
+            prisma.person.findFirst.mockResolvedValue({ id: 1 }); // a lead with a valid check
+
+            await beginRenewal(5);
+
+            expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith({
+                where: { id: 5, status: 'PENDING_RENEWAL' },
+                data: expect.objectContaining({ status: 'PENDING_PAYMENT', bgClearedAt: expect.any(Date) }),
+            });
+            // Fresh-check renewals skip clearBackgroundCheck, so a designation added
+            // since last cycle must be matched here or the household pays full dues.
+            expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 9, 7, false);
+            expect(notifyReviewers).not.toHaveBeenCalled();
+        });
+
+        it('stale check → RENEWAL_PENDING_BG, reviewers pinged, allowlist left to clearBackgroundCheck', async () => {
+            prisma.person.findFirst.mockResolvedValue(null); // no valid check on file
+            prisma.orgMembershipProcess.findUniqueOrThrow.mockResolvedValue({ ...pending, status: 'RENEWAL_PENDING_BG' });
+
+            await beginRenewal(5);
+
+            expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith({
+                where: { id: 5, status: 'PENDING_RENEWAL' },
+                data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
+            });
+            expect(applyVolunteerStatus).not.toHaveBeenCalled();
+            expect(notifyReviewers).toHaveBeenCalledTimes(1);
+        });
+
+        it('double-submit loser (count 0) → no audit, no allowlist match, no ping', async () => {
+            prisma.person.findFirst.mockResolvedValue({ id: 1 });
+            prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 0 });
+
+            await beginRenewal(5);
+
+            expect(prisma.auditLog.create).not.toHaveBeenCalled();
+            expect(applyVolunteerStatus).not.toHaveBeenCalled();
+            expect(notifyReviewers).not.toHaveBeenCalled();
+        });
     });
 });

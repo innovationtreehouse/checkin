@@ -272,7 +272,10 @@ export function matchesVolunteerDesignation(parentEmails: string[], designationE
 /**
  * Sticky/additive volunteer status: set Membership.isVolunteer = true if ANY
  * reviewer marked the family volunteer-only OR a household parent's email is pre-
- * designated. Never clears it here.
+ * designated. Never clears it here. Runs at every PENDING_PAYMENT transition
+ * (external advance, fresh-check intake shortcut, fresh-check renewal) so the
+ * allowlist drives dues BEFORE the check clears (#874), and again at clearance
+ * with the reviewers' volunteer marks.
  */
 export async function applyVolunteerStatus(db: DbClient, orgMembershipId: number, householdId: number, markedByReviewer: boolean) {
     let isVolunteer = markedByReviewer;

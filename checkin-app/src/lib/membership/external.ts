@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
 import { backgroundCheckProvider } from "@/lib/membership/background-check/manual-adapter";
-import { notifyReviewers } from "@/lib/membership/review";
+import { notifyReviewers, applyVolunteerStatus } from "@/lib/membership/review";
 import { zohoSign } from "@/lib/membership/contract/zohoProvider";
 import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
 import { latestPendingExternal } from "@/lib/membership/phases";
@@ -97,6 +97,12 @@ export async function advanceExternalIfComplete(processId: number) {
             data: { status: "PENDING_PAYMENT", stageEnteredAt: new Date() },
         });
         if (count !== 1) return null; // lost the race or no longer eligible — no audit, no notify
+        // Dues are read at PENDING_PAYMENT (ensurePaymentLink), normally BEFORE the
+        // background check clears — so a pre-designated volunteer family must get
+        // isVolunteer here, not only at clearance (#874). Sticky + idempotent;
+        // clearBackgroundCheck's reviewer-marked pass remains the supplement.
+        const membership = await tx.orgMembership.findUnique({ where: { id: process.orgMembershipId }, select: { householdId: true } });
+        if (membership) await applyVolunteerStatus(tx, process.orgMembershipId, membership.householdId, false);
         await tx.auditLog.create({
             data: {
                 actorId: SYSTEM_ACTOR,
