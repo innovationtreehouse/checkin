@@ -140,6 +140,31 @@ describe("membership page", () => {
     );
   });
 
+  it("gates the consent self-attest checkbox behind the Averity link, then records consent", async () => {
+    setSession({ id: 1 });
+    const fetchMock = mockFetchJson({
+      "/api/membership/bg-consent": { status: { contractSigned: false, contractStarted: false, bgConsented: true, bgCleared: false, deepLinkUrl: "https://averity.example/consent" } },
+      "/api/membership": state({
+        process: { id: 1, kind: "INITIAL", status: "PENDING_EXTERNAL_ACTION" },
+        external: { contractSigned: false, contractStarted: false, bgConsented: false, bgCleared: false, deepLinkUrl: "https://averity.example/consent" },
+      }),
+    });
+    renderWithProviders(<MembershipPage />);
+    await screen.findByText("Sign & start your background check", { exact: false });
+
+    // Locked until the applicant has actually opened the Averity form.
+    const checkbox = screen.getByRole("checkbox", { name: /I submitted my consent on Averity/ });
+    expect(checkbox).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("link", { name: /Consent on Averity/ }));
+    expect(checkbox).toBeEnabled();
+
+    fireEvent.click(checkbox);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/membership/bg-consent", expect.objectContaining({ method: "POST" })),
+    );
+  });
+
   it("renders PENDING_EXTERNAL_ACTION with a cleared background check", async () => {
     setSession({ id: 1 });
     mockFetchJson({
