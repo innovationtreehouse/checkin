@@ -57,6 +57,16 @@ routes, auth, and DB together.
   reseeds every run). Don't rely on re-running against the same DB locally.
 - `*.flow.test.ts` is excluded from the unit/integration runs (it needs a live
   server) — keep it that way; run it only via `npm run test:flow`.
+- **No test tier exercises real Google OAuth.** Flow tests authenticate via
+  persona-mint (a credentials sign-in), which — with JWT sessions — never
+  touches the NextAuth **PrismaAdapter**; the adapter's user methods run only
+  inside the live Google OAuth callback. The adapter↔model mapping in
+  `checkin-app/src/lib/auth-options.ts` is guarded by tsc (keep the
+  `user: prisma.person` reference cast-free) and by
+  `src/lib/__tests__/auth-options-adapter.test.ts`. Regression to learn from:
+  the Participant→Person rename (#708) left `.participant` in that mapping
+  behind an `as` cast — CI stayed fully green while every Google sign-in on
+  the dev instance 500'd in the OAuth callback.
 
 To add a journey: drop a `flow-tests/<name>.flow.test.ts` using `loginAs`/`api`,
 keep it to real HTTP calls + response assertions. Prefer routes that don't need
