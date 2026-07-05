@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState, useEffect, useCallback } from 'react';
-import { signIn, useSession } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Anchor, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
@@ -363,11 +363,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   {isClosed ? <>Enrollment Closed{closedSuffix}</> : "Enroll"}
                 </Button>
               ) : (
-                // Auth-first: sign in with Google BEFORE any intake, so account
-                // existence is resolved by NextAuth (googleId), never leaked by a
-                // public API response. First-time users are then filled in by the
-                // intake panel below rather than the anonymous register form.
-                <Button size="md" onClick={() => signIn("google", { callbackUrl: `/programs/${program.id}` })} disabled={isClosed}>
+                // Auth-first: route through /signin (which picks Google vs. the
+                // offline dev picker by env) BEFORE any intake, so account
+                // existence is resolved by NextAuth, never leaked by a public API
+                // response. First-time users are then filled in by the intake
+                // panel below rather than the anonymous register form.
+                <Button size="md" onClick={() => router.push(`/signin?callbackUrl=/programs/${program.id}`)} disabled={isClosed}>
                   {isClosed ? <>Enrollment Closed{closedSuffix}</> : "Sign in to enroll"}
                 </Button>
               )}

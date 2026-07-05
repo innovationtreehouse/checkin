@@ -119,7 +119,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice } = body;
+        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -150,6 +150,13 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             ...(leadMentorNotificationSettings !== undefined && { leadMentorNotificationSettings }),
             ...(memberPrice !== undefined && { orgMemberPriceCents: dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined) }),
             ...(nonMemberPrice !== undefined && { nonOrgMemberPriceCents: dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined) }),
+            // Shopify identifiers are sysadmin/board-only — a lead mentor's PATCH can't
+            // touch them (they can break checkout, so they stay off the lead surface).
+            // Empty string clears the field. This is the manual repair path when there's
+            // no live Shopify to sync against (local/testing).
+            ...(isSysAdminOrBoard && shopifyProductId !== undefined && { shopifyProductId: shopifyProductId || null }),
+            ...(isSysAdminOrBoard && shopifyOrgMemberVariantId !== undefined && { shopifyOrgMemberVariantId: shopifyOrgMemberVariantId || null }),
+            ...(isSysAdminOrBoard && shopifyNonOrgMemberVariantId !== undefined && { shopifyNonOrgMemberVariantId: shopifyNonOrgMemberVariantId || null }),
         };
 
         const updatedProgram = await prisma.program.update({
