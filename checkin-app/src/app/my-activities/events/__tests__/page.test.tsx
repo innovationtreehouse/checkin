@@ -3,6 +3,7 @@ import { screen, fireEvent, waitFor } from "@testing-library/react";
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import ParticipantEventsDashboard from "../page";
 
 beforeEach(() => resetRtl());
@@ -22,6 +23,32 @@ describe("ParticipantEventsDashboard", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "Yes" }));
         await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/events/10/rsvp", expect.objectContaining({ method: "PATCH" })));
+    });
+
+    it("reverts the optimistic RSVP and shows an error toast on a non-OK response", async () => {
+        setSession({ id: 1, householdLead: true });
+        const event = { id: 10, name: "Robotics Meet", description: null, startAt: "2026-07-10T18:00:00.000Z", endAt: "2026-07-10T20:00:00.000Z", program: { name: "Robotics Club" }, participant: { id: 100, name: "Kid One" }, rsvp: null };
+        // Stateful fetch: /mine always 200 with rsvp:null; the PATCH 403s so the
+        // optimistic ATTENDING must not stick.
+        const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === "string" ? input : input.toString();
+            if (url.includes("/api/events/10/rsvp")) {
+                return { ok: false, status: 403, json: async () => ({ error: "Not allowed." }) } as Response;
+            }
+            return { ok: true, status: 200, json: async () => [event] } as Response;
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const showSpy = jest.spyOn(notifications, "show");
+
+        renderWithProviders(<ParticipantEventsDashboard />);
+        expect(await screen.findByText("Robotics Meet")).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+
+        // Error surfaced with the server message...
+        await waitFor(() => expect(showSpy).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Not allowed.", autoClose: false })));
+        // ...and the revert refetched /mine (initial load + revert = 2 calls).
+        expect(fetchMock.mock.calls.filter(([u]) => String(u).includes("/api/events/mine"))).toHaveLength(2);
     });
 
     it("shows an empty state with no upcoming events", async () => {
