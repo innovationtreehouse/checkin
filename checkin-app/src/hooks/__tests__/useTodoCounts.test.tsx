@@ -5,7 +5,7 @@ import type { TodoCounts } from "@/app/api/nav/todo-counts/route";
 
 const makeCounts = (building: number): TodoCounts =>
   ({
-    member: { household: [], programs: [] },
+    member: { household: [], programs: [], programsAwaitingFinance: 0 },
     building,
     buildingHousehold: 0,
     activePrograms: 0,

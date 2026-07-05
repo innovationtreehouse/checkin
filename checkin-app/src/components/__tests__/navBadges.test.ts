@@ -2,7 +2,7 @@ import { navBadgeFor, tabBadgeFor, reviewBadges, settingsMisconfigBadge, program
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 
 const base: TodoCounts = {
-  member: { household: [], programs: [] },
+  member: { household: [], programs: [], programsAwaitingFinance: 0 },
   building: 0,
   buildingHousehold: 0,
   activePrograms: 0,
@@ -71,6 +71,29 @@ describe('My Programs badge count', () => {
     expect(navBadgeFor('/my-programs', counts)).toEqual([
       { count: 1, color: 'red', label: '1 attendance conflict to resolve' },
     ]);
+  });
+});
+
+describe('My Activities program-payment badges', () => {
+  const todo = (id: number) => ({ key: `program-${id}`, label: `Complete enrollment for P${id}`, href: `/programs/${id}` });
+
+  it('no badge when nothing is owed', () => {
+    expect(navBadgeFor('/my-activities', base)).toEqual([]);
+  });
+
+  it('green for payments due, gray for plans awaiting finance', () => {
+    const counts: TodoCounts = { ...base, member: { household: [], programs: [todo(1), todo(2)], programsAwaitingFinance: 3 } };
+    expect(navBadgeFor('/my-activities', counts)).toEqual([
+      { count: 2, color: 'treehouseGreen', label: '2 program payments due' },
+      { count: 3, color: 'gray', label: '3 program payments awaiting finance approval' },
+    ]);
+  });
+
+  it('singularizes each label and hides each half independently at 0', () => {
+    expect(navBadgeFor('/my-activities', { ...base, member: { household: [], programs: [todo(1)], programsAwaitingFinance: 0 } }))
+      .toEqual([{ count: 1, color: 'treehouseGreen', label: '1 program payment due' }]);
+    expect(navBadgeFor('/my-activities', { ...base, member: { household: [], programs: [], programsAwaitingFinance: 1 } }))
+      .toEqual([{ count: 1, color: 'gray', label: '1 program payment awaiting finance approval' }]);
   });
 });
 

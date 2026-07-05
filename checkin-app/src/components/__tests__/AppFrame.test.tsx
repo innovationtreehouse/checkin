@@ -67,7 +67,7 @@ describe("AppFrame", () => {
   it("shows Shop Ops for a certifier without admin flags, and My Programs when leading a program", () => {
     setSession({ id: 2, toolStatuses: [{ level: "MAY_CERTIFY_OTHERS" }] });
     mockedUseTodoCounts.mockReturnValue({
-      member: { household: [], programs: [] },
+      member: { household: [], programs: [], programsAwaitingFinance: 0 },
       building: 0,
       buildingHousehold: 0,
       activePrograms: 0,
@@ -93,7 +93,7 @@ describe("AppFrame", () => {
   it("badges the reviewer-only Membership Ops nav with the green can-act-on count", () => {
     setSession({ id: 3, isBackgroundCheckReviewer: true });
     mockedUseTodoCounts.mockReturnValue({
-      member: { household: [], programs: [] },
+      member: { household: [], programs: [], programsAwaitingFinance: 0 },
       building: 0,
       buildingHousehold: 0,
       activePrograms: 0,
