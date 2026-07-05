@@ -3,7 +3,7 @@ import { sendEmail } from "./email";
 import { formatTime, formatDate } from "./time";
 import { checkinReceiptTemplate } from "./email-templates/checkin";
 import { householdMemberTemplate } from "./email-templates/household";
-import { escapeHtml } from "./email-templates/base";
+import { escapeHtml, type VisitSource } from "./email-templates/base";
 
 /**
  * Service to handle sending notifications to users via their defined preferences.
@@ -85,7 +85,7 @@ export async function sendNotification(userId: number, eventType: NotificationEv
  * - emailCheckinReceipts: send to the participant themselves
  * - emailDependentCheckins: send to household leads when a dependent checks in/out
  */
-export async function sendCheckinNotifications(participantId: number, type: 'checkin' | 'checkout') {
+export async function sendCheckinNotifications(participantId: number, type: 'checkin' | 'checkout', source?: VisitSource | null) {
     try {
         const participant = await prisma.person.findUnique({
             where: { id: participantId },
@@ -122,7 +122,7 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
         const settings = participant.notificationSettings as unknown as Record<string, boolean>;
         if (settings?.emailCheckinReceipts && participant.email) {
             const subject = `${emoji} ${name} ${action} Innovation Treehouse`;
-            const html = checkinReceiptTemplate({ name, type, date: dateStr, time: timeStr });
+            const html = checkinReceiptTemplate({ name, type, date: dateStr, time: timeStr, source });
             emailPromises.push(sendEmail(participant.email, subject, html));
         }
 
@@ -154,7 +154,8 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
                         memberName: name,
                         type,
                         date: dateStr,
-                        time: timeStr
+                        time: timeStr,
+                        source
                     });
                     emailPromises.push(sendEmail(lead.person.email, subject, html));
                 }
