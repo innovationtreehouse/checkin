@@ -11,7 +11,7 @@
  * withSyncRun, the cursor/bulk-state core fns, the bulk lifecycle module, and the
  * payout/balance streams are all mocked so only the state machine is under test.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@inventory/s-ingest-core", () => ({
   EventSource: { BACKFILL: "BACKFILL" },

@@ -23,7 +23,7 @@ async function* paginate<T>(
   queryFilter?: string,
 ): AsyncGenerator<T> {
   let after: string | null = null;
-  // eslint-disable-next-line no-constant-condition
+
   while (true) {
     const data = await client.request<unknown>(query, { first: pageSize, after, query: queryFilter });
     const conn = pickConnection(data);

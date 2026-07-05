@@ -109,7 +109,7 @@ export async function downloadBulkJsonl(
   const safeUrl = assertAllowedBulkUrl(url);
 
   let attempt = 0;
-  // eslint-disable-next-line no-constant-condition
+
   while (true) {
     attempt++;
     const controller = new AbortController();

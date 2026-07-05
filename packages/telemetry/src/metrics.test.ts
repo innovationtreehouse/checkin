@@ -13,9 +13,11 @@ import {
  * Restoration is handled centrally by `afterEach` — callers never restore by hand,
  * so a throwing assertion can't leave console mocked for the next test.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function capture(): () => Array<Record<string, any>> {
   const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-  return () => spy.mock.calls.map((c) => JSON.parse(String(c[0])));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return () => spy.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, any>);
 }
 
 afterEach(() => vi.restoreAllMocks());
