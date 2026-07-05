@@ -1,6 +1,7 @@
 import { PrismaClient } from '@/generated/prisma/client'
 import { Pool } from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { emailNormalizeExtension } from '@/lib/prismaEmailNormalize'
 
 const connectionString = `${process.env.DATABASE_URL}`
 // Tests default to a single connection so suites don't exhaust a small CI
@@ -38,8 +39,19 @@ const pool = new Pool({
 // keeps its single long-lived pool untouched.
 const adapter = new PrismaPg(pool, process.env.NODE_ENV === 'test' ? { disposeExternalPool: true } : undefined)
 
-const prismaClientSingleton = () => {
-    return new PrismaClient({ adapter })
+// The email-normalize extension lowercases Person.email at write time — the one
+// choke point so no route can drift into storing a case-variant on the @unique
+// column. The extension runs at runtime for every top-level person.* write
+// (incl. $transaction and tx.person.* inside interactive transactions).
+//
+// We cast the extended client back to PrismaClient for the exported type. A
+// $extends() result is a runtime superset but a DIFFERENT static type (it drops
+// $on and re-parameterizes $transaction/TransactionClient), so leaking it into
+// `ReturnType<typeof prismaClientSingleton>` would break every consumer typed
+// against PrismaClient / Prisma.TransactionClient / DbClient. The person.* API
+// is identical either way, so the cast hides nothing consumers use.
+const prismaClientSingleton = (): PrismaClient => {
+    return new PrismaClient({ adapter }).$extends(emailNormalizeExtension) as unknown as PrismaClient
 }
 
 declare const globalThis: {
