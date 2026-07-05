@@ -21,6 +21,8 @@ export const GET = withAuth({}, async (_req, auth) => {
             select: {
                 programId: true,
                 personId: true,
+                status: true,
+                isPaymentPlanRequested: true,
                 person: { select: { id: true, name: true } },
                 program: {
                     select: { id: true, name: true, startAt: true, endAt: true }

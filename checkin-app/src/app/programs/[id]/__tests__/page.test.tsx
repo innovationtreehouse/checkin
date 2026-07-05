@@ -49,7 +49,7 @@ function baseProgram(overrides: Record<string, unknown> = {}) {
         endAt: null,
         leadMentorId: 5,
         leadMentor: { name: "Coach K", email: "coach@example.com" },
-        participants: [{ personId: 100, status: "ENROLLED" }],
+        participants: [{ personId: 100, status: "ACTIVE" }],
         enrollmentStatus: "OPEN",
         orgMemberPriceCents: null,
         nonOrgMemberPriceCents: null,
@@ -77,7 +77,7 @@ describe("ProgramEnrollmentPage", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         expect(await screen.findByText("Which of your household wants to enroll?")).toBeInTheDocument();
-        expect(screen.getByText("(Already Enrolled)")).toBeInTheDocument();
+        expect(screen.getByText("(Enrolled)")).toBeInTheDocument();
         expect(screen.getByText("(Too young)")).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
@@ -155,7 +155,7 @@ describe("ProgramEnrollmentPage", () => {
                     ],
                 },
             },
-            "/api/programs/10": baseProgram({ participants: [{ personId: 201, status: "ENROLLED" }], minAge: 5, maxAge: 16 }),
+            "/api/programs/10": baseProgram({ participants: [{ personId: 201, status: "PENDING" }], minAge: 5, maxAge: 16 }),
         });
         renderPage();
 
@@ -166,7 +166,8 @@ describe("ProgramEnrollmentPage", () => {
         // Declared adult reads as "(Adult)", never the confusing "(DOB missing)".
         expect(screen.getByText("(Adult)")).toBeInTheDocument();
         expect(screen.queryByText("(DOB missing)")).not.toBeInTheDocument();
-        expect(screen.getByText("(Already Enrolled)")).toBeInTheDocument();
+        // PENDING enrollment reads as payment-pending, not a bare "Enrolled".
+        expect(screen.getByText("(Enrolled — Payment Pending)")).toBeInTheDocument();
         // No enrollable member -> first-time setup affordance (replaces the old
         // dead-end alert), no direct enroll button.
         expect(screen.getByRole("button", { name: "Finish setting up your household to enroll" })).toBeInTheDocument();

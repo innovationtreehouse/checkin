@@ -23,7 +23,7 @@ type ProgramDetail = {
   // Absent for non-enrolled callers (route gates the roster); only their own
   // household's rows arrive when enrolled, which is all the "already enrolled"
   // check below needs.
-  participants?: { personId: number, status?: string }[];
+  participants?: { personId: number, status?: string, person?: { name: string | null, householdId: number } }[];
   _count?: { participants?: number };
   phase: string;
   maxParticipants: number | null;
@@ -34,9 +34,10 @@ type ProgramDetail = {
   shopifyNonOrgMemberVariantId: string | null;
   minAge: number | null;
   maxAge: number | null;
+  orgMemberOnly: boolean;
 };
 
-type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number };
+type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number; householdId?: number | null };
 
 export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -86,7 +87,10 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   // render so an ineligible member is never auto-selected and then POSTed (which
   // returned a confusing "Date of Birth is missing" for over-25 adults).
   const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'age' | 'dob' | null; label: string } => {
-    if ((program?.participants ?? []).some(p => p.personId === member.id)) return { reason: 'enrolled', label: 'Already Enrolled' };
+    const enrolledRow = (program?.participants ?? []).find(p => p.personId === member.id);
+    // ACTIVE = paid/free/override (truly done). PENDING = payment still owed,
+    // including a requested-but-incomplete payment plan — don't imply completion.
+    if (enrolledRow) return { reason: 'enrolled', label: enrolledRow.status === 'ACTIVE' ? 'Enrolled' : 'Enrolled — Payment Pending' };
     if (!program) return { reason: null, label: '' };
     // Same eligibility rule as the enroll route: a declared over-25 adult clears
     // a youth minimum like "16 and up" without a DOB on file.
@@ -293,6 +297,16 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
   const user = session?.user as SessionUser | undefined;
   const canManage = !!(session && (user?.isSysadmin || user?.isBoardMember || user?.id === program.leadMentorId));
+
+  // My household's already-enrolled members — shown so a returning parent doesn't
+  // re-attempt an enrollment that would 409. name/householdId are public tier, so
+  // they survive the stripper; no extra household fetch needed here.
+  const myEnrolled = (program.participants ?? [])
+    .filter(p => p.person && (p.personId === user?.id || (user?.householdId != null && p.person.householdId === user.householdId)))
+    .map(p => ({
+      name: p.personId === user?.id ? (p.person?.name || 'You') : (p.person?.name || 'Household member'),
+      active: p.status === 'ACTIVE',
+    }));
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.orgMemberPriceCents || program.nonOrgMemberPriceCents);
 
@@ -341,6 +355,30 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   program.enrollmentStatus === 'WHITELIST' ? <Text component="span" c="yellow">Invite Only</Text> :
                     program.enrollmentStatus}
             </Text>
+            {(ageRange || program.maxParticipants != null || program.orgMemberOnly) && (
+              <>
+                <Divider />
+                {ageRange && <Text><strong>Age:</strong> {ageRange}</Text>}
+                {program.maxParticipants != null && (
+                  <Text>
+                    <strong>Capacity:</strong> {enrolledCount}/{program.maxParticipants}
+                    {isFull && <Text component="span" c="red"> (Full)</Text>}
+                  </Text>
+                )}
+                {program.orgMemberOnly && <Text><strong>Eligibility:</strong> Treehouse Members only</Text>}
+              </>
+            )}
+            {myEnrolled.length > 0 && (
+              <>
+                <Divider />
+                <Text><strong>Already enrolled from your household:</strong></Text>
+                {myEnrolled.map((m, i) => (
+                  <Text key={i} size="sm" c={m.active ? 'green' : 'yellow'} ml="sm">
+                    {m.name} — {m.active ? 'Enrolled' : 'Enrolled, payment pending'}
+                  </Text>
+                ))}
+              </>
+            )}
             {(program.orgMemberPriceCents !== null || program.nonOrgMemberPriceCents !== null) && (
               <>
                 <Divider />
@@ -405,7 +443,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                               disabled={disabled}
                               label={member.name || 'Unnamed Participant'}
                             />
-                            {reason === 'enrolled' && <Text size="sm" c="green">({label})</Text>}
+                            {reason === 'enrolled' && <Text size="sm" c={label.includes('Pending') ? 'yellow' : 'green'}>({label})</Text>}
                             {disabled && reason !== 'enrolled' && <Text size="sm" c="red">({label})</Text>}
                           </Group>
                         </Card>

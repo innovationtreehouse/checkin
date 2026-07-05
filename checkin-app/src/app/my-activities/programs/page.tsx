@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Badge, Button, Card, Container, SimpleGrid, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Container, Group, SimpleGrid, Text, Title } from '@mantine/core';
 import { formatDate } from '@/lib/time';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type UserProgram = {
   programId: number;
   personId: number;
+  status: 'PENDING' | 'ACTIVE';
+  isPaymentPlanRequested: boolean;
   person: { id: number; name: string | null };
   program: {
     id: number;
@@ -19,6 +21,16 @@ type UserProgram = {
     endAt: string | null;
   };
 };
+
+// Payment pill: ACTIVE (paid/free) shows nothing; a still-owed enrollment is
+// either the household's to pay (green, actionable) or waiting on finance to
+// approve a payment plan (gray, not actionable — don't imply it's settled).
+function paymentPill(status: string, planRequested: boolean) {
+  if (status === 'ACTIVE') return null;
+  return planRequested
+    ? <Badge color="gray" variant="filled">Awaiting finance approval</Badge>
+    : <Badge color="green" variant="filled">Payment due</Badge>;
+}
 
 export default function MyProgramsDashboard() {
   const { data: session, status } = useSession();
@@ -82,11 +94,14 @@ export default function MyProgramsDashboard() {
         </Card>
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-          {enrollments.map(({ program, personId, person }) => (
+          {enrollments.map(({ program, personId, person, status: enrollStatus, isPaymentPlanRequested }) => (
             <Card key={`${program.id}-${personId}`} withBorder radius="md" padding="lg">
-              {showMembers && (
-                <Badge variant="light" mb="sm">{person.name ?? 'Member'}</Badge>
-              )}
+              <Group gap="xs" mb="sm">
+                {showMembers && (
+                  <Badge variant="light">{person.name ?? 'Member'}</Badge>
+                )}
+                {paymentPill(enrollStatus, isPaymentPlanRequested)}
+              </Group>
               <Title order={4} mb="sm">{program.name}</Title>
               <Text c="dimmed" style={{ flex: 1 }}>
                 {program.startAt ? formatDate(program.startAt) : 'Start Date TBD'}

@@ -83,6 +83,16 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
   switch (href) {
     case '/my-household':
       return green(counts.member.household.length, `${counts.member.household.length} items need attention`);
+    case '/my-activities': {
+      // Green = program payments the household can pay now (actionable); gray =
+      // payment plans sent to finance, awaiting board approval (not actionable).
+      const due = counts.member.programs.length;
+      const finance = counts.member.programsAwaitingFinance;
+      return [
+        ...green(due, `${due} program payment${due === 1 ? '' : 's'} due`),
+        ...gray(finance, `${finance} program payment${finance === 1 ? '' : 's'} awaiting finance approval`),
+      ];
+    }
     case '/my-programs': {
       // Red conflicts first (left of green), then pending attendance the lead
       // must confirm — mirrors the Conflicts/Attendance subtab badges.

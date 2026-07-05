@@ -173,7 +173,11 @@ describe('Nav todo-counts API', () => {
         // + PENDING_SUBJECT_ACTION (1) + expiring trusted adult (1) = 5.
         // RENEWAL_PENDING_BG is reviewer-owned → excluded.
         expect(data.member.household).toHaveLength(5);
-        expect(data.member.programs).toHaveLength(2);
+        // program1 is unpaid PENDING (household-actionable); program2's payment plan
+        // is awaiting finance approval → gray count, not a todo.
+        expect(data.member.programs).toHaveLength(1);
+        expect(data.member.programs[0]).toEqual(expect.objectContaining({ key: `program-${program1Id}` }));
+        expect(data.member.programsAwaitingFinance).toBe(1);
         // Items carry a label + a deep link so the UI can show *what* is due.
         expect(data.member.household).toEqual(
             expect.arrayContaining([
