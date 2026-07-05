@@ -89,8 +89,10 @@ export async function getIntakeState(userId: number) {
     // The current in-flight process of any kind (INITIAL or RENEWAL) — anything
     // not yet ACTIVE. During renewal the membership stays ACTIVE while its RENEWAL
     // process cycles, so we surface that here rather than the "you're a member" card.
+    // A board-archived (disposed) process is terminal: it's skipped so a returning
+    // applicant sees a clean slate and can file fresh, rather than resuming a ghost.
     const process = membership?.processes
-        .filter((p) => p.status !== "ACTIVE")
+        .filter((p) => p.status !== "ACTIVE" && !p.archivedAt)
         .sort((a, b) => b.id - a.id)[0] ?? null;
 
     // Parents/guardians are the household leads; children are non-lead members.
@@ -172,7 +174,7 @@ export async function startIntake(userId: number) {
             // Lock the membership row so overlapping starts serialize here, not at the INSERT.
             await tx.$queryRaw`SELECT id FROM "OrgMembership" WHERE id = ${membership.id} FOR UPDATE`;
             const existing = await tx.orgMembershipProcess.findFirst({
-                where: { orgMembershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+                where: { orgMembershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES }, archivedAt: null },
                 orderBy: { id: "desc" },
             });
             if (existing) return existing;
@@ -200,7 +202,7 @@ export async function startIntake(userId: number) {
         // Return the winner instead of surfacing a 500 to the applicant (mirrors renewal).
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
             const winner = await prisma.orgMembershipProcess.findFirst({
-                where: { orgMembershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+                where: { orgMembershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES }, archivedAt: null },
                 orderBy: { id: "desc" },
             });
             if (winner) return winner;
@@ -354,7 +356,7 @@ export async function submitIntake(userId: number) {
 
     const household = user.household!;
     const process = household.orgMembership?.processes
-        .filter((p) => p.kind === "INITIAL" && p.status === "INTAKE")
+        .filter((p) => p.kind === "INITIAL" && p.status === "INTAKE" && !p.archivedAt)
         .sort((a, b) => b.id - a.id)[0];
     if (!process) throw new IntakeError("no_process", "No application is awaiting your information.");
 

@@ -48,6 +48,7 @@ import { GET as UNCLAIMED_GET } from '@/app/api/membership-audit/unclaimed-house
 import { POST as CERTIFY_PAYMENT_POST } from '@/app/api/membership-ops/applications/certify-payment/route';
 import { POST as APP_EXTERNAL_POST } from '@/app/api/membership-ops/applications/external/route';
 import { POST as REVIEW_OVERRIDE_POST } from '@/app/api/membership-ops/applications/review-override/route';
+import { POST as APP_ARCHIVE_POST } from '@/app/api/membership-ops/applications/archive/route';
 import { GET as MOPS_HH_GET, POST as MOPS_HH_POST } from '@/app/api/membership-ops/households/route';
 import { POST as REVIEWS_POST } from '@/app/api/membership/reviews/route';
 import { GET as ROLES_GET, PATCH as ROLES_PATCH } from '@/app/api/roles/route';
@@ -183,6 +184,7 @@ describe('Protected-route role rejection', () => {
         { name: 'POST /api/membership-ops/applications/certify-payment', invoke: () => CERTIFY_PAYMENT_POST(nreq('http://localhost/api/membership-ops/applications/certify-payment', 'POST', {})) },
         { name: 'POST /api/membership-ops/applications/external', invoke: () => APP_EXTERNAL_POST(nreq('http://localhost/api/membership-ops/applications/external', 'POST', {})) },
         { name: 'POST /api/membership-ops/applications/review-override', invoke: () => REVIEW_OVERRIDE_POST(nreq('http://localhost/api/membership-ops/applications/review-override', 'POST', {})) },
+        { name: 'POST /api/membership-ops/applications/archive', invoke: () => APP_ARCHIVE_POST(nreq('http://localhost/api/membership-ops/applications/archive', 'POST', {})) },
         { name: 'GET /api/membership-ops/households (collection)', invoke: () => MOPS_HH_GET(nreq('http://localhost/api/membership-ops/households')) },
         { name: 'POST /api/membership-ops/households (collection)', invoke: () => MOPS_HH_POST(nreq('http://localhost/api/membership-ops/households', 'POST', {})) },
         { name: 'POST /api/membership/reviews (backgroundCheckReviewer-only)', invoke: () => REVIEWS_POST(nreq('http://localhost/api/membership/reviews', 'POST', {})) },

@@ -367,6 +367,12 @@ model OrgMembershipProcess {
   renewalReminderSentAt DateTime?
   /// @sensitivity:internal
   isPaymentPlanRequested Boolean @default(false)
+  /// Board disposal of an abandoned (non-ACTIVE) application: once set the process
+  /// drops off the board applications list. archivedById is the acting board member.
+  /// @sensitivity:internal
+  archivedAt            DateTime?
+  /// @sensitivity:internal
+  archivedById          Int?
 
   attestations BackgroundCheckAttestation[]
 

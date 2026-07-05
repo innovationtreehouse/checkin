@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifications } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface Person {
@@ -129,6 +130,48 @@ export default function AdminMembershipPage() {
     } finally {
       setBusyId(null);
     }
+  };
+
+  const archive = async (processId: number) => {
+    setBusyId(processId);
+    setMessageId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/membership-ops/applications/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ color: "green", message: "Application archived." });
+        await load();
+        notifyNavRefresh();
+      } else {
+        setMessage(data.error || "Archive failed.");
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Disposing an abandoned application removes it from the board list. Confirm
+  // because it's a deliberate cleanup action (kept in the audit log, not deleted).
+  const confirmArchive = (r: ProcessRow) => {
+    modals.openConfirmModal({
+      title: "Archive this application?",
+      children: (
+        <Text size="sm">
+          This removes <strong>{householdLabel(r)}</strong> (application #{r.id}) from the board list.
+          A record is kept in the audit log. Only do this for abandoned applications.
+        </Text>
+      ),
+      labels: { confirm: "Archive", cancel: "Cancel" },
+      confirmProps: { color: "red" },
+      onConfirm: () => archive(r.id),
+    });
   };
 
   const certify = async (processId: number) => {
@@ -283,6 +326,12 @@ export default function AdminMembershipPage() {
               {messageId === r.id && (
                 <AlertBanner message={message} tone="error" mt="md" />
               )}
+
+              <Group justify="flex-end" mt="md">
+                <Button size="xs" fz={15} variant="subtle" color="red" disabled={busyId === r.id} onClick={() => confirmArchive(r)}>
+                  Archive
+                </Button>
+              </Group>
             </Card>
           ))}
         </Stack>
