@@ -373,7 +373,7 @@ function KioskDisplayInner() {
                 Sign out a user
               </Button>
             )}
-            <CountBadge intent="info" size="lg" leftSection="●">{counts.total} People Present</CountBadge>
+            <CountBadge intent="info" size="lg" leftSection="●">People Present: {counts.total}</CountBadge>
           </Group>
         </Group>
 
