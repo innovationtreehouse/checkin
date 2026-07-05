@@ -6,6 +6,7 @@ import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
+import { validateProgramAgeBounds } from "@/lib/programAge";
 
 export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
     const programId = parseInt(params.id, 10);
@@ -127,6 +128,11 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             if (isNaN(leadMentorId)) {
                 return apiError("Invalid lead mentor", 400);
             }
+        }
+
+        const ageErr = validateProgramAgeBounds(minAge, maxAge);
+        if (ageErr) {
+            return apiError(ageErr, 400);
         }
 
         const updateData: Record<string, unknown> = {

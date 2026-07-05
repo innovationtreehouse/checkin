@@ -128,7 +128,7 @@ describe("ProgramEnrollmentPage", () => {
 
         // Panel mounts, prefilled with the adult's name; add the child + emergency contact.
         await screen.findByText("Finish setting up your household");
-        fireEvent.click(screen.getByRole("button", { name: "+ Add child" }));
+        fireEvent.click(screen.getByRole("button", { name: "+ Add household member" }));
         fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "New Kid" } });
         fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "2015-01-01" } });
         fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt May" } });

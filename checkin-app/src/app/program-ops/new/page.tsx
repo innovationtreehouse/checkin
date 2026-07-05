@@ -136,8 +136,8 @@ export default function CreateProgramPage() {
             />
 
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
-              <NumberInput label="Min Age (Optional)" value={minAge} onChange={(v) => setMinAge(String(v))} min={0} />
-              <NumberInput label="Max Age (Optional)" value={maxAge} onChange={(v) => setMaxAge(String(v))} min={0} />
+              <NumberInput label="Min Age (Optional)" value={minAge} onChange={(v) => setMinAge(String(v))} min={0} max={25} />
+              <NumberInput label="Max Age (Optional)" value={maxAge} onChange={(v) => setMaxAge(String(v))} min={0} max={25} />
             </SimpleGrid>
 
             <SimpleGrid cols={{ base: 1, sm: 2 }}>

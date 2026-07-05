@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Alert, Button, Center, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Center, Checkbox, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 import { INTAKE_PROFILES, missingRequiredFields, type IntakeSubmitContext } from "@/lib/intake/profiles";
 import AddressForm from "@/components/membership/AddressForm";
 import EmergencyContactForm from "@/components/membership/EmergencyContactForm";
@@ -43,6 +44,8 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
   const [emPhone, setEmPhone] = useState("");
   const [emEmail, setEmEmail] = useState("");
   const [primaryName, setPrimaryName] = useState("");
+  const [primaryDob, setPrimaryDob] = useState("");
+  const [primaryOver25, setPrimaryOver25] = useState(false);
   const [primaryAllergies, setPrimaryAllergies] = useState("");
   const [children, setChildren] = useState<ChildForm[]>([]);
 
@@ -65,6 +68,8 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
         setEmPhone(h?.emergencyContactPhone ?? "");
         setEmEmail(h?.emergencyContactEmail ?? "");
         setPrimaryName(s.prefill?.primaryParent?.name ?? "");
+        setPrimaryDob(s.prefill?.primaryParent?.dob ?? "");
+        setPrimaryOver25(!!s.prefill?.primaryParent?.over25);
         setPrimaryAllergies(s.prefill?.primaryParent?.allergies ?? "");
         setChildren(
           (s.prefill?.children ?? []).map((c: { id: number; name: string | null; dob: string | null; allergies: string | null }) => ({
@@ -93,12 +98,21 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
 
   // Required-ness comes from the program-first-time profile (single source of
   // truth), mapped onto the form's inputs for red-box feedback.
+  // The primary adult can be the enrollee themselves (single-person household):
+  // an entered DOB or the over-25 declaration counts as their age being set.
+  const primarySelfEnrolling = !!primaryDob || primaryOver25;
+
   const validate = (): Record<string, string> => {
     const errs: Record<string, string> = {};
     const ctx: IntakeSubmitContext = {
       emergencyContacts: emName.trim() && emPhone.trim() ? [{ conflictParticipantId: null, name: emName, phone: emPhone }] : [],
       primaryName,
-      participants: namedChildren.map((c) => ({ dob: c.dob || null, ageGated })),
+      // Self is an age-gated enrollee only when giving an exact DOB; over-25 is a
+      // declared-adult flag (no DOB expected), same as the my-household form.
+      participants: [
+        ...namedChildren.map((c) => ({ dob: c.dob || null, ageGated })),
+        ...(primaryDob ? [{ dob: primaryDob, ageGated }] : []),
+      ],
     };
     for (const m of missingRequiredFields(INTAKE_PROFILES["program-first-time"], ctx)) {
       if (m.field === "primaryName") errs.primaryName = "Your name is required.";
@@ -107,9 +121,13 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
         errs.emPhone = "Add an emergency contact who isn't in your household.";
       } else if (m.field === "participantDob") errs.childDob = "Enter each participant's date of birth.";
     }
-    // An age-gated program needs someone to actually enroll — nudge them to add
-    // the child (participantDob is trivially satisfied when there are no children).
-    if (ageGated && namedChildren.length === 0) errs.child = "Add the child you want to enroll.";
+    // Format check mirrors the server guard so a filled-but-invalid number gets
+    // inline feedback instead of a 500 from the intake save.
+    if (emPhone.trim() && !isValidPhone(emPhone)) errs.emPhone = PHONE_ERROR;
+    // An age-gated program needs someone to actually enroll — a household member,
+    // or the adult themselves once they've set their own age.
+    if (ageGated && namedChildren.length === 0 && !primarySelfEnrolling)
+      errs.child = "Add the household member you want to enroll, or set your date of birth below to enroll yourself.";
     return errs;
   };
 
@@ -128,9 +146,9 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           household: { ...address, emergencyContactName: emName, emergencyContactPhone: emPhone, emergencyContactEmail: emEmail },
-          // No dob/over25 for the adult — leave their age untouched; they aren't
-          // the age-gated enrollee.
-          primaryParent: { name: primaryName, allergies: primaryAllergies || null },
+          // Adult's age is captured so a single-person household can enroll itself.
+          // over25 wins when checked (declared adult, DOB cleared), matching my-household.
+          primaryParent: { name: primaryName, dob: primaryOver25 ? null : primaryDob || null, over25: primaryOver25, allergies: primaryAllergies || null },
           children: namedChildren.map((c) => ({ id: c.id, name: c.name, dob: c.dob || null, allergies: c.allergies || null })),
         }),
       });
@@ -157,8 +175,18 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
       </div>
 
       <section>
-        <Title order={5} mb="sm">{ageGated ? "Who are you enrolling?" : "Participants"}</Title>
-        <ChildrenListForm items={children} onAdd={addChild} onUpdate={updateChild} onRemove={removeChild} hideEmail />
+        <Title order={5} mb="sm">Enrolling someone else in your household? Enter their info now</Title>
+        <ChildrenListForm
+          items={children}
+          onAdd={addChild}
+          onUpdate={updateChild}
+          onRemove={removeChild}
+          hideEmail
+          titleText="Household members"
+          addText="+ Add household member"
+          emptyText="No other household members added yet."
+          itemLabel="Household member"
+        />
         {fieldErrors.child && <Text c="red" size="sm" mt="xs">{fieldErrors.child}</Text>}
         {fieldErrors.childDob && <Text c="red" size="sm" mt="xs">{fieldErrors.childDob}</Text>}
       </section>
@@ -171,6 +199,22 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
           error={fieldErrors.primaryName}
           onChange={(e) => { setPrimaryName(e.currentTarget.value); clearErr("primaryName"); }}
         />
+        <Checkbox
+          mt="sm"
+          label="I am over 25"
+          checked={primaryOver25}
+          onChange={(e) => { setPrimaryOver25(e.currentTarget.checked); if (e.currentTarget.checked) setPrimaryDob(""); clearErr("child"); }}
+        />
+        {!primaryOver25 && (
+          <TextInput
+            type="date"
+            mt="sm"
+            label="Your date of birth"
+            description="Fill this in if you're the one enrolling."
+            value={primaryDob}
+            onChange={(e) => { setPrimaryDob(e.currentTarget.value); clearErr("child"); }}
+          />
+        )}
         <TextInput mt="sm" label="Allergies (optional)" value={primaryAllergies} onChange={(e) => setPrimaryAllergies(e.currentTarget.value)} />
       </section>
 
