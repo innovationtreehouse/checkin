@@ -98,7 +98,7 @@ export interface ShopifyClient {
 export function createShopifyClient(cfg: ShopifyConfig): ShopifyClient {
   async function request<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
     let attempt = 0;
-    // eslint-disable-next-line no-constant-condition
+
     while (true) {
       attempt++;
       let res: Response;
