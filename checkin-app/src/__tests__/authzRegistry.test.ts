@@ -80,6 +80,8 @@ const AUTHZ_TESTED = new Set<string>([
     'membership/reviews',
     'people/search',
     'programs',
+    // POST deny-path (401 anon / 403 non-board) in authzRoleRejection.integration.test.ts.
+    'programs/[id]/sync-shopify',
     'roles',
     'safety/board-contacts',
     'safety/emergency-contacts',
