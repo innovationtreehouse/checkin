@@ -34,7 +34,7 @@ describe("flow: membership background check is non-blocking (PR #428)", () => {
         const save = await api(applicant, "/api/membership/intake", {
             method: "PATCH",
             body: JSON.stringify({
-                household: { address: "456 Workshop Drive", emergencyContactName: "Pat Outside", emergencyContactPhone: "555-987-6543" },
+                household: { line1: "456 Workshop Drive", city: "Austin", state: "TX", postalCode: "78701", emergencyContactName: "Pat Outside", emergencyContactPhone: "555-987-6543" },
                 primaryParent: { name: "Parent Family2" },
             }),
         });

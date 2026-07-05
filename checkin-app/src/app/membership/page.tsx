@@ -278,6 +278,9 @@ export default function MembershipPage() {
   const validateIntake = (): Record<string, string> => {
     const errs: Record<string, string> = {};
     if (!address.line1?.trim()) errs.address = "Home address is required.";
+    if (!address.city?.trim()) errs.addrCity = "City is required.";
+    if (!address.state?.trim()) errs.addrState = "State is required.";
+    if (!address.postalCode?.trim()) errs.addrZip = "ZIP is required.";
     if (!emName.trim()) errs.emName = "Emergency contact name is required.";
     if (!emPhone.trim()) errs.emPhone = "Emergency contact phone is required.";
     else if (!isValidPhone(emPhone)) errs.emPhone = PHONE_ERROR;
@@ -581,7 +584,12 @@ export default function MembershipPage() {
                 <Stack gap="lg">
                   <section>
                     <Title order={2} mb="sm">Your household</Title>
-                    <AddressForm address={address} onChange={setAddress} error={fieldErrors.address} onErrorClear={() => clearErr("address")} />
+                    <AddressForm
+                      address={address}
+                      onChange={setAddress}
+                      errors={{ line1: fieldErrors.address, city: fieldErrors.addrCity, state: fieldErrors.addrState, postalCode: fieldErrors.addrZip }}
+                      onErrorClear={(f) => clearErr(f === "line1" ? "address" : f === "city" ? "addrCity" : f === "state" ? "addrState" : "addrZip")}
+                    />
                     <EmergencyContactForm
                       emName={emName} setEmName={setEmName}
                       emPhone={emPhone} setEmPhone={setEmPhone}

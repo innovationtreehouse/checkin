@@ -23,7 +23,7 @@ type ProgramDetail = {
   // Absent for non-enrolled callers (route gates the roster); only their own
   // household's rows arrive when enrolled, which is all the "already enrolled"
   // check below needs.
-  participants?: { personId: number, status?: string }[];
+  participants?: { personId: number, status?: string, person?: { name: string | null, householdId: number } }[];
   _count?: { participants?: number };
   phase: string;
   maxParticipants: number | null;
@@ -34,9 +34,10 @@ type ProgramDetail = {
   shopifyNonOrgMemberVariantId: string | null;
   minAge: number | null;
   maxAge: number | null;
+  orgMemberOnly: boolean;
 };
 
-type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number };
+type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number; householdId?: number | null };
 
 export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -86,7 +87,10 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   // render so an ineligible member is never auto-selected and then POSTed (which
   // returned a confusing "Date of Birth is missing" for over-25 adults).
   const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'age' | 'dob' | null; label: string } => {
-    if ((program?.participants ?? []).some(p => p.personId === member.id)) return { reason: 'enrolled', label: 'Already Enrolled' };
+    const enrolledRow = (program?.participants ?? []).find(p => p.personId === member.id);
+    // ACTIVE = paid/free/override (truly done). PENDING = payment still owed,
+    // including a requested-but-incomplete payment plan — don't imply completion.
+    if (enrolledRow) return { reason: 'enrolled', label: enrolledRow.status === 'ACTIVE' ? 'Enrolled' : 'Enrolled — Payment Pending' };
     if (!program) return { reason: null, label: '' };
     // Same eligibility rule as the enroll route: a declared over-25 adult clears
     // a youth minimum like "16 and up" without a DOB on file.
@@ -219,7 +223,30 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     setEnrolling(true);
     setMessage("");
 
+    let navigating = false; // only the Shopify redirect keeps the spinner past finally
     try {
+      // Resolve the Shopify checkout details BEFORE enrolling. A paid program with
+      // no variant (or no store domain) can never be charged, so it must fail here
+      // instead of creating a free, unchargeable enrollment.
+      let variantId: string | null = null;
+      let storeDomain: string | undefined;
+      if (isPayingOnShopify && program) {
+        const householdRes = await fetch('/api/household');
+        let isMember = false;
+        if (householdRes.ok) {
+          const householdData = await householdRes.json();
+          isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
+        }
+        variantId = isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId;
+        storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+        if (!variantId || !storeDomain) {
+          notifications.show({ color: "red", autoClose: false, message: variantId
+            ? "Cannot enroll: Shopify store domain not configured. Contact an admin."
+            : "Cannot enroll: no pricing variant set for this program tier — set one in program-ops." });
+          return; // no enrollment created — payment path is broken
+        }
+      }
+
       const outcomes: EnrollOutcome[] = [];
       for (const participantId of selectedParticipantIds) {
         const res = await fetch(`/api/programs/${id}/participants`, {
@@ -238,28 +265,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
       if (enrolledIds.length > 0) {
         notifyNavRefresh();
-        if (isPayingOnShopify && program) {
+        if (isPayingOnShopify && program && variantId && storeDomain) {
           setSuccessMessage("Redirecting to Shopify for secure payment...");
-
-          const householdRes = await fetch('/api/household');
-          let isMember = false;
-          if (householdRes.ok) {
-            const householdData = await householdRes.json();
-            isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
-          }
-
-          const variantId = isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId;
-
-          if (variantId) {
-            const storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
-            // qty=N single variant + comma-joined account ids — see buildShopifyCheckoutUrl.
-            window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id);
-            return;
-          } else {
-            notifications.show({ color: "green", message: "Enrolled! (Note: No pricing variant configured for this tier)" });
-            setSuccessMessage("");
-            fetchProgram();
-          }
+          // qty=N single variant + comma-joined account ids — see buildShopifyCheckoutUrl.
+          navigating = true;
+          window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id);
+          return; // spinner stays; page unloads on redirect
         } else {
           notifications.show({ color: "green", message: enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!" });
           setRequiresOverride(false);
@@ -272,7 +283,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     } catch {
       notifications.show({ color: "red", message: "Network error during enrollment.", autoClose: false });
     } finally {
-      if (!isPayingOnShopify) setEnrolling(false);
+      if (!navigating) setEnrolling(false);
     }
   };
 
@@ -293,6 +304,16 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
   const user = session?.user as SessionUser | undefined;
   const canManage = !!(session && (user?.isSysadmin || user?.isBoardMember || user?.id === program.leadMentorId));
+
+  // My household's already-enrolled members — shown so a returning parent doesn't
+  // re-attempt an enrollment that would 409. name/householdId are public tier, so
+  // they survive the stripper; no extra household fetch needed here.
+  const myEnrolled = (program.participants ?? [])
+    .filter(p => p.person && (p.personId === user?.id || (user?.householdId != null && p.person.householdId === user.householdId)))
+    .map(p => ({
+      name: p.personId === user?.id ? (p.person?.name || 'You') : (p.person?.name || 'Household member'),
+      active: p.status === 'ACTIVE',
+    }));
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.orgMemberPriceCents || program.nonOrgMemberPriceCents);
 
@@ -341,6 +362,30 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   program.enrollmentStatus === 'WHITELIST' ? <Text component="span" c="yellow">Invite Only</Text> :
                     program.enrollmentStatus}
             </Text>
+            {(ageRange || program.maxParticipants != null || program.orgMemberOnly) && (
+              <>
+                <Divider />
+                {ageRange && <Text><strong>Age:</strong> {ageRange}</Text>}
+                {program.maxParticipants != null && (
+                  <Text>
+                    <strong>Capacity:</strong> {enrolledCount}/{program.maxParticipants}
+                    {isFull && <Text component="span" c="red"> (Full)</Text>}
+                  </Text>
+                )}
+                {program.orgMemberOnly && <Text><strong>Eligibility:</strong> Treehouse Members only</Text>}
+              </>
+            )}
+            {myEnrolled.length > 0 && (
+              <>
+                <Divider />
+                <Text><strong>Already enrolled from your household:</strong></Text>
+                {myEnrolled.map((m, i) => (
+                  <Text key={i} size="sm" c={m.active ? 'green' : 'yellow'} ml="sm">
+                    {m.name} — {m.active ? 'Enrolled' : 'Enrolled, payment pending'}
+                  </Text>
+                ))}
+              </>
+            )}
             {(program.orgMemberPriceCents !== null || program.nonOrgMemberPriceCents !== null) && (
               <>
                 <Divider />
@@ -367,7 +412,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 // offline dev picker by env) BEFORE any intake, so account
                 // existence is resolved by NextAuth, never leaked by a public API
                 // response. First-time users are then filled in by the intake
-                // panel below rather than the anonymous register form.
+                // panel below.
                 <Button size="md" onClick={() => router.push(`/signin?callbackUrl=/programs/${program.id}`)} disabled={isClosed}>
                   {isClosed ? <>Enrollment Closed{closedSuffix}</> : "Sign in to enroll"}
                 </Button>
@@ -405,7 +450,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                               disabled={disabled}
                               label={member.name || 'Unnamed Participant'}
                             />
-                            {reason === 'enrolled' && <Text size="sm" c="green">({label})</Text>}
+                            {reason === 'enrolled' && <Text size="sm" c={label.includes('Pending') ? 'yellow' : 'green'}>({label})</Text>}
                             {disabled && reason !== 'enrolled' && <Text size="sm" c="red">({label})</Text>}
                           </Group>
                         </Card>

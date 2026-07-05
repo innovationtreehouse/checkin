@@ -91,7 +91,7 @@ function tooMany(retryAfterSec: number): NextResponse {
  * Enforce a per-IP rate limit for one route. Returns a 429 NextResponse when the
  * caller is over the limit (caller should return it), or null to proceed.
  *
- *   const limited = rateLimit(req, { name: "public-register", limit: 5, windowMs: 60_000 });
+ *   const limited = rateLimit(req, { name: "signin", limit: 5, windowMs: 60_000 });
  *   if (limited) return limited;
  */
 export function rateLimit(

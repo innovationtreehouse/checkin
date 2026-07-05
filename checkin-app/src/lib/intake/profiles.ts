@@ -32,6 +32,9 @@ export interface IntakeProfile {
  */
 export interface IntakeSubmitContext {
     addressLine1?: string | null;
+    addressCity?: string | null;
+    addressState?: string | null;
+    addressPostalCode?: string | null;
     emergencyContacts: { conflictParticipantId: number | null; name: string; phone: string }[];
     primaryName?: string | null;
     /** Enrollees whose DOB gates an age-restricted program (program-first-time). */
@@ -45,8 +48,12 @@ export interface IntakeSubmitContext {
  */
 const FIELD_RULES: Record<FieldKey, { label: string; isSatisfied: (ctx: IntakeSubmitContext) => boolean }> = {
     address: {
-        label: "home address",
-        isSatisfied: (ctx) => !!ctx.addressLine1?.trim(),
+        label: "home address (street, city, state, ZIP)",
+        isSatisfied: (ctx) =>
+            !!ctx.addressLine1?.trim() &&
+            !!ctx.addressCity?.trim() &&
+            !!ctx.addressState?.trim() &&
+            !!ctx.addressPostalCode?.trim(),
     },
     emergencyContact: {
         // A household must keep >= 1 valid (non-member, complete) emergency contact.

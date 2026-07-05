@@ -294,7 +294,6 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
               <Stack mb="lg">
                 <Group wrap="wrap">
                   <Button type="button" variant="light" onClick={downloadQr}>📷 Download QR Code</Button>
-                  <Button type="button" color="teal" variant="light" onClick={() => window.open(`/programs/${program.id}/register`, '_blank')}>🔗 Public Registration Page</Button>
                   <Button type="button" variant="default" onClick={() => window.open(`/programs/${program.id}`, '_blank')}>📄 Public Details Page</Button>
                 </Group>
 

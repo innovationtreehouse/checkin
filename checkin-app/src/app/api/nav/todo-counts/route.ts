@@ -48,7 +48,10 @@ export type TodoItem = { key: string; label: string; href: string };
 
 export type TodoCounts = {
     // Member buckets are itemized so the UI can show *what* is due, not just a number.
-    member: { household: TodoItem[]; programs: TodoItem[] };
+    // `programs` = enrollments the household must still pay for (actionable, green).
+    // `programsAwaitingFinance` = enrollments whose payment plan was sent to finance
+    // and not yet approved — blocked on the board, so a gray informational count, not a todo.
+    member: { household: TodoItem[]; programs: TodoItem[]; programsAwaitingFinance: number };
     // Informational gray badges (not action items): live building occupancy and
     // how many programs are currently running.
     building: number;
@@ -123,6 +126,9 @@ export const GET = withAuth({}, async (_req, auth) => {
     // ---- Member surface (scoped to the caller's household) ----
     const householdTodos: TodoItem[] = [];
     const programTodos: TodoItem[] = [];
+    // PENDING enrollments whose payment plan is awaiting finance approval — not the
+    // household's action, so counted (gray) rather than listed as a todo.
+    let programsAwaitingFinance = 0;
 
     if (user.householdId) {
         const householdId = user.householdId;
@@ -193,7 +199,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             }),
             prisma.programParticipant.findMany({
                 where: { personId: { in: memberIds }, status: "PENDING" },
-                select: { programId: true, program: { select: { name: true } } },
+                select: { programId: true, isPaymentPlanRequested: true, program: { select: { name: true } } },
             }),
         ]);
 
@@ -223,6 +229,8 @@ export const GET = withAuth({}, async (_req, auth) => {
             householdTodos.push({ key: `trusted-adult-expiring-${i}`, label: "Renew an expiring trusted adult", href: "/trusted-adults" });
         }
         for (const p of pendingPrograms) {
+            // Payment plan sent to finance → blocked on the board, not the household.
+            if (p.isPaymentPlanRequested) { programsAwaitingFinance++; continue; }
             programTodos.push({
                 key: `program-${p.programId}`,
                 label: `Complete enrollment for ${p.program?.name ?? "a program"}`,
@@ -241,7 +249,7 @@ export const GET = withAuth({}, async (_req, auth) => {
     ]);
 
     const result: TodoCounts = {
-        member: { household: householdTodos, programs: programTodos },
+        member: { household: householdTodos, programs: programTodos, programsAwaitingFinance },
         building,
         buildingHousehold,
         activePrograms,

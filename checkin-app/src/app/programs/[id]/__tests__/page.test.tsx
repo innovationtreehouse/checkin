@@ -49,7 +49,7 @@ function baseProgram(overrides: Record<string, unknown> = {}) {
         endAt: null,
         leadMentorId: 5,
         leadMentor: { name: "Coach K", email: "coach@example.com" },
-        participants: [{ personId: 100, status: "ENROLLED" }],
+        participants: [{ personId: 100, status: "ACTIVE" }],
         enrollmentStatus: "OPEN",
         orgMemberPriceCents: null,
         nonOrgMemberPriceCents: null,
@@ -77,7 +77,7 @@ describe("ProgramEnrollmentPage", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         expect(await screen.findByText("Which of your household wants to enroll?")).toBeInTheDocument();
-        expect(screen.getByText("(Already Enrolled)")).toBeInTheDocument();
+        expect(screen.getByText("(Enrolled)")).toBeInTheDocument();
         expect(screen.getByText("(Too young)")).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
@@ -155,7 +155,7 @@ describe("ProgramEnrollmentPage", () => {
                     ],
                 },
             },
-            "/api/programs/10": baseProgram({ participants: [{ personId: 201, status: "ENROLLED" }], minAge: 5, maxAge: 16 }),
+            "/api/programs/10": baseProgram({ participants: [{ personId: 201, status: "PENDING" }], minAge: 5, maxAge: 16 }),
         });
         renderPage();
 
@@ -166,16 +166,17 @@ describe("ProgramEnrollmentPage", () => {
         // Declared adult reads as "(Adult)", never the confusing "(DOB missing)".
         expect(screen.getByText("(Adult)")).toBeInTheDocument();
         expect(screen.queryByText("(DOB missing)")).not.toBeInTheDocument();
-        expect(screen.getByText("(Already Enrolled)")).toBeInTheDocument();
+        // PENDING enrollment reads as payment-pending, not a bare "Enrolled".
+        expect(screen.getByText("(Enrolled — Payment Pending)")).toBeInTheDocument();
         // No enrollable member -> first-time setup affordance (replaces the old
         // dead-end alert), no direct enroll button.
         expect(screen.getByRole("button", { name: "Finish setting up your household to enroll" })).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Complete Enrollment" })).not.toBeInTheDocument();
     });
 
-    it("priced program with no Shopify variant configured falls back to a direct enroll message", async () => {
+    it("priced program with no Shopify variant configured aborts before enrolling", async () => {
         setSession({ id: 101 });
-        mockFetchJson({
+        const fetchMock = mockFetchJson({
             "/api/programs/10/participants": { ok: true },
             "/api/household": household,
             "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 7000, minAge: null, maxAge: null }),
@@ -188,9 +189,15 @@ describe("ProgramEnrollmentPage", () => {
         await screen.findByText("Which of your household wants to enroll?");
 
         fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
+        // No chargeable variant → persistent error, and NO enrollment is created.
         await waitFor(() =>
-            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Enrolled! (Note: No pricing variant configured for this tier)" })),
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({
+                color: "red",
+                autoClose: false,
+                message: "Cannot enroll: no pricing variant set for this program tier — set one in program-ops.",
+            })),
         );
+        expect(fetchMock).not.toHaveBeenCalledWith("/api/programs/10/participants", expect.anything());
     });
 
     it("shows a not-found card and navigates back to the directory", async () => {
@@ -396,19 +403,25 @@ describe("ProgramEnrollmentPage", () => {
 
     it("redirects to Shopify checkout for a priced enrollment with a configured member variant", async () => {
         setSession({ id: 101 });
-        const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
-        mockFetchJson({
-            "/api/household": memberHousehold,
-            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
-            "/api/programs/10/participants": { ok: true },
-        });
-        renderPage();
-        await screen.findByText("Robotics Club");
-        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
-        await screen.findByText("Which of your household wants to enroll?");
-        fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
+        const prevDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+        process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN = "shop.example.com"; // redirect requires a store domain
+        try {
+            const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
+            mockFetchJson({
+                "/api/household": memberHousehold,
+                "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
+                "/api/programs/10/participants": { ok: true },
+            });
+            renderPage();
+            await screen.findByText("Robotics Club");
+            fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+            await screen.findByText("Which of your household wants to enroll?");
+            fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
 
-        expect(await screen.findByText("Redirecting to Shopify for secure payment...")).toBeInTheDocument();
+            expect(await screen.findByText("Redirecting to Shopify for secure payment...")).toBeInTheDocument();
+        } finally {
+            process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN = prevDomain;
+        }
     });
 
     it("shows different closed-enrollment reasons depending on fullness, phase, and count source", async () => {

@@ -181,8 +181,9 @@ describe('Manual Attendance API Integration Tests', () => {
         });
 
         it('should successfully record a manual visit with arrivedAt only', async () => {
+            // Keyholder: an open backfill must clear the facility-open guard.
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testUserId }
+                user: { id: testUserId, isKeyholder: true }
             });
 
             const arrivedAt = new Date(Date.now() - 1800000); // 30 minutes ago
@@ -203,8 +204,9 @@ describe('Manual Attendance API Integration Tests', () => {
         });
 
         it('dedups a SERIAL double-submit: second POST returns the same open visit, only one in DB', async () => {
+            // Keyholder: an open backfill must clear the facility-open guard.
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testUserId }
+                user: { id: testUserId, isKeyholder: true }
             });
 
             // Isolate: drop any open visit left by earlier tests so the count is unambiguous.
@@ -235,5 +237,73 @@ describe('Manual Attendance API Integration Tests', () => {
             expect(openVisits.length).toBe(1);
             expect(openVisits[0].id).toBe(first.id);
         });
+    });
+});
+
+// An OPEN manual backfill (no departure) claims the actor is in the building now,
+// so it must obey the same keyholder-first rule as /api/scan and MANUAL_CHECKIN.
+// A CLOSED backfill is historical and never gated.
+describe('Manual Attendance API keyholder-first guard (open backfills)', () => {
+    const TAG = 'manual-guard-test';
+    let nkId: number;
+    let khId: number;
+    let householdIds: number[];
+
+    function openReq(userId: number) {
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: userId, isKeyholder: false } });
+        return new Request('http://localhost:4000/api/attendance/manual', {
+            method: 'POST',
+            body: JSON.stringify({ arrivedAt: new Date(Date.now() - 600000).toISOString() }), // 10 min ago, open
+        }) as unknown as import('next/server').NextRequest;
+    }
+
+    beforeAll(async () => {
+        const leaked = await prisma.person.findMany({ where: { email: { contains: TAG } }, select: { id: true, householdId: true } });
+        const ids = leaked.map(p => p.id);
+        await prisma.visit.deleteMany({ where: { personId: { in: ids } } });
+        await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
+        await prisma.person.deleteMany({ where: { id: { in: ids } } });
+        await prisma.household.deleteMany({ where: { id: { in: leaked.map(p => p.householdId) } } });
+
+        const nk = await prisma.person.create({ data: { email: `nk-${TAG}@example.com`, name: 'Guard NK', household: { create: {} } } });
+        nkId = nk.id;
+        const kh = await prisma.person.create({ data: { email: `kh-${TAG}@example.com`, name: 'Guard KH', isKeyholder: true, household: { create: {} } } });
+        khId = kh.id;
+        householdIds = [nk.householdId, kh.householdId];
+    });
+
+    afterAll(async () => {
+        await prisma.visit.deleteMany({ where: { personId: { in: [nkId, khId] } } });
+        await prisma.auditLog.deleteMany({ where: { actorId: { in: [nkId, khId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [nkId, khId] } } });
+        await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
+    });
+
+    it('non-keyholder open backfill into an empty building → 403, no visit', async () => {
+        await prisma.visit.deleteMany({ where: { personId: { in: [nkId, khId] } } });
+        const res = await (POST(openReq(nkId)) as Promise<Response>);
+        expect(res.status).toBe(403);
+        expect(await prisma.visit.count({ where: { personId: nkId, departedAt: null } })).toBe(0);
+    });
+
+    it('non-keyholder open backfill with a keyholder present → 201', async () => {
+        await prisma.visit.deleteMany({ where: { personId: { in: [nkId, khId] } } });
+        await prisma.visit.create({ data: { personId: khId, arrivedAt: new Date(), arrivedVia: 'WEB' } });
+        const res = await (POST(openReq(nkId)) as Promise<Response>);
+        expect(res.status).toBe(201);
+        expect(await prisma.visit.count({ where: { personId: nkId, departedAt: null } })).toBe(1);
+    });
+
+    it('non-keyholder CLOSED backfill into an empty building → 201 (historical, ungated)', async () => {
+        await prisma.visit.deleteMany({ where: { personId: { in: [nkId, khId] } } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: nkId, isKeyholder: false } });
+        const arrivedAt = new Date(Date.now() - 7200000).toISOString(); // 2h ago
+        const departedAt = new Date(Date.now() - 3600000).toISOString(); // 1h ago
+        const req = new Request('http://localhost:4000/api/attendance/manual', {
+            method: 'POST',
+            body: JSON.stringify({ arrivedAt, departedAt }),
+        }) as unknown as import('next/server').NextRequest;
+        const res = await (POST(req) as Promise<Response>);
+        expect(res.status).toBe(201);
     });
 });
