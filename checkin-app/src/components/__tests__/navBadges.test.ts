@@ -103,6 +103,7 @@ const admin = (over: Partial<NonNullable<TodoCounts['admin']>> = {}): TodoCounts
     membership: 0,
     applicationsTotal: 0,
     paymentPlanPending: 0,
+    membershipPaymentPlanPending: 0,
     trustedAdults: 0,
     householdsMissingContact: 0,
     unclaimedHouseholds: 0,
@@ -238,6 +239,31 @@ describe('tabBadgeFor', () => {
   it('hides action/gap tabs at zero', () => {
     expect(tabBadgeFor('/membership-ops/applications', admin())).toBeNull();
     expect(tabBadgeFor('/membership-audit/broken', admin())).toBeNull();
+  });
+
+  it('finance-ops tabs badge their own queue (green), hidden at zero', () => {
+    expect(tabBadgeFor('/finance-ops/payment-plan', admin({ paymentPlanPending: 2 })))
+      .toEqual({ count: 2, color: 'treehouseGreen', label: '2 program payment-plan approvals' });
+    expect(tabBadgeFor('/finance-ops/membership-payment-plan', admin({ membershipPaymentPlanPending: 1 })))
+      .toEqual({ count: 1, color: 'treehouseGreen', label: '1 membership payment-plan approval' });
+    expect(tabBadgeFor('/finance-ops/payment-plan', admin())).toBeNull();
+    expect(tabBadgeFor('/finance-ops/membership-payment-plan', admin())).toBeNull();
+  });
+});
+
+describe('finance-ops nav ↔ tab agreement', () => {
+  it('the section green pill sums both tab queues', () => {
+    const counts = admin({ paymentPlanPending: 2, membershipPaymentPlanPending: 3 });
+    expect(navBadgeFor('/finance-ops', counts))
+      .toEqual([{ count: 5, color: 'treehouseGreen', label: 'Pending payment-plan approvals' }]);
+
+    const program = tabBadgeFor('/finance-ops/payment-plan', counts)?.count ?? 0;
+    const membership = tabBadgeFor('/finance-ops/membership-payment-plan', counts)?.count ?? 0;
+    expect(navBadgeFor('/finance-ops', counts)[0].count).toBe(program + membership);
+  });
+
+  it('no section badge when both queues are empty', () => {
+    expect(navBadgeFor('/finance-ops', admin())).toEqual([]);
   });
 });
 

@@ -120,7 +120,8 @@ export const PAGES: PageEntry[] = [
 
   // Finance Ops — board
   { href: '/finance-ops', label: 'Finance Ops', section: 'Finance Ops', visible: BOARD },
-  { href: '/finance-ops/payment-plan', label: 'Payment Plans', section: 'Finance Ops', visible: BOARD },
+  { href: '/finance-ops/payment-plan', label: 'Program Payment Plan', section: 'Finance Ops', visible: BOARD },
+  { href: '/finance-ops/membership-payment-plan', label: 'Membership Payment Plan', section: 'Finance Ops', visible: BOARD },
 
   // System Status — board
   { href: '/system-status', label: 'System Status', section: 'System Status', visible: BOARD },

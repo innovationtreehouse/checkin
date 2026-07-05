@@ -87,6 +87,7 @@ export const classifications = {
         paidAt: 'internal',
         certifiedById: 'internal',
         renewalReminderSentAt: 'internal',
+        isPaymentPlanRequested: 'internal',
     },
     BackgroundCheckAttestation: {
         id: 'public',
