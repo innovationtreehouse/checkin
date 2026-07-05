@@ -13,6 +13,11 @@ jest.mock("next/navigation", () => ({
 jest.mock("next-auth/react", () => ({
   useSession: () => mockSession,
 }));
+// The layout reads live badge counts; stub them out so the gate test doesn't hit
+// the network. tabBadgeFor(null) returns null, so no badges render.
+jest.mock("@/hooks/useTodoCounts", () => ({
+  useTodoCounts: () => null,
+}));
 
 beforeAll(() => {
   window.matchMedia =

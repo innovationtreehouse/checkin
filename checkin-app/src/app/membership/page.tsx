@@ -130,6 +130,8 @@ export default function MembershipPage() {
   const [secondaryAllergies, setSecondaryAllergies] = useState("");
   const [children, setChildren] = useState<ChildForm[]>([]);
   const [payment, setPayment] = useState<{ amountCents: number; checkoutUrl: string | null } | null>(null);
+  // Flips true once the household asks the finance committee for a payment plan.
+  const [planRequested, setPlanRequested] = useState(false);
   // Serialized form as last loaded/saved; isDirty compares it to current state.
   const [savedForm, setSavedForm] = useState<string | null>(null);
 
@@ -424,6 +426,29 @@ export default function MembershipPage() {
     // On success we navigate away, so we intentionally leave `saving` true.
   };
 
+  // Ask the board's finance committee for a payment plan on membership dues.
+  // Mirrors the program-page request; the finance-ops Membership Payment Plan tab
+  // picks it up and activates the membership on approval (no Shopify payment).
+  const requestPaymentPlan = async () => {
+    if (!state?.process) return;
+    try {
+      const res = await fetch("/api/membership/request-payment-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId: state.process.id }),
+      });
+      if (res.ok) {
+        setPlanRequested(true);
+        notifications.show({ color: "green", message: "Requested! The finance committee of the board will follow up." });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: "red", message: data.error || "Could not request a payment plan.", autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    }
+  };
+
   const renew = async () => {
     setSaving(true);
     flash("");
@@ -703,7 +728,16 @@ export default function MembershipPage() {
                         Your membership activates as soon as both the payment and the check are done.
                       </Alert>
                     )}
-                    <Text size="sm" c="dimmed" mt="lg">
+                    {planRequested ? (
+                      <Text c="green" mt="lg">Payment plan requested — the finance committee will follow up.</Text>
+                    ) : (
+                      <Text mt="lg">
+                        <Anchor component="button" type="button" onClick={requestPaymentPlan}>
+                          request a payment plan from the finance committee of the board
+                        </Anchor>
+                      </Text>
+                    )}
+                    <Text size="sm" c="dimmed" mt="md">
                       To discuss alternative arrangements, please email{" "}
                       <Anchor href="mailto:finance@innovationtreehouse.org">finance@innovationtreehouse.org</Anchor>.
                     </Text>
