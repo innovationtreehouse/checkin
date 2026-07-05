@@ -1,0 +1,120 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { Badge, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { formatPhone } from "@/lib/phone";
+import { PageLoader } from "@/components/ui/PageLoader";
+
+type Lead = { id: number; name: string | null; phone: string | null; email: string | null };
+type Household = {
+  id: number;
+  name: string | null;
+  reasons: string[];
+  lastBackgroundCheck: string | null;
+  leads: Lead[];
+};
+
+// Reason tag -> human label + badge color. Keys mirror the endpoint's tags.
+const REASON: Record<string, { label: string; color: string }> = {
+  STALE_BG: { label: "Background check expired", color: "orange" },
+  REVOKED: { label: "Revoked", color: "red" },
+  DENIED: { label: "Denied", color: "red" },
+  STUCK_BG_CLEARANCE: { label: "Stuck at BG clearance", color: "yellow" },
+};
+
+/**
+ * Membership Audit view: households out of compliance that the system did NOT
+ * auto-terminate. Read-only — the board follows up manually; no action buttons.
+ */
+export default function CompliancePage() {
+  const [households, setHouseholds] = useState<Household[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/membership-audit/compliance");
+        if (res.ok) {
+          const data = await res.json();
+          setHouseholds(data.households ?? []);
+        } else {
+          setError("Failed to load compliance data. Ensure you have the proper authorizations.");
+        }
+      } catch (e) {
+        console.error(e);
+        setError("Network error loading compliance data.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) return <PageLoader />;
+
+  if (error) {
+    return (
+      <Center mih="60vh">
+        <Title order={3} c="red">{error}</Title>
+      </Center>
+    );
+  }
+
+  return (
+    <Stack>
+      <Card withBorder radius="md" padding="lg">
+        <Text c="dimmed">
+          Households out of compliance that the system did not auto-terminate. This is
+          a standing list for manual board follow-up — no emails or actions are sent
+          from here.
+        </Text>
+      </Card>
+
+      {households.length === 0 ? (
+        <Card withBorder radius="md" padding="xl" ta="center">
+          <Text c="dimmed">Every household is in compliance. 🎉</Text>
+        </Card>
+      ) : (
+        <Stack gap="sm">
+          {households.map((h) => (
+            <Card key={h.id} withBorder radius="md" padding="lg">
+              <Group justify="space-between" wrap="wrap" mb="xs">
+                <Text fw={600} fz="lg">{h.name || `Household #${h.id}`}</Text>
+                <Group gap="xs">
+                  {h.reasons.map((r) => {
+                    const meta = REASON[r] ?? { label: r, color: "gray" };
+                    return (
+                      <Badge key={r} color={meta.color} variant="light">{meta.label}</Badge>
+                    );
+                  })}
+                </Group>
+              </Group>
+              {h.reasons.includes("STALE_BG") && (
+                <Text size="sm" c="dimmed" mb="xs">
+                  Last background check:{" "}
+                  {h.lastBackgroundCheck
+                    ? new Date(h.lastBackgroundCheck).toLocaleDateString()
+                    : "Never"}
+                </Text>
+              )}
+              <Text size="sm" c="dimmed" mb="xs">Household Leads:</Text>
+              {h.leads.length > 0 ? (
+                <Stack gap="xs">
+                  {h.leads.map((l) => (
+                    <Paper key={l.id} withBorder radius="sm" p="xs">
+                      <Text fw={500}>{l.name || l.email || `Member #${l.id}`}</Text>
+                      <Text size="sm" c="dimmed">Phone: {l.phone ? formatPhone(l.phone) : "Not provided"}</Text>
+                      {l.email && <Text size="sm" c="dimmed">Email: {l.email}</Text>}
+                    </Paper>
+                  ))}
+                </Stack>
+              ) : (
+                <Text size="sm" c="red">No designated leads found.</Text>
+              )}
+            </Card>
+          ))}
+        </Stack>
+      )}
+    </Stack>
+  );
+}

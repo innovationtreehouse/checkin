@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { name: "Emergency Contacts", href: "/membership-audit/emergency-contacts", icon: "🚑" },
   { name: "Unclaimed Accounts", href: "/membership-audit/unclaimed", icon: "📨" },
   { name: "Broken Households", href: "/membership-audit/broken", icon: "⚠️" },
+  { name: "Compliance", href: "/membership-audit/compliance", icon: "🚩" },
 ];
 
 export default function MembershipAuditLayout({ children }: { children: React.ReactNode }) {
