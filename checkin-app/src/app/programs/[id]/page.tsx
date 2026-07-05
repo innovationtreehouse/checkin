@@ -510,7 +510,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
                 {hasPrice && !isClosed && (
                   <Anchor component="button" type="button" size="sm" onClick={handleRequestPaymentPlan}>
-                    request a payment plan from the finance committee of the board
+                    request a scholarship or payment plan from the finance committee of the board
                   </Anchor>
                 )}
               </Stack>
