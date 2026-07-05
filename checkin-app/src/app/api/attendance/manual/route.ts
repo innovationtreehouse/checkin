@@ -73,7 +73,7 @@ export const POST = withAuth({}, async (req, auth) => {
         // visit before creating, so two concurrent manual submits — or a manual
         // submit racing a kiosk scan — can't leave two open visits for one
         // participant (checkout closes only one, the other lingers forever).
-        const { visit, freshCheckin } = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(userId)})`;
 
             // Only an open visit carries dedup-able state; a closed one (departure
@@ -83,6 +83,18 @@ export const POST = withAuth({}, async (req, auth) => {
                     where: { personId: userId, departedAt: null }
                 });
                 if (openVisit) return { visit: openVisit, freshCheckin: false };
+
+                // An open backfill claims the actor is in the building NOW, so the
+                // same facility-open guard as /api/scan applies: a non-keyholder
+                // cannot be the first (only) person present. A closed backfill is
+                // historical and never gates. Checked under the lock so a racing
+                // keyholder check-in is either committed-and-seen or not yet.
+                if (!auth.user.isKeyholder) {
+                    const activeKeyholders = await tx.visit.count({
+                        where: { departedAt: null, person: { isKeyholder: true } }
+                    });
+                    if (activeKeyholders === 0) return { facilityClosed: true as const };
+                }
             }
 
             const created = await tx.visit.create({
@@ -102,6 +114,11 @@ export const POST = withAuth({}, async (req, auth) => {
             maxWait: 5000,
             timeout: 15000,
         });
+
+        if ('facilityClosed' in result) {
+            return apiError("Facility is closed. A Keyholder must check in first.", 403);
+        }
+        const { visit, freshCheckin } = result;
 
         // If a departure time was provided, we process the checkout logic directly
         // to handle any back-to-back event transitions.
