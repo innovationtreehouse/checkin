@@ -148,18 +148,24 @@ describe("zohoMockActive / zohoAvailable / zohoWebhookSecret", () => {
 });
 
 describe("shopifyMockActive / shopifyWebhookSecret", () => {
-    it("mock active when unconfigured, non-prod, non-production NODE_ENV", () => {
+    it("mock active on local, non-production NODE_ENV", () => {
         clearShopify();
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "test";
         expect(config.shopifyMockActive()).toBe(true);
         expect(config.shopifyWebhookSecret()).toBe(DEV_MOCK_SHOPIFY_WEBHOOK_SECRET);
     });
-    it("mock inactive when Shopify is configured (real integration wins)", () => {
+    it("mock STILL active on local even when Shopify creds are set (env gate, not cred gate)", () => {
         process.env.SHOPIFY_STORE_DOMAIN = "shop.myshopify.com";
         process.env.SHOPIFY_CLIENT_ID = "a";
         process.env.SHOPIFY_CLIENT_SECRET = "b";
         process.env.CHECKIN_ENV = "local";
+        (process.env as Record<string, string>).NODE_ENV = "test";
+        expect(config.shopifyMockActive()).toBe(true);
+    });
+    it("mock inactive on dev (real dev store, not the mock)", () => {
+        clearShopify();
+        process.env.CHECKIN_ENV = "dev";
         (process.env as Record<string, string>).NODE_ENV = "test";
         expect(config.shopifyMockActive()).toBe(false);
     });

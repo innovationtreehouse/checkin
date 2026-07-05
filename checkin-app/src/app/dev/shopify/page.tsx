@@ -6,14 +6,15 @@ import DevShopifyClient from "./DevShopifyClient";
 export const dynamic = "force-dynamic";
 
 /**
- * Dev-only stand-in for a Shopify orders/paid webhook (see
+ * ENV GATE: LOCAL ONLY. Stand-in for a Shopify orders/paid webhook (see
  * docs/designs/SHOPIFY_DEV_STORE_WEBHOOK.md §6). Lists the membership processes
  * AND program enrollments currently awaiting payment and fires a
- * synthesized-but-real webhook for the chosen one. 404s the moment the mock
- * isn't active (always in prod).
+ * synthesized-but-real webhook for the chosen one. 404s on dev AND prod
+ * (shopifyMockActive() is true iff CHECKIN_ENV=local) — dev/prod pay through
+ * their real Shopify store.
  */
 export default async function DevShopifyPage() {
-    if (!config.shopifyMockActive()) notFound();
+    if (!config.shopifyMockActive()) notFound(); // local only; 404 on dev + prod
 
     const processes = await prisma.orgMembershipProcess.findMany({
         where: { status: "PENDING_PAYMENT" },
@@ -22,7 +23,8 @@ export default async function DevShopifyPage() {
     });
 
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const hasVariant = !!(settings?.orgMembershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId);
+    // Mock synthesizes a membership variant (config), so the fire tool is always usable on local.
+    const hasVariant = config.shopifyMockActive() || !!(settings?.orgMembershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId);
 
     const pendingParticipants = await prisma.programParticipant.findMany({
         where: { status: "PENDING" },
