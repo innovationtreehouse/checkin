@@ -74,6 +74,7 @@ export default function PendingParticipantsPage() {
       if (res.ok) {
         setRequests(prev => prev.filter(r => !(r.programId === programId && r.personId === participantId)));
         notifyNavRefresh();
+        notifications.show({ color: 'green', message: 'Payment plan approved.' });
       } else {
         const data = await res.json();
         if (data.error === "No pending payment-plan request") {
