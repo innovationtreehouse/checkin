@@ -59,7 +59,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     let prevMembershipVariantId: string | null = null;
 
     beforeAll(async () => {
-        // shopifyNonOrgMemberVariantId is the variant public-register's checkout
+        // shopifyNonOrgMemberVariantId is the variant the enroll flow's checkout
         // link is built from — seed it so the guard under test has something to
         // match line_items against.
         const program = await prisma.program.create({

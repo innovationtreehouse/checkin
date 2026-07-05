@@ -14,8 +14,9 @@ function mockTx(count: number): Prisma.TransactionClient {
 }
 
 describe("lockProgramAndCheckCapacity", () => {
-    // The only multi-seat caller (public-register) can overflow a program by
-    // more than one in a single request; seats=1 tests never hit count+seats>max.
+    // No caller enrolls more than one seat per request today (the authenticated
+    // enroll flow is one participant per request), but the lock takes a seat
+    // count, so exercise the multi-seat overflow branch directly here.
     it("throws ProgramCapacityError when a multi-seat request overflows the cap", async () => {
         // count=0, seats=3, max=2 -> 0+3 > 2 -> reject, 2 spots left.
         expect.assertions(2);

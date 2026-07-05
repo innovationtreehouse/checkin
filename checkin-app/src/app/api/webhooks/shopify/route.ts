@@ -123,13 +123,14 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 // customer-controlled — set from the public cart permalink —
                 // so nothing in the payload itself proves the paid order was
                 // for THIS program at THIS program's price. Without this, an
-                // attacker could self-register (public-register creates a
-                // PENDING participant, no payment) then pay for the cheapest
-                // item in the store with a forged Program_ID/CheckMeIn_Account_ID
-                // attribute and activate (or activate someone else's)
-                // enrollment. Checked by variant id — stable, and the same id
-                // public-register's checkout link is built from — not order
-                // total. Fail CLOSED: no variant configured on the Program, or
+                // attacker could self-enroll (the authenticated enroll flow
+                // creates a PENDING participant, no payment) then pay for the
+                // cheapest item in the store with a forged
+                // Program_ID/CheckMeIn_Account_ID attribute and activate (or
+                // activate someone else's) enrollment. Checked by variant id —
+                // stable, and the same id the enroll flow's checkout link is
+                // built from — not order total. Fail CLOSED: no variant
+                // configured on the Program, or
                 // no line-item match, means we do NOT activate.
                 const program = await prisma.program.findUnique({ where: { id: programId } });
                 const programVariantIds = new Set(

@@ -72,7 +72,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     //
     // Staff (admin/board/lead/core-vol) or a member of an enrolled household see
     // the rows; everyone else (anonymous, plain authenticated non-enrolled) gets
-    // metadata + counts only. The public/register pages need spots-remaining
+    // metadata + counts only. The public details/enroll page needs spots-remaining
     // (_count.participants), not names — a count is fine, the names are the leak.
     // The registry orderedView tiers remain as defense-in-depth, stripping
     // pii/personal on the rows for non-staff-but-enrolled callers.
