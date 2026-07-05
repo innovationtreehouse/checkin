@@ -180,18 +180,22 @@ describe('Household API Integration Tests', () => {
             expect(data.error).toBe('Only household leads can add members');
         });
 
-        it('should reject if trying to link an account already in another household', async () => {
+        it('must NOT reparent an existing account in another household — generic error, untouched', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
 
             const req = new Request('http://localhost:4000/api/household', {
                 method: 'PATCH',
-                body: JSON.stringify({ memberName: 'T', memberEmail: 'other-household-api-test@example.com' })
+                body: JSON.stringify({ memberName: 'T', memberEmail: 'other-household-api-test@example.com', memberDob: '2015-01-01' })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(400);
             const data = await res.json();
-            expect(data.error).toBe('A user with this email already belongs to a household.');
+            // Generic, non-confirming validation error framed around login-time linking.
+            expect(data.error).toMatch(/linked automatically when they first sign in/);
+            // The existing account was NOT absorbed into the caller's household.
+            const untouched = await prisma.person.findUnique({ where: { id: testOtherHouseUserId } });
+            expect(untouched?.householdId).toBe(otherHouseholdId);
         });
 
         it('should successfully add a new child record', async () => {
