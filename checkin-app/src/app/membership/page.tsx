@@ -132,6 +132,11 @@ export default function MembershipPage() {
   const [secondaryAllergies, setSecondaryAllergies] = useState("");
   const [children, setChildren] = useState<ChildForm[]>([]);
   const [payment, setPayment] = useState<{ amountCents: number; checkoutUrl: string | null } | null>(null);
+  // Self-attest gate for the background-check task (#875): the confirm checkbox
+  // unlocks only after the applicant has opened the Averity consent link this
+  // visit, so they can't attest to a form they never saw.
+  const [bgLinkOpened, setBgLinkOpened] = useState(false);
+  const [bgAttesting, setBgAttesting] = useState(false);
   // Serialized form as last loaded/saved; isDirty compares it to current state.
   const [savedForm, setSavedForm] = useState<string | null>(null);
 
@@ -260,11 +265,9 @@ export default function MembershipPage() {
     if (error || msg === "") setWarnings([]);
   };
 
-  // Build an error message from an API response, appending the dev-only `detail`
-  // (the real server failure) when present so an "Internal Server Error" isn't a
-  // dead end. Falls back to a friendly default when the body carries nothing.
-  const apiError = (data: { error?: string; detail?: string } | null | undefined, fallback: string) =>
-    [data?.error, data?.detail].filter(Boolean).join(" — ") || fallback;
+  // Prefer the API's user-facing error string; fall back to a friendly default.
+  const apiError = (data: { error?: string } | null | undefined, fallback: string) =>
+    data?.error || fallback;
 
   // Local dev has no Shopify store, so instead of a checkout redirect we fire the
   // mock orders/paid webhook in-app (same endpoint the Debug → Shopify tool uses),
@@ -468,6 +471,27 @@ export default function MembershipPage() {
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Applicant confirms they submitted consent on Averity. On success the reload
+  // flips the task to done (and may advance the whole card to payment); on
+  // failure the checkbox reverts so they can retry.
+  const attestBgConsent = async () => {
+    setBgAttesting(true);
+    try {
+      const res = await fetch("/api/membership/bg-consent", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        await load();
+        notifyNavRefresh();
+      } else {
+        setBgAttesting(false);
+        flash(apiError(data, "Could not record your consent. Please try again."), true);
+      }
+    } catch {
+      setBgAttesting(false);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     }
   };
 
@@ -695,9 +719,24 @@ export default function MembershipPage() {
                           can keep going and pay while it completes.
                         </Text>
                         {state.external?.deepLinkUrl ? (
-                          <Button component="a" href={state.external.deepLinkUrl} target="_blank" rel="noopener noreferrer">
-                            Consent on Averity →
-                          </Button>
+                          <>
+                            <Button
+                              component="a"
+                              href={state.external.deepLinkUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => setBgLinkOpened(true)}
+                            >
+                              Consent on Averity →
+                            </Button>
+                            <Checkbox
+                              label="I submitted my consent on Averity"
+                              description={bgLinkOpened ? undefined : "Open the Averity form above first, then confirm here."}
+                              checked={bgAttesting}
+                              disabled={!bgLinkOpened || bgAttesting}
+                              onChange={(e) => { if (e.currentTarget.checked) attestBgConsent(); }}
+                            />
+                          </>
                         ) : (
                           <Text c="dimmed">The background-check link isn&apos;t available yet. Please check back shortly.</Text>
                         )}
