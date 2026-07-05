@@ -42,6 +42,10 @@ export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
                     household: {
                         select: {
                             name: true,
+                            // The applicant's "anything else we should know?" note — the
+                            // signal a volunteer-only household uses to ask the reviewer to
+                            // mark them volunteer. Classified pii; reviewers hold that band.
+                            intakeNotes: true,
                             leads: { select: { person: { select: { id: true, name: true, email: true } } } },
                         },
                     },

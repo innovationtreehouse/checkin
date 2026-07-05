@@ -59,6 +59,7 @@ export default function AdminHouseholdsPage() {
 
       if (res.ok) {
         fetchHouseholds();
+        notifications.show({ color: 'green', message: currentActive ? 'Membership revoked.' : 'Membership granted.' });
       } else {
         notifications.show({ color: 'red', message: 'Failed to update membership.', autoClose: false });
       }
@@ -88,6 +89,7 @@ export default function AdminHouseholdsPage() {
 
       if (res.ok) {
         fetchHouseholds();
+        notifications.show({ color: 'green', message: deny ? 'Membership denied — members can no longer log in.' : 'Membership restored.' });
       } else {
         const data = await res.json().catch(() => ({}));
         notifications.show({ color: 'red', message: data.error || 'Failed to update membership.', autoClose: false });

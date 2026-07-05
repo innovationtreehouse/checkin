@@ -51,7 +51,7 @@ type ParentInput = { id?: number; name?: string; email?: string; dob?: string | 
 type ChildInput = { id?: number; name?: string; email?: string | null; dob?: string | null; allergies?: string | null };
 
 export interface IntakeSaveInput {
-    household?: Partial<StructuredAddress> & { emergencyContactName?: string; emergencyContactPhone?: string; emergencyContactEmail?: string };
+    household?: Partial<StructuredAddress> & { emergencyContactName?: string; emergencyContactPhone?: string; emergencyContactEmail?: string; notes?: string | null };
     primaryParent?: ParentInput;
     secondaryParent?: ParentInput | null;
     children?: ChildInput[];
@@ -121,6 +121,7 @@ export async function getIntakeState(userId: number) {
             household: household
                 ? {
                       name: household.name,
+                      notes: household.intakeNotes,
                       ...pickAddress(household),
                       // The primary (lowest-priority) contact backs the single-field
                       // form. Shown even when flagged invalid so the lead can fix it.
@@ -241,9 +242,14 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     };
 
     if (input.household) {
-        const addressData = normalizeAddressInput(input.household);
-        if (Object.keys(addressData).length > 0) {
-            await prisma.household.update({ where: { id: householdId }, data: addressData });
+        // Address + the optional "anything else we should know?" note share one
+        // household.update. Note is trimmed to null so an empty box clears it.
+        const householdData = {
+            ...normalizeAddressInput(input.household),
+            ...(input.household.notes !== undefined && { intakeNotes: input.household.notes?.trim() || null }),
+        };
+        if (Object.keys(householdData).length > 0) {
+            await prisma.household.update({ where: { id: householdId }, data: householdData });
         }
         // Emergency contact lives in its own table now; the single-field intake
         // form maps onto the household's primary contact. Tolerant of partial

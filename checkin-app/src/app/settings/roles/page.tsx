@@ -82,6 +82,8 @@ export default function RoleAssignmentPage() {
         setRowError({ id: userId, text: data.error || "Failed to update role." });
         // Revert optimistic update
         fetchUsers();
+      } else {
+        notifications.show({ color: 'green', message: 'Role updated.' });
       }
     } catch {
       notifications.show({ color: "red", message: "Network error updating role.", autoClose: false });

@@ -14,12 +14,19 @@ export const PATCH = withAuth(
             const userId = auth.user.id;
 
             const body = await req.json();
-            const { emergencyContactName, emergencyContactPhone } = body;
+            const { emergencyContactName, emergencyContactPhone, notes } = body;
             const addressData = normalizeAddressInput(body);
             // Address is optional on this route (emergency-contact-only PATCHes
             // send no address keys); when any address field is supplied, the
             // whole address must be complete + valid.
             if (Object.keys(addressData).length > 0) assertValidAddress(addressData);
+            // Optional "anything else we should know?" note rides along on the same
+            // household.update. Trimmed to null so an emptied box clears it; only
+            // touched when the key is present.
+            const householdData = {
+                ...addressData,
+                ...(notes !== undefined && { intakeNotes: typeof notes === "string" && notes.trim() ? notes.trim() : null }),
+            };
 
             const user = await prisma.person.findUnique({
                 where: { id: userId },
@@ -37,7 +44,7 @@ export const PATCH = withAuth(
 
             const updatedHousehold = await prisma.household.update({
                 where: { id: user.householdId },
-                data: addressData,
+                data: householdData,
             });
 
             // Emergency contact is a separate entity; the settings form edits the

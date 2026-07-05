@@ -72,7 +72,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         // Send email to finances
         // In a real implementation this would trigger an actual email via SendGrid, NodeMailer, etc.
-        logger.info(`[EMAIL DISPATCH] To: finances@innovationtreehouse.org, Subject: Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
+        logger.info(`[EMAIL DISPATCH] To: finance@innovationtreehouse.org, Subject: Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
 
         return NextResponse.json({ success: true, participant: updatedParticipant });
     } catch (error) {

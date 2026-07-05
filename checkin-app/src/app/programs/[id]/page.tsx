@@ -11,6 +11,7 @@ import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { aggregateEnrollOutcomes, buildShopifyCheckoutUrl, type EnrollOutcome } from './enroll';
 import FirstTimeIntakePanel from './FirstTimeIntakePanel';
+import { useIsLocalInstance } from '@/components/EnvProvider';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type ProgramDetail = {
@@ -43,6 +44,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const { id } = use(params);
   const { data: session, status } = useSession();
   const router = useRouter();
+  const isLocalInstance = useIsLocalInstance();
 
   const [program, setProgram] = useState<ProgramDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -230,6 +232,13 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       // instead of creating a free, unchargeable enrollment.
       let variantId: string | null = null;
       let storeDomain: string | undefined;
+      // ENV GATE (mirrors server config.shopifyMockActive ⇔ CHECKIN_ENV=local):
+      //   local     → mockPay: settle the charge in-app via the Debug orders/paid
+      //               webhook, no redirect (there is no local Shopify store).
+      //   dev/prod  → redirect to the real store (storeDomain required).
+      // Variant is always required — local synthesizes dev-mock-variant ids, so a null
+      // one is a real config gap in every env.
+      let mockPay = false;
       if (isPayingOnShopify && program) {
         const householdRes = await fetch('/api/household');
         let isMember = false;
@@ -239,7 +248,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         }
         variantId = isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId;
         storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
-        if (!variantId || !storeDomain) {
+        mockPay = isLocalInstance;
+        if (!variantId || (!mockPay && !storeDomain)) {
           notifications.show({ color: "red", autoClose: false, message: variantId
             ? "Cannot enroll: Shopify store domain not configured. Contact an admin."
             : "Cannot enroll: no pricing variant set for this program tier — set one in program-ops." });
@@ -265,7 +275,22 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
       if (enrolledIds.length > 0) {
         notifyNavRefresh();
-        if (isPayingOnShopify && program && variantId && storeDomain) {
+        if (isPayingOnShopify && program && variantId && mockPay) {
+          // Local mock: fire the Debug section's orders/paid webhook to activate the
+          // PENDING enrollments, exactly as the dev Shopify tool's button does — no redirect.
+          const payRes = await fetch('/api/dev/shopify/orders-paid', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ programId: program.id, participantIds: enrolledIds }),
+          });
+          if (payRes.ok) {
+            notifications.show({ color: "green", message: "Payment mocked (local) — enrollment activated." });
+          } else {
+            notifications.show({ color: "red", autoClose: false, message: "Enrolled, but the mock payment failed — fire it from the Debug → Shopify tool." });
+          }
+          setRequiresOverride(false);
+          fetchProgram();
+        } else if (isPayingOnShopify && program && variantId && storeDomain) {
           setSuccessMessage("Redirecting to Shopify for secure payment...");
           // qty=N single variant + comma-joined account ids — see buildShopifyCheckoutUrl.
           navigating = true;

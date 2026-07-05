@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Divider, Group, Loader, Modal, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
@@ -139,8 +140,17 @@ export function AdminEditHouseholdModal({
   // prompt when the form has unsaved edits. handleSave calls onClose directly
   // so a successful save never prompts.
   const requestClose = () => {
-    if (isFormDirty(form, initial) && !window.confirm("Discard unsaved changes?")) return;
-    onClose();
+    if (!isFormDirty(form, initial)) {
+      onClose();
+      return;
+    }
+    modals.openConfirmModal({
+      title: 'Discard unsaved changes?',
+      children: <Text size="sm">You have unsaved changes. Close without saving?</Text>,
+      labels: { confirm: 'Discard', cancel: 'Keep editing' },
+      confirmProps: { color: 'red' },
+      onConfirm: onClose,
+    });
   };
 
   // Phone is optional here, so only a non-empty malformed value is an error.

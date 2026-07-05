@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { withWebhook } from "@/lib/webhookAuth";
-import { config } from "@/lib/config";
+import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 
 interface ShopifyOrder {
     id?: number | string;
@@ -49,7 +49,13 @@ function verifyShopifyHmac(req: Request, rawBody: string): { ok: true } | { ok: 
 }
 
 // Shopify Webhook for `orders/paid` or `orders/create`
-// Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE
+// Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE.
+//
+// ENV: this handler runs in ALL environments — dev/prod receive it from the real
+// Shopify store; local receives it from the self-fired mock (/api/dev/shopify/orders-paid).
+// The HMAC secret differs per env (config.shopifyWebhookSecret). The only env-branched
+// logic is the synthetic dev-mock variant fallback, gated on config.shopifyMockActive()
+// (⇔ CHECKIN_ENV=local) below.
 export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac }, async (_req, order: ShopifyOrder) => {
         // Iterate through line items to find CheckMeIn_Account_ID and Program_ID
         // We set these custom attributes in the permalink URL:
@@ -94,9 +100,13 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
             if (!isNaN(processId)) {
                 const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
                 const membershipVariantIds = new Set(
-                    [settings?.orgMembershipVariantId, settings?.shopifyNormalVariantId, settings?.shopifyVolunteerVariantId].filter(
-                        (v): v is string => !!v,
-                    ),
+                    [
+                        settings?.orgMembershipVariantId,
+                        settings?.shopifyNormalVariantId,
+                        settings?.shopifyVolunteerVariantId,
+                        // Local mock's self-fired order carries this synthetic id (config).
+                        config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
+                    ].filter((v): v is string => !!v),
                 );
                 const hasMembershipItem = (order.line_items ?? []).some((li) => membershipVariantIds.has(String(li.variant_id)));
                 const proc = await activateByProcessId(processId, order.id ? String(order.id) : "", hasMembershipItem);

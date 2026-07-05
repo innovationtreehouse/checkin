@@ -17,7 +17,7 @@ interface Person {
 // Only the household leads (parents) are returned — children are never sent.
 interface QueueItem {
   id: number;
-  orgMembership: { household: { name: string | null; leads: { person: Person }[] } | null } | null;
+  orgMembership: { household: { name: string | null; intakeNotes: string | null; leads: { person: Person }[] } | null } | null;
   _count: { attestations: number };
 }
 
@@ -113,6 +113,7 @@ export default function MembershipReviewPage() {
         <Stack mt="md">
           {queue.map((item) => {
             const parents = (item.orgMembership?.household?.leads ?? []).map((l) => l.person);
+            const notes = item.orgMembership?.household?.intakeNotes?.trim();
             return (
             <Card key={item.id} withBorder radius="md" padding="lg">
               <Text fw={700} fz="lg">
@@ -124,6 +125,15 @@ export default function MembershipReviewPage() {
                   : "No parent contact on file."}
               </Text>
               <Text size="xs" c="dimmed" mt={4}>{item._count.attestations}/2 approvals so far.</Text>
+
+              {/* The applicant's "anything else?" note — surfaced up front (not
+                  behind a click) because it's where a volunteer-only household asks
+                  to be marked volunteer, which drives the checkbox below. */}
+              {notes && (
+                <Alert color="yellow" variant="light" mt="md" title="From the applicant — “Anything else we should know?”">
+                  <Text style={{ whiteSpace: "pre-wrap" }}>{notes}</Text>
+                </Alert>
+              )}
 
               <Checkbox
                 my="md"
