@@ -17,9 +17,9 @@ export const dynamic = 'force-dynamic';
  * logged-out picker is the initial login path).
  */
 export async function GET() {
-    if (process.env.NODE_ENV === 'production') {
-        return apiError("Not available", 404);
-    }
+    // Gate on CHECKIN_ENV only (via isDevInstance) — NOT NODE_ENV. The cloud dev instance is a
+    // prod build (NODE_ENV=production, CHECKIN_ENV=dev), so a NODE_ENV check would 404 the picker
+    // there. isDevInstance() already fails safe to prod. Mirrors the shared dev fence (guard.ts).
     if (!config.isDevInstance()) {
         return apiError("Not available", 404);
     }
