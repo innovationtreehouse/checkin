@@ -217,3 +217,34 @@ A slide-up panel, rendered **only** when `CHECKIN_ENV` is `dev`/`local`, for the
   `sysadmin` persona desired for testing admin flows? (Likely yes — it's fake data.)
 - **Infra note (for the deploy side, not this repo):** the dev task definition sets
   `CHECKIN_ENV=dev` and `DATABASE_URL`→`checkin_dev`; prod sets neither. Same image both places.
+
+---
+
+## 12. Local login: never call Google on a local-reachable path
+
+**Invariant.** On `CHECKIN_ENV=local` there is no Google identity (creds are
+dummy). Any UI control that calls `signIn("google", …)` on a path a *local*
+user can reach is a bug — it redirects to real Google OAuth and dead-ends. Local
+authenticates **only** through the offline persona-mint dev picker
+(`DevLoginPicker` → `signIn("persona-mint", …)`, incl. its "New registrant (fresh
+household)" button for a brand-new empty user). `dev` and `prod` use Google, only.
+
+**The pattern for a logged-out CTA** (any "sign in to do X" button):
+
+- Do **not** call `signIn("google")` directly from the feature page. Route to the
+  sign-in screen with a return URL: `router.push("/signin?callbackUrl=<target>")`.
+- `/signin` is the *one* place that branches by env: it renders `DevLoginPicker`
+  (carrying the `callbackUrl`) when `useIsLocalInstance()`, and the Google button
+  otherwise. Feature pages stay env-agnostic.
+- `DevLoginPicker` takes a `callbackUrl` prop (default `"/"`) so the offline mint
+  returns the user to where they started.
+
+**Why this section exists.** Auth-first program registration shipped a CTA that
+called `signIn("google")` unconditionally; it worked on dev/prod but broke every
+local test of the new-user flow (no Google on a laptop). Fixed in
+`fix(programs): route enroll CTA through /signin so LOCAL uses dev picker` (#863).
+The single remaining sanctioned `signIn("google")` call site is the `/signin`
+Google button itself (the dev/prod path). Adding another on a local-reachable
+surface re-introduces this bug — grep for `signIn("google"` and keep that the
+only hit.
+
