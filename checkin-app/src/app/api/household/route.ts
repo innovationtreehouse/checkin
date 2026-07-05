@@ -70,17 +70,7 @@ export const PATCH = withAuth(
                 return apiError("Invalid email format", 400);
             }
 
-            let targetMember: Awaited<ReturnType<typeof prisma.person.findUnique>> = null;
-
-            if (memberEmail) {
-                targetMember = await prisma.person.findUnique({ where: { email: memberEmail.toLowerCase() } });
-
-                if (targetMember && targetMember.householdId) {
-                    return apiError("A user with this email already belongs to a household.", 400);
-                }
-            }
-
-            if (!targetMember && !memberDob && !memberOver25) {
+            if (!memberDob && !memberOver25) {
                 // A new member's age must be known: either a DoB, or an explicit
                 // "25+" declaration (mirrors the client form's requirement).
                 return apiError("Date of birth is required for anyone under 25.", 400);
@@ -89,23 +79,21 @@ export const PATCH = withAuth(
             const householdId = hh.householdId;
 
             const { member, warning } = await prisma.$transaction(async (tx) => {
-                const member = targetMember
-                    ? await tx.person.update({
-                        where: { id: targetMember.id },
-                        data: { householdId },
-                        select: HOUSEHOLD_PEER_SELECT,
-                    })
-                    : await tx.person.create({
-                        data: {
-                            name: memberName,
-                            ...(memberEmail && { email: memberEmail.toLowerCase() }),
-                            dateOfBirth: memberDob ? new Date(memberDob) : null,
-                            isDeclaredAdult: !memberDob && !!memberOver25,
-                            allergies: memberAllergies || null,
-                            householdId,
-                        },
-                        select: HOUSEHOLD_PEER_SELECT,
-                    });
+                // Always create a fresh member — never reparent an existing account by
+                // email. Real account linking happens at Google sign-in via
+                // allowDangerousEmailAccountLinking (see lib/auth-options.ts). Attaching
+                // here would let any lead absorb a known/guessed email into their household.
+                const member = await tx.person.create({
+                    data: {
+                        name: memberName,
+                        ...(memberEmail && { email: memberEmail.toLowerCase() }),
+                        dateOfBirth: memberDob ? new Date(memberDob) : null,
+                        isDeclaredAdult: !memberDob && !!memberOver25,
+                        allergies: memberAllergies || null,
+                        householdId,
+                    },
+                    select: HOUSEHOLD_PEER_SELECT,
+                });
 
                 await tx.auditLog.create({
                     data: {
@@ -126,8 +114,22 @@ export const PATCH = withAuth(
 
             return NextResponse.json({ member, warning }, { status: 200 });
         } catch (error: unknown) {
+            // P2002 = unique violation on Person.email: the provided email already
+            // belongs to some account. Return a generic, non-confirming validation
+            // error framed around login-time linking — do NOT attach the existing
+            // account, and do NOT confirm it exists.
+            if (isPrismaError(error, 'P2002')) {
+                return apiError("We couldn't add this member with that email. If they already have an account, they'll be linked automatically when they first sign in with Google using that email.", 400);
+            }
             logger.error("Household PATCH Error:", error);
             return apiError("Internal Server Error", 500);
         }
     }
 );
+
+// Prisma known-request errors carry a string `code`. Duck-typed so we don't
+// pull in the generated Prisma namespace just for one check.
+function isPrismaError(error: unknown, code: string): boolean {
+    return typeof error === 'object' && error !== null && 'code' in error
+        && (error as { code: unknown }).code === code;
+}
