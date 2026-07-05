@@ -219,7 +219,30 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     setEnrolling(true);
     setMessage("");
 
+    let navigating = false; // only the Shopify redirect keeps the spinner past finally
     try {
+      // Resolve the Shopify checkout details BEFORE enrolling. A paid program with
+      // no variant (or no store domain) can never be charged, so it must fail here
+      // instead of creating a free, unchargeable enrollment.
+      let variantId: string | null = null;
+      let storeDomain: string | undefined;
+      if (isPayingOnShopify && program) {
+        const householdRes = await fetch('/api/household');
+        let isMember = false;
+        if (householdRes.ok) {
+          const householdData = await householdRes.json();
+          isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
+        }
+        variantId = isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId;
+        storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+        if (!variantId || !storeDomain) {
+          notifications.show({ color: "red", autoClose: false, message: variantId
+            ? "Cannot enroll: Shopify store domain not configured. Contact an admin."
+            : "Cannot enroll: no pricing variant set for this program tier — set one in program-ops." });
+          return; // no enrollment created — payment path is broken
+        }
+      }
+
       const outcomes: EnrollOutcome[] = [];
       for (const participantId of selectedParticipantIds) {
         const res = await fetch(`/api/programs/${id}/participants`, {
@@ -238,28 +261,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
       if (enrolledIds.length > 0) {
         notifyNavRefresh();
-        if (isPayingOnShopify && program) {
+        if (isPayingOnShopify && program && variantId && storeDomain) {
           setSuccessMessage("Redirecting to Shopify for secure payment...");
-
-          const householdRes = await fetch('/api/household');
-          let isMember = false;
-          if (householdRes.ok) {
-            const householdData = await householdRes.json();
-            isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
-          }
-
-          const variantId = isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId;
-
-          if (variantId) {
-            const storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
-            // qty=N single variant + comma-joined account ids — see buildShopifyCheckoutUrl.
-            window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id);
-            return;
-          } else {
-            notifications.show({ color: "green", message: "Enrolled! (Note: No pricing variant configured for this tier)" });
-            setSuccessMessage("");
-            fetchProgram();
-          }
+          // qty=N single variant + comma-joined account ids — see buildShopifyCheckoutUrl.
+          navigating = true;
+          window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id);
+          return; // spinner stays; page unloads on redirect
         } else {
           notifications.show({ color: "green", message: enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!" });
           setRequiresOverride(false);
@@ -272,7 +279,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     } catch {
       notifications.show({ color: "red", message: "Network error during enrollment.", autoClose: false });
     } finally {
-      if (!isPayingOnShopify) setEnrolling(false);
+      if (!navigating) setEnrolling(false);
     }
   };
 
