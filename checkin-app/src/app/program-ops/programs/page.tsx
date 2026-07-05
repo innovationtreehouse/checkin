@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Anchor, Badge, Button, Checkbox, Group, Stack, Text } from "@mantine/core";
+import { Anchor, Badge, Button, Checkbox, Group, Stack, Text, Tooltip } from "@mantine/core";
 import { DataTable, type DataTableColumn } from "@/components/admin/DataTable";
+import { isProgramCheckoutBroken } from "@/lib/programCheckout";
 
 type Program = {
   id: number;
@@ -14,6 +15,10 @@ type Program = {
   orgMemberOnly?: boolean;
   startAt?: string | null;
   endAt?: string | null;
+  orgMemberPriceCents?: number | null;
+  nonOrgMemberPriceCents?: number | null;
+  shopifyOrgMemberVariantId?: string | null;
+  shopifyNonOrgMemberVariantId?: string | null;
   _count?: { participants?: number; events?: number };
 };
 
@@ -72,7 +77,16 @@ export default function AdminProgramsIndex() {
   const columns: DataTableColumn<Program>[] = [
     {
       header: "Program",
-      render: (p) => <Text fw={600}>{p.name}</Text>,
+      render: (p) => (
+        <Group gap="xs" wrap="nowrap">
+          <Text fw={600}>{p.name}</Text>
+          {isProgramCheckoutBroken(p) && (
+            <Tooltip label="Priced but no Shopify checkout variant — paid enrollment will not work. Open the program to sync.">
+              <Badge color="red" variant="filled">⚠️ Broken checkout</Badge>
+            </Tooltip>
+          )}
+        </Group>
+      ),
       sortBy: (p) => p.name,
     },
     {
