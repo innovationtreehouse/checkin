@@ -11,6 +11,17 @@ export function escapeHtml(value: string): string {
         .replace(/'/g, '&#39;');
 }
 
+export type VisitSource = 'SCANNER' | 'WEB' | 'SYSTEM';
+
+/** Human phrase for how a check-in/out was recorded, e.g. "via badge scan". */
+export function sourceLine(source?: VisitSource | null): string {
+    const label = source === 'SCANNER' ? 'badge scan'
+        : source === 'WEB' ? 'the web app'
+        : source === 'SYSTEM' ? 'the system automatically'
+        : null;
+    return label ? `<p style="color: #6b7280;">📍 via ${label}</p>` : '';
+}
+
 /**
  * Base HTML email layout with consistent branding.
  */

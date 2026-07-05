@@ -36,6 +36,9 @@ export const GET = withAuth({}, async (_req, auth) => {
             set.add(personId);
         }
 
+        // (person, program) pairs where the household member volunteers, not enrolls.
+        const volunteerKeys = new Set(volunteers.map(v => `${v.personId}:${v.programId}`));
+
         const events = await prisma.event.findMany({
             where: {
                 programId: { in: [...programParticipants.keys()] },
@@ -66,7 +69,8 @@ export const GET = withAuth({}, async (_req, auth) => {
                     endAt: ev.endAt,
                     program: ev.program,
                     participant: householdMemberById.get(pid),
-                    rsvp: ev.rsvps.find((r: typeof ev.rsvps[number]) => r.personId === pid)?.status ?? null
+                    rsvp: ev.rsvps.find((r: typeof ev.rsvps[number]) => r.personId === pid)?.status ?? null,
+                    isVolunteer: volunteerKeys.has(`${pid}:${ev.programId}`)
                 }));
         });
 

@@ -24,22 +24,13 @@ export default function IndexPage() {
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return visible;
-    return visible.filter((p) =>
-      `${p.label} ${p.section} ${p.keywords ?? ''}`.toLowerCase().includes(q),
-    );
+    const filtered = !q
+      ? visible
+      : visible.filter((p) =>
+          `${p.label} ${p.section} ${p.keywords ?? ''}`.toLowerCase().includes(q),
+        );
+    return [...filtered].sort((a, b) => a.label.localeCompare(b.label));
   }, [visible, query]);
-
-  // Group by section (first-seen section order, registry page order within).
-  const grouped = useMemo(() => {
-    const bySection = new Map<string, typeof matches>();
-    for (const p of matches) {
-      const pages = bySection.get(p.section);
-      if (pages) pages.push(p);
-      else bySection.set(p.section, [p]);
-    }
-    return Array.from(bySection, ([section, pages]) => ({ section, pages }));
-  }, [matches]);
 
   return (
     <PageContainer>
@@ -53,25 +44,18 @@ export default function IndexPage() {
         autoFocus
         mb="lg"
       />
-      {grouped.length === 0 ? (
+      {matches.length === 0 ? (
         <Text c="dimmed">No pages match “{query}”.</Text>
       ) : (
-        <Stack gap="lg">
-          {grouped.map((group) => (
-            <div key={group.section}>
-              <Text fw={700} size="sm" c="dimmed" tt="uppercase" mb={4}>
-                {group.section}
-              </Text>
-              {group.pages.map((p) => (
-                <NavLink
-                  key={p.href}
-                  component={Link}
-                  href={p.href}
-                  label={p.label}
-                  description={p.href}
-                />
-              ))}
-            </div>
+        <Stack gap={0}>
+          {matches.map((p) => (
+            <NavLink
+              key={p.href}
+              component={Link}
+              href={p.href}
+              label={p.label}
+              description={p.href}
+            />
           ))}
         </Stack>
       )}

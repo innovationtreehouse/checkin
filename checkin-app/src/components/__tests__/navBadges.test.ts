@@ -137,9 +137,9 @@ describe('settings misconfig red pill', () => {
 
   it('red pill with the unset count, singular label at 1', () => {
     expect(settingsMisconfigBadge(admin({ settingsMisconfig: 1 })))
-      .toEqual({ count: 1, color: 'red', label: '1 required checkout setting not configured' });
-    expect(navBadgeFor('/settings', admin({ settingsMisconfig: 2 })))
-      .toEqual([{ count: 2, color: 'red', label: '2 required checkout settings not configured' }]);
+      .toEqual({ count: 1, color: 'red', label: '1 required membership setting not configured' });
+    expect(navBadgeFor('/settings', admin({ settingsMisconfig: 4 })))
+      .toEqual([{ count: 4, color: 'red', label: '4 required membership settings not configured' }]);
   });
 });
 

@@ -50,7 +50,7 @@ describe("attendance/current page", () => {
     mockRoutes();
     renderWithProviders(<KioskDisplay />);
 
-    expect(await screen.findByText("3 People Present")).toBeInTheDocument();
+    expect(await screen.findByText("People Present: 3")).toBeInTheDocument();
     expect(screen.getByText("Karen Keyholder")).toBeInTheDocument();
     expect(screen.getByText("Val Volunteer")).toBeInTheDocument();
     expect(screen.getByText("Stu Student")).toBeInTheDocument();
@@ -61,7 +61,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Check Me In" }));
 
@@ -80,7 +80,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     expect(await screen.findByText("Check In Household Members")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Jamie Kid" }));
@@ -100,7 +100,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), {
       target: { value: "Wendy" },
@@ -124,7 +124,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out a user" }));
     const modal = await screen.findByRole("dialog", { name: "Sign Out A User" });
@@ -174,7 +174,7 @@ describe("attendance/current page", () => {
     });
     renderWithProviders(<KioskDisplay />);
 
-    expect(await screen.findByText("1 People Present")).toBeInTheDocument();
+    expect(await screen.findByText("People Present: 1")).toBeInTheDocument();
     expect(screen.getByText("Kid Eight")).toBeInTheDocument();
     expect(screen.getByText("Individual names are only visible to administrators", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("Your household members are shown above.", { exact: false })).toBeInTheDocument();
@@ -254,7 +254,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent(window, new MessageEvent("message", {
       data: {
@@ -274,7 +274,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
     const callsBefore = fetchMock.mock.calls.filter(([u]) => u === "/api/attendance").length;
 
     fireEvent(window, new MessageEvent("message", { data: "refresh-attendance" }));
@@ -289,7 +289,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Check Me In" }));
 
@@ -306,7 +306,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "W" } });
     await new Promise((resolve) => setTimeout(resolve, 350));
@@ -327,7 +327,7 @@ describe("attendance/current page", () => {
       },
     });
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "noname" } });
 
@@ -346,7 +346,7 @@ describe("attendance/current page", () => {
       return { ok: false, json: async () => ({}) } as Response;
     }) as unknown as typeof fetch;
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "wendy" } });
     await new Promise((resolve) => setTimeout(resolve, 350));
@@ -359,7 +359,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out a user" }));
     const modal = await screen.findByRole("dialog");
@@ -383,7 +383,7 @@ describe("attendance/current page", () => {
       return { ok: true, json: async () => attendanceData } as Response;
     }) as unknown as typeof fetch;
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out a user" }));
     const modal = await screen.findByRole("dialog");
@@ -421,7 +421,7 @@ describe("attendance/current page", () => {
       return { ok: true, json: async () => attendanceData } as Response;
     }) as unknown as typeof fetch;
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Check Me In" }));
     await waitFor(() =>
@@ -477,7 +477,7 @@ describe("attendance/current page", () => {
       },
     });
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByText("Karen Keyholder"));
     let modal = await screen.findByRole("dialog");
@@ -512,7 +512,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out a user" }));
     const modal = await screen.findByRole("dialog");
@@ -542,7 +542,7 @@ describe("attendance/current page", () => {
       },
     });
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("2 People Present");
+    await screen.findByText("People Present: 2");
 
     expect(screen.getByText("Robotics Club")).toBeInTheDocument();
     expect(screen.getByText("555-123-4567", { exact: false })).toBeInTheDocument();
@@ -617,7 +617,7 @@ describe("attendance/current page", () => {
     }) as unknown as typeof fetch;
     renderWithProviders(<KioskDisplay />);
 
-    expect(await screen.findByText("3 People Present")).toBeInTheDocument();
+    expect(await screen.findByText("People Present: 3")).toBeInTheDocument();
     // Household fetch failed silently — no household check-in row to show.
     expect(screen.queryByText("Check In Household Members")).not.toBeInTheDocument();
   });
