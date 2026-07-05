@@ -7,6 +7,7 @@ const base = {
   hasSecondary: false, secondaryId: undefined,
   secondaryName: "", secondaryEmail: "", secondaryDob: "", secondaryOver25: false, secondaryAllergies: "",
   children: [{ id: 1, name: "Kid", email: "", dob: "2015-02-02", allergies: "peanuts" }],
+  notes: "",
 };
 
 describe("serializeMembershipForm (unsaved-changes dirty compare)", () => {
@@ -26,5 +27,9 @@ describe("serializeMembershipForm (unsaved-changes dirty compare)", () => {
   it("a nested child change → different key", () => {
     const next = { ...base, children: [{ ...base.children[0], allergies: "none" }] };
     expect(serializeMembershipForm(base)).not.toBe(serializeMembershipForm(next));
+  });
+
+  it("editing the freeform notes → different key (dirty)", () => {
+    expect(serializeMembershipForm(base)).not.toBe(serializeMembershipForm({ ...base, notes: "volunteer only" }));
   });
 });

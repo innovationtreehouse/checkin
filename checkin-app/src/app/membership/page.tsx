@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import type { OrgMembershipProcessStatus, OrgMembershipStatus } from "@/generated/prisma/client";
 import {
   Alert, Anchor, Box, Button, Card, Checkbox, Container, Group,
-  SimpleGrid, Stack, Text, TextInput, ThemeIcon, Title,
+  SimpleGrid, Stack, Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
@@ -48,7 +48,7 @@ interface IntakeState {
   process: { id: number; kind: string; status: OrgMembershipProcessStatus } | null;
   external: ExternalStatus | null;
   prefill: {
-    household: ({ name: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactEmail: string | null } & Partial<StructuredAddress>) | null;
+    household: ({ name: string | null; notes: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactEmail: string | null } & Partial<StructuredAddress>) | null;
     primaryParent: PersonPrefill | null;
     secondaryParent: PersonPrefill | null;
     children: PersonPrefill[];
@@ -70,6 +70,7 @@ interface FormValues {
   hasSecondary: boolean; secondaryId?: number;
   secondaryName: string; secondaryEmail: string; secondaryDob: string; secondaryOver25: boolean; secondaryAllergies: string;
   children: ChildForm[];
+  notes: string;
 }
 
 // Stable key for the unsaved-changes dirty compare. Array (not object) so order
@@ -81,6 +82,7 @@ export const serializeMembershipForm = (v: FormValues) =>
     v.primaryName, v.primaryDob, v.primaryOver25, v.primaryAllergies,
     v.hasSecondary, v.secondaryId, v.secondaryName, v.secondaryEmail, v.secondaryDob, v.secondaryOver25, v.secondaryAllergies,
     v.children.map((c) => [c.id, c.name, c.email, c.dob, c.allergies]),
+    v.notes,
   ]);
 
 function ExternalTask({ done, title, doneText, children }: { done: boolean; title: string; doneText: string; children: React.ReactNode }) {
@@ -131,6 +133,7 @@ export default function MembershipPage() {
   const [secondaryOver25, setSecondaryOver25] = useState(false);
   const [secondaryAllergies, setSecondaryAllergies] = useState("");
   const [children, setChildren] = useState<ChildForm[]>([]);
+  const [notes, setNotes] = useState("");
   const [payment, setPayment] = useState<{ amountCents: number; checkoutUrl: string | null } | null>(null);
   // Self-attest gate for the background-check task (#875): the confirm checkbox
   // unlocks only after the applicant has opened the Averity consent link this
@@ -149,6 +152,7 @@ export default function MembershipPage() {
     setEmName(h?.emergencyContactName ?? "");
     setEmPhone(h?.emergencyContactPhone ?? "");
     setEmEmail(h?.emergencyContactEmail ?? "");
+    setNotes(h?.notes ?? "");
     const p = s.prefill.primaryParent;
     setPrimaryName(p?.name ?? "");
     setPrimaryDob(p?.dob ?? "");
@@ -191,6 +195,7 @@ export default function MembershipPage() {
       secondaryOver25: !!sec?.over25,
       secondaryAllergies: sec?.allergies ?? "",
       children: nextChildren,
+      notes: h?.notes ?? "",
     }));
   }, []);
 
@@ -347,7 +352,7 @@ export default function MembershipPage() {
   };
 
   const buildPayload = () => ({
-    household: { ...address, emergencyContactName: emName, emergencyContactPhone: emPhone, emergencyContactEmail: emEmail },
+    household: { ...address, emergencyContactName: emName, emergencyContactPhone: emPhone, emergencyContactEmail: emEmail, notes: notes || null },
     primaryParent: { name: primaryName, dob: primaryOver25 ? null : (primaryDob || null), over25: primaryOver25, allergies: primaryAllergies || null },
     secondaryParent: hasSecondary
       ? { id: secondaryId, name: secondaryName, email: secondaryEmail || undefined, dob: secondaryOver25 ? null : (secondaryDob || null), over25: secondaryOver25, allergies: secondaryAllergies || null }
@@ -505,6 +510,7 @@ export default function MembershipPage() {
     primaryName, primaryDob, primaryOver25, primaryAllergies,
     hasSecondary, secondaryId, secondaryName, secondaryEmail, secondaryDob, secondaryOver25, secondaryAllergies,
     children,
+    notes,
   });
   // Dirty once the user edits past the loaded snapshot. Re-hydrate after a
   // save/submit re-snapshots, so this flips back to false then.
@@ -668,6 +674,17 @@ export default function MembershipPage() {
                   </section>
 
                   <ChildrenListForm items={children} onAdd={addChild} onUpdate={updateChild} onRemove={removeChild} />
+
+                  <section>
+                    <Textarea
+                      label="Anything else we should know?"
+                      description="Optional. Tell us anything that would help us review your application — for example, if your household is applying to volunteer only, with no students enrolled."
+                      autosize
+                      minRows={3}
+                      value={notes}
+                      onChange={(e) => setNotes(e.currentTarget.value)}
+                    />
+                  </section>
 
                   {/* Local echo of the page-top banner: intake is a long card, so
                       the top AlertBanner posts off-screen next to these buttons. */}

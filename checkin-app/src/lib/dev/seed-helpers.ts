@@ -49,6 +49,16 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         });
     }
 
+    // A third non-member household. Family and Family2 are each already claimed by
+    // a membership flow test as their applicant; this one keeps the intake-notes
+    // flow test's applicant disjoint on the shared serial DB.
+    let household3 = await prisma.household.findFirst({ where: { name: "Family3" } });
+    if (!household3) {
+        household3 = await prisma.household.create({
+            data: { name: "Family3", line1: "789 Volunteer Way" },
+        });
+    }
+
     // 2. The 9 debug personas (solo personas get a single-person household of their own)
     const isBoardMember = await prisma.person.upsert({
         where: { email: "boardmember@example.com" },
@@ -104,6 +114,17 @@ export async function seedBaseline(prisma: Db): Promise<void> {
             name: "Parent Family2",
             phone: "555-555-0004",
             householdId: household2.id,
+        },
+    });
+
+    const parentFamily3 = await prisma.person.upsert({
+        where: { email: "parent.family3@example.com" },
+        update: { name: "Parent Family3", phone: "555-555-0010" },
+        create: {
+            email: "parent.family3@example.com",
+            name: "Parent Family3",
+            phone: "555-555-0010",
+            householdId: household3.id,
         },
     });
 
@@ -177,6 +198,9 @@ export async function seedBaseline(prisma: Db): Promise<void> {
 
     await prisma.person.update({ where: { id: parentFamily2.id }, data: { householdId: household2.id } });
     await addHouseholdLead(prisma, household2.id, parentFamily2.id);
+
+    await prisma.person.update({ where: { id: parentFamily3.id }, data: { householdId: household3.id } });
+    await addHouseholdLead(prisma, household3.id, parentFamily3.id);
 
     // 4. Tools & certifications
     const tableSaw = await prisma.tool.upsert({

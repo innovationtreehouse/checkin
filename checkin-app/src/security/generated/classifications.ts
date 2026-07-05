@@ -41,6 +41,7 @@ export const classifications = {
         city: 'personal',
         state: 'personal',
         postalCode: 'personal',
+        intakeNotes: 'pii',
     },
     EmergencyContact: {
         id: 'public',

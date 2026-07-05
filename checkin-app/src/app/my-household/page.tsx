@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, TextInput, Title, Tooltip } from '@mantine/core';
+import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, Textarea, TextInput, Title, Tooltip } from '@mantine/core';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { formatDate, calculateAge } from '@/lib/time';
@@ -85,6 +85,9 @@ export default function HouseholdPage() {
   // Snapshot of the address as last loaded/saved; isDirty compares it to current
   // state to drive the unsaved-changes guard.
   const [initialAddress, setInitialAddress] = useState<StructuredAddress>(blankAddress);
+  // "Anything else we should know?" — saved alongside the address on this card.
+  const [notes, setNotes] = useState("");
+  const [initialNotes, setInitialNotes] = useState("");
   const [addressErrors, setAddressErrors] = useState<Partial<Record<AddressField, string>>>({});
   const [savingSettings, setSavingSettings] = useState(false);
   // Transient "Updated" confirmation shown in the Address card header for 5s.
@@ -118,6 +121,8 @@ export default function HouseholdPage() {
         const loaded = { line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" };
         setAddress(loaded);
         setInitialAddress(loaded);
+        setNotes(data.household?.intakeNotes ?? "");
+        setInitialNotes(data.household?.intakeNotes ?? "");
       }
     } catch {
       notifications.show({ color: "red", message: "Network error loading household.", autoClose: false });
@@ -142,11 +147,12 @@ export default function HouseholdPage() {
       const householdRes = await fetch('/api/household/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(address)
+        body: JSON.stringify({ ...address, notes: notes || null })
       });
 
       if (householdRes.ok) {
         ok("Settings updated successfully!");
+        setInitialNotes(notes);
         fetchHousehold();
         notifyNavRefresh();
       } else {
@@ -315,7 +321,7 @@ export default function HouseholdPage() {
   // Address" button). The member add/edit forms, emergency-contact form, and the
   // receipts toggle all submit instantly with no pending state — intentionally
   // excluded so they never raise a spurious unsaved-changes prompt.
-  const isDirty = !shallowEqual({ ...initialAddress }, { ...address });
+  const isDirty = !shallowEqual({ ...initialAddress }, { ...address }) || notes !== initialNotes;
   useUnsavedGuard(isDirty);
 
   if (loading || authLoading) {
@@ -481,9 +487,17 @@ export default function HouseholdPage() {
                 <TextInput label="State" required maxLength={2} value={address.state ?? ""} error={addressErrors.state} onChange={(e) => { setAddress({ ...address, state: e.currentTarget.value }); setAddressErrors({ ...addressErrors, state: undefined }); }} placeholder="TX" />
                 <TextInput label="ZIP" required value={address.postalCode ?? ""} error={addressErrors.postalCode} onChange={(e) => { setAddress({ ...address, postalCode: e.currentTarget.value }); setAddressErrors({ ...addressErrors, postalCode: undefined }); }} placeholder="78701" />
               </SimpleGrid>
+              <Textarea
+                label="Anything else we should know?"
+                description="Optional — e.g. if your household is here to volunteer only, with no students enrolled."
+                autosize
+                minRows={2}
+                value={notes}
+                onChange={(e) => setNotes(e.currentTarget.value)}
+              />
             </Stack>
             <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="md">
-              Update Address
+              Save household details
             </Button>
           </Card>
         )}

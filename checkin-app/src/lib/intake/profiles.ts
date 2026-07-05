@@ -15,7 +15,7 @@
  * See docs/designs/auth-first-registration.md §9.3.
  */
 
-export type FieldKey = "address" | "emergencyContact" | "primaryName" | "participantDob";
+export type FieldKey = "address" | "emergencyContact" | "primaryName" | "participantDob" | "notes";
 
 export interface IntakeProfile {
     context: string;
@@ -69,19 +69,25 @@ const FIELD_RULES: Record<FieldKey, { label: string; isSatisfied: (ctx: IntakeSu
         // Only age-gated enrollees need a DOB; no age-gated enrollees → satisfied.
         isSatisfied: (ctx) => (ctx.participants ?? []).filter((p) => p.ageGated).every((p) => !!p.dob),
     },
+    // "Anything else we should know?" — always optional, never gates a submit, so
+    // it lives only in `shown`. Rule present to satisfy the FieldKey map.
+    notes: {
+        label: "anything else we should know",
+        isSatisfied: () => true,
+    },
 };
 
 export const INTAKE_PROFILES = {
     "membership-initial": {
         context: "membership-initial",
-        shown: ["address", "emergencyContact", "primaryName"],
+        shown: ["address", "emergencyContact", "primaryName", "notes"],
         requiredAtSubmit: ["address", "emergencyContact", "primaryName"],
     },
     "program-first-time": {
         context: "program-first-time",
         // Address is shown (collected if offered) but not required — a non-member
         // enrolling in one workshop is not a membership application.
-        shown: ["primaryName", "emergencyContact", "participantDob", "address"],
+        shown: ["primaryName", "emergencyContact", "participantDob", "address", "notes"],
         requiredAtSubmit: ["primaryName", "emergencyContact", "participantDob"],
     },
 } satisfies Record<string, IntakeProfile>;

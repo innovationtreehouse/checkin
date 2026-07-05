@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Alert, Button, Center, Checkbox, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Center, Checkbox, Loader, Stack, Text, Textarea, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
@@ -47,6 +47,7 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
   const [primaryDob, setPrimaryDob] = useState("");
   const [primaryOver25, setPrimaryOver25] = useState(false);
   const [primaryAllergies, setPrimaryAllergies] = useState("");
+  const [notes, setNotes] = useState("");
   const [children, setChildren] = useState<ChildForm[]>([]);
 
   const clearErr = (key: string) =>
@@ -71,6 +72,7 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
         setPrimaryDob(s.prefill?.primaryParent?.dob ?? "");
         setPrimaryOver25(!!s.prefill?.primaryParent?.over25);
         setPrimaryAllergies(s.prefill?.primaryParent?.allergies ?? "");
+        setNotes(h?.notes ?? "");
         setChildren(
           (s.prefill?.children ?? []).map((c: { id: number; name: string | null; dob: string | null; allergies: string | null }) => ({
             id: c.id,
@@ -145,7 +147,7 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          household: { ...address, emergencyContactName: emName, emergencyContactPhone: emPhone, emergencyContactEmail: emEmail },
+          household: { ...address, emergencyContactName: emName, emergencyContactPhone: emPhone, emergencyContactEmail: emEmail, notes: notes || null },
           // Adult's age is captured so a single-person household can enroll itself.
           // over25 wins when checked (declared adult, DOB cleared), matching my-household.
           primaryParent: { name: primaryName, dob: primaryOver25 ? null : primaryDob || null, over25: primaryOver25, allergies: primaryAllergies || null },
@@ -232,6 +234,17 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
       <section>
         <Title order={5} mb="sm">Home address (optional)</Title>
         <AddressForm address={address} onChange={setAddress} onErrorClear={() => {}} required={false} />
+      </section>
+
+      <section>
+        <Textarea
+          label="Anything else we should know?"
+          description="Optional — for example, if your household is here to volunteer only."
+          autosize
+          minRows={2}
+          value={notes}
+          onChange={(e) => setNotes(e.currentTarget.value)}
+        />
       </section>
 
       {error && <Alert color="red" variant="light">{error}</Alert>}
