@@ -29,7 +29,7 @@ export function SettingsTabs({ active }: { active: SettingsTab }) {
   const { data: session } = useSession();
   const isSysadmin = !!session?.user?.isSysadmin;
   const tabs = TABS.filter((t) => !t.sysadminOnly || isSysadmin);
-  // Red pill on Membership Settings when a required checkout setting is unset. Same
+  // Red pill on Membership Settings when a required membership setting is unset. Same
   // shared counts as the nav badge, so tab and nav can't diverge.
   const misconfig = settingsMisconfigBadge(useTodoCounts(!!session));
   return (

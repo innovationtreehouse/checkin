@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
+import { sendCheckinNotifications } from "@/lib/notifications";
 import { logBackendError, logger } from "@/lib/logger";
 import { config } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
@@ -122,6 +123,11 @@ export const DELETE = withAuth({}, async (req, auth) => {
         const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
         const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visit;
 
+        // Fire-and-forget: send check-out notifications (mirrors /api/scan)
+        sendCheckinNotifications(visit.personId, 'checkout').catch(err =>
+            logger.error('Checkout notification error:', err)
+        );
+
         return NextResponse.json({ success: true, visit: updatedVisit });
     } catch (error) {
         await logBackendError(error, "DELETE /api/attendance");
@@ -203,6 +209,11 @@ export const POST = withAuth({}, async (req, auth) => {
             if (result.alreadyCheckedIn) {
                 return apiError("User is already checked in", 400);
             }
+
+            // Fire-and-forget: send check-in notifications (mirrors /api/scan)
+            sendCheckinNotifications(participant.id, 'checkin').catch(err =>
+                logger.error('Checkin notification error:', err)
+            );
 
             return NextResponse.json({ success: true, visit: result.visit });
         }

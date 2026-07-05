@@ -332,7 +332,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                 rightSection={
                   badges.length > 0 ? (
                     <Group gap={4} wrap="nowrap">
-                      {badges.map((badge) => {
+                      {badges.map((badge, i) => {
                         // Green action + gray info badges go through the shared CountBadge
                         // (treehouseGreen/black and gray.2/gray-8 respectively). The gray solid
                         // fill is deliberate: on the dark purple sidebar a 'light' translucent
@@ -342,12 +342,12 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                         // sidebar, so the dark label is pinned explicitly.
                         const intent = badgeIntentFor(badge.color);
                         return intent ? (
-                          <CountBadge key={badge.color} intent={intent} aria-label={badge.label}>
+                          <CountBadge key={i} intent={intent} aria-label={badge.label}>
                             {badge.count}
                           </CountBadge>
                         ) : (
                           <Badge
-                            key={badge.color}
+                            key={i}
                             size="md"
                             color={badge.color}
                             variant="filled"

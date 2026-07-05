@@ -21,17 +21,19 @@ export function leadConflictCount(counts: TodoCounts | null): number {
 }
 
 /**
- * Red pill for unconfigured required Shopify-checkout board settings (the
- * membership variant ID and the volunteer discount code). Count is 1 or 2, or
- * null when both are set. Red (alert) — not green/gray — because until it's
- * fixed membership checkout is broken. Shown on the Settings nav item and the
- * Membership Settings sub-tab, both board/sysadmin-only (the people who can fix
- * it). Returns null off the admin surface (non-board viewers never see it).
+ * Red pill for unconfigured required membership board settings (the Shopify
+ * membership variant ID, the volunteer discount code, the background-check
+ * re-check interval, and the membership-year boundary). Count is 1–4, or null
+ * when all are set. Red (alert) — not green/gray — because until it's fixed
+ * membership checkout / renewals are broken. Shown on the Settings nav item and
+ * the Membership Settings sub-tab,
+ * both board/sysadmin-only (the people who can fix it). Returns null off the
+ * admin surface (non-board viewers never see it).
  */
 export function settingsMisconfigBadge(counts: TodoCounts | null): NavBadge | null {
   const n = counts?.admin?.settingsMisconfig ?? 0;
   return n > 0
-    ? { count: n, color: 'red', label: `${n} required checkout setting${n === 1 ? '' : 's'} not configured` }
+    ? { count: n, color: 'red', label: `${n} required membership setting${n === 1 ? '' : 's'} not configured` }
     : null;
 }
 

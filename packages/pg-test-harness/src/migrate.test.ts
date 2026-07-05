@@ -17,7 +17,7 @@ import { applyMigrations } from "./migrate.js";
 /** A fake `require` whose `.resolve` points at a prisma package.json and which returns the
  *  given `bin` field when asked for prisma/package.json. */
 function fakeRequire(binField: string | Record<string, string>) {
-  const req = ((_id: string) => ({ bin: binField })) as unknown as NodeJS.Require;
+  const req = (() => ({ bin: binField })) as unknown as NodeJS.Require;
   (req as unknown as { resolve: () => string }).resolve = () => "/repo/node_modules/prisma/package.json";
   return req;
 }
