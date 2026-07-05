@@ -1,0 +1,68 @@
+import { checkProgramAge, validateProgramAgeBounds, MAX_PROGRAM_AGE } from "@/lib/programAge";
+
+// as-of date pins calculateAge so the DOB cases don't drift with wall-clock time.
+const asOf = "2026-01-01";
+
+describe("checkProgramAge", () => {
+  it("passes anyone when the program has no age bounds", () => {
+    expect(checkProgramAge({ dateOfBirth: null }, { minAge: null, maxAge: null }).ok).toBe(true);
+  });
+
+  it("lets a declared over-25 adult into a '16 and up' program without a DOB", () => {
+    expect(
+      checkProgramAge({ dateOfBirth: null, isDeclaredAdult: true }, { minAge: 16, maxAge: null }).ok,
+    ).toBe(true);
+  });
+
+  it("blocks a declared adult from a youth program with a maximum age", () => {
+    const r = checkProgramAge({ dateOfBirth: null, isDeclaredAdult: true }, { minAge: 8, maxAge: 16 });
+    expect(r).toEqual({ ok: false, reason: "age", label: "Adult" });
+  });
+
+  it("blocks a declared adult when the minimum is above 25 (over-25 can't guarantee it)", () => {
+    const r = checkProgramAge({ dateOfBirth: null, isDeclaredAdult: true }, { minAge: 30, maxAge: null });
+    expect(r).toEqual({ ok: false, reason: "age", label: "Adult" });
+  });
+
+  it("treats a missing DOB with no adult flag as missing data", () => {
+    const r = checkProgramAge({ dateOfBirth: null }, { minAge: 16, maxAge: null });
+    expect(r).toEqual({ ok: false, reason: "dob", label: "DOB missing" });
+  });
+
+  it("enforces min/max against a real DOB", () => {
+    expect(checkProgramAge({ dateOfBirth: "2015-01-01" }, { minAge: 16, maxAge: null, asOf })).toEqual({
+      ok: false,
+      reason: "age",
+      label: "Too young",
+    });
+    expect(checkProgramAge({ dateOfBirth: "1990-01-01" }, { minAge: null, maxAge: 16, asOf })).toEqual({
+      ok: false,
+      reason: "age",
+      label: "Too old",
+    });
+    expect(checkProgramAge({ dateOfBirth: "2000-01-01" }, { minAge: 16, maxAge: 40, asOf }).ok).toBe(true);
+  });
+});
+
+describe("validateProgramAgeBounds", () => {
+  it("accepts null/undefined (optional bounds)", () => {
+    expect(validateProgramAgeBounds()).toBeNull();
+    expect(validateProgramAgeBounds(null, null)).toBeNull();
+  });
+
+  it("accepts a valid range within the 25 ceiling", () => {
+    expect(validateProgramAgeBounds(14, 18)).toBeNull();
+    expect(validateProgramAgeBounds(0, MAX_PROGRAM_AGE)).toBeNull();
+  });
+
+  it("rejects ages over 25 (the 'over 25' bucket, not a real age)", () => {
+    expect(validateProgramAgeBounds(26, null)).toBe("minAge cannot exceed 25");
+    expect(validateProgramAgeBounds(null, 26)).toBe("maxAge cannot exceed 25");
+  });
+
+  it("rejects negatives and inverted ranges", () => {
+    expect(validateProgramAgeBounds(-1, null)).toBe("minAge cannot be negative");
+    expect(validateProgramAgeBounds(null, -1)).toBe("maxAge cannot be negative");
+    expect(validateProgramAgeBounds(18, 14)).toBe("minAge cannot exceed maxAge");
+  });
+});
