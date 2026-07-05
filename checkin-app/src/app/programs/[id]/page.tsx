@@ -405,7 +405,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 // offline dev picker by env) BEFORE any intake, so account
                 // existence is resolved by NextAuth, never leaked by a public API
                 // response. First-time users are then filled in by the intake
-                // panel below rather than the anonymous register form.
+                // panel below.
                 <Button size="md" onClick={() => router.push(`/signin?callbackUrl=/programs/${program.id}`)} disabled={isClosed}>
                   {isClosed ? <>Enrollment Closed{closedSuffix}</> : "Sign in to enroll"}
                 </Button>
