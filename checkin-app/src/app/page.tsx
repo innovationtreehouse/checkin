@@ -39,7 +39,8 @@ export default function Home() {
 
   const [isLastKeyholder, setIsLastKeyholder] = useState(false);
   const [isTwoDeepViolation, setIsTwoDeepViolation] = useState(false);
-  const [isMember, setIsMember] = useState<boolean | null>(null);
+  // null = not loaded yet; once loaded, status/processStatus drive the join banner.
+  const [membership, setMembership] = useState<{ status: string | null; processStatus: string | null } | null>(null);
 
   const checkAttendanceStatus = useCallback(async () => {
     if (!session?.user) return;
@@ -84,14 +85,16 @@ export default function Home() {
   useEffect(() => {
     if (!session?.user) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsMember(null);
+      setMembership(null);
       return;
     }
     let cancelled = false;
     fetch('/api/membership')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!cancelled && data) setIsMember(data.membershipStatus === 'ACTIVE');
+        if (!cancelled && data) {
+          setMembership({ status: data.membershipStatus ?? null, processStatus: data.process?.status ?? null });
+        }
       })
       .catch(() => { /* non-blocking: leave banner hidden on error */ });
     return () => { cancelled = true; };
@@ -151,8 +154,10 @@ export default function Home() {
                 )}
               </Paper>
 
-              {/* Visitor call-to-action — only for non-members */}
-              {isMember === false && <JoinTreehouseBanner />}
+              {/* Visitor call-to-action — only for non-members; copy reflects in-flight state */}
+              {membership && membership.status !== 'ACTIVE' && (
+                <JoinTreehouseBanner processStatus={membership.processStatus} />
+              )}
 
               {/* In-app red-dot indicators (membership reviewer queue / blocked apps, …) */}
               <Notifications />
