@@ -358,6 +358,9 @@ export async function submitIntake(userId: number) {
     const primary = household.householdMembers.find((p) => p.id === userId);
     const missing = missingRequiredFields(INTAKE_PROFILES["membership-initial"], {
         addressLine1: household.line1,
+        addressCity: household.city,
+        addressState: household.state,
+        addressPostalCode: household.postalCode,
         emergencyContacts: household.emergencyContacts,
         primaryName: primary?.name,
     });

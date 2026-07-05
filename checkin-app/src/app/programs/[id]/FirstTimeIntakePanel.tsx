@@ -231,7 +231,7 @@ export default function FirstTimeIntakePanel({ ageGated, onSaved }: { ageGated: 
 
       <section>
         <Title order={5} mb="sm">Home address (optional)</Title>
-        <AddressForm address={address} onChange={setAddress} onErrorClear={() => {}} />
+        <AddressForm address={address} onChange={setAddress} onErrorClear={() => {}} required={false} />
       </section>
 
       {error && <Alert color="red" variant="light">{error}</Alert>}
