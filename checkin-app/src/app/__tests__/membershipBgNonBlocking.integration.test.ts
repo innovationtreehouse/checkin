@@ -192,7 +192,7 @@ describe('background check is non-blocking', () => {
         const { processId, orgMembershipId, householdId } = await makeApplicant('PENDING_EXTERNAL_ACTION', { lastBackgroundCheck: new Date() });
         // Reset the process to INTAKE with the household fully filled so submitIntake passes validation.
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
-        await prisma.household.update({ where: { id: householdId }, data: { line1: '123 Test St' } });
+        await prisma.household.update({ where: { id: householdId }, data: { line1: '123 Test St', city: 'Austin', state: 'TX', postalCode: '78701' } });
         await prisma.emergencyContact.create({ data: { householdId, name: 'Out Of House', phone: '555-555-1212', phoneDigits: '5555551212', priority: 0 } });
         const lead = await prisma.person.findFirst({ where: { householdId, householdLeads: { some: { householdId } } } });
 

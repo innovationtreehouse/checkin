@@ -518,9 +518,8 @@ describe("ProgramDetailsPage", () => {
     await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
 
     fireEvent.click(screen.getByRole("button", { name: /Download QR Code/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Public Registration Page/ }));
     fireEvent.click(screen.getByRole("button", { name: /Public Details Page/ }));
-    expect(window.open).toHaveBeenCalledTimes(2);
+    expect(window.open).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "← Back to Programs" }));
     expect(router.push).toHaveBeenCalledWith("/program-ops/programs");

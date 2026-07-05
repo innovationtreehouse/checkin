@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { isActiveOrgMember } from "@/lib/orgMembership";
+import { notifyNewProgramAnnounced } from "@/lib/notifications";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { validateProgramAgeBounds } from "@/lib/programAge";
@@ -72,7 +73,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     //
     // Staff (admin/board/lead/core-vol) or a member of an enrolled household see
     // the rows; everyone else (anonymous, plain authenticated non-enrolled) gets
-    // metadata + counts only. The public/register pages need spots-remaining
+    // metadata + counts only. The public details/enroll page needs spots-remaining
     // (_count.participants), not names — a count is fine, the names are the leak.
     // The registry orderedView tiers remain as defense-in-depth, stripping
     // pii/personal on the rows for non-staff-but-enrolled callers.
@@ -173,6 +174,14 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
                 newData: updatedProgram
             }
         });
+
+        // Announce only on the transition INTO (UPCOMING && OPEN) — not on every
+        // save while already there, and not when only one of the two is set.
+        const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
+        const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
+        if (!wasAnnounced && nowAnnounced) {
+            await notifyNewProgramAnnounced(updatedProgram.name);
+        }
 
         return NextResponse.json({ success: true, program: updatedProgram });
     } catch (error) {

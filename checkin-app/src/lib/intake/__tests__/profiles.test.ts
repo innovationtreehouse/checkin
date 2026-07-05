@@ -26,10 +26,22 @@ describe("intake profiles registry", () => {
     it("missingRequiredFields returns [] when membership-initial is satisfied", () => {
         const missing = missingRequiredFields(INTAKE_PROFILES["membership-initial"], {
             addressLine1: "1 Main St",
+            addressCity: "Austin",
+            addressState: "TX",
+            addressPostalCode: "78701",
             emergencyContacts: [{ conflictParticipantId: null, name: "Aunt May", phone: "555-2000" }],
             primaryName: "Primary",
         });
         expect(missing).toEqual([]);
+    });
+
+    it("membership-initial address requires city/state/ZIP, not just street", () => {
+        const missing = missingRequiredFields(INTAKE_PROFILES["membership-initial"], {
+            addressLine1: "1 Main St",
+            emergencyContacts: [{ conflictParticipantId: null, name: "Aunt May", phone: "555-2000" }],
+            primaryName: "Primary",
+        });
+        expect(missing.map((m) => m.field)).toEqual(["address"]);
     });
 
     it("program-first-time: age-gated enrollee without DOB fails participantDob; none age-gated passes", () => {

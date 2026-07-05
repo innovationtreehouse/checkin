@@ -2,7 +2,7 @@ import { navBadgeFor, tabBadgeFor, reviewBadges, settingsMisconfigBadge, program
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 
 const base: TodoCounts = {
-  member: { household: [], programs: [] },
+  member: { household: [], programs: [], programsAwaitingFinance: 0 },
   building: 0,
   buildingHousehold: 0,
   activePrograms: 0,
@@ -74,6 +74,29 @@ describe('My Programs badge count', () => {
   });
 });
 
+describe('My Activities program-payment badges', () => {
+  const todo = (id: number) => ({ key: `program-${id}`, label: `Complete enrollment for P${id}`, href: `/programs/${id}` });
+
+  it('no badge when nothing is owed', () => {
+    expect(navBadgeFor('/my-activities', base)).toEqual([]);
+  });
+
+  it('green for payments due, gray for plans awaiting finance', () => {
+    const counts: TodoCounts = { ...base, member: { household: [], programs: [todo(1), todo(2)], programsAwaitingFinance: 3 } };
+    expect(navBadgeFor('/my-activities', counts)).toEqual([
+      { count: 2, color: 'treehouseGreen', label: '2 program payments due' },
+      { count: 3, color: 'gray', label: '3 program payments awaiting finance approval' },
+    ]);
+  });
+
+  it('singularizes each label and hides each half independently at 0', () => {
+    expect(navBadgeFor('/my-activities', { ...base, member: { household: [], programs: [todo(1)], programsAwaitingFinance: 0 } }))
+      .toEqual([{ count: 1, color: 'treehouseGreen', label: '1 program payment due' }]);
+    expect(navBadgeFor('/my-activities', { ...base, member: { household: [], programs: [], programsAwaitingFinance: 1 } }))
+      .toEqual([{ count: 1, color: 'gray', label: '1 program payment awaiting finance approval' }]);
+  });
+});
+
 const admin = (over: Partial<NonNullable<TodoCounts['admin']>> = {}): TodoCounts => ({
   ...base,
   admin: {
@@ -115,12 +138,30 @@ describe('reviewBadges (Review tab + Membership Ops nav)', () => {
     ]);
   });
 
-  it('surfaces on the Membership Ops nav item alongside the board BLOCKED count', () => {
+  it('folds board queue + can-act-on into ONE green pill on the Membership Ops nav item', () => {
     const counts: TodoCounts = { ...admin({ membership: 2 }), review: { canActOn: 1, approvedAwaitingSecond: 0 } };
     expect(navBadgeFor('/membership-ops', counts)).toEqual([
-      { count: 2, color: 'treehouseGreen', label: 'Pending membership reviews' },
-      { count: 1, color: 'treehouseGreen', label: '1 background check you can review now' },
+      { count: 3, color: 'treehouseGreen', label: '2 pending membership reviews; 1 background check you can review now' },
     ]);
+  });
+
+  it('collapses to exactly one green + one gray, each summing its two parts', () => {
+    const counts: TodoCounts = {
+      ...admin({ membership: 2, applicationsTotal: 40 }),
+      review: { canActOn: 1, approvedAwaitingSecond: 3 },
+    };
+    expect(navBadgeFor('/membership-ops', counts)).toEqual([
+      { count: 3, color: 'treehouseGreen', label: '2 pending membership reviews; 1 background check you can review now' },
+      { count: 43, color: 'gray', label: '40 in-flight applications; 3 you approved awaiting a second reviewer' },
+    ]);
+  });
+
+  it('hides each pill independently when its parts sum to zero', () => {
+    // Only info counts present → green hidden, gray shown.
+    expect(navBadgeFor('/membership-ops', { ...admin({ applicationsTotal: 40 }), review: { canActOn: 0, approvedAwaitingSecond: 3 } }))
+      .toEqual([{ count: 43, color: 'gray', label: '40 in-flight applications; 3 you approved awaiting a second reviewer' }]);
+    // Nothing anywhere → no badges.
+    expect(navBadgeFor('/membership-ops', { ...admin(), review: { canActOn: 0, approvedAwaitingSecond: 0 } })).toEqual([]);
   });
 });
 

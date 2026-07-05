@@ -83,6 +83,16 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
   switch (href) {
     case '/my-household':
       return green(counts.member.household.length, `${counts.member.household.length} items need attention`);
+    case '/my-activities': {
+      // Green = program payments the household can pay now (actionable); gray =
+      // payment plans sent to finance, awaiting board approval (not actionable).
+      const due = counts.member.programs.length;
+      const finance = counts.member.programsAwaitingFinance;
+      return [
+        ...green(due, `${due} program payment${due === 1 ? '' : 's'} due`),
+        ...gray(finance, `${finance} program payment${finance === 1 ? '' : 's'} awaiting finance approval`),
+      ];
+    }
     case '/my-programs': {
       // Red conflicts first (left of green), then pending attendance the lead
       // must confirm — mirrors the Conflicts/Attendance subtab badges.
@@ -110,14 +120,26 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
       return b ? [b] : [];
     }
     case '/membership-ops': {
-      // Board's BLOCKED queue (green) plus the viewer's own background-check
-      // review counts — the Review tab lives under this nav item, so its badges
-      // surface here too. Gray mirrors the Applications tab's total in-flight count.
+      // The Review tab lives under this nav item, so its counts surface here
+      // too. Everything collapses into at most ONE green + ONE gray so the nav
+      // item never shows two same-color pills side by side. Green (actions you
+      // can take): board's BLOCKED membership queue + background checks you can
+      // review now. Gray (passive info): in-flight applications + reviews you
+      // approved awaiting a second reviewer. reviewBadges is NOT spread here —
+      // both its halves are folded in inline (its other caller, the Review tab,
+      // still wants them separate).
+      const membership = counts.admin ? counts.admin.membership : 0;
+      const canActOn = counts.review?.canActOn ?? 0;
+      const action = membership + canActOn;
+      const actionLabel = `${membership} pending membership review${plural(membership, '', 's')}; ${canActOn} background check${plural(canActOn, '', 's')} you can review now`;
+
       const apps = counts.admin ? counts.admin.applicationsTotal : 0;
+      const awaiting = counts.review?.approvedAwaitingSecond ?? 0;
+      const info = apps + awaiting;
+      const infoLabel = `${apps} in-flight application${plural(apps, '', 's')}; ${awaiting} you approved awaiting a second reviewer`;
       return [
-        ...green(counts.admin ? counts.admin.membership : 0, 'Pending membership reviews'),
-        ...gray(apps, `${apps} application${plural(apps, '', 's')}`),
-        ...reviewBadges(counts),
+        ...green(action, actionLabel),
+        ...gray(info, infoLabel),
       ];
     }
     case '/membership-audit': {
