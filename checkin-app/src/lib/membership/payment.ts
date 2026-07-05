@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
+import { openPersonBgForNewMember } from "@/lib/membership/personBgTriggers";
 import { config } from "@/lib/config";
 
 /**
@@ -57,7 +58,9 @@ export async function ensurePaymentLink(processId: number): Promise<{ amountCent
     if (!proc) throw new PaymentError("not_found", "Application not found.");
     if (proc.status !== "PENDING_PAYMENT") throw new PaymentError("wrong_phase", "This application is not awaiting payment.");
 
-    const membership = await prisma.orgMembership.findUnique({ where: { id: proc.orgMembershipId }, select: { isVolunteer: true } });
+    // orgMembershipId is non-null for any process in PENDING_PAYMENT (a PERSON_BG
+    // never enters payment); the guard above ensures we only reach here for those.
+    const membership = await prisma.orgMembership.findUnique({ where: { id: proc.orgMembershipId! }, select: { isVolunteer: true } });
     if (!membership) throw new PaymentError("not_found", "Membership not found.");
 
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
@@ -124,7 +127,9 @@ export async function activate(
         if (process.paidAt || process.status === "ACTIVE") {
             return { kind: "noop" as const };
         }
-        const membership = await tx.orgMembership.findUnique({ where: { id: process.orgMembershipId }, select: { householdId: true, isVolunteer: true } });
+        // orgMembershipId is non-null for a payable process (PERSON_BG never reaches
+        // activate — it has no checkout — and is filtered out by the status guards above).
+        const membership = await tx.orgMembership.findUnique({ where: { id: process.orgMembershipId! }, select: { householdId: true, isVolunteer: true } });
         if (!membership) throw new PaymentError("not_found", "Membership not found.");
 
         const now = new Date();
@@ -201,7 +206,7 @@ export async function activate(
             data: { paidAt: now, stageEnteredAt: now, ...payMeta, status: activating ? "ACTIVE" : "PENDING_BG_CLEARANCE" },
         });
         if (activating) {
-            await tx.orgMembership.update({ where: { id: process.orgMembershipId }, data: { status: "ACTIVE" } });
+            await tx.orgMembership.update({ where: { id: process.orgMembershipId! }, data: { status: "ACTIVE" } });
         }
         await tx.auditLog.create({
             data: {
@@ -213,12 +218,19 @@ export async function activate(
                 newData: activating ? { status: "ACTIVE", via: opts.via } : { status: "PENDING_BG_CLEARANCE", via: opts.via, paid: true },
             },
         });
-        return activating ? { kind: "active" as const, householdId: membership.householdId } : { kind: "held" as const };
+        return activating
+            ? { kind: "active" as const, householdId: membership.householdId, isInitial: process.kind === "INITIAL" }
+            : { kind: "held" as const };
     });
 
     // Side effects outside the transaction: a slow/failed send must not roll back
     // the write, and only the call that actually recorded the change emits one.
-    if (result.kind === "active") await sendCongrats(result.householdId);
+    if (result.kind === "active") {
+        await sendCongrats(result.householdId);
+        // Trigger C: a brand-new (INITIAL) member just activated (bg cleared before
+        // payment landed) — open PERSON_BG for the household's program-attached adults.
+        if (result.isInitial) await openPersonBgForNewMember(result.householdId, new Date());
+    }
     if (result.kind === "paid_while_blocked" || result.kind === "underpaid") await notifyBoardPaidReject(processId);
     return prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
 }
