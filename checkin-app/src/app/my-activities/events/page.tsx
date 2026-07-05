@@ -80,11 +80,17 @@ export default function ParticipantEventsDashboard() {
     ));
 
     try {
-      await fetch(`/api/events/${eventId}/rsvp`, {
+      const res = await fetch(`/api/events/${eventId}/rsvp`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus, participantId })
       });
+      if (!res.ok) {
+        // Non-OK doesn't throw — revert the optimistic update and surface the error.
+        const data = await res.json().catch(() => ({}));
+        fetchEvents();
+        notifications.show({ color: "red", message: data.error || "Failed to update RSVP.", autoClose: false });
+      }
     } catch {
       // Revert on failure by refetching
       fetchEvents();
