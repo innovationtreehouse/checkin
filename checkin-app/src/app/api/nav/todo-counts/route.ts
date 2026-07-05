@@ -395,15 +395,20 @@ export const GET = withAuth({}, async (_req, auth) => {
                     },
                 },
             }),
-            // Required Shopify-checkout settings — count how many are still unset so the
-            // board sees a red pill until both are configured. Empty string counts as unset.
+            // Required membership settings — count how many are still unset so the board
+            // sees a red pill until all are configured. Empty string counts as unset for
+            // the Shopify fields; bgRecheckMonths <= 0 means the re-check interval is unset;
+            // a null orgMembershipYearBoundary means the renewal cycle has no anchor date.
             prisma.boardSettings.findUnique({
                 where: { id: 1 },
-                select: { orgMembershipVariantId: true, volunteerDiscountCode: true },
+                select: { orgMembershipVariantId: true, volunteerDiscountCode: true, bgRecheckMonths: true, orgMembershipYearBoundary: true },
             }),
         ]);
         const settingsMisconfig =
-            (boardSettings?.orgMembershipVariantId ? 0 : 1) + (boardSettings?.volunteerDiscountCode ? 0 : 1);
+            (boardSettings?.orgMembershipVariantId ? 0 : 1) +
+            (boardSettings?.volunteerDiscountCode ? 0 : 1) +
+            ((boardSettings?.bgRecheckMonths ?? 0) > 0 ? 0 : 1) +
+            (boardSettings?.orgMembershipYearBoundary ? 0 : 1);
         result.admin = { membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, settingsMisconfig };
         // System-config health (env-var/deploy gaps). Synchronous, no DB — just presence
         // checks. Same admin+board gate as the rest of this block.

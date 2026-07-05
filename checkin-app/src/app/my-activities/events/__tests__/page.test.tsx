@@ -30,4 +30,19 @@ describe("ParticipantEventsDashboard", () => {
         renderWithProviders(<ParticipantEventsDashboard />);
         expect(await screen.findByText("No Upcoming Events")).toBeInTheDocument();
     });
+
+    it("tags events where the member volunteers", async () => {
+        setSession({ id: 1 });
+        mockFetchJson({
+            "/api/events/mine": [
+                { id: 10, name: "Robotics Meet", description: null, startAt: "2026-07-10T18:00:00.000Z", endAt: "2026-07-10T20:00:00.000Z", program: { name: "Robotics Club" }, participant: { id: 100, name: "Kid One" }, rsvp: null, isVolunteer: true },
+                { id: 11, name: "Chess Night", description: null, startAt: "2026-07-11T18:00:00.000Z", endAt: "2026-07-11T20:00:00.000Z", program: { name: "Chess Club" }, participant: { id: 100, name: "Kid One" }, rsvp: null, isVolunteer: false },
+            ],
+        });
+        renderWithProviders(<ParticipantEventsDashboard />);
+
+        expect(await screen.findByText("Robotics Meet")).toBeInTheDocument();
+        // One badge, on the volunteered event only.
+        expect(screen.getAllByText("Volunteer")).toHaveLength(1);
+    });
 });

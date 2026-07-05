@@ -41,7 +41,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
     });
 
     // Fire-and-forget: send check-in notifications
-    sendCheckinNotifications(participant.id, 'checkin').catch(err =>
+    sendCheckinNotifications(participant.id, 'checkin', 'SCANNER').catch(err =>
         console.error('Checkin notification error:', err)
     );
 
@@ -131,6 +131,11 @@ export async function processCheckout(
 
     const finalVisits = await processVisitCheckout(activeVisitId, new Date(), db, "SCANNER");
     const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : null;
+
+    // Fire-and-forget: send check-out notifications (mirrors processCheckin)
+    sendCheckinNotifications(participant.id, 'checkout').catch(err =>
+        console.error('Checkout notification error:', err)
+    );
 
     return apiJson({
         message: facilityClosed ? "Checked out and Facility closed" : "Checked out successfully",
