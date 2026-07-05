@@ -291,8 +291,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
                   <TextInput type="date" label="Start Date" value={startAt} onChange={e => setStartAt(e.currentTarget.value)} />
                   <TextInput type="date" label="End Date" value={endAt} onChange={e => setEndAt(e.currentTarget.value)} />
-                  <NumberInput label="Minimum Age (Optional)" value={minAge} onChange={v => setMinAge(String(v))} min={0} placeholder="e.g. 14" />
-                  <NumberInput label="Maximum Age (Optional)" value={maxAge} onChange={v => setMaxAge(String(v))} min={0} placeholder="e.g. 18" />
+                  <NumberInput label="Minimum Age (Optional)" value={minAge} onChange={v => setMinAge(String(v))} min={0} max={25} placeholder="e.g. 14" />
+                  <NumberInput label="Maximum Age (Optional)" value={maxAge} onChange={v => setMaxAge(String(v))} min={0} max={25} placeholder="e.g. 18" />
                 </SimpleGrid>
 
                 <div>
