@@ -16,12 +16,19 @@ import { withAuroraResumeRetry } from "@/lib/auroraResumeRetry";
 // Stable id for the dev/local persona-mint credential flow.
 export const PERSONA_MINT_PROVIDER_ID = "persona-mint";
 
-// NextAuth PrismaAdapter hardcodes `prisma.user` for its user operations.
-// We map `.user` to `.participant` so the adapter can find our custom model.
-const prismaAdapterCore = prisma as unknown as Record<string, unknown> & { participant: unknown };
+// NextAuth PrismaAdapter hardcodes `prisma.user` for its user operations, so
+// alias `.user` to our Person model. `prisma.person` below MUST stay a plain,
+// type-checked property access — never hide the model name behind an `as`
+// cast. The Participant→Person rename (#708) missed this mapping precisely
+// because a cast (`as ... & { participant: unknown }`) kept tsc green with a
+// stale name, and no test tier can reach it: the adapter's user methods run
+// ONLY inside the real Google OAuth callback (persona-mint/credentials
+// sign-in bypasses the adapter entirely), so every Google sign-in crashed on
+// the dev instance while CI passed. The compiler plus
+// auth-options-adapter.test.ts are the guards — keep both intact.
 const prismaAdapterClient = {
-    ...prismaAdapterCore,
-    user: prismaAdapterCore.participant,
+    ...(prisma as unknown as Record<string, unknown>),
+    user: prisma.person,
 };
 
 // Every participant must belong to a household (Participant.householdId is
