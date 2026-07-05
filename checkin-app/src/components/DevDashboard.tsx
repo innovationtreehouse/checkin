@@ -269,7 +269,7 @@ export default function DevDashboard() {
                                 🔓 Logged out
                             </button>
                         </div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", maxHeight: "9.5rem", overflowY: "auto" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", maxHeight: "15rem", overflowY: "auto" }}>
                             {personas.length === 0 && (
                                 <span style={{ fontSize: "0.78rem", color: "#9ca3af" }}>
                                     No personas yet — run the + Family macro or the seed.
@@ -282,14 +282,23 @@ export default function DevDashboard() {
                                     disabled={switching}
                                     style={{
                                         ...macroBtn(switching),
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "flex-start",
+                                        gap: "0.1rem",
                                         textAlign: "left",
-                                        whiteSpace: "nowrap",
                                         overflow: "hidden",
-                                        textOverflow: "ellipsis",
                                     }}
                                     title={p.email}
                                 >
-                                    🎭 {p.name || p.email}
+                                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+                                        🎭 {p.name || p.email}
+                                    </span>
+                                    {p.name && p.email && (
+                                        <span style={{ fontSize: "0.68rem", color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+                                            {p.email}
+                                        </span>
+                                    )}
                                 </button>
                             ))}
                         </div>
