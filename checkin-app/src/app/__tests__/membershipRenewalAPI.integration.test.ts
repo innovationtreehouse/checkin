@@ -30,13 +30,13 @@ describe('Membership renewal', () => {
     // process this test opened (including renewals on other suites' memberships).
     let preMaxProcessId = 0;
 
-    async function makeActiveMembership(label: string, parentBg: Date | null) {
+    async function makeActiveMembership(label: string, parentBg: Date | null, leadEmail?: string) {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
         // The guardian is a household lead (drives the 3-yr BG-freshness check).
-        const parent = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id, lastBackgroundCheck: parentBg ?? undefined } });
+        const parent = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id, email: leadEmail, lastBackgroundCheck: parentBg ?? undefined } });
         await prisma.householdLead.create({ data: { householdId: hh.id, personId: parent.id } });
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
-        return { householdId: hh.id, orgMembershipId: m.id };
+        return { householdId: hh.id, orgMembershipId: m.id, leadEmail };
     }
 
     async function wipe() {
@@ -104,14 +104,22 @@ describe('Membership renewal', () => {
 
     it('opens a PENDING_RENEWAL process within the window, once', async () => {
         await setBoundary(new Date(Date.UTC(2000, 7, 1))); // Aug 1
-        const m = await makeActiveMembership('Due', null);
+        const m = await makeActiveMembership('Due', null, `due-lead-${TAG}@example.com`);
         const now = new Date(Date.UTC(2026, 6, 1)); // Jul 1 — within 2 months before Aug 1
+
+        // sendEmail is mocked (top of file), so the reminder is recorded on the spy,
+        // not devSentEmail. Clear it so the assertion sees only this scenario's sweep.
+        const { sendEmail } = jest.requireMock('@/lib/email') as { sendEmail: jest.Mock };
+        sendEmail.mockClear();
 
         const first = await runRenewalSweep(now);
         expect(first.opened).toBeGreaterThanOrEqual(1);
         const proc = await prisma.orgMembershipProcess.findFirst({ where: { orgMembershipId: m.orgMembershipId } });
         expect(proc?.status).toBe('PENDING_RENEWAL');
         expect(proc?.kind).toBe('RENEWAL');
+
+        // Opening the renewal also reminds the household lead by email.
+        expect(sendEmail).toHaveBeenCalledWith(m.leadEmail, 'Time to renew your Treehouse membership', expect.any(String));
 
         const second = await runRenewalSweep(now);
         const count = await prisma.orgMembershipProcess.count({ where: { orgMembershipId: m.orgMembershipId } });
