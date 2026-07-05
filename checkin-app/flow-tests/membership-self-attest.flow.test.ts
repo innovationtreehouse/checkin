@@ -36,7 +36,7 @@ describe("flow: applicant self-attests background-check consent (#875)", () => {
         const save = await api(applicant, "/api/membership/intake", {
             method: "PATCH",
             body: JSON.stringify({
-                household: { address: "123 Maker Lane", emergencyContactName: "Pat Outside", emergencyContactPhone: "555-987-6543" },
+                household: { line1: "123 Maker Lane", city: "Austin", state: "TX", postalCode: "78701", emergencyContactName: "Pat Outside", emergencyContactPhone: "555-987-6543" },
                 primaryParent: { name: "Parent Family" },
             }),
         });
