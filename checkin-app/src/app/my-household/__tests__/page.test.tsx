@@ -111,7 +111,7 @@ describe("HouseholdPage", () => {
     renderWithProviders(<HouseholdPage />);
     await screen.findByRole("heading", { name: "Smith Household", level: 1 });
 
-    fireEvent.click(screen.getByRole("button", { name: "Update Address" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save household details" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -469,12 +469,12 @@ describe("HouseholdPage", () => {
 
     // Address settings: client validation error, then server failure, then network error.
     fireEvent.change(screen.getByLabelText(/Street Address/), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update Address" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save household details" }));
     expect(await screen.findByText("Street address is required.")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/Street Address/), { target: { value: "123 Main St" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update Address" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save household details" }));
     expect(await screen.findByText("Failed to update some settings.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Update Address" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save household details" }));
     await waitFor(() => expectToast("Network error saving settings."));
 
     // Emergency contact add: network error.

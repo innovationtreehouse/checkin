@@ -12,11 +12,12 @@
  * external actions (which puts the application into the parallel BG-review
  * track), then GET /api/membership/reviews returns the note on that row.
  *
- * Assumes a freshly-seeded DB. Uses parent.family (household1) as the applicant
- * — disjoint from the bg-nonblocking flow test, which drives parent.family2
- * (household2) — so the two suites don't collide on the shared seeded DB.
- * boardmember is a sysadmin+board account: it both records the external actions
- * and, as an implicit reviewer of another household, reads the queue.
+ * Assumes a freshly-seeded DB. Uses parent.family3 (household3), a non-member
+ * household seeded specifically so this suite's applicant is disjoint from the
+ * other membership flow tests (parent.family / parent.family2) on the shared
+ * serial DB. boardmember is a sysadmin+board account: it both records the
+ * external actions and, as an implicit reviewer of another household, reads the
+ * queue.
  */
 
 import { loginAs, api } from "./helpers";
@@ -29,8 +30,8 @@ type Reviews = { queue: QueueRow[] };
 
 describe("flow: intake notes surface to the BG-review queue", () => {
     it("applicant's intake note comes back in GET /api/membership/reviews", async () => {
-        const applicant = await loginAs("parent.family@example.com"); // non-member household1 lead
-        const reviewer = await loginAs("boardmember@example.com");     // sysadmin + board = implicit reviewer
+        const applicant = await loginAs("parent.family3@example.com"); // dedicated non-member household3 lead
+        const reviewer = await loginAs("boardmember@example.com");      // sysadmin + board = implicit reviewer
 
         const start = await api(applicant, "/api/membership", { method: "POST" });
         expect([200, 201]).toContain(start.status);
@@ -39,8 +40,8 @@ describe("flow: intake notes surface to the BG-review queue", () => {
         const save = await api(applicant, "/api/membership/intake", {
             method: "PATCH",
             body: JSON.stringify({
-                household: { line1: "123 Maker Lane", city: "Austin", state: "TX", postalCode: "78701", emergencyContactName: "Pat Outside", emergencyContactPhone: "555-987-6543", notes: NOTE },
-                primaryParent: { name: "Parent Family" },
+                household: { line1: "789 Volunteer Way", city: "Austin", state: "TX", postalCode: "78701", emergencyContactName: "Pat Outside", emergencyContactPhone: "555-987-6543", notes: NOTE },
+                primaryParent: { name: "Parent Family3" },
             }),
         });
         expect(save.status).toBe(200);
