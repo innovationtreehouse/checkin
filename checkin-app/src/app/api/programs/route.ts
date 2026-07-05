@@ -7,6 +7,7 @@ import { logBackendError, logger } from "@/lib/logger";
 import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
+import { validateProgramAgeBounds } from "@/lib/programAge";
 
 // GET is the PUBLIC program catalog — anonymous callers legitimately get the
 // non-draft, non-orgMemberOnly list (asserted by programsAPI.integration.test.ts),
@@ -107,6 +108,11 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
         if (!leadMentorId) {
             return apiError("Lead Mentor is required", 400);
+        }
+
+        const ageErr = validateProgramAgeBounds(minAge, maxAge);
+        if (ageErr) {
+            return apiError(ageErr, 400);
         }
 
         // Client sends a raw dollar string; tolerate a number too. Convert to cents here.

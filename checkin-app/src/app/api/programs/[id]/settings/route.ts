@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { validateProgramAgeBounds } from "@/lib/programAge";
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -46,17 +47,12 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         } = body;
 
         // Age range sanity. Use effective values (body overrides current) so a
-        // one-sided edit can't leave minAge > maxAge.
+        // one-sided edit can't leave minAge > maxAge or exceed the 25+ ceiling.
         const effMinAge = minAge !== undefined ? minAge : currentProgram.minAge;
         const effMaxAge = maxAge !== undefined ? maxAge : currentProgram.maxAge;
-        if (minAge != null && minAge < 0) {
-            return apiError("minAge cannot be negative", 400);
-        }
-        if (maxAge != null && maxAge < 0) {
-            return apiError("maxAge cannot be negative", 400);
-        }
-        if (effMinAge != null && effMaxAge != null && effMinAge > effMaxAge) {
-            return apiError("minAge cannot exceed maxAge", 400);
+        const ageErr = validateProgramAgeBounds(effMinAge, effMaxAge);
+        if (ageErr) {
+            return apiError(ageErr, 400);
         }
 
         // maxParticipants: null = uncapped (allowed). Otherwise must be a

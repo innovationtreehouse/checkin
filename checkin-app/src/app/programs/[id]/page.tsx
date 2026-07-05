@@ -5,7 +5,8 @@ import { signIn, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Anchor, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { formatDate, calculateAge } from '@/lib/time';
+import { formatDate } from '@/lib/time';
+import { checkProgramAge } from '@/lib/programAge';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { aggregateEnrollOutcomes, buildShopifyCheckoutUrl, type EnrollOutcome } from './enroll';
@@ -86,17 +87,11 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   // returned a confusing "Date of Birth is missing" for over-25 adults).
   const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'age' | 'dob' | null; label: string } => {
     if ((program?.participants ?? []).some(p => p.personId === member.id)) return { reason: 'enrolled', label: 'Already Enrolled' };
-    if (program && (program.minAge !== null || program.maxAge !== null)) {
-      if (!member.dateOfBirth) {
-        // A declared over-25 adult is simply outside a child age range — not a
-        // missing-data problem the household needs to fix.
-        return member.isDeclaredAdult ? { reason: 'age', label: 'Adult' } : { reason: 'dob', label: 'DOB missing' };
-      }
-      const age = calculateAge(member.dateOfBirth, program.startAt ?? undefined);
-      if (program.minAge !== null && age < program.minAge) return { reason: 'age', label: 'Too young' };
-      if (program.maxAge !== null && age > program.maxAge) return { reason: 'age', label: 'Too old' };
-    }
-    return { reason: null, label: '' };
+    if (!program) return { reason: null, label: '' };
+    // Same eligibility rule as the enroll route: a declared over-25 adult clears
+    // a youth minimum like "16 and up" without a DOB on file.
+    const check = checkProgramAge(member, { minAge: program.minAge, maxAge: program.maxAge, asOf: program.startAt ?? undefined });
+    return check.ok ? { reason: null, label: '' } : { reason: check.reason, label: check.label };
   };
 
   // Load the caller's household into the member-select, and decide whether they

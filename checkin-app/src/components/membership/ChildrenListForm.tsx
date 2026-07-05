@@ -16,6 +16,12 @@ export default function ChildrenListForm({
   onUpdate,
   onRemove,
   hideEmail = false,
+  // Copy overrides — membership intake lists a family's children, but program
+  // intake lists any household member (a spouse, an adult enrolling themselves).
+  titleText = "Children",
+  addText = "+ Add child",
+  emptyText = "No children added yet.",
+  itemLabel = "Child",
 }: {
   items: ChildForm[];
   onAdd: () => void;
@@ -24,19 +30,23 @@ export default function ChildrenListForm({
   // Program-first-time intake collects a child's email later (on the household
   // screen), so it hides the email input here; membership intake keeps it.
   hideEmail?: boolean;
+  titleText?: string;
+  addText?: string;
+  emptyText?: string;
+  itemLabel?: string;
 }) {
   return (
     <section>
       <Group justify="space-between" align="center" mb="sm">
-        <Title order={2}>Children</Title>
-        <Button variant="light" size="xs" fz={15} onClick={onAdd}>+ Add child</Button>
+        <Title order={2}>{titleText}</Title>
+        <Button variant="light" size="xs" fz={15} onClick={onAdd}>{addText}</Button>
       </Group>
-      {items.length === 0 && <Text c="dimmed">No children added yet.</Text>}
+      {items.length === 0 && <Text c="dimmed">{emptyText}</Text>}
       <Stack>
         {items.map((child, i) => (
           <Card key={child.id ?? `new-${i}`} withBorder radius="md" padding="md">
             <Group justify="space-between" align="center" mb="xs">
-              <Text fw={600}>Child {i + 1}</Text>
+              <Text fw={600}>{itemLabel} {i + 1}</Text>
               <Button variant="subtle" color="red" size="compact-sm" onClick={() => onRemove(i)}>Remove</Button>
             </Group>
             <TextInput label="Full name" value={child.name} onChange={(e) => onUpdate(i, "name", e.currentTarget.value)} />
