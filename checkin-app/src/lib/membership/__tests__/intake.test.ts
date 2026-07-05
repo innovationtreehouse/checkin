@@ -343,6 +343,9 @@ describe('submitIntake', () => {
         household: {
             id: 7,
             line1: '1 Main St',
+            city: 'Austin',
+            state: 'TX',
+            postalCode: '78701',
             emergencyContacts: [{ conflictParticipantId: null, name: 'Aunt May', phone: '555-555-2000' }],
             householdMembers: [{ id: 1, name: 'Primary' }],
             orgMembership: { processes: [{ id: 11, kind: 'INITIAL', status: 'INTAKE' }] },

@@ -78,6 +78,9 @@ describe("membership page", () => {
     await screen.findByText("Your household");
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
+    fireEvent.change(screen.getByLabelText("City", { exact: false }), { target: { value: "Austin" } });
+    fireEvent.change(screen.getByLabelText("State", { exact: false }), { target: { value: "TX" } });
+    fireEvent.change(screen.getByLabelText("ZIP", { exact: false }), { target: { value: "78701" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
@@ -101,6 +104,9 @@ describe("membership page", () => {
     await screen.findByText("Your household");
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
+    fireEvent.change(screen.getByLabelText("City", { exact: false }), { target: { value: "Austin" } });
+    fireEvent.change(screen.getByLabelText("State", { exact: false }), { target: { value: "TX" } });
+    fireEvent.change(screen.getByLabelText("ZIP", { exact: false }), { target: { value: "78701" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
@@ -511,6 +517,9 @@ describe("membership page", () => {
 
     expect(await screen.findByText("Please complete the highlighted fields.")).toBeInTheDocument();
     expect(screen.getByText("Home address is required.")).toBeInTheDocument();
+    expect(screen.getByText("City is required.")).toBeInTheDocument();
+    expect(screen.getByText("State is required.")).toBeInTheDocument();
+    expect(screen.getByText("ZIP is required.")).toBeInTheDocument();
     expect(screen.getByText("Emergency contact name is required.")).toBeInTheDocument();
     expect(screen.getByText("Emergency contact phone is required.")).toBeInTheDocument();
     expect(screen.getByText("Your name is required.")).toBeInTheDocument();
@@ -563,6 +572,9 @@ describe("membership page", () => {
     await screen.findByText("Your household");
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
+    fireEvent.change(screen.getByLabelText("City", { exact: false }), { target: { value: "Austin" } });
+    fireEvent.change(screen.getByLabelText("State", { exact: false }), { target: { value: "TX" } });
+    fireEvent.change(screen.getByLabelText("ZIP", { exact: false }), { target: { value: "78701" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
@@ -591,6 +603,9 @@ describe("membership page", () => {
     await screen.findByText("Your household");
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
+    fireEvent.change(screen.getByLabelText("City", { exact: false }), { target: { value: "Austin" } });
+    fireEvent.change(screen.getByLabelText("State", { exact: false }), { target: { value: "TX" } });
+    fireEvent.change(screen.getByLabelText("ZIP", { exact: false }), { target: { value: "78701" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
@@ -615,6 +630,9 @@ describe("membership page", () => {
     await screen.findByText("Your household");
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
+    fireEvent.change(screen.getByLabelText("City", { exact: false }), { target: { value: "Austin" } });
+    fireEvent.change(screen.getByLabelText("State", { exact: false }), { target: { value: "TX" } });
+    fireEvent.change(screen.getByLabelText("ZIP", { exact: false }), { target: { value: "78701" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
     fireEvent.change(screen.getByLabelText("Full name", { exact: false }), { target: { value: "Pat Parent" } });
@@ -700,8 +718,8 @@ describe("membership page", () => {
 
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
     fireEvent.change(screen.getByPlaceholderText("Apt 4B"), { target: { value: "Unit 2" } });
-    fireEvent.change(screen.getByLabelText("City"), { target: { value: "Austin" } });
-    fireEvent.change(screen.getByLabelText("State"), { target: { value: "TX" } });
+    fireEvent.change(screen.getByLabelText("City", { exact: false }), { target: { value: "Austin" } });
+    fireEvent.change(screen.getByLabelText("State", { exact: false }), { target: { value: "TX" } });
     fireEvent.change(screen.getByPlaceholderText("78701"), { target: { value: "78701" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt Jo" } });
     fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "512-555-1234" } });
