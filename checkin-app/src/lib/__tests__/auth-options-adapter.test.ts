@@ -2,22 +2,26 @@
  * @jest-environment node
  */
 /**
- * Regression guard for the NextAuth PrismaAdapter ↔ Person-model mapping in
- * auth-options.ts (the `user: prisma.person` shim).
+ * Regression guard for the NextAuth adapter's Int↔string id boundary in
+ * auth-options.ts.
  *
- * Why this exists: the Participant→Person rename (#708) missed that mapping —
- * it was hidden behind an `as` cast, so tsc stayed green — and every Google
- * sign-in on the dev instance crashed in the OAuth callback with
- * `Cannot read properties of undefined (reading 'findUnique')` in
- * getUserByEmail. No test tier caught it, because the adapter's user methods
- * run ONLY inside the real Google OAuth callback: persona-mint/credentials
- * sign-in (what flow tests use via loginAs) never touches the adapter, and
- * the global prisma mock in jest.setup.js is a permissive proxy that resolves
- * ANY model name, so even importing auth-options can't surface a stale name.
+ * Why this exists: the adapter's user/account methods run ONLY inside the real
+ * Google OAuth callback — persona-mint/credentials sign-in (what flow tests use
+ * via loginAs) never touches the adapter, and the global prisma mock in
+ * jest.setup.js resolves ANY model name — so no other tier reaches this code.
+ * Two bugs have shipped here as a result:
+ *   - #708 (Participant→Person rename) missed the model map behind an `as` cast;
+ *     getUserByEmail crashed with `undefined ... findUnique`.
+ *   - createUser returned a string id that then crashed linkAccount writing it
+ *     into Account.userId (Int) — `Expected Int, provided String` — on every
+ *     first Google sign-in, while CI stayed green.
  *
- * This suite therefore (a) mocks prisma with ONLY the real model names and
- * (b) actually CALLS the adapter methods — PrismaAdapter's closures are lazy,
- * so a stale mapping only explodes on invocation, exactly as in production.
+ * The boundary is now unified: every user/account method converts ids through
+ * toAdapterUser (Int→string out) / toDbId (string→Int in). This suite (a) mocks
+ * prisma with ONLY the real model names and (b) actually CALLS the adapter
+ * methods (their closures are lazy — a stale map or missed coercion only
+ * explodes on invocation, exactly as in production), asserting BOTH directions
+ * for every method that crosses the boundary.
  */
 
 import prisma from '@/lib/prisma';
@@ -48,7 +52,8 @@ jest.mock('@/lib/config', () => {
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        person: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+        person: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), delete: jest.fn() },
+        account: { findUnique: jest.fn(), create: jest.fn() },
         household: { create: jest.fn() },
         $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prismaMockTx)),
     },
@@ -71,10 +76,16 @@ const mockPersonFindUnique = (prisma as unknown as { person: { findUnique: jest.
 
 // Adapter methods are typed optional on Adapter; the shim always provides these.
 const adapter = authOptions.adapter as unknown as {
-    getUserByEmail: (email: string) => Promise<unknown>;
-    getUser: (id: string) => Promise<unknown>;
+    getUserByEmail: (email: string) => Promise<{ id: string; email: string } | null>;
+    getUserByAccount: (key: { provider: string; providerAccountId: string }) => Promise<{ id: string; email: string } | null>;
+    getUser: (id: string) => Promise<{ id: string; email: string } | null>;
     createUser: (user: Record<string, unknown>) => Promise<{ id: string; email: string }>;
+    updateUser: (user: { id: string; name?: string | null }) => Promise<{ id: string; email: string }>;
+    linkAccount: (account: Record<string, unknown>) => Promise<unknown>;
 };
+
+const mockAccount = (prisma as unknown as { account: { findUnique: jest.Mock; create: jest.Mock } }).account;
+const mockPersonUpdate = (prisma as unknown as { person: { update: jest.Mock } }).person.update;
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -118,5 +129,50 @@ describe('PrismaAdapter user-model shim (auth-options.ts)', () => {
         );
         expect(addHouseholdLead).toHaveBeenCalled();
         expect(created).toEqual(expect.objectContaining({ id: '7', email: 'new@example.com' }));
+    });
+
+    test('getUserByEmail returns a string id (Int→string on the way out)', async () => {
+        mockPersonFindUnique.mockResolvedValue({ id: 55, email: 'q@example.com' });
+        const user = await adapter.getUserByEmail('q@example.com');
+        expect(user).toEqual(expect.objectContaining({ id: '55', email: 'q@example.com' }));
+    });
+
+    test('getUserByAccount resolves the account→person and stringifies the id', async () => {
+        mockAccount.findUnique.mockResolvedValue({ user: { id: 88, email: 'acct@example.com' } });
+        const user = await adapter.getUserByAccount({ provider: 'google', providerAccountId: '114917684045724477868' });
+        expect(mockAccount.findUnique).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { provider_providerAccountId: { provider: 'google', providerAccountId: '114917684045724477868' } },
+            }),
+        );
+        expect(user).toEqual(expect.objectContaining({ id: '88', email: 'acct@example.com' }));
+    });
+
+    // The bug from the checkin-dev logs: base linkAccount wrote the string userId
+    // straight into Account.userId (Int) → `Expected Int, provided String`.
+    test('linkAccount coerces the string userId to Int before prisma.account.create', async () => {
+        mockAccount.create.mockResolvedValue({});
+        await adapter.linkAccount({
+            userId: '298',
+            type: 'oauth',
+            provider: 'google',
+            providerAccountId: '114917684045724477868',
+            access_token: 'tok',
+            scope: 'openid email',
+        });
+        expect(mockAccount.create).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ userId: 298, provider: 'google' }) }),
+        );
+        // The id landing in the Int column must be a number, not the string "298".
+        expect(typeof mockAccount.create.mock.calls[0][0].data.userId).toBe('number');
+    });
+
+    test('updateUser converts the string id to Int for the where clause', async () => {
+        mockPersonUpdate.mockResolvedValue({ id: 12, email: 'u@example.com' });
+        const user = await adapter.updateUser({ id: '12', name: 'Renamed' });
+        expect(mockPersonUpdate).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { id: 12 } }),
+        );
+        expect(user).toEqual(expect.objectContaining({ id: '12', email: 'u@example.com' }));
     });
 });
