@@ -1,7 +1,9 @@
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
+jest.mock("@mantine/modals", () => ({ modals: { openConfirmModal: jest.fn() } }));
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { notifications } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { renderWithProviders, mockFetchJson, resetRtl } from "@/test-helpers/rtl";
 import { AdminEditHouseholdModal, isFormDirty } from "../AdminEditHouseholdModal";
 
@@ -125,20 +127,23 @@ describe("AdminEditHouseholdModal", () => {
     renderWithProviders(<AdminEditHouseholdModal householdId={55} opened={true} onClose={onClose} />);
     await screen.findByDisplayValue("Smith Family");
 
+    const openConfirmModal = modals.openConfirmModal as jest.Mock;
+
     // Not dirty -> closes without prompting.
-    window.confirm = jest.fn();
+    openConfirmModal.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(window.confirm).not.toHaveBeenCalled();
+    expect(openConfirmModal).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
 
     fireEvent.change(screen.getByLabelText("Household Name"), { target: { value: "Changed" } });
 
-    window.confirm = jest.fn(() => false);
+    // Dirty -> confirm modal opens; cancelling ("Keep editing") never fires onConfirm.
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(onClose).toHaveBeenCalledTimes(1); // still just the earlier call — cancelled this time
+    expect(openConfirmModal).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1); // still just the earlier call — no confirm yet
 
-    window.confirm = jest.fn(() => true);
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    // Confirming ("Discard") invokes the modal's onConfirm, which calls onClose.
+    openConfirmModal.mock.calls[0][0].onConfirm();
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
