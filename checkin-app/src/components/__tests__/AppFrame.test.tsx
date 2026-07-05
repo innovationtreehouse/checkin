@@ -103,7 +103,9 @@ describe("AppFrame", () => {
 
     // Badge keys off the section href (/membership-ops), not the per-role /review
     // destination — the green count must reach a reviewer-only user's nav item.
-    expect(screen.getByLabelText("4 background checks you can review now")).toHaveTextContent("4");
+    // The green pill merges the board queue (0 here) and can-act-on (4) into one,
+    // so its aria-label names both parts and the count is their sum.
+    expect(screen.getByLabelText("0 pending membership reviews; 4 background checks you can review now")).toHaveTextContent("4");
   });
 
   it("highlights the active nav item based on pathname", () => {
