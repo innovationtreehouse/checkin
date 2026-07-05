@@ -11,6 +11,7 @@ import { ProgramRosterTab } from './ProgramRosterTab';
 import { notifications } from '@mantine/notifications';
 import { ProgramEventsTab } from './ProgramEventsTab';
 import { isProgramCheckoutBroken } from '@/lib/programCheckout';
+import { notifyNavRefresh } from '@/lib/nav-refresh';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 export type ProgramDetail = {
@@ -160,6 +161,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       });
       if (res.ok) {
         notifications.show({ color: "green", message: "Saved." });
+        notifyNavRefresh();
         fetchProgram();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -187,6 +189,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: "Shopify identifiers saved." });
+        notifyNavRefresh();
         fetchProgram();
       } else {
         notifications.show({ color: "red", message: data.error || "Failed to save.", autoClose: false });
@@ -205,6 +208,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: "Shopify checkout configured." });
+        notifyNavRefresh();
         fetchProgram();
       } else {
         notifications.show({ color: "red", message: data.error || "Failed to sync to Shopify.", autoClose: false });

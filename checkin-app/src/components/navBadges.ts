@@ -103,6 +103,12 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
     }
     case '/programs':
       return gray(counts.activePrograms, `${counts.activePrograms} active programs`);
+    case '/program-ops': {
+      // Red: priced programs missing their Shopify variant (broken paid checkout).
+      // Mirrors the Programs section-tab pill; admin/board-gated (count absent otherwise).
+      const b = programsMisconfigBadge(counts);
+      return b ? [b] : [];
+    }
     case '/membership-ops': {
       // Board's BLOCKED queue (green) plus the viewer's own background-check
       // review counts — the Review tab lives under this nav item, so its badges

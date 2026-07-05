@@ -160,6 +160,13 @@ describe('programs misconfig red pill', () => {
     expect(programsMisconfigBadge(admin({ programsMisconfig: 3 })))
       .toEqual({ count: 3, color: 'red', label: '3 programs with broken checkout' });
   });
+
+  it('surfaces on the /program-ops left-nav item, empty off the admin surface', () => {
+    expect(navBadgeFor('/program-ops', base)).toEqual([]);
+    expect(navBadgeFor('/program-ops', admin({ programsMisconfig: 0 }))).toEqual([]);
+    expect(navBadgeFor('/program-ops', admin({ programsMisconfig: 2 })))
+      .toEqual([{ count: 2, color: 'red', label: '2 programs with broken checkout' }]);
+  });
 });
 
 describe('tabBadgeFor', () => {
