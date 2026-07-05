@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { withWebhook } from "@/lib/webhookAuth";
-import { config } from "@/lib/config";
+import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 
 interface ShopifyOrder {
     id?: number | string;
@@ -94,9 +94,13 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
             if (!isNaN(processId)) {
                 const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
                 const membershipVariantIds = new Set(
-                    [settings?.orgMembershipVariantId, settings?.shopifyNormalVariantId, settings?.shopifyVolunteerVariantId].filter(
-                        (v): v is string => !!v,
-                    ),
+                    [
+                        settings?.orgMembershipVariantId,
+                        settings?.shopifyNormalVariantId,
+                        settings?.shopifyVolunteerVariantId,
+                        // Local mock's self-fired order carries this synthetic id (config).
+                        config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
+                    ].filter((v): v is string => !!v),
                 );
                 const hasMembershipItem = (order.line_items ?? []).some((li) => membershipVariantIds.has(String(li.variant_id)));
                 const proc = await activateByProcessId(processId, order.id ? String(order.id) : "", hasMembershipItem);

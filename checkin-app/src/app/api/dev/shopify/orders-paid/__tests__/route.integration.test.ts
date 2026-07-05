@@ -172,12 +172,18 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
         expect(res.status).toBe(404);
     });
 
-    it('409s when no membership variant is configured on BoardSettings', async () => {
+    it('settles via the synthetic mock variant when none is configured on BoardSettings', async () => {
+        // A local seed never sets a membership variant; the mock falls back to
+        // DEV_MOCK_MEMBERSHIP_VARIANT_ID (config), which the inbound handler echoes,
+        // so dues still settle end-to-end instead of dead-ending on a 409.
         asSession();
         await setVariant(null);
         const { processId } = await makeProc();
         const res = await POST(jsonReq({ processId }));
-        expect(res.status).toBe(409);
+        expect(res.status).toBe(200);
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(proc?.status).toBe('PENDING_BG_CLEARANCE');
+        expect(proc?.paidAt).not.toBeNull();
     });
 
     it('200s, fires the real inbound webhook, and advances the process (PENDING_PAYMENT -> PENDING_BG_CLEARANCE)', async () => {

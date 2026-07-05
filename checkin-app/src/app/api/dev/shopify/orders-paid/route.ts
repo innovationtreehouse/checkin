@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { config } from "@/lib/config";
+import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 import { logger } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 
@@ -71,10 +71,9 @@ async function fireMembership(processId: number): Promise<NextResponse> {
     // the membership product (#624/H2). The mock must echo a configured variant id
     // or the webhook lands as a no-membership-item anomaly, not an activation.
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const variantId = settings?.orgMembershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId;
-    if (!variantId) {
-        return apiError("No membership variant configured. Set one in Settings → Membership first (design §2, O4a).", 409);
-    }
+    // Mock stands in for the manual BoardSettings variant a local seed never sets;
+    // the inbound handler echoes the same fallback so the order matches (config).
+    const variantId = settings?.orgMembershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId ?? DEV_MOCK_MEMBERSHIP_VARIANT_ID;
 
     // Shape mirrors the subset the inbound handler reads: note_attributes (where
     // Shopify maps cart attributes) + line_items + an order id. Stable id so two

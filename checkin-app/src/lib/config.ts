@@ -86,6 +86,17 @@ function shopifyMockActiveEnv(): boolean {
 export const DEV_MOCK_SHOPIFY_WEBHOOK_SECRET = 'dev-shopify-mock-webhook-secret';
 
 /**
+ * Synthetic membership variant id used when the Shopify mock is active. Programs
+ * synthesize dev-mock-variant ids at creation (shopify.ts › createShopifyProgramVariants),
+ * but the membership variant is manual BoardSettings config that a local seed never
+ * populates — so with no fallback the mock orders/paid webhook can't match a membership
+ * order (webhooks/shopify/route.ts) and the dev fire tool 409s. Both the mock firer and
+ * the inbound handler fall back to this id when shopifyMockActive(), so local membership
+ * dues settle end-to-end with zero setup. Same shape as the program dev-mock ids.
+ */
+export const DEV_MOCK_MEMBERSHIP_VARIANT_ID = 'dev-mock-variant-membership';
+
+/**
  * The dev/local background-check MOCK is active when the real Averity consent link
  * is unconfigured (AVERITY_CONSENT_URL unset) AND we're on a non-prod instance.
  * Same two server-only fuses as the Zoho/Shopify mocks — CHECKIN_ENV (fails safe to

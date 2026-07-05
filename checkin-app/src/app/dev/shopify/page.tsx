@@ -22,7 +22,8 @@ export default async function DevShopifyPage() {
     });
 
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const hasVariant = !!(settings?.orgMembershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId);
+    // Mock synthesizes a membership variant (config), so the fire tool is always usable on local.
+    const hasVariant = config.shopifyMockActive() || !!(settings?.orgMembershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId);
 
     const pendingParticipants = await prisma.programParticipant.findMany({
         where: { status: "PENDING" },

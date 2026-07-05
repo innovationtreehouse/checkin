@@ -19,6 +19,7 @@ import { useUnsavedGuard, useConfirmNav } from "@/components/UnsavedChangesProvi
 import AddressForm from "@/components/membership/AddressForm";
 import EmergencyContactForm from "@/components/membership/EmergencyContactForm";
 import ChildrenListForm from "@/components/membership/ChildrenListForm";
+import { useIsLocalInstance } from "@/components/EnvProvider";
 
 import { PageLoader } from "@/components/ui/PageLoader";
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
@@ -100,6 +101,7 @@ function ExternalTask({ done, title, doneText, children }: { done: boolean; titl
 
 export default function MembershipPage() {
   const { data: session, status: sessionStatus } = useSession();
+  const isLocalInstance = useIsLocalInstance();
 
   const [state, setState] = useState<IntakeState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -263,6 +265,32 @@ export default function MembershipPage() {
   // dead end. Falls back to a friendly default when the body carries nothing.
   const apiError = (data: { error?: string; detail?: string } | null | undefined, fallback: string) =>
     [data?.error, data?.detail].filter(Boolean).join(" — ") || fallback;
+
+  // Local dev has no Shopify store, so instead of a checkout redirect we fire the
+  // mock orders/paid webhook in-app (same endpoint the Debug → Shopify tool uses),
+  // settling dues end-to-end with zero setup. Only rendered on a local instance.
+  const settleMockPayment = async () => {
+    if (!state?.process) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/dev/shopify/orders-paid", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId: state.process.id }),
+      });
+      if (res.ok) {
+        flash("Payment mocked (local) — updating status.");
+        notifyNavRefresh();
+        await load();
+      } else {
+        flash(apiError(await res.json().catch(() => null), "Mock payment failed."), true);
+      }
+    } catch {
+      flash("Mock payment failed.", true);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Clear a single field's error (called as the user edits it).
   const clearErr = (key: string) =>
@@ -693,6 +721,10 @@ export default function MembershipPage() {
                     {payment.checkoutUrl ? (
                       <Button component="a" href={payment.checkoutUrl} target="_blank" rel="noopener noreferrer" color="green" mt="md">
                         Pay here with Shopify →
+                      </Button>
+                    ) : isLocalInstance ? (
+                      <Button color="green" mt="md" disabled={saving} onClick={settleMockPayment}>
+                        Pay now (local mock) →
                       </Button>
                     ) : (
                       <Text c="yellow" mt="md">The payment link isn&apos;t available yet. Please check back shortly.</Text>
