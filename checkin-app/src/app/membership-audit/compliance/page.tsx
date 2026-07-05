@@ -13,6 +13,14 @@ type Household = {
   lastBackgroundCheck: string | null;
   leads: Lead[];
 };
+type PersonRow = {
+  personId: number;
+  name: string;
+  householdId: number;
+  programId: number | null;
+  programName: string | null;
+  reason: string;
+};
 
 // Reason tag -> human label + badge color. Keys mirror the endpoint's tags.
 const REASON: Record<string, { label: string; color: string }> = {
@@ -22,12 +30,50 @@ const REASON: Record<string, { label: string; color: string }> = {
   STUCK_BG_CLEARANCE: { label: "Stuck at BG clearance", color: "yellow" },
 };
 
+/** Person-scoped section (bg-needed / DOB-missing). Program people may not be in a
+ *  member household, so these render on their own, keyed on the person. */
+function PersonSection({
+  title,
+  description,
+  color,
+  people,
+}: {
+  title: string;
+  description: string;
+  color: string;
+  people: PersonRow[];
+}) {
+  if (people.length === 0) return null;
+  return (
+    <Stack gap="sm">
+      <Title order={4}>{title}</Title>
+      <Text c="dimmed" size="sm">{description}</Text>
+      {people.map((p) => (
+        <Card key={p.personId} withBorder radius="md" padding="lg">
+          <Group justify="space-between" wrap="wrap">
+            <div>
+              <Text fw={600} fz="lg">{p.name}</Text>
+              <Text size="sm" c="dimmed">
+                {p.programName ? `Program: ${p.programName}` : "No program on file"}
+                {" · "}Household #{p.householdId}
+              </Text>
+            </div>
+            <Badge color={color} variant="light">{title}</Badge>
+          </Group>
+        </Card>
+      ))}
+    </Stack>
+  );
+}
+
 /**
  * Membership Audit view: households out of compliance that the system did NOT
  * auto-terminate. Read-only — the board follows up manually; no action buttons.
  */
 export default function CompliancePage() {
   const [households, setHouseholds] = useState<Household[]>([]);
+  const [peopleNeedingBgCheck, setPeopleNeedingBgCheck] = useState<PersonRow[]>([]);
+  const [peopleMissingDob, setPeopleMissingDob] = useState<PersonRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -38,6 +84,8 @@ export default function CompliancePage() {
         if (res.ok) {
           const data = await res.json();
           setHouseholds(data.households ?? []);
+          setPeopleNeedingBgCheck(data.peopleNeedingBgCheck ?? []);
+          setPeopleMissingDob(data.peopleMissingDob ?? []);
         } else {
           setError("Failed to load compliance data. Ensure you have the proper authorizations.");
         }
@@ -70,11 +118,13 @@ export default function CompliancePage() {
         </Text>
       </Card>
 
-      {households.length === 0 ? (
+      {households.length === 0 && peopleNeedingBgCheck.length === 0 && peopleMissingDob.length === 0 && (
         <Card withBorder radius="md" padding="xl" ta="center">
-          <Text c="dimmed">Every household is in compliance. 🎉</Text>
+          <Text c="dimmed">Everyone is in compliance. 🎉</Text>
         </Card>
-      ) : (
+      )}
+
+      {households.length > 0 && (
         <Stack gap="sm">
           {households.map((h) => (
             <Card key={h.id} withBorder radius="md" padding="lg">
@@ -115,6 +165,20 @@ export default function CompliancePage() {
           ))}
         </Stack>
       )}
+
+      <PersonSection
+        title="Background check needed"
+        description="Program-attached people 18 or older with no current background check. Warn-only — nothing is blocked."
+        color="orange"
+        people={peopleNeedingBgCheck}
+      />
+
+      <PersonSection
+        title="Missing date of birth"
+        description="Program-attached people with no recorded age. Confirm their date of birth before a background check can be assessed."
+        color="grape"
+        people={peopleMissingDob}
+      />
     </Stack>
   );
 }
