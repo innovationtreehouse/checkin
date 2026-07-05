@@ -6,6 +6,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
+import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface Settings {
   normalDuesCents: number;
@@ -82,6 +83,10 @@ export default function MembershipSettingsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Confirm-checkbox gate only matters when a boundary already exists — changing
+  // it shifts every household's cycle. First-time set has nothing to shift.
+  const boundaryWasSet = !!initial?.boundary;
+
   const saveSettings = async () => {
     setSaveNotice(null);
     setFieldErrors({});
@@ -101,10 +106,12 @@ export default function MembershipSettingsPage() {
           orgMembershipVariantId: variantId.trim() || null,
           volunteerDiscountCode: discountCode.trim() || null,
           bgRecheckMonths: Math.round(parseInt(bgRecheckMonths || "0", 10)),
-          ...(boundaryUnlocked ? { orgMembershipYearBoundary: boundary || null } : {}),
+          // Send the boundary when the unlock is checked, or when it was never set (no
+          // unlock shown then — nothing to protect from an accidental shift).
+          ...(boundaryUnlocked || !boundaryWasSet ? { orgMembershipYearBoundary: boundary || null } : {}),
         }),
       });
-      if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); setBoundaryUnlocked(false); await load(); }
+      if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); setBoundaryUnlocked(false); notifyNavRefresh(); await load(); }
       else { const d = await res.json().catch(() => ({})); setSaveNotice({ text: d.error || "Save failed.", err: true }); }
     } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
@@ -168,14 +175,15 @@ export default function MembershipSettingsPage() {
                 rightSectionWidth={36}
                 inputMode="numeric"
                 w={200}
+                error={(!bgRecheckMonths || parseInt(bgRecheckMonths, 10) <= 0) ? "Required — not configured." : undefined}
                 value={bgRecheckMonths}
                 onChange={(e) => setBgRecheckMonths(e.currentTarget.value)}
               />
             </Group>
 
             {(!bgRecheckMonths || parseInt(bgRecheckMonths, 10) <= 0) && (
-              <Alert color="yellow" variant="light" mt="md">
-                ⚠️ Background-check interval is <strong>not set</strong>. Until the board enters the
+              <Alert color="red" variant="light" mt="md">
+                ⛔ Background-check interval is <strong>not set</strong>. Until the board enters the
                 policy value (in months), every renewal will be sent back for a fresh background
                 review. Enter the real Treehouse re-check interval above.
               </Alert>
@@ -194,7 +202,7 @@ export default function MembershipSettingsPage() {
                 description="The Shopify variant ID of the membership product. We build the “Pay with Shopify” link from it as https://<store>/cart/<variantId>:1."
                 placeholder="1234567890"
                 w={260}
-                error={fieldErrors.variantId}
+                error={fieldErrors.variantId ?? (variantId.trim() === "" ? "Required for checkout — not configured." : undefined)}
                 value={variantId}
                 onChange={(e) => { setVariantId(e.currentTarget.value); setFieldErrors((f) => ({ ...f, variantId: undefined })); }}
               />
@@ -203,32 +211,42 @@ export default function MembershipSettingsPage() {
                 description="Create this discount in Shopify, then paste the code here. It is appended to the checkout link for volunteer households only."
                 placeholder="VOLUNTEER"
                 w={260}
+                error={discountCode.trim() === "" ? "Required for checkout — not configured." : undefined}
                 value={discountCode}
                 onChange={(e) => setDiscountCode(e.currentTarget.value)}
               />
             </Stack>
 
-            <Alert color="yellow" variant="light" mt="md" title="Membership-year boundary">
-              <Text size="sm" mb="sm">
-                ⚠️ Changing this date shifts the renewal cycle for <strong>every household</strong>.
-                Only change it if you are sure.
-              </Text>
+            <Alert color={boundary ? "yellow" : "red"} variant="light" mt="md" title="Membership-year boundary">
+              {boundary ? (
+                <Text size="sm" mb="sm">
+                  ⚠️ Changing this date shifts the renewal cycle for <strong>every household</strong>.
+                  Only change it if you are sure.
+                </Text>
+              ) : (
+                <Text size="sm" mb="sm">
+                  ⛔ The membership-year boundary is <strong>not configured</strong>. Renewal cycles
+                  have no anchor date until you enter it below.
+                </Text>
+              )}
               <Text size="sm" mb="sm">
                 Current boundary:{" "}
-                <strong>{boundary ? (currentBoundaryLabel(boundary) ?? "—") : "not set"}</strong>
+                <strong>{initial?.boundary ? (currentBoundaryLabel(initial.boundary) ?? "—") : "not set"}</strong>
               </Text>
-              <Checkbox
-                mb="sm"
-                checked={boundaryUnlocked}
-                onChange={(e) => setBoundaryUnlocked(e.currentTarget.checked)}
-                label="I understand — let me edit the boundary date"
-              />
+              {boundaryWasSet && (
+                <Checkbox
+                  mb="sm"
+                  checked={boundaryUnlocked}
+                  onChange={(e) => setBoundaryUnlocked(e.currentTarget.checked)}
+                  label="I understand — let me edit the boundary date"
+                />
+              )}
               <TextInput
                 type="date"
                 w={220}
                 value={boundary}
                 onChange={(e) => setBoundary(e.currentTarget.value)}
-                disabled={!boundaryUnlocked}
+                disabled={boundaryWasSet && !boundaryUnlocked}
               />
             </Alert>
 
