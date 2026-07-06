@@ -13,7 +13,7 @@
 
 import { markContractSigned, markBgConsent } from '@/lib/membership/external';
 import { normalizeAuditData } from '@/lib/auditPayload';
-import { attest } from '@/lib/membership/review';
+import { attest, overrideBlocked } from '@/lib/membership/review';
 import { certifyPaymentPlan, activate } from '@/lib/membership/payment';
 import { submitIntake } from '@/lib/membership/intake';
 import { beginRenewal } from '@/lib/membership/renewal';
@@ -204,9 +204,40 @@ describe('background check is non-blocking', () => {
         // Contract alone advances (no BG consent needed), and paying activates immediately.
         await markContractSigned(processId);
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
-        await certifyPaymentPlan(processId, lead!.id);
+        await certifyPaymentPlan(processId, revA); // certifier must be outside the applicant household (conflict-of-interest guard)
         expect(await statusOf(processId)).toBe('ACTIVE');
         expect(await membershipStatusOf(orgMembershipId)).toBe('ACTIVE');
+    });
+
+    it('conflict of interest: a certifier in the applicant household is blocked; sysadmin overrides', async () => {
+        const { processId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        await markContractSigned(processId);
+        await markBgConsent(processId, revA);
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
+
+        // A household lead certifying their OWN membership = self-approval → forbidden.
+        await expect(certifyPaymentPlan(processId, leadId)).rejects.toMatchObject({ code: 'forbidden' });
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT'); // unchanged — nothing certified
+
+        // Sysadmin is the deliberate remedy and bypasses the guard.
+        await certifyPaymentPlan(processId, leadId, { isSysadmin: true });
+        expect(await statusOf(processId)).toBe('PENDING_BG_CLEARANCE'); // paid; still needs the check
+    });
+
+    it('conflict of interest: overrideBlocked by the applicant household is blocked; sysadmin overrides', async () => {
+        const { processId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        await markContractSigned(processId);
+        await markBgConsent(processId, revA);
+        await attest(revA, processId, { result: 'REJECT' }); // one reject → BLOCKED
+        expect(await statusOf(processId)).toBe('BLOCKED');
+
+        // A household lead force-clearing their OWN blocked check = self-approval → forbidden.
+        await expect(overrideBlocked(processId, leadId, 'approve')).rejects.toMatchObject({ code: 'same_household_applicant' });
+        expect(await statusOf(processId)).toBe('BLOCKED'); // unchanged
+
+        // Sysadmin bypasses; the force-clear lands the process back on the payment track.
+        await overrideBlocked(processId, leadId, 'approve', { isSysadmin: true });
+        expect(await statusOf(processId)).not.toBe('BLOCKED');
     });
 
     it('renewal with a still-valid check → PENDING_PAYMENT + bgClearedAt, then paying activates (not stuck)', async () => {

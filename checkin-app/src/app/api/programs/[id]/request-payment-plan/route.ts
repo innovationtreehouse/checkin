@@ -61,6 +61,10 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             return apiError("Forbidden: Not authorized to request a payment plan for this participant", 403);
         }
 
+        if (participant.status !== 'PENDING') {
+            return apiError("This enrollment is not awaiting payment", 409);
+        }
+
         const updatedParticipant = await prisma.programParticipant.update({
             where: {
                 programId_personId: { programId, personId: participantId }

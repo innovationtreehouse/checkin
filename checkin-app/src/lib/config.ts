@@ -135,6 +135,11 @@ export const config = {
     // Email
     resendApiKey: (): string | null => process.env.RESEND_API_KEY || null,
     emailFrom: () => process.env.EMAIL_FROM || 'CheckMeIn <onboarding@resend.dev>',
+    // Resend's inbound bounce/complaint webhook signs with Svix under this shared
+    // secret (Resend dashboard → Webhooks → signing secret, "whsec_..."). Null when
+    // unset — the webhook route's verify fn fails closed with a 500 config error,
+    // same pattern as shopifyWebhookSecret/zohoWebhookSecret.
+    resendWebhookSecret: (): string | null => process.env.RESEND_WEBHOOK_SECRET || null,
 
     // Background check (Averity/VERITY hosted consent deep link). No API — this is a
     // static hosted URL provided out-of-band, so it lives in config, not BoardSettings.
