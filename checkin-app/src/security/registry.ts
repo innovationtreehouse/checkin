@@ -50,8 +50,9 @@ defineRoute({
     ],
 });
 
-// Event roster — embeds participant PII (name/email/phone/dob, incl. youth) for
-// everyone enrolled in / RSVP'd to the program. This route is FAIL-CLOSED,
+// Event roster — embeds participant contact pii (name/email/phone) AND
+// personal-tier data (dob, incl. youth) for everyone enrolled in / RSVP'd to
+// the program. This route is FAIL-CLOSED,
 // staff-only: the handler fn (events/[id]/route.ts) does an inline event->program
 // lead/core-vol/admin gate and throws 403 for everyone else, so non-staff never
 // receive the roster at all. That gate is NOT here in `authorize` because the
@@ -90,10 +91,13 @@ defineRoute({
 // their_program_participants scope grants nothing here — admission is the real
 // boundary: 'program-lead-mentor' (resolveAccess also admits sysadmin/board)
 // restricts callers to a lead of THIS program. Once admitted, staff see the
-// directory's pii (name[public]/email[pii]/dateOfBirth[pii]) — preserving the
-// old inline behavior, which already ran a global participant query. So the
-// admitted views carry 'everyones:pii'. FINDING for the CODEOWNERS reviewer:
-// this is a deliberate global-directory grant, not a per-program scope.
+// directory's contact band (name[public]/email[pii]); dateOfBirth is 'personal'
+// (the strict tier), so it reaches only sysadmin/board (everyones:personal) —
+// a program lead may NOT enumerate the whole directory's DOBs. The UI degrades
+// cleanly: the age-warning badge in the enroll picker needs dob, and only
+// sysadmin/board can enroll anyway. FINDING for the CODEOWNERS reviewer:
+// 'everyones:pii' here is a deliberate global-directory contact grant, not a
+// per-program scope.
 defineRoute({
     endpoint: 'GET /api/programs/[id]/eligible-participants',
     authorize: 'program-lead-mentor',

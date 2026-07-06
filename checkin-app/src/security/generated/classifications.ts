@@ -10,7 +10,7 @@ export const classifications = {
         name: 'public',
         emailVerified: 'internal',
         image: 'public',
-        dateOfBirth: 'pii',
+        dateOfBirth: 'personal',
         isDeclaredAdult: 'internal',
         lastWaiverSign: 'internal',
         waiverSignedBy: 'internal',

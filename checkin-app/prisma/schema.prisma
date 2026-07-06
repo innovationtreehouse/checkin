@@ -77,7 +77,10 @@ model Person {
   accounts      Account[]
   sessions      Session[]
 
-  /// @sensitivity:pii
+  /// DOB is intimate data, not contact data: 'personal' is the strict tier
+  /// (self/household/board + explicit per-program grants), while 'pii' is the
+  /// contact-identity band (email/phone) that program leads etc. may hold.
+  /// @sensitivity:personal
   dateOfBirth          DateTime?
   /// Set when a lead marks a member as 25+ without recording a DoB, so the
   /// member shows as "Adult" instead of "Age Unavailable". @sensitivity:internal

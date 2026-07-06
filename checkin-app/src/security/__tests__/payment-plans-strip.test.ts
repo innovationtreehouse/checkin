@@ -52,7 +52,7 @@ const row = {
 };
 
 describe('payment-plans field-stripping', () => {
-    it('board sees the nested participant email + dateOfBirth (pii)', () => {
+    it('board sees the nested participant email (pii) + dateOfBirth (personal)', () => {
         const tokens = tokensFor(ENDPOINT, 'isBoardMember');
         const out = stripValue('ProgramParticipant', row, tokens, ctx()) as Record<string, unknown>;
         const p = out.person as Record<string, unknown>;

@@ -452,7 +452,7 @@ describe('Event roster strip (events/[id] view)', () => {
                         name: 'Youth Kid',     // public
                         email: 'kid@x.com',    // pii
                         phone: '555-0100',     // pii
-                        dateOfBirth: '2012-05-01', // pii
+                        dateOfBirth: '2012-05-01', // personal
                         allergies: 'peanuts',  // personal
                     },
                 },
@@ -483,8 +483,8 @@ describe('Event roster strip (events/[id] view)', () => {
     });
 
     // WHY the route gates admission instead of relying on stripping: a non-staff
-    // scope strips email/phone/dob (pii) — but the participant's NAME is tier
-    // 'public', so it survives. Stripping alone would still leak the full
+    // scope strips email/phone (pii) and dob/allergies (personal) — but the
+    // participant's NAME is tier 'public', so it survives. Stripping alone would still leak the full
     // attendee roster. This asserts that leak exists, documenting the reason the
     // handler fn 403s non-staff before the roster is ever returned.
     it('stripping alone leaves the roster name (tier public) — hence the fail-closed admission gate', () => {
