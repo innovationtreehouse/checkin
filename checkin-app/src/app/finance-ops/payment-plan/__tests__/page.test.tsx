@@ -42,7 +42,7 @@ describe("finance-ops/payment-plan page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Approve/ }));
 
-    const confirmModal = await screen.findByRole("dialog", { name: "Approve Payment Plan" });
+    const confirmModal = await screen.findByRole("dialog", { name: "Approve Scholarship / Payment Plan" });
     fireEvent.click(within(confirmModal).getByRole("button", { name: /Approve/ }));
 
     await waitFor(() =>
@@ -54,6 +54,6 @@ describe("finance-ops/payment-plan page", () => {
         }),
       ),
     );
-    expect(await screen.findByText("No pending payment plan requests.")).toBeInTheDocument();
+    expect(await screen.findByText("No pending scholarship or payment plan requests.")).toBeInTheDocument();
   });
 });
