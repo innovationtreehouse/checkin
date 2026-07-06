@@ -817,11 +817,11 @@ export default function MembershipPage() {
                       </Alert>
                     )}
                     {planRequested ? (
-                      <Text c="green" mt="lg">Payment plan requested — the finance committee will follow up.</Text>
+                      <Text c="green" mt="lg">Scholarship or payment plan requested — the finance committee will follow up.</Text>
                     ) : (
                       <Text mt="lg">
                         <Anchor component="button" type="button" onClick={requestPaymentPlan}>
-                          request a payment plan from the finance committee of the board
+                          request a scholarship or payment plan from the finance committee of the board
                         </Anchor>
                       </Text>
                     )}

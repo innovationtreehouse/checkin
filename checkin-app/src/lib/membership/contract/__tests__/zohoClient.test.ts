@@ -113,12 +113,19 @@ describe("zohoClient", () => {
         expect(calledUrl.searchParams.get("host")).toBe("https://app.example.com");
     });
 
-    it("getRequestStatus is true only when the request is completed", async () => {
+    it("getRequestStatus normalizes completed / in-flight / dead request states", async () => {
         mockFetchOnce({ requests: { request_status: "completed" } });
-        await expect(getRequestStatus("t", "req-1")).resolves.toBe(true);
+        await expect(getRequestStatus("t", "req-1")).resolves.toBe("completed");
 
         mockFetchOnce({ requests: { request_status: "inprogress" } });
-        await expect(getRequestStatus("t", "req-1")).resolves.toBe(false);
+        await expect(getRequestStatus("t", "req-1")).resolves.toBe("in_progress");
+
+        // Declined and expired requests can never be signed — they must surface as
+        // terminal so the caller creates a fresh request (#876).
+        for (const dead of ["declined", "expired", "recalled"]) {
+            mockFetchOnce({ requests: { request_status: dead } });
+            await expect(getRequestStatus("t", "req-1")).resolves.toBe("terminal");
+        }
     });
 
     it("rejects with a ZohoError timeout when the connection hangs (never resolves)", async () => {
