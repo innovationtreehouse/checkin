@@ -19,7 +19,7 @@ type MembershipPaymentPlanRequest = {
     isVolunteer: boolean;
     household: {
       id: number;
-      name: string | null;
+      name: string;
     };
   };
 };
@@ -100,10 +100,10 @@ export default function MembershipPaymentPlansPage() {
   const columns: DataTableColumn<MembershipPaymentPlanRequest>[] = [
     {
       header: 'Household',
-      sortBy: (req) => (req.orgMembership.household.name ?? '').toLowerCase(),
+      sortBy: (req) => req.orgMembership.household.name.toLowerCase(),
       render: (req) => (
         <>
-          <Text fw={500}>{req.orgMembership.household.name ?? `Household #${req.orgMembership.household.id}`}</Text>
+          <Text fw={500}>{req.orgMembership.household.name}</Text>
           <Text size="sm" c="dimmed">{req.orgMembership.isVolunteer ? 'Volunteer household' : 'Standard household'}</Text>
         </>
       ),
