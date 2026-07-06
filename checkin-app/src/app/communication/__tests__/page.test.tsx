@@ -11,15 +11,15 @@ describe("CommunicationPage", () => {
     it("loads current settings and persists a toggle", async () => {
         setSession({ id: 1, email: "a@example.com" });
         const fetchMock = mockFetchJson({
-            "/api/profile": { profile: { notificationSettings: { emailNewsletter: true } } },
+            "/api/profile": { profile: { notificationSettings: { emailCheckinReceipts: true } } },
         });
         renderWithProviders(<CommunicationPage />);
 
-        const newsletter = await screen.findByLabelText("Subscribe to the monthly newsletter");
-        expect(newsletter).toBeChecked();
+        const receipts = await screen.findByLabelText("Email me when I check in or out");
+        expect(receipts).toBeChecked();
 
-        fireEvent.click(newsletter);
-        await waitFor(() => expect(newsletter).not.toBeChecked());
+        fireEvent.click(receipts);
+        await waitFor(() => expect(receipts).not.toBeChecked());
         expect(fetchMock).toHaveBeenCalledWith("/api/profile", expect.objectContaining({ method: "PATCH" }));
     });
 
@@ -28,6 +28,6 @@ describe("CommunicationPage", () => {
         mockFetchJson({ "/api/profile": { profile: { notificationSettings: {} } } });
         renderWithProviders(<CommunicationPage />);
 
-        expect(await screen.findByLabelText("Subscribe to the monthly newsletter")).toBeDisabled();
+        expect(await screen.findByLabelText("Email me when I check in or out")).toBeDisabled();
     });
 });
