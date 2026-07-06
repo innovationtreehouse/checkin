@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { handler } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
+import { isActiveOrgMember, ACTIVE_ORG_MEMBER_INCLUDE } from "@/lib/orgMembership";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 
 export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
@@ -13,7 +14,11 @@ export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
             status: 'PENDING'
         },
         include: {
-            person: true,
+            // Nests household->orgMembership (same shape as ACTIVE_ORG_MEMBER_INCLUDE)
+            // so the board can see CURRENT membership while a request is still
+            // pending — wasOrgMemberAtApproval is null until approved, so it can't
+            // answer this. Derive live client-side; nothing new to stamp/store here.
+            person: { include: ACTIVE_ORG_MEMBER_INCLUDE },
             program: true
         },
         orderBy: {
@@ -46,10 +51,16 @@ export const POST = withAuth(
                 }
             }
 
+            // Point-in-time snapshot: membership status changes over time, so this
+            // must be stamped now, at approval — not derived later from the live
+            // OrgMembership row. Reuses the canonical org-member check (lib/orgMembership.ts).
+            const wasOrgMemberAtApproval = await isActiveOrgMember(participantId);
+
             const data = {
                 status: 'ACTIVE' as const,
                 isPaymentPlanRequested: false, // cleared since it's approved
-                pendingSince: null // reset
+                pendingSince: null, // reset
+                wasOrgMemberAtApproval
             };
 
             // Scope to the pending request so approving a non-pending/nonexistent
