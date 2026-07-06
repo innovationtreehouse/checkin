@@ -73,6 +73,31 @@ describe("membership-ops/households page", () => {
     );
   });
 
+  it("flags a household whose member has an undeliverable email", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/membership-ops/households": {
+        households: [
+          {
+            id: 3,
+            name: "The Bounces",
+            orgMembership: { status: "ACTIVE" },
+            householdMembers: [{ id: 30, name: "Bo Bounce", email: "bo@example.com", isBoardMember: false, emailUndeliverableAt: "2026-07-01T00:00:00.000Z" }],
+          },
+          ...households.households,
+        ],
+      },
+    });
+    renderWithProviders(<AdminHouseholdsPage />);
+    await screen.findByText("The Bounces");
+
+    // Household-level flag next to the name, and the per-member marker in the list.
+    expect(screen.getByText("✉ Broken email")).toBeInTheDocument();
+    expect(screen.getByText("✉ undeliverable")).toBeInTheDocument();
+    // Households with all-deliverable emails carry neither.
+    expect(screen.getAllByText("✉ Broken email")).toHaveLength(1);
+  });
+
   it("navigates to the add-participant page for a household", async () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({ "/api/membership-ops/households": households });

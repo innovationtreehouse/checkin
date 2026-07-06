@@ -68,7 +68,7 @@ export const GET = withAuth(
                 where: whereClause,
                 include: {
                     householdMembers: {
-                        select: { id: true, name: true, email: true, isBoardMember: true }
+                        select: { id: true, name: true, email: true, isBoardMember: true, emailUndeliverableAt: true }
                     },
                     orgMembership: true,
                     emergencyContacts: {
