@@ -7,6 +7,7 @@ import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
 import { config } from "@/lib/config";
 import { canonicalizeEmail } from "@/lib/emailNormalize";
 import { openPersonBgForNewMember } from "@/lib/membership/personBgTriggers";
+import { hasHouseholdConflict, sharesHousehold } from "@/lib/conflictOfInterest";
 import { type DbClient, type TxClient } from "@/lib/db-client";
 
 /**
@@ -173,9 +174,9 @@ export async function eligibleReviewProcessIds(reviewerId: number): Promise<numb
         .filter((p) => {
             // Applicant household = subject's for a PERSON_BG, else the membership's.
             const applicantHouseholdId = p.subjectPerson?.householdId ?? p.orgMembership?.householdId ?? null;
-            if (applicantHouseholdId !== null && applicantHouseholdId === reviewer.householdId) return false; // own household
+            if (sharesHousehold(reviewer.householdId, applicantHouseholdId)) return false; // own household
             if (p.attestations.some((a) => a.reviewerId === reviewer.id)) return false; // already attested
-            if (p.attestations.some((a) => a.reviewer.householdId === reviewer.householdId)) return false; // shares household with other reviewer
+            if (p.attestations.some((a) => sharesHousehold(reviewer.householdId, a.reviewer.householdId))) return false; // shares household with other reviewer
             return true;
         })
         .map((p) => p.id);
@@ -227,9 +228,9 @@ export async function attest(
         if (!process) throw new ReviewError("not_found", "Application not found.");
         if (!isAwaitingBgReview(process)) throw new ReviewError("wrong_phase", "This application is not awaiting background-check review.");
         const applicantHouseholdId = await applicantHousehold(tx, process);
-        if (applicantHouseholdId !== null && applicantHouseholdId === reviewer.householdId) throw new ReviewError("same_household_applicant", "You cannot review an applicant in your own household.");
+        if (sharesHousehold(reviewer.householdId, applicantHouseholdId)) throw new ReviewError("same_household_applicant", "You cannot review an applicant in your own household.");
         if (process.attestations.some((a) => a.reviewerId === reviewerId)) throw new ReviewError("already_attested", "You have already reviewed this application.");
-        if (process.attestations.some((a) => a.reviewer.householdId === reviewer.householdId)) throw new ReviewError("same_household_reviewer", "Another reviewer from your household has already reviewed this application.");
+        if (process.attestations.some((a) => sharesHousehold(reviewer.householdId, a.reviewer.householdId))) throw new ReviewError("same_household_reviewer", "Another reviewer from your household has already reviewed this application.");
 
         await tx.backgroundCheckAttestation.create({
             data: { processId, reviewerId, result: input.result, isMarkedVolunteer: !!input.isMarkedVolunteer },
@@ -347,10 +348,18 @@ export async function applyVolunteerStatus(db: DbClient, orgMembershipId: number
 }
 
 /** Board override on a BLOCKED application: reset for re-review, or force-clear the check. */
-export async function overrideBlocked(processId: number, actorId: number, action: "reset" | "approve") {
+export async function overrideBlocked(processId: number, actorId: number, action: "reset" | "approve", opts?: { isSysadmin?: boolean }) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ReviewError("not_found", "Application not found.");
     if (process.status !== "BLOCKED") throw new ReviewError("wrong_phase", "This application is not blocked.");
+
+    // Conflict of interest: a board member may not override their OWN household's blocked
+    // application — else they could force-clear their family's failed background check, the
+    // very thing attest()'s same-household gate forbids. Sysadmin bypasses (opts.isSysadmin).
+    const applicantHouseholdId = await applicantHousehold(prisma, process);
+    if (await hasHouseholdConflict(prisma, actorId, applicantHouseholdId, { isSysadmin: opts?.isSysadmin })) {
+        throw new ReviewError("same_household_applicant", "You cannot override your own household's application — a sysadmin must.");
+    }
 
     if (action === "reset") {
         // Restore the review state that matches the cycle. The check runs in parallel,

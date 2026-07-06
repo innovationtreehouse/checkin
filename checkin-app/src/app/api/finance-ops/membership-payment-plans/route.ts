@@ -51,7 +51,7 @@ export const POST = withAuth(
             // Reuse the membership activation path: certifies the plan and activates
             // without a Shopify payment (holding for background clearance if not yet
             // cleared). Then clear the request flag so it drops off the queue.
-            await certifyPaymentPlan(processId, auth.user.id);
+            await certifyPaymentPlan(processId, auth.user.id, { isSysadmin: auth.user.isSysadmin === true });
             await prisma.orgMembershipProcess.update({
                 where: { id: processId },
                 data: { isPaymentPlanRequested: false },
@@ -70,7 +70,7 @@ export const POST = withAuth(
             return NextResponse.json({ success: true });
         } catch (error) {
             if (error instanceof PaymentError) {
-                return apiError(error.message, error.code === "not_found" ? 404 : 409);
+                return apiError(error.message, error.code === "not_found" ? 404 : error.code === "forbidden" ? 403 : 409);
             }
             logger.error("Failed to approve membership payment plan:", error);
             return apiError("Failed to approve payment plan", 500);
