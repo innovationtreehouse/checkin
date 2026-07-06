@@ -41,7 +41,6 @@ describe('Trusted Adults service', () => {
             await prisma.trustedAdultReview.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.trustedAdult.deleteMany({ where: { householdId: { in: ids } } });
         }
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
@@ -52,7 +51,7 @@ describe('Trusted Adults service', () => {
         householdId = hh.id;
         const lead = await prisma.person.create({ data: { name: 'Lead', email: `lead-${TAG}@ex.com`, householdId: hh.id } });
         leadId = lead.id;
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+        await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
 
         // A board member who is also a lead of the disclosing household: overriding this
         // household's own review is a conflict of interest (force-approve Grandma for their kids).
@@ -60,7 +59,7 @@ describe('Trusted Adults service', () => {
             data: { name: 'BoardLead', email: `boardlead-${TAG}@ex.com`, isBoardMember: true, householdId: hh.id },
         });
         boardLeadId = boardLead.id;
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: boardLead.id } });
+        await prisma.person.update({ where: { id: boardLead.id }, data: { isHouseholdLead: true } });
 
         const outHh = await prisma.household.create({ data: { name: `Outsider HH ${TAG}` } });
         outsiderId = (await prisma.person.create({ data: { name: 'Outsider', householdId: outHh.id } })).id;
@@ -537,7 +536,6 @@ describe('runExpirySweep edge cases', () => {
             await prisma.trustedAdultReview.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.trustedAdult.deleteMany({ where: { householdId: { in: ids } } });
         }
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
@@ -569,7 +567,7 @@ describe('runExpirySweep edge cases', () => {
         householdId = hh.id;
         const lead = await prisma.person.create({ data: { name: 'SweepLead', email: `sweeplead-${SWEEP_TAG}@ex.com`, householdId: hh.id } });
         leadId = lead.id;
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+        await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
     });
 
     afterAll(async () => {

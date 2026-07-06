@@ -100,6 +100,13 @@ model Person {
   householdId Int
   household   Household @relation(fields: [householdId], references: [id])
 
+  /// True when this person is a lead of their own household ({@link householdId}).
+  /// Single source of truth for leadership — supersedes the HouseholdLead join
+  /// table, which stored a redundant householdId that could diverge (issue: the
+  /// isLead check required lead.householdId === person.householdId). Cap of 2
+  /// leads/household enforced at write, not in schema. @sensitivity:public
+  isHouseholdLead Boolean @default(false)
+
   /// @sensitivity:personal
   allergies String?
 
@@ -115,6 +122,10 @@ model Person {
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
   personBgProcesses   OrgMembershipProcess[]       @relation("PersonBgSubject")
+  // DEPRECATED (a1): leadership is now the isHouseholdLead flag above. The
+  // HouseholdLead table is kept, unused, only until the follow-up contract
+  // migration drops it — no code reads or writes this relation. See
+  // docs/designs/HOUSEHOLD_LEAD_MODEL.md + DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md.
   householdLeads      HouseholdLead[]
   corporationLeads    CorporationLead[]
   corporationMembers  CorporationMember[]
@@ -130,6 +141,12 @@ model Person {
   trustedAdultRecordsAsAdult TrustedAdult[]       @relation("TrustedAdultPerson")
   trustedAdultsDisclosed      TrustedAdult[]       @relation("TrustedAdultDiscloser")
   trustedAdultReviewsDecided  TrustedAdultReview[] @relation("TrustedAdultDecider")
+
+  // Household-lead lookups (a1): "leads of household X" runs on the hot paths
+  // (check-in notification fan-out, nav badges, broken/unclaimed-household scans).
+  // Person had no householdId index — the old HouseholdLead composite PK provided
+  // one; this restores it, extended with isHouseholdLead so lead scans stay index-only.
+  @@index([householdId, isHouseholdLead])
 }
 
 model Tool {
@@ -179,6 +196,8 @@ model Household {
   intakeNotes String?
 
   householdMembers  Person[]
+  // DEPRECATED (a1): superseded by Person.isHouseholdLead; kept unused until the
+  // follow-up contract migration drops the table (see HOUSEHOLD_LEAD_MODEL.md).
   leads             HouseholdLead[]
   orgMembership     OrgMembership?
   trustedAdults     TrustedAdult[]
@@ -231,6 +250,11 @@ model EmergencyContact {
   @@index([phoneDigits])
 }
 
+/// DEPRECATED (a1): the household-lead join table. Leadership is now the boolean
+/// Person.isHouseholdLead. This model is retained ONLY so schema.prisma still
+/// matches the physical table during the expand phase — no code reads or writes
+/// it. The follow-up contract migration DROPs the table and removes this model.
+/// See docs/designs/HOUSEHOLD_LEAD_MODEL.md + DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md.
 model HouseholdLead {
   /// @sensitivity:public
   householdId   Int

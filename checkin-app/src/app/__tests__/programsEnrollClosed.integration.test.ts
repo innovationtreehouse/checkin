@@ -28,7 +28,6 @@ describe('Enroll into a CLOSED program is rejected', () => {
         const hhIds = [...new Set(members.map(m => m.householdId).filter((x): x is number => x != null))];
         await prisma.auditLog.deleteMany({ where: { actorId: { in: members.map(m => m.id) } } });
         await prisma.emergencyContact.deleteMany({ where: { householdId: { in: hhIds } } });
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.person.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
         await prisma.program.deleteMany({ where: { id: { in: progIds } } });

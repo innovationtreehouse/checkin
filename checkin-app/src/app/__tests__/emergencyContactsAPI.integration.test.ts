@@ -39,14 +39,12 @@ async function wipe() {
     if (!ids.length) return;
     await prisma.emergencyContact.deleteMany({ where: { householdId: { in: ids } } });
     await prisma.auditLog.deleteMany({ where: { tableName: "EmergencyContact", secondaryAffectedEntity: { in: ids } } });
-    await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
     await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
     await prisma.household.deleteMany({ where: { id: { in: ids } } });
 }
 
 describe("Emergency Contacts API — removal prohibition", () => {
     let leadId: number;
-    let householdId: number;
 
     beforeAll(async () => {
         await wipe();
@@ -54,8 +52,7 @@ describe("Emergency Contacts API — removal prohibition", () => {
             data: { email: `lead-${TAG}@example.com`, name: "Lead Person", household: { create: { name: `HH ${TAG}` } } },
         });
         leadId = lead.id;
-        householdId = lead.householdId!;
-        await prisma.householdLead.create({ data: { householdId, personId: leadId } });
+        await prisma.person.update({ where: { id: leadId }, data: { isHouseholdLead: true } });
     });
 
     afterAll(async () => {
@@ -96,7 +93,7 @@ describe("Emergency Contacts API — removal prohibition", () => {
         // Fresh household to isolate state.
         const hh = await prisma.household.create({ data: { name: `HH2 ${TAG}` } });
         const p = await prisma.person.create({ data: { email: `lead2-${TAG}@example.com`, name: "Lead Two", householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: p.id } });
+        await prisma.person.update({ where: { id: p.id }, data: { isHouseholdLead: true } });
         // A contact that is flagged invalid (simulate a direction-B conflict).
         const member = await prisma.person.create({ data: { name: "Clashy", householdId: hh.id } });
         const invalid = await prisma.emergencyContact.create({
@@ -112,7 +109,7 @@ describe("Emergency Contacts API — removal prohibition", () => {
         const lead = await prisma.person.create({
             data: { email: `lead-${label}-${TAG}@example.com`, name: `Lead ${label}`, householdId: hh.id },
         });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+        await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
         return { hhId: hh.id, leadId: lead.id };
     }
 

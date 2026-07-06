@@ -24,8 +24,10 @@
 import prisma from '@/lib/prisma';
 import {
     addHouseholdLead,
+    removeHouseholdLead,
     HouseholdLeadLimitError,
     MAX_HOUSEHOLD_LEADS,
+    type RemoveLeadResult,
 } from '@/lib/household/leads';
 
 const TAG = 'hh-lead-conc-test';
@@ -37,7 +39,6 @@ async function cleanup() {
     });
     const ids = users.map(u => u.id);
     const householdIds = [...new Set(users.map(u => u.householdId))];
-    await prisma.householdLead.deleteMany({ where: { personId: { in: ids } } });
     await prisma.person.deleteMany({ where: { id: { in: ids } } });
     await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
 }
@@ -53,7 +54,7 @@ async function makeHousehold(label: string, existingLeads: number, spares: numbe
         const p = await prisma.person.create({
             data: { email: `lead-${i}-${label}-${TAG}@example.com`, name: `Lead ${i}`, householdId: household.id },
         });
-        await prisma.householdLead.create({ data: { householdId: household.id, personId: p.id } });
+        await prisma.person.update({ where: { id: p.id }, data: { isHouseholdLead: true } });
         leadIds.push(p.id);
     }
     const spareIds: number[] = [];
@@ -87,20 +88,20 @@ describe('addHouseholdLead (cap lock)', () => {
         expect(rejected).toHaveLength(1);
         expect(rejected[0].reason).toBeInstanceOf(HouseholdLeadLimitError);
 
-        const count = await prisma.householdLead.count({ where: { householdId } });
+        const count = await prisma.person.count({ where: { householdId, isHouseholdLead: true } });
         expect(count).toBe(MAX_HOUSEHOLD_LEADS);
     });
 
     it('re-adding an existing lead is a no-op even at the cap', async () => {
         // Household already full; re-promote a participant who is already a lead.
         const { householdId, leadIds } = await makeHousehold('idem', MAX_HOUSEHOLD_LEADS, 0);
-        const before = await prisma.householdLead.count({ where: { householdId } });
+        const before = await prisma.person.count({ where: { householdId, isHouseholdLead: true } });
         expect(before).toBe(MAX_HOUSEHOLD_LEADS);
 
         const res = await addHouseholdLead(prisma, householdId, leadIds[0]);
         expect(res).toEqual({ created: false });
 
-        const after = await prisma.householdLead.count({ where: { householdId } });
+        const after = await prisma.person.count({ where: { householdId, isHouseholdLead: true } });
         expect(after).toBe(MAX_HOUSEHOLD_LEADS);
     });
 
@@ -116,14 +117,52 @@ describe('addHouseholdLead (cap lock)', () => {
                 const res = await addHouseholdLead(tx, householdId, spareIds[0]);
                 expect(res).toEqual({ created: true });
                 // Visible inside the same tx before we bail.
-                const inTx = await tx.householdLead.count({ where: { householdId } });
+                const inTx = await tx.person.count({ where: { householdId, isHouseholdLead: true } });
                 expect(inTx).toBe(MAX_HOUSEHOLD_LEADS);
                 throw sentinel;
             }),
         ).rejects.toBe(sentinel);
 
         // Rolled back with the outer tx → still at MAX-1, the add did not persist.
-        const after = await prisma.householdLead.count({ where: { householdId } });
+        const after = await prisma.person.count({ where: { householdId, isHouseholdLead: true } });
         expect(after).toBe(MAX_HOUSEHOLD_LEADS - 1);
+    });
+});
+
+describe('removeHouseholdLead (last-lead lock)', () => {
+    beforeAll(cleanup);
+    afterAll(cleanup);
+
+    it('two concurrent demotes of a 2-lead household → exactly one succeeds, never zero leads', async () => {
+        // Both leads targeted at once. Without the Household FOR UPDATE lock both
+        // would read count === 2, both pass the last-lead guard, both clear → a
+        // zero-lead ("broken") household. The lock serializes them: the first
+        // removes, the second then sees count === 1 and is refused.
+        const { householdId, leadIds } = await makeHousehold('demote-race', MAX_HOUSEHOLD_LEADS, 0);
+
+        const results = await Promise.allSettled([
+            removeHouseholdLead(prisma, householdId, leadIds[0]),
+            removeHouseholdLead(prisma, householdId, leadIds[1]),
+        ]);
+
+        const values = results
+            .filter((r): r is PromiseFulfilledResult<RemoveLeadResult> => r.status === 'fulfilled')
+            .map((r) => r.value);
+        expect(values.filter((v) => v.removed)).toHaveLength(1);
+        const refused = values.filter((v) => !v.removed);
+        expect(refused).toHaveLength(1);
+        expect(refused[0]).toMatchObject({ removed: false, reason: 'last_lead' });
+
+        // The invariant: a demote race NEVER leaves the household with zero leads.
+        const count = await prisma.person.count({ where: { householdId, isHouseholdLead: true } });
+        expect(count).toBe(1);
+    });
+
+    it('refuses to remove the sole lead (would break the household)', async () => {
+        const { householdId, leadIds } = await makeHousehold('sole-lead', 1, 0);
+        const res = await removeHouseholdLead(prisma, householdId, leadIds[0]);
+        expect(res).toEqual({ removed: false, reason: 'last_lead' });
+        const count = await prisma.person.count({ where: { householdId, isHouseholdLead: true } });
+        expect(count).toBe(1);
     });
 });

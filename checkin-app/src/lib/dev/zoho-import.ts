@@ -531,12 +531,11 @@ export async function applyImport(
             if (m.isPrimary) primaryParticipantId = participant.id;
         }
 
-        // The primary contact is the household lead.
+        // The primary contact is the household lead (a1: flag on the person).
         if (primaryParticipantId !== null) {
-            await tx.householdLead.upsert({
-                where: { householdId_personId: { householdId, personId: primaryParticipantId } },
-                create: { householdId, personId: primaryParticipantId },
-                update: {},
+            await tx.person.update({
+                where: { id: primaryParticipantId },
+                data: { isHouseholdLead: true },
             });
         }
 

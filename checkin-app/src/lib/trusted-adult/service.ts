@@ -569,9 +569,9 @@ export async function runExpirySweep(now: Date) {
 
 /** Actor must be a lead of the given household. */
 export async function assertHouseholdLead(householdId: number, actorId: number) {
-    const lead = await prisma.householdLead.findFirst({
-        where: { householdId, personId: actorId },
-        select: { personId: true },
+    const lead = await prisma.person.findFirst({
+        where: { id: actorId, householdId, isHouseholdLead: true },
+        select: { id: true },
     });
     if (!lead) throw new TrustedAdultError("forbidden", "You must be a lead of this household.");
 }

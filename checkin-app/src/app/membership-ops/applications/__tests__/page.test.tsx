@@ -10,7 +10,7 @@ import AdminMembershipPage from "../page";
 beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 function household(name: string, id: number) {
-    return { name, householdMembers: [{ id: 1, name: "Lead One", email: "lead@example.com" }], leads: [{ personId: 1 }], householdId: id };
+    return { name, householdMembers: [{ id: 1, name: "Lead One", email: "lead@example.com", isHouseholdLead: true }], householdId: id };
 }
 
 const rows = [

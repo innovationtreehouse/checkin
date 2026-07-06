@@ -15,7 +15,7 @@ const queue = {
   queue: [
     {
       id: 100,
-      orgMembership: { household: { name: "The Smiths", intakeNotes: "We're volunteer only — no students.", leads: [{ person: { id: 1, name: "Pat Smith", email: "pat@example.com" } }] } },
+      orgMembership: { household: { name: "The Smiths", intakeNotes: "We're volunteer only — no students.", householdMembers: [{ id: 1, name: "Pat Smith", email: "pat@example.com" }] } },
       _count: { attestations: 1 },
     },
   ],

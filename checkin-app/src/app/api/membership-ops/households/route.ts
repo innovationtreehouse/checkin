@@ -33,7 +33,7 @@ export const GET = withAuth(
                     include: {
                         householdMembers: {
                             select: {
-                                id: true, name: true, email: true,
+                                id: true, name: true, email: true, isHouseholdLead: true,
                                 // Program enrollments for the household detail view. Extra field the
                                 // Edit Info modal (same endpoint) simply ignores.
                                 programParticipants: {
@@ -42,7 +42,6 @@ export const GET = withAuth(
                                 },
                             }
                         },
-                        leads: { select: { personId: true } },
                         orgMembership: true,
                         emergencyContacts: {
                             where: PRIMARY_CONTACT_WHERE,
@@ -53,8 +52,8 @@ export const GET = withAuth(
                     }
                 });
                 if (!household) return NextResponse.json({ household: null });
-                const { leads: householdLeads, ...rest } = household;
-                return NextResponse.json({ household: { ...withFlatContact(rest), householdLeads } });
+                const householdLeads = household.householdMembers.filter(p => p.isHouseholdLead).map(p => ({ personId: p.id }));
+                return NextResponse.json({ household: { ...withFlatContact(household), householdLeads } });
             }
 
             const whereClause = q ? {

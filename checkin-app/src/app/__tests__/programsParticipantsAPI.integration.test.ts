@@ -39,10 +39,6 @@ describe('Program Participants API Integration Tests', () => {
         });
         const existingUserIds = existingUsers.map(u => u.id);
 
-        await prisma.householdLead.deleteMany({
-            where: { personId: { in: existingUserIds } }
-        });
-
         await prisma.programParticipant.deleteMany({
             where: { personId: { in: existingUserIds } }
         });
@@ -109,8 +105,9 @@ describe('Program Participants API Integration Tests', () => {
             }
         });
         depId = dependent.id;
-        await prisma.householdLead.create({
-            data: { householdId: boardHousehold.id, personId: boardId }
+        await prisma.person.update({
+            where: { id: boardId },
+            data: { isHouseholdLead: true }
         });
 
         // Create mock programs
@@ -149,9 +146,6 @@ describe('Program Participants API Integration Tests', () => {
         const validProgramIds = [standardProgramId, freeProgramId, fullProgramId, exactAgeProgramId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
-            await prisma.householdLead.deleteMany({
-                where: { personId: { in: existingUserIds } }
-            });
             await prisma.programParticipant.deleteMany({
                 where: { personId: { in: existingUserIds } }
             });

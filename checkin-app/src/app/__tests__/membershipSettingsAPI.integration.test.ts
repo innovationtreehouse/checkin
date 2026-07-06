@@ -34,7 +34,6 @@ describe('Membership settings + volunteer designations API', () => {
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
             await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }

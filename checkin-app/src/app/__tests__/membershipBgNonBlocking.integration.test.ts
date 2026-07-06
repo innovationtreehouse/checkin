@@ -50,7 +50,7 @@ async function makeFreshRenewal() {
     const lead = await prisma.person.create({
         data: { email: `rlead-${Math.random()}-${TAG}@example.com`, name: 'R Lead', householdId: hh.id, lastBackgroundCheck: new Date() },
     });
-    await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+    await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
     const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
     const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
     return { orgMembershipId: m.id, processId: proc.id };
@@ -62,7 +62,7 @@ async function makeApplicant(status: 'PENDING_EXTERNAL_ACTION', extra: { lastBac
     const lead = await prisma.person.create({
         data: { email: `lead-${Math.random()}-${TAG}@example.com`, name: 'Lead Parent', householdId: hh.id, lastBackgroundCheck: extra.lastBackgroundCheck ?? null },
     });
-    await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+    await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
     const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
     const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status } });
     return { householdId: hh.id, orgMembershipId: m.id, processId: proc.id, leadId: lead.id };
@@ -81,7 +81,6 @@ async function wipe() {
         await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { householdId: { in: ids } } } } });
         await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
         await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.emergencyContact.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
@@ -194,7 +193,7 @@ describe('background check is non-blocking', () => {
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
         await prisma.household.update({ where: { id: householdId }, data: { line1: '123 Test St', city: 'Austin', state: 'TX', postalCode: '78701' } });
         await prisma.emergencyContact.create({ data: { householdId, name: 'Out Of House', phone: '555-555-1212', phoneDigits: '5555551212', priority: 0 } });
-        const lead = await prisma.person.findFirst({ where: { householdId, householdLeads: { some: { householdId } } } });
+        const lead = await prisma.person.findFirst({ where: { householdId, isHouseholdLead: true } });
 
         await submitIntake(lead!.id);
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });

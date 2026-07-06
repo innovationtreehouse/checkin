@@ -18,6 +18,7 @@ export const classifications = {
         emailUndeliverableAt: 'internal',
         notificationSettings: 'personal',
         householdId: 'public',
+        isHouseholdLead: 'public',
         allergies: 'personal',
         isSysadmin: 'internal',
         isBoardMember: 'public',

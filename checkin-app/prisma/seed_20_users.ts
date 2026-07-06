@@ -27,12 +27,10 @@ async function main() {
             }
         })
 
-        // Make HouseholdLead
-        await prisma.householdLead.create({
-            data: {
-                householdId: household.id,
-                personId: participant.id,
-            }
+        // Make household lead (a1: flag on the person).
+        await prisma.person.update({
+            where: { id: participant.id },
+            data: { isHouseholdLead: true },
         });
 
         // Create membership

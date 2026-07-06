@@ -44,12 +44,11 @@ function ageBadge(p: HouseholdMember): { label: string; color: string; variant: 
   return { label: 'Age Unavailable', color: 'red', variant: 'filled' };
 }
 
-type HouseholdMember = { id: number; name?: string; email?: string; dateOfBirth?: string; phone?: string; isDeclaredAdult?: boolean; allergies?: string | null };
+type HouseholdMember = { id: number; name?: string; email?: string; dateOfBirth?: string; phone?: string; isDeclaredAdult?: boolean; allergies?: string | null; isHouseholdLead?: boolean };
 type EmergencyContact = { id: number; name: string; phone: string; email?: string | null; relationship?: string | null; priority: number; invalid: boolean };
 type HouseholdData = {
   id?: number;
   name?: string;
-  leads?: Array<{ personId: number }>;
   householdMembers?: HouseholdMember[];
   orgMembership?: { status?: string; memberSince?: string; isVolunteer?: boolean } | null;
 } & Partial<StructuredAddress> | null;
@@ -334,7 +333,7 @@ export default function HouseholdPage() {
   // Staff (@innovationtreehouse.org) accounts aren't real member families; the add-member
   // control is hidden for them (server also enforces this — see /api/household PATCH).
   const isStaffAccount = isOrgAccount(sessionUser as { hd?: string | null; email?: string | null });
-  const isLead = (pid: number) => household?.leads?.some((l) => l.personId === pid) ?? false;
+  const isLead = (pid: number) => household?.householdMembers?.find((m) => m.id === pid)?.isHouseholdLead ?? false;
   const viewerIsLead = isLead(userId);
 
   const sortedHouseholdMembers = (household?.householdMembers || []).slice().sort((a, b) => {

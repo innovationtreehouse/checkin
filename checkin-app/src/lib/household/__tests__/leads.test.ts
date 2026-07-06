@@ -23,7 +23,7 @@ test("a lead of their household gets the householdId", async () => {
         id: 1,
         householdId: 42,
         isSysadmin: false,
-        householdLeads: [{ householdId: 42 }],
+        isHouseholdLead: true,
     });
     expect(await leadHousehold(1)).toBe(42);
 });
@@ -33,7 +33,7 @@ test("a non-lead gets the {error,status} 403 object", async () => {
         id: 2,
         householdId: 42,
         isSysadmin: false,
-        householdLeads: [{ householdId: 99 }], // lead of a different household
+        isHouseholdLead: false, // a member who is not a lead
     });
     expect(await leadHousehold(2)).toEqual({
         error: "Only household leads can manage emergency contacts.",
@@ -42,7 +42,7 @@ test("a non-lead gets the {error,status} 403 object", async () => {
 });
 
 test("no household gets the {error,status} 400 object", async () => {
-    mockFind.mockResolvedValue({ id: 3, householdId: null, isSysadmin: false, householdLeads: [] });
+    mockFind.mockResolvedValue({ id: 3, householdId: null, isSysadmin: false, isHouseholdLead: false });
     expect(await leadHousehold(3)).toEqual({
         error: "You must create a household first.",
         status: 400,

@@ -24,8 +24,7 @@ export const GET = withAuth(
                     include: {
                         household: {
                             include: {
-                                householdMembers: true,
-                                leads: true
+                                householdMembers: true
                             }
                         },
                         _count: {
