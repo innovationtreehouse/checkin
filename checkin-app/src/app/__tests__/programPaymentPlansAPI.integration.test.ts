@@ -144,7 +144,7 @@ describe('Program payment-plan routes', () => {
 
             const res = await PlansGet(nextReq());
             expect(res.status).toBe(200);
-            const rows = await res.json();
+            const { ProgramParticipant: rows } = await res.json();
             const ids = rows.map((r: { personId: number }) => r.personId);
             expect(ids).toContain(selfId);
             expect(ids).not.toContain(noiseId);
@@ -157,12 +157,31 @@ describe('Program payment-plan routes', () => {
 
             const res = await PlansGet(nextReq());
             expect(res.status).toBe(200);
-            const rows = await res.json();
+            const { ProgramParticipant: rows } = await res.json();
             type Row = { personId: number; person: { household?: { orgMembership?: { status: string } | null } | null } };
             const memberRow = (rows as Row[]).find(r => r.personId === memberId);
             const nonMemberRow = (rows as Row[]).find(r => r.personId === selfId);
             expect(memberRow?.person.household?.orgMembership?.status).toBe('ACTIVE');
             expect(nonMemberRow?.person.household?.orgMembership).toBeFalsy();
+        });
+
+        it('ships the next-year flag inputs: program.startAt + a BoardSettings key', async () => {
+            // The flag itself is derived on the client (the stripper drops ad-hoc
+            // booleans); the route's job is only to ship both inputs — the program's
+            // start date and the membership-year cutoff singleton. Don't mutate the
+            // BoardSettings singleton here (it's global across the integration DB);
+            // just assert the key rides along and startAt round-trips.
+            const startAt = new Date('2999-10-01T00:00:00Z');
+            await prisma.program.update({ where: { id: programId }, data: { startAt } });
+            await enroll(selfId, { requested: true });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            const res = await PlansGet(nextReq());
+            expect(res.status).toBe(200);
+            const body = await res.json();
+            expect(body).toHaveProperty('BoardSettings');
+            const row = body.ProgramParticipant.find((r: { personId: number }) => r.personId === selfId);
+            expect(row.program.startAt).toBe(startAt.toISOString());
         });
     });
 

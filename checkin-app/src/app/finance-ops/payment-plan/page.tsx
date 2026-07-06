@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Button, Group, Modal, Stack, Text } from '@mantine/core';
+import { Badge, Button, Group, Modal, Stack, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
@@ -11,6 +11,7 @@ import { formatDateTime } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { sharesHousehold } from '@/lib/conflictOfInterest';
 import { formatCents } from '@inventory/money';
+import { landsNextYear } from '@/lib/programYear';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type PaymentPlanRequest = {
@@ -31,6 +32,7 @@ type PaymentPlanRequest = {
     name: string;
     orgMemberPriceCents: number | null;
     nonOrgMemberPriceCents: number | null;
+    startAt: string | null;
   };
 };
 
@@ -42,6 +44,7 @@ export default function PendingParticipantsPage() {
     me?.isSysadmin !== true && sharesHousehold(me?.householdId, req.person.householdId);
 
   const [requests, setRequests] = useState<PaymentPlanRequest[]>([]);
+  const [cutoff, setCutoff] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [confirmApproveOpened, { open: openConfirmApprove, close: closeConfirmApprove }] = useDisclosure(false);
@@ -52,7 +55,8 @@ export default function PendingParticipantsPage() {
       const res = await fetch('/api/finance-ops/payment-plans');
       if (res.ok) {
         const data = await res.json();
-        setRequests(data);
+        setRequests(data.ProgramParticipant ?? []);
+        setCutoff(data.BoardSettings?.orgMembershipYearBoundary ?? null);
       } else {
         setMessage("Failed to load requests. You may not have access.");
       }
@@ -128,7 +132,12 @@ export default function PendingParticipantsPage() {
       sortBy: (req) => req.program.name.toLowerCase(),
       render: (req) => (
         <>
-          <Text fw={500}>{req.program.name}</Text>
+          <Group gap="xs">
+            <Text fw={500}>{req.program.name}</Text>
+            {landsNextYear(req.program.startAt, cutoff) && (
+              <Badge size="sm" color="orange" variant="light">Next year</Badge>
+            )}
+          </Group>
           <Text size="sm" c="dimmed">
             Price: M {formatCents(req.program.orgMemberPriceCents)} / NM {formatCents(req.program.nonOrgMemberPriceCents)}
           </Text>
