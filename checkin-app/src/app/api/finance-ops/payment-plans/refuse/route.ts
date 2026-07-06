@@ -3,14 +3,18 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
-import { adjustProgramInventory } from "@/lib/shopify";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 
 // Denies a pending scholarship / payment-plan request — the sibling of
 // POST /api/finance-ops/payment-plans (approve) this branch previously lacked.
-// The participant stays PENDING (they can still pay normally, or re-request);
-// only the isPaymentPlanRequested flag clears. Same auth/conflict-of-interest
-// posture as approve.
+// The participant stays PENDING and keeps their held seat (product decision
+// 2026-07-06, hold-ledger): a denial performs NO Shopify operation — the seat
+// stays out of Shopify's pool exactly as the application left it, so the
+// applicant may still pay normally. This supersedes the earlier deny-time +1
+// (that let the seat re-sell out from under a denied-but-not-withdrawn
+// applicant). The hold is released, exactly once, by whichever of withdrawal /
+// normal payment / grace-period expiry fires first (see
+// docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md).
 export const POST = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
     async (req, auth) => {
@@ -32,12 +36,12 @@ export const POST = withAuth(
                 }
             }
 
-            const data = { isPaymentPlanRequested: false };
+            const data = { isPaymentPlanRequested: false, paymentPlanDeniedAt: new Date() };
 
             // Scope to the pending request so refusing a non-pending/nonexistent
             // request is a no-op error, mirroring approve's guard. Transactional
             // true->false guard: a double-refuse (already false) 409s instead of
-            // crediting +1 twice.
+            // re-stamping paymentPlanDeniedAt.
             const { count } = await prisma.programParticipant.updateMany({
                 where: { programId, personId: participantId, isPaymentPlanRequested: true, status: 'PENDING' },
                 data,
@@ -60,25 +64,7 @@ export const POST = withAuth(
                 });
             }
 
-            // Scholarship lifecycle drives inventory (product decision 2026-07-06):
-            // a refusal returns the seat to Shopify's pool, since the application
-            // took it out of the pool. Non-fatal: the refusal itself already
-            // committed above regardless of the Shopify result. The participant
-            // row still exists PENDING (may re-apply, pay normally, or withdraw —
-            // see the open policy question in this feature's PR body about a
-            // refused-but-never-withdrawn participant still holding DB capacity).
-            let warning: string | undefined;
-            const program = await prisma.program.findUnique({ where: { id: programId } });
-            if (program) {
-                const ok = await adjustProgramInventory(program, 1);
-                if (!ok) {
-                    warning = "Payment plan refused, but the Shopify inventory adjustment failed. Capacity may be out of sync — check System Status > Link Status.";
-                }
-            }
-
-            const responseObj: Record<string, unknown> = { success: true };
-            if (warning) responseObj.warning = warning;
-            return NextResponse.json(responseObj);
+            return NextResponse.json({ success: true });
         } catch (error) {
             logger.error("Failed to refuse payment plan:", error);
             return apiError("Failed to refuse payment plan", 500);

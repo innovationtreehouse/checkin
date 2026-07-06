@@ -522,5 +522,48 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
                 else process.env.CHECKIN_ENV = prevEnv;
             }
         });
+
+        // Hold-ledger (product decision 2026-07-06): release path (b) — a denied
+        // scholarship applicant who pays anyway (inventoryHeldAt still set from
+        // application time) gets that hold released (+1) to compensate Shopify's
+        // real sale, which just auto-decremented a SECOND unit for the same seat.
+        // Without this, every denied-then-paying applicant leaks a seat.
+        it('activates AND releases the scholarship hold (+1) when a denied applicant pays anyway', async () => {
+            const prevEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            try {
+                await prisma.programParticipant.upsert({
+                    where: { programId_personId: { programId: singlePoolProgramId, personId: sgp1 } },
+                    update: { status: 'PENDING', pendingSince: new Date(), isPaymentPlanRequested: false, inventoryHeldAt: new Date(), paymentPlanDeniedAt: new Date() },
+                    create: { programId: singlePoolProgramId, personId: sgp1, status: 'PENDING', pendingSince: new Date(), isPaymentPlanRequested: false, inventoryHeldAt: new Date(), paymentPlanDeniedAt: new Date() },
+                });
+                const body = JSON.stringify({
+                    id: 889,
+                    line_items: [{ variant_id: SINGLE_VARIANT_ID }],
+                    note_attributes: [
+                        { name: 'CheckMeIn_Account_ID', value: String(sgp1) },
+                        { name: 'Program_ID', value: String(singlePoolProgramId) },
+                    ],
+                });
+
+                const res = await POST(webhookReq(body, sign(body)));
+                expect(res.status).toBe(200);
+
+                const row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: singlePoolProgramId, personId: sgp1 } },
+                });
+                expect(row?.status).toBe('ACTIVE');
+                expect(row?.inventoryHeldAt).toBeNull(); // hold released
+
+                expect(logSpy).toHaveBeenCalledWith(
+                    expect.stringContaining(`Would adjust inventory by 1 for variants: ${SINGLE_VARIANT_ID}`),
+                );
+            } finally {
+                logSpy.mockRestore();
+                if (prevEnv === undefined) delete process.env.CHECKIN_ENV;
+                else process.env.CHECKIN_ENV = prevEnv;
+            }
+        });
     });
 });

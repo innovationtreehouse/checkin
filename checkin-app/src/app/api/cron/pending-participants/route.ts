@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
+import { withdrawAndReleaseHold } from "@/lib/program/capacity";
 
 export const GET = withCron(async () => {
         const now = new Date();
@@ -19,7 +20,7 @@ export const GET = withCron(async () => {
 
         let kickedCount = 0;
         let warnedCount = 0;
-        const toDelete: { programId: number; personId: number }[] = [];
+        const toDelete: typeof pendingParticipants = [];
 
         for (const record of pendingParticipants) {
             if (!record.pendingSince) continue;
@@ -31,11 +32,10 @@ export const GET = withCron(async () => {
             const warningText = `If not paid, your spot in ${record.program.name} will be freed up. If a payment plan is needed, contact the board via finance@innovationtreehouse.org`;
 
             if (diffDays >= 7) {
-                // Collect IDs for batch deletion
-                toDelete.push({
-                    programId: record.programId,
-                    personId: record.personId
-                });
+                // Collect for removal below (hold-ledger: a denied scholarship
+                // applicant is isPaymentPlanRequested:false too, so this query can
+                // also catch a still-held seat — see the per-row removal below).
+                toDelete.push(record);
 
                 kickedCount++;
 
@@ -56,13 +56,24 @@ export const GET = withCron(async () => {
             }
         }
 
-        if (toDelete.length > 0) {
-            await prisma.programParticipant.deleteMany({
-                where: {
-                    OR: toDelete
+        // Removed one row at a time (not a bulk deleteMany) so the hold-ledger
+        // release (withdrawAndReleaseHold) runs per participant, and one bad row
+        // can't block the rest of the sweep.
+        for (const record of toDelete) {
+            try {
+                await withdrawAndReleaseHold(record.programId, record.personId, record.program);
+            } catch (err) {
+                // P2025 = already removed by another path (e.g. self-withdraw)
+                // between this sweep's read and now — benign, skip.
+                if (!isPrismaP2025(err)) {
+                    logger.error(`[CRON] Failed to remove pending participant ${record.personId} from program ${record.programId}:`, err);
                 }
-            });
+            }
         }
 
         return NextResponse.json({ success: true, processed: pendingParticipants.length, kicked: kickedCount, warned: warnedCount });
 });
+
+function isPrismaP2025(err: unknown): boolean {
+    return typeof err === 'object' && err !== null && 'code' in err && (err as { code?: unknown }).code === 'P2025';
+}

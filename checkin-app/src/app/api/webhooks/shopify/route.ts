@@ -164,6 +164,7 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                     (order.line_items ?? []).some((li) => String(li.variant_id) === program.shopifyOrgMemberVariantId);
 
                 let activatedCount = 0;
+                let releasedHoldCount = 0;
 
                 for (const participantId of participantIds) {
                     // Find existing participant
@@ -191,8 +192,43 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                         activatedCount++;
 
                         logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
+
+                        // Hold-ledger (product decision 2026-07-06): NORMAL PAYMENT is
+                        // one of the three release paths. A denied scholarship
+                        // applicant who pays anyway still had inventoryHeldAt set
+                        // from application time; this sale just made Shopify
+                        // auto-decrement a SECOND unit for the same seat. Release the
+                        // hold (+1) to compensate, guarded transactionally
+                        // (inventoryHeldAt NOT NULL -> NULL) so a webhook retry can't
+                        // release twice. Without this, every denied-then-paying
+                        // applicant permanently leaks a seat of capacity.
+                        if (existing.inventoryHeldAt) {
+                            const release = await prisma.programParticipant.updateMany({
+                                where: { programId, personId: participantId, inventoryHeldAt: { not: null } },
+                                data: { inventoryHeldAt: null },
+                            });
+                            releasedHoldCount += release.count;
+                        }
                     } else {
                         logger.warn(`[SHOPIFY WEBHOOK] Participant ${participantId} not found in Program ${programId}. Ignoring payment.`);
+                    }
+                }
+
+                // Release path (b), continued: fire the compensating +1 for every
+                // hold released above, in one call. Never allowed to fail the
+                // webhook response — same non-fatal posture as the sibling-mirror
+                // block below (Shopify retries the whole order on a non-2xx).
+                if (releasedHoldCount > 0) {
+                    const ok = await adjustProgramInventory(
+                        {
+                            shopifyVariantId: program?.shopifyVariantId ?? null,
+                            shopifyOrgMemberVariantId: program?.shopifyOrgMemberVariantId ?? null,
+                            shopifyNonOrgMemberVariantId: program?.shopifyNonOrgMemberVariantId ?? null,
+                        },
+                        releasedHoldCount,
+                    );
+                    if (!ok) {
+                        logger.error(`[SHOPIFY WEBHOOK] Failed to release ${releasedHoldCount} scholarship inventory hold(s) for program ${programId} after payment — capacity may be out of sync.`);
                     }
                 }
 

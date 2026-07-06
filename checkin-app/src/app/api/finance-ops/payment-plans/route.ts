@@ -69,7 +69,14 @@ export const POST = withAuth(
                 status: 'ACTIVE' as const,
                 isPaymentPlanRequested: false, // cleared since it's approved
                 pendingSince: null, // reset
-                wasOrgMemberAtApproval
+                wasOrgMemberAtApproval,
+                // Hold-ledger (product decision 2026-07-06): approval CONSUMES the
+                // hold — the applicant keeps the seat permanently as a comped
+                // enrollment, so it must never be released later (e.g. if this
+                // now-ACTIVE participant is later removed, that removal must NOT
+                // fire a +1 — see withdrawAndReleaseHold, which only releases when
+                // inventoryHeldAt is still set).
+                inventoryHeldAt: null,
             };
 
             // Scope to the pending request so approving a non-pending/nonexistent

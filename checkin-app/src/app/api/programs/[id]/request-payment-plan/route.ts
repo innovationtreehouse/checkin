@@ -66,18 +66,26 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             return apiError("This enrollment is not awaiting payment", 409);
         }
 
-        // Scholarship lifecycle drives inventory (product decision 2026-07-06):
-        // APPLICATION takes a seat out of Shopify's pool, same as a normal paid
-        // checkout would. Transactional false->true guard: only fires -1 the
-        // moment isPaymentPlanRequested actually flips (count>0); an idempotent
-        // re-POST while already requested is a no-op (count=0, no second -1).
-        // Re-application after a refusal (isPaymentPlanRequested reset to false
-        // by the refuse endpoint) is a fresh false->true transition, so it fires
-        // -1 again — intentional (the applicant is asking to hold a seat again).
-        const { count } = await prisma.programParticipant.updateMany({
-            where: { programId, personId: participantId, isPaymentPlanRequested: false },
-            data: { isPaymentPlanRequested: true },
+        // Hold-ledger (product decision 2026-07-06): APPLICATION takes a seat out
+        // of Shopify's pool (-1), stamping inventoryHeldAt so every later release
+        // path (withdrawal / payment / grace-expiry) or approval knows there's a
+        // hold to account for. Guard is on inventoryHeldAt, NOT isPaymentPlanRequested:
+        // a denied re-applicant still holds the seat (refuse no longer releases
+        // it — see the refuse route), so re-applying must NOT decrement twice.
+        // Branch 1 (inventoryHeldAt null -> now): the seat is genuinely free —
+        // fires -1. Branch 2 (inventoryHeldAt already set): re-application while
+        // holding (or an idempotent re-POST) — just (re)flips the request flag
+        // and clears any denial stamp, no second decrement.
+        const holdResult = await prisma.programParticipant.updateMany({
+            where: { programId, personId: participantId, inventoryHeldAt: null },
+            data: { isPaymentPlanRequested: true, inventoryHeldAt: new Date(), paymentPlanDeniedAt: null },
         });
+        if (holdResult.count === 0) {
+            await prisma.programParticipant.updateMany({
+                where: { programId, personId: participantId, inventoryHeldAt: { not: null } },
+                data: { isPaymentPlanRequested: true, paymentPlanDeniedAt: null },
+            });
+        }
 
         const updatedParticipant = await prisma.programParticipant.findUniqueOrThrow({
             where: { programId_personId: { programId, personId: participantId } },
@@ -88,7 +96,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         logger.info(`[EMAIL DISPATCH] To: finance@innovationtreehouse.org, Subject: Scholarship / Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
 
         let warning: string | undefined;
-        if (count > 0 && participant.program) {
+        if (holdResult.count > 0 && participant.program) {
             const ok = await adjustProgramInventory(participant.program, -1);
             if (!ok) {
                 warning = "Payment plan requested, but the Shopify inventory adjustment failed. Capacity may be out of sync — check System Status > Link Status.";

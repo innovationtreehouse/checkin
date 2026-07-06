@@ -14,7 +14,7 @@
 import { GET as PlansGet, POST as PlansPost } from '@/app/api/finance-ops/payment-plans/route';
 import { POST as RefusePost } from '@/app/api/finance-ops/payment-plans/refuse/route';
 import { POST as RequestPost } from '@/app/api/programs/[id]/request-payment-plan/route';
-import { POST as ParticipantsPost } from '@/app/api/programs/[id]/participants/route';
+import { POST as ParticipantsPost, DELETE as ParticipantsDelete } from '@/app/api/programs/[id]/participants/route';
 import prisma from '@/lib/prisma';
 
 jest.mock('next-auth/next', () => ({
@@ -221,13 +221,14 @@ describe('Program payment-plan routes', () => {
             expect(data.warning).toBeUndefined();
         });
 
-        // Scholarship lifecycle drives inventory (product decision 2026-07-06):
-        // the seat is decremented at APPLICATION time (request-payment-plan), NOT
-        // at approval — approval only stops billing the applicant. This supersedes
-        // the earlier approve-time decrement (see PR history for the two-pool
-        // mirror model this replaced). Proven here by NO fetch firing even though
+        // Hold-ledger (product decision 2026-07-06): the seat is decremented at
+        // APPLICATION time (request-payment-plan), NOT at approval — approval
+        // only stops billing the applicant and CONSUMES the hold (clears
+        // inventoryHeldAt with no +1), so a later removal of this now-ACTIVE
+        // comped participant must not release a seat that was never given back
+        // to Shopify. Proven here by NO fetch firing at either step even though
         // the program has a variant configured.
-        it('does NOT touch Shopify on approval, even when the program has a variant configured', async () => {
+        it('does NOT touch Shopify on approval (hold consumed, not released), and a later removal fires no +1', async () => {
             const fetchSpy = jest.spyOn(global, 'fetch');
             const shopifyProgram = await prisma.program.create({
                 data: {
@@ -240,8 +241,8 @@ describe('Program payment-plan routes', () => {
             try {
                 await prisma.programParticipant.upsert({
                     where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
-                    update: { status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
-                    create: { programId: shopifyProgram.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
+                    update: { status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date(), inventoryHeldAt: new Date() },
+                    create: { programId: shopifyProgram.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date(), inventoryHeldAt: new Date() },
                 });
                 mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
@@ -257,6 +258,21 @@ describe('Program payment-plan routes', () => {
                     where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
                 });
                 expect(row?.status).toBe('ACTIVE');
+                expect(row?.inventoryHeldAt).toBeNull(); // hold consumed
+                expect(fetchSpy).not.toHaveBeenCalled();
+
+                // Later removal of the now-ACTIVE comped participant: no hold left
+                // to release, so no +1 fires.
+                mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+                const delRes = await ParticipantsDelete(
+                    new Request(`http://localhost/api/programs/${shopifyProgram.id}/participants`, {
+                        method: 'DELETE',
+                        body: JSON.stringify({ participantId: selfId }),
+                    }) as unknown as import('next/server').NextRequest,
+                    { params: Promise.resolve({ id: String(shopifyProgram.id) }) },
+                );
+                expect(delRes.status).toBe(200);
+                expect((await delRes.json()).warning).toBeUndefined();
                 expect(fetchSpy).not.toHaveBeenCalled();
             } finally {
                 fetchSpy.mockRestore();
@@ -512,56 +528,52 @@ describe('Program payment-plan routes', () => {
             expect(row?.isPaymentPlanRequested).toBe(true); // unchanged
         });
 
-        it('refuses a pending request: clears the flag, audit-logs, and adds the seat back (+1)', async () => {
-            const prevCheckinEnv = process.env.CHECKIN_ENV;
-            process.env.CHECKIN_ENV = 'local';
-            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+        it('denies a pending request: no Shopify op, hold persists, denial stamped', async () => {
+            const fetchSpy = jest.spyOn(global, 'fetch');
             const shopifyProgram = await prisma.program.create({
                 data: { name: `PP Refuse Shopify Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: 'dev-mock-variant-refuse-pp' },
             });
             try {
+                // inventoryHeldAt set, as APPLICATION would have stamped it.
                 await prisma.programParticipant.upsert({
                     where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
-                    update: { status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
-                    create: { programId: shopifyProgram.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
+                    update: { status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date(), inventoryHeldAt: new Date() },
+                    create: { programId: shopifyProgram.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date(), inventoryHeldAt: new Date() },
                 });
                 mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
                 const res = await RefusePost(refuseReq({ programId: shopifyProgram.id, participantId: selfId }));
                 expect(res.status).toBe(200);
-                const data = await res.json();
-                expect(data.warning).toBeUndefined();
+                expect((await res.json()).warning).toBeUndefined();
 
                 const row = await prisma.programParticipant.findUnique({
                     where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
                 });
                 expect(row?.isPaymentPlanRequested).toBe(false);
-                expect(row?.status).toBe('PENDING'); // still holds the enrollment — known open policy question
+                expect(row?.status).toBe('PENDING'); // still holds the enrollment
+                expect(row?.inventoryHeldAt).not.toBeNull(); // hold persists — no +1
+                expect(row?.paymentPlanDeniedAt).not.toBeNull(); // denial stamped
 
                 const audit = await prisma.auditLog.findFirst({
                     where: { actorId: boardId, tableName: 'ProgramParticipant', affectedEntityId: selfId, secondaryAffectedEntity: shopifyProgram.id, action: 'EDIT' },
                 });
                 expect(audit).not.toBeNull();
 
-                expect(logSpy).toHaveBeenCalledWith(
-                    expect.stringContaining('Would adjust inventory by 1 for variants: dev-mock-variant-refuse-pp'),
-                );
+                expect(fetchSpy).not.toHaveBeenCalled(); // no Shopify op at all — this supersedes the earlier deny-time +1
 
-                // Double-refuse: the second call finds isPaymentPlanRequested already
-                // false -> 409, no second +1.
-                logSpy.mockClear();
+                // Double-refuse: the second call finds isPaymentPlanRequested
+                // already false -> 409, no-op.
                 const second = await RefusePost(refuseReq({ programId: shopifyProgram.id, participantId: selfId }));
                 expect(second.status).toBe(409);
-                expect(logSpy).not.toHaveBeenCalled();
+                expect(fetchSpy).not.toHaveBeenCalled();
             } finally {
-                logSpy.mockRestore();
-                process.env.CHECKIN_ENV = prevCheckinEnv;
+                fetchSpy.mockRestore();
                 await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
                 await prisma.program.delete({ where: { id: shopifyProgram.id } });
             }
         });
 
-        it('re-application after a refusal fires -1 again', async () => {
+        it('re-applies while holding after a denial: no second -1, denial stamp clears', async () => {
             const prevCheckinEnv = process.env.CHECKIN_ENV;
             process.env.CHECKIN_ENV = 'local';
             const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -572,17 +584,25 @@ describe('Program payment-plan routes', () => {
             try {
                 await prisma.programParticipant.upsert({
                     where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
-                    update: { status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
-                    create: { programId: shopifyProgram.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
+                    update: { status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date(), inventoryHeldAt: new Date() },
+                    create: { programId: shopifyProgram.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date(), inventoryHeldAt: new Date() },
                 });
 
-                // Refuse -> +1.
+                // Deny -> no Shopify op, hold persists, deniedAt stamped.
                 mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
                 const refuseRes = await RefusePost(refuseReq({ programId: shopifyProgram.id, participantId: selfId }));
                 expect(refuseRes.status).toBe(200);
-                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by 1'));
+                expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory'));
 
-                // Re-apply -> fresh false->true transition -> -1 again.
+                let row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
+                });
+                expect(row?.inventoryHeldAt).not.toBeNull();
+                expect(row?.paymentPlanDeniedAt).not.toBeNull();
+
+                // Re-apply while still holding -> flips the request flag + clears the
+                // denial stamp, but does NOT fire a second -1 (inventoryHeldAt was
+                // already set, so the apply-time guard's branch-1 never runs).
                 logSpy.mockClear();
                 mockSession.mockResolvedValue({ user: { id: selfId } });
                 const reapplyRes = await RequestPost(
@@ -594,7 +614,14 @@ describe('Program payment-plan routes', () => {
                     reqParams(shopifyProgram.id),
                 );
                 expect(reapplyRes.status).toBe(200);
-                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by -1'));
+                expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory'));
+
+                row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
+                });
+                expect(row?.isPaymentPlanRequested).toBe(true);
+                expect(row?.paymentPlanDeniedAt).toBeNull(); // denial stamp cleared
+                expect(row?.inventoryHeldAt).not.toBeNull(); // still held throughout
             } finally {
                 logSpy.mockRestore();
                 process.env.CHECKIN_ENV = prevCheckinEnv;
