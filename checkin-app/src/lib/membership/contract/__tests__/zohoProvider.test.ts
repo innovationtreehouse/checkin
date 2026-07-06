@@ -74,6 +74,6 @@ describe("mock provider behavior", () => {
         });
         expect(url).toBe(`http://localhost:4000/dev/zoho-sign?rid=${created.requestId}`);
 
-        expect(await zohoSign.getRequestStatus("t", created.requestId)).toBe(true);
+        expect(await zohoSign.getRequestStatus("t", created.requestId)).toBe("completed");
     });
 });
