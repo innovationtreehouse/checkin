@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Divider, Group, Loader, Modal, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 
@@ -62,6 +63,8 @@ export function AdminEditHouseholdModal({
   const [members, setMembers] = useState<NonNullable<AdminHousehold["householdMembers"]>>([]);
   const [leadIds, setLeadIds] = useState<number[]>([]);
   const [removingLead, setRemovingLead] = useState<number | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ memberSince?: string }>({});
+  const [hasMembership, setHasMembership] = useState(false);
   // Modal-local notice for save-error / lead-remove results, so feedback lands
   // next to the form instead of a global corner toast behind the modal.
   const [notice, setNotice] = useState<{ color: string; message: string } | null>(null);
@@ -85,6 +88,7 @@ export function AdminEditHouseholdModal({
         };
         setForm(loaded);
         setInitial(loaded);
+        setHasMembership(!!h.orgMembership);
         setDisplayName(h.name || `Household #${h.id}`);
         setMembers(h.householdMembers ?? []);
         setLeadIds((h.householdLeads ?? []).map((l) => l.personId));
@@ -124,7 +128,7 @@ export function AdminEditHouseholdModal({
         setNotice({ color: "red", message: data.error || "Failed to remove lead." });
       }
     } catch {
-      setNotice({ color: "red", message: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setRemovingLead(null);
     }
@@ -136,8 +140,17 @@ export function AdminEditHouseholdModal({
   // prompt when the form has unsaved edits. handleSave calls onClose directly
   // so a successful save never prompts.
   const requestClose = () => {
-    if (isFormDirty(form, initial) && !window.confirm("Discard unsaved changes?")) return;
-    onClose();
+    if (!isFormDirty(form, initial)) {
+      onClose();
+      return;
+    }
+    modals.openConfirmModal({
+      title: 'Discard unsaved changes?',
+      children: <Text size="sm">You have unsaved changes. Close without saving?</Text>,
+      labels: { confirm: 'Discard', cancel: 'Keep editing' },
+      confirmProps: { color: 'red' },
+      onConfirm: onClose,
+    });
   };
 
   // Phone is optional here, so only a non-empty malformed value is an error.
@@ -146,6 +159,21 @@ export function AdminEditHouseholdModal({
   const handleSave = async () => {
     if (householdId == null || phoneInvalid) return;
     setNotice(null);
+    setFieldErrors({});
+    // Client-side date checks so a bad member-since highlights the field before
+    // the server round-trip (server still re-checks as defense-in-depth).
+    if (form.memberSince) {
+      const t = new Date(`${form.memberSince}T00:00:00.000Z`).getTime();
+      if (isNaN(t)) {
+        setFieldErrors({ memberSince: "Invalid member-since date" });
+        return;
+      }
+      // Org didn't exist before this date, so no membership can predate it.
+      if (t < Date.UTC(2023, 10, 1)) {
+        setFieldErrors({ memberSince: "Member-since cannot be before Nov 1, 2023" });
+        return;
+      }
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/membership-ops/households/${householdId}`, {
@@ -163,7 +191,7 @@ export function AdminEditHouseholdModal({
         setNotice({ color: "red", message: data.error || "Failed to update household." });
       }
     } catch {
-      setNotice({ color: "red", message: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }
@@ -230,13 +258,18 @@ export function AdminEditHouseholdModal({
                 error={phoneInvalid ? PHONE_ERROR : undefined}
               />
             </SimpleGrid>
-            <TextInput
-              type="date"
-              label="Member since"
-              description="Household's membership start date. Editing this is recorded in the audit log."
-              value={form.memberSince}
-              onChange={(e) => update({ memberSince: e.currentTarget.value })}
-            />
+            {hasMembership ? (
+              <TextInput
+                type="date"
+                label="Member since"
+                description="Household's membership start date. Editing this is recorded in the audit log."
+                value={form.memberSince}
+                onChange={(e) => { update({ memberSince: e.currentTarget.value }); setFieldErrors({}); }}
+                error={fieldErrors.memberSince}
+              />
+            ) : (
+              <Text size="sm" c="dimmed">This household isn&apos;t an org member — no membership date.</Text>
+            )}
             <Divider label="Household Leads" labelPosition="left" mt="sm" />
             <Stack gap="xs">
               {leadIds.length === 0 && (

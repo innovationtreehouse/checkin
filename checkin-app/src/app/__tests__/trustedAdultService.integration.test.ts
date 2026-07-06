@@ -13,6 +13,7 @@ import {
     createTrustedAdult,
     decideReview,
     renewTrustedAdult,
+    resubmitWithChanges,
     withdrawTrustedAdult,
     hideTrustedAdult,
     overrideReview,
@@ -203,6 +204,110 @@ describe('Trusted Adults service', () => {
         await expect(renewTrustedAdult(ta.id, outsiderId)).rejects.toMatchObject({ code: 'forbidden' });
         const review = await renewTrustedAdult(ta.id, leadId);
         expect(review.status).toBe('PENDING_BOARD_REVIEW');
+    });
+
+    it('resubmit-with-changes opens a MODIFIED review holding the proposed edits, WITHOUT disturbing a live approval', async () => {
+        const ta = await discloseOne();
+        const approved = await decideReview(ta.reviews[0].id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
+
+        const modReview = await resubmitWithChanges(ta.id, leadId, {
+            trustedAdultName: 'Jane External-Smith',
+            trustedAdultPhone: '512-555-0199',
+            trustedAdultEmail: 'jane.smith@example.com',
+            familyContext: 'Now married; new number. Weekday pickups only.',
+        });
+        expect(modReview.kind).toBe('MODIFIED');
+        expect(modReview.status).toBe('PENDING_BOARD_REVIEW');
+        expect(modReview.proposedName).toBe('Jane External-Smith');
+
+        // Non-destructive: parent facts and the prior APPROVED review are untouched, so
+        // the front desk keeps seeing the approved record while this change is pending.
+        const parent = await prisma.trustedAdult.findUnique({ where: { id: ta.id } });
+        expect(parent?.trustedAdultName).toBe('Jane External');
+        expect(parent?.familyContext).toBe('Our nanny; may collect the kids on weekdays.');
+        const priorStill = await prisma.trustedAdultReview.findUnique({ where: { id: approved.id } });
+        expect(priorStill?.status).toBe('APPROVED');
+
+        // Only a lead, and never while a review is already open.
+        await expect(
+            resubmitWithChanges(ta.id, outsiderId, { trustedAdultName: 'x', trustedAdultEmail: 'x@y.com', familyContext: 'x' }),
+        ).rejects.toMatchObject({ code: 'forbidden' });
+        await expect(
+            resubmitWithChanges(ta.id, leadId, { trustedAdultName: 'x', trustedAdultEmail: 'x@y.com', familyContext: 'x' }),
+        ).rejects.toMatchObject({ code: 'already_open' });
+    });
+
+    it('approving a MODIFIED review promotes the proposed edits onto the parent; denying discards them', async () => {
+        // Deny path: parent stays on the old facts, prior approval stays live.
+        const denied = await discloseOne();
+        const approvedD = await decideReview(denied.reviews[0].id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
+        const modD = await resubmitWithChanges(denied.id, leadId, {
+            trustedAdultName: 'Should Not Land', trustedAdultEmail: 'nope@example.com', familyContext: 'discarded',
+        });
+        await decideReview(modD.id, boardId, { decision: 'DENY' });
+        const parentD = await prisma.trustedAdult.findUnique({ where: { id: denied.id } });
+        expect(parentD?.trustedAdultName).toBe('Jane External');
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: approvedD.id } }))?.status).toBe('APPROVED');
+
+        // Approve path: the proposed edits become the parent's facts.
+        const ok = await discloseOne();
+        await decideReview(ok.reviews[0].id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
+        const modOk = await resubmitWithChanges(ok.id, leadId, {
+            trustedAdultName: 'Jane Promoted', trustedAdultPhone: '512-555-0100', trustedAdultEmail: 'promoted@example.com', familyContext: 'new scope',
+        });
+        await decideReview(modOk.id, boardId, { decision: 'APPROVE', sharedNote: 'Updated: Jane Promoted may pick up.' });
+        const parentOk = await prisma.trustedAdult.findUnique({ where: { id: ok.id } });
+        expect(parentOk?.trustedAdultName).toBe('Jane Promoted');
+        expect(parentOk?.familyContext).toBe('new scope');
+        expect(parentOk?.trustedAdultEmail).toBe('promoted@example.com');
+    });
+
+    it('plain Deny of a change leaves the live approval intact; Deny & Revoke kills it', async () => {
+        // Plain Deny: prior approval survives (the adult stays authorized at the front desk).
+        const keep = await discloseOne();
+        const approvedK = await decideReview(keep.reviews[0].id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
+        const modK = await resubmitWithChanges(keep.id, leadId, { trustedAdultName: 'x', trustedAdultEmail: 'x@y.com', familyContext: 'x' });
+        await decideReview(modK.id, boardId, { decision: 'DENY' });
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: approvedK.id } }))?.status).toBe('APPROVED');
+
+        // Deny & Revoke: the change is denied AND every live approval is revoked, so no
+        // APPROVED review remains and the adult drops off the pickup list.
+        const kill = await discloseOne();
+        const approvedR = await decideReview(kill.reviews[0].id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
+        const modR = await resubmitWithChanges(kill.id, leadId, { trustedAdultName: 'y', trustedAdultEmail: 'y@z.com', familyContext: 'y' });
+        await decideReview(modR.id, boardId, { decision: 'DENY', revokePriorApprovals: true });
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: modR.id } }))?.status).toBe('DENIED');
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: approvedR.id } }))?.status).toBe('REVOKED');
+        expect(await prisma.trustedAdultReview.count({ where: { trustedAdultId: kill.id, status: 'APPROVED' } })).toBe(0);
+    });
+
+    it('a board member cannot Deny & Revoke their own household review', async () => {
+        const ta = await discloseOne();
+        const approved = await decideReview(ta.reviews[0].id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
+        const mod = await resubmitWithChanges(ta.id, leadId, { trustedAdultName: 'z', trustedAdultEmail: 'z@z.com', familyContext: 'z' });
+        await expect(
+            decideReview(mod.id, boardLeadId, { decision: 'DENY', revokePriorApprovals: true }),
+        ).rejects.toMatchObject({ code: 'forbidden' });
+        // Nothing changed: the change is still pending and the approval still live.
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: mod.id } }))?.status).toBe('PENDING_BOARD_REVIEW');
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: approved.id } }))?.status).toBe('APPROVED');
+    });
+
+    it('withdraw scope=change cancels only the pending change (approval stays); default withdraw revokes all', async () => {
+        // Cancel the change: only the pending MODIFIED review is revoked; the approval remains.
+        const ta = await discloseOne();
+        const approved = await decideReview(ta.reviews[0].id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
+        const mod = await resubmitWithChanges(ta.id, leadId, { trustedAdultName: 'q', trustedAdultEmail: 'q@q.com', familyContext: 'q' });
+        await withdrawTrustedAdult(ta.id, leadId, { latestReviewOnly: true });
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: mod.id } }))?.status).toBe('REVOKED');
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: approved.id } }))?.status).toBe('APPROVED');
+
+        // With no pending change left, scope=change has nothing to cancel.
+        await expect(withdrawTrustedAdult(ta.id, leadId, { latestReviewOnly: true })).rejects.toMatchObject({ code: 'wrong_phase' });
+
+        // Default withdraw now revokes the surviving approval.
+        await withdrawTrustedAdult(ta.id, leadId);
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: approved.id } }))?.status).toBe('REVOKED');
     });
 
     it('expiry sweep warns the family 30 days out (once), then expires lapsed approvals', async () => {

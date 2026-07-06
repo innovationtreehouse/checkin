@@ -3,12 +3,15 @@
 import { use, useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Anchor, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { formatDate, calculateAge } from '@/lib/time';
+import { formatDate } from '@/lib/time';
+import { checkProgramAge } from '@/lib/programAge';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { aggregateEnrollOutcomes, buildShopifyCheckoutUrl, type EnrollOutcome } from './enroll';
+import FirstTimeIntakePanel from './FirstTimeIntakePanel';
+import { useIsLocalInstance } from '@/components/EnvProvider';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type ProgramDetail = {
@@ -21,7 +24,7 @@ type ProgramDetail = {
   // Absent for non-enrolled callers (route gates the roster); only their own
   // household's rows arrive when enrolled, which is all the "already enrolled"
   // check below needs.
-  participants?: { personId: number, status?: string }[];
+  participants?: { personId: number, status?: string, person?: { name: string | null, householdId: number } }[];
   _count?: { participants?: number };
   phase: string;
   maxParticipants: number | null;
@@ -32,14 +35,16 @@ type ProgramDetail = {
   shopifyNonOrgMemberVariantId: string | null;
   minAge: number | null;
   maxAge: number | null;
+  orgMemberOnly: boolean;
 };
 
-type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number };
+type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number; householdId?: number | null };
 
 export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data: session, status } = useSession();
   const router = useRouter();
+  const isLocalInstance = useIsLocalInstance();
 
   const [program, setProgram] = useState<ProgramDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,6 +57,11 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const [householdMembers, setHouseholdMembers] = useState<{ id: number; name: string | null; dateOfBirth: string | null; isDeclaredAdult?: boolean }[]>([]);
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<number[]>([]);
   const [loadingHousehold, setLoadingHousehold] = useState(false);
+  // First-time gap: a freshly-signed-in user has a single-person household with
+  // no enrollable participant and/or no emergency contact. When set, we offer the
+  // intake panel instead of the dead-end "no eligible participants" alert.
+  const [needsSetup, setNeedsSetup] = useState(false);
+  const [showIntake, setShowIntake] = useState(false);
 
   const fetchProgram = useCallback(async () => {
     try {
@@ -65,7 +75,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         setMessage("Failed to load program details.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -79,18 +89,64 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   // render so an ineligible member is never auto-selected and then POSTed (which
   // returned a confusing "Date of Birth is missing" for over-25 adults).
   const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'age' | 'dob' | null; label: string } => {
-    if ((program?.participants ?? []).some(p => p.personId === member.id)) return { reason: 'enrolled', label: 'Already Enrolled' };
-    if (program && (program.minAge !== null || program.maxAge !== null)) {
-      if (!member.dateOfBirth) {
-        // A declared over-25 adult is simply outside a child age range — not a
-        // missing-data problem the household needs to fix.
-        return member.isDeclaredAdult ? { reason: 'age', label: 'Adult' } : { reason: 'dob', label: 'DOB missing' };
+    const enrolledRow = (program?.participants ?? []).find(p => p.personId === member.id);
+    // ACTIVE = paid/free/override (truly done). PENDING = payment still owed,
+    // including a requested-but-incomplete payment plan — don't imply completion.
+    if (enrolledRow) return { reason: 'enrolled', label: enrolledRow.status === 'ACTIVE' ? 'Enrolled' : 'Enrolled — Payment Pending' };
+    if (!program) return { reason: null, label: '' };
+    // Same eligibility rule as the enroll route: a declared over-25 adult clears
+    // a youth minimum like "16 and up" without a DOB on file.
+    const check = checkProgramAge(member, { minAge: program.minAge, maxAge: program.maxAge, asOf: program.startAt ?? undefined });
+    return check.ok ? { reason: null, label: '' } : { reason: check.reason, label: check.label };
+  };
+
+  // Load the caller's household into the member-select, and decide whether they
+  // still need first-time setup (no enrollable participant, or no valid emergency
+  // contact). Shared by the initial "Enroll" click and the post-intake re-fetch.
+  const populateHousehold = async () => {
+    const currentUserId = (session!.user as SessionUser).id;
+    setLoadingHousehold(true);
+    try {
+      const res = await fetch(`/api/household`);
+      let members: { id: number; name: string | null; dateOfBirth: string | null; isDeclaredAdult?: boolean }[] =
+        [{ id: currentUserId, name: "Myself", dateOfBirth: null }];
+      if (res.ok) {
+        const data = await res.json();
+        if (data.household?.householdMembers) members = data.household.householdMembers;
       }
-      const age = calculateAge(member.dateOfBirth, program.startAt ?? undefined);
-      if (program.minAge !== null && age < program.minAge) return { reason: 'age', label: 'Too young' };
-      if (program.maxAge !== null && age > program.maxAge) return { reason: 'age', label: 'Too old' };
+      setHouseholdMembers(members);
+      // Default to me if I'm eligible, else the first eligible member, else none —
+      // never auto-select someone who'd fail the age/DOB check.
+      const me = members.find((p) => p.id === currentUserId);
+      const def = me && enrollBlock(me).reason === null
+        ? me.id
+        : members.find((m) => enrollBlock(m).reason === null)?.id;
+      setSelectedParticipantIds(def != null ? [def] : []);
+
+      const hasEnrollable = members.some((m) => enrollBlock(m).reason === null);
+      // Emergency contact isn't in /api/household; probe the process-free intake
+      // state for it. Fail open (treat as present) if the probe can't answer, so
+      // a household with an enrollable member is never blocked by an EC hiccup.
+      let hasValidEmergencyContact = true;
+      try {
+        const ir = await fetch(`/api/household/intake`);
+        if (ir.ok) {
+          const s = await ir.json();
+          if (s && "prefill" in s) {
+            const h = s.prefill?.household;
+            hasValidEmergencyContact = !!(h?.emergencyContactName?.trim() && h?.emergencyContactPhone?.trim());
+          }
+        }
+      } catch {
+        /* fail open */
+      }
+      setNeedsSetup(!hasEnrollable || !hasValidEmergencyContact);
+    } catch {
+      setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
+      setSelectedParticipantIds([currentUserId]);
+    } finally {
+      setLoadingHousehold(false);
     }
-    return { reason: null, label: '' };
   };
 
   const startEnrollmentProcess = async () => {
@@ -99,38 +155,14 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       return;
     }
     setShowEnrollmentSelection(true);
-    setLoadingHousehold(true);
+    await populateHousehold();
+  };
 
-    try {
-      const currentUserId = (session.user as SessionUser).id;
-      const res = await fetch(`/api/household`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.household && data.household.householdMembers) {
-          const members = data.household.householdMembers;
-          setHouseholdMembers(members);
-          // Default to me if I'm eligible, else the first eligible member, else
-          // none — never auto-select someone who'd fail the age/DOB check.
-          const me = members.find((p: { id: number }) => p.id === currentUserId);
-          const def = me && enrollBlock(me).reason === null
-            ? me.id
-            : members.find((m: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }) => enrollBlock(m).reason === null)?.id;
-          setSelectedParticipantIds(def != null ? [def] : []);
-        } else {
-          setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
-          setSelectedParticipantIds([currentUserId]);
-        }
-      } else {
-        setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
-        setSelectedParticipantIds([currentUserId]);
-      }
-    } catch {
-      const currentUserId = (session.user as SessionUser).id;
-      setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
-      setSelectedParticipantIds([currentUserId]);
-    } finally {
-      setLoadingHousehold(false);
-    }
+  // Back from the first-time intake panel: reload the household (the new child /
+  // emergency contact are now saved) and drop into the normal member-select.
+  const handleIntakeSaved = async () => {
+    setShowIntake(false);
+    await populateHousehold();
   };
 
   const handleRequestPaymentPlan = async () => {
@@ -176,7 +208,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       }
       if (errors.length > 0) setMessage(errors.join(" "));
     } catch {
-      setMessage("Network error requesting payment plan.");
+      notifications.show({ color: "red", message: "Network error requesting payment plan.", autoClose: false });
     } finally {
       setEnrolling(false);
     }
@@ -193,7 +225,38 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     setEnrolling(true);
     setMessage("");
 
+    let navigating = false; // only the Shopify redirect keeps the spinner past finally
     try {
+      // Resolve the Shopify checkout details BEFORE enrolling. A paid program with
+      // no variant (or no store domain) can never be charged, so it must fail here
+      // instead of creating a free, unchargeable enrollment.
+      let variantId: string | null = null;
+      let storeDomain: string | undefined;
+      // ENV GATE (mirrors server config.shopifyMockActive ⇔ CHECKIN_ENV=local):
+      //   local     → mockPay: settle the charge in-app via the Debug orders/paid
+      //               webhook, no redirect (there is no local Shopify store).
+      //   dev/prod  → redirect to the real store (storeDomain required).
+      // Variant is always required — local synthesizes dev-mock-variant ids, so a null
+      // one is a real config gap in every env.
+      let mockPay = false;
+      if (isPayingOnShopify && program) {
+        const householdRes = await fetch('/api/household');
+        let isMember = false;
+        if (householdRes.ok) {
+          const householdData = await householdRes.json();
+          isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
+        }
+        variantId = isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId;
+        storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+        mockPay = isLocalInstance;
+        if (!variantId || (!mockPay && !storeDomain)) {
+          notifications.show({ color: "red", autoClose: false, message: variantId
+            ? "Cannot enroll: Shopify store domain not configured. Contact an admin."
+            : "Cannot enroll: no pricing variant set for this program tier — set one in program-ops." });
+          return; // no enrollment created — payment path is broken
+        }
+      }
+
       const outcomes: EnrollOutcome[] = [];
       for (const participantId of selectedParticipantIds) {
         const res = await fetch(`/api/programs/${id}/participants`, {
@@ -212,28 +275,27 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
       if (enrolledIds.length > 0) {
         notifyNavRefresh();
-        if (isPayingOnShopify && program) {
-          setSuccessMessage("Redirecting to Shopify for secure payment...");
-
-          const householdRes = await fetch('/api/household');
-          let isMember = false;
-          if (householdRes.ok) {
-            const householdData = await householdRes.json();
-            isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
-          }
-
-          const variantId = isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId;
-
-          if (variantId) {
-            const storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
-            // qty=N single variant + comma-joined account ids — see buildShopifyCheckoutUrl.
-            window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id);
-            return;
+        if (isPayingOnShopify && program && variantId && mockPay) {
+          // Local mock: fire the Debug section's orders/paid webhook to activate the
+          // PENDING enrollments, exactly as the dev Shopify tool's button does — no redirect.
+          const payRes = await fetch('/api/dev/shopify/orders-paid', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ programId: program.id, participantIds: enrolledIds }),
+          });
+          if (payRes.ok) {
+            notifications.show({ color: "green", message: "Payment mocked (local) — enrollment activated." });
           } else {
-            notifications.show({ color: "green", message: "Enrolled! (Note: No pricing variant configured for this tier)" });
-            setSuccessMessage("");
-            fetchProgram();
+            notifications.show({ color: "red", autoClose: false, message: "Enrolled, but the mock payment failed — fire it from the Debug → Shopify tool." });
           }
+          setRequiresOverride(false);
+          fetchProgram();
+        } else if (isPayingOnShopify && program && variantId && storeDomain) {
+          setSuccessMessage("Redirecting to Shopify for secure payment...");
+          // qty=N single variant + comma-joined account ids — see buildShopifyCheckoutUrl.
+          navigating = true;
+          window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id);
+          return; // spinner stays; page unloads on redirect
         } else {
           notifications.show({ color: "green", message: enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!" });
           setRequiresOverride(false);
@@ -244,9 +306,9 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       if (needsOverride) setRequiresOverride(true);
       if (errors.length > 0) setMessage(errors.join(" "));
     } catch {
-      setMessage("Network error during enrollment.");
+      notifications.show({ color: "red", message: "Network error during enrollment.", autoClose: false });
     } finally {
-      if (!isPayingOnShopify) setEnrolling(false);
+      if (!navigating) setEnrolling(false);
     }
   };
 
@@ -267,10 +329,19 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
 
   const user = session?.user as SessionUser | undefined;
   const canManage = !!(session && (user?.isSysadmin || user?.isBoardMember || user?.id === program.leadMentorId));
+
+  // My household's already-enrolled members — shown so a returning parent doesn't
+  // re-attempt an enrollment that would 409. name/householdId are public tier, so
+  // they survive the stripper; no extra household fetch needed here.
+  const myEnrolled = (program.participants ?? [])
+    .filter(p => p.person && (p.personId === user?.id || (user?.householdId != null && p.person.householdId === user.householdId)))
+    .map(p => ({
+      name: p.personId === user?.id ? (p.person?.name || 'You') : (p.person?.name || 'Household member'),
+      active: p.status === 'ACTIVE',
+    }));
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.orgMemberPriceCents || program.nonOrgMemberPriceCents);
 
-  const enrollableMembers = householdMembers.filter(m => enrollBlock(m).reason === null);
   const ageRange = program.minAge !== null && program.maxAge !== null ? `ages ${program.minAge}–${program.maxAge}`
     : program.minAge !== null ? `ages ${program.minAge} and up`
     : program.maxAge !== null ? `ages ${program.maxAge} and under` : null;
@@ -316,6 +387,30 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   program.enrollmentStatus === 'WHITELIST' ? <Text component="span" c="yellow">Invite Only</Text> :
                     program.enrollmentStatus}
             </Text>
+            {(ageRange || program.maxParticipants != null || program.orgMemberOnly) && (
+              <>
+                <Divider />
+                {ageRange && <Text><strong>Age:</strong> {ageRange}</Text>}
+                {program.maxParticipants != null && (
+                  <Text>
+                    <strong>Capacity:</strong> {enrolledCount}/{program.maxParticipants}
+                    {isFull && <Text component="span" c="red"> (Full)</Text>}
+                  </Text>
+                )}
+                {program.orgMemberOnly && <Text><strong>Eligibility:</strong> Treehouse Members only</Text>}
+              </>
+            )}
+            {myEnrolled.length > 0 && (
+              <>
+                <Divider />
+                <Text><strong>Already enrolled from your household:</strong></Text>
+                {myEnrolled.map((m, i) => (
+                  <Text key={i} size="sm" c={m.active ? 'green' : 'yellow'} ml="sm">
+                    {m.name} — {m.active ? 'Enrolled' : 'Enrolled, payment pending'}
+                  </Text>
+                ))}
+              </>
+            )}
             {(program.orgMemberPriceCents !== null || program.nonOrgMemberPriceCents !== null) && (
               <>
                 <Divider />
@@ -338,16 +433,25 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   {isClosed ? <>Enrollment Closed{closedSuffix}</> : "Enroll"}
                 </Button>
               ) : (
-                <>
-                  <Button size="md" onClick={() => router.push('/')}>Log In To Enroll</Button>
-                  <Button size="md" color="green" onClick={() => router.push(`/programs/${program.id}/register`)} disabled={isClosed}>
-                    {isClosed ? <>Registration Closed{closedSuffix}</> : "Register (New User)"}
-                  </Button>
-                </>
+                // Auth-first: route through /signin (which picks Google vs. the
+                // offline dev picker by env) BEFORE any intake, so account
+                // existence is resolved by NextAuth, never leaked by a public API
+                // response. First-time users are then filled in by the intake
+                // panel below.
+                <Button size="md" onClick={() => router.push(`/signin?callbackUrl=/programs/${program.id}`)} disabled={isClosed}>
+                  {isClosed ? <>Enrollment Closed{closedSuffix}</> : "Sign in to enroll"}
+                </Button>
               )}
             </Group>
           ) : (
-            <Card withBorder radius="md" padding="lg" w="100%" maw={500}>
+            <Card withBorder radius="md" padding="lg" w="100%" maw={showIntake ? 640 : 500}>
+              {showIntake ? (
+                <FirstTimeIntakePanel
+                  ageGated={program.minAge !== null || program.maxAge !== null}
+                  onSaved={handleIntakeSaved}
+                />
+              ) : (
+              <>
               <Title order={4} mb="lg">Which of your household wants to enroll?</Title>
 
               {loadingHousehold ? (
@@ -371,7 +475,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                               disabled={disabled}
                               label={member.name || 'Unnamed Participant'}
                             />
-                            {reason === 'enrolled' && <Text size="sm" c="green">({label})</Text>}
+                            {reason === 'enrolled' && <Text size="sm" c={label.includes('Pending') ? 'yellow' : 'green'}>({label})</Text>}
                             {disabled && reason !== 'enrolled' && <Text size="sm" c="red">({label})</Text>}
                           </Group>
                         </Card>
@@ -381,10 +485,17 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 </Checkbox.Group>
               )}
 
-              {!loadingHousehold && householdMembers.length > 0 && enrollableMembers.length === 0 ? (
-                <Alert color="blue" variant="light">
-                  No eligible participants in your household for this program{ageRange ? ` (${ageRange})` : ''}.
-                </Alert>
+              {!loadingHousehold && needsSetup ? (
+                // Replaces the old dead-end "no eligible participants" alert: a
+                // first-time user finishes their household here, then enrolls.
+                <Stack align="center" gap="sm">
+                  <Text c="dimmed" size="sm" ta="center">
+                    Finish setting up your household to enroll{ageRange ? ` (${ageRange})` : ''}.
+                  </Text>
+                  <Button fullWidth size="md" onClick={() => setShowIntake(true)}>
+                    Finish setting up your household to enroll
+                  </Button>
+                </Stack>
               ) : (
               <Stack align="center">
                 <Button
@@ -398,9 +509,16 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 </Button>
 
                 {hasPrice && !isClosed && (
-                  <Anchor component="button" type="button" size="sm" onClick={handleRequestPaymentPlan}>
-                    request a payment plan from the finance committee of the board
-                  </Anchor>
+                  <Button
+                    fullWidth
+                    size="md"
+                    variant="light"
+                    type="button"
+                    onClick={handleRequestPaymentPlan}
+                    styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
+                  >
+                    Request a scholarship or payment plan from the Finance Committee of the Board
+                  </Button>
                 )}
               </Stack>
               )}
@@ -415,6 +533,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                     Force Enroll (Override)
                   </Button>
                 </Alert>
+              )}
+              </>
               )}
             </Card>
           )}

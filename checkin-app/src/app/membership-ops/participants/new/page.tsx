@@ -44,6 +44,7 @@ function NewParticipantForm() {
   const [alreadyMember, setAlreadyMember] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string }>({});
 
   // Handle deep linked household
   useEffect(() => {
@@ -78,6 +79,7 @@ function NewParticipantForm() {
     e.preventDefault();
     setSaving(true);
     setMessage("");
+    setFieldErrors({});
 
     try {
       const res = await fetch('/api/membership-ops/participants', {
@@ -93,7 +95,7 @@ function NewParticipantForm() {
         })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (res.ok) {
         notifications.show({ color: "green", message: `Participant ${name || data.participant.email || 'created'} successfully!` });
@@ -104,11 +106,13 @@ function NewParticipantForm() {
         setHouseholdId("");
         setHouseholdSearch("");
         setAlreadyMember(false);
+      } else if (data.fields?.includes("email")) {
+        setFieldErrors({ email: "This email is already registered." });
       } else {
         setMessage(data.error || "Failed to create participant");
       }
     } catch {
-      setMessage("Network error");
+      notifications.show({ color: "red", message: "Network error", autoClose: false });
     } finally {
       setSaving(false);
     }
@@ -152,7 +156,8 @@ function NewParticipantForm() {
               label={`Participant Google Email ${isYouthSelected ? '(Optional for Students)' : ''}`}
               required={!isYouthSelected && !householdId}
               value={email}
-              onChange={(e) => setEmail(e.currentTarget.value)}
+              error={fieldErrors.email}
+              onChange={(e) => { setEmail(e.currentTarget.value); setFieldErrors((fe) => ({ ...fe, email: undefined })); }}
               placeholder="jane.doe@example.com"
             />
 

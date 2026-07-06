@@ -9,6 +9,7 @@
 import { POST as ZOHO_WEBHOOK } from '@/app/api/webhooks/zoho/route';
 import { POST as BOARD_EXTERNAL } from '@/app/api/membership-ops/applications/external/route';
 import { GET as ADMIN_LIST } from '@/app/api/membership-ops/applications/route';
+import { GET as MEMBERSHIP_GET } from '@/app/api/membership/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -78,9 +79,9 @@ describe('Membership EXTERNAL phase API', () => {
         process.env.ZOHO_WEBHOOK_SECRET = SECRET;
         await wipe();
 
-        const board = await prisma.person.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: {} } } });
+        const board = await prisma.person.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: "Test HH" } } } });
         boardId = board.id;
-        const user = await prisma.person.create({ data: { email: `user-${TAG}@example.com`, name: 'User', household: { create: {} } } });
+        const user = await prisma.person.create({ data: { email: `user-${TAG}@example.com`, name: 'User', household: { create: { name: "Test HH" } } } });
         plainUserId = user.id;
 
         const a = await makeProcess(`A ${TAG}`, 'zoho-A');
@@ -235,5 +236,101 @@ describe('Membership EXTERNAL phase API', () => {
         const a = data.processes.find((p: { id: number }) => p.id === procA);
         expect(a.orgMembership.householdId).toBe(hhA);
         expect(a.status).toBe('PENDING_PAYMENT');
+    });
+});
+
+/**
+ * The background-check "fill-out external" step, applicant + board sides:
+ *   1. GET /api/membership surfaces the manual-adapter consent deep link
+ *      (external.deepLinkUrl) while the process awaits external action.
+ *   2. Board 'mark-bg-consent' records consent and — the contract already being
+ *      signed — advances the process EXTERNAL → PENDING_PAYMENT.
+ *
+ * The background check uses the manual (deep-link) adapter, never Averity's API;
+ * AVERITY_CONSENT_URL is set so the real (non-mock) provider hands back a URL.
+ */
+describe('Membership EXTERNAL phase — background-check step', () => {
+    const TAG2 = 'membership-bgconsent-test';
+    const AVERITY_URL = 'https://averity.example/consent/treehouse';
+    const prevAverity = process.env.AVERITY_CONSENT_URL;
+
+    let boardId2: number;
+    let applicantId: number;
+    let procId: number;
+
+    async function wipe2() {
+        const hhs = await prisma.household.findMany({ where: { name: { contains: TAG2 } }, select: { id: true } });
+        const ids = hhs.map((h) => h.id);
+        if (ids.length) {
+            await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.household.deleteMany({ where: { id: { in: ids } } });
+        }
+        await prisma.person.deleteMany({ where: { email: { contains: TAG2 } } });
+    }
+
+    beforeAll(async () => {
+        // Real (manual) adapter, deterministic URL — no Averity API, no mock page.
+        process.env.AVERITY_CONSENT_URL = AVERITY_URL;
+        await wipe2();
+
+        const board = await prisma.person.create({ data: { email: `board-${TAG2}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: "Test HH" } } } });
+        boardId2 = board.id;
+
+        // Applicant household with an in-flight process already past the contract:
+        // BG consent is the ONLY remaining external action, so marking it is what
+        // advances the process — isolating the step under test.
+        const hh = await prisma.household.create({ data: { name: `Applicant ${TAG2}` } });
+        const applicant = await prisma.person.create({ data: { email: `applicant-${TAG2}@example.com`, name: 'Applicant', householdId: hh.id } });
+        applicantId = applicant.id;
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
+        const p = await prisma.orgMembershipProcess.create({
+            data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION', contractSignedAt: new Date() },
+        });
+        procId = p.id;
+    });
+
+    afterAll(async () => {
+        await wipe2();
+        await prisma.person.deleteMany({ where: { email: { contains: TAG2 } } });
+        if (prevAverity === undefined) delete process.env.AVERITY_CONSENT_URL;
+        else process.env.AVERITY_CONSENT_URL = prevAverity;
+    });
+
+    function membershipGetReq() {
+        return new Request('http://localhost:4000/api/membership') as unknown as Parameters<typeof MEMBERSHIP_GET>[0];
+    }
+
+    it('applicant GET /api/membership exposes the BG-check consent deep link while awaiting external action', async () => {
+        asUser(applicantId);
+        const res = await MEMBERSHIP_GET(membershipGetReq() as never);
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.process?.status).toBe('PENDING_EXTERNAL_ACTION');
+        // The applicant-facing deep link is what ships (manual adapter) — assert on
+        // the real field name/shape from getExternalStatus, not a guessed one.
+        expect(body.external?.deepLinkUrl).toBe(AVERITY_URL);
+        expect(body.external?.bgConsented).toBe(false);
+    });
+
+    it('board mark-bg-consent records consent and advances EXTERNAL → PENDING_PAYMENT', async () => {
+        asBoard(boardId2);
+        const res = await BOARD_EXTERNAL(boardReq({ processId: procId, action: 'mark-bg-consent' }) as never);
+        expect(res.status).toBe(200);
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: procId } });
+        expect(p?.bgConsentAt).not.toBeNull();
+        expect(p?.status).toBe('PENDING_PAYMENT');
+    });
+
+    it('the advance is reflected back to the applicant GET (bgConsented, PENDING_PAYMENT)', async () => {
+        asUser(applicantId);
+        const res = await MEMBERSHIP_GET(membershipGetReq() as never);
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.process?.status).toBe('PENDING_PAYMENT');
+        expect(body.external?.bgConsented).toBe(true);
+        // Deep link still surfaced — the process is not yet ACTIVE.
+        expect(body.external?.deepLinkUrl).toBe(AVERITY_URL);
     });
 });

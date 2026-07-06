@@ -149,6 +149,85 @@ export async function renewTrustedAdult(id: number, actorId: number) {
     return review;
 }
 
+export interface ResubmitInput {
+    trustedAdultName: string;
+    trustedAdultPhone?: string | null;
+    trustedAdultEmail?: string | null;
+    /** The family's board-facing explanation of what the adult may/may not do. */
+    familyContext: string;
+}
+
+/**
+ * Open a MODIFIED review that carries the family's CHANGED facts about a trusted
+ * adult. Unlike renew, the edited name/contact/context are NOT written to the
+ * parent — they ride on the review (proposed* fields) and only promote onto the
+ * parent when the board approves (see promoteProposal). This is deliberate: a
+ * still-live prior approval keeps its own facts + shared note active for the front
+ * desk until, and only if, the board approves the change. A deny leaves the prior
+ * approval wholly intact. Allowed only when no review is already in flight.
+ */
+export async function resubmitWithChanges(id: number, actorId: number, input: ResubmitInput) {
+    if (!input.trustedAdultName?.trim()) {
+        throw new TrustedAdultError("bad_input", "The trusted adult's name is required.");
+    }
+    const contact = validateContact({ phone: input.trustedAdultPhone, email: input.trustedAdultEmail });
+    if ("error" in contact) {
+        throw new TrustedAdultError("bad_input", contact.error);
+    }
+    if (!input.familyContext?.trim()) {
+        throw new TrustedAdultError("bad_input", "Tell the board what this adult may or may not do.");
+    }
+
+    const ta = await prisma.trustedAdult.findUnique({ where: { id }, select: { id: true, householdId: true } });
+    if (!ta) throw new TrustedAdultError("not_found", "Trusted adult not found.");
+    await assertHouseholdLead(ta.householdId, actorId);
+
+    const review = await prisma.$transaction(async (tx) => {
+        await lockTrustedAdult(tx, ta.id);
+        const latest = await tx.trustedAdultReview.findFirst({ where: { trustedAdultId: ta.id }, orderBy: { id: "desc" } });
+        if (latest && (latest.status === "PENDING_BOARD_REVIEW" || latest.status === "PENDING_SUBJECT_ACTION")) {
+            throw new TrustedAdultError("already_open", "A review for this trusted adult is already in progress.");
+        }
+        const created = await tx.trustedAdultReview.create({
+            data: {
+                trustedAdultId: ta.id,
+                householdId: ta.householdId,
+                kind: "MODIFIED",
+                status: "PENDING_BOARD_REVIEW",
+                proposedName: input.trustedAdultName.trim(),
+                proposedPhone: contact.phone,
+                proposedEmail: contact.email,
+                proposedContext: input.familyContext.trim(),
+            },
+        });
+        await audit(tx, actorId, ta.id, {}, { modified: created.id, status: "PENDING_BOARD_REVIEW" }, "CREATE");
+        return created;
+    });
+    await notifyBoard();
+    return review;
+}
+
+/**
+ * Promote a MODIFIED review's proposed facts onto the parent TrustedAdult. Called
+ * inside the approval transaction only — the live approved facts stay put until the
+ * board actually signs off on the change. No-op for INITIAL/RENEWAL reviews.
+ */
+function promoteProposal(
+    tx: TxClient,
+    review: { kind: string; trustedAdultId: number; proposedName: string | null; proposedPhone: string | null; proposedEmail: string | null; proposedContext: string | null },
+) {
+    if (review.kind !== "MODIFIED") return;
+    return tx.trustedAdult.update({
+        where: { id: review.trustedAdultId },
+        data: {
+            trustedAdultName: review.proposedName ?? undefined,
+            trustedAdultPhone: review.proposedPhone,
+            trustedAdultEmail: review.proposedEmail,
+            familyContext: review.proposedContext ?? undefined,
+        },
+    });
+}
+
 /**
  * A household lead permanently hides a WITHDRAWN trusted adult from their own
  * view. The row stays in the DB (board history / audit); only the member-facing
@@ -180,10 +259,27 @@ export async function hideTrustedAdult(id: number, actorId: number) {
  * ANY review is APPROVED. Revoking only the latest would leave a stale approval
  * live, so the adult keeps showing up on the pickup list after withdrawal.
  */
-export async function withdrawTrustedAdult(id: number, actorId: number) {
+export async function withdrawTrustedAdult(id: number, actorId: number, opts?: { latestReviewOnly?: boolean }) {
     const ta = await prisma.trustedAdult.findUnique({ where: { id }, select: { id: true, householdId: true } });
     if (!ta) throw new TrustedAdultError("not_found", "Trusted adult not found.");
     await assertHouseholdLead(ta.householdId, actorId);
+
+    // "Cancel change request": revoke ONLY the pending review on top (the proposed
+    // change), leaving any live prior approval standing. The revoke-all path below is
+    // for withdrawing the adult outright; using it here would nuke an approval the
+    // family only meant to keep while retracting an edit.
+    if (opts?.latestReviewOnly) {
+        return prisma.$transaction(async (tx) => {
+            await lockTrustedAdult(tx, ta.id);
+            const latest = await tx.trustedAdultReview.findFirst({ where: { trustedAdultId: ta.id }, orderBy: { id: "desc" } });
+            if (!latest || (latest.status !== "PENDING_BOARD_REVIEW" && latest.status !== "PENDING_SUBJECT_ACTION")) {
+                throw new TrustedAdultError("wrong_phase", "No pending change to cancel.");
+            }
+            await tx.trustedAdultReview.update({ where: { id: latest.id }, data: { status: "REVOKED" } });
+            await audit(tx, actorId, ta.id, { status: latest.status }, { status: "REVOKED" });
+            return { ...latest, status: "REVOKED" as const };
+        });
+    }
 
     // Lock the parent so withdraw serializes against renew and decide on the same TA.
     return prisma.$transaction(async (tx) => {
@@ -210,6 +306,13 @@ export interface DecideInput {
     sharedNote?: string | null;
     /** Board-private reasoning (never shown outside the board). */
     note?: string | null;
+    /**
+     * DENY only. When true, also REVOKE every live (APPROVED) review — "Deny &
+     * Revoke": reject the adult entirely, not just the proposed change. When false
+     * (plain "Deny"), a live prior approval is left intact and keeps authorizing the
+     * adult at the front desk; only the reviewed submission is denied.
+     */
+    revokePriorApprovals?: boolean;
 }
 
 /**
@@ -235,7 +338,7 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
         where: { id: reviewId },
         select: {
             trustedAdultId: true,
-            trustedAdult: { select: { householdId: true, trustedAdultPersonId: true } },
+            trustedAdult: { select: { householdId: true, trustedAdultPersonId: true, trustedAdultName: true } },
         },
     });
     if (!head) throw new TrustedAdultError("not_found", "Review not found.");
@@ -290,12 +393,65 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
         data.status = status;
 
         const updated = await tx.trustedAdultReview.update({ where: { id: reviewId }, data });
+        // Approving a MODIFIED review is the moment its proposed edits become fact.
+        if (input.decision === "APPROVE") await promoteProposal(tx, review);
         await audit(tx, boardMemberId, review.trustedAdultId, { status: review.status }, { status, decision: input.decision });
+        // "Deny & Revoke": reject the adult outright. Revoke EVERY live approval, not
+        // just one — /operational shows a TA while ANY review is APPROVED, so leaving
+        // one live would keep the adult on the pickup list after a full rejection.
+        if (input.decision === "DENY" && input.revokePriorApprovals) {
+            const live = await tx.trustedAdultReview.findMany({
+                where: { trustedAdultId: review.trustedAdultId, status: "APPROVED" },
+                orderBy: { id: "desc" },
+            });
+            if (live.length) {
+                await tx.trustedAdultReview.updateMany({
+                    where: { id: { in: live.map((r) => r.id) } },
+                    data: { status: "REVOKED" },
+                });
+                for (const r of live) {
+                    await audit(tx, boardMemberId, review.trustedAdultId, { status: r.status }, { status: "REVOKED", revokedWithDenial: reviewId });
+                }
+            }
+        }
         return { updated, householdId: review.householdId };
     });
 
     if (input.decision === "REQUEST_INFO") {
         await notifyHouseholdFamily(result.householdId, "The board needs more information about a trusted adult", input.note?.trim());
+    }
+    // Every denial notifies the family. The message depends on what survives the deny:
+    // a live approval left standing (a rejected change), nothing left (a plain rejection),
+    // or a deliberate full revocation.
+    if (input.decision === "DENY") {
+        const name = head.trustedAdult.trustedAdultName?.trim() || "your trusted adult";
+        if (input.revokePriorApprovals) {
+            await notifyHouseholdFamily(
+                result.householdId,
+                `Trusted adult no longer authorized: ${name}`,
+                `The board did not approve ${name}, and any prior approval has been revoked. They are no longer authorized at the front desk. You may submit a new request if things change.`,
+            );
+        } else {
+            // Mirror /operational's rule: a surviving APPROVED review = still authorized.
+            const live = await prisma.trustedAdultReview.findFirst({
+                where: { trustedAdultId: head.trustedAdultId, status: "APPROVED" },
+                orderBy: { reviewBy: "desc" },
+            });
+            if (live) {
+                const until = live.reviewBy ? ` (valid until ${live.reviewBy.toISOString().slice(0, 10)})` : "";
+                await notifyHouseholdFamily(
+                    result.householdId,
+                    `Trusted adult change not approved: ${name}`,
+                    `The board did not approve your recent change to ${name}. The previously approved arrangement${until} remains in effect. You can submit a new change any time.`,
+                );
+            } else {
+                await notifyHouseholdFamily(
+                    result.householdId,
+                    `Trusted adult not approved: ${name}`,
+                    `The board did not approve ${name}. You may submit a new request if things change.`,
+                );
+            }
+        }
     }
     return result.updated;
 }
@@ -317,7 +473,7 @@ export async function overrideReview(
 ) {
     const review = await prisma.trustedAdultReview.findUnique({
         where: { id: reviewId },
-        include: { trustedAdult: { select: { householdId: true, trustedAdultPersonId: true } } },
+        include: { trustedAdult: { select: { householdId: true, trustedAdultPersonId: true, trustedAdultName: true } } },
     });
     if (!review) throw new TrustedAdultError("not_found", "Review not found.");
 
@@ -355,9 +511,19 @@ export async function overrideReview(
 
     const updated = await prisma.$transaction(async (tx) => {
         const u = await tx.trustedAdultReview.update({ where: { id: reviewId }, data });
+        if (action === "approve") await promoteProposal(tx, review);
         await audit(tx, actorId, review.trustedAdultId, { status: review.status }, { status: data.status, override: action });
         return u;
     });
+    // A forced denial/revocation notifies the family, like the ordinary deny path.
+    if (action === "deny" || action === "revoke") {
+        const name = review.trustedAdult.trustedAdultName?.trim() || "your trusted adult";
+        await notifyHouseholdFamily(
+            review.trustedAdult.householdId,
+            `Trusted adult no longer authorized: ${name}`,
+            `The board has ${action === "revoke" ? "revoked" : "denied"} ${name}. They are no longer authorized at the front desk. You may submit a new request if things change.`,
+        );
+    }
     return updated;
 }
 

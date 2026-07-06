@@ -41,6 +41,7 @@ export const classifications = {
         city: 'personal',
         state: 'personal',
         postalCode: 'personal',
+        intakeNotes: 'pii',
     },
     EmergencyContact: {
         id: 'public',
@@ -71,6 +72,7 @@ export const classifications = {
     OrgMembershipProcess: {
         id: 'public',
         orgMembershipId: 'public',
+        subjectPersonId: 'public',
         kind: 'public',
         status: 'internal',
         stageEnteredAt: 'internal',
@@ -86,6 +88,7 @@ export const classifications = {
         paidAt: 'internal',
         certifiedById: 'internal',
         renewalReminderSentAt: 'internal',
+        isPaymentPlanRequested: 'internal',
     },
     BackgroundCheckAttestation: {
         id: 'public',
@@ -148,6 +151,10 @@ export const classifications = {
         effectiveFrom: 'personal',
         reviewBy: 'personal',
         expiryWarningSentAt: 'internal',
+        proposedName: 'personal',
+        proposedPhone: 'personal',
+        proposedEmail: 'personal',
+        proposedContext: 'pii',
         createdAt: 'public',
         updatedAt: 'internal',
     },
@@ -329,6 +336,7 @@ export const relations = {
         household: { model: 'Household', isList: false },
         toolStatuses: { model: 'ToolStatus', isList: true },
         bgAttestations: { model: 'BackgroundCheckAttestation', isList: true },
+        personBgProcesses: { model: 'OrgMembershipProcess', isList: true },
         householdLeads: { model: 'HouseholdLead', isList: true },
         corporationLeads: { model: 'CorporationLead', isList: true },
         corporationMembers: { model: 'CorporationMember', isList: true },
@@ -371,6 +379,7 @@ export const relations = {
     },
     OrgMembershipProcess: {
         orgMembership: { model: 'OrgMembership', isList: false },
+        subjectPerson: { model: 'Person', isList: false },
         attestations: { model: 'BackgroundCheckAttestation', isList: true },
     },
     BackgroundCheckAttestation: {

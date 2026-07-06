@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 import { Alert, Badge, Box, Button, Card, Checkbox, Group, Modal, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
 import { EntityPicker } from '@/components/admin/EntityPicker';
 import { calculateAge, formatDateTime } from '@/lib/time';
 import { formatPhone } from '@/lib/phone';
@@ -105,7 +106,14 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
       if (res.ok) { setNewPartId(""); setPartLabel(""); fetchProgram(); }
       else {
         const data = await res.json();
-        setEnrollError(data.error || "Failed to enroll participant.");
+        if (res.status === 409) {
+          // Race: benign double-submit / stale view — already enrolled.
+          notifications.show({ color: "red", message: data.error || "Participant is already enrolled in this program.", autoClose: 4000 });
+          setNewPartId(""); setPartLabel("");
+          fetchProgram();
+        } else {
+          setEnrollError(data.error || "Failed to enroll participant.");
+        }
       }
     } finally {
       setSaving(false);

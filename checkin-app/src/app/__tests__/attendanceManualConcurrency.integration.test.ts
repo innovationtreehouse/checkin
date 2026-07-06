@@ -64,7 +64,7 @@ describe('POST /api/attendance/manual concurrency (advisory lock)', () => {
         await prisma.household.deleteMany({ where: { id: { in: leakedHouseholdIds } } });
 
         const subject = await prisma.person.create({
-            data: { email: `subject-${EMAIL_TAG}@example.com`, name: 'Manual Concurrency Subject', household: { create: {} } },
+            data: { email: `subject-${EMAIL_TAG}@example.com`, name: 'Manual Concurrency Subject', household: { create: { name: "Test HH" } } },
         });
         subjectId = subject.id;
         householdId = subject.householdId;
@@ -82,7 +82,9 @@ describe('POST /api/attendance/manual concurrency (advisory lock)', () => {
         await prisma.visit.deleteMany({ where: { personId: subjectId } });
         expect(await openVisitCount(subjectId)).toBe(0);
 
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: subjectId } });
+        // Keyholder: an open backfill must clear the facility-open guard; this
+        // suite exercises the advisory lock, not the keyholder-first rule.
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: subjectId, isKeyholder: true } });
 
         const arrivedAt = new Date(Date.now() - 1800000).toISOString(); // 30 min ago
 

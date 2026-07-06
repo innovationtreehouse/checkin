@@ -23,7 +23,7 @@ const DECISIONS = new Set(["APPROVE", "DENY", "REQUEST_INFO"]);
  */
 export const POST = withAuth({ roles: ["isBoardMember", "isSysadmin"] }, async (req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
-    let body: { reviewId?: number; decision?: string; sharedNote?: string; note?: string };
+    let body: { reviewId?: number; decision?: string; sharedNote?: string; note?: string; revokePriorApprovals?: boolean };
     try {
         body = await req.json();
     } catch {
@@ -37,6 +37,7 @@ export const POST = withAuth({ roles: ["isBoardMember", "isSysadmin"] }, async (
             decision: body.decision as "APPROVE" | "DENY" | "REQUEST_INFO",
             sharedNote: body.sharedNote,
             note: body.note,
+            revokePriorApprovals: body.revokePriorApprovals,
         });
         return NextResponse.json({ status: outcome.status });
     } catch (error) {

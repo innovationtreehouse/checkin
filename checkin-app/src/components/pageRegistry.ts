@@ -48,12 +48,12 @@ export const PAGES: PageEntry[] = [
   { href: '/my-household', label: 'My Household', section: 'Personal', visible: SIGNED_IN },
   { href: '/my-activities', label: 'My Activities', section: 'Personal', visible: SIGNED_IN },
   { href: '/my-activities/events', label: 'My Events', section: 'Personal', visible: SIGNED_IN },
-  { href: '/my-activities/programs', label: 'My Programs', section: 'Personal', visible: SIGNED_IN },
+  { href: '/my-activities/programs', label: 'My Programs (as Participant)', section: 'Personal', visible: SIGNED_IN },
   { href: '/profile', label: 'My Profile', section: 'Personal', visible: SIGNED_IN },
   // Staff home for program lead mentors. Lead status rides in on the todo-counts
   // payload (leadsAnyProgram), matching the nav gate. Distinct from the attendee
   // "My Programs" tab above.
-  { href: '/my-programs/attendance', label: 'My Programs (Staff)', section: 'Personal', keywords: 'lead mentor program staff attendance', visible: LEADS_PROGRAM },
+  { href: '/my-programs/attendance', label: 'My Programs (as Volunteer)', section: 'Personal', keywords: 'lead mentor program staff attendance', visible: LEADS_PROGRAM },
   { href: '/my-programs/conflicts', label: 'Attendance Conflicts', section: 'Personal', keywords: 'lead mentor duplicate overlapping visit attendance', visible: LEADS_PROGRAM },
   // Stays visible to all members: also the Join/renewal entry for new applicants
   // who aren't a household lead yet (gating it on lead would break joining).
@@ -108,6 +108,7 @@ export const PAGES: PageEntry[] = [
   { href: '/membership-audit/emergency-contacts', label: 'Missing Emergency Contacts', section: 'Membership Audit', visible: BOARD },
   { href: '/membership-audit/unclaimed', label: 'Unclaimed Accounts', section: 'Membership Audit', visible: BOARD },
   { href: '/membership-audit/broken', label: 'Broken Households', section: 'Membership Audit', keywords: 'lead leadless no lead unclaimed', visible: BOARD },
+  { href: '/membership-audit/compliance', label: 'Membership Compliance', section: 'Membership Audit', keywords: 'violations background check revoked denied stale follow-up', visible: BOARD },
 
   // Program Ops — board
   { href: '/program-ops', label: 'Program Ops', section: 'Program Ops', visible: BOARD },
@@ -119,7 +120,8 @@ export const PAGES: PageEntry[] = [
 
   // Finance Ops — board
   { href: '/finance-ops', label: 'Finance Ops', section: 'Finance Ops', visible: BOARD },
-  { href: '/finance-ops/payment-plan', label: 'Payment Plans', section: 'Finance Ops', visible: BOARD },
+  { href: '/finance-ops/payment-plan', label: 'Program Payment Plan', section: 'Finance Ops', visible: BOARD },
+  { href: '/finance-ops/membership-payment-plan', label: 'Membership Payment Plan', section: 'Finance Ops', visible: BOARD },
 
   // System Status — board
   { href: '/system-status', label: 'System Status', section: 'System Status', visible: BOARD },

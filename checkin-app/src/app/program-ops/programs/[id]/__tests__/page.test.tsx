@@ -172,7 +172,11 @@ describe("ProgramDetailsPage", () => {
     routedFetch([{ url: "/api/programs/1", method: "GET", result: { throws: true } }]);
     renderPage();
 
-    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Network error.", autoClose: false }),
+      ),
+    );
   });
 
   it("shows a forbidden message for a user without authorization", async () => {
@@ -234,7 +238,11 @@ describe("ProgramDetailsPage", () => {
     await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
 
     fireEvent.click(screen.getByRole("button", { name: "Save Settings" }));
-    expect(await screen.findByText("Network error.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Network error.", autoClose: false }),
+      ),
+    );
   });
 
   it("switches to editing the lead mentor, selects a new one, then cancels back", async () => {
@@ -510,9 +518,8 @@ describe("ProgramDetailsPage", () => {
     await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
 
     fireEvent.click(screen.getByRole("button", { name: /Download QR Code/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Public Registration Page/ }));
     fireEvent.click(screen.getByRole("button", { name: /Public Details Page/ }));
-    expect(window.open).toHaveBeenCalledTimes(2);
+    expect(window.open).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "← Back to Programs" }));
     expect(router.push).toHaveBeenCalledWith("/program-ops/programs");

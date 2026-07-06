@@ -39,7 +39,7 @@ export default function ProfilePage() {
         setMessage({ text: "Failed to load profile.", tone: "error" });
       }
     } catch {
-      setMessage({ text: "Network error loading profile.", tone: "error" });
+      notifications.show({ color: "red", message: "Network error loading profile.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -72,10 +72,11 @@ export default function ProfilePage() {
       if (res.ok) {
         notifications.show({ color: "green", message: "Profile updated successfully!" });
       } else {
-        setMessage({ text: "Failed to update profile.", tone: "error" });
+        const data = await res.json().catch(() => ({}));
+        setMessage({ text: data.error || "Failed to update profile.", tone: "error" });
       }
     } catch {
-      setMessage({ text: "Network error saving profile.", tone: "error" });
+      notifications.show({ color: "red", message: "Network error saving profile.", autoClose: false });
     } finally {
       setSaving(false);
     }

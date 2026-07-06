@@ -57,12 +57,17 @@ const AUTHZ_TESTED = new Set<string>([
     'admin/broken-households',
     // POST deny-path (401 anon / 403 non-board) in programPaymentPlansAPI.integration.test.ts.
     'finance-ops/payment-plans',
+    // POST deny-path (401 anon / 403 non-board) in membershipPaymentPlansAPI.integration.test.ts.
+    'finance-ops/membership-payment-plans',
     'admin/settings/localization',
     'events',
     'facility/badges',
     'facility/trends',
     'facility/visits',
     'kioskdisplay/certifications',
+    'membership-audit/compliance',
+    // POST deny-path (403 non-board) in personBgManualSubmit.integration.test.ts.
+    'membership-audit/person-bg',
     'membership-audit/households-missing-contact',
     'membership-audit/unclaimed-households',
     'membership-ops/applications/certify-payment',
@@ -80,6 +85,8 @@ const AUTHZ_TESTED = new Set<string>([
     'membership/reviews',
     'people/search',
     'programs',
+    // POST deny-path (401 anon / 403 non-board) in authzRoleRejection.integration.test.ts.
+    'programs/[id]/sync-shopify',
     'roles',
     'safety/board-contacts',
     'safety/emergency-contacts',

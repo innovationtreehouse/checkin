@@ -4,8 +4,10 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { isActiveOrgMember } from "@/lib/orgMembership";
+import { notifyNewProgramAnnounced } from "@/lib/notifications";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
+import { validateProgramAgeBounds } from "@/lib/programAge";
 
 export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
     const programId = parseInt(params.id, 10);
@@ -71,7 +73,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     //
     // Staff (admin/board/lead/core-vol) or a member of an enrolled household see
     // the rows; everyone else (anonymous, plain authenticated non-enrolled) gets
-    // metadata + counts only. The public/register pages need spots-remaining
+    // metadata + counts only. The public details/enroll page needs spots-remaining
     // (_count.participants), not names — a count is fine, the names are the leak.
     // The registry orderedView tiers remain as defense-in-depth, stripping
     // pii/personal on the rows for non-staff-but-enrolled callers.
@@ -117,7 +119,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice } = body;
+        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -127,6 +129,11 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             if (isNaN(leadMentorId)) {
                 return apiError("Invalid lead mentor", 400);
             }
+        }
+
+        const ageErr = validateProgramAgeBounds(minAge, maxAge);
+        if (ageErr) {
+            return apiError(ageErr, 400);
         }
 
         const updateData: Record<string, unknown> = {
@@ -143,6 +150,13 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             ...(leadMentorNotificationSettings !== undefined && { leadMentorNotificationSettings }),
             ...(memberPrice !== undefined && { orgMemberPriceCents: dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined) }),
             ...(nonMemberPrice !== undefined && { nonOrgMemberPriceCents: dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined) }),
+            // Shopify identifiers are sysadmin/board-only — a lead mentor's PATCH can't
+            // touch them (they can break checkout, so they stay off the lead surface).
+            // Empty string clears the field. This is the manual repair path when there's
+            // no live Shopify to sync against (local/testing).
+            ...(isSysAdminOrBoard && shopifyProductId !== undefined && { shopifyProductId: shopifyProductId || null }),
+            ...(isSysAdminOrBoard && shopifyOrgMemberVariantId !== undefined && { shopifyOrgMemberVariantId: shopifyOrgMemberVariantId || null }),
+            ...(isSysAdminOrBoard && shopifyNonOrgMemberVariantId !== undefined && { shopifyNonOrgMemberVariantId: shopifyNonOrgMemberVariantId || null }),
         };
 
         const updatedProgram = await prisma.program.update({
@@ -160,6 +174,14 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
                 newData: updatedProgram
             }
         });
+
+        // Announce only on the transition INTO (UPCOMING && OPEN) — not on every
+        // save while already there, and not when only one of the two is set.
+        const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
+        const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
+        if (!wasAnnounced && nowAnnounced) {
+            await notifyNewProgramAnnounced(updatedProgram.name);
+        }
 
         return NextResponse.json({ success: true, program: updatedProgram });
     } catch (error) {

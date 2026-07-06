@@ -2,13 +2,11 @@
  * @jest-environment node
  */
 /**
- * Guard: a CLOSED program rejects new enrollments on BOTH enroll paths —
- * authenticated self-enroll (POST /api/programs/[id]/participants) and the
- * public/unauthenticated registration (POST /api/programs/[id]/public-register).
- * Both check enrollmentStatus === 'CLOSED' and return 400; neither was tested.
+ * Guard: a CLOSED program rejects new enrollments on the authenticated
+ * self-enroll path (POST /api/programs/[id]/participants). It checks
+ * enrollmentStatus === 'CLOSED' and returns 400; this was untested.
  */
 import { POST as ENROLL } from '@/app/api/programs/[id]/participants/route';
-import { POST as PUBLIC_REGISTER } from '@/app/api/programs/[id]/public-register/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -17,7 +15,7 @@ jest.mock('@/lib/notifications', () => ({ sendNotification: jest.fn().mockResolv
 
 const TAG = 'enroll-closed-test';
 
-describe('Enroll into a CLOSED program is rejected (both paths)', () => {
+describe('Enroll into a CLOSED program is rejected', () => {
     let userId: number;
     let closedProgramId: number;
 
@@ -25,7 +23,7 @@ describe('Enroll into a CLOSED program is rejected (both paths)', () => {
         const progs = await prisma.program.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
         const progIds = progs.map(p => p.id);
         await prisma.programParticipant.deleteMany({ where: { programId: { in: progIds } } });
-        // Households spawned by public-register (reached via enrolled members) + the test user.
+        // Households reached via enrolled members + the test user.
         const members = await prisma.person.findMany({ where: { OR: [{ email: { contains: TAG } }, { programParticipants: { some: { programId: { in: progIds } } } }] }, select: { id: true, householdId: true } });
         const hhIds = [...new Set(members.map(m => m.householdId).filter((x): x is number => x != null))];
         await prisma.auditLog.deleteMany({ where: { actorId: { in: members.map(m => m.id) } } });
@@ -38,7 +36,7 @@ describe('Enroll into a CLOSED program is rejected (both paths)', () => {
 
     beforeAll(async () => {
         await cleanup();
-        const user = await prisma.person.create({ data: { email: `user-${TAG}@example.com`, name: 'Self Enroller', household: { create: {} } } });
+        const user = await prisma.person.create({ data: { email: `user-${TAG}@example.com`, name: 'Self Enroller', household: { create: { name: "Test HH" } } } });
         userId = user.id;
         const program = await prisma.program.create({
             data: { name: `Closed ${TAG}`, phase: 'RUNNING', enrollmentStatus: 'CLOSED', orgMemberPriceCents: null, nonOrgMemberPriceCents: null },
@@ -63,22 +61,6 @@ describe('Enroll into a CLOSED program is rejected (both paths)', () => {
         expect(res.status).toBe(400);
         expect((await res.json()).error).toMatch(/closed/i);
         // No enrollment row written.
-        expect(await prisma.programParticipant.count({ where: { programId: closedProgramId } })).toBe(0);
-    });
-
-    it('public-register into a CLOSED program → 400 closed', async () => {
-        const req = new Request(`http://localhost:4000/api/programs/${closedProgramId}/public-register`, {
-            method: 'POST',
-            body: JSON.stringify({
-                parents: [{ name: `Parent ${TAG}`, email: `parent-${TAG}@example.com`, phone: '555-000-0001' }],
-                emergencyContact: { name: 'Aunt', phone: '555-111-2222' },
-                participants: [{ name: 'Kid', dob: '2015-01-01' }],
-            }),
-        });
-        const res = await PUBLIC_REGISTER(req as unknown as import('next/server').NextRequest, params(closedProgramId) as unknown as never);
-        expect(res.status).toBe(400);
-        expect((await res.json()).error).toMatch(/closed/i);
-        // Closed-check happens before any household/enrollment writes.
         expect(await prisma.programParticipant.count({ where: { programId: closedProgramId } })).toBe(0);
     });
 });

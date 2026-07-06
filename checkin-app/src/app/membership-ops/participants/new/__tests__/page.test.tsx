@@ -215,6 +215,7 @@ describe("membership-ops/participants/new page", () => {
 
     global.fetch = jest.fn(() => Promise.reject(new Error("net"))) as unknown as typeof fetch;
     fireEvent.click(screen.getByRole("button", { name: "Create Participant" }));
-    expect(await screen.findByText("Network error")).toBeInTheDocument();
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(
+      expect.objectContaining({ color: "red", message: "Network error", autoClose: false })));
   });
 });

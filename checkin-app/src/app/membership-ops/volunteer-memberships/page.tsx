@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button, Card, Center, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifications } from "@mantine/notifications";
+import { isValidEmail } from "@/lib/emergencyContacts/identity";
 
 interface Designation {
   id: number;
@@ -16,9 +17,11 @@ export default function VolunteerMembershipsPage() {
   const [newEmail, setNewEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; tone: "warning" | "error" } | undefined>();
+  const [emailError, setEmailError] = useState<string | undefined>(undefined);
 
-  const flash = (m: string) => setMessage(m);
+  const flash = (text: string, tone: "warning" | "error" = "error") =>
+    setMessage(text ? { text, tone } : undefined);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,7 +36,9 @@ export default function VolunteerMembershipsPage() {
   useEffect(() => { load(); }, [load]);
 
   const addDesignation = async () => {
+    setEmailError(undefined);
     if (!newEmail.trim()) return;
+    if (!isValidEmail(newEmail)) { setEmailError("A valid email is required."); return; }
     setSaving(true);
     flash("");
     try {
@@ -42,13 +47,13 @@ export default function VolunteerMembershipsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: newEmail }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setNewEmail("");
-        if (data.warning) { flash(data.warning); } else { notifications.show({ color: "green", message: "Designation added." }); }
+        if (data.warning) { flash(data.warning, "warning"); } else { notifications.show({ color: "green", message: "Designation added." }); }
         await load();
       } else flash(data.error || "Could not add.");
-    } catch { flash("Network error."); }
+    } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
   };
 
@@ -62,7 +67,7 @@ export default function VolunteerMembershipsPage() {
 
   return (
     <Stack>
-      <AlertBanner message={message} tone="warning" />
+      <AlertBanner message={message?.text} tone={message?.tone} />
 
       <Card withBorder radius="md" padding="lg">
         <Title order={3} mb="xs">Volunteer-only designated emails</Title>
@@ -74,7 +79,8 @@ export default function VolunteerMembershipsPage() {
           <TextInput
             w={320}
             value={newEmail}
-            onChange={(e) => setNewEmail(e.currentTarget.value)}
+            onChange={(e) => { setNewEmail(e.currentTarget.value); setEmailError(undefined); }}
+            error={emailError}
             placeholder="volunteer@example.com"
           />
           <Button disabled={saving} onClick={addDesignation}>Add</Button>

@@ -177,7 +177,7 @@ describe("EventAdminPage", () => {
 
         fetchEventThenPatchWith(baseEvent(), () => { throw new Error("boom"); });
         fireEvent.click(screen.getByRole("button", { name: "Confirm Attendance" }));
-        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
     });
 
     it("edit time: shows the server error, then a network-error message", async () => {
@@ -194,12 +194,13 @@ describe("EventAdminPage", () => {
 
         fetchEventThenPatchWith(future, () => { throw new Error("boom"); });
         fireEvent.click(screen.getByRole("button", { name: "Save Time Changes" }));
-        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
     });
 
-    it("manual edit: a member with a visit defaults to Present with time fields; toggling to Absent hides them and saves null times", async () => {
+    it("manual edit: a checked-in member (open visit) defaults to Present with time fields; Absent is disabled with a hint", async () => {
         setSession({ id: 1, isSysadmin: true });
-        const fetchMock = mockFetchJson({ "/api/events/5": baseEvent() });
+        // baseEvent's Pat has an open visit (departedAt null) — the server rejects marking Absent.
+        mockFetchJson({ "/api/events/5": baseEvent() });
         renderPage(params);
         await screen.findByText("Robotics Session");
 
@@ -213,6 +214,30 @@ describe("EventAdminPage", () => {
         expect(statusInput).toHaveValue("Present");
         expect(screen.getByLabelText("Arrived Time")).toBeInTheDocument();
         expect(screen.getByLabelText("Departed Time (Optional)")).toBeInTheDocument();
+        expect(screen.getByText("Check them out first to mark Absent.")).toBeInTheDocument();
+
+        // The Absent option is present but disabled; clicking it does not switch status.
+        fireEvent.click(statusInput);
+        const absentOption = screen.getByText("Absent", { selector: '[role="option"] span' }).closest('[role="option"]');
+        expect(absentOption).toHaveAttribute("data-combobox-disabled", "true");
+        fireEvent.click(absentOption!);
+        expect(statusInput).toHaveValue("Present");
+        expect(screen.getByLabelText("Arrived Time")).toBeInTheDocument();
+    });
+
+    it("manual edit: a departed member (closed visit) can toggle to Absent, which hides time fields and saves null times", async () => {
+        setSession({ id: 1, isSysadmin: true });
+        // Closed visit (departedAt set) — not currently checked in, so Absent is allowed.
+        const event = baseEvent({ visits: [{ id: 1, personId: 3, arrivedAt: "2020-01-01T18:05:00.000Z", departedAt: "2020-01-01T19:00:00.000Z" }] });
+        const fetchMock = mockFetchJson({ "/api/events/5": event });
+        renderPage(params);
+        await screen.findByText("Robotics Session");
+
+        fireEvent.click(screen.getAllByRole("button", { name: "Manual Edit" })[1]);
+        expect(await screen.findByText(/Manual Edit: Pat Participant/)).toBeInTheDocument();
+        const statusInput = screen.getByRole("textbox", { name: "Status" });
+        expect(statusInput).toHaveValue("Present");
+        expect(screen.queryByText("Check them out first to mark Absent.")).not.toBeInTheDocument();
         fireEvent.change(screen.getByLabelText("Arrived Time"), { target: { value: "2020-01-01T18:10" } });
         fireEvent.change(screen.getByLabelText("Departed Time (Optional)"), { target: { value: "2020-01-01T19:10" } });
 
@@ -262,7 +287,7 @@ describe("EventAdminPage", () => {
         fireEvent.click(screen.getAllByRole("button", { name: "Manual Edit" })[0]);
         fetchEventThenPatchWith(baseEvent(), () => { throw new Error("boom"); });
         fireEvent.click(screen.getByRole("button", { name: "Save" }));
-        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
     });
 
     it("cancel event: declining the confirm() dialog skips the request; accepting shows the server error", async () => {
@@ -300,7 +325,7 @@ describe("EventAdminPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
         let modal = await screen.findByRole("dialog", { name: "Cancel Event" });
         fireEvent.click(within(modal).getByRole("button", { name: "Cancel Event(s)" }));
-        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
         await waitFor(() => expect(screen.queryByRole("dialog", { name: "Cancel Event" })).not.toBeInTheDocument());
 
         fetchEventThenPatchWith(future, () => ({ ok: true, json: async () => ({}) } as Response));

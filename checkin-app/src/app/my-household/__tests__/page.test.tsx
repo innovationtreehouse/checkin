@@ -90,6 +90,8 @@ describe("HouseholdPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add Household Member" }));
     fireEvent.change(screen.getByLabelText("Full Name"), { target: { value: "Robin Smith" } });
     fireEvent.click(screen.getByLabelText("Individual is over 25"));
+    // Allergies (safety data) must be capturable on ADD, not only on a later edit.
+    fireEvent.change(screen.getByLabelText("Allergies (optional)"), { target: { value: "Bees" } });
     fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
 
     await waitFor(() =>
@@ -97,7 +99,7 @@ describe("HouseholdPage", () => {
         "/api/household",
         expect.objectContaining({
           method: "PATCH",
-          body: JSON.stringify({ memberName: "Robin Smith", memberEmail: "", memberDob: "", memberOver25: true }),
+          body: JSON.stringify({ memberName: "Robin Smith", memberEmail: "", memberDob: "", memberOver25: true, memberAllergies: "Bees" }),
         }),
       ),
     );
@@ -109,7 +111,7 @@ describe("HouseholdPage", () => {
     renderWithProviders(<HouseholdPage />);
     await screen.findByRole("heading", { name: "Smith Household", level: 1 });
 
-    fireEvent.click(screen.getByRole("button", { name: "Update Address" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save household details" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -176,7 +178,7 @@ describe("HouseholdPage", () => {
     ]);
     renderWithProviders(<HouseholdPage />);
 
-    expect(await screen.findByText("Network error loading household.")).toBeInTheDocument();
+    await waitFor(() => expectToast("Network error loading household."));
   });
 
   it("validates required fields, then adds a member and surfaces a contact-collision warning", async () => {
@@ -237,7 +239,7 @@ describe("HouseholdPage", () => {
     expect(await screen.findByText("Household is full.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
-    expect(await screen.findByText("Network error adding household member.")).toBeInTheDocument();
+    await waitFor(() => expectToast("Network error adding household member."));
   });
 
   it("edits a household member: cancels, validates, toggles the lead checkbox, and shows a lead-rejection warning", async () => {
@@ -467,37 +469,37 @@ describe("HouseholdPage", () => {
 
     // Address settings: client validation error, then server failure, then network error.
     fireEvent.change(screen.getByLabelText(/Street Address/), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update Address" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save household details" }));
     expect(await screen.findByText("Street address is required.")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/Street Address/), { target: { value: "123 Main St" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update Address" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save household details" }));
     expect(await screen.findByText("Failed to update some settings.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Update Address" }));
-    expect(await screen.findByText("Network error saving settings.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save household details" }));
+    await waitFor(() => expectToast("Network error saving settings."));
 
     // Emergency contact add: network error.
     fireEvent.click(screen.getByRole("button", { name: "+ Add Contact" }));
     fireEvent.change(screen.getByLabelText("Contact Name"), { target: { value: "New Contact" } });
     fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "5125559000" } });
     fireEvent.click(screen.getByRole("button", { name: "Add Contact" }));
-    expect(await screen.findByText("Network error saving emergency contact.")).toBeInTheDocument();
+    await waitFor(() => expectToast("Network error saving emergency contact."));
 
     // Emergency contact delete: server failure, then network error (same row both times).
     fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
     expect(await screen.findByText("Contact not found.")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
-    expect(await screen.findByText("Network error removing emergency contact.")).toBeInTheDocument();
+    await waitFor(() => expectToast("Network error removing emergency contact."));
 
     // Household member edit: server failure, then network error.
     fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Update rejected.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByText("Network error updating household member.")).toBeInTheDocument();
+    await waitFor(() => expectToast("Network error updating household member."));
 
     // Make Lead: network error.
     fireEvent.click(screen.getByRole("button", { name: "Make Lead" }));
-    expect(await screen.findByText("Network error promoting household member.")).toBeInTheDocument();
+    await waitFor(() => expectToast("Network error promoting household member."));
     expect(fetchMock).toHaveBeenCalledWith("/api/household/lead", expect.objectContaining({ method: "POST" }));
   });
 });

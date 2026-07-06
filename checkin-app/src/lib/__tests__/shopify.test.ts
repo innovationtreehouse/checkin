@@ -45,11 +45,35 @@ describe('createShopifyProgramVariants', () => {
         jest.restoreAllMocks();
     });
 
-    it('should return null if credentials are missing', async () => {
+    it('should return null if credentials are missing in prod', async () => {
+        // In prod, unconfigured Shopify fails closed to null (no mock stand-in).
+        process.env.CHECKIN_ENV = 'prod';
         delete process.env.SHOPIFY_STORE_DOMAIN;
         const result = await createShopifyProgramVariants('Test Program', 10, 20);
         expect(result).toBeNull();
         expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('returns synthetic variant ids for priced tiers on local (mock active)', async () => {
+        // CHECKIN_ENV=local → shopifyMockActive: stand in for the real store so the
+        // seed → checkout → orders/paid dev tool works with zero env. Gated on the
+        // env, not on cred presence.
+        process.env.CHECKIN_ENV = 'local';
+        delete process.env.SHOPIFY_STORE_DOMAIN;
+        delete process.env.SHOPIFY_CLIENT_ID;
+        delete process.env.SHOPIFY_CLIENT_SECRET;
+
+        const result = await createShopifyProgramVariants('Test Program', 10, 20);
+        expect(result).not.toBeNull();
+        expect(result?.shopifyProductId).toBeTruthy();
+        expect(result?.shopifyOrgMemberVariantId).toBeTruthy();
+        expect(result?.shopifyNonOrgMemberVariantId).toBeTruthy();
+        expect(fetchMock).not.toHaveBeenCalled(); // no real API calls in mock mode
+
+        // Free tier (price 0/null) gets no variant, matching the real branch.
+        const freeMember = await createShopifyProgramVariants('Free Prog', null, 20);
+        expect(freeMember?.shopifyOrgMemberVariantId).toBeNull();
+        expect(freeMember?.shopifyNonOrgMemberVariantId).toBeTruthy();
     });
 
     it('should successfully create product and variants', async () => {

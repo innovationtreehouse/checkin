@@ -318,6 +318,10 @@ export function buildImport(files: ZohoFiles, now: Date): BuiltImport {
         ).length;
 
         const rawAddress = (family?.Address || "").trim() || null;
+        // ponytail: no Household.intakeNotes mapped — legacy Zoho has no free-text
+        // "anything else?" column, and it's the volunteer-magic-text a NEW applicant
+        // types for the reviewer, not something imported members ever supplied. Add a
+        // source→intakeNotes map here only if Zoho gains such a column.
         households.push({
             groupKey: key,
             name: ln ? `${ln} Household` : "Household",

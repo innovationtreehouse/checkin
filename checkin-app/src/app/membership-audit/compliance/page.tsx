@@ -1,0 +1,225 @@
+"use client";
+
+import { useState, useEffect, type ReactNode } from "react";
+import { Badge, Button, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { formatPhone } from "@/lib/phone";
+import { PageLoader } from "@/components/ui/PageLoader";
+
+type Lead = { id: number; name: string | null; phone: string | null; email: string | null };
+type Household = {
+  id: number;
+  name: string | null;
+  reasons: string[];
+  lastBackgroundCheck: string | null;
+  leads: Lead[];
+};
+type PersonRow = {
+  personId: number;
+  name: string;
+  householdId: number;
+  programId: number | null;
+  programName: string | null;
+  reason: string;
+};
+
+// Reason tag -> human label + badge color. Keys mirror the endpoint's tags.
+const REASON: Record<string, { label: string; color: string }> = {
+  STALE_BG: { label: "Background check expired", color: "orange" },
+  REVOKED: { label: "Revoked", color: "red" },
+  DENIED: { label: "Denied", color: "red" },
+  STUCK_BG_CLEARANCE: { label: "Stuck at BG clearance", color: "yellow" },
+};
+
+/** Person-scoped section (bg-needed / DOB-missing). Program people may not be in a
+ *  member household, so these render on their own, keyed on the person. */
+function PersonSection({
+  title,
+  description,
+  color,
+  people,
+  renderAction,
+}: {
+  title: string;
+  description: string;
+  color: string;
+  people: PersonRow[];
+  renderAction?: (p: PersonRow) => ReactNode;
+}) {
+  if (people.length === 0) return null;
+  return (
+    <Stack gap="sm">
+      <Title order={4}>{title}</Title>
+      <Text c="dimmed" size="sm">{description}</Text>
+      {people.map((p) => (
+        <Card key={p.personId} withBorder radius="md" padding="lg">
+          <Group justify="space-between" wrap="wrap">
+            <div>
+              <Text fw={600} fz="lg">{p.name}</Text>
+              <Text size="sm" c="dimmed">
+                {p.programName ? `Program: ${p.programName}` : "No program on file"}
+                {" · "}Household #{p.householdId}
+              </Text>
+            </div>
+            <Group gap="sm">
+              <Badge color={color} variant="light">{title}</Badge>
+              {renderAction?.(p)}
+            </Group>
+          </Group>
+        </Card>
+      ))}
+    </Stack>
+  );
+}
+
+/**
+ * Membership Audit view: households out of compliance that the system did NOT
+ * auto-terminate. Read-only — the board follows up manually; no action buttons.
+ */
+export default function CompliancePage() {
+  const [households, setHouseholds] = useState<Household[]>([]);
+  const [peopleNeedingBgCheck, setPeopleNeedingBgCheck] = useState<PersonRow[]>([]);
+  const [peopleMissingDob, setPeopleMissingDob] = useState<PersonRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [submittedIds, setSubmittedIds] = useState<Set<number>>(new Set());
+
+  // Record that an external background check exists for a program person and submit
+  // it for two-reviewer approval. Board/lead-initiated — the subject may have no login.
+  const submitBg = async (personId: number) => {
+    setBusyId(personId);
+    try {
+      const res = await fetch("/api/membership-audit/person-bg", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personId }),
+      });
+      if (res.ok) {
+        setSubmittedIds((s) => new Set(s).add(personId));
+        notifications.show({ color: "green", message: "Submitted for background-check review." });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: "red", message: data.error || "Could not submit for review." });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error." });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/membership-audit/compliance");
+        if (res.ok) {
+          const data = await res.json();
+          setHouseholds(data.households ?? []);
+          setPeopleNeedingBgCheck(data.peopleNeedingBgCheck ?? []);
+          setPeopleMissingDob(data.peopleMissingDob ?? []);
+        } else {
+          setError("Failed to load compliance data. Ensure you have the proper authorizations.");
+        }
+      } catch (e) {
+        console.error(e);
+        setError("Network error loading compliance data.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) return <PageLoader />;
+
+  if (error) {
+    return (
+      <Center mih="60vh">
+        <Title order={3} c="red">{error}</Title>
+      </Center>
+    );
+  }
+
+  return (
+    <Stack>
+      <Card withBorder radius="md" padding="lg">
+        <Text c="dimmed">
+          Households out of compliance that the system did not auto-terminate. This is
+          a standing list for manual board follow-up — no emails or actions are sent
+          from here.
+        </Text>
+      </Card>
+
+      {households.length === 0 && peopleNeedingBgCheck.length === 0 && peopleMissingDob.length === 0 && (
+        <Card withBorder radius="md" padding="xl" ta="center">
+          <Text c="dimmed">Everyone is in compliance. 🎉</Text>
+        </Card>
+      )}
+
+      {households.length > 0 && (
+        <Stack gap="sm">
+          {households.map((h) => (
+            <Card key={h.id} withBorder radius="md" padding="lg">
+              <Group justify="space-between" wrap="wrap" mb="xs">
+                <Text fw={600} fz="lg">{h.name || `Household #${h.id}`}</Text>
+                <Group gap="xs">
+                  {h.reasons.map((r) => {
+                    const meta = REASON[r] ?? { label: r, color: "gray" };
+                    return (
+                      <Badge key={r} color={meta.color} variant="light">{meta.label}</Badge>
+                    );
+                  })}
+                </Group>
+              </Group>
+              {h.reasons.includes("STALE_BG") && (
+                <Text size="sm" c="dimmed" mb="xs">
+                  Last background check:{" "}
+                  {h.lastBackgroundCheck
+                    ? new Date(h.lastBackgroundCheck).toLocaleDateString()
+                    : "Never"}
+                </Text>
+              )}
+              <Text size="sm" c="dimmed" mb="xs">Household Leads:</Text>
+              {h.leads.length > 0 ? (
+                <Stack gap="xs">
+                  {h.leads.map((l) => (
+                    <Paper key={l.id} withBorder radius="sm" p="xs">
+                      <Text fw={500}>{l.name || l.email || `Member #${l.id}`}</Text>
+                      <Text size="sm" c="dimmed">Phone: {l.phone ? formatPhone(l.phone) : "Not provided"}</Text>
+                      {l.email && <Text size="sm" c="dimmed">Email: {l.email}</Text>}
+                    </Paper>
+                  ))}
+                </Stack>
+              ) : (
+                <Text size="sm" c="red">No designated leads found.</Text>
+              )}
+            </Card>
+          ))}
+        </Stack>
+      )}
+
+      <PersonSection
+        title="Background check needed"
+        description="Program-attached people 18 or older with no current background check. Warn-only — nothing is blocked. Once an external check exists, submit it below for two-reviewer approval."
+        color="orange"
+        people={peopleNeedingBgCheck}
+        renderAction={(p) =>
+          submittedIds.has(p.personId) ? (
+            <Badge color="green" variant="light">Submitted for review</Badge>
+          ) : (
+            <Button size="xs" variant="light" loading={busyId === p.personId} disabled={busyId === p.personId} onClick={() => submitBg(p.personId)}>
+              Record external check &amp; submit
+            </Button>
+          )
+        }
+      />
+
+      <PersonSection
+        title="Missing date of birth"
+        description="Program-attached people with no recorded age. Confirm their date of birth before a background check can be assessed."
+        color="grape"
+        people={peopleMissingDob}
+      />
+    </Stack>
+  );
+}

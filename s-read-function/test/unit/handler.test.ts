@@ -4,7 +4,7 @@
  * into a clean `{ skipped: true }` while any other error propagates. All collaborators
  * are mocked so this isolates the handler's own control flow.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { it, expect, vi, beforeEach } from "vitest";
 
 // Hoisted so the class exists when the (hoisted) vi.mock factory below references it.
 const { ConcurrentRunError } = vi.hoisted(() => ({

@@ -25,9 +25,13 @@ const STATUS_FOR: Record<ReviewError["code"], number> = {
  * pii + public only — applicant parents' names/emails, nothing internal). The
  * attestation _count doubles as the approval count for queue rows.
  *
- * The query selects ONLY the household leads' (parents') person rows — the
- * reviewer never needs the children, so their PII never leaves the DB. The
- * stripper is defense-in-depth on top of this narrowing, not the primary filter.
+ * For a household review the query selects ONLY the household leads' (parents')
+ * person rows — the reviewer never needs the children, so their PII never leaves
+ * the DB. For a PERSON_BG it selects the SUBJECT person instead (name + household
+ * context, subject may have no household), so the reviewer sees who they're
+ * approving rather than a blank row. Both name/household fields are public-band, so
+ * the stripper passes them for the reviewer grant; it stays defense-in-depth on top
+ * of this narrowing, not the primary filter.
  */
 export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
     if (auth.type !== "session") throw unauthorized();
@@ -37,11 +41,25 @@ export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
         orderBy: { stageEnteredAt: "asc" },
         select: {
             id: true,
+            // The BG subject (set only on a PERSON_BG row): identity + household
+            // context so the reviewer knows who the check is for. Household may be null.
+            subjectPerson: {
+                select: {
+                    id: true,
+                    name: true,
+                    householdId: true,
+                    household: { select: { name: true } },
+                },
+            },
             orgMembership: {
                 select: {
                     household: {
                         select: {
                             name: true,
+                            // The applicant's "anything else we should know?" note — the
+                            // signal a volunteer-only household uses to ask the reviewer to
+                            // mark them volunteer. Classified pii; reviewers hold that band.
+                            intakeNotes: true,
                             leads: { select: { person: { select: { id: true, name: true, email: true } } } },
                         },
                     },

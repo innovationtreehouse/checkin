@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, Checkbox, Container, Group, Select, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { useUnsavedGuard, shallowEqual } from '@/components/UnsavedChangesProvider';
@@ -106,6 +107,30 @@ export function NewEventForm() {
       return;
     }
 
+    if (repeats && daysOfWeek.length > 0 && until) {
+      // Parse as local dates (YYYY-MM-DD as local midnight) so getDay() matches the picker.
+      const start = new Date(`${startDate}T00:00:00`);
+      const end = new Date(`${until}T00:00:00`);
+      if (end < start) {
+        setMessage("The end date must be on or after the start date.");
+        setSaving(false);
+        return;
+      }
+      // A window of ≥7 days always covers every weekday; only short ranges need scanning.
+      const spanDays = Math.round((end.getTime() - start.getTime()) / 86400000);
+      if (spanDays < 7) {
+        let hit = false;
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          if (daysOfWeek.includes(d.getDay())) { hit = true; break; }
+        }
+        if (!hit) {
+          setMessage("The selected day(s) don't fall within the start–end date range. Pick a wider range or different days.");
+          setSaving(false);
+          return;
+        }
+      }
+    }
+
     try {
       interface EventPayload {
         name: string;
@@ -140,11 +165,11 @@ export function NewEventForm() {
         setSubmitted(true); // clear unsaved-changes guard before redirect
         router.push('/program-ops/events');
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         setMessage(err.error || "Failed to create event");
       }
     } catch {
-      setMessage("Network error");
+      notifications.show({ color: "red", message: "Network error", autoClose: false });
     } finally {
       setSaving(false);
     }

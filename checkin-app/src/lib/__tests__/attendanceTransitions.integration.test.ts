@@ -27,7 +27,7 @@ describe('attendanceTransitions', () => {
         programId = program.id;
 
         const p = await prisma.person.create({
-            data: { name: 'AT Enrolled', email: `enrolled-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'AT Enrolled', email: `enrolled-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         participantId = p.id;
         householdIds.push(p.householdId);
@@ -36,7 +36,7 @@ describe('attendanceTransitions', () => {
         });
 
         const u = await prisma.person.create({
-            data: { name: 'AT Unenrolled', email: `unenrolled-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'AT Unenrolled', email: `unenrolled-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         unenrolledId = u.id;
         householdIds.push(u.householdId);

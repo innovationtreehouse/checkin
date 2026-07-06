@@ -43,14 +43,14 @@ describe('Admin Visits API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.person.create({
-            data: { email: 'admin-visits-api-test@example.com', name: 'Admin Visits Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-visits-api-test@example.com', name: 'Admin Visits Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
         const checkAdmin = await prisma.person.findUnique({ where: { id: testAdminId } });
         console.log("Check Admin:", checkAdmin);
 
         const user = await prisma.person.create({
-            data: { email: 'user-visits-api-test@example.com', name: 'User Visits Test', household: { create: {} } }
+            data: { email: 'user-visits-api-test@example.com', name: 'User Visits Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
 
@@ -165,6 +165,89 @@ describe('Admin Visits API Integration Tests', () => {
             expect(data.error).toBe('visitId is required.');
         });
 
+        it('should return 400 for an invalid provided date', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'PATCH',
+                body: JSON.stringify({ visitId: testVisitId, departedAt: 'not-a-date' })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('Invalid departure time');
+        });
+
+        it('should return 400 for a future provided date', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            const future = new Date(Date.now() + 3600000).toISOString();
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'PATCH',
+                body: JSON.stringify({ visitId: testVisitId, departedAt: future })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('Departure time cannot be in the future.');
+        });
+
+        it('should return 400 when editing an open visit without supplying a departure', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            // testVisitId is still open here (departedAt null); editing only arrival must not leave it open.
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'PATCH',
+                body: JSON.stringify({ visitId: testVisitId, arrivedAt: new Date(Date.now() - 7200000).toISOString() })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('Departure time is required to close this visit.');
+        });
+
+        it('should return 400 when departure is not after arrival', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            // Existing arrival is ~1h ago; a departure 2h ago is before it (also covers zero-length).
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'PATCH',
+                body: JSON.stringify({ visitId: testVisitId, departedAt: new Date(Date.now() - 7200000).toISOString() })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('Departure time must be after arrival time');
+        });
+
+        it('should return 404 for a non-existent visit', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'PATCH',
+                body: JSON.stringify({ visitId: 999999999, departedAt: new Date().toISOString() })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(404);
+            const data = await res.json();
+            expect(data.error).toBe('Visit not found.');
+        });
+
         it('should update the visit and log to audit block when an admin requests it', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testAdminId, isSysadmin: true }
@@ -184,6 +267,7 @@ describe('Admin Visits API Integration Tests', () => {
             expect(res.status).toBe(200);
             const data = await res.json();
             expect(new Date(data.visit.departedAt).toISOString()).toBe(now.toISOString());
+            expect(data.visit.departedVia).toBe('WEB');
 
             const updatedVisit = await prisma.visit.findUnique({ where: { id: testVisitId } });
             expect(updatedVisit?.departedAt?.toISOString()).toBe(now.toISOString());

@@ -2,10 +2,11 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Badge, Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
+import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { tabBadgeFor } from "@/components/navBadges";
+import { CountBadge } from "@/components/ui/CountBadge";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useConfirmNav } from "@/components/UnsavedChangesProvider";
@@ -61,7 +62,7 @@ export default function SafetyLayout({ children }: { children: React.ReactNode }
               value={t.href}
               // Active tab recolors its content to the tabs color (green); pin dark text so the
               // green count badge isn't rendered green-on-green on the active tab.
-              rightSection={t.count ? <Badge size="md" color="treehouseGreen" c="var(--mantine-color-black)">{t.count}</Badge> : undefined}
+              rightSection={t.count ? <CountBadge intent="action">{t.count}</CountBadge> : undefined}
             >
               {t.name}
             </Tabs.Tab>

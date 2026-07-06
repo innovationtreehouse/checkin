@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import type { OrgMembershipProcessStatus, OrgMembershipStatus } from "@/generated/prisma/client";
 import {
   Alert, Anchor, Box, Button, Card, Checkbox, Container, Group,
-  SimpleGrid, Stack, Text, TextInput, ThemeIcon, Title,
+  SimpleGrid, Stack, Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
@@ -14,10 +14,12 @@ import MembershipFlowStepper from "@/components/MembershipFlowStepper";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
+import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 import { useUnsavedGuard, useConfirmNav } from "@/components/UnsavedChangesProvider";
 import AddressForm from "@/components/membership/AddressForm";
 import EmergencyContactForm from "@/components/membership/EmergencyContactForm";
 import ChildrenListForm from "@/components/membership/ChildrenListForm";
+import { useIsLocalInstance } from "@/components/EnvProvider";
 
 import { PageLoader } from "@/components/ui/PageLoader";
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
@@ -41,11 +43,12 @@ interface ExternalStatus {
 
 interface IntakeState {
   hasHousehold: boolean;
+  isLead: boolean;
   membershipStatus: OrgMembershipStatus | null;
   process: { id: number; kind: string; status: OrgMembershipProcessStatus } | null;
   external: ExternalStatus | null;
   prefill: {
-    household: ({ name: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactEmail: string | null } & Partial<StructuredAddress>) | null;
+    household: ({ name: string | null; notes: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactEmail: string | null } & Partial<StructuredAddress>) | null;
     primaryParent: PersonPrefill | null;
     secondaryParent: PersonPrefill | null;
     children: PersonPrefill[];
@@ -67,6 +70,7 @@ interface FormValues {
   hasSecondary: boolean; secondaryId?: number;
   secondaryName: string; secondaryEmail: string; secondaryDob: string; secondaryOver25: boolean; secondaryAllergies: string;
   children: ChildForm[];
+  notes: string;
 }
 
 // Stable key for the unsaved-changes dirty compare. Array (not object) so order
@@ -78,6 +82,7 @@ export const serializeMembershipForm = (v: FormValues) =>
     v.primaryName, v.primaryDob, v.primaryOver25, v.primaryAllergies,
     v.hasSecondary, v.secondaryId, v.secondaryName, v.secondaryEmail, v.secondaryDob, v.secondaryOver25, v.secondaryAllergies,
     v.children.map((c) => [c.id, c.name, c.email, c.dob, c.allergies]),
+    v.notes,
   ]);
 
 function ExternalTask({ done, title, doneText, children }: { done: boolean; title: string; doneText: string; children: React.ReactNode }) {
@@ -98,6 +103,7 @@ function ExternalTask({ done, title, doneText, children }: { done: boolean; titl
 
 export default function MembershipPage() {
   const { data: session, status: sessionStatus } = useSession();
+  const isLocalInstance = useIsLocalInstance();
 
   const [state, setState] = useState<IntakeState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,7 +133,15 @@ export default function MembershipPage() {
   const [secondaryOver25, setSecondaryOver25] = useState(false);
   const [secondaryAllergies, setSecondaryAllergies] = useState("");
   const [children, setChildren] = useState<ChildForm[]>([]);
+  const [notes, setNotes] = useState("");
   const [payment, setPayment] = useState<{ amountCents: number; checkoutUrl: string | null } | null>(null);
+  // Flips true once the household asks the finance committee for a payment plan.
+  const [planRequested, setPlanRequested] = useState(false);
+  // Self-attest gate for the background-check task (#875): the confirm checkbox
+  // unlocks only after the applicant has opened the Averity consent link this
+  // visit, so they can't attest to a form they never saw.
+  const [bgLinkOpened, setBgLinkOpened] = useState(false);
+  const [bgAttesting, setBgAttesting] = useState(false);
   // Serialized form as last loaded/saved; isDirty compares it to current state.
   const [savedForm, setSavedForm] = useState<string | null>(null);
 
@@ -140,6 +154,7 @@ export default function MembershipPage() {
     setEmName(h?.emergencyContactName ?? "");
     setEmPhone(h?.emergencyContactPhone ?? "");
     setEmEmail(h?.emergencyContactEmail ?? "");
+    setNotes(h?.notes ?? "");
     const p = s.prefill.primaryParent;
     setPrimaryName(p?.name ?? "");
     setPrimaryDob(p?.dob ?? "");
@@ -182,6 +197,7 @@ export default function MembershipPage() {
       secondaryOver25: !!sec?.over25,
       secondaryAllergies: sec?.allergies ?? "",
       children: nextChildren,
+      notes: h?.notes ?? "",
     }));
   }, []);
 
@@ -256,11 +272,35 @@ export default function MembershipPage() {
     if (error || msg === "") setWarnings([]);
   };
 
-  // Build an error message from an API response, appending the dev-only `detail`
-  // (the real server failure) when present so an "Internal Server Error" isn't a
-  // dead end. Falls back to a friendly default when the body carries nothing.
-  const apiError = (data: { error?: string; detail?: string } | null | undefined, fallback: string) =>
-    [data?.error, data?.detail].filter(Boolean).join(" — ") || fallback;
+  // Prefer the API's user-facing error string; fall back to a friendly default.
+  const apiError = (data: { error?: string } | null | undefined, fallback: string) =>
+    data?.error || fallback;
+
+  // Local dev has no Shopify store, so instead of a checkout redirect we fire the
+  // mock orders/paid webhook in-app (same endpoint the Debug → Shopify tool uses),
+  // settling dues end-to-end with zero setup. Only rendered on a local instance.
+  const settleMockPayment = async () => {
+    if (!state?.process) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/dev/shopify/orders-paid", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId: state.process.id }),
+      });
+      if (res.ok) {
+        flash("Payment mocked (local) — updating status.");
+        notifyNavRefresh();
+        await load();
+      } else {
+        flash(apiError(await res.json().catch(() => null), "Mock payment failed."), true);
+      }
+    } catch {
+      flash("Mock payment failed.", true);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Clear a single field's error (called as the user edits it).
   const clearErr = (key: string) =>
@@ -271,8 +311,12 @@ export default function MembershipPage() {
   const validateIntake = (): Record<string, string> => {
     const errs: Record<string, string> = {};
     if (!address.line1?.trim()) errs.address = "Home address is required.";
+    if (!address.city?.trim()) errs.addrCity = "City is required.";
+    if (!address.state?.trim()) errs.addrState = "State is required.";
+    if (!address.postalCode?.trim()) errs.addrZip = "ZIP is required.";
     if (!emName.trim()) errs.emName = "Emergency contact name is required.";
     if (!emPhone.trim()) errs.emPhone = "Emergency contact phone is required.";
+    else if (!isValidPhone(emPhone)) errs.emPhone = PHONE_ERROR;
     if (emEmail.trim() && !isValidEmail(emEmail)) errs.emEmail = "That email address doesn't look right.";
     if (!primaryName.trim()) errs.primaryName = "Your name is required.";
     return errs;
@@ -299,18 +343,18 @@ export default function MembershipPage() {
     flash("");
     try {
       const res = await fetch("/api/membership", { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) { hydrate(data.state); notifyNavRefresh(); }
       else flash(apiError(data, "Could not start your application."), true);
     } catch {
-      flash("Network error.", true);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }
   };
 
   const buildPayload = () => ({
-    household: { ...address, emergencyContactName: emName, emergencyContactPhone: emPhone, emergencyContactEmail: emEmail },
+    household: { ...address, emergencyContactName: emName, emergencyContactPhone: emPhone, emergencyContactEmail: emEmail, notes: notes || null },
     primaryParent: { name: primaryName, dob: primaryOver25 ? null : (primaryDob || null), over25: primaryOver25, allergies: primaryAllergies || null },
     secondaryParent: hasSecondary
       ? { id: secondaryId, name: secondaryName, email: secondaryEmail || undefined, dob: secondaryOver25 ? null : (secondaryDob || null), over25: secondaryOver25, allergies: secondaryAllergies || null }
@@ -329,14 +373,14 @@ export default function MembershipPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(buildPayload()),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         hydrate(data.state);
         flash("Progress saved.");
         setWarnings((data.rejections ?? []).map((r: { message: string }) => r.message));
       } else flash(apiError(data, "Could not save."), true);
     } catch {
-      flash("Network error.", true);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }
@@ -367,13 +411,18 @@ export default function MembershipPage() {
       }
       const saveWarnings: string[] = (saveData.rejections ?? []).map((r: { message: string }) => r.message);
       const res = await fetch("/api/membership/intake/submit", { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setFieldErrors({});
         hydrate(data.state);
         notifyNavRefresh();
         flash("Submitted! Next: sign your contract and start your background check — then you can pay right away.");
         setWarnings(saveWarnings);
+      } else if (data.code === "no_process") {
+        // Race: the process advanced out from under this stale view. Transient
+        // toast + re-hydrate; the `incomplete` field-error path below is untouched.
+        notifications.show({ color: "red", message: data.error || "No application is awaiting your information.", autoClose: 4000 });
+        await load();
       } else {
         // The server may flag fields the client can't check locally (e.g. an
         // emergency contact who is a household member) — highlight those too.
@@ -381,7 +430,7 @@ export default function MembershipPage() {
         flash(apiError(data, "Could not submit."), true);
       }
     } catch {
-      flash("Network error.", true);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
     }
@@ -395,18 +444,45 @@ export default function MembershipPage() {
     flash("");
     try {
       const res = await fetch("/api/membership/contract/sign", { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.url) {
         window.location.href = data.url;
+      } else if (data.code === "not_configured" || data.code === "agreement_unavailable") {
+        // Zoho e-sign isn't set up yet (503) — retrying won't help.
+        flash("Signing is temporarily unavailable — please check back soon.", true);
+        setSaving(false);
       } else {
         flash(apiError(data, "Couldn't open the signing form. Please try again."), true);
         setSaving(false);
       }
     } catch {
-      flash("Network error.", true);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
       setSaving(false);
     }
     // On success we navigate away, so we intentionally leave `saving` true.
+  };
+
+  // Ask the board's finance committee for a payment plan on membership dues.
+  // Mirrors the program-page request; the finance-ops Membership Payment Plan tab
+  // picks it up and activates the membership on approval (no Shopify payment).
+  const requestPaymentPlan = async () => {
+    if (!state?.process) return;
+    try {
+      const res = await fetch("/api/membership/request-payment-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId: state.process.id }),
+      });
+      if (res.ok) {
+        setPlanRequested(true);
+        notifications.show({ color: "green", message: "Requested! The finance committee of the board will follow up." });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: "red", message: data.error || "Could not request a payment plan.", autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    }
   };
 
   const renew = async () => {
@@ -414,13 +490,38 @@ export default function MembershipPage() {
     flash("");
     try {
       const res = await fetch("/api/membership/renew", { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) { await load(); notifyNavRefresh(); flash("Renewal started."); }
+      else if (data.code === "wrong_phase") {
+        notifications.show({ color: "red", message: data.error || "This renewal is no longer awaiting your confirmation.", autoClose: 4000 });
+        await load();
+      }
       else flash(apiError(data, "Could not start renewal."), true);
     } catch {
-      flash("Network error.", true);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Applicant confirms they submitted consent on Averity. On success the reload
+  // flips the task to done (and may advance the whole card to payment); on
+  // failure the checkbox reverts so they can retry.
+  const attestBgConsent = async () => {
+    setBgAttesting(true);
+    try {
+      const res = await fetch("/api/membership/bg-consent", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        await load();
+        notifyNavRefresh();
+      } else {
+        setBgAttesting(false);
+        flash(apiError(data, "Could not record your consent. Please try again."), true);
+      }
+    } catch {
+      setBgAttesting(false);
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     }
   };
 
@@ -434,6 +535,7 @@ export default function MembershipPage() {
     primaryName, primaryDob, primaryOver25, primaryAllergies,
     hasSecondary, secondaryId, secondaryName, secondaryEmail, secondaryDob, secondaryOver25, secondaryAllergies,
     children,
+    notes,
   });
   // Dirty once the user edits past the loaded snapshot. Re-hydrate after a
   // save/submit re-snapshots, so this flips back to false then.
@@ -495,7 +597,11 @@ export default function MembershipPage() {
               family, then walk you through signing a contract, a background check, and payment. You
               can stop and resume anytime.
             </Text>
-            <Button disabled={saving} loading={saving} onClick={startApplication}>Start application</Button>
+            {state?.isLead ? (
+              <Button disabled={saving} loading={saving} onClick={startApplication}>Start application</Button>
+            ) : (
+              <Text c="dimmed">Only a household lead can start the membership application. Ask your household&apos;s lead to begin.</Text>
+            )}
           </Card>
         )
       ) : isRenewal && inStatus === "PENDING_RENEWAL" ? (
@@ -535,7 +641,12 @@ export default function MembershipPage() {
                 <Stack gap="lg">
                   <section>
                     <Title order={2} mb="sm">Your household</Title>
-                    <AddressForm address={address} onChange={setAddress} error={fieldErrors.address} onErrorClear={() => clearErr("address")} />
+                    <AddressForm
+                      address={address}
+                      onChange={setAddress}
+                      errors={{ line1: fieldErrors.address, city: fieldErrors.addrCity, state: fieldErrors.addrState, postalCode: fieldErrors.addrZip }}
+                      onErrorClear={(f) => clearErr(f === "line1" ? "address" : f === "city" ? "addrCity" : f === "state" ? "addrState" : "addrZip")}
+                    />
                     <EmergencyContactForm
                       emName={emName} setEmName={setEmName}
                       emPhone={emPhone} setEmPhone={setEmPhone}
@@ -589,6 +700,17 @@ export default function MembershipPage() {
 
                   <ChildrenListForm items={children} onAdd={addChild} onUpdate={updateChild} onRemove={removeChild} />
 
+                  <section>
+                    <Textarea
+                      label="Anything else we should know?"
+                      description="Optional. Tell us anything that would help us review your application — for example, if your household is applying to volunteer only, with no students enrolled."
+                      autosize
+                      minRows={3}
+                      value={notes}
+                      onChange={(e) => setNotes(e.currentTarget.value)}
+                    />
+                  </section>
+
                   {/* Local echo of the page-top banner: intake is a long card, so
                       the top AlertBanner posts off-screen next to these buttons. */}
                   {message && (
@@ -639,9 +761,24 @@ export default function MembershipPage() {
                           can keep going and pay while it completes.
                         </Text>
                         {state.external?.deepLinkUrl ? (
-                          <Button component="a" href={state.external.deepLinkUrl} target="_blank" rel="noopener noreferrer">
-                            Consent on Averity →
-                          </Button>
+                          <>
+                            <Button
+                              component="a"
+                              href={state.external.deepLinkUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => setBgLinkOpened(true)}
+                            >
+                              Consent on Averity →
+                            </Button>
+                            <Checkbox
+                              label="I submitted my consent on Averity"
+                              description={bgLinkOpened ? undefined : "Open the Averity form above first, then confirm here."}
+                              checked={bgAttesting}
+                              disabled={!bgLinkOpened || bgAttesting}
+                              onChange={(e) => { if (e.currentTarget.checked) attestBgConsent(); }}
+                            />
+                          </>
                         ) : (
                           <Text c="dimmed">The background-check link isn&apos;t available yet. Please check back shortly.</Text>
                         )}
@@ -666,8 +803,25 @@ export default function MembershipPage() {
                       <Button component="a" href={payment.checkoutUrl} target="_blank" rel="noopener noreferrer" color="green" mt="md">
                         Pay here with Shopify →
                       </Button>
+                    ) : isLocalInstance ? (
+                      <Button color="green" mt="md" disabled={saving} onClick={settleMockPayment}>
+                        Pay now (local mock) →
+                      </Button>
                     ) : (
                       <Text c="yellow" mt="md">The payment link isn&apos;t available yet. Please check back shortly.</Text>
+                    )}
+                    {planRequested ? (
+                      <Text c="green" mt="md">Scholarship or payment plan requested — the finance committee will follow up.</Text>
+                    ) : (
+                      <Button
+                        variant="light"
+                        type="button"
+                        mt="md"
+                        onClick={requestPaymentPlan}
+                        styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
+                      >
+                        Request a scholarship or payment plan from the Finance Committee of the Board
+                      </Button>
                     )}
                     {!state.external?.bgCleared && (
                       <Alert color="blue" variant="light" mt="md">
@@ -675,8 +829,8 @@ export default function MembershipPage() {
                         Your membership activates as soon as both the payment and the check are done.
                       </Alert>
                     )}
-                    <Text size="sm" c="dimmed" mt="lg">
-                      To discuss alternative arrangements, please email{" "}
+                    <Text size="sm" c="dimmed" mt="md">
+                      For any questions, please email{" "}
                       <Anchor href="mailto:finance@innovationtreehouse.org">finance@innovationtreehouse.org</Anchor>.
                     </Text>
                   </>

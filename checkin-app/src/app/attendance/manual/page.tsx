@@ -15,11 +15,39 @@ export default function ManualAttendance() {
   const [departedAt, setDeparted] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{ arrivedAt?: string; departedAt?: string }>({});
+
+  const validateTimes = () => {
+    const now = Date.now();
+    const fe: { arrivedAt?: string; departedAt?: string } = {};
+    const arr = new Date(arrivedAt);
+    if (!arrivedAt) fe.arrivedAt = "Arrival time is required";
+    else if (isNaN(arr.getTime())) fe.arrivedAt = "Invalid arrival time";
+    else if (arr.getTime() > now + 5 * 60 * 1000) fe.arrivedAt = "Arrival time cannot be in the future.";
+    if (departedAt) {
+      const dep = new Date(departedAt);
+      if (isNaN(dep.getTime())) fe.departedAt = "Invalid departure time";
+      else if (dep.getTime() <= arr.getTime()) fe.departedAt = "Departure time must be after arrival time";
+    } else if (arrivedAt && !fe.arrivedAt) {
+      const withinSixHours = now - arr.getTime() <= 6 * 60 * 60 * 1000;
+      const sameDay = arr.toDateString() === new Date(now).toDateString();
+      if (!withinSixHours && !sameDay) fe.departedAt = "Departure time is required for past arrivals.";
+    }
+    return fe;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
+    setFieldErrors({});
+
+    const fe = validateTimes();
+    if (fe.arrivedAt || fe.departedAt) {
+      setFieldErrors(fe);
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const res = await fetch("/api/attendance/manual", {
@@ -28,7 +56,7 @@ export default function ManualAttendance() {
         body: JSON.stringify({ arrivedAt, departedAt }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error || "Failed to record manual visit.");
       } else {
@@ -39,7 +67,7 @@ export default function ManualAttendance() {
         notifyNavRefresh();
       }
     } catch {
-      setError("Network error occurred.");
+      notifications.show({ color: "red", message: "Network error occurred.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -47,10 +75,6 @@ export default function ManualAttendance() {
 
   if (authLoading) return <PageLoader />;
   if (!ready) return null;
-
-  const departureError = error === "Departure time is required for past arrivals.";
-  const arrivalError = error === "Arrival time cannot be in the future.";
-  const fieldError = departureError || arrivalError;
 
   return (
     <PageContainer>
@@ -63,7 +87,7 @@ export default function ManualAttendance() {
           currently in the building, leave the departure time blank.
         </Text>
 
-        {error && !fieldError && <Alert color="red" mb="md">{error}</Alert>}
+        {error && <Alert color="red" mb="md">{error}</Alert>}
 
         <form onSubmit={handleSubmit}>
           <Stack>
@@ -71,16 +95,22 @@ export default function ManualAttendance() {
               type="datetime-local"
               label="Arrival Time (Required)"
               value={arrivedAt}
-              onChange={(e) => setArrived(e.currentTarget.value)}
-              error={arrivalError ? error : undefined}
+              onChange={(e) => {
+                setArrived(e.currentTarget.value);
+                setFieldErrors((f) => ({ ...f, arrivedAt: undefined }));
+              }}
+              error={fieldErrors.arrivedAt}
               required
             />
             <TextInput
               type="datetime-local"
               label="Departure Time (Optional)"
               value={departedAt}
-              onChange={(e) => setDeparted(e.currentTarget.value)}
-              error={departureError ? error : undefined}
+              onChange={(e) => {
+                setDeparted(e.currentTarget.value);
+                setFieldErrors((f) => ({ ...f, departedAt: undefined }));
+              }}
+              error={fieldErrors.departedAt}
             />
             <Button type="submit" disabled={loading || !arrivedAt} loading={loading} mt="sm">
               Record Time Entry

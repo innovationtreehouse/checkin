@@ -45,11 +45,11 @@ describe('Scan causal chain — last isKeyholder closes facility', () => {
     beforeAll(async () => {
         (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'kiosk' });
         isKeyholder = await prisma.person.create({
-            data: { name: 'Causal Key', email: `key-${TAG}@example.com`, isKeyholder: true, household: { create: {} } },
+            data: { name: 'Causal Key', email: `key-${TAG}@example.com`, isKeyholder: true, household: { create: { name: "Test HH" } } },
         });
         householdIds.push(isKeyholder.householdId);
         normal = await prisma.person.create({
-            data: { name: 'Causal Normal', email: `normal-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Causal Normal', email: `normal-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         householdIds.push(normal.householdId);
     });

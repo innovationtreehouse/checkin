@@ -48,7 +48,7 @@ export default function PendingParticipantsPage() {
         setMessage("Failed to load requests. You may not have access.");
       }
     } catch {
-      setMessage("Network error loading requests.");
+      notifications.show({ color: "red", message: "Network error loading requests.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -74,9 +74,15 @@ export default function PendingParticipantsPage() {
       if (res.ok) {
         setRequests(prev => prev.filter(r => !(r.programId === programId && r.personId === participantId)));
         notifyNavRefresh();
+        notifications.show({ color: 'green', message: 'Scholarship / payment plan approved.' });
       } else {
         const data = await res.json();
-        notifications.show({ color: 'red', message: data.error || "Failed to approve.", autoClose: false });
+        if (data.error === "No pending payment-plan request") {
+          notifications.show({ color: 'red', message: data.error, autoClose: 4000 });
+          fetchRequests();
+        } else {
+          notifications.show({ color: 'red', message: data.error || "Failed to approve.", autoClose: false });
+        }
       }
     } catch {
       notifications.show({ color: 'red', message: "Network error processing approval.", autoClose: false });
@@ -139,7 +145,7 @@ export default function PendingParticipantsPage() {
   return (
     <Stack>
       <Text c="dimmed">
-        Review pending participants who have clicked the &quot;Request Payment Plan&quot; button.
+        Review pending participants who have requested a scholarship or payment plan.
         Approving a request marks the user as ACTIVE and exempts them from the 7-day automated
         removal cron job.
       </Text>
@@ -150,17 +156,17 @@ export default function PendingParticipantsPage() {
         columns={columns}
         rows={requests}
         getRowKey={(req) => `${req.programId}-${req.personId}`}
-        emptyMessage="No pending payment plan requests."
+        emptyMessage="No pending scholarship or payment plan requests."
       />
 
       <Modal
         opened={confirmApproveOpened}
         onClose={closeConfirmApprove}
-        title={<Text span fw={700} fz="lg">Approve Payment Plan</Text>}
+        title={<Text span fw={700} fz="lg">Approve Scholarship / Payment Plan</Text>}
         centered
       >
         <Text mb="lg">
-          Approve this payment plan? This sets the participant&apos;s status to ACTIVE and stops
+          Approve this scholarship or payment plan? This sets the participant&apos;s status to ACTIVE and stops
           automated unpaid warning emails.
         </Text>
         <Group justify="flex-end">

@@ -101,7 +101,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         setMessage("Failed to load event.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -130,11 +130,11 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         notifications.show({ color: "green", message: "Attendance confirmed successfully!" });
         fetchEvent();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setAttendanceNotice({ ok: false, msg: data.error || "Failed to confirm attendance." });
       }
     } catch {
-      setAttendanceNotice({ ok: false, msg: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setActionLoading(false);
     }
@@ -157,11 +157,17 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         setEditMode(false);
         fetchEvent();
       } else {
-        const data = await res.json();
-        setTimeNotice({ ok: false, msg: data.error || "Failed to edit event." });
+        const data = await res.json().catch(() => ({}));
+        if (data.error === "Cannot edit a past event") {
+          notifications.show({ color: "red", message: data.error, autoClose: 4000 });
+          setEditMode(false);
+          fetchEvent();
+        } else {
+          setTimeNotice({ ok: false, msg: data.error || "Failed to edit event." });
+        }
       }
     } catch {
-      setTimeNotice({ ok: false, msg: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setActionLoading(false);
     }
@@ -169,6 +175,12 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
 
   const handleSaveManualAttendance = async () => {
     if (!editingAttendance) return;
+    // Instant feedback only — server remains the trust boundary.
+    if (manualStatus === 'Present' && manualArrived && manualDeparted &&
+        Date.parse(manualDeparted) <= Date.parse(manualArrived)) {
+      setManualNotice({ ok: false, msg: "Departure time must be after arrival time" });
+      return;
+    }
     setActionLoading(true);
     setManualNotice(null);
     try {
@@ -189,11 +201,11 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         fetchEvent();
       } else {
         // Keep the modal open so the error is visible next to Save.
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setManualNotice({ ok: false, msg: data.error || "Failed to update attendance." });
       }
     } catch {
-      setManualNotice({ ok: false, msg: "Network error." });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setActionLoading(false);
     }
@@ -211,11 +223,11 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
       if (res.ok) {
         router.push(eventData?.program?.id ? `/program-ops/programs/${eventData.program.id}` : '/program-ops/programs');
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setMessage(data.error || "Failed to cancel event.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setActionLoading(false);
     }
@@ -408,7 +420,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           </Button>
         </Group>
 
-        <AlertBanner message={message} tone="info" mb="lg" />
+        <AlertBanner message={message} tone="error" mb="lg" />
 
         {/* PAST EVENT: ATTENDANCE CONFIRMATION */}
         {isPastEvent && canManageAttendance && (
@@ -508,13 +520,20 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         centered
       >
         <Stack>
-          <Select
-            label="Status"
-            value={manualStatus}
-            onChange={(v) => setManualStatus((v as "Present" | "Absent") ?? "Present")}
-            allowDeselect={false}
-            data={[{ value: "Present", label: "Present" }, { value: "Absent", label: "Absent" }]}
-          />
+          {(() => {
+            const editingVisit = editingAttendance ? eventData.visits.find(v => v.personId === editingAttendance.personId) : undefined;
+            const isCheckedIn = !!(editingVisit && !editingVisit.departedAt);
+            return (
+              <Select
+                label="Status"
+                value={manualStatus}
+                onChange={(v) => setManualStatus((v as "Present" | "Absent") ?? "Present")}
+                allowDeselect={false}
+                data={[{ value: "Present", label: "Present" }, { value: "Absent", label: "Absent", disabled: isCheckedIn }]}
+                description={isCheckedIn ? "Check them out first to mark Absent." : undefined}
+              />
+            );
+          })()}
           {manualStatus === "Present" && (
             <>
               <TextInput type="datetime-local" label="Arrived Time" value={manualArrived} onChange={(e) => setManualArrived(e.currentTarget.value)} />

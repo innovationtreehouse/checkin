@@ -59,8 +59,10 @@ describe('POST /api/attendance MANUAL_CHECKIN concurrency (advisory lock)', () =
         await prisma.person.deleteMany({ where: { id: { in: leakedIds } } });
         await prisma.household.deleteMany({ where: { id: { in: leakedHouseholdIds } } });
 
+        // Keyholder so the facility-open guard passes: this suite exercises the
+        // advisory lock, not the keyholder-first rule (covered separately below).
         const subject = await prisma.person.create({
-            data: { email: `subject-${EMAIL_TAG}@example.com`, name: 'Manual Checkin Concurrency Subject', household: { create: {} } },
+            data: { email: `subject-${EMAIL_TAG}@example.com`, name: 'Manual Checkin Concurrency Subject', isKeyholder: true, household: { create: { name: "Test HH" } } },
         });
         subjectId = subject.id;
         householdId = subject.householdId;
@@ -94,5 +96,62 @@ describe('POST /api/attendance MANUAL_CHECKIN concurrency (advisory lock)', () =
 
         // The core invariant: the race did not open two visits.
         expect(await openVisitCount(subjectId)).toBe(1);
+    });
+});
+
+const GUARD_TAG = 'manual-checkin-keyholder-guard-test';
+
+// Regression: /attendance/current (MANUAL_CHECKIN) let a non-keyholder be the
+// first into an empty building, while / (/api/scan → processCheckin) blocked it.
+// The MANUAL_CHECKIN path now enforces the same facility-open guard.
+describe('POST /api/attendance MANUAL_CHECKIN keyholder-first guard', () => {
+    let nonKeyholderId: number;
+    let keyholderId: number;
+    let householdIds: number[];
+
+    beforeAll(async () => {
+        const leaked = await prisma.person.findMany({
+            where: { email: { contains: GUARD_TAG } },
+            select: { id: true, householdId: true },
+        });
+        const leakedIds = leaked.map(p => p.id);
+        await prisma.visit.deleteMany({ where: { personId: { in: leakedIds } } });
+        await prisma.person.deleteMany({ where: { id: { in: leakedIds } } });
+        await prisma.household.deleteMany({ where: { id: { in: leaked.map(p => p.householdId) } } });
+
+        const nk = await prisma.person.create({
+            data: { email: `nk-${GUARD_TAG}@example.com`, name: 'Guard NonKeyholder', household: { create: { name: "Test HH" } } },
+        });
+        nonKeyholderId = nk.id;
+        const kh = await prisma.person.create({
+            data: { email: `kh-${GUARD_TAG}@example.com`, name: 'Guard Keyholder', isKeyholder: true, household: { create: { name: "Test HH" } } },
+        });
+        keyholderId = kh.id;
+        householdIds = [nk.householdId, kh.householdId];
+    });
+
+    afterAll(async () => {
+        await prisma.visit.deleteMany({ where: { personId: { in: [nonKeyholderId, keyholderId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [nonKeyholderId, keyholderId] } } });
+        await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
+    });
+
+    it('non-keyholder into an empty building → 403, no visit', async () => {
+        await prisma.visit.deleteMany({ where: { personId: { in: [nonKeyholderId, keyholderId] } } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: nonKeyholderId } });
+
+        const res = await (POST(checkinRequest(nonKeyholderId)) as Promise<Response>);
+        expect(res.status).toBe(403);
+        expect(await openVisitCount(nonKeyholderId)).toBe(0);
+    });
+
+    it('non-keyholder with a keyholder present → 200', async () => {
+        await prisma.visit.deleteMany({ where: { personId: { in: [nonKeyholderId, keyholderId] } } });
+        await prisma.visit.create({ data: { personId: keyholderId, arrivedAt: new Date(), arrivedVia: 'WEB' } });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: nonKeyholderId } });
+
+        const res = await (POST(checkinRequest(nonKeyholderId)) as Promise<Response>);
+        expect(res.status).toBe(200);
+        expect(await openVisitCount(nonKeyholderId)).toBe(1);
     });
 });

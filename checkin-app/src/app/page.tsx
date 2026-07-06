@@ -20,6 +20,7 @@ import {
   IconAddressBook,
   IconUrgent,
 } from '@tabler/icons-react';
+import { notifications } from "@mantine/notifications";
 import DevLoginPicker from '@/components/DevLoginPicker';
 import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
 import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
@@ -38,7 +39,8 @@ export default function Home() {
 
   const [isLastKeyholder, setIsLastKeyholder] = useState(false);
   const [isTwoDeepViolation, setIsTwoDeepViolation] = useState(false);
-  const [isMember, setIsMember] = useState<boolean | null>(null);
+  // null = not loaded yet; once loaded, status/processStatus drive the join banner.
+  const [membership, setMembership] = useState<{ status: string | null; processStatus: string | null } | null>(null);
 
   const checkAttendanceStatus = useCallback(async () => {
     if (!session?.user) return;
@@ -83,14 +85,16 @@ export default function Home() {
   useEffect(() => {
     if (!session?.user) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsMember(null);
+      setMembership(null);
       return;
     }
     let cancelled = false;
     fetch('/api/membership')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!cancelled && data) setIsMember(data.membershipStatus === 'ACTIVE');
+        if (!cancelled && data) {
+          setMembership({ status: data.membershipStatus ?? null, processStatus: data.process?.status ?? null });
+        }
       })
       .catch(() => { /* non-blocking: leave banner hidden on error */ });
     return () => { cancelled = true; };
@@ -107,7 +111,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participantId })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setMessage(`${data.type === 'checkin' ? 'Successfully checked in!' : 'Successfully checked out!'}`);
         await checkAttendanceStatus(); // Re-fetch the status securely
@@ -115,7 +119,7 @@ export default function Home() {
         setMessage(`Error: ${data.error || 'Failed to update attendance'}`);
       }
     } catch {
-      setMessage("Failed to connect to API");
+      notifications.show({ color: "red", message: "Failed to connect to API", autoClose: false });
     }
     setLoading(false);
   };
@@ -150,8 +154,10 @@ export default function Home() {
                 )}
               </Paper>
 
-              {/* Visitor call-to-action — only for non-members */}
-              {isMember === false && <JoinTreehouseBanner />}
+              {/* Visitor call-to-action — only for non-members; copy reflects in-flight state */}
+              {membership && membership.status !== 'ACTIVE' && (
+                <JoinTreehouseBanner processStatus={membership.processStatus} />
+              )}
 
               {/* In-app red-dot indicators (membership reviewer queue / blocked apps, …) */}
               <Notifications />

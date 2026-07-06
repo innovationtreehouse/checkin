@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { withWebhook } from "@/lib/webhookAuth";
-import { config } from "@/lib/config";
+import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 
 interface ShopifyOrder {
     id?: number | string;
@@ -49,7 +49,13 @@ function verifyShopifyHmac(req: Request, rawBody: string): { ok: true } | { ok: 
 }
 
 // Shopify Webhook for `orders/paid` or `orders/create`
-// Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE
+// Verifies HMAC signature, extracts custom attributes, and marks user as ACTIVE.
+//
+// ENV: this handler runs in ALL environments — dev/prod receive it from the real
+// Shopify store; local receives it from the self-fired mock (/api/dev/shopify/orders-paid).
+// The HMAC secret differs per env (config.shopifyWebhookSecret). The only env-branched
+// logic is the synthetic dev-mock variant fallback, gated on config.shopifyMockActive()
+// (⇔ CHECKIN_ENV=local) below.
 export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac }, async (_req, order: ShopifyOrder) => {
         // Iterate through line items to find CheckMeIn_Account_ID and Program_ID
         // We set these custom attributes in the permalink URL:
@@ -94,9 +100,13 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
             if (!isNaN(processId)) {
                 const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
                 const membershipVariantIds = new Set(
-                    [settings?.orgMembershipVariantId, settings?.shopifyNormalVariantId, settings?.shopifyVolunteerVariantId].filter(
-                        (v): v is string => !!v,
-                    ),
+                    [
+                        settings?.orgMembershipVariantId,
+                        settings?.shopifyNormalVariantId,
+                        settings?.shopifyVolunteerVariantId,
+                        // Local mock's self-fired order carries this synthetic id (config).
+                        config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
+                    ].filter((v): v is string => !!v),
                 );
                 const hasMembershipItem = (order.line_items ?? []).some((li) => membershipVariantIds.has(String(li.variant_id)));
                 const proc = await activateByProcessId(processId, order.id ? String(order.id) : "", hasMembershipItem);
@@ -123,13 +133,14 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 // customer-controlled — set from the public cart permalink —
                 // so nothing in the payload itself proves the paid order was
                 // for THIS program at THIS program's price. Without this, an
-                // attacker could self-register (public-register creates a
-                // PENDING participant, no payment) then pay for the cheapest
-                // item in the store with a forged Program_ID/CheckMeIn_Account_ID
-                // attribute and activate (or activate someone else's)
-                // enrollment. Checked by variant id — stable, and the same id
-                // public-register's checkout link is built from — not order
-                // total. Fail CLOSED: no variant configured on the Program, or
+                // attacker could self-enroll (the authenticated enroll flow
+                // creates a PENDING participant, no payment) then pay for the
+                // cheapest item in the store with a forged
+                // Program_ID/CheckMeIn_Account_ID attribute and activate (or
+                // activate someone else's) enrollment. Checked by variant id —
+                // stable, and the same id the enroll flow's checkout link is
+                // built from — not order total. Fail CLOSED: no variant
+                // configured on the Program, or
                 // no line-item match, means we do NOT activate.
                 const program = await prisma.program.findUnique({ where: { id: programId } });
                 const programVariantIds = new Set(

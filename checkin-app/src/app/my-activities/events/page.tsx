@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Group, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { notifications } from "@mantine/notifications";
 import { formatDateTime, formatTime } from '@/lib/time';
 import type { RSVPStatus } from '@/types/rsvp';
 
@@ -22,6 +23,7 @@ type EventData = {
   program: { name: string } | null;
   participant: { id: number; name: string | null };
   rsvp: RsvpStatus | null;
+  isVolunteer: boolean;
 };
 
 // Group (event, member) rows into one bucket per event, preserving first-seen order.
@@ -57,7 +59,7 @@ export default function ParticipantEventsDashboard() {
         setMessage("Failed to load your events.");
       }
     } catch {
-      setMessage("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -78,11 +80,17 @@ export default function ParticipantEventsDashboard() {
     ));
 
     try {
-      await fetch(`/api/events/${eventId}/rsvp`, {
+      const res = await fetch(`/api/events/${eventId}/rsvp`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus, participantId })
       });
+      if (!res.ok) {
+        // Non-OK doesn't throw — revert the optimistic update and surface the error.
+        const data = await res.json().catch(() => ({}));
+        fetchEvents();
+        notifications.show({ color: "red", message: data.error || "Failed to update RSVP.", autoClose: false });
+      }
     } catch {
       // Revert on failure by refetching
       fetchEvents();
@@ -124,13 +132,18 @@ export default function ParticipantEventsDashboard() {
             return (
               <Card key={ev.id} withBorder radius="md" padding="lg">
                 <Stack gap="sm" h="100%">
-                  <div>
-                    {ev.program && (
-                      <Text size="xs" c="cyan" fw={600} tt="uppercase">{ev.program.name}</Text>
+                  <Group justify="space-between" wrap="nowrap" align="flex-start">
+                    <div>
+                      {ev.program && (
+                        <Text size="xs" c="cyan" fw={600} tt="uppercase">{ev.program.name}</Text>
+                      )}
+                      <Title order={4}>{ev.name}</Title>
+                      <Text size="sm" c="dimmed">📅 {startStr} – {endStr}</Text>
+                    </div>
+                    {rows.some((r) => r.isVolunteer) && (
+                      <Badge color="grape" variant="light" style={{ flexShrink: 0 }}>Volunteer</Badge>
                     )}
-                    <Title order={4}>{ev.name}</Title>
-                    <Text size="sm" c="dimmed">📅 {startStr} – {endStr}</Text>
-                  </div>
+                  </Group>
 
                   {ev.description && (
                     <Text size="sm" lineClamp={2}>{ev.description}</Text>

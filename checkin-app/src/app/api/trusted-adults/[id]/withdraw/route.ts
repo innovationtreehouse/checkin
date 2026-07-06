@@ -16,14 +16,16 @@ const STATUS_FOR: Record<TrustedAdultError["code"], number> = {
 
 /**
  * POST /api/trusted-adults/[id]/withdraw — subject (or their household lead)
- * withdraws a disclosed relationship; the latest review is marked REVOKED.
+ * retracts a disclosure. Body { scope }: "change" cancels only the pending change
+ * on top (keeping a live prior approval); default "all" revokes every live review.
  */
 export const POST = withAuth({}, async (req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
     const id = parseInt(req.nextUrl.pathname.split("/").at(-2) ?? "", 10);
     if (isNaN(id)) return apiError("Invalid id", 400);
     try {
-        await withdrawTrustedAdult(id, auth.user.id);
+        const body = await req.json().catch(() => ({}));
+        await withdrawTrustedAdult(id, auth.user.id, { latestReviewOnly: body.scope === "change" });
         return NextResponse.json({ ok: true });
     } catch (error) {
         if (error instanceof TrustedAdultError) {

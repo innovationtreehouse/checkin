@@ -2,10 +2,11 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Badge, Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
+import { Box, Center, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { tabBadgeFor } from "@/components/navBadges";
+import { CountBadge, badgeIntentFor } from "@/components/ui/CountBadge";
 import { ScrollableTabsList } from "@/components/ui/ScrollableTabsList";
 import { PageContainer } from "@/components/ui/PageContainer";
 
@@ -13,6 +14,7 @@ const NAV_LINKS = [
   { name: "Emergency Contacts", href: "/membership-audit/emergency-contacts", icon: "🚑" },
   { name: "Unclaimed Accounts", href: "/membership-audit/unclaimed", icon: "📨" },
   { name: "Broken Households", href: "/membership-audit/broken", icon: "⚠️" },
+  { name: "Compliance", href: "/membership-audit/compliance", icon: "🚩" },
 ];
 
 export default function MembershipAuditLayout({ children }: { children: React.ReactNode }) {
@@ -41,8 +43,8 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
       .sort((a, b) => b.href.length - a.href.length)
       .find((l) => pathname === l.href || pathname.startsWith(l.href + "/"))?.href ?? null;
 
-  // Emergency/Unclaimed are gray (gaps on the household), Broken is green (board must
-  // assign a lead) — derived in navBadges.tabBadgeFor so nav and tab agree.
+  // Emergency/Unclaimed are gray (gaps on the household), Broken is red (board must
+  // assign a lead — blocking) — derived in navBadges.tabBadgeFor so nav and tab agree.
   return (
     <PageContainer>
       <Stack>
@@ -50,25 +52,17 @@ export default function MembershipAuditLayout({ children }: { children: React.Re
         <ScrollableTabsList>
           {NAV_LINKS.map((link) => {
             const badge = tabBadgeFor(link.href, todoCounts);
-            const isBroken = badge?.color === "treehouseGreen";
+            const intent = badge ? badgeIntentFor(badge.color) : null;
             return (
               <Tabs.Tab
                 key={link.href}
                 value={link.href}
                 leftSection={<span>{link.icon}</span>}
                 rightSection={
-                  badge ? (
-                    <Badge
-                      size="md"
-                      color={isBroken ? "treehouseGreen" : "gray.2"}
-                      variant="filled"
-                      // Pinned label color so the active tab's green recolor doesn't render the
-                      // count green-on-green (dark gray on the light-gray fill, or black on the green fill).
-                      c={isBroken ? "var(--mantine-color-black)" : "var(--mantine-color-gray-8)"}
-                      aria-label={badge.label}
-                    >
+                  badge && intent ? (
+                    <CountBadge intent={intent} aria-label={badge.label}>
                       {badge.count}
-                    </Badge>
+                    </CountBadge>
                   ) : undefined
                 }
               >

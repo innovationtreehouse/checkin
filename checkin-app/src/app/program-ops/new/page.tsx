@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alert, Box, Button, Card, Checkbox, Group, NumberInput, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { EntityPicker } from '@/components/admin/EntityPicker';
@@ -70,12 +71,12 @@ export default function CreateProgramPage() {
         setSubmitted(true); // clear unsaved-changes guard before redirect
         router.push(`/program-ops/programs/${data.program.id}`);
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setMessage(data.error || "Failed to create program.");
         setSaving(false);
       }
     } catch {
-      setMessage("Network error creating program.");
+      notifications.show({ color: "red", message: "Network error creating program.", autoClose: false });
       setSaving(false);
     }
   };
@@ -135,8 +136,8 @@ export default function CreateProgramPage() {
             />
 
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
-              <NumberInput label="Min Age (Optional)" value={minAge} onChange={(v) => setMinAge(String(v))} min={0} />
-              <NumberInput label="Max Age (Optional)" value={maxAge} onChange={(v) => setMaxAge(String(v))} min={0} />
+              <NumberInput label="Min Age (Optional)" value={minAge} onChange={(v) => setMinAge(String(v))} min={0} max={25} />
+              <NumberInput label="Max Age (Optional)" value={maxAge} onChange={(v) => setMaxAge(String(v))} min={0} max={25} />
             </SimpleGrid>
 
             <SimpleGrid cols={{ base: 1, sm: 2 }}>

@@ -17,7 +17,8 @@ export const GET = withAuth(
                 .catch((err: unknown) => logger.error("Failed to purge old integration errors:", err));
 
             const errors = await prisma.integrationErrorLog.findMany({
-                orderBy: [{ resolvedAt: "asc" }, { timestamp: "desc" }],
+                // nulls:"first" — unresolved (resolvedAt null) sort first; PG default is NULLS LAST.
+                orderBy: [{ resolvedAt: { sort: "asc", nulls: "first" } }, { timestamp: "desc" }],
                 take: 200,
             });
 

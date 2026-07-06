@@ -31,6 +31,16 @@ describe('checkinReceiptTemplate', () => {
         expect(result).toContain('🕐 14:30');
     });
 
+    it('indicates the check-in source when provided', () => {
+        expect(checkinReceiptTemplate({ ...defaultParams, type: 'checkin', source: 'SCANNER' }))
+            .toContain('via badge scan');
+        expect(checkinReceiptTemplate({ ...defaultParams, type: 'checkin', source: 'WEB' }))
+            .toContain('via the web app');
+        // omitted source renders no source line
+        expect(checkinReceiptTemplate({ ...defaultParams, type: 'checkin' }))
+            .not.toContain('📍 via');
+    });
+
     it('escapes HTML in the participant name to prevent content injection', () => {
         const result = checkinReceiptTemplate({
             ...defaultParams,

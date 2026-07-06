@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
-import { calculateAge } from "@/lib/time";
+import { checkProgramAge } from "@/lib/programAge";
 import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
@@ -39,7 +39,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         const participantData = await prisma.person.findUnique({
             where: { id: participantId },
-            select: { dateOfBirth: true, householdId: true }
+            select: { dateOfBirth: true, isDeclaredAdult: true, householdId: true }
         });
 
         let isHouseholdLead = false;
@@ -91,19 +91,22 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                 return NextResponse.json({ error: "Program enrollment is currently closed.", requiresOverride: true }, { status: 400 });
             }
 
-            // Check Age
-            if (currentProgram.minAge !== null || currentProgram.maxAge !== null) {
-                if (!participantData?.dateOfBirth) {
-                    return NextResponse.json({ error: "Participant Date of Birth is missing.", requiresOverride: true }, { status: 400 });
-                }
-                // Age as of program start; now for dateless programs.
-                const age = calculateAge(participantData.dateOfBirth, currentProgram.startAt ?? undefined);
-                if (currentProgram.minAge !== null && age < currentProgram.minAge) {
-                    return NextResponse.json({ error: `Participant must be at least ${currentProgram.minAge} years old.`, requiresOverride: true }, { status: 400 });
-                }
-                if (currentProgram.maxAge !== null && age > currentProgram.maxAge) {
-                    return NextResponse.json({ error: `Participant maximum age is ${currentProgram.maxAge} years old.`, requiresOverride: true }, { status: 400 });
-                }
+            // Check Age (as of program start; now for dateless programs). A declared
+            // adult with no DOB is handled inside checkProgramAge — over-25 satisfies
+            // a youth minimum like "16 and up".
+            const ageCheck = checkProgramAge(
+                { dateOfBirth: participantData?.dateOfBirth ?? null, isDeclaredAdult: participantData?.isDeclaredAdult },
+                { minAge: currentProgram.minAge, maxAge: currentProgram.maxAge, asOf: currentProgram.startAt ?? undefined },
+            );
+            if (!ageCheck.ok) {
+                const error = ageCheck.reason === "dob"
+                    ? "Participant Date of Birth is missing."
+                    : ageCheck.label === "Too young"
+                        ? `Participant must be at least ${currentProgram.minAge} years old.`
+                        : ageCheck.label === "Too old"
+                            ? `Participant maximum age is ${currentProgram.maxAge} years old.`
+                            : "Participant is outside this program's age range.";
+                return NextResponse.json({ error, requiresOverride: true }, { status: 400 });
             }
         }
 

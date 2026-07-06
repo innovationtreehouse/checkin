@@ -27,7 +27,8 @@ describe('General Attendance API Integration Tests', () => {
     let householdLeadId: number;
     let householdChildId: number;
     let boardMemberId: number;
-    
+    let keyholderId: number;
+
     let activeVisitId: number;
     let childActiveVisitId: number;
 
@@ -71,19 +72,19 @@ describe('General Attendance API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.person.create({
-            data: { email: 'admin-attend-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-attend-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Board Member
         const isBoardMember = await prisma.person.create({
-            data: { email: 'board-attend-api-test@example.com', name: 'Board Member', isBoardMember: true, household: { create: {} } }
+            data: { email: 'board-attend-api-test@example.com', name: 'Board Member', isBoardMember: true, household: { create: { name: "Test HH" } } }
         });
         boardMemberId = isBoardMember.id;
 
         // Create Common User
         const commonUser = await prisma.person.create({
-            data: { email: 'common-attend-api-test@example.com', name: 'Common', household: { create: {} } }
+            data: { email: 'common-attend-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 
@@ -111,6 +112,16 @@ describe('General Attendance API Integration Tests', () => {
         });
         householdChildId = householdChild.id;
 
+        // Keyholder present + checked in: the facility-open guard requires an
+        // active keyholder before any non-keyholder MANUAL_CHECKIN succeeds.
+        const keyholder = await prisma.person.create({
+            data: { email: 'keyholder-attend-api-test@example.com', name: 'Keyholder', isKeyholder: true, household: { create: { name: "Test HH" } } }
+        });
+        keyholderId = keyholder.id;
+        await prisma.visit.create({
+            data: { personId: keyholderId, arrivedAt: new Date() }
+        });
+
         // Create initial active visits
         const commonVisit = await prisma.visit.create({
             data: { personId: commonId, arrivedAt: new Date() }
@@ -124,7 +135,7 @@ describe('General Attendance API Integration Tests', () => {
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, commonId, householdLeadId, householdChildId, boardMemberId].filter(id => id !== undefined);
+        const existingUserIds = [adminId, commonId, householdLeadId, householdChildId, boardMemberId, keyholderId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
             await prisma.householdLead.deleteMany({

@@ -67,7 +67,7 @@ describe("AppFrame", () => {
   it("shows Shop Ops for a certifier without admin flags, and My Programs when leading a program", () => {
     setSession({ id: 2, toolStatuses: [{ level: "MAY_CERTIFY_OTHERS" }] });
     mockedUseTodoCounts.mockReturnValue({
-      member: { household: [], programs: [] },
+      member: { household: [], programs: [], programsAwaitingFinance: 0 },
       building: 0,
       buildingHousehold: 0,
       activePrograms: 0,
@@ -88,6 +88,24 @@ describe("AppFrame", () => {
     expect(link).toHaveAttribute("href", "/membership-ops/review");
     // Reviewer-only: the admin-gated siblings stay hidden.
     expect(screen.queryByText("Membership Audit")).not.toBeInTheDocument();
+  });
+
+  it("badges the reviewer-only Membership Ops nav with the green can-act-on count", () => {
+    setSession({ id: 3, isBackgroundCheckReviewer: true });
+    mockedUseTodoCounts.mockReturnValue({
+      member: { household: [], programs: [], programsAwaitingFinance: 0 },
+      building: 0,
+      buildingHousehold: 0,
+      activePrograms: 0,
+      review: { canActOn: 4, approvedAwaitingSecond: 0 },
+    });
+    renderFrame();
+
+    // Badge keys off the section href (/membership-ops), not the per-role /review
+    // destination — the green count must reach a reviewer-only user's nav item.
+    // The green pill merges the board queue (0 here) and can-act-on (4) into one,
+    // so its aria-label names both parts and the count is their sum.
+    expect(screen.getByLabelText("0 pending membership reviews; 4 background checks you can review now")).toHaveTextContent("4");
   });
 
   it("highlights the active nav item based on pathname", () => {

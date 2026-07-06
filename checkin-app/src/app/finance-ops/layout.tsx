@@ -5,9 +5,13 @@ import { SectionTabs } from "@/components/ui/SectionTabs";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { FINANCE_NAV_LINKS } from "@/lib/financeNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { useTodoCounts } from "@/hooks/useTodoCounts";
+import { tabBadgeFor } from "@/components/navBadges";
+import { CountBadge } from "@/components/ui/CountBadge";
 
 export default function FinanceOpsLayout({ children }: { children: React.ReactNode }) {
   const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
+  const counts = useTodoCounts(true);
 
   if (loading) {
     return (
@@ -24,7 +28,14 @@ export default function FinanceOpsLayout({ children }: { children: React.ReactNo
 
   return (
     <PageContainer>
-      <SectionTabs links={FINANCE_NAV_LINKS} mb="md" />
+      <SectionTabs
+        links={FINANCE_NAV_LINKS}
+        mb="md"
+        badgeFor={(href) => {
+          const b = tabBadgeFor(href, counts);
+          return b ? <CountBadge intent="action">{b.count}</CountBadge> : null;
+        }}
+      />
       <Box style={{ minWidth: 0 }}>{children}</Box>
     </PageContainer>
   );

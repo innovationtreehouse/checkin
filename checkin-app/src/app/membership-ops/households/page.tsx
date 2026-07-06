@@ -39,7 +39,7 @@ export default function AdminHouseholdsPage() {
         setError("Failed to fetch households.");
       }
     } catch {
-      setError("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -59,6 +59,7 @@ export default function AdminHouseholdsPage() {
 
       if (res.ok) {
         fetchHouseholds();
+        notifications.show({ color: 'green', message: currentActive ? 'Membership revoked.' : 'Membership granted.' });
       } else {
         notifications.show({ color: 'red', message: 'Failed to update membership.', autoClose: false });
       }
@@ -88,6 +89,7 @@ export default function AdminHouseholdsPage() {
 
       if (res.ok) {
         fetchHouseholds();
+        notifications.show({ color: 'green', message: deny ? 'Membership denied — members can no longer log in.' : 'Membership restored.' });
       } else {
         const data = await res.json().catch(() => ({}));
         notifications.show({ color: 'red', message: data.error || 'Failed to update membership.', autoClose: false });
@@ -161,7 +163,14 @@ export default function AdminHouseholdsPage() {
               return (
                 <Table.Tr key={household.id}>
                   <Table.Td>
-                    <Text fw={600}>{household.name || `Household #${household.id}`}</Text>
+                    <Text
+                      fw={600}
+                      c="blue"
+                      style={{ cursor: "pointer" }}
+                      onClick={() => router.push(`/membership-ops/households/${household.id}`)}
+                    >
+                      {household.name || `Household #${household.id}`}
+                    </Text>
                   </Table.Td>
                   <Table.Td>
                     {household.householdMembers && household.householdMembers.length > 0 ? (

@@ -4,7 +4,8 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { ORG_DOMAIN } from "@/lib/config";
-import { useCheckinEnv, useIsDevInstance } from "@/components/EnvProvider";
+import { useCheckinEnv, useIsDevInstance, useIsLocalInstance } from "@/components/EnvProvider";
+import DevLoginPicker from "@/components/DevLoginPicker";
 
 // Layout for the glass hero (this page still uses the legacy glass-* utilities, not Mantine).
 // Inlined from the former page.module.css, which the Mantine migration removed.
@@ -35,6 +36,7 @@ function SignInInner() {
     const params = useSearchParams();
     const { data: session, status } = useSession();
     const isDevInstance = useIsDevInstance();
+    const isLocalInstance = useIsLocalInstance();
     const checkinEnv = useCheckinEnv();
     const callbackUrl = params.get("callbackUrl") || "/";
     const error = params.get("error");
@@ -149,19 +151,26 @@ function SignInInner() {
                             gap: "1.25rem",
                         }}
                     >
-                        <button
-                            className="glass-button primary-button"
-                            onClick={() => signIn("google", { callbackUrl })}
-                            style={{
-                                width: "100%",
-                                padding: "1rem 2rem",
-                                fontSize: "1.2rem",
-                                background: "rgba(59, 130, 246, 0.2)",
-                                borderColor: "rgba(59, 130, 246, 0.4)",
-                            }}
-                        >
-                            Sign in with Google
-                        </button>
+                        {isLocalInstance ? (
+                            // LOCAL never calls Google (no Google identity on a laptop) — the offline
+                            // dev persona picker is the only login path. callbackUrl is honored so a
+                            // program-page "Sign in to enroll" returns to /programs/<id> after mint.
+                            <DevLoginPicker callbackUrl={callbackUrl} />
+                        ) : (
+                            <button
+                                className="glass-button primary-button"
+                                onClick={() => signIn("google", { callbackUrl })}
+                                style={{
+                                    width: "100%",
+                                    padding: "1rem 2rem",
+                                    fontSize: "1.2rem",
+                                    background: "rgba(59, 130, 246, 0.2)",
+                                    borderColor: "rgba(59, 130, 246, 0.4)",
+                                }}
+                            >
+                                Sign in with Google
+                            </button>
+                        )}
                     </div>
                 )}
             </div>

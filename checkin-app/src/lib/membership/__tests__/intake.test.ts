@@ -164,6 +164,7 @@ describe('getIntakeState', () => {
             householdId: 7,
             household: {
                 name: 'Test Household',
+                intakeNotes: 'volunteer only, no students',
                 line1: '1 Main St', line2: null, city: 'Austin', state: 'TX', postalCode: '78701',
                 leads: [{ personId: 1 }, { personId: 2 }],
                 householdMembers: [
@@ -196,6 +197,7 @@ describe('getIntakeState', () => {
         expect(state.prefill.children).toHaveLength(1);
         expect(state.prefill.children[0].id).toBe(3);
         expect(state.prefill.household?.emergencyContactName).toBe('Aunt');
+        expect(state.prefill.household?.notes).toBe('volunteer only, no students');
     });
 
     it('every process ACTIVE → process is null, no external lookup', async () => {
@@ -261,6 +263,15 @@ describe('saveIntake', () => {
             email: undefined,
         });
         expect(reconcileHouseholdConflicts).toHaveBeenCalledWith(prisma, 7);
+    });
+
+    it('household notes persist as intakeNotes (trimmed; empty → null)', async () => {
+        await saveIntake(1, { household: { notes: '  we volunteer only, no students  ' } });
+        expect(prisma.household.update).toHaveBeenCalledWith({ where: { id: 7 }, data: { intakeNotes: 'we volunteer only, no students' } });
+
+        prisma.household.update.mockClear();
+        await saveIntake(1, { household: { notes: '' } });
+        expect(prisma.household.update).toHaveBeenCalledWith({ where: { id: 7 }, data: { intakeNotes: null } });
     });
 
     it('no address keys and no emergency-contact keys → neither household.update nor upsertPrimaryContact is called', async () => {
@@ -343,6 +354,9 @@ describe('submitIntake', () => {
         household: {
             id: 7,
             line1: '1 Main St',
+            city: 'Austin',
+            state: 'TX',
+            postalCode: '78701',
             emergencyContacts: [{ conflictParticipantId: null, name: 'Aunt May', phone: '555-555-2000' }],
             householdMembers: [{ id: 1, name: 'Primary' }],
             orgMembership: { processes: [{ id: 11, kind: 'INITIAL', status: 'INTAKE' }] },

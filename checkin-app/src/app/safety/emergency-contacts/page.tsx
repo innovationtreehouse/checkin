@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Badge, Card, Center, Group, List, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { formatPhone } from "@/lib/phone";
 
@@ -66,7 +67,7 @@ export default function EmergencyContactsPage() {
       }
     } catch (e) {
       console.error(e);
-      setError("Network error loading contacts.");
+      notifications.show({ color: "red", message: "Network error loading contacts.", autoClose: false });
     } finally {
       setLoading(false);
     }

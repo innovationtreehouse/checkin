@@ -109,6 +109,7 @@ model Person {
 
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
+  personBgProcesses   OrgMembershipProcess[]       @relation("PersonBgSubject")
   householdLeads      HouseholdLead[]
   corporationLeads    CorporationLead[]
   corporationMembers  CorporationMember[]
@@ -154,7 +155,7 @@ model Household {
   /// @sensitivity:public
   id      Int     @id @default(autoincrement())
   /// @sensitivity:public
-  name    String?
+  name    String
   /// @sensitivity:personal
   line1      String?
   /// @sensitivity:personal
@@ -165,6 +166,12 @@ model Household {
   state      String?
   /// @sensitivity:personal
   postalCode String?
+
+  /// Freeform "Anything else we should know?" captured at intake. Where a
+  /// volunteer-only household types the note that tells a background-check
+  /// reviewer to mark them volunteer. pii (not personal): reviewers must read it.
+  /// @sensitivity:pii
+  intakeNotes String?
 
   householdMembers  Person[]
   leads             HouseholdLead[]
@@ -245,6 +252,10 @@ enum OrgMembershipStatus {
 enum OrgMembershipProcessKind {
   INITIAL
   RENEWAL
+  // Per-person background-check obligation (Phase 2). Not tied to a household
+  // membership: orgMembershipId is null and subjectPersonId points at the person
+  // being checked. Runs through the same two-reviewer gate as household checks.
+  PERSON_BG
 }
 
 enum OrgMembershipProcessStatus {
@@ -276,6 +287,13 @@ enum TrustedAdultOrigin {
 enum TrustedAdultReviewKind {
   INITIAL
   RENEWAL
+  // Resubmission where the family CHANGED the trusted adult's facts (name/contact/
+  // context) rather than reusing them (RENEWAL). The proposed edits ride on the
+  // review (proposed* fields) and only promote onto the parent on approval, so a
+  // still-live prior approval keeps its OWN facts for the front desk. The board's
+  // prior-decision walk still yields "Renewal"/"Previously denied"; this only adds
+  // the "— info updated" flag.
+  MODIFIED
 }
 
 enum TrustedAdultReviewStatus {
@@ -315,9 +333,18 @@ model OrgMembership {
 model OrgMembershipProcess {
   /// @sensitivity:public
   id                    Int                        @id @default(autoincrement())
+  // Nullable since Phase 2: a PERSON_BG process is not tied to a household
+  // membership (subjectPersonId is set instead). INITIAL/RENEWAL always set it.
   /// @sensitivity:public
-  orgMembershipId       Int
-  orgMembership         OrgMembership              @relation(fields: [orgMembershipId], references: [id])
+  orgMembershipId       Int?
+  // onDelete pinned to Restrict to keep the existing constraint (Prisma's default
+  // for an optional relation is SetNull; the live FK is RESTRICT). Avoids drift.
+  orgMembership         OrgMembership?             @relation(fields: [orgMembershipId], references: [id], onDelete: Restrict)
+  // Set only for PERSON_BG processes — the person being background-checked
+  // (participant, volunteer, or lead). Null for household INITIAL/RENEWAL.
+  /// @sensitivity:public
+  subjectPersonId       Int?
+  subjectPerson         Person?                    @relation("PersonBgSubject", fields: [subjectPersonId], references: [id])
   /// @sensitivity:public
   kind                  OrgMembershipProcessKind
   /// @sensitivity:internal
@@ -352,6 +379,8 @@ model OrgMembershipProcess {
   certifiedById         Int?
   /// @sensitivity:internal
   renewalReminderSentAt DateTime?
+  /// @sensitivity:internal
+  isPaymentPlanRequested Boolean @default(false)
 
   attestations BackgroundCheckAttestation[]
 
@@ -553,6 +582,18 @@ model TrustedAdultReview {
   /// When the 30-day-before-expiry reminder email was sent (once).
   /// @sensitivity:internal
   expiryWarningSentAt  DateTime?
+  /// Proposed edits carried by a MODIFIED resubmission. Held HERE, not on the
+  /// parent, so a still-live prior approval keeps its own facts for the front desk
+  /// until/unless the board approves these. Promoted onto the parent on approval,
+  /// discarded on deny. Same bands as the parent's live facts.
+  /// @sensitivity:personal
+  proposedName         String?
+  /// @sensitivity:personal
+  proposedPhone        String?
+  /// @sensitivity:personal
+  proposedEmail        String?
+  /// @sensitivity:pii
+  proposedContext      String?
   /// @sensitivity:public
   createdAt            DateTime               @default(now())
   /// @sensitivity:internal

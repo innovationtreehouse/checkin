@@ -45,19 +45,19 @@ describe('Programs API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.person.create({
-            data: { email: 'admin-programs-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-programs-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Lead
         const lead = await prisma.person.create({
-            data: { email: 'lead-programs-api-test@example.com', name: 'Lead', household: { create: {} } }
+            data: { email: 'lead-programs-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
         // Create Common User
         const commonUser = await prisma.person.create({
-            data: { email: 'common-programs-api-test@example.com', name: 'Common', household: { create: {} } }
+            data: { email: 'common-programs-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 

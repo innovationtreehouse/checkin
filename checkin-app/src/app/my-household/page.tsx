@@ -3,10 +3,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, TextInput, Title, Tooltip } from '@mantine/core';
+import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, Textarea, TextInput, Title, Tooltip } from '@mantine/core';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { PageContainer } from '@/components/ui/PageContainer';
-import { formatDate, calculateAge } from '@/lib/time';
+import { calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import { notifications } from '@mantine/notifications';
 import TodoCard from '@/components/TodoCard';
@@ -72,7 +72,7 @@ export default function HouseholdPage() {
   const warn = (text: string) => setMessage({ text, tone: "warning" });
   const [addingHouseholdMember, setAddingHouseholdMember] = useState(false);
 
-  const [householdMemberForm, setHouseholdMemberForm] = useState({ name: "", email: "", dob: "", over25: false });
+  const [householdMemberForm, setHouseholdMemberForm] = useState({ name: "", email: "", dob: "", over25: false, allergies: "" });
   const [householdMemberErrors, setHouseholdMemberErrors] = useState<{ name?: string; email?: string; dob?: string }>({});
 
   const [editingHouseholdMemberId, setEditingHouseholdMemberId] = useState<number | null>(null);
@@ -85,6 +85,9 @@ export default function HouseholdPage() {
   // Snapshot of the address as last loaded/saved; isDirty compares it to current
   // state to drive the unsaved-changes guard.
   const [initialAddress, setInitialAddress] = useState<StructuredAddress>(blankAddress);
+  // "Anything else we should know?" — saved alongside the address on this card.
+  const [notes, setNotes] = useState("");
+  const [initialNotes, setInitialNotes] = useState("");
   const [addressErrors, setAddressErrors] = useState<Partial<Record<AddressField, string>>>({});
   const [savingSettings, setSavingSettings] = useState(false);
   // Transient "Updated" confirmation shown in the Address card header for 5s.
@@ -118,9 +121,11 @@ export default function HouseholdPage() {
         const loaded = { line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", state: a.state ?? "", postalCode: a.postalCode ?? "" };
         setAddress(loaded);
         setInitialAddress(loaded);
+        setNotes(data.household?.intakeNotes ?? "");
+        setInitialNotes(data.household?.intakeNotes ?? "");
       }
     } catch {
-      err("Network error loading household.");
+      notifications.show({ color: "red", message: "Network error loading household.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -142,18 +147,19 @@ export default function HouseholdPage() {
       const householdRes = await fetch('/api/household/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(address)
+        body: JSON.stringify({ ...address, notes: notes || null })
       });
 
       if (householdRes.ok) {
         ok("Settings updated successfully!");
+        setInitialNotes(notes);
         fetchHousehold();
         notifyNavRefresh();
       } else {
         err("Failed to update some settings.");
       }
     } catch {
-      err("Network error saving settings.");
+      notifications.show({ color: "red", message: "Network error saving settings.", autoClose: false });
     } finally {
       setSavingSettings(false);
     }
@@ -177,7 +183,7 @@ export default function HouseholdPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: contactForm.name, phone: contactForm.phone, email: contactForm.email, relationship: contactForm.relationship }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: editing ? "Emergency contact updated." : "Emergency contact added." });
         setContactForm(blankContactForm);
@@ -188,7 +194,7 @@ export default function HouseholdPage() {
         setContactError(data.error || "Failed to save emergency contact.");
       }
     } catch {
-      setContactError("Network error saving emergency contact.");
+      notifications.show({ color: "red", message: "Network error saving emergency contact.", autoClose: false });
     } finally {
       setSavingContact(false);
     }
@@ -207,7 +213,7 @@ export default function HouseholdPage() {
         setContactError(data.error || "Failed to remove emergency contact.");
       }
     } catch {
-      setContactError("Network error removing emergency contact.");
+      notifications.show({ color: "red", message: "Network error removing emergency contact.", autoClose: false });
     }
   };
 
@@ -243,11 +249,11 @@ export default function HouseholdPage() {
       const res = await fetch('/api/household', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberName: householdMemberForm.name, memberEmail: householdMemberForm.email, memberDob: householdMemberForm.over25 ? "" : householdMemberForm.dob, memberOver25: householdMemberForm.over25 })
+        body: JSON.stringify({ memberName: householdMemberForm.name, memberEmail: householdMemberForm.email, memberDob: householdMemberForm.over25 ? "" : householdMemberForm.dob, memberOver25: householdMemberForm.over25, memberAllergies: householdMemberForm.allergies })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setHouseholdMemberForm({ name: "", email: "", dob: "", over25: false });
+        setHouseholdMemberForm({ name: "", email: "", dob: "", over25: false, allergies: "" });
         setHouseholdMemberErrors({});
         setAddingHouseholdMember(false);
         fetchHousehold();
@@ -256,7 +262,7 @@ export default function HouseholdPage() {
         err(data.error || "Failed to add household member.");
       }
     } catch {
-      err("Network error adding household member.");
+      notifications.show({ color: "red", message: "Network error adding household member.", autoClose: false });
     }
   };
 
@@ -273,7 +279,7 @@ export default function HouseholdPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participantId, name: editForm.name, email: editForm.email, dob: editForm.over25 ? "" : editForm.dob, phone: editForm.phone, isLead: editForm.isLead, over25: editForm.over25, allergies: editForm.allergies })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setEditErrors({});
         setEditingHouseholdMemberId(null);
@@ -291,7 +297,7 @@ export default function HouseholdPage() {
         err(data.error || "Failed to update household member.");
       }
     } catch {
-      err("Network error updating household member.");
+      notifications.show({ color: "red", message: "Network error updating household member.", autoClose: false });
     }
   };
 
@@ -299,7 +305,7 @@ export default function HouseholdPage() {
     setMessage(null);
     try {
       const res = await fetch('/api/household/lead', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId }) });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         ok("Household member promoted to lead successfully!");
         fetchHousehold();
@@ -307,7 +313,7 @@ export default function HouseholdPage() {
         err(data.error || "Failed to promote household member.");
       }
     } catch {
-      err("Network error promoting household member.");
+      notifications.show({ color: "red", message: "Network error promoting household member.", autoClose: false });
     }
   };
 
@@ -315,7 +321,7 @@ export default function HouseholdPage() {
   // Address" button). The member add/edit forms, emergency-contact form, and the
   // receipts toggle all submit instantly with no pending state — intentionally
   // excluded so they never raise a spurious unsaved-changes prompt.
-  const isDirty = !shallowEqual({ ...initialAddress }, { ...address });
+  const isDirty = !shallowEqual({ ...initialAddress }, { ...address }) || notes !== initialNotes;
   useUnsavedGuard(isDirty);
 
   if (loading || authLoading) {
@@ -352,7 +358,7 @@ export default function HouseholdPage() {
             household.orgMembership?.status === 'ACTIVE' ? (
               <Alert color="green" mb="lg">
                 <Group gap="xs" wrap="wrap">
-                  <Text fw={600}>✓ Member{household.orgMembership.memberSince ? ` since ${formatDate(household.orgMembership.memberSince)}` : ''}</Text>
+                  <Text fw={600}>✓ Member{household.orgMembership.memberSince ? ` since ${new Date(household.orgMembership.memberSince).getFullYear()}` : ''}</Text>
                   {household.orgMembership.isVolunteer && <Badge color="green" variant="light">Volunteer-only family</Badge>}
                 </Group>
               </Alert>
@@ -454,6 +460,7 @@ export default function HouseholdPage() {
                       {!householdMemberForm.over25 && (
                         <TextInput type="date" label="Date of Birth" value={householdMemberForm.dob} error={householdMemberErrors.dob} onChange={(e) => { setHouseholdMemberForm({ ...householdMemberForm, dob: e.currentTarget.value }); setHouseholdMemberErrors({ ...householdMemberErrors, dob: undefined }); }} />
                       )}
+                      <TextInput label="Allergies (optional)" value={householdMemberForm.allergies} onChange={(e) => setHouseholdMemberForm({ ...householdMemberForm, allergies: e.currentTarget.value })} />
                       <Group grow>
                         <Button type="submit" color="green">Save / Invite Household Member</Button>
                         <Button type="button" variant="default" onClick={() => { setAddingHouseholdMember(false); setHouseholdMemberErrors({}); }}>Cancel</Button>
@@ -480,9 +487,17 @@ export default function HouseholdPage() {
                 <TextInput label="State" required maxLength={2} value={address.state ?? ""} error={addressErrors.state} onChange={(e) => { setAddress({ ...address, state: e.currentTarget.value }); setAddressErrors({ ...addressErrors, state: undefined }); }} placeholder="TX" />
                 <TextInput label="ZIP" required value={address.postalCode ?? ""} error={addressErrors.postalCode} onChange={(e) => { setAddress({ ...address, postalCode: e.currentTarget.value }); setAddressErrors({ ...addressErrors, postalCode: undefined }); }} placeholder="78701" />
               </SimpleGrid>
+              <Textarea
+                label="Anything else we should know?"
+                description="Optional — e.g. if your household is here to volunteer only, with no students enrolled."
+                autosize
+                minRows={2}
+                value={notes}
+                onChange={(e) => setNotes(e.currentTarget.value)}
+              />
             </Stack>
             <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="md">
-              Update Address
+              Save household details
             </Button>
           </Card>
         )}

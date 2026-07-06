@@ -2,12 +2,14 @@
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, setSearchParams, resetRtl } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import KioskDisplay from "../page";
 
-beforeEach(() => resetRtl());
+beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
 const attendanceData = {
   access: "full",
@@ -48,7 +50,7 @@ describe("attendance/current page", () => {
     mockRoutes();
     renderWithProviders(<KioskDisplay />);
 
-    expect(await screen.findByText("3 People Present")).toBeInTheDocument();
+    expect(await screen.findByText("People Present: 3")).toBeInTheDocument();
     expect(screen.getByText("Karen Keyholder")).toBeInTheDocument();
     expect(screen.getByText("Val Volunteer")).toBeInTheDocument();
     expect(screen.getByText("Stu Student")).toBeInTheDocument();
@@ -59,7 +61,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Check Me In" }));
 
@@ -78,7 +80,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     expect(await screen.findByText("Check In Household Members")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Jamie Kid" }));
@@ -98,7 +100,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), {
       target: { value: "Wendy" },
@@ -122,7 +124,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out a user" }));
     const modal = await screen.findByRole("dialog", { name: "Sign Out A User" });
@@ -172,7 +174,7 @@ describe("attendance/current page", () => {
     });
     renderWithProviders(<KioskDisplay />);
 
-    expect(await screen.findByText("1 People Present")).toBeInTheDocument();
+    expect(await screen.findByText("People Present: 1")).toBeInTheDocument();
     expect(screen.getByText("Kid Eight")).toBeInTheDocument();
     expect(screen.getByText("Individual names are only visible to administrators", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("Your household members are shown above.", { exact: false })).toBeInTheDocument();
@@ -224,7 +226,11 @@ describe("attendance/current page", () => {
     global.fetch = jest.fn(async () => { throw new Error("down"); }) as unknown as typeof fetch;
     renderWithProviders(<KioskDisplay />);
 
-    expect(await screen.findByText("Network error")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Network error", autoClose: false }),
+      ),
+    );
   });
 
   it("switches to kiosk mode automatically when the server flags a signed request", async () => {
@@ -248,7 +254,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent(window, new MessageEvent("message", {
       data: {
@@ -268,7 +274,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
     const callsBefore = fetchMock.mock.calls.filter(([u]) => u === "/api/attendance").length;
 
     fireEvent(window, new MessageEvent("message", { data: "refresh-attendance" }));
@@ -283,7 +289,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Check Me In" }));
 
@@ -300,7 +306,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "W" } });
     await new Promise((resolve) => setTimeout(resolve, 350));
@@ -321,7 +327,7 @@ describe("attendance/current page", () => {
       },
     });
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "noname" } });
 
@@ -340,7 +346,7 @@ describe("attendance/current page", () => {
       return { ok: false, json: async () => ({}) } as Response;
     }) as unknown as typeof fetch;
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "wendy" } });
     await new Promise((resolve) => setTimeout(resolve, 350));
@@ -353,7 +359,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     const fetchMock = mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out a user" }));
     const modal = await screen.findByRole("dialog");
@@ -377,20 +383,28 @@ describe("attendance/current page", () => {
       return { ok: true, json: async () => attendanceData } as Response;
     }) as unknown as typeof fetch;
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out a user" }));
     const modal = await screen.findByRole("dialog");
     fireEvent.click(within(modal).getAllByRole("button", { name: "Sign Out" })[0]);
     const confirmModal = await screen.findByRole("dialog", { name: "Force Checkout" });
     fireEvent.click(within(confirmModal).getByRole("button", { name: "Force Checkout" }));
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith("Failed to force checkout."));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Failed to force checkout.", autoClose: false }),
+      ),
+    );
 
     failMode = "network";
     fireEvent.click(within(modal).getAllByRole("button", { name: "Sign Out" })[0]);
     const confirmModal2 = await screen.findByRole("dialog", { name: "Force Checkout" });
     fireEvent.click(within(confirmModal2).getByRole("button", { name: "Force Checkout" }));
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith("Network error."));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Network error.", autoClose: false }),
+      ),
+    );
   });
 
   it("alerts on a server failure and then a network error during manual check-in", async () => {
@@ -407,14 +421,22 @@ describe("attendance/current page", () => {
       return { ok: true, json: async () => attendanceData } as Response;
     }) as unknown as typeof fetch;
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Check Me In" }));
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith("Error: Already checked in"));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Already checked in", autoClose: false }),
+      ),
+    );
 
     failMode = "network";
     fireEvent.click(screen.getByRole("button", { name: "Check Me In" }));
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith("Network error."));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Network error.", autoClose: false }),
+      ),
+    );
   });
 
   it("opens the emergency-contact modal with multiple contacts, then a no-contact fallback", async () => {
@@ -455,7 +477,7 @@ describe("attendance/current page", () => {
       },
     });
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByText("Karen Keyholder"));
     let modal = await screen.findByRole("dialog");
@@ -490,7 +512,7 @@ describe("attendance/current page", () => {
     setAdminSession();
     mockRoutes();
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("3 People Present");
+    await screen.findByText("People Present: 3");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out a user" }));
     const modal = await screen.findByRole("dialog");
@@ -520,7 +542,7 @@ describe("attendance/current page", () => {
       },
     });
     renderWithProviders(<KioskDisplay />);
-    await screen.findByText("2 People Present");
+    await screen.findByText("People Present: 2");
 
     expect(screen.getByText("Robotics Club")).toBeInTheDocument();
     expect(screen.getByText("555-123-4567", { exact: false })).toBeInTheDocument();
@@ -566,7 +588,11 @@ describe("attendance/current page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Out" }));
     // isSelf → no window.confirm prompt, and the "check out" (not "force checkout") wording.
     expect(window.confirm).not.toHaveBeenCalled();
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith("Failed to check out."));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Failed to check out.", autoClose: false }),
+      ),
+    );
   });
 
   it("shows a critical two-deep-violation banner over the last-keyholder warning", async () => {
@@ -591,7 +617,7 @@ describe("attendance/current page", () => {
     }) as unknown as typeof fetch;
     renderWithProviders(<KioskDisplay />);
 
-    expect(await screen.findByText("3 People Present")).toBeInTheDocument();
+    expect(await screen.findByText("People Present: 3")).toBeInTheDocument();
     // Household fetch failed silently — no household check-in row to show.
     expect(screen.queryByText("Check In Household Members")).not.toBeInTheDocument();
   });

@@ -79,7 +79,7 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
         await prisma.household.deleteMany({ where: { id: { in: leakedHouseholdIds } } });
 
         const keeper = await prisma.person.create({
-            data: { email: `keeper-${EMAIL_TAG}@example.com`, name: 'Keeper', isKeyholder: true, household: { create: {} } },
+            data: { email: `keeper-${EMAIL_TAG}@example.com`, name: 'Keeper', isKeyholder: true, household: { create: { name: "Test HH" } } },
         });
         keeperId = keeper.id;
         // Keep the isKeyholder checked in so non-isKeyholder check-ins are allowed
@@ -87,12 +87,12 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
         await prisma.visit.create({ data: { personId: keeperId, arrivedAt: new Date() } });
 
         const checkinSubject = await prisma.person.create({
-            data: { email: `checkin-${EMAIL_TAG}@example.com`, name: 'Checkin Subject', household: { create: {} } },
+            data: { email: `checkin-${EMAIL_TAG}@example.com`, name: 'Checkin Subject', household: { create: { name: "Test HH" } } },
         });
         checkinSubjectId = checkinSubject.id;
 
         const checkoutSubject = await prisma.person.create({
-            data: { email: `checkout-${EMAIL_TAG}@example.com`, name: 'Checkout Subject', household: { create: {} } },
+            data: { email: `checkout-${EMAIL_TAG}@example.com`, name: 'Checkout Subject', household: { create: { name: "Test HH" } } },
         });
         checkoutSubjectId = checkoutSubject.id;
     });

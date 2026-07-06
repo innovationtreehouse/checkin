@@ -34,8 +34,13 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
         }
 
         const body = await request.json();
-        const data: { name?: string | null } & Partial<StructuredAddress> = {};
-        if (body.name !== undefined) data.name = body.name;
+        const data: { name?: string } & Partial<StructuredAddress> = {};
+        if (body.name !== undefined) {
+            if (typeof body.name !== "string" || !body.name.trim()) {
+                return apiError("Household name cannot be empty", 400);
+            }
+            data.name = body.name.trim();
+        }
         Object.assign(data, normalizeAddressInput(body));
 
         const editsContact = body.emergencyContactName !== undefined || body.emergencyContactPhone !== undefined;
@@ -49,6 +54,10 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
             const parsed = new Date(`${body.memberSince}T00:00:00.000Z`);
             if (isNaN(parsed.getTime())) {
                 return apiError("Invalid member-since date", 400);
+            }
+            // Org didn't exist before this date, so no membership can predate it.
+            if (parsed.getTime() < Date.UTC(2023, 10, 1)) {
+                return apiError("Member-since cannot be before Nov 1, 2023", 400);
             }
             const membership = await prisma.orgMembership.findUnique({ where: { householdId: id } });
             if (!membership) {

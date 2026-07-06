@@ -28,7 +28,7 @@ export const GET = withCron(async () => {
             const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); // Calculate total full days
 
             // Email text for warnings
-            const warningText = `If not paid, your spot in ${record.program.name} will be freed up. If a payment plan is needed, contact the board via finances@innovationtreehouse.org`;
+            const warningText = `If not paid, your spot in ${record.program.name} will be freed up. If a payment plan is needed, contact the board via finance@innovationtreehouse.org`;
 
             if (diffDays >= 7) {
                 // Collect IDs for batch deletion

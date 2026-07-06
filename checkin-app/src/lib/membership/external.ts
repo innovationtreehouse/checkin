@@ -16,8 +16,10 @@ import { latestPendingExternal } from "@/lib/membership/phases";
  * the final ACTIVE transition waits on it.
  *
  * The contract is recorded automatically (Zoho webhook) or manually by the
- * board; BG consent is always human-marked by the board (no Averity API). The
- * system never sees contract content or check results.
+ * board. BG consent is human-marked (no Averity API): the applicant self-attests
+ * after submitting on Averity (selfAttestBgConsent, #875), with the board's
+ * mark-bg-consent action as the backstop. The system never sees contract content
+ * or check results.
  *
  * actorId 0 denotes a system actor (e.g. the Zoho webhook) in the audit log.
  */
@@ -153,6 +155,39 @@ export async function markBgConsent(processId: number, actorId: number) {
     return advanceExternalIfComplete(processId);
 }
 
+/**
+ * Applicant self-attestation that they submitted background-check consent on
+ * Averity (#875). Honor-system by design: Averity has no API, so the applicant's
+ * own claim records consent the same way a board mark does — through
+ * markBgConsent, with the applicant as the audit actor, so a self-attested
+ * consent stays distinguishable from a board-confirmed one. The board
+ * mark-bg-consent action remains as the backstop. Idempotent (markBgConsent
+ * no-ops on a second call), and restricted to a household lead — the person who
+ * actually consents on Averity.
+ */
+export async function selfAttestBgConsent(userId: number): Promise<ExternalStatus> {
+    const user = await prisma.person.findUnique({
+        where: { id: userId },
+        include: {
+            householdLeads: true,
+            household: { include: { orgMembership: { include: { processes: true } } } },
+        },
+    });
+    if (!user) throw new ExternalError("not_found", "Application not found.");
+    if (!user.householdId) throw new ExternalError("no_household", "You must create a household first.");
+    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
+    if (!isLead && !user.isSysadmin) {
+        throw new ExternalError("not_lead", "Only a household lead can confirm background-check consent.");
+    }
+
+    const process = latestPendingExternal(user.household?.orgMembership?.processes);
+    if (!process) throw new ExternalError("wrong_phase", "No application is awaiting background-check consent.");
+
+    const updated = await markBgConsent(process.id, userId);
+    if (!updated) throw new ExternalError("not_found", "Application not found.");
+    return getExternalStatus(updated);
+}
+
 /** Associate a Zoho signing request id with a process so its webhook can match. */
 export async function setZohoEnvelope(processId: number, requestId: string, actorId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
@@ -167,6 +202,35 @@ export async function setZohoEnvelope(processId: number, requestId: string, acto
 /** Find the in-flight process tied to a Zoho request id (for webhook matching). */
 export async function findProcessByEnvelope(requestId: string) {
     return prisma.orgMembershipProcess.findFirst({ where: { zohoEnvelopeId: requestId } });
+}
+
+/**
+ * Forget a dead Zoho signing request (declined/expired/recalled) so the next
+ * "sign" click creates a fresh one — the applicant's self-serve recovery (#876).
+ * Conditional on the process still pointing at THAT request and being unsigned,
+ * so a concurrent re-create's fresh ids are never clobbered and the audit row is
+ * written only by the caller that actually cleared.
+ */
+async function clearDeadSigningRequest(processId: number, requestId: string, actorId: number) {
+    const cleared = await prisma.$transaction(async (tx) => {
+        const { count } = await tx.orgMembershipProcess.updateMany({
+            where: { id: processId, zohoEnvelopeId: requestId, contractSignedAt: null },
+            data: { zohoEnvelopeId: null, zohoActionId: null },
+        });
+        if (count !== 1) return false;
+        await tx.auditLog.create({
+            data: {
+                actorId,
+                action: "EDIT",
+                tableName: "OrgMembershipProcess",
+                affectedEntityId: processId,
+                oldData: { zohoEnvelopeId: requestId },
+                newData: { zohoEnvelopeId: null, zohoActionId: null },
+            },
+        });
+        return true;
+    });
+    if (cleared) logger.info(`Cleared dead Zoho signing request ${requestId} for membership process ${processId}.`);
 }
 
 /**
@@ -190,8 +254,13 @@ export async function syncContractStatus(userId: number): Promise<ExternalStatus
     if (!process.contractSignedAt && process.zohoEnvelopeId && config.zohoAvailable()) {
         try {
             const token = await zohoSign.getAccessToken();
-            if (await zohoSign.getRequestStatus(token, process.zohoEnvelopeId)) {
+            const state = await zohoSign.getRequestStatus(token, process.zohoEnvelopeId);
+            if (state === "completed") {
                 await markContractSigned(process.id, userId);
+            } else if (state === "terminal") {
+                // Declined or expired — forget the dead request so contractStarted
+                // resets and the next click creates a fresh one (#876).
+                await clearDeadSigningRequest(process.id, process.zohoEnvelopeId, userId);
             }
         } catch (e) {
             logger.error(`Zoho status sync failed for process ${process.id}: ${e instanceof Error ? e.message : String(e)}`);
@@ -250,6 +319,25 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
     // document is never re-generated (only the embed session below is ephemeral).
     let requestId = process.zohoEnvelopeId;
     let actionId = process.zohoActionId;
+
+    // A stored request may be dead — declined by the signer, or expired after
+    // CONTRACT_EXPIRATION_DAYS — and Zoho can neither embed nor revive it. Check
+    // before reusing (#876): forget dead ids and fall through to the create path
+    // below, so the same button self-recovers. Best-effort — if the status read
+    // fails, proceed with the stored ids rather than blocking the click (worst
+    // case the embed call fails, as it did before this check existed).
+    if (requestId && actionId && !process.contractSignedAt) {
+        try {
+            if ((await zohoSign.getRequestStatus(token, requestId)) === "terminal") {
+                await clearDeadSigningRequest(process.id, requestId, userId);
+                requestId = null;
+                actionId = null;
+            }
+        } catch (e) {
+            logger.warn(`Zoho request-status check failed for membership process ${process.id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+
     if (!requestId || !actionId) {
         // Mock mode never uploads the PDF (its createRequest ignores the bytes), so
         // skip the S3 load that also 503s in dev — an empty placeholder keeps the

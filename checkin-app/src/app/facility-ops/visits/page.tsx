@@ -116,7 +116,7 @@ export default function AdminVisitsPage() {
         setMessage({ text: "Failed to load visits.", tone: "error" });
       }
     } catch {
-      setMessage({ text: "Network error loading visits.", tone: "error" });
+      notifications.show({ color: "red", message: "Network error loading visits.", autoClose: false });
     } finally {
       setLoading(false);
     }
@@ -144,6 +144,15 @@ export default function AdminVisitsPage() {
   };
 
   const handleSaveEdit = async (id: number) => {
+    // Instant feedback only — server remains the trust boundary.
+    if (!editForm.departedAt) {
+      setRowNotice({ id, text: "Departure time is required to close this visit.", tone: "error" });
+      return;
+    }
+    if (editForm.arrivedAt && Date.parse(editForm.departedAt) <= Date.parse(editForm.arrivedAt)) {
+      setRowNotice({ id, text: "Departure time must be after arrival time", tone: "error" });
+      return;
+    }
     try {
       const res = await fetch(`/api/facility/visits`, {
         method: 'PATCH',
@@ -159,10 +168,11 @@ export default function AdminVisitsPage() {
         setEditingVisitId(null);
         fetchVisits();
       } else {
-        setRowNotice({ id, text: "Failed to update visit.", tone: "error" });
+        const data = await res.json().catch(() => ({}));
+        setRowNotice({ id, text: data.error || "Failed to update visit.", tone: "error" });
       }
     } catch {
-      setRowNotice({ id, text: "Network error saving visit.", tone: "error" });
+      notifications.show({ color: "red", message: "Network error saving visit.", autoClose: false });
     }
   };
 

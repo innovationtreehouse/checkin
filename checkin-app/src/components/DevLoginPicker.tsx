@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { Badge, Card, Center, Divider, Group, SimpleGrid, Stack, Text } from "@mantine/core";
+import { useCheckinEnv } from "@/components/EnvProvider";
 
 interface Persona {
   id: number;
@@ -21,11 +22,12 @@ interface Persona {
  * DevLoginPicker — renders a list of debug personas for quick login.
  * Only rendered in dev mode when the user is NOT signed in.
  */
-export default function DevLoginPicker() {
+export default function DevLoginPicker({ callbackUrl = "/" }: { callbackUrl?: string }) {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [loading, setLoading] = useState(true);
   const [signingIn, setSigningIn] = useState<string | null>(null);
   const [now, setNow] = useState<number | null>(null);
+  const checkinEnv = useCheckinEnv();
 
   useEffect(() => {
     fetch("/api/auth/dev-personas", { cache: "no-store" })
@@ -45,7 +47,17 @@ export default function DevLoginPicker() {
     setSigningIn(persona.email);
     // Initial local login: no current session, so the mint is a plain login as this persona
     // (impersonatedBy stays null). The same flow handles impersonation once signed in.
-    signIn("persona-mint", { personaId: String(persona.id), mode: "impersonate", callbackUrl: "/" });
+    signIn("persona-mint", { personaId: String(persona.id), mode: "impersonate", callbackUrl });
+  };
+
+  // Local only: mint a brand-new empty registrant (server generates the identity), then log in
+  // as it via the same persona-mint. Exercises the auth-first first-time intake path on a laptop.
+  const handleNewRegistrant = async () => {
+    setSigningIn("__new__");
+    const res = await fetch("/api/auth/dev-personas", { method: "POST" });
+    if (!res.ok) { setSigningIn(null); return; }
+    const { personaId } = await res.json();
+    signIn("persona-mint", { personaId: String(personaId), mode: "impersonate", callbackUrl });
   };
 
   const getRoleBadges = (p: Persona): { label: string; color: string }[] => {
@@ -107,6 +119,25 @@ export default function DevLoginPicker() {
             )}
           </Card>
         ))}
+        {checkinEnv === "local" && (
+          <Card
+            id="dev-login-new-registrant"
+            withBorder
+            radius="md"
+            padding="sm"
+            onClick={() => { if (!signingIn) handleNewRegistrant(); }}
+            style={{
+              cursor: signingIn ? "wait" : "pointer",
+              opacity: signingIn && signingIn !== "__new__" ? 0.5 : 1,
+              borderStyle: "dashed",
+            }}
+          >
+            <Text fw={600} size="sm">
+              {signingIn === "__new__" ? "⏳ " : "＋ "}New registrant (fresh household)
+            </Text>
+            <Text size="xs" c="dimmed">Brand-new empty user — tests the first-time intake path</Text>
+          </Card>
+        )}
       </SimpleGrid>
     </Stack>
   );

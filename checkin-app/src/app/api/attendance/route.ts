@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
+import { sendCheckinNotifications } from "@/lib/notifications";
 import { logBackendError, logger } from "@/lib/logger";
 import { config } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
@@ -122,6 +123,11 @@ export const DELETE = withAuth({}, async (req, auth) => {
         const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
         const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visit;
 
+        // Fire-and-forget: send check-out notifications (mirrors /api/scan)
+        sendCheckinNotifications(visit.personId, 'checkout').catch(err =>
+            logger.error('Checkout notification error:', err)
+        );
+
         return NextResponse.json({ success: true, visit: updatedVisit });
     } catch (error) {
         await logBackendError(error, "DELETE /api/attendance");
@@ -185,6 +191,18 @@ export const POST = withAuth({}, async (req, auth) => {
                     return { alreadyCheckedIn: true as const };
                 }
 
+                // Same facility-open guard as /api/scan's processCheckin: a
+                // non-keyholder cannot be the first in. Checked under the lock so a
+                // racing keyholder check-in is either fully committed or not yet seen.
+                if (!participant.isKeyholder) {
+                    const activeKeyholders = await tx.visit.count({
+                        where: { departedAt: null, person: { isKeyholder: true } }
+                    });
+                    if (activeKeyholders === 0) {
+                        return { facilityClosed: true as const };
+                    }
+                }
+
                 const visit = await tx.visit.create({
                     data: {
                         personId: participant.id,
@@ -200,9 +218,17 @@ export const POST = withAuth({}, async (req, auth) => {
                 timeout: 15000,
             });
 
+            if ('facilityClosed' in result) {
+                return apiError("Facility is closed. A Keyholder must check in first.", 403);
+            }
             if (result.alreadyCheckedIn) {
                 return apiError("User is already checked in", 400);
             }
+
+            // Fire-and-forget: send check-in notifications (mirrors /api/scan)
+            sendCheckinNotifications(participant.id, 'checkin').catch(err =>
+                logger.error('Checkin notification error:', err)
+            );
 
             return NextResponse.json({ success: true, visit: result.visit });
         }

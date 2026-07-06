@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Badge, Button, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
 import { formatPhone } from "@/lib/phone";
+import { notifications } from "@mantine/notifications";
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type Lead = { id: number; name: string | null; phone: string | null; email: string | null };
@@ -30,7 +31,7 @@ export default function MissingEmergencyContactsPage() {
       }
     } catch (e) {
       console.error(e);
-      setError("Network error loading households.");
+      notifications.show({ color: "red", message: "Network error loading households.", autoClose: false });
     } finally {
       setLoading(false);
     }

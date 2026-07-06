@@ -4,8 +4,11 @@ import { withAuth } from "@/lib/auth";
 import type { OrgMembershipProcessStatus, TrustedAdultReviewStatus } from "@/generated/prisma/client";
 import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/service";
 import { canReviewBackgroundChecks, reviewQueueCounts } from "@/lib/membership/review";
+import { getLeadConflicts } from "@/lib/attendanceConflicts";
 import { pickAddress, validateAddress } from "@/lib/address";
 import { ORG_DOMAIN } from "@/lib/config";
+import { openConfigIssues } from "@/lib/configHealth";
+import { PROGRAM_CHECKOUT_BROKEN_WHERE } from "@/lib/programCheckout";
 import { apiError } from "@/lib/api-response";
 
 /**
@@ -45,7 +48,10 @@ export type TodoItem = { key: string; label: string; href: string };
 
 export type TodoCounts = {
     // Member buckets are itemized so the UI can show *what* is due, not just a number.
-    member: { household: TodoItem[]; programs: TodoItem[] };
+    // `programs` = enrollments the household must still pay for (actionable, green).
+    // `programsAwaitingFinance` = enrollments whose payment plan was sent to finance
+    // and not yet approved — blocked on the board, so a gray informational count, not a todo.
+    member: { household: TodoItem[]; programs: TodoItem[]; programsAwaitingFinance: number };
     // Informational gray badges (not action items): live building occupancy and
     // how many programs are currently running.
     building: number;
@@ -58,11 +64,20 @@ export type TodoCounts = {
     // `membership` = board-actionable (BLOCKED, green). `applicationsTotal` =
     // every in-flight (non-ACTIVE) application, the gray count shown on the
     // Applications tab — mirrors what /api/admin/membership lists.
-    // `brokenHouseholds` = households with no lead at all (green).
+    // `brokenHouseholds` = households with no lead at all (red — blocking board action).
     // `memberFamilies` = total member families (gray), shown on the Manage Memberships tab:
     // households with >=1 non-org-email (or null-email) participant. Staff households hold
     // only the org-email lead, so they fall out.
-    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number };
+    // `settingsMisconfig` = how many required Shopify-checkout board settings are still
+    // unset (0–2): the membership variant ID and the volunteer discount code. Red pill on
+    // the Settings nav + Membership Settings tab — checkout is broken until both are set.
+    // `programsMisconfig` = how many programs have a price but no matching Shopify variant
+    // (paid enrollment silently can't check out). Red pill on the Program Ops Programs tab.
+    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; membershipPaymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number; settingsMisconfig: number; programsMisconfig: number };
+    // Config-health gaps (admins + board only): number of failing system-config checks
+    // (e.g. Zoho e-sign unconfigured). Drives the red System Status nav badge; the full
+    // list lives at /api/system-status/config-health. See lib/configHealth.ts.
+    configHealth?: { openIssues: number };
     // Background-check reviewer surface (reviewers + board, per-viewer). `canActOn`
     // = applications this reviewer may attest now (green). `approvedAwaitingSecond`
     // = ones they approved that still need a second reviewer (gray).
@@ -72,7 +87,9 @@ export type TodoCounts = {
     // visibility and its green badge (sum of pending attendance to confirm).
     // `pending` mirrors the post-event email's targets (ended events not yet
     // confirmed), deep-linked to the existing confirm screen. No new capability.
-    lead?: { programs: LedProgram[] };
+    // `conflicts` = overlapping-visit conflicts across the caller's led programs;
+    // drives the red badge on the "My Programs" nav item and the Conflicts subtab.
+    lead?: { programs: LedProgram[]; conflicts?: number };
 };
 
 /** RSVP tally (Yes/Maybe/No; NO_RESPONSE omitted). */
@@ -109,6 +126,9 @@ export const GET = withAuth({}, async (_req, auth) => {
     // ---- Member surface (scoped to the caller's household) ----
     const householdTodos: TodoItem[] = [];
     const programTodos: TodoItem[] = [];
+    // PENDING enrollments whose payment plan is awaiting finance approval — not the
+    // household's action, so counted (gray) rather than listed as a todo.
+    let programsAwaitingFinance = 0;
 
     if (user.householdId) {
         const householdId = user.householdId;
@@ -179,7 +199,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             }),
             prisma.programParticipant.findMany({
                 where: { personId: { in: memberIds }, status: "PENDING" },
-                select: { programId: true, program: { select: { name: true } } },
+                select: { programId: true, isPaymentPlanRequested: true, program: { select: { name: true } } },
             }),
         ]);
 
@@ -209,6 +229,8 @@ export const GET = withAuth({}, async (_req, auth) => {
             householdTodos.push({ key: `trusted-adult-expiring-${i}`, label: "Renew an expiring trusted adult", href: "/trusted-adults" });
         }
         for (const p of pendingPrograms) {
+            // Payment plan sent to finance → blocked on the board, not the household.
+            if (p.isPaymentPlanRequested) { programsAwaitingFinance++; continue; }
             programTodos.push({
                 key: `program-${p.programId}`,
                 label: `Complete enrollment for ${p.program?.name ?? "a program"}`,
@@ -227,7 +249,7 @@ export const GET = withAuth({}, async (_req, auth) => {
     ]);
 
     const result: TodoCounts = {
-        member: { household: householdTodos, programs: programTodos },
+        member: { household: householdTodos, programs: programTodos, programsAwaitingFinance },
         building,
         buildingHousehold,
         activePrograms,
@@ -245,7 +267,7 @@ export const GET = withAuth({}, async (_req, auth) => {
     if (ledPrograms.length > 0) {
         const ledIds = ledPrograms.map((p) => p.id);
         const now = new Date();
-        const [pendingEvents, enrolledCounts, futureEvents, volunteerRows] = await Promise.all([
+        const [pendingEvents, enrolledCounts, futureEvents, volunteerRows, conflicts] = await Promise.all([
             prisma.event.findMany({
                 where: { programId: { in: ledIds }, endAt: { lte: now }, attendanceConfirmedAt: null },
                 select: { id: true, name: true, programId: true },
@@ -268,6 +290,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 where: { programId: { in: ledIds } },
                 select: { programId: true, personId: true },
             }),
+            getLeadConflicts(user.id),
         ]);
         // (programId, personId) keys that belong to a volunteer; everyone else on a roster is a participant.
         const volunteerKeys = new Set(volunteerRows.map((v) => `${v.programId}:${v.personId}`));
@@ -332,12 +355,13 @@ export const GET = withAuth({}, async (_req, auth) => {
                     return { eventId: e.id, name: e.name, startAt: e.startAt.toISOString(), participants: t.participants, volunteers: t.volunteers };
                 }),
             })),
+            conflicts: conflicts.length,
         };
     }
 
     // ---- Admin surface (board's own queue) — only for board/isSysadmin ----
     if (user.isSysadmin || user.isBoardMember) {
-        const [membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies] = await Promise.all([
+        const [membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, programsMisconfig, boardSettings] = await Promise.all([
             prisma.orgMembershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -347,6 +371,10 @@ export const GET = withAuth({}, async (_req, auth) => {
             }),
             prisma.programParticipant.count({
                 where: { status: "PENDING", isPaymentPlanRequested: true },
+            }),
+            // Households awaiting board approval of a membership-dues payment plan.
+            prisma.orgMembershipProcess.count({
+                where: { status: "PENDING_PAYMENT", isPaymentPlanRequested: true },
             }),
             prisma.trustedAdultReview.count({
                 where: { status: "PENDING_BOARD_REVIEW" },
@@ -382,8 +410,28 @@ export const GET = withAuth({}, async (_req, auth) => {
                     },
                 },
             }),
+            // Programs priced on a tier with no matching Shopify variant — paid enrollment
+            // silently can't check out. Same condition as the list/detail UI, shared via
+            // PROGRAM_CHECKOUT_BROKEN_WHERE (see lib/programCheckout.ts).
+            prisma.program.count({ where: PROGRAM_CHECKOUT_BROKEN_WHERE }),
+            // Required membership settings — count how many are still unset so the board
+            // sees a red pill until all are configured. Empty string counts as unset for
+            // the Shopify fields; bgRecheckMonths <= 0 means the re-check interval is unset;
+            // a null orgMembershipYearBoundary means the renewal cycle has no anchor date.
+            prisma.boardSettings.findUnique({
+                where: { id: 1 },
+                select: { orgMembershipVariantId: true, volunteerDiscountCode: true, bgRecheckMonths: true, orgMembershipYearBoundary: true },
+            }),
         ]);
-        result.admin = { membership, applicationsTotal, paymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies };
+        const settingsMisconfig =
+            (boardSettings?.orgMembershipVariantId ? 0 : 1) +
+            (boardSettings?.volunteerDiscountCode ? 0 : 1) +
+            ((boardSettings?.bgRecheckMonths ?? 0) > 0 ? 0 : 1) +
+            (boardSettings?.orgMembershipYearBoundary ? 0 : 1);
+        result.admin = { membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, settingsMisconfig, programsMisconfig };
+        // System-config health (env-var/deploy gaps). Synchronous, no DB — just presence
+        // checks. Same admin+board gate as the rest of this block.
+        result.configHealth = { openIssues: openConfigIssues() };
     }
 
     // ---- Reviewer surface (per-viewer background-check queue) ----

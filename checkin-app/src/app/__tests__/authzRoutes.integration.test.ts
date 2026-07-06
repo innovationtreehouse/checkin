@@ -36,19 +36,19 @@ describe('Sensitive route authorization', () => {
 
     beforeAll(async () => {
         const plain = await prisma.person.create({
-            data: { name: 'Authz Plain', email: `plain-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Authz Plain', email: `plain-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         plainId = plain.id;
         householdIds.push(plain.householdId);
 
         const target = await prisma.person.create({
-            data: { name: `ZZTarget ${TAG}`, email: `target-${TAG}@example.com`, phone: '555-0101', household: { create: {} } },
+            data: { name: `ZZTarget ${TAG}`, email: `target-${TAG}@example.com`, phone: '555-0101', household: { create: { name: "Test HH" } } },
         });
         searchTargetId = target.id;
         householdIds.push(target.householdId);
 
         const persona = await prisma.person.create({
-            data: { name: 'Persona One', email: `persona-${TAG}@example.com`, isSysadmin: true, household: { create: {} } },
+            data: { name: 'Persona One', email: `persona-${TAG}@example.com`, isSysadmin: true, household: { create: { name: "Test HH" } } },
         });
         personaId = persona.id;
         householdIds.push(persona.householdId);
@@ -140,19 +140,23 @@ describe('Sensitive route authorization', () => {
         it('404 in production (impersonation surface must be off)', async () => {
             process.env.CHECKIN_ENV = 'prod';
             mockSession.mockResolvedValue({ user: { id: personaId, isSysadmin: true } });
-            expect((await DevPersonasGet()).status).toBe(404);
+            expect((await DevPersonasGet(req('http://localhost/api/auth/dev-personas'))).status).toBe(404);
         });
 
         it('404 on the cloud dev instance when unauthenticated', async () => {
             process.env.CHECKIN_ENV = 'dev';
             mockSession.mockResolvedValue(null);
-            expect((await DevPersonasGet()).status).toBe(404);
+            expect((await DevPersonasGet(req('http://localhost/api/auth/dev-personas'))).status).toBe(404);
         });
 
         it('200 with the persona list when authenticated on dev', async () => {
             process.env.CHECKIN_ENV = 'dev';
             mockSession.mockResolvedValue({ user: { id: personaId } });
-            const res = await DevPersonasGet();
+            // Search by the unique seed tag so the assertion is independent of the 50-row cap /
+            // name ordering (the list now spans every participant, not just a handful).
+            const res = await DevPersonasGet(
+                req(`http://localhost/api/auth/dev-personas?q=persona-${TAG}`),
+            );
             expect(res.status).toBe(200);
             const json = await res.json();
             expect(json.personas.some((p: { id: number }) => p.id === personaId)).toBe(true);

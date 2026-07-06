@@ -14,10 +14,12 @@ interface Person {
     email: string | null;
 }
 // Shape returned by GET /api/membership/reviews (security-stripped model rows).
-// Only the household leads (parents) are returned — children are never sent.
+// A household review returns the leads (parents); a PERSON_BG review returns the
+// subject person (name + household context) instead. Children are never sent.
 interface QueueItem {
   id: number;
-  orgMembership: { household: { name: string | null; leads: { person: Person }[] } | null } | null;
+  subjectPerson: { id: number; name: string | null; householdId: number | null; household: { name: string | null } | null } | null;
+  orgMembership: { household: { name: string | null; intakeNotes: string | null; leads: { person: Person }[] } | null } | null;
   _count: { attestations: number };
 }
 
@@ -64,16 +66,19 @@ export default function MembershipReviewPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ processId, result, isMarkedVolunteer: !!volunteer[processId] }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified." });
         await load();
         notifyNavRefresh();
+      } else if (data.code === "already_attested") {
+        notifications.show({ color: "red", message: data.error || "Already attested.", autoClose: 4000 });
+        await load();
       } else {
         setMessage({ processId, text: data.error || "Could not record your attestation.", tone: "error" });
       }
     } catch {
-      setMessage({ processId, text: "Network error.", tone: "error" });
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setBusyId(null);
     }
@@ -109,27 +114,50 @@ export default function MembershipReviewPage() {
       ) : (
         <Stack mt="md">
           {queue.map((item) => {
+            const subject = item.subjectPerson;
             const parents = (item.orgMembership?.household?.leads ?? []).map((l) => l.person);
+            const notes = item.orgMembership?.household?.intakeNotes?.trim();
             return (
             <Card key={item.id} withBorder radius="md" padding="lg">
-              <Text fw={700} fz="lg">
-                {item.orgMembership?.household?.name || `Household (application #${item.id})`}
-              </Text>
-              <Text size="sm" c="dimmed" mt={4}>
-                {parents.length > 0
-                  ? parents.map((p) => `${p.name || "—"}${p.email ? ` <${p.email}>` : ""}`).join(", ")
-                  : "No parent contact on file."}
-              </Text>
+              {subject ? (
+                <>
+                  <Text fw={700} fz="lg">{subject.name || `Person #${subject.id}`}</Text>
+                  <Text size="sm" c="dimmed" mt={4}>
+                    Background check for an individual · {subject.household?.name ? `Household: ${subject.household.name}` : "No household on file"}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text fw={700} fz="lg">
+                    {item.orgMembership?.household?.name || `Household (application #${item.id})`}
+                  </Text>
+                  <Text size="sm" c="dimmed" mt={4}>
+                    {parents.length > 0
+                      ? parents.map((p) => `${p.name || "—"}${p.email ? ` <${p.email}>` : ""}`).join(", ")
+                      : "No parent contact on file."}
+                  </Text>
+                </>
+              )}
               <Text size="xs" c="dimmed" mt={4}>{item._count.attestations}/2 approvals so far.</Text>
 
-              <Checkbox
-                my="md"
-                checked={!!volunteer[item.id]}
-                onChange={(e) => { const checked = e.currentTarget.checked; setVolunteer((v) => ({ ...v, [item.id]: checked })); }}
-                label="This is a volunteer only family (no students)"
-              />
+              {/* Household-application concepts (intake note + volunteer-only mark)
+                  don't apply to a per-person BG check. */}
+              {!subject && notes && (
+                <Alert color="yellow" variant="light" mt="md" title="From the applicant — “Anything else we should know?”">
+                  <Text style={{ whiteSpace: "pre-wrap" }}>{notes}</Text>
+                </Alert>
+              )}
 
-              <Group gap="sm" wrap="wrap">
+              {!subject && (
+                <Checkbox
+                  my="md"
+                  checked={!!volunteer[item.id]}
+                  onChange={(e) => { const checked = e.currentTarget.checked; setVolunteer((v) => ({ ...v, [item.id]: checked })); }}
+                  label="This is a volunteer only family (no students)"
+                />
+              )}
+
+              <Group gap="sm" wrap="wrap" mt={subject ? "md" : undefined}>
                 <Button color="green" disabled={busyId === item.id} loading={busyId === item.id} onClick={() => submit(item.id, "APPROVE")}>
                   Attest — check is clean
                 </Button>

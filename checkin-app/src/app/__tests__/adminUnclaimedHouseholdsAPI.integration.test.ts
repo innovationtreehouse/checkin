@@ -41,12 +41,12 @@ describe('Admin Unclaimed Households API Integration Tests', () => {
         await cleanup();
 
         const admin = await prisma.person.create({
-            data: { email: 'admin-unclaimed-api-test@example.com', name: 'Admin Unclaimed Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-unclaimed-api-test@example.com', name: 'Admin Unclaimed Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.person.create({
-            data: { email: 'user-unclaimed-api-test@example.com', name: 'User Unclaimed Test', isSysadmin: false, household: { create: {} } }
+            data: { email: 'user-unclaimed-api-test@example.com', name: 'User Unclaimed Test', isSysadmin: false, household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
 

@@ -59,7 +59,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     let prevMembershipVariantId: string | null = null;
 
     beforeAll(async () => {
-        // shopifyNonOrgMemberVariantId is the variant public-register's checkout
+        // shopifyNonOrgMemberVariantId is the variant the enroll flow's checkout
         // link is built from — seed it so the guard under test has something to
         // match line_items against.
         const program = await prisma.program.create({
@@ -68,12 +68,12 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         programId = program.id;
 
         const a = await prisma.person.create({
-            data: { name: 'Hook P1', email: `p1-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Hook P1', email: `p1-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         p1 = a.id;
         h1 = a.householdId;
         const b = await prisma.person.create({
-            data: { name: 'Hook P2', email: `p2-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Hook P2', email: `p2-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         p2 = b.id;
         h2 = b.householdId;
@@ -146,12 +146,15 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         }
     });
 
-    it('accepts a mock-signed webhook when Shopify is unconfigured (dev orders/paid mock)', async () => {
-        // Off a real store (creds unset, non-prod), shopifyWebhookSecret() falls back
-        // to the fixed mock secret so the dev mock's self-signed webhook verifies for
-        // real — the symmetry /api/dev/shopify/orders-paid relies on. Bad signature
-        // still 401s; a correctly mock-signed body passes verification (200).
+    it('accepts a mock-signed webhook on local (dev orders/paid mock)', async () => {
+        // On local (CHECKIN_ENV=local), shopifyWebhookSecret() falls back to the fixed
+        // mock secret so the mock's self-signed webhook verifies for real — the symmetry
+        // /api/dev/shopify/orders-paid relies on. Bad signature still 401s; a correctly
+        // mock-signed body passes verification (200). The mock is gated on the env, not
+        // on cred presence, so run this test as local.
         delete process.env.SHOPIFY_WEBHOOK_SECRET;
+        const prevEnv = process.env.CHECKIN_ENV;
+        process.env.CHECKIN_ENV = 'local';
         // Imported so signer and verifier track the same constant — the value
         // itself is not a contract; this test asserts the fallback wiring.
         const MOCK_SECRET = DEV_MOCK_SHOPIFY_WEBHOOK_SECRET;
@@ -161,6 +164,8 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
             expect((await POST(webhookReq(body, sign(body, MOCK_SECRET)))).status).toBe(200); // signed with the mock secret
         } finally {
             process.env.SHOPIFY_WEBHOOK_SECRET = SECRET;
+            if (prevEnv === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = prevEnv;
         }
     });
 

@@ -44,18 +44,18 @@ describe('Bulk import merge rollback', () => {
         await cleanup();
 
         const admin = await prisma.person.create({
-            data: { email: 'admin-mergeroll-test@example.com', name: 'Admin Mergeroll Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-mergeroll-test@example.com', name: 'Admin Mergeroll Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
         const target = await prisma.person.create({
-            data: { email: TARGET_EMAIL, name: 'Target Anchor Mergeroll Test', household: { create: {} } },
+            data: { email: TARGET_EMAIL, name: 'Target Anchor Mergeroll Test', household: { create: { name: "Test HH" } } },
             select: { householdId: true }
         });
         targetHouseholdId = target.householdId;
 
         const source = await prisma.person.create({
-            data: { email: SOURCE_EMAIL, name: 'Source Member Mergeroll Test', household: { create: {} } },
+            data: { email: SOURCE_EMAIL, name: 'Source Member Mergeroll Test', household: { create: { name: "Test HH" } } },
             select: { id: true, householdId: true }
         });
         sourceMemberId = source.id;

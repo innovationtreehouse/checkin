@@ -220,6 +220,22 @@ defineRoute({
     ],
 });
 
+// Board's membership payment-plan approval queue. Returns PENDING_PAYMENT
+// OrgMembershipProcess rows the household asked to pay by plan, with the
+// membership + household nested. Board/sysadmin only, and they hold everyones:*
+// so they see every field — the win is the declared policy: any role later added
+// to this view is field-stripped automatically.
+defineRoute({
+    endpoint: 'GET /api/finance-ops/membership-payment-plans',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // Shop member roster (for certifying tools). Admins/board see the full row incl.
 // email (pii). Certifiers only need to NAME the member they certify, so they get
 // name (public) + member-tier — NOT everyones:pii. This deliberately TIGHTENS the

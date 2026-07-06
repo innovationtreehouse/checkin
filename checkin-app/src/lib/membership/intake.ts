@@ -6,6 +6,7 @@ import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
 import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/lib/address";
+import { INTAKE_PROFILES, missingRequiredFields } from "@/lib/intake/profiles";
 
 /**
  * Membership intake service — the write/read model behind the "Join the
@@ -50,7 +51,7 @@ type ParentInput = { id?: number; name?: string; email?: string; dob?: string | 
 type ChildInput = { id?: number; name?: string; email?: string | null; dob?: string | null; allergies?: string | null };
 
 export interface IntakeSaveInput {
-    household?: Partial<StructuredAddress> & { emergencyContactName?: string; emergencyContactPhone?: string; emergencyContactEmail?: string };
+    household?: Partial<StructuredAddress> & { emergencyContactName?: string; emergencyContactPhone?: string; emergencyContactEmail?: string; notes?: string | null };
     primaryParent?: ParentInput;
     secondaryParent?: ParentInput | null;
     children?: ChildInput[];
@@ -112,6 +113,7 @@ export async function getIntakeState(userId: number) {
 
     return {
         hasHousehold: !!household,
+        isLead: leadIds.has(userId),
         membershipStatus: membership?.status ?? null,
         process: process ? { id: process.id, kind: process.kind, status: process.status } : null,
         external,
@@ -119,6 +121,7 @@ export async function getIntakeState(userId: number) {
             household: household
                 ? {
                       name: household.name,
+                      notes: household.intakeNotes,
                       ...pickAddress(household),
                       // The primary (lowest-priority) contact backs the single-field
                       // form. Shown even when flagged invalid so the lead can fix it.
@@ -239,9 +242,14 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     };
 
     if (input.household) {
-        const addressData = normalizeAddressInput(input.household);
-        if (Object.keys(addressData).length > 0) {
-            await prisma.household.update({ where: { id: householdId }, data: addressData });
+        // Address + the optional "anything else we should know?" note share one
+        // household.update. Note is trimmed to null so an empty box clears it.
+        const householdData = {
+            ...normalizeAddressInput(input.household),
+            ...(input.household.notes !== undefined && { intakeNotes: input.household.notes?.trim() || null }),
+        };
+        if (Object.keys(householdData).length > 0) {
+            await prisma.household.update({ where: { id: householdId }, data: householdData });
         }
         // Emergency contact lives in its own table now; the single-field intake
         // form maps onto the household's primary contact. Tolerant of partial
@@ -350,17 +358,18 @@ export async function submitIntake(userId: number) {
         .sort((a, b) => b.id - a.id)[0];
     if (!process) throw new IntakeError("no_process", "No application is awaiting your information.");
 
-    // Each missing requirement carries the form field key to highlight + a label
-    // for the summary message.
-    const missing: { field: string; label: string }[] = [];
-    if (!household.line1?.trim()) missing.push({ field: "address", label: "home address" });
-    // A household must keep >= 1 valid (non-member, complete) emergency contact.
-    const hasValidContact = household.emergencyContacts.some(
-        (c) => c.conflictParticipantId === null && c.name.trim() && c.phone.trim(),
-    );
-    if (!hasValidContact) missing.push({ field: "emergencyContact", label: "a valid emergency contact (someone outside the household)" });
+    // Required-field validation is driven by the membership-initial profile (one
+    // declarative source of truth shared across intake surfaces), not inline
+    // literals. Field keys + labels + order are unchanged from the hardcoded set.
     const primary = household.householdMembers.find((p) => p.id === userId);
-    if (!primary?.name?.trim()) missing.push({ field: "primaryName", label: "primary parent name" });
+    const missing = missingRequiredFields(INTAKE_PROFILES["membership-initial"], {
+        addressLine1: household.line1,
+        addressCity: household.city,
+        addressState: household.state,
+        addressPostalCode: household.postalCode,
+        emergencyContacts: household.emergencyContacts,
+        primaryName: primary?.name,
+    });
     if (missing.length) {
         throw new IntakeError(
             "incomplete",

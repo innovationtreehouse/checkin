@@ -52,7 +52,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
                 name: 'Keyholder Scan',
                 email: `isKeyholder-${TAG}@example.com`,
                 isKeyholder: true,
-                household: { create: {} },
+                household: { create: { name: "Test HH" } },
             },
         });
         keyholderId = isKeyholder.id;
@@ -62,7 +62,7 @@ describe('POST /api/scan — real check-in/out logic', () => {
             data: {
                 name: 'Normal Scan',
                 email: `normal-${TAG}@example.com`,
-                household: { create: {} },
+                household: { create: { name: "Test HH" } },
             },
         });
         normalId = normal.id;

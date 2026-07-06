@@ -77,8 +77,8 @@ export default function LocalizationSettingsPage() {
         body: JSON.stringify({ timezone, locale }),
       });
       if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); await load(); }
-      else flash((await res.json()).error || "Save failed.");
-    } catch { flash("Network error."); }
+      else { const d = await res.json().catch(() => ({})); flash(d.error || "Save failed."); }
+    } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
   };
 
@@ -92,7 +92,7 @@ export default function LocalizationSettingsPage() {
     <Stack>
       <SettingsTabs active="localization" />
 
-      <AlertBanner message={message} tone="warning" />
+      <AlertBanner message={message} tone="error" />
 
       {loading ? (
         <Center py="xl"><Loader /></Center>

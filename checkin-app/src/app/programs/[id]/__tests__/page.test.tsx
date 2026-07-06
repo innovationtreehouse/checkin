@@ -4,12 +4,14 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 import { notifications } from "@mantine/notifications";
+import { signIn } from "next-auth/react";
 import { renderWithProviders, mockFetchJson, setSession, router, resetRtl } from "@/test-helpers/rtl";
 import ProgramEnrollmentPage from "../page";
 
 beforeEach(() => {
     resetRtl();
     (notifications.show as jest.Mock).mockClear();
+    (signIn as jest.Mock).mockClear();
 });
 
 // `use(params)` suspends on any promise it hasn't already tracked, even one that
@@ -47,7 +49,7 @@ function baseProgram(overrides: Record<string, unknown> = {}) {
         endAt: null,
         leadMentorId: 5,
         leadMentor: { name: "Coach K", email: "coach@example.com" },
-        participants: [{ personId: 100, status: "ENROLLED" }],
+        participants: [{ personId: 100, status: "ACTIVE" }],
         enrollmentStatus: "OPEN",
         orgMemberPriceCents: null,
         nonOrgMemberPriceCents: null,
@@ -75,9 +77,67 @@ describe("ProgramEnrollmentPage", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         expect(await screen.findByText("Which of your household wants to enroll?")).toBeInTheDocument();
-        expect(screen.getByText("(Already Enrolled)")).toBeInTheDocument();
+        expect(screen.getByText("(Enrolled)")).toBeInTheDocument();
         expect(screen.getByText("(Too young)")).toBeInTheDocument();
 
+        fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Successfully enrolled!" })),
+        );
+    });
+
+    it("first-time user finishes household setup, then enrolls a child (auth-first)", async () => {
+        setSession({ id: 500 });
+        let childAdded = false;
+        const adult = { id: 500, name: "New Parent", dateOfBirth: null };
+        const child = { id: 501, name: "New Kid", dateOfBirth: "2015-01-01" };
+        // Process-free intake state; the POST mutates it (child + emergency
+        // contact now saved) so the subsequent EC probe reads them back.
+        const intakeState = {
+            prefill: {
+                household: { emergencyContactName: null, emergencyContactPhone: null, emergencyContactEmail: null, line1: null },
+                primaryParent: { id: 500, name: "New Parent", email: null, dob: null, over25: false, allergies: null },
+                secondaryParent: null,
+                children: [] as unknown[],
+            },
+        };
+        const json = (b: unknown) => ({ ok: true, status: 200, json: async () => b } as Response);
+        global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === "string" ? input : input.toString();
+            // Order matters: /api/household/intake also contains "/api/household".
+            if (url.includes("/api/household/intake")) {
+                if (init?.method === "POST") {
+                    childAdded = true;
+                    intakeState.prefill.household.emergencyContactName = "Aunt May" as unknown as null;
+                    intakeState.prefill.household.emergencyContactPhone = "5125550000" as unknown as null;
+                    return json({ state: intakeState, rejections: [] });
+                }
+                return json(intakeState);
+            }
+            if (url.includes("/api/household")) return json({ household: { householdMembers: childAdded ? [adult, child] : [adult] } });
+            if (url.includes("/api/programs/10/participants")) return json({});
+            if (url.includes("/api/programs/10")) return json(baseProgram({ participants: [] }));
+            return { ok: false, status: 404, json: async () => ({}) } as Response;
+        });
+        renderPage();
+
+        await screen.findByText("Robotics Club");
+        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+        // No enrollable participant yet -> first-time setup affordance.
+        fireEvent.click(await screen.findByRole("button", { name: "Finish setting up your household to enroll" }));
+
+        // Panel mounts, prefilled with the adult's name; add the child + emergency contact.
+        await screen.findByText("Finish setting up your household");
+        fireEvent.click(screen.getByRole("button", { name: "+ Add household member" }));
+        fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "New Kid" } });
+        fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "2015-01-01" } });
+        fireEvent.change(screen.getByLabelText(/Emergency contact name/), { target: { value: "Aunt May" } });
+        fireEvent.change(screen.getByLabelText(/Emergency contact phone/), { target: { value: "5125550000" } });
+        fireEvent.click(screen.getByRole("button", { name: "Save & continue to enroll" }));
+
+        // Back to member-select with the now-enrollable child preselected.
+        await screen.findByText("Which of your household wants to enroll?");
+        expect(await screen.findByLabelText("New Kid")).toBeChecked();
         fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
         await waitFor(() =>
             expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Successfully enrolled!" })),
@@ -95,7 +155,7 @@ describe("ProgramEnrollmentPage", () => {
                     ],
                 },
             },
-            "/api/programs/10": baseProgram({ participants: [{ personId: 201, status: "ENROLLED" }], minAge: 5, maxAge: 16 }),
+            "/api/programs/10": baseProgram({ participants: [{ personId: 201, status: "PENDING" }], minAge: 5, maxAge: 16 }),
         });
         renderPage();
 
@@ -106,15 +166,17 @@ describe("ProgramEnrollmentPage", () => {
         // Declared adult reads as "(Adult)", never the confusing "(DOB missing)".
         expect(screen.getByText("(Adult)")).toBeInTheDocument();
         expect(screen.queryByText("(DOB missing)")).not.toBeInTheDocument();
-        expect(screen.getByText("(Already Enrolled)")).toBeInTheDocument();
-        // No enrollable member -> guidance message with the age range, no submit button.
-        expect(screen.getByText("No eligible participants in your household for this program (ages 5–16).")).toBeInTheDocument();
+        // PENDING enrollment reads as payment-pending, not a bare "Enrolled".
+        expect(screen.getByText("(Enrolled — Payment Pending)")).toBeInTheDocument();
+        // No enrollable member -> first-time setup affordance (replaces the old
+        // dead-end alert), no direct enroll button.
+        expect(screen.getByRole("button", { name: "Finish setting up your household to enroll" })).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Complete Enrollment" })).not.toBeInTheDocument();
     });
 
-    it("priced program with no Shopify variant configured falls back to a direct enroll message", async () => {
+    it("priced program with no Shopify variant configured aborts before enrolling", async () => {
         setSession({ id: 101 });
-        mockFetchJson({
+        const fetchMock = mockFetchJson({
             "/api/programs/10/participants": { ok: true },
             "/api/household": household,
             "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 7000, minAge: null, maxAge: null }),
@@ -127,9 +189,15 @@ describe("ProgramEnrollmentPage", () => {
         await screen.findByText("Which of your household wants to enroll?");
 
         fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
+        // No chargeable variant → persistent error, and NO enrollment is created.
         await waitFor(() =>
-            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Enrolled! (Note: No pricing variant configured for this tier)" })),
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({
+                color: "red",
+                autoClose: false,
+                message: "Cannot enroll: no pricing variant set for this program tier — set one in program-ops.",
+            })),
         );
+        expect(fetchMock).not.toHaveBeenCalledWith("/api/programs/10/participants", expect.anything());
     });
 
     it("shows a not-found card and navigates back to the directory", async () => {
@@ -142,19 +210,20 @@ describe("ProgramEnrollmentPage", () => {
         expect(router.push).toHaveBeenCalledWith("/programs");
     });
 
-    it("prompts a logged-out visitor to log in or register instead of enrolling", async () => {
+    it("routes a logged-out visitor through /signin (carrying the return URL) before enrolling (auth-first)", async () => {
         setSession(null, "unauthenticated");
         mockFetchJson({ "/api/programs/10": baseProgram() });
         renderPage();
 
         await screen.findByText("Robotics Club");
-        await waitFor(() => {
-            expect(screen.getByRole("button", { name: "Log In To Enroll" })).toBeInTheDocument();
-            expect(screen.getByRole("button", { name: "Register (New User)" })).toBeInTheDocument();
-        });
+        // Single auth-first CTA — no anonymous "Register (New User)" leak.
+        await screen.findByRole("button", { name: "Sign in to enroll" });
+        expect(screen.queryByRole("button", { name: "Register (New User)" })).not.toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole("button", { name: "Log In To Enroll" }));
-        expect(router.push).toHaveBeenCalledWith("/");
+        fireEvent.click(screen.getByRole("button", { name: "Sign in to enroll" }));
+        // LOCAL never calls Google directly; /signin decides Google vs. the dev picker by env.
+        expect(signIn).not.toHaveBeenCalled();
+        expect(router.push).toHaveBeenCalledWith("/signin?callbackUrl=/programs/10");
     });
 
     it("navigates back and to the manage screen for authorized managers", async () => {
@@ -184,7 +253,7 @@ describe("ProgramEnrollmentPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         await screen.findByText("Which of your household wants to enroll?");
 
-        fireEvent.click(screen.getByRole("button", { name: /request a payment plan/ }));
+        fireEvent.click(screen.getByRole("button", { name: /request a scholarship or payment plan/i }));
         await waitFor(() =>
             expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringMatching(/Requested! Please check your email/) })),
         );
@@ -210,7 +279,7 @@ describe("ProgramEnrollmentPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         await screen.findByText("Which of your household wants to enroll?");
 
-        fireEvent.click(screen.getByRole("button", { name: /request a payment plan/ }));
+        fireEvent.click(screen.getByRole("button", { name: /request a scholarship or payment plan/i }));
         expect(await screen.findByText("Already pending.")).toBeInTheDocument();
     });
 
@@ -229,7 +298,7 @@ describe("ProgramEnrollmentPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         await screen.findByText("Which of your household wants to enroll?");
 
-        fireEvent.click(screen.getByRole("button", { name: /request a payment plan/ }));
+        fireEvent.click(screen.getByRole("button", { name: /request a scholarship or payment plan/i }));
         expect(await screen.findByText(/failed to alert the finance committee/)).toBeInTheDocument();
     });
 
@@ -242,8 +311,10 @@ describe("ProgramEnrollmentPage", () => {
         await screen.findByText("Which of your household wants to enroll?");
 
         global.fetch = jest.fn().mockRejectedValue(new Error("down"));
-        fireEvent.click(screen.getByRole("button", { name: /request a payment plan/ }));
-        expect(await screen.findByText("Network error requesting payment plan.")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: /request a scholarship or payment plan/i }));
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error requesting payment plan.", autoClose: false })),
+        );
     });
 
     it("enrolls multiple selected household members and reports the plural success message", async () => {
@@ -325,24 +396,32 @@ describe("ProgramEnrollmentPage", () => {
 
         global.fetch = jest.fn().mockRejectedValue(new Error("down"));
         fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
-        expect(await screen.findByText("Network error during enrollment.")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error during enrollment.", autoClose: false })),
+        );
     });
 
     it("redirects to Shopify checkout for a priced enrollment with a configured member variant", async () => {
         setSession({ id: 101 });
-        const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
-        mockFetchJson({
-            "/api/household": memberHousehold,
-            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
-            "/api/programs/10/participants": { ok: true },
-        });
-        renderPage();
-        await screen.findByText("Robotics Club");
-        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
-        await screen.findByText("Which of your household wants to enroll?");
-        fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
+        const prevDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+        process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN = "shop.example.com"; // redirect requires a store domain
+        try {
+            const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
+            mockFetchJson({
+                "/api/household": memberHousehold,
+                "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
+                "/api/programs/10/participants": { ok: true },
+            });
+            renderPage();
+            await screen.findByText("Robotics Club");
+            fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+            await screen.findByText("Which of your household wants to enroll?");
+            fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
 
-        expect(await screen.findByText("Redirecting to Shopify for secure payment...")).toBeInTheDocument();
+            expect(await screen.findByText("Redirecting to Shopify for secure payment...")).toBeInTheDocument();
+        } finally {
+            process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN = prevDomain;
+        }
     });
 
     it("shows different closed-enrollment reasons depending on fullness, phase, and count source", async () => {
@@ -368,13 +447,14 @@ describe("ProgramEnrollmentPage", () => {
         }
     });
 
-    it("shows registration-closed state and lets a signed-out visitor still navigate to log in", async () => {
+    it("shows a disabled closed CTA to a signed-out visitor", async () => {
         setSession(null, "unauthenticated");
         mockFetchJson({ "/api/programs/10": baseProgram({ enrollmentStatus: "CLOSED", phase: "UPCOMING", maxParticipants: null }) });
         renderPage();
 
         await screen.findByText("Robotics Club");
-        expect(screen.getByText(/Registration Closed/)).toBeInTheDocument();
+        // Auth-first CTA reuses the same disabled-closed treatment as the logged-in Enroll button.
+        expect(screen.getByRole("button", { name: /Enrollment Closed \(Upcoming\)/ })).toBeDisabled();
         expect(screen.getByText("Closed")).toBeInTheDocument();
     });
 
@@ -444,7 +524,9 @@ describe("ProgramEnrollmentPage", () => {
     it("shows a network-error message when the program fetch throws", async () => {
         global.fetch = jest.fn().mockRejectedValue(new Error("down"));
         renderPage();
-        expect(await screen.findByText("Network error.")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })),
+        );
     });
 
     it("falls back to a bare Not Found card when the program response has no message", async () => {

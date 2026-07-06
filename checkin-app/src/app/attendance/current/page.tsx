@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useDisclosure } from "@mantine/hooks";
+import { notifications } from "@mantine/notifications";
 import {
   Alert, Anchor, Badge, Box, Button, Card, Center, Group, Loader, Modal, Paper,
   SimpleGrid, Stack, Text, TextInput, Title,
@@ -15,6 +16,7 @@ import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { AttendanceTabs } from "../AttendanceTabs";
 
 import { PageLoader } from "@/components/ui/PageLoader";
+import { CountBadge } from "@/components/ui/CountBadge";
 type Person = {
   id: number;
   email: string;
@@ -118,7 +120,7 @@ function KioskDisplayInner() {
         }
 
         const res = await fetch("/api/attendance", { headers });
-        const json = await res.json();
+        const json = await res.json().catch(() => ({}));
         if (res.ok && (json.access === "full" || json.access === "limited")) {
           setData(json);
           setError(null);
@@ -128,7 +130,7 @@ function KioskDisplayInner() {
         }
       } catch (error) {
         console.error("Failed to fetch attendance:", error);
-        setError("Network error");
+        notifications.show({ color: "red", message: "Network error", autoClose: false });
       } finally {
         setLoading(false);
       }
@@ -217,10 +219,10 @@ function KioskDisplayInner() {
         body: JSON.stringify({ visitId }),
       });
       if (res.ok) refreshAttendance();
-      else alert(isSelf ? "Failed to check out." : "Failed to force checkout.");
+      else notifications.show({ color: "red", message: isSelf ? "Failed to check out." : "Failed to force checkout.", autoClose: false });
     } catch (e) {
       console.error(e);
-      alert("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setCheckingOut(null);
     }
@@ -247,12 +249,17 @@ function KioskDisplayInner() {
         setSearchResults([]);
         refreshAttendance();
       } else {
-        const d = await res.json();
-        alert(`Error: ${d.error}`);
+        const d = await res.json().catch(() => ({}));
+        if (d.error === "User is already checked in") {
+          notifications.show({ color: "red", message: d.error, autoClose: 4000 });
+          refreshAttendance();
+        } else {
+          notifications.show({ color: "red", message: d.error || "Action failed.", autoClose: false });
+        }
       }
     } catch (e) {
       console.error(e);
-      alert("Network error.");
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setCheckingInId(null);
     }
@@ -366,7 +373,7 @@ function KioskDisplayInner() {
                 Sign out a user
               </Button>
             )}
-            <Badge size="lg" color="gray.2" variant="filled" c="var(--mantine-color-gray-8)" leftSection="●">{counts.total} People Present</Badge>
+            <CountBadge intent="info" size="lg">People Present: {counts.total}</CountBadge>
           </Group>
         </Group>
 
