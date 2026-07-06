@@ -50,7 +50,6 @@ async function wipe() {
     const memberIds = members.map((m) => m.id);
     await prisma.emergencyContact.deleteMany({ where: { householdId: { in: ids } } });
     if (memberIds.length) await prisma.auditLog.deleteMany({ where: { actorId: { in: memberIds } } });
-    await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
     await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
     await prisma.household.deleteMany({ where: { id: { in: ids } } });
 }
@@ -76,7 +75,7 @@ describe("PATCH /api/household/settings — Direction A: reject a member as prim
         });
         leadId = lead.id;
         householdId = lead.householdId!;
-        await prisma.householdLead.create({ data: { householdId, personId: leadId } });
+        await prisma.person.update({ where: { id: leadId }, data: { isHouseholdLead: true } });
         const member = await prisma.person.create({
             data: {
                 email: `member-A-${TAG}@example.com`,
@@ -144,7 +143,7 @@ describe("PATCH /api/household — Direction B: adding a member that collides wi
         });
         leadId = lead.id;
         householdId = lead.householdId!;
-        await prisma.householdLead.create({ data: { householdId, personId: leadId } });
+        await prisma.person.update({ where: { id: leadId }, data: { isHouseholdLead: true } });
         // A pre-existing VALID emergency contact (not yet a member).
         const contact = await prisma.emergencyContact.create({
             data: { householdId, name: "Grandma Ext", phone: "555-1111", phoneDigits: "5551111", priority: 0 },

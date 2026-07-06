@@ -50,7 +50,6 @@ async function wipe() {
         await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { householdId: { in: ids } } } } });
         await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
         await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }

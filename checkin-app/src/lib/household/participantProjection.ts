@@ -21,4 +21,7 @@ export const HOUSEHOLD_PEER_SELECT = {
     // Collected per-person at membership intake; household peers view/edit it on
     // the my-household cards. Same @sensitivity:personal tier as name/email/phone.
     allergies: true,
+    // Leadership (a1). @sensitivity:public — already surfaced as the "Household
+    // Lead" badge on the my-household cards; peers legitimately see who leads.
+    isHouseholdLead: true,
 } satisfies Prisma.PersonSelect;

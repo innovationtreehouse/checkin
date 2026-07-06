@@ -34,7 +34,6 @@ async function wipe() {
     if (ids.length) {
         await prisma.trustedAdultReview.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.trustedAdult.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
@@ -55,7 +54,7 @@ describe('trusted-adult mutation concurrency', () => {
         householdId = hh.id;
         const lead = await prisma.person.create({ data: { name: 'Lead', email: `lead-${TAG}@ex.com`, householdId: hh.id } });
         leadId = lead.id;
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+        await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
         const boardHh = await prisma.household.create({ data: { name: `Board HH ${TAG}` } });
         boardId = (await prisma.person.create({ data: { name: 'Boardie', isBoardMember: true, householdId: boardHh.id } })).id;
     });

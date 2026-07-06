@@ -37,7 +37,7 @@ async function makeHousehold(slug: string, lastBackgroundCheck: Date | null) {
             lastBackgroundCheck,
         },
     });
-    await prisma.householdLead.create({ data: { householdId: household.id, personId: person.id } });
+    await prisma.person.update({ where: { id: person.id }, data: { isHouseholdLead: true } });
     return household.id;
 }
 
@@ -55,7 +55,6 @@ describe('GET /api/membership-audit/compliance', () => {
         const ms = await prisma.orgMembership.findMany({ where: { householdId: { in: hhIds } }, select: { id: true } });
         await prisma.orgMembershipProcess.deleteMany({ where: { orgMembershipId: { in: ms.map(m => m.id) } } });
         await prisma.orgMembership.deleteMany({ where: { householdId: { in: hhIds } } });
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.person.deleteMany({ where: { OR: [{ email: { contains: TAG } }, { householdId: { in: hhIds } }] } });
         await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
     };

@@ -60,7 +60,7 @@ export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
                             // signal a volunteer-only household uses to ask the reviewer to
                             // mark them volunteer. Classified pii; reviewers hold that band.
                             intakeNotes: true,
-                            leads: { select: { person: { select: { id: true, name: true, email: true } } } },
+                            householdMembers: { where: { isHouseholdLead: true }, select: { id: true, name: true, email: true } },
                         },
                     },
                 },

@@ -99,7 +99,6 @@ async function cleanup() {
     await prisma.program.deleteMany({ where: { id: { in: progIds } } });
     await prisma.orgMembershipProcess.deleteMany({ where: { id: { in: pids } } });
     await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-    await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
     await prisma.person.deleteMany({ where: { OR: [{ householdId: { in: ids } }, { id: { in: peopleIds } }] } });
     await prisma.household.deleteMany({ where: { id: { in: [...ids, ...peopleHhIds] } } });
 }
@@ -225,7 +224,7 @@ describe('Phase 3 — manual PERSON_BG submit + queue gating + e2e', () => {
         await attachToProgram('e2e', subject.id);
         // A household-mate with no check — the subject-scoped clear must not touch them.
         const mate = await makePerson('e2e-mate', hh.id, { dateOfBirth: ADULT_DOB });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: mate.id } });
+        await prisma.person.update({ where: { id: mate.id }, data: { isHouseholdLead: true } });
 
         // Before: the subject is on the dashboard's PERSON_BG_NEEDED list.
         as(board, { isBoardMember: true });

@@ -40,9 +40,6 @@ describe('General Attendance API Integration Tests', () => {
         });
         const existingUserIds = existingUsers.map(u => u.id);
         
-        await prisma.householdLead.deleteMany({
-            where: { personId: { in: existingUserIds } }
-        });
         await prisma.visit.deleteMany({
             where: { personId: { in: existingUserIds } }
         });
@@ -98,7 +95,7 @@ describe('General Attendance API Integration Tests', () => {
                 email: 'lead-attend-api-test@example.com', 
                 name: 'Household Lead',
                 household: { connect: { id: household.id } },
-                householdLeads: { create: { householdId: household.id } }
+                isHouseholdLead: true
             }
         });
         householdLeadId = householdLead.id;
@@ -138,9 +135,6 @@ describe('General Attendance API Integration Tests', () => {
         const existingUserIds = [adminId, commonId, householdLeadId, householdChildId, boardMemberId, keyholderId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
-            await prisma.householdLead.deleteMany({
-                where: { personId: { in: existingUserIds } }
-            });
             await prisma.visit.deleteMany({
                 where: { personId: { in: existingUserIds } }
             });

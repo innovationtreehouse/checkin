@@ -47,10 +47,9 @@ function routedFetch(rules: { url: string; method?: string; result: RouteResult 
 const householdData = {
   id: 55,
   name: "Smith Household",
-  leads: [{ personId: 10 }],
   householdMembers: [
-    { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01" },
-    { id: 11, name: "Jamie Smith", email: "", dateOfBirth: "2012-05-01" },
+    { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01", isHouseholdLead: true },
+    { id: 11, name: "Jamie Smith", email: "", dateOfBirth: "2012-05-01", isHouseholdLead: false },
   ],
   orgMembership: { status: "ACTIVE", memberSince: "2024-01-01T00:00:00.000Z", isVolunteer: false },
   line1: "123 Main St", line2: "", city: "Austin", state: "TX", postalCode: "78701",
@@ -246,8 +245,8 @@ describe("HouseholdPage", () => {
     const editHousehold = {
       ...householdData,
       householdMembers: [
-        { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01" },
-        { id: 12, name: "Casey Smith", email: "", isDeclaredAdult: true },
+        { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01", isHouseholdLead: true },
+        { id: 12, name: "Casey Smith", email: "", isDeclaredAdult: true, isHouseholdLead: false },
       ],
     };
     setSession({ id: 10, email: "sam@example.com" });
@@ -307,8 +306,8 @@ describe("HouseholdPage", () => {
     const leadHousehold = {
       ...householdData,
       householdMembers: [
-        { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01" },
-        { id: 12, name: "Casey Smith", email: "", isDeclaredAdult: true },
+        { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01", isHouseholdLead: true },
+        { id: 12, name: "Casey Smith", email: "", isDeclaredAdult: true, isHouseholdLead: false },
       ],
     };
     setSession({ id: 10, email: "sam@example.com" });
@@ -341,7 +340,7 @@ describe("HouseholdPage", () => {
     const variedHousehold = {
       ...householdData,
       householdMembers: [
-        { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01" }, // lead, adult via dob
+        { id: 10, name: "Sam Smith", email: "sam@example.com", phone: "5125551234", dateOfBirth: "1980-01-01", isHouseholdLead: true }, // lead, adult via dob
         { id: 11, name: "Jamie Smith", email: "", dateOfBirth: "2012-05-01" }, // kid via dob
         { id: 13, name: "Alex Smith", email: "" }, // no dob, not declared -> Age Unavailable
         { id: 14, name: "Zoe Smith", email: "" }, // no dob, not declared -> both-no-dob sort branch

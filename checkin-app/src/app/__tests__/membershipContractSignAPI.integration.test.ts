@@ -56,7 +56,6 @@ describe('POST /api/membership/contract/sign', () => {
             await prisma.auditLog.deleteMany({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: { in: ids } } }).catch(() => {});
             await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
             await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
@@ -71,7 +70,7 @@ describe('POST /api/membership/contract/sign', () => {
         const hh = await prisma.household.create({ data: { name: `HH ${TAG}` } });
         const lead = await prisma.person.create({ data: { email: `lead-${TAG}@example.com`, name: 'Lead Parent', householdId: hh.id } });
         const nonLead = await prisma.person.create({ data: { email: `member-${TAG}@example.com`, name: 'Member', householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+        await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
         const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
         leadId = lead.id;
@@ -122,7 +121,7 @@ describe('POST /api/membership/contract/sign', () => {
     it('lets a RENEWAL process in the EXTERNAL phase sign (renewals re-sign fresh)', async () => {
         const hh = await prisma.household.create({ data: { name: `HH renewal ${TAG}` } });
         const rLead = await prisma.person.create({ data: { email: `rlead-${TAG}@example.com`, name: 'Renewing Lead', householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: rLead.id } });
+        await prisma.person.update({ where: { id: rLead.id }, data: { isHouseholdLead: true } });
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
         await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'RENEWAL', status: 'PENDING_EXTERNAL_ACTION' } });
 
@@ -207,7 +206,7 @@ describe('POST /api/membership/contract/sign', () => {
         // Household whose lead is someone else; the signer is a isSysadmin member, not a lead.
         const hh = await prisma.household.create({ data: { name: `HH isSysadmin ${TAG}` } });
         const otherLead = await prisma.person.create({ data: { email: `otherlead-${TAG}@example.com`, name: 'Other Lead', householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: otherLead.id } });
+        await prisma.person.update({ where: { id: otherLead.id }, data: { isHouseholdLead: true } });
         const isSysadmin = await prisma.person.create({ data: { email: `isSysadmin-${TAG}@example.com`, name: 'Sys Admin', householdId: hh.id, isSysadmin: true } });
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
         await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
@@ -223,7 +222,7 @@ describe('POST /api/membership/contract/sign', () => {
         // which loads the agreement PDF; make that throw AgreementUnavailableError.
         const hh = await prisma.household.create({ data: { name: `HH noagreement ${TAG}` } });
         const lead = await prisma.person.create({ data: { email: `noagr-lead-${TAG}@example.com`, name: 'NoAgr Lead', householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+        await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
         await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_EXTERNAL_ACTION' } });
 

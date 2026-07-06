@@ -21,6 +21,9 @@ type PaymentPlanRequest = {
     id: number;
     name: string | null;
     email: string;
+    // Current (live) membership, not the point-in-time snapshot — nothing is
+    // stamped until the request is approved, so this is derived on render.
+    household?: { orgMembership?: { status: string } | null } | null;
     householdId: number | null;
   };
   program: {
@@ -130,6 +133,12 @@ export default function PendingParticipantsPage() {
             Price: M {formatCents(req.program.orgMemberPriceCents)} / NM {formatCents(req.program.nonOrgMemberPriceCents)}
           </Text>
         </>
+      ),
+    },
+    {
+      header: 'Membership',
+      render: (req) => (
+        <Text size="sm">{req.person.household?.orgMembership?.status === 'ACTIVE' ? 'Member' : 'Non-member'}</Text>
       ),
     },
     {

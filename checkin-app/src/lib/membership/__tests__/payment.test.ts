@@ -17,7 +17,7 @@ jest.mock('@/lib/prisma', () => {
         orgMembership: { findUnique: jest.fn(), update: jest.fn() },
         boardSettings: { findUnique: jest.fn() },
         auditLog: { create: jest.fn() },
-        householdLead: { findMany: jest.fn().mockResolvedValue([]) },
+        person: { findMany: jest.fn().mockResolvedValue([]) },
         $queryRaw: jest.fn(),
         $transaction: jest.fn(),
     };

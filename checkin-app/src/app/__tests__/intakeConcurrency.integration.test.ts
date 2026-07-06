@@ -31,7 +31,6 @@ async function wipe() {
     if (ids.length) {
         await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
         await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
@@ -47,7 +46,7 @@ describe('intake start concurrency', () => {
         householdId = hh.id;
         const lead = await prisma.person.create({ data: { name: 'Lead', email: `lead-${TAG}@ex.com`, householdId: hh.id } });
         leadId = lead.id;
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+        await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
     });
 
     afterAll(wipe);

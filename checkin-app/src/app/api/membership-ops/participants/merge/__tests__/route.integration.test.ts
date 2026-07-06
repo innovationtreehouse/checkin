@@ -64,7 +64,6 @@ describe("Merge Participants API", () => {
         await prisma.feePayment.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
         await prisma.visit.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
         await prisma.programParticipant.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
-        await prisma.householdLead.deleteMany({ where: { personId: { in: [pKeepId, pMergeId] } } });
         await prisma.auditLog.deleteMany({ where: { actorId } });
         await prisma.person.deleteMany({ where: { id: { in: [pKeepId, pMergeId, actorId] } } });
         if (createdFeeId) {
@@ -183,9 +182,7 @@ describe("Merge Participants API", () => {
 
     it("should fail to merge if merged user is the lead of a household with other members", async () => {
         // Both users already share a household (from beforeEach); make merge user the lead
-        await prisma.householdLead.create({
-            data: { householdId, personId: pMergeId }
-        });
+        await prisma.person.update({ where: { id: pMergeId }, data: { isHouseholdLead: true } });
 
         const req = new Request("http://localhost/api/membership-ops/participants/merge", {
             method: "POST",

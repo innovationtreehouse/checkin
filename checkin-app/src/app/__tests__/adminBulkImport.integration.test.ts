@@ -24,7 +24,6 @@ describe('Admin Bulk Import API Integration Tests', () => {
         try {
             // Clean up any leaked state
             await prisma.orgMembership.deleteMany({});
-            await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({
                 where: { email: { contains: 'import-test' } }
             });
@@ -55,7 +54,6 @@ describe('Admin Bulk Import API Integration Tests', () => {
         try {
             // Clean up
             await prisma.orgMembership.deleteMany({});
-            await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({
                 where: { email: { contains: 'import-test' } }
             });
@@ -75,7 +73,6 @@ describe('Admin Bulk Import API Integration Tests', () => {
         try {
             // Clean up participants created during tests
             await prisma.orgMembership.deleteMany({});
-            await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({
                 where: { email: { contains: 'batch-import-test' } }
             });
@@ -224,7 +221,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
             expect(adult).not.toBeNull();
             expect(adult!.householdId).not.toBeNull();
             
-            const adultLead = await prisma.householdLead.findFirst({ where: { personId: adult!.id } });
+            const adultLead = await prisma.person.findFirst({ where: { id: adult!.id, isHouseholdLead: true }, select: { id: true } });
             // In some environments, lead assignment might delay or fail if the household creation isn't atomic.
             // But here it should be present.
             expect(adultLead).not.toBeNull();
@@ -232,12 +229,12 @@ describe('Admin Bulk Import API Integration Tests', () => {
             const youth = await prisma.person.findFirst({ where: { name: 'Youth Import Test' } });
             expect(youth).not.toBeNull();
             expect(youth!.householdId).not.toBeNull();
-            const youthLead = await prisma.householdLead.findFirst({ where: { personId: youth!.id } });
+            const youthLead = await prisma.person.findFirst({ where: { id: youth!.id, isHouseholdLead: true }, select: { id: true } });
             expect(youthLead).toBeNull();
 
             const defaultAdult = await prisma.person.findFirst({ where: { name: 'Default Import Test' } });
             expect(defaultAdult?.householdId).not.toBeNull();
-            const defaultLead = await prisma.householdLead.findFirst({ where: { personId: defaultAdult?.id } });
+            const defaultLead = await prisma.person.findFirst({ where: { id: defaultAdult?.id, isHouseholdLead: true }, select: { id: true } });
             expect(defaultLead).not.toBeNull();
         });
     });

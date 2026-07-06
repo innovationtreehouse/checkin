@@ -14,7 +14,6 @@ describe("GET /api/cron/post-event", () => {
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Future Event' } } });
         await prisma.program.deleteMany({ where: { name: 'Test Program' } });
         await prisma.toolStatus.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
-        await prisma.householdLead.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
         await prisma.rawBadgeLog.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
         await prisma.person.deleteMany({ where: { email: { contains: 'example.com' } } });
         // Global participant-less household delete: clear the membership chain for those

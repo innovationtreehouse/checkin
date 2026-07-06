@@ -31,11 +31,7 @@ describe('Household Member API Integration Tests', () => {
         
         const existingUserIds = existingUsers.map(u => u.id);
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter(id => id !== null) as number[];
-        
-        await prisma.householdLead.deleteMany({
-            where: { personId: { in: existingUserIds } }
-        });
-        
+
         await prisma.orgMembership.deleteMany({
             where: { householdId: { in: existingHouseholdIds } }
         });
@@ -64,9 +60,7 @@ describe('Household Member API Integration Tests', () => {
         });
         testLeadId = leadUser.id;
 
-        await prisma.householdLead.create({
-            data: { householdId: household.id, personId: leadUser.id }
-        });
+        await prisma.person.update({ where: { id: leadUser.id }, data: { isHouseholdLead: true } });
 
         const memberUser = await prisma.person.create({
             data: { email: 'child-member-api-test@example.com', name: 'Child User', householdId: household.id }
@@ -93,10 +87,6 @@ describe('Household Member API Integration Tests', () => {
         const currentIds = [testLeadId, testMemberId, testNonLeadId, testOtherMemberId];
         const validHouseholdIds = [householdId, otherHouseholdId];
 
-        await prisma.householdLead.deleteMany({
-            where: { personId: { in: currentIds } }
-        });
-        
         await prisma.orgMembership.deleteMany({
             where: { householdId: { in: validHouseholdIds } }
         });
@@ -242,8 +232,9 @@ describe('Household Member API Integration Tests', () => {
              expect(res.status).toBe(200);
 
              // Verify they are now a lead
-             const leadRecord = await prisma.householdLead.findUnique({
-                 where: { householdId_personId: { householdId: householdId, personId: testNonLeadId } }
+             const leadRecord = await prisma.person.findFirst({
+                 where: { id: testNonLeadId, householdId: householdId, isHouseholdLead: true },
+                 select: { id: true }
              });
              expect(leadRecord).not.toBeNull();
         });
@@ -263,8 +254,9 @@ describe('Household Member API Integration Tests', () => {
              expect(res.status).toBe(200);
 
              // Verify they are no longer a lead
-             const leadRecord = await prisma.householdLead.findUnique({
-                 where: { householdId_personId: { householdId: householdId, personId: testNonLeadId } }
+             const leadRecord = await prisma.person.findFirst({
+                 where: { id: testNonLeadId, householdId: householdId, isHouseholdLead: true },
+                 select: { id: true }
              });
              expect(leadRecord).toBeNull();
         });
@@ -284,8 +276,9 @@ describe('Household Member API Integration Tests', () => {
              expect(res.status).toBe(200); // the edit still succeeds technically even if it ignored the lea demotion request since it doesn't hard error it, this is intended
 
              // Verify they are STILL a lead
-             const leadRecord = await prisma.householdLead.findUnique({
-                 where: { householdId_personId: { householdId: householdId, personId: testLeadId } }
+             const leadRecord = await prisma.person.findFirst({
+                 where: { id: testLeadId, householdId: householdId, isHouseholdLead: true },
+                 select: { id: true }
              });
              expect(leadRecord).not.toBeNull();
         });

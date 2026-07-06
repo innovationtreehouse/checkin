@@ -46,7 +46,7 @@ interface PersonRef {
 interface HouseholdRef {
     id: number;
     name: string | null;
-    leads: { person: PersonRef }[];
+    householdMembers: PersonRef[];
 }
 interface TrustedAdult {
     id: number;
@@ -290,9 +290,9 @@ export default function AdminTrustedAdultsPage() {
                         {latest?.sharedNote && (
                             <Text size="sm" c="teal" mt={2}>Shared note (keyholders/program leads): {latest.sharedNote}</Text>
                         )}
-                        {ta.household?.leads?.length ? (
+                        {ta.household?.householdMembers?.length ? (
                             <Text size="xs" c="dimmed" mt={2}>
-                                Leads: {ta.household.leads.map((l) => l.person.name || l.person.email).join(", ")}
+                                Leads: {ta.household.householdMembers.map((p) => p.name || p.email).join(", ")}
                             </Text>
                         ) : null}
                         {latest?.reviewBy && (

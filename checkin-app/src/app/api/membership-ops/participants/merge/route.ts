@@ -36,7 +36,6 @@ export const POST = withAuth(
                     rsvps: true,
                     toolStatuses: true,
                     feePayments: true,
-                    householdLeads: true,
                     household: {
                         include: {
                             householdMembers: true
@@ -49,7 +48,7 @@ export const POST = withAuth(
                 return apiError("Participant(s) not found.", 404);
             }
 
-            const isLead = mergeParticipant.householdLeads.length > 0;
+            const isLead = mergeParticipant.isHouseholdLead;
             const householdOthersCount = mergeParticipant.household?.householdMembers.filter(p => p.id !== mergeId).length || 0;
 
             if (isLead && householdOthersCount > 0) {
@@ -164,13 +163,10 @@ export const POST = withAuth(
                     }
                 }
 
-                await tx.householdLead.deleteMany({
-                    where: { personId: mergeId }
-                });
-
                 // householdId stays pointing at the old household: every
                 // participant must belong to a household, and merged-away
-                // records are tombstoned rather than deleted.
+                // records are tombstoned rather than deleted. Leadership is
+                // cleared (a1): the tombstone is no longer a lead of anything.
                 await tx.person.update({
                     where: { id: mergeId },
                     data: {
@@ -178,6 +174,7 @@ export const POST = withAuth(
                         email: `merged-${mergeId}@deleted.checkme.in`,
                         phone: null,
                         name: `${mergeParticipant.name || 'Unknown'} (Merged into ${keepId})`,
+                        isHouseholdLead: false,
                     }
                 });
 

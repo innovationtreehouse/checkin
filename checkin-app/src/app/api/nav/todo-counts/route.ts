@@ -6,10 +6,10 @@ import { countHouseholdsMissingValidContact } from "@/lib/emergencyContacts/serv
 import { canReviewBackgroundChecks, reviewQueueCounts } from "@/lib/membership/review";
 import { getLeadConflicts } from "@/lib/attendanceConflicts";
 import { pickAddress, validateAddress } from "@/lib/address";
-import { ORG_DOMAIN } from "@/lib/config";
 import { openConfigIssues } from "@/lib/configHealth";
 import { PROGRAM_CHECKOUT_BROKEN_WHERE } from "@/lib/programCheckout";
 import { apiError } from "@/lib/api-response";
+import { BROKEN_HOUSEHOLD_WHERE, UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE } from "@/lib/household/filters";
 
 /**
  * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
@@ -66,16 +66,14 @@ export type TodoCounts = {
     // Applications tab — mirrors what /api/admin/membership lists.
     // `brokenEmails` = people whose email Resend has reported as undeliverable
     // (bounce/complaint) and no later delivery has cleared — see webhooks/resend.
+    // Red pill on the Membership Ops nav item + the Manage Memberships (households) tab.
     // `brokenHouseholds` = households with no lead at all (red — blocking board action).
-    // `memberFamilies` = total member families (gray), shown on the Manage Memberships tab:
-    // households with >=1 non-org-email (or null-email) participant. Staff households hold
-    // only the org-email lead, so they fall out.
     // `settingsMisconfig` = how many required Shopify-checkout board settings are still
     // unset (0–2): the membership variant ID and the volunteer discount code. Red pill on
     // the Settings nav + Membership Settings tab — checkout is broken until both are set.
     // `programsMisconfig` = how many programs have a price but no matching Shopify variant
     // (paid enrollment silently can't check out). Red pill on the Program Ops Programs tab.
-    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; membershipPaymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; brokenEmails: number; memberFamilies: number; settingsMisconfig: number; programsMisconfig: number };
+    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; membershipPaymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; brokenEmails: number; settingsMisconfig: number; programsMisconfig: number };
     // Config-health gaps (admins + board only): number of failing system-config checks
     // (e.g. Zoho e-sign unconfigured). Drives the red System Status nav badge; the full
     // list lives at /api/system-status/config-health. See lib/configHealth.ts.
@@ -142,9 +140,9 @@ export const GET = withAuth({}, async (_req, auth) => {
 
         const isLead =
             user.householdLead ??
-            (await prisma.householdLead.findFirst({
-                where: { householdId, personId: user.id },
-                select: { personId: true },
+            (await prisma.person.findFirst({
+                where: { id: user.id, householdId, isHouseholdLead: true },
+                select: { id: true },
             })) !== null;
 
         const [hh, leadsMissingPhone, membersMissingAge, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
@@ -172,9 +170,9 @@ export const GET = withAuth({}, async (_req, auth) => {
             // A household lead with no phone on file is an actionable gap — the
             // page highlights the member box; this drives the nav badge count.
             isLead
-                ? prisma.householdLead.findMany({
-                      where: { householdId, OR: [{ person: { phone: null } }, { person: { phone: "" } }] },
-                      select: { person: { select: { id: true, name: true } } },
+                ? prisma.person.findMany({
+                      where: { householdId, isHouseholdLead: true, OR: [{ phone: null }, { phone: "" }] },
+                      select: { id: true, name: true },
                   })
                 : Promise.resolve([]),
             // A member with no DoB and no 25+ declaration shows "Age Unavailable"
@@ -212,7 +210,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             householdTodos.push({ key: "household-address", label: "Add or complete your household address", href: "/my-household" });
         }
         for (const l of leadsMissingPhone) {
-            householdTodos.push({ key: `lead-phone-${l.person.id}`, label: `Add a phone number for ${l.person.name ?? "the household lead"}`, href: "/my-household" });
+            householdTodos.push({ key: `lead-phone-${l.id}`, label: `Add a phone number for ${l.name ?? "the household lead"}`, href: "/my-household" });
         }
         for (const m of membersMissingAge) {
             householdTodos.push({ key: `member-age-${m.id}`, label: `Add a date of birth for ${m.name ?? "a household member"}`, href: "/my-household" });
@@ -363,7 +361,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // ---- Admin surface (board's own queue) — only for board/isSysadmin ----
     if (user.isSysadmin || user.isBoardMember) {
-        const [membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, memberFamilies, programsMisconfig, boardSettings] = await Promise.all([
+        const [membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, programsMisconfig, boardSettings] = await Promise.all([
             prisma.orgMembershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -384,38 +382,20 @@ export const GET = withAuth({}, async (_req, auth) => {
             countHouseholdsMissingValidContact(),
             // Households nobody has claimed via Google sign-in yet: either a lead has an
             // email to chase but no lead has signed in, OR the household has no lead at
-            // all (broken). Must stay identical to /api/membership-audit/unclaimed-households
-            // or the badge count and the list diverge.
+            // all (broken). Shared predicate with /api/membership-audit/unclaimed-households
+            // so the badge count and the list can't diverge.
             prisma.household.count({
-                where: {
-                    OR: [
-                        {
-                            leads: { some: { person: { email: { not: null } } } },
-                            NOT: { leads: { some: { person: { googleId: { not: null } } } } }
-                        },
-                        { leads: { none: {} } }
-                    ]
-                },
+                where: UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE,
             }),
             // "Broken" households: no household lead at all. Mirrors
             // /api/admin/broken-households. Includes empty households.
             prisma.household.count({
-                where: { leads: { none: {} } },
+                where: BROKEN_HOUSEHOLD_WHERE,
             }),
             // People Resend has reported as undeliverable (bounce/complaint), not since
             // cleared by a later delivery. See Person.emailUndeliverableAt / webhooks/resend.
             prisma.person.count({
                 where: { emailUndeliverableAt: { not: null } },
-            }),
-            // Member families: households with >=1 non-org-email participant. A null email is
-            // not an org address, but Prisma's `NOT endsWith` skips null rows — list it
-            // explicitly so null-email members (e.g. children) count.
-            prisma.household.count({
-                where: {
-                    householdMembers: {
-                        some: { OR: [{ email: null }, { NOT: { email: { endsWith: `@${ORG_DOMAIN}` } } }] },
-                    },
-                },
             }),
             // Programs priced on a tier with no matching Shopify variant — paid enrollment
             // silently can't check out. Same condition as the list/detail UI, shared via
@@ -435,7 +415,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             (boardSettings?.volunteerDiscountCode ? 0 : 1) +
             ((boardSettings?.bgRecheckMonths ?? 0) > 0 ? 0 : 1) +
             (boardSettings?.orgMembershipYearBoundary ? 0 : 1);
-        result.admin = { membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, memberFamilies, settingsMisconfig, programsMisconfig };
+        result.admin = { membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, settingsMisconfig, programsMisconfig };
         // System-config health (env-var/deploy gaps). Synchronous, no DB — just presence
         // checks. Same admin+board gate as the rest of this block.
         result.configHealth = { openIssues: openConfigIssues() };

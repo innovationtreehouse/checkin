@@ -34,7 +34,6 @@ describe('Bulk import merge rollback', () => {
         try {
             await prisma.trustedAdult.deleteMany({ where: { trustedAdultName: 'Grandma Mergeroll' } });
             await prisma.orgMembership.deleteMany({});
-            await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({ where: { email: { contains: 'mergeroll-test' } } });
             await prisma.household.deleteMany({ where: { householdMembers: { none: {} } } });
         } catch {}

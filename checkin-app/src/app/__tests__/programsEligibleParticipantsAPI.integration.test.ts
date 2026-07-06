@@ -200,9 +200,6 @@ describe('Eligible Participants API Integration Tests', () => {
         }
 
         if (testHouseholdId) {
-            await prisma.householdLead.deleteMany({
-                where: { householdId: testHouseholdId }
-            });
             await prisma.household.deleteMany({
                 where: { id: testHouseholdId }
             });

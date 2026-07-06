@@ -31,7 +31,6 @@ describe('Attendance API Integration Tests', () => {
     beforeAll(async () => {
         // Clean up any leaked state
         await prisma.visit.deleteMany({});
-        await prisma.householdLead.deleteMany({});
         await prisma.person.deleteMany({
             where: { email: { contains: 'attendance-test' } }
         });
@@ -61,8 +60,9 @@ describe('Attendance API Integration Tests', () => {
         testParticipantId = participant.id;
 
         // Make participant the household lead
-        await prisma.householdLead.create({
-            data: { householdId: testHouseholdId, personId: testParticipantId }
+        await prisma.person.update({
+            where: { id: testParticipantId },
+            data: { isHouseholdLead: true }
         });
 
         const householdMember = await prisma.person.create({
@@ -94,9 +94,6 @@ describe('Attendance API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.visit.deleteMany({});
-        await prisma.householdLead.deleteMany({
-            where: { householdId: testHouseholdId }
-        });
         await prisma.person.deleteMany({
             where: { id: { in: [testAdminId, testParticipantId, testHouseholdMemberId, testKeyholderId] } }
         });

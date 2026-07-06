@@ -15,21 +15,11 @@ export const GET = withAuth(
                             id: true,
                             name: true,
                             email: true,
+                            phone: true,
+                            isHouseholdLead: true,
                             visits: {
                                 where: { departedAt: null },
                                 select: { id: true }
-                            }
-                        }
-                    },
-                    leads: {
-                        include: {
-                            person: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    email: true,
-                                    phone: true
-                                }
                             }
                         }
                     },
@@ -65,11 +55,11 @@ export const GET = withAuth(
                         name: p.name,
                         isPresent: p.visits.length > 0
                     })),
-                    leads: h.leads.map(l => ({
-                        id: l.person.id,
-                        name: l.person.name,
-                        phone: l.person.phone,
-                        email: l.person.email
+                    leads: h.householdMembers.filter(p => p.isHouseholdLead).map(p => ({
+                        id: p.id,
+                        name: p.name,
+                        phone: p.phone,
+                        email: p.email
                     }))
                 };
             });

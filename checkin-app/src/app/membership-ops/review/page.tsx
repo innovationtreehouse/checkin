@@ -19,7 +19,7 @@ interface Person {
 interface QueueItem {
   id: number;
   subjectPerson: { id: number; name: string | null; householdId: number | null; household: { name: string | null } | null } | null;
-  orgMembership: { household: { name: string | null; intakeNotes: string | null; leads: { person: Person }[] } | null } | null;
+  orgMembership: { household: { name: string | null; intakeNotes: string | null; householdMembers: Person[] } | null } | null;
   _count: { attestations: number };
 }
 
@@ -115,7 +115,7 @@ export default function MembershipReviewPage() {
         <Stack mt="md">
           {queue.map((item) => {
             const subject = item.subjectPerson;
-            const parents = (item.orgMembership?.household?.leads ?? []).map((l) => l.person);
+            const parents = item.orgMembership?.household?.householdMembers ?? [];
             const notes = item.orgMembership?.household?.intakeNotes?.trim();
             return (
             <Card key={item.id} withBorder radius="md" padding="lg">

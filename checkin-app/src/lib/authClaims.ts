@@ -11,9 +11,9 @@ export type ClaimSourceParticipant = {
     isBackgroundCheckReviewer: boolean;
     householdId: number;
     toolStatuses: { toolId: number; level: string }[];
-    // Any row here means this participant leads a household (the relation is already
-    // filtered to their own leads). Empty/absent → not a lead.
-    householdLeads?: { personId: number }[];
+    // Leadership of their own household. Single source of truth (a1) — supersedes
+    // the former HouseholdLead join.
+    isHouseholdLead: boolean;
     // Programs this participant is the lead mentor of (Program.leadMentorId === id).
     // Drives the client-side program-ops row gate; mirrors access-resolvers' programsLed.
     programsLed?: { id: number }[];
@@ -38,7 +38,7 @@ export function assignParticipantClaims(token: JWT, p: ClaimSourceParticipant): 
     token.isBoardMember = denied ? false : p.isBoardMember;
     token.isBackgroundCheckReviewer = denied ? false : p.isBackgroundCheckReviewer;
     token.householdId = p.householdId;
-    token.householdLead = denied ? false : (p.householdLeads?.length ?? 0) > 0;
+    token.householdLead = denied ? false : p.isHouseholdLead;
     token.toolStatuses = denied ? [] : p.toolStatuses;
     token.programsLed = denied ? [] : (p.programsLed?.map((prog) => prog.id) ?? []);
 }

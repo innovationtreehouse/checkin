@@ -9,6 +9,7 @@ function participant(overrides: Partial<ClaimSourceParticipant> = {}): ClaimSour
         isBoardMember: true,
         isBackgroundCheckReviewer: true,
         householdId: 99,
+        isHouseholdLead: false,
         toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
         household: { orgMembership: { status: 'ACTIVE' } },
         ...overrides,
@@ -55,22 +56,22 @@ describe('assignParticipantClaims — household login gate', () => {
 });
 
 describe('assignParticipantClaims — householdLead claim', () => {
-    it('stamps householdLead=true when a HouseholdLead row exists', () => {
+    it('stamps householdLead=true when isHouseholdLead is set', () => {
         const token = {} as JWT;
-        assignParticipantClaims(token, participant({ householdLeads: [{ personId: 7 }] }));
+        assignParticipantClaims(token, participant({ isHouseholdLead: true }));
         expect(token.householdLead).toBe(true);
     });
 
-    it('stamps householdLead=false when no HouseholdLead row exists', () => {
+    it('stamps householdLead=false when isHouseholdLead is unset', () => {
         const token = {} as JWT;
-        assignParticipantClaims(token, participant({ householdLeads: [] }));
+        assignParticipantClaims(token, participant({ isHouseholdLead: false }));
         expect(token.householdLead).toBe(false);
     });
 
-    it('forces householdLead=false for a DENIED household even with a lead row', () => {
+    it('forces householdLead=false for a DENIED household even when isHouseholdLead is set', () => {
         const token = {} as JWT;
         assignParticipantClaims(token, participant({
-            householdLeads: [{ personId: 7 }],
+            isHouseholdLead: true,
             household: { orgMembership: { status: 'DENIED' } },
         }));
         expect(token.householdLead).toBe(false);

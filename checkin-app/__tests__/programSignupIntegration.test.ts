@@ -30,6 +30,7 @@ jest.mock('@/lib/prisma', () => {
     person: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
       deleteMany: jest.fn(),
@@ -50,11 +51,6 @@ jest.mock('@/lib/prisma', () => {
     household: {
       create: jest.fn(),
       delete: jest.fn(),
-    },
-    householdLead: {
-      create: jest.fn(),
-      findUnique: jest.fn(),
-      deleteMany: jest.fn(),
     },
     membership: {
       create: jest.fn(),
@@ -153,7 +149,7 @@ describe('Full Program Signup Integration Flow', () => {
 
         // 4. Lead user (who already has a household from signup) adds a child member
         mockGetSession.mockResolvedValue({ user: { id: leadUserId } });
-        (prisma.person.findUnique as jest.Mock).mockResolvedValueOnce({ id: leadUserId, householdId, householdLeads: [{ householdId, participantId: leadUserId }] });
+        (prisma.person.findUnique as jest.Mock).mockResolvedValueOnce({ id: leadUserId, householdId, isHouseholdLead: true });
         (prisma.person.create as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId });
         // Adding a member reconciles emergency contacts (direction B); no contacts/members to flag here.
         (prisma.person.findMany as jest.Mock).mockResolvedValue([]);
@@ -181,7 +177,7 @@ describe('Full Program Signup Integration Flow', () => {
             _count: { participants: 0 }
         });
         (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dateOfBirth: new Date('2015-01-01') });
-        (prisma.householdLead.findUnique as jest.Mock).mockResolvedValue({ householdId, participantId: leadUserId });
+        (prisma.person.findFirst as jest.Mock).mockResolvedValue({ id: leadUserId });
         (prisma.programParticipant.create as jest.Mock).mockResolvedValue({ programId, personId: childParticipantId, status: 'PENDING' });
 
         const enrollReq = new Request(`http://localhost/api/programs/${programId}/participants`, {
@@ -238,7 +234,7 @@ describe('Full Program Signup Integration Flow', () => {
             _count: { participants: 0 }
         });
         (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dateOfBirth: new Date('2015-01-01') });
-        (prisma.householdLead.findUnique as jest.Mock).mockResolvedValue(null); // Not a lead
+        (prisma.person.findFirst as jest.Mock).mockResolvedValue(null); // Not a lead
 
         const enrollReq = new Request(`http://localhost/api/programs/${programId}/participants`, {
             method: 'POST',

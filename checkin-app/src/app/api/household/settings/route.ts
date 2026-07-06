@@ -30,15 +30,14 @@ export const PATCH = withAuth(
 
             const user = await prisma.person.findUnique({
                 where: { id: userId },
-                include: { householdLeads: true }
+                select: { householdId: true, isHouseholdLead: true, isSysadmin: true }
             });
 
             if (!user || !user.householdId) {
                 return apiError("Household not found", 404);
             }
 
-            const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isLead && !user.isSysadmin) {
+            if (!user.isHouseholdLead && !user.isSysadmin) {
                 return apiError("Only household leads can edit household settings", 403);
             }
 

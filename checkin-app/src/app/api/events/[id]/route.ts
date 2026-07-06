@@ -109,10 +109,9 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 return apiError("Forbidden: Only Lead Mentors or Admins can edit/cancel events", 403);
             }
 
-            // Block edits to an event that has already finished. Re-clearing
-            // reminderSentAt on a past event is meaningless and would re-arm a
-            // stale reminder; today only the cron's future-only window stops it
-            // from firing. Use endAt (not startAt) so an in-progress event still edits.
+            // Block edits to an event that has already finished — rescheduling a
+            // past event is meaningless. Use endAt (not startAt) so an in-progress
+            // event still edits.
             if (body.action === 'editTime' && event.endAt.getTime() < Date.now()) {
                 return apiError("Cannot edit a past event", 400);
             }
@@ -152,15 +151,6 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                         });
                     });
 
-                    // Rescheduled to a new start → clear reminders for the shifted events
-                    // so attendees get a fresh 2h reminder. End-only shifts keep state.
-                    if (timeShiftStartMs !== 0) {
-                        ops.push(prisma.rSVP.updateMany({
-                            where: { eventId: { in: futureEvents.map(e => e.id) }, reminderSentAt: { not: null } },
-                            data: { reminderSentAt: null }
-                        }));
-                    }
-
                     await prisma.$transaction(ops);
 
                     return NextResponse.json({ success: true, count: futureEvents.length });
@@ -176,7 +166,6 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     ]);
                     return NextResponse.json({ success: true });
                 } else if (body.action === 'editTime') {
-                    const startChanged = timeShiftStartMs !== 0;
                     const updatedEvent = await prisma.event.update({
                         where: { id: event.id },
                         data: {
@@ -184,14 +173,6 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                             endAt: endAt ? new Date(endAt) : event.endAt
                         }
                     });
-                    // Rescheduled to a new start → attendees become eligible for a fresh
-                    // 2h reminder. End-only edits keep the existing reminder state.
-                    if (startChanged) {
-                        await prisma.rSVP.updateMany({
-                            where: { eventId: event.id, reminderSentAt: { not: null } },
-                            data: { reminderSentAt: null }
-                        });
-                    }
                     return NextResponse.json({ success: true, event: updatedEvent });
                 }
             }

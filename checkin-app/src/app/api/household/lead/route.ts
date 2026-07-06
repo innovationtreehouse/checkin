@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
+import { addHouseholdLead, removeHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth(
@@ -21,7 +21,7 @@ export const POST = withAuth(
 
             const user = await prisma.person.findUnique({
                 where: { id: userId },
-                include: { householdLeads: true }
+                select: { isSysadmin: true, isBoardMember: true, isHouseholdLead: true, householdId: true }
             });
 
             const targetMember = await prisma.person.findUnique({ where: { id: participantId } });
@@ -34,7 +34,7 @@ export const POST = withAuth(
             // a leadless household imported without a primary contact). A regular
             // household lead can only promote within their own household.
             const isPrivileged = !!user?.isSysadmin || !!user?.isBoardMember;
-            const isLeadOfTarget = !!user?.householdLeads.some(lead => lead.householdId === targetHouseholdId);
+            const isLeadOfTarget = !!user?.isHouseholdLead && user.householdId === targetHouseholdId;
             if (!isPrivileged && !isLeadOfTarget) {
                 return apiError("Only household leads, board members, or sysadmins can promote members", 403);
             }
@@ -50,10 +50,10 @@ export const POST = withAuth(
                 data: {
                     actorId: userId,
                     action: "CREATE",
-                    tableName: "HouseholdLead",
+                    tableName: "Person",
                     affectedEntityId: targetHouseholdId,
                     secondaryAffectedEntity: participantId,
-                    newData: newLead
+                    newData: { ...newLead, isHouseholdLead: true }
                 }
             });
 
@@ -85,10 +85,13 @@ export const DELETE = withAuth(
 
             const user = await prisma.person.findUnique({
                 where: { id: userId },
-                include: { householdLeads: true }
+                select: { isSysadmin: true, isBoardMember: true, isHouseholdLead: true, householdId: true }
             });
 
-            const targetMember = await prisma.person.findUnique({ where: { id: participantId } });
+            const targetMember = await prisma.person.findUnique({
+                where: { id: participantId },
+                select: { householdId: true, isHouseholdLead: true }
+            });
             if (!targetMember) {
                 return apiError("Participant not found", 404);
             }
@@ -101,49 +104,30 @@ export const DELETE = withAuth(
             // mirror of the promote path in POST. A regular household lead can only
             // remove leads within their own household.
             const isPrivileged = !!user?.isSysadmin || !!user?.isBoardMember;
-            const isLeadOfTarget = !!user?.householdLeads.some(lead => lead.householdId === targetHouseholdId);
+            const isLeadOfTarget = !!user?.isHouseholdLead && user.householdId === targetHouseholdId;
             if (!isPrivileged && !isLeadOfTarget) {
                 return apiError("Only household leads, board members, or sysadmins can remove leads", 403);
             }
 
-            const allLeads = await prisma.householdLead.findMany({
-                where: { householdId: targetHouseholdId }
-            });
-
-            if (allLeads.length <= 1 && allLeads.some(l => l.personId === participantId)) {
-                return apiError("Cannot remove the last lead of a household.", 400);
-            }
-
-            const existingLead = await prisma.householdLead.findUnique({
-                where: {
-                    householdId_personId: {
-                        householdId: targetHouseholdId,
-                        personId: participantId
-                    }
+            // Locked demote: refuses to drop the household's last lead, and
+            // serializes concurrent demotes so two can't both pass the guard and
+            // zero-lead the household (see removeHouseholdLead).
+            const result = await removeHouseholdLead(prisma, targetHouseholdId, participantId);
+            if (!result.removed) {
+                if (result.reason === "last_lead") {
+                    return apiError("Cannot remove the last lead of a household.", 400);
                 }
-            });
-
-            if (!existingLead) {
-                 return apiError("Member is not a lead", 400);
+                return apiError("Member is not a lead", 400);
             }
-
-            await prisma.householdLead.delete({
-                where: {
-                    householdId_personId: {
-                        householdId: targetHouseholdId,
-                        personId: participantId
-                    }
-                }
-            });
 
             await prisma.auditLog.create({
                 data: {
                     actorId: userId,
                     action: "DELETE",
-                    tableName: "HouseholdLead",
+                    tableName: "Person",
                     affectedEntityId: targetHouseholdId,
                     secondaryAffectedEntity: participantId,
-                    oldData: existingLead
+                    oldData: { householdId: targetHouseholdId, personId: participantId, isHouseholdLead: true }
                 }
             });
 

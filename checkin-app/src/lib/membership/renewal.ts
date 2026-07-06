@@ -208,7 +208,7 @@ export async function householdBgIsFresh(householdId: number, boundary: Date, re
     if (recheckMonths <= 0) return false;
     const threshold = monthsBefore(boundary, recheckMonths);
     const fresh = await prisma.person.findFirst({
-        where: { householdId, householdLeads: { some: { householdId } }, lastBackgroundCheck: { gte: threshold } },
+        where: { householdId, isHouseholdLead: true, lastBackgroundCheck: { gte: threshold } },
         select: { id: true },
     });
     return fresh !== null;

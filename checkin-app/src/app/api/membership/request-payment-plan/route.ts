@@ -16,7 +16,7 @@ export const POST = withAuth({}, async (req, auth) => {
 
         const process = await prisma.orgMembershipProcess.findUnique({
             where: { id: processId },
-            include: { orgMembership: { include: { household: { include: { leads: true } } } } },
+            include: { orgMembership: { include: { household: { include: { householdMembers: { where: { isHouseholdLead: true }, select: { id: true } } } } } } },
         });
 
         if (!process || !process.orgMembership) {
@@ -30,7 +30,7 @@ export const POST = withAuth({}, async (req, auth) => {
         // user could flip isPaymentPlanRequested on an arbitrary application (IDOR).
         const currentUserId = auth.user.id;
         const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
-        const isHouseholdLead = process.orgMembership.household.leads.some((l) => l.personId === currentUserId);
+        const isHouseholdLead = process.orgMembership.household.householdMembers.some((p) => p.id === currentUserId);
 
         if (!isSysAdminOrBoard && !isHouseholdLead) {
             return apiError("Forbidden: Not authorized to request a payment plan for this membership", 403);

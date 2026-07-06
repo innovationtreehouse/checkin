@@ -55,7 +55,6 @@ describe('Trusted Adults API', () => {
             const pids = parts.map((p) => p.id);
             await prisma.programParticipant.deleteMany({ where: { personId: { in: pids } } });
             await prisma.program.deleteMany({ where: { name: { contains: TAG } } });
-            await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         }
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
@@ -66,7 +65,7 @@ describe('Trusted Adults API', () => {
         const fhh = await prisma.household.create({ data: { name: `Family HH ${TAG}` } });
         familyHh = fhh.id;
         leadId = (await prisma.person.create({ data: { name: 'Lead', householdId: familyHh } })).id;
-        await prisma.householdLead.create({ data: { householdId: familyHh, personId: leadId } });
+        await prisma.person.update({ where: { id: leadId }, data: { isHouseholdLead: true } });
         childId = (await prisma.person.create({ data: { name: 'Child', householdId: familyHh } })).id;
 
         boardHh = (await prisma.household.create({ data: { name: `Board HH ${TAG}` } })).id;

@@ -109,7 +109,6 @@ const admin = (over: Partial<NonNullable<TodoCounts['admin']>> = {}): TodoCounts
     unclaimedHouseholds: 0,
     brokenHouseholds: 0,
     brokenEmails: 0,
-    memberFamilies: 0,
     settingsMisconfig: 0,
     programsMisconfig: 0,
     ...over,
@@ -164,6 +163,32 @@ describe('reviewBadges (Review tab + Membership Ops nav)', () => {
       .toEqual([{ count: 43, color: 'gray', label: '40 in-flight applications; 3 you approved awaiting a second reviewer' }]);
     // Nothing anywhere → no badges.
     expect(navBadgeFor('/membership-ops', { ...admin(), review: { canActOn: 0, approvedAwaitingSecond: 0 } })).toEqual([]);
+  });
+
+  it('prepends a red broken-email pill (before green/gray) on the Membership Ops nav item', () => {
+    expect(navBadgeFor('/membership-ops', admin({ brokenEmails: 2 }))).toEqual([
+      { count: 2, color: 'red', label: '2 members with an undeliverable email' },
+    ]);
+    // Ordering: red first, then green, then gray.
+    const counts: TodoCounts = {
+      ...admin({ brokenEmails: 1, membership: 2, applicationsTotal: 40 }),
+      review: { canActOn: 0, approvedAwaitingSecond: 0 },
+    };
+    expect(navBadgeFor('/membership-ops', counts).map((b) => b.color)).toEqual(['red', 'treehouseGreen', 'gray']);
+    // Singularized, and hidden at 0.
+    expect(navBadgeFor('/membership-ops', admin({ brokenEmails: 1 })))
+      .toEqual([{ count: 1, color: 'red', label: '1 member with an undeliverable email' }]);
+    expect(navBadgeFor('/membership-ops', admin({ brokenEmails: 0 }))).toEqual([]);
+  });
+});
+
+describe('tabBadgeFor — Manage Memberships broken-email pill', () => {
+  it('red count on the households tab, singularized, null at 0', () => {
+    expect(tabBadgeFor('/membership-ops/households', admin({ brokenEmails: 3 })))
+      .toEqual({ count: 3, color: 'red', label: '3 members with an undeliverable email' });
+    expect(tabBadgeFor('/membership-ops/households', admin({ brokenEmails: 1 })))
+      .toEqual({ count: 1, color: 'red', label: '1 member with an undeliverable email' });
+    expect(tabBadgeFor('/membership-ops/households', admin({ brokenEmails: 0 }))).toBeNull();
   });
 });
 
