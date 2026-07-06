@@ -705,6 +705,15 @@ model Program {
   shopifyOrgMemberVariantId    String?
   /// @sensitivity:public
   shopifyNonOrgMemberVariantId String?
+  /// Single-pool model (product decision 2026-07-06, supersedes the two-variant
+  /// mirror above for NEW program creation): one variant priced at the base
+  /// (non-member) rate; members get a server-minted single-use discount code
+  /// at checkout instead of a separate variant/pool (mintMemberDiscountCode in
+  /// lib/shopify.ts). Legacy programs keep the two columns above untouched —
+  /// expand-only migration; dropping the legacy pair (contract) is a later
+  /// release once every program has migrated.
+  /// @sensitivity:public
+  shopifyVariantId          String?
 
   volunteers   ProgramVolunteer[]
   participants ProgramParticipant[]

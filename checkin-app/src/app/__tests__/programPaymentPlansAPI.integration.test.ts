@@ -12,6 +12,7 @@
  * and the successful state transitions.
  */
 import { GET as PlansGet, POST as PlansPost } from '@/app/api/finance-ops/payment-plans/route';
+import { POST as RefusePost } from '@/app/api/finance-ops/payment-plans/refuse/route';
 import { POST as RequestPost } from '@/app/api/programs/[id]/request-payment-plan/route';
 import { POST as ParticipantsPost } from '@/app/api/programs/[id]/participants/route';
 import prisma from '@/lib/prisma';
@@ -220,63 +221,47 @@ describe('Program payment-plan routes', () => {
             expect(data.warning).toBeUndefined();
         });
 
-        // Shopify is the source of truth for program capacity (product decision
-        // 2026-07-06, extended): an approved scholarship/payment-plan seat consumes
-        // real capacity exactly like a paid one, so approval must decrement Shopify
-        // too. Runs against the CHECKIN_ENV=local mock (config.shopifyMockActive),
-        // same pattern as programSyncShopifyAPI.integration.test.ts.
-        it('decrements both Shopify variant pools by 1 on approval when the program has variants configured', async () => {
-            const prevCheckinEnv = process.env.CHECKIN_ENV;
-            process.env.CHECKIN_ENV = 'local';
-            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+        // Scholarship lifecycle drives inventory (product decision 2026-07-06):
+        // the seat is decremented at APPLICATION time (request-payment-plan), NOT
+        // at approval — approval only stops billing the applicant. This supersedes
+        // the earlier approve-time decrement (see PR history for the two-pool
+        // mirror model this replaced). Proven here by NO fetch firing even though
+        // the program has a variant configured.
+        it('does NOT touch Shopify on approval, even when the program has a variant configured', async () => {
+            const fetchSpy = jest.spyOn(global, 'fetch');
+            const shopifyProgram = await prisma.program.create({
+                data: {
+                    name: `PP Shopify Program ${TAG}`,
+                    leadMentorId: mentorId,
+                    enrollmentStatus: 'OPEN',
+                    shopifyVariantId: 'dev-mock-variant-pp',
+                },
+            });
             try {
-                const shopifyProgram = await prisma.program.create({
-                    data: {
-                        name: `PP Shopify Program ${TAG}`,
-                        leadMentorId: mentorId,
-                        enrollmentStatus: 'OPEN',
-                        shopifyOrgMemberVariantId: 'dev-mock-variant-member-pp',
-                        shopifyNonOrgMemberVariantId: 'dev-mock-variant-nonmember-pp',
-                    },
+                await prisma.programParticipant.upsert({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
+                    update: { status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
+                    create: { programId: shopifyProgram.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
                 });
-                try {
-                    await prisma.programParticipant.upsert({
-                        where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
-                        update: { status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
-                        create: { programId: shopifyProgram.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
-                    });
-                    mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+                mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
-                    // A cookie header is required: CHECKIN_ENV=local (for the Shopify mock)
-                    // also arms the keyless-kiosk fallback in authenticateRequest, which
-                    // hijacks any cookie-less request as `kiosk` -> 403 before the
-                    // session/role gate runs.
-                    const res = await PlansPost(nextReq('http://localhost', {
-                        method: 'POST',
-                        headers: { cookie: 'session=test' },
-                        body: JSON.stringify({ programId: shopifyProgram.id, participantId: selfId }),
-                    }));
-                    expect(res.status).toBe(200);
-                    const data = await res.json();
-                    expect(data.warning).toBeUndefined(); // mock no-ops successfully
+                const res = await PlansPost(nextReq('http://localhost', {
+                    method: 'POST',
+                    body: JSON.stringify({ programId: shopifyProgram.id, participantId: selfId }),
+                }));
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.warning).toBeUndefined();
 
-                    const row = await prisma.programParticipant.findUnique({
-                        where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
-                    });
-                    expect(row?.status).toBe('ACTIVE');
-
-                    // Confirms BOTH pools were targeted with delta -1, not just that the
-                    // call succeeded — the mock logs the resolved variant id list.
-                    expect(logSpy).toHaveBeenCalledWith(
-                        expect.stringContaining('Would adjust inventory by -1 for variants: dev-mock-variant-member-pp, dev-mock-variant-nonmember-pp'),
-                    );
-                } finally {
-                    await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
-                    await prisma.program.delete({ where: { id: shopifyProgram.id } });
-                }
+                const row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
+                });
+                expect(row?.status).toBe('ACTIVE');
+                expect(fetchSpy).not.toHaveBeenCalled();
             } finally {
-                logSpy.mockRestore();
-                process.env.CHECKIN_ENV = prevCheckinEnv;
+                fetchSpy.mockRestore();
+                await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
+                await prisma.program.delete({ where: { id: shopifyProgram.id } });
             }
         });
 
@@ -406,6 +391,216 @@ describe('Program payment-plan routes', () => {
                 where: { programId_personId: { programId, personId: selfId } },
             });
             expect(row?.isPaymentPlanRequested).toBe(false);
+        });
+
+        // Scholarship lifecycle drives inventory (product decision 2026-07-06):
+        // APPLICATION decrements Shopify by 1 — only on the false->true transition.
+        describe('Shopify inventory (apply time)', () => {
+            let shopifyProgramId: number;
+
+            beforeAll(async () => {
+                const p = await prisma.program.create({
+                    data: { name: `PP Apply Shopify Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: 'dev-mock-variant-apply-pp' },
+                });
+                shopifyProgramId = p.id;
+            });
+
+            afterAll(async () => {
+                await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgramId } });
+                await prisma.program.delete({ where: { id: shopifyProgramId } });
+            });
+
+            it('decrements the single-pool variant by 1 on the false->true transition', async () => {
+                const prevCheckinEnv = process.env.CHECKIN_ENV;
+                process.env.CHECKIN_ENV = 'local';
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+                try {
+                    await prisma.programParticipant.upsert({
+                        where: { programId_personId: { programId: shopifyProgramId, personId: selfId } },
+                        update: { status: 'PENDING', isPaymentPlanRequested: false, pendingSince: new Date() },
+                        create: { programId: shopifyProgramId, personId: selfId, status: 'PENDING', isPaymentPlanRequested: false, pendingSince: new Date() },
+                    });
+                    mockSession.mockResolvedValue({ user: { id: selfId } });
+
+                    // CHECKIN_ENV=local also arms the keyless-kiosk fallback in
+                    // authenticateRequest, which hijacks any cookie-less request as
+                    // `kiosk` -> 403 before the session/role gate runs — send a cookie.
+                    const req = new Request(`http://localhost/api/programs/${shopifyProgramId}/request-payment-plan`, {
+                        method: 'POST',
+                        headers: { cookie: 'session=test' },
+                        body: JSON.stringify({ participantId: selfId }),
+                    }) as unknown as import('next/server').NextRequest;
+                    const res = await RequestPost(req, params(shopifyProgramId));
+                    expect(res.status).toBe(200);
+                    const data = await res.json();
+                    expect(data.warning).toBeUndefined();
+
+                    expect(logSpy).toHaveBeenCalledWith(
+                        expect.stringContaining('Would adjust inventory by -1 for variants: dev-mock-variant-apply-pp'),
+                    );
+                } finally {
+                    logSpy.mockRestore();
+                    process.env.CHECKIN_ENV = prevCheckinEnv;
+                }
+            });
+
+            it('does NOT fire a second -1 on an idempotent re-request (already requested)', async () => {
+                const prevCheckinEnv = process.env.CHECKIN_ENV;
+                process.env.CHECKIN_ENV = 'local';
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+                try {
+                    await prisma.programParticipant.update({
+                        where: { programId_personId: { programId: shopifyProgramId, personId: selfId } },
+                        data: { isPaymentPlanRequested: true },
+                    });
+                    mockSession.mockResolvedValue({ user: { id: selfId } });
+
+                    const req = new Request(`http://localhost/api/programs/${shopifyProgramId}/request-payment-plan`, {
+                        method: 'POST',
+                        headers: { cookie: 'session=test' },
+                        body: JSON.stringify({ participantId: selfId }),
+                    }) as unknown as import('next/server').NextRequest;
+                    const res = await RequestPost(req, params(shopifyProgramId));
+                    expect(res.status).toBe(200);
+                    expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory'));
+                } finally {
+                    logSpy.mockRestore();
+                    process.env.CHECKIN_ENV = prevCheckinEnv;
+                }
+            });
+        });
+    });
+
+    describe('POST /api/finance-ops/payment-plans/refuse', () => {
+        // Cookie header: harmless when CHECKIN_ENV isn't 'local', and required for
+        // the tests below that DO flip it to 'local' — see the comment on the
+        // approve-endpoint's Shopify test above for why (keyless-kiosk fallback).
+        const refuseReq = (body: unknown) => new Request('http://localhost/api/finance-ops/payment-plans/refuse', {
+            method: 'POST',
+            headers: { cookie: 'session=test' },
+            body: JSON.stringify(body),
+        }) as unknown as import('next/server').NextRequest;
+
+        it('401 without a session', async () => {
+            mockSession.mockResolvedValue(null);
+            const res = await RefusePost(refuseReq({ programId, participantId: selfId }));
+            expect(res.status).toBe(401);
+        });
+
+        it('403 for a non-board user', async () => {
+            mockSession.mockResolvedValue({ user: { id: selfId } });
+            const res = await RefusePost(refuseReq({ programId, participantId: selfId }));
+            expect(res.status).toBe(403);
+        });
+
+        it('409 when there is no pending payment-plan request', async () => {
+            await enroll(otherId, { requested: false });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            const res = await RefusePost(refuseReq({ programId, participantId: otherId }));
+            expect(res.status).toBe(409);
+        });
+
+        it("refuses to refuse a plan for the board member's OWN household (conflict of interest)", async () => {
+            await enroll(boardKinId, { requested: true });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            const res = await RefusePost(refuseReq({ programId, participantId: boardKinId }));
+            expect(res.status).toBe(403);
+
+            const row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: boardKinId } },
+            });
+            expect(row?.isPaymentPlanRequested).toBe(true); // unchanged
+        });
+
+        it('refuses a pending request: clears the flag, audit-logs, and adds the seat back (+1)', async () => {
+            const prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const shopifyProgram = await prisma.program.create({
+                data: { name: `PP Refuse Shopify Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: 'dev-mock-variant-refuse-pp' },
+            });
+            try {
+                await prisma.programParticipant.upsert({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
+                    update: { status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
+                    create: { programId: shopifyProgram.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
+                });
+                mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+                const res = await RefusePost(refuseReq({ programId: shopifyProgram.id, participantId: selfId }));
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.warning).toBeUndefined();
+
+                const row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
+                });
+                expect(row?.isPaymentPlanRequested).toBe(false);
+                expect(row?.status).toBe('PENDING'); // still holds the enrollment — known open policy question
+
+                const audit = await prisma.auditLog.findFirst({
+                    where: { actorId: boardId, tableName: 'ProgramParticipant', affectedEntityId: selfId, secondaryAffectedEntity: shopifyProgram.id, action: 'EDIT' },
+                });
+                expect(audit).not.toBeNull();
+
+                expect(logSpy).toHaveBeenCalledWith(
+                    expect.stringContaining('Would adjust inventory by 1 for variants: dev-mock-variant-refuse-pp'),
+                );
+
+                // Double-refuse: the second call finds isPaymentPlanRequested already
+                // false -> 409, no second +1.
+                logSpy.mockClear();
+                const second = await RefusePost(refuseReq({ programId: shopifyProgram.id, participantId: selfId }));
+                expect(second.status).toBe(409);
+                expect(logSpy).not.toHaveBeenCalled();
+            } finally {
+                logSpy.mockRestore();
+                process.env.CHECKIN_ENV = prevCheckinEnv;
+                await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
+                await prisma.program.delete({ where: { id: shopifyProgram.id } });
+            }
+        });
+
+        it('re-application after a refusal fires -1 again', async () => {
+            const prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const shopifyProgram = await prisma.program.create({
+                data: { name: `PP Reapply Shopify Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: 'dev-mock-variant-reapply-pp' },
+            });
+            const reqParams = (id: string | number) => ({ params: Promise.resolve({ id: String(id) }) });
+            try {
+                await prisma.programParticipant.upsert({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
+                    update: { status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
+                    create: { programId: shopifyProgram.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
+                });
+
+                // Refuse -> +1.
+                mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+                const refuseRes = await RefusePost(refuseReq({ programId: shopifyProgram.id, participantId: selfId }));
+                expect(refuseRes.status).toBe(200);
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by 1'));
+
+                // Re-apply -> fresh false->true transition -> -1 again.
+                logSpy.mockClear();
+                mockSession.mockResolvedValue({ user: { id: selfId } });
+                const reapplyRes = await RequestPost(
+                    new Request(`http://localhost/api/programs/${shopifyProgram.id}/request-payment-plan`, {
+                        method: 'POST',
+                        headers: { cookie: 'session=test' },
+                        body: JSON.stringify({ participantId: selfId }),
+                    }) as unknown as import('next/server').NextRequest,
+                    reqParams(shopifyProgram.id),
+                );
+                expect(reapplyRes.status).toBe(200);
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by -1'));
+            } finally {
+                logSpy.mockRestore();
+                process.env.CHECKIN_ENV = prevCheckinEnv;
+                await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
+                await prisma.program.delete({ where: { id: shopifyProgram.id } });
+            }
         });
     });
 

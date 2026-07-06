@@ -270,7 +270,7 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
             expect(row?.status).toBe('PENDING');
         });
 
-        it('200s, fires the real inbound webhook, and activates the PENDING participant', async () => {
+        it('200s, fires the real inbound webhook, and activates the PENDING participant (legacy variant)', async () => {
             asSession();
             await prisma.program.update({ where: { id: programId }, data: { shopifyOrgMemberVariantId: 'dev-mock-variant-route-program-test' } });
             await prisma.programParticipant.create({
@@ -283,6 +283,29 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
             expect(body).toEqual({ ok: true, participants: [{ personId, status: 'ACTIVE' }] });
 
             // The real proof: the webhook actually ran end-to-end and mutated the DB.
+            const row = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } });
+            expect(row?.status).toBe('ACTIVE');
+            expect(row?.pendingSince).toBeNull();
+        });
+
+        // Single-pool model (product decision 2026-07-06): the mock tool must
+        // echo shopifyVariantId too, or every new-model program's local mock-pay
+        // flow 409s despite being fully configured.
+        it('200s, fires the real inbound webhook, and activates the PENDING participant (single-pool variant)', async () => {
+            asSession();
+            await prisma.program.update({
+                where: { id: programId },
+                data: { shopifyOrgMemberVariantId: null, shopifyVariantId: 'dev-mock-variant-single-pool-route-test' },
+            });
+            await prisma.programParticipant.create({
+                data: { programId, personId, status: 'PENDING', pendingSince: new Date() },
+            });
+
+            const res = await POST(jsonReq({ programId, participantIds: [personId] }));
+            expect(res.status).toBe(200);
+            const body = await res.json();
+            expect(body).toEqual({ ok: true, participants: [{ personId, status: 'ACTIVE' }] });
+
             const row = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } });
             expect(row?.status).toBe('ACTIVE');
             expect(row?.pendingSince).toBeNull();

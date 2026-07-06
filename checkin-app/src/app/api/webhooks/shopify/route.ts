@@ -143,9 +143,14 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 // built from — not order total. Fail CLOSED: no variant
                 // configured on the Program, or
                 // no line-item match, means we do NOT activate.
+                // Single-pool model (product decision 2026-07-06): shopifyVariantId,
+                // when set, is matched alongside the legacy pair during the
+                // transition — old programs never get shopifyVariantId, new ones
+                // never get the legacy pair, so this is additive, not a widening
+                // of what any one program accepts.
                 const program = await prisma.program.findUnique({ where: { id: programId } });
                 const programVariantIds = new Set(
-                    [program?.shopifyOrgMemberVariantId, program?.shopifyNonOrgMemberVariantId].filter(
+                    [program?.shopifyVariantId, program?.shopifyOrgMemberVariantId, program?.shopifyNonOrgMemberVariantId].filter(
                         (v): v is string => !!v,
                     ),
                 );
@@ -191,16 +196,17 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                     }
                 }
 
-                // Interim two-pool mirror model (product decision 2026-07-06, extended):
-                // the org-member and non-org-member variants each carry their OWN
-                // Shopify inventory pool, both seeded to maxParticipants — so Shopify
-                // only auto-decrements the pool for the tier actually purchased. Mirror
-                // the same drop onto the SIBLING pool so both pools keep meaning
-                // "remaining shared capacity" (mod webhook lag/races) until the planned
-                // customer-segment/single-variant redesign collapses them into one.
-                // Deliberately AFTER activation is committed, and never allowed to fail
-                // the webhook response — Shopify retries the whole order on a non-2xx.
-                if (activatedCount > 0) {
+                // LEGACY-ONLY two-pool mirror (product decision 2026-07-06, single-
+                // pool redesign): the org-member and non-org-member variants each
+                // carry their OWN Shopify inventory pool, both seeded to
+                // maxParticipants — so Shopify only auto-decrements the pool for the
+                // tier actually purchased, and the sibling pool needs a compensating
+                // mirror. Single-pool (shopifyVariantId) programs need NO mirror —
+                // there's exactly one pool, and Shopify already auto-decremented it
+                // on the sale. Deliberately AFTER activation is committed, and never
+                // allowed to fail the webhook response — Shopify retries the whole
+                // order on a non-2xx.
+                if (activatedCount > 0 && !program?.shopifyVariantId) {
                     const siblingOnly = purchasedOrgMember
                         ? { shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: program?.shopifyNonOrgMemberVariantId ?? null }
                         : { shopifyOrgMemberVariantId: program?.shopifyOrgMemberVariantId ?? null, shopifyNonOrgMemberVariantId: null };

@@ -120,7 +120,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
+        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -156,6 +156,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             // Empty string clears the field. This is the manual repair path when there's
             // no live Shopify to sync against (local/testing).
             ...(isSysAdminOrBoard && shopifyProductId !== undefined && { shopifyProductId: shopifyProductId || null }),
+            ...(isSysAdminOrBoard && shopifyVariantId !== undefined && { shopifyVariantId: shopifyVariantId || null }),
             ...(isSysAdminOrBoard && shopifyOrgMemberVariantId !== undefined && { shopifyOrgMemberVariantId: shopifyOrgMemberVariantId || null }),
             ...(isSysAdminOrBoard && shopifyNonOrgMemberVariantId !== undefined && { shopifyNonOrgMemberVariantId: shopifyNonOrgMemberVariantId || null }),
         };
@@ -191,7 +192,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         let warning: string | undefined;
         const oldMax = currentProgram.maxParticipants;
         const newMax = updatedProgram.maxParticipants;
-        const hasShopifyVariant = !!(updatedProgram.shopifyOrgMemberVariantId || updatedProgram.shopifyNonOrgMemberVariantId);
+        const hasShopifyVariant = !!(updatedProgram.shopifyVariantId || updatedProgram.shopifyOrgMemberVariantId || updatedProgram.shopifyNonOrgMemberVariantId);
 
         if (oldMax !== newMax && hasShopifyVariant) {
             if (oldMax !== null && newMax !== null) {

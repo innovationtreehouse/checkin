@@ -122,12 +122,13 @@ async function fireProgram(programId: number, rawParticipantIds: unknown): Promi
     // handler fails CLOSED unless the paid order's line_items contain one of the
     // program's own Shopify variant ids (webhooks/shopify/route.ts). Program has a
     // price (that's how the participant reached PENDING) but the variant may still
-    // be unset.
+    // be unset. Single-pool model (product decision 2026-07-06): shopifyVariantId
+    // takes priority — new programs never populate the legacy pair.
     const program = await prisma.program.findUnique({
         where: { id: programId },
-        select: { shopifyOrgMemberVariantId: true, shopifyNonOrgMemberVariantId: true },
+        select: { shopifyVariantId: true, shopifyOrgMemberVariantId: true, shopifyNonOrgMemberVariantId: true },
     });
-    const variantId = program?.shopifyOrgMemberVariantId ?? program?.shopifyNonOrgMemberVariantId;
+    const variantId = program?.shopifyVariantId ?? program?.shopifyOrgMemberVariantId ?? program?.shopifyNonOrgMemberVariantId;
     if (!variantId) {
         return apiError("No Shopify variant configured on this program. Set one on the program in program-ops first, or the webhook leaves the participant PENDING.", 409);
     }

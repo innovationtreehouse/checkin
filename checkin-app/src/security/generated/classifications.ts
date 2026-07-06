@@ -193,6 +193,7 @@ export const classifications = {
         shopifyProductId: 'public',
         shopifyOrgMemberVariantId: 'public',
         shopifyNonOrgMemberVariantId: 'public',
+        shopifyVariantId: 'public',
     },
     ProgramVolunteer: {
         programId: 'public',

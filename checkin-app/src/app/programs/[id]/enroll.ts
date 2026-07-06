@@ -49,13 +49,22 @@ export function aggregateEnrollOutcomes(outcomes: EnrollOutcome[]): {
  * comma-joined. The orders/paid webhook splits CheckMeIn_Account_ID on ',' and
  * activates each (webhooks/shopify/route.ts). Constraint: holds only while one
  * household = one membership tier = one variant.
+ *
+ * `discountCode` (single-pool model only — see mintMemberDiscountCode in
+ * lib/shopify.ts) is prepended as `discount=<code>`, mirroring
+ * buildMembershipCheckoutUrl's existing discount-code convention.
  */
 export function buildShopifyCheckoutUrl(
     storeDomain: string | undefined,
     variantId: string,
     enrolledIds: number[],
     programId: string | number,
+    discountCode?: string | null,
 ): string {
     const accountIds = enrolledIds.join(',');
-    return `https://${storeDomain}/cart/${variantId}:${enrolledIds.length}?attributes[CheckMeIn_Account_ID]=${accountIds}&attributes[Program_ID]=${programId}`;
+    const parts: string[] = [];
+    if (discountCode) parts.push(`discount=${encodeURIComponent(discountCode)}`);
+    parts.push(`attributes[CheckMeIn_Account_ID]=${accountIds}`);
+    parts.push(`attributes[Program_ID]=${programId}`);
+    return `https://${storeDomain}/cart/${variantId}:${enrolledIds.length}?${parts.join('&')}`;
 }

@@ -96,26 +96,14 @@ export const POST = withAuth(
                 });
             }
 
-            // Shopify is the source of truth for program capacity (product decision
-            // 2026-07-06, extended): an approved payment-plan/scholarship participant
-            // consumes a real seat exactly like a paid one, so it decrements Shopify
-            // inventory too — both member/non-member pools in parallel, same call
-            // shape as the PATCH /api/programs/[id] maxParticipants propagation (see
-            // the interim two-pool mirror note in webhooks/shopify/route.ts).
-            // Non-fatal: approval already committed above, so a Shopify failure here
-            // surfaces as a warning, not a rejected approval.
-            let warning: string | undefined;
-            const program = await prisma.program.findUnique({ where: { id: programId } });
-            if (program && (program.shopifyOrgMemberVariantId || program.shopifyNonOrgMemberVariantId)) {
-                const ok = await adjustProgramInventory(program, -1);
-                if (!ok) {
-                    warning = "Payment plan approved, but the Shopify inventory adjustment failed. Capacity may be out of sync — check System Status > Link Status.";
-                }
-            }
-
-            const responseObj: Record<string, unknown> = { success: true };
-            if (warning) responseObj.warning = warning;
-            return NextResponse.json(responseObj);
+            // Scholarship lifecycle drives inventory (product decision 2026-07-06):
+            // the seat was already decremented from Shopify at APPLICATION time
+            // (POST .../request-payment-plan), so approval performs NO Shopify
+            // operation — the applicant already holds the seat; approval just
+            // stops billing them for it. This supersedes the earlier approve-time
+            // decrement (see PR history — that double-counted against the
+            // apply-time decrement added alongside it).
+            return NextResponse.json({ success: true });
         } catch (error) {
             logger.error("Failed to approve payment plan:", error);
             return apiError("Failed to approve payment plan", 500);

@@ -340,11 +340,14 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         expect(rows[0].context).toEqual({ operation: 'POST /api/webhooks/shopify' });
     });
 
-    // Interim two-pool mirror model (product decision 2026-07-06, extended): the
-    // org-member/non-member variants each carry their OWN Shopify inventory pool.
-    // Shopify auto-decrements only the pool for the tier actually purchased, so the
-    // webhook mirrors the same drop onto the SIBLING pool after activation.
-    describe('sibling inventory mirror after program activation', () => {
+    // LEGACY-ONLY two-pool mirror (product decision 2026-07-06, single-pool
+    // redesign): the org-member/non-member variants each carry their OWN
+    // Shopify inventory pool. Shopify auto-decrements only the pool for the
+    // tier actually purchased, so the webhook mirrors the same drop onto the
+    // SIBLING pool after activation — but ONLY for programs still on this
+    // legacy model (no shopifyVariantId). See the 'single-pool model' describe
+    // block below for the new-model equivalent (no mirror needed).
+    describe('sibling inventory mirror after program activation (legacy two-variant programs)', () => {
         let siblingProgramId: number;
         let sp1: number;
         let sp2: number;
@@ -449,6 +452,75 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
                 where: { programId_personId: { programId: siblingProgramId, personId: sp1 } },
             });
             expect(row?.status).toBe('ACTIVE');
+        });
+    });
+
+    // Single-pool model (product decision 2026-07-06): shopifyVariantId is
+    // matched alongside the legacy pair (transition), and activation needs NO
+    // mirror call at all — there's exactly one pool, and Shopify already
+    // auto-decremented it on the sale.
+    describe('single-pool model (shopifyVariantId)', () => {
+        let singlePoolProgramId: number;
+        let sgp1: number;
+        let sgh1: number;
+        const SINGLE_VARIANT_ID = '556677';
+
+        beforeAll(async () => {
+            const program = await prisma.program.create({
+                data: { name: `Webhook Single-Pool Test Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: SINGLE_VARIANT_ID },
+            });
+            singlePoolProgramId = program.id;
+
+            const a = await prisma.person.create({
+                data: { name: 'Single Pool P1', email: `sgp1-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
+            });
+            sgp1 = a.id;
+            sgh1 = a.householdId;
+        });
+
+        afterAll(async () => {
+            await prisma.programParticipant.deleteMany({ where: { programId: singlePoolProgramId } });
+            await prisma.program.delete({ where: { id: singlePoolProgramId } });
+            await prisma.person.deleteMany({ where: { id: sgp1 } });
+            await prisma.household.deleteMany({ where: { id: sgh1 } });
+        });
+
+        it('activates on a shopifyVariantId match with no mirror call (single pool, no sibling)', async () => {
+            const prevEnv = process.env.CHECKIN_ENV;
+            // Arms config.shopifyMockActive() so a mirror call (if any fired) would
+            // log rather than hit a real API — asserting its ABSENCE below.
+            process.env.CHECKIN_ENV = 'local';
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            try {
+                await prisma.programParticipant.upsert({
+                    where: { programId_personId: { programId: singlePoolProgramId, personId: sgp1 } },
+                    update: { status: 'PENDING', pendingSince: new Date() },
+                    create: { programId: singlePoolProgramId, personId: sgp1, status: 'PENDING', pendingSince: new Date() },
+                });
+                const body = JSON.stringify({
+                    id: 888,
+                    line_items: [{ variant_id: SINGLE_VARIANT_ID }],
+                    note_attributes: [
+                        { name: 'CheckMeIn_Account_ID', value: String(sgp1) },
+                        { name: 'Program_ID', value: String(singlePoolProgramId) },
+                    ],
+                });
+
+                const res = await POST(webhookReq(body, sign(body)));
+                expect(res.status).toBe(200);
+
+                const row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: singlePoolProgramId, personId: sgp1 } },
+                });
+                expect(row?.status).toBe('ACTIVE');
+
+                // No mirror/adjust call at all — single pool, Shopify already decremented it.
+                expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory'));
+            } finally {
+                logSpy.mockRestore();
+                if (prevEnv === undefined) delete process.env.CHECKIN_ENV;
+                else process.env.CHECKIN_ENV = prevEnv;
+            }
         });
     });
 });

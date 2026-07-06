@@ -64,4 +64,20 @@ describe('buildShopifyCheckoutUrl', () => {
             'https://shop.example.com/cart/gid123:1?attributes[CheckMeIn_Account_ID]=11&attributes[Program_ID]=7'
         );
     });
+
+    // Single-pool model: a member's checkout carries a server-minted discount
+    // code (mintMemberDiscountCode) prepended, mirroring buildMembershipCheckoutUrl.
+    it('prepends discount=<code> when a discount code is given', () => {
+        const url = buildShopifyCheckoutUrl('shop.example.com', 'gid123', [11], '7', 'PRG7-ABCD');
+        expect(url).toBe(
+            'https://shop.example.com/cart/gid123:1?discount=PRG7-ABCD&attributes[CheckMeIn_Account_ID]=11&attributes[Program_ID]=7'
+        );
+    });
+
+    it('omits the discount param entirely when the code is null/undefined', () => {
+        const url = buildShopifyCheckoutUrl('shop.example.com', 'gid123', [11], '7', null);
+        expect(url).toBe(
+            'https://shop.example.com/cart/gid123:1?attributes[CheckMeIn_Account_ID]=11&attributes[Program_ID]=7'
+        );
+    });
 });

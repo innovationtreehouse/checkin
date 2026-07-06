@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { adjustProgramInventory } from "@/lib/shopify";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -65,20 +66,38 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             return apiError("This enrollment is not awaiting payment", 409);
         }
 
-        const updatedParticipant = await prisma.programParticipant.update({
-            where: {
-                programId_personId: { programId, personId: participantId }
-            },
-            data: {
-                isPaymentPlanRequested: true
-            }
+        // Scholarship lifecycle drives inventory (product decision 2026-07-06):
+        // APPLICATION takes a seat out of Shopify's pool, same as a normal paid
+        // checkout would. Transactional false->true guard: only fires -1 the
+        // moment isPaymentPlanRequested actually flips (count>0); an idempotent
+        // re-POST while already requested is a no-op (count=0, no second -1).
+        // Re-application after a refusal (isPaymentPlanRequested reset to false
+        // by the refuse endpoint) is a fresh false->true transition, so it fires
+        // -1 again — intentional (the applicant is asking to hold a seat again).
+        const { count } = await prisma.programParticipant.updateMany({
+            where: { programId, personId: participantId, isPaymentPlanRequested: false },
+            data: { isPaymentPlanRequested: true },
+        });
+
+        const updatedParticipant = await prisma.programParticipant.findUniqueOrThrow({
+            where: { programId_personId: { programId, personId: participantId } },
         });
 
         // Send email to finances
         // In a real implementation this would trigger an actual email via SendGrid, NodeMailer, etc.
         logger.info(`[EMAIL DISPATCH] To: finance@innovationtreehouse.org, Subject: Scholarship / Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
 
-        return NextResponse.json({ success: true, participant: updatedParticipant });
+        let warning: string | undefined;
+        if (count > 0 && participant.program) {
+            const ok = await adjustProgramInventory(participant.program, -1);
+            if (!ok) {
+                warning = "Payment plan requested, but the Shopify inventory adjustment failed. Capacity may be out of sync — check System Status > Link Status.";
+            }
+        }
+
+        const responseObj: Record<string, unknown> = { success: true, participant: updatedParticipant };
+        if (warning) responseObj.warning = warning;
+        return NextResponse.json(responseObj);
     } catch (error) {
         logger.error("Payment plan request error:", error);
         return apiError("Failed to request payment plan", 500);
