@@ -8,25 +8,33 @@ import { isActiveOrgMember, ACTIVE_ORG_MEMBER_INCLUDE } from "@/lib/orgMembershi
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 
 export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
-    const requests = await prisma.programParticipant.findMany({
-        where: {
-            isPaymentPlanRequested: true,
-            status: 'PENDING'
-        },
-        include: {
-            // Nests household->orgMembership (same shape as ACTIVE_ORG_MEMBER_INCLUDE)
-            // so the board can see CURRENT membership while a request is still
-            // pending — wasOrgMemberAtApproval is null until approved, so it can't
-            // answer this. Derive live client-side; nothing new to stamp/store here.
-            person: { include: ACTIVE_ORG_MEMBER_INCLUDE },
-            program: true
-        },
-        orderBy: {
-            pendingSince: 'asc'
-        }
-    });
+    const [requests, boardSettings] = await Promise.all([
+        prisma.programParticipant.findMany({
+            where: {
+                isPaymentPlanRequested: true,
+                status: 'PENDING'
+            },
+            include: {
+                // Nests household->orgMembership (same shape as ACTIVE_ORG_MEMBER_INCLUDE)
+                // so the board can see CURRENT membership while a request is still
+                // pending — wasOrgMemberAtApproval is null until approved, so it can't
+                // answer this. Derive live client-side; nothing new to stamp/store here.
+                person: { include: ACTIVE_ORG_MEMBER_INCLUDE },
+                program: true // carries startAt (public) — half of the next-year flag
+            },
+            orderBy: {
+                pendingSince: 'asc'
+            }
+        }),
+        // The membership-year cutoff. Shipped so the board can flag requests whose
+        // program lands in the NEXT membership year (program.startAt >= next cutoff).
+        // Derived on the client, not stamped: the security stripper drops ad-hoc
+        // booleans, so we ship the two classified inputs (startAt + this boundary)
+        // and compare client-side — same pattern as the Member/Non-member column.
+        prisma.boardSettings.findUnique({ where: { id: 1 } })
+    ]);
 
-    return { ProgramParticipant: requests };
+    return { ProgramParticipant: requests, BoardSettings: boardSettings };
 });
 
 export const POST = withAuth(

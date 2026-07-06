@@ -23,7 +23,7 @@ const requests = [
 describe("finance-ops/payment-plan page", () => {
   it("loads and renders pending payment plan requests", async () => {
     setSession({ id: 1, isSysadmin: true });
-    mockFetchJson({ "/api/finance-ops/payment-plans": requests });
+    mockFetchJson({ "/api/finance-ops/payment-plans": { ProgramParticipant: requests, BoardSettings: null } });
     renderWithProviders(<PendingParticipantsPage />);
 
     expect(await screen.findByText("Pat Participant")).toBeInTheDocument();
@@ -35,7 +35,7 @@ describe("finance-ops/payment-plan page", () => {
   it("approves a request and removes it from the list", async () => {
     setSession({ id: 1, isSysadmin: true });
     const fetchMock = mockFetchJson({
-      "/api/finance-ops/payment-plans": () => requests,
+      "/api/finance-ops/payment-plans": () => ({ ProgramParticipant: requests, BoardSettings: null }),
     });
     renderWithProviders(<PendingParticipantsPage />);
     await screen.findByText("Pat Participant");

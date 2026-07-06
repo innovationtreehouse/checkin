@@ -216,7 +216,7 @@ defineRoute({
     endpoint: 'GET /api/finance-ops/payment-plans',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: null,
-    returns: ['ProgramParticipant', 'Person', 'Program', 'Household', 'OrgMembership'],
+    returns: ['ProgramParticipant', 'Person', 'Program', 'Household', 'OrgMembership', 'BoardSettings'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
