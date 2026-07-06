@@ -603,7 +603,11 @@ export async function mintMemberDiscountCode(
                     target_type: 'line_item',
                     target_selection: 'entitled',
                     entitled_variant_ids: [Number(variantId)],
-                    allocation_method: 'across',
+                    // 'each' applies the amount PER UNIT: a member household enrolling
+                    // N kids buys quantity N of the variant, and each seat gets the
+                    // member price ('across' would subtract the amount once from the
+                    // whole line, overcharging N-1 seats).
+                    allocation_method: 'each',
                     value_type: 'fixed_amount',
                     value: `-${(amountOffCents / 100).toFixed(2)}`,
                     customer_selection: 'all',

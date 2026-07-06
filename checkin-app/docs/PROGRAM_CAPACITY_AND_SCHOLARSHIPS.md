@@ -113,9 +113,9 @@ idempotent no-op by every caller.
 
 - **(a) Withdrawal** — `DELETE /api/programs/[id]/participants` (self or admin removal;
   the same route handles both) and the non-payment kick
-  (`cron/pending-participants`, which can also catch a denied-and-still-PENDING
-  participant since denial resets `isPaymentPlanRequested` to `false` too) both funnel
-  through this.
+  (`cron/pending-participants`; denied-and-still-PENDING participants are excluded
+  from the kick via `paymentPlanDeniedAt: null` — their timeline belongs to the
+  grace-expiry cron in (c)) both funnel through this.
 - **(b) Normal payment** — the `orders/paid` webhook's activation path. A denied
   applicant who pays anyway makes Shopify auto-decrement a *second* unit for the same
   seat (the application's hold already took one out); the webhook releases the hold

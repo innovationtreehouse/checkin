@@ -437,6 +437,31 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
             }
         });
 
+        it('does NOT re-fire the sibling mirror when the same order is redelivered (participant already ACTIVE)', async () => {
+            const prevEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            try {
+                await setSiblingPending(sp1);
+                const body = siblingPayload(String(sp1), NONORG_VARIANT_ID);
+
+                // First delivery activates and mirrors -1.
+                expect((await POST(webhookReq(body, sign(body)))).status).toBe(200);
+                const mirrorCalls = () => logSpy.mock.calls.filter(c =>
+                    String(c[0]).includes(`Would adjust inventory by -1 for variants: ${ORG_VARIANT_ID}`)).length;
+                expect(mirrorCalls()).toBe(1);
+
+                // Shopify redelivers the identical order (timeout / non-2xx retry):
+                // the participant is already ACTIVE, so no second -1 may fire.
+                expect((await POST(webhookReq(body, sign(body)))).status).toBe(200);
+                expect(mirrorCalls()).toBe(1);
+            } finally {
+                logSpy.mockRestore();
+                if (prevEnv === undefined) delete process.env.CHECKIN_ENV;
+                else process.env.CHECKIN_ENV = prevEnv;
+            }
+        });
+
         it('activates the participant and still returns 200 even when the sibling inventory adjust fails', async () => {
             // Default env here (no CHECKIN_ENV=local, no Shopify creds configured in
             // this suite) — adjustProgramInventory's real "missing credentials" path

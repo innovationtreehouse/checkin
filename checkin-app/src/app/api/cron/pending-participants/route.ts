@@ -10,6 +10,11 @@ export const GET = withCron(async () => {
             where: {
                 status: 'PENDING',
                 isPaymentPlanRequested: false,
+                // Denied scholarship applicants are governed by the
+                // scholarship-grace-expiry cron (scholarshipDenialGraceDays),
+                // not this 7-day clock — a denial never resets pendingSince, so
+                // without this exclusion they'd be kicked the night after denial.
+                paymentPlanDeniedAt: null,
                 pendingSince: { not: null }
             },
             include: {
@@ -32,9 +37,10 @@ export const GET = withCron(async () => {
             const warningText = `If not paid, your spot in ${record.program.name} will be freed up. If a payment plan is needed, contact the board via finance@innovationtreehouse.org`;
 
             if (diffDays >= 7) {
-                // Collect for removal below (hold-ledger: a denied scholarship
-                // applicant is isPaymentPlanRequested:false too, so this query can
-                // also catch a still-held seat — see the per-row removal below).
+                // Collect for removal below (denied scholarship applicants are
+                // excluded by the query above; anything caught here is an
+                // ordinary non-payer, though withdrawAndReleaseHold still
+                // handles a held seat correctly if one slips through).
                 toDelete.push(record);
 
                 kickedCount++;

@@ -180,18 +180,22 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                             continue;
                         }
 
-                        await prisma.programParticipant.update({
-                            where: {
-                                programId_personId: { programId, personId: participantId }
-                            },
+                        // Guarded transactionally (status PENDING -> ACTIVE) so a webhook
+                        // redelivery — or a participant already activated elsewhere —
+                        // can't inflate activatedCount and double-fire the sibling
+                        // mirror's -1 below.
+                        const activated = await prisma.programParticipant.updateMany({
+                            where: { programId, personId: participantId, status: 'PENDING' },
                             data: {
                                 status: 'ACTIVE',
                                 pendingSince: null, // clear out the pending timer
                             }
                         });
-                        activatedCount++;
+                        activatedCount += activated.count;
 
-                        logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
+                        if (activated.count > 0) {
+                            logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
+                        }
 
                         // Hold-ledger (product decision 2026-07-06): NORMAL PAYMENT is
                         // one of the three release paths. A denied scholarship
