@@ -128,9 +128,9 @@ defineRoute({
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: 'processes',
     // Bag: { OrgMembershipProcess } with attestations (BackgroundCheckAttestation),
-    // membership (OrgMembership → household Household → participants Person,
-    // leads HouseholdLead).
-    returns: ['OrgMembershipProcess', 'BackgroundCheckAttestation', 'OrgMembership', 'Household', 'Person', 'HouseholdLead'],
+    // membership (OrgMembership → household Household → householdMembers Person,
+    // leads flagged isHouseholdLead).
+    returns: ['OrgMembershipProcess', 'BackgroundCheckAttestation', 'OrgMembership', 'Household', 'Person'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
@@ -146,8 +146,8 @@ defineRoute({
     authorize: { anyRole: ['isBackgroundCheckReviewer', 'isBoardMember'] },
     envelope: 'queue',
     // Bag: { OrgMembershipProcess } with membership (OrgMembership → household Household
-    // → leads HouseholdLead → participant Person).
-    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'HouseholdLead', 'Person'],
+    // → householdMembers Person, leads flagged isHouseholdLead).
+    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'Person'],
     orderedView: [
         ['isBackgroundCheckReviewer', ['everyones:pii', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'member', 'public']],
@@ -174,9 +174,9 @@ defineRoute({
     endpoint: 'GET /api/safety/trusted-adults',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: 'trustedAdults',
-    // Bag: { TrustedAdult } with household (Household → leads HouseholdLead →
-    // participant Person), trustedAdultPerson (Person), reviews (TrustedAdultReview).
-    returns: ['TrustedAdult', 'Household', 'HouseholdLead', 'Person', 'TrustedAdultReview'],
+    // Bag: { TrustedAdult } with household (Household → householdMembers Person,
+    // leads flagged isHouseholdLead), trustedAdultPerson (Person), reviews (TrustedAdultReview).
+    returns: ['TrustedAdult', 'Household', 'Person', 'TrustedAdultReview'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],

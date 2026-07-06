@@ -48,10 +48,6 @@ export const SCOPE_BINDINGS = {
         their_households: { field: 'householdId', eqCtx: 'householdId' },
         their_program_households: { field: 'householdId', inCtx: 'householdIdsInScopePrograms' },
     },
-    HouseholdLead: {
-        their_households: { field: 'householdId', eqCtx: 'householdId' },
-        their_own: { field: 'personId', eqCtx: 'selfId' },
-    },
     OrgMembership: { their_households: { field: 'householdId', eqCtx: 'householdId' } },
     Program: {
         their_program_participants: { field: 'id', inCtx: ['programsLed', 'programsCoreVolIn'] },
