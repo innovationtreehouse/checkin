@@ -6,6 +6,23 @@ import type { Person } from "@/generated/prisma/client";
 import { type DbClient, isRootClient } from "@/lib/db-client";
 
 /**
+ * The scan response's `participant` DTO. The full Person row must never ship:
+ * the primary caller is the anonymous signed kiosk, which holds no sensitive
+ * tier at all — a raw row would put email/phone (pii), dateOfBirth/allergies
+ * (personal) and the role/audit flags (internal) on the kiosk wire for every
+ * badge scan. The kiosk needs only who checked in/out (id + display name) and
+ * isKeyholder (it renders facility open/close state). Same name-or-email-prefix
+ * fallback as getFullAttendance (#329) so the raw address never ships either.
+ */
+function scanParticipantDTO(p: Person) {
+    return {
+        id: p.id,
+        name: p.name?.trim() || p.email?.split("@")[0] || null,
+        isKeyholder: p.isKeyholder,
+    };
+}
+
+/**
  * Process a check-in for a participant who has no active visit.
  *
  * The scan route passes its transaction client `db` so these reads and writes
@@ -48,7 +65,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
     return apiJson({
         message: "Checked in successfully",
         type: "checkin" as const,
-        participant,
+        participant: scanParticipantDTO(participant),
         visit: newVisit,
         signedRequest: authType === "kiosk",
     });
@@ -104,7 +121,11 @@ export async function processCheckout(
                 }
 
                 if (!confirmForceClose) {
-                    const names = remainingUsers.map(u => u.person.name || u.person.email).join(", ");
+                    // Display names only — never the raw email address (the
+                    // warning renders on the kiosk screen). Same #329 fallback.
+                    const names = remainingUsers
+                        .map(u => u.person.name?.trim() || u.person.email?.split("@")[0] || `#${u.person.id}`)
+                        .join(", ");
                     return apiJson({
                         error: `Warning! You are the last isKeyholder, but others are here:\n${names}\n\nBadge again within 10 seconds to confirm you've checked them and close the facility.`,
                         type: "warning" as const
@@ -140,7 +161,7 @@ export async function processCheckout(
     return apiJson({
         message: facilityClosed ? "Checked out and Facility closed" : "Checked out successfully",
         type: "checkout" as const,
-        participant,
+        participant: scanParticipantDTO(participant),
         visit: updatedVisit,
         facilityClosed,
         signedRequest: authType === "kiosk",

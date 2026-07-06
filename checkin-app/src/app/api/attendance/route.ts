@@ -57,10 +57,27 @@ export async function GET(req: NextRequest) {
         const isAdmin = isKiosk || user?.isSysadmin || user?.isBoardMember || user?.isKeyholder;
 
         if (isAdmin) {
-            // Full access: return all visits + counts
+            // Full access: return all visits + counts. The anonymous kiosk device
+            // gets the roster + grouping flags but NOT the personal-tier band
+            // (phone / emergency contacts) — the kiosk UI can't render those
+            // anyway (the EC modal and phone line are session-gated), so they
+            // only ride the wire for authenticated keyholder/board/sysadmin
+            // sessions, matching the keyholders:personal front-desk grant.
+            const wireAttendance = isKiosk
+                ? attendance.map(({ participant, ...v }) => ({
+                    ...v,
+                    participant: {
+                        id: participant.id,
+                        name: participant.name,
+                        isKeyholder: participant.isKeyholder,
+                        isYouth: participant.isYouth,
+                        householdId: participant.householdId,
+                    },
+                }))
+                : attendance;
             return NextResponse.json({
                 access: "full",
-                attendance,
+                attendance: wireAttendance,
                 counts,
                 safety,
                 signedRequest: isKiosk,
@@ -99,9 +116,12 @@ export const DELETE = withAuth({}, async (req, auth) => {
             return apiError("visitId is required", 400);
         }
 
+        // Only householdId is read (for the household-lead permission check).
+        // A full `person: true` include would ship the whole Person row (pii/
+        // personal/internal tiers) on the already-departed fallback path below.
         const visit = await prisma.visit.findUnique({
             where: { id: visitId },
-            include: { person: true }
+            include: { person: { select: { householdId: true } } }
         });
 
         if (!visit) {
@@ -121,7 +141,10 @@ export const DELETE = withAuth({}, async (req, auth) => {
         }
 
         const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
-        const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visit;
+        // Fallback (already-departed race): ship the bare Visit row, never the
+        // included person relation.
+        const { person: _person, ...visitBare } = visit;
+        const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visitBare;
 
         // Fire-and-forget: send check-out notifications (mirrors /api/scan)
         sendCheckinNotifications(visit.personId, 'checkout').catch(err =>

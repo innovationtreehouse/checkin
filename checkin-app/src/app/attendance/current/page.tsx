@@ -9,7 +9,7 @@ import {
   Alert, Anchor, Badge, Box, Button, Card, Center, Group, Loader, Modal, Paper,
   SimpleGrid, Stack, Text, TextInput, Title,
 } from "@mantine/core";
-import { formatTime, isYouth } from "@/lib/time";
+import { formatTime } from "@/lib/time";
 import { formatPhone } from "@/lib/phone";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
@@ -19,11 +19,14 @@ import { PageLoader } from "@/components/ui/PageLoader";
 import { CountBadge } from "@/components/ui/CountBadge";
 type Person = {
   id: number;
-  email: string;
+  // Attendance participants never carry email/dateOfBirth on the wire (the
+  // server resolves the display name and the derived isYouth flag instead);
+  // other sources (roles search) may still include email.
+  email?: string | null;
   name?: string | null;
   isKeyholder: boolean;
   isSysadmin: boolean;
-  dateOfBirth?: string | null;
+  isYouth?: boolean;
   householdId?: number | null;
   phone?: string | null;
   household?: { emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[] } | null;
@@ -77,14 +80,14 @@ function KioskDisplayInner() {
 
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
   const keyholderList = fullAttendance.filter(v => v.participant.isKeyholder);
-  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !isYouth(v.participant.dateOfBirth));
-  const youthList = fullAttendance.filter(v => isYouth(v.participant.dateOfBirth));
+  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !v.participant.isYouth);
+  const youthList = fullAttendance.filter(v => v.participant.isYouth);
 
   const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
   const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
   const householdKeyholders = limitedHousehold.filter(v => v.participant.isKeyholder);
-  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !isYouth(v.participant.dateOfBirth));
-  const householdYouth = limitedHousehold.filter(v => isYouth(v.participant.dateOfBirth));
+  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !v.participant.isYouth);
+  const householdYouth = limitedHousehold.filter(v => v.participant.isYouth);
 
   const isCheckedIn = isFull
     ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)
@@ -273,7 +276,7 @@ function KioskDisplayInner() {
   const kioskDisplayNames = useMemo(() => {
     if (!isKioskMode) return new Map<number, string>();
     const allVisits = [...keyholderList, ...volunteerList, ...youthList];
-    return getKioskDisplayNames(allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, email: v.participant.email })));
+    return getKioskDisplayNames(allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, email: v.participant.email ?? undefined })));
   }, [isKioskMode, keyholderList, volunteerList, youthList]);
 
   const canSeeNames = !isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin || currentUserIsBoardMember);
@@ -291,7 +294,7 @@ function KioskDisplayInner() {
               style={{ cursor: canSeeNames ? 'pointer' : 'default' }}
               onClick={() => { if (canSeeNames) setSelectedParticipant(visit.participant); }}
             >
-              {isKioskMode ? (kioskDisplayNames.get(visit.participant.id) || visit.participant.name || visit.participant.email.split("@")[0]) : (visit.participant.name || visit.participant.email.split("@")[0])}
+              {isKioskMode ? (kioskDisplayNames.get(visit.participant.id) || visit.participant.name || visit.participant.email?.split("@")[0] || "Unknown") : (visit.participant.name || visit.participant.email?.split("@")[0] || "Unknown")}
             </Text>
             <Group gap={6} align="center">
               <Text c="dimmed" size="xs">{formatTime(visit.arrivedAt)}</Text>
@@ -479,7 +482,7 @@ function KioskDisplayInner() {
                 <Paper key={v.id} withBorder radius="md" p="sm">
                   <Group justify="space-between">
                     <div>
-                      <Text fw={500}>{v.participant.name || v.participant.email.split('@')[0]}</Text>
+                      <Text fw={500}>{v.participant.name || v.participant.email?.split('@')[0] || "Unknown"}</Text>
                       <Text size="xs" c="dimmed">Arrived: {formatTime(v.arrivedAt)}</Text>
                     </div>
                     <Button color="red" variant="light" onClick={() => handleForceCheckout(v.id)} disabled={checkingOut === v.id}>
@@ -502,7 +505,7 @@ function KioskDisplayInner() {
         {selectedParticipant && (
           <>
             <Stack align="center" gap={4} mb="lg">
-              <Text fz="xl" fw={700}>{selectedParticipant.name || selectedParticipant.email.split('@')[0]}</Text>
+              <Text fz="xl" fw={700}>{selectedParticipant.name || selectedParticipant.email?.split('@')[0] || "Unknown"}</Text>
               {selectedParticipant.phone && (
                 <Text c="dimmed">User Phone: <Anchor href={`tel:${selectedParticipant.phone.replace(/\D/g, '')}`} c="teal">{formatPhone(selectedParticipant.phone)}</Anchor></Text>
               )}

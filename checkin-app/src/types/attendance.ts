@@ -1,43 +1,50 @@
-import type { Prisma } from '@/generated/prisma/client';
-
 /**
- * Visit with included participant and event data, as returned by getFullAttendance.
- * PII-minimized (M1): email/googleId and role flags are deliberately NOT part of this
- * shape — getFullAttendance resolves the display name server-side and strips them, so a
- * consumer typed against this can't reach back for the raw address/identifiers.
+ * Visit with participant and event data, as returned by getFullAttendance.
+ * PII-minimized (M1): email/googleId and role flags are deliberately NOT part of
+ * this shape — getFullAttendance resolves the display name server-side and strips
+ * them, so a consumer typed against this can't reach back for the raw
+ * address/identifiers. Likewise dateOfBirth (personal tier) never ships: the
+ * server computes the derived `isYouth` flag instead.
+ *
+ * `phone` and `household` (emergency contacts) are the personal-tier band for
+ * front-desk staff: present for authenticated keyholder/board/sysadmin sessions,
+ * absent on the anonymous kiosk wire (see GET /api/attendance).
  */
-export type VisitWithDetails = Prisma.VisitGetPayload<{
-    include: {
-        participant: {
-            select: {
-                id: true;
-                name: true;
-                isKeyholder: true;
-                dateOfBirth: true;
-                householdId: true;
-                phone: true;
-                household: {
-                    select: {
-                        id: true;
-                        emergencyContacts: {
-                            select: {
-                                id: true;
-                                name: true;
-                                phone: true;
-                                relationship: true;
-                            };
-                        };
-                    };
-                };
-            };
-        };
-        event: {
-            include: {
-                program: true;
-            };
-        };
-    };
-}>;
+export interface AttendanceParticipant {
+    id: number;
+    name: string | null;
+    isKeyholder: boolean;
+    isYouth: boolean;
+    householdId: number | null;
+    phone?: string | null;
+    household?: {
+        id: number;
+        emergencyContacts: {
+            id: number;
+            name: string;
+            phone: string;
+            relationship: string | null;
+        }[];
+    } | null;
+}
+
+export interface VisitWithDetails {
+    id: number;
+    personId: number;
+    arrivedAt: Date | string;
+    departedAt: Date | string | null;
+    arrivedVia: string;
+    departedVia: string | null;
+    associatedEventId: number | null;
+    participant: AttendanceParticipant;
+    event: {
+        id: number;
+        name: string;
+        startAt: Date | string;
+        endAt: Date | string;
+        program: { id: number; name: string } | null;
+    } | null;
+}
 
 /**
  * Attendance counts breakdown.

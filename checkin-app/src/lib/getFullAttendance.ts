@@ -30,9 +30,17 @@ export async function getFullAttendance() {
                     }
                 },
             },
+            // Explicit select: the UI renders only the program-name badge. An
+            // `include` would ship internal Event fields (attendanceConfirmedAt…)
+            // and the whole Program row incl. leadMentorNotificationSettings
+            // (personal tier) to every attendance viewer.
             event: {
-                include: {
-                    program: true
+                select: {
+                    id: true,
+                    name: true,
+                    startAt: true,
+                    endAt: true,
+                    program: { select: { id: true, name: true } },
                 }
             }
         },
@@ -69,15 +77,17 @@ export async function getFullAttendance() {
     // Drop email/googleId from the wire (M1): resolve the same name-or-email-prefix
     // fallback the UI already falls back to (`name || email.split("@")[0]`) here,
     // server-side, so `name` is always populated and the raw address never ships.
-    // Strip the raw included `person` (carries email) out of the spread and re-emit
-    // a sanitized DTO under the unchanged wire key `participant` (API contract).
+    // Likewise dateOfBirth (personal tier) never ships — the UI only ever needs
+    // the derived isYouth flag, which is computed here. Strip the raw included
+    // `person` out of the spread and re-emit a sanitized DTO under the unchanged
+    // wire key `participant` (API contract).
     const attendance = activeVisits.map(({ person, ...v }) => ({
         ...v,
         participant: {
             id: person.id,
             name: person.name?.trim() || person.email?.split("@")[0] || null,
             isKeyholder: person.isKeyholder,
-            dateOfBirth: person.dateOfBirth,
+            isYouth: youthMap.get(v.id)!,
             householdId: person.householdId,
             phone: person.phone,
             household: person.household,
