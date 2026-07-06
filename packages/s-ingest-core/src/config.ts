@@ -16,12 +16,22 @@ const dbSchema = z.object({
   STORE_ID: z.string().min(1).optional(),
 });
 
-const shopifySchema = z.object({
-  SHOPIFY_SHOP: z.string().min(1, "SHOPIFY_SHOP is required"),
-  SHOPIFY_ADMIN_TOKEN: z.string().min(1, "SHOPIFY_ADMIN_TOKEN is required"),
-  SHOPIFY_API_VERSION: z.string().min(1).default("2025-07"),
-  CUTOVER_DATE: z.string().min(1, "CUTOVER_DATE is required"),
-});
+const shopifySchema = z
+  .object({
+    SHOPIFY_SHOP: z.string().min(1, "SHOPIFY_SHOP is required"),
+    // Static token (local dev / legacy custom apps) OR client-credentials (deployed
+    // Lambda, minted at runtime — see s-read-function/src/shopify/token.ts). At least
+    // one of the two must be present; enforced below since Zod's object schema can't
+    // express "A or (B and C)" declaratively.
+    SHOPIFY_ADMIN_TOKEN: z.string().min(1).optional(),
+    SHOPIFY_CLIENT_ID: z.string().min(1).optional(),
+    SHOPIFY_CLIENT_SECRET: z.string().min(1).optional(),
+    SHOPIFY_API_VERSION: z.string().min(1).default("2025-07"),
+    CUTOVER_DATE: z.string().min(1, "CUTOVER_DATE is required"),
+  })
+  .refine((v) => Boolean(v.SHOPIFY_ADMIN_TOKEN) || Boolean(v.SHOPIFY_CLIENT_ID && v.SHOPIFY_CLIENT_SECRET), {
+    message: "Set SHOPIFY_ADMIN_TOKEN (local/legacy), or both SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET (deployed).",
+  });
 
 export interface DbConfig {
   databaseUrl: string;
@@ -36,7 +46,14 @@ export interface DbConfig {
 
 export interface ShopifyConfig {
   shop: string;
-  adminToken: string;
+  /**
+   * Static Admin API token (local dev / legacy custom apps). When present it's used
+   * verbatim forever — takes precedence over clientId/clientSecret, never minted or cached.
+   */
+  adminToken?: string;
+  /** Client-credentials grant identity, used to mint a short-lived (~24h) token when adminToken is absent. */
+  clientId?: string;
+  clientSecret?: string;
   apiVersion: string;
   cutoverDate: string;
   /** GraphQL endpoint derived from shop + apiVersion. */
@@ -57,6 +74,8 @@ export function loadShopifyConfig(env: NodeJS.ProcessEnv = process.env): Shopify
   return {
     shop,
     adminToken: parsed.SHOPIFY_ADMIN_TOKEN,
+    clientId: parsed.SHOPIFY_CLIENT_ID,
+    clientSecret: parsed.SHOPIFY_CLIENT_SECRET,
     apiVersion: parsed.SHOPIFY_API_VERSION,
     cutoverDate: parsed.CUTOVER_DATE,
     endpoint: `https://${shop}/admin/api/${parsed.SHOPIFY_API_VERSION}/graphql.json`,
