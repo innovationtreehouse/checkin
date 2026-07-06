@@ -188,6 +188,75 @@ describe('createShopifyProgramVariants', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1); // only token request
     });
 
+    describe('inventory branch (maxParticipants configured, real Shopify path)', () => {
+        // Single priced tier (member only) keeps the fetch sequence to one variant:
+        // token, product, variant, locations, [inventory_levels/set] — see shopify.ts:157-238.
+        it('sets inventory at the store location when maxParticipants is configured', async () => {
+            mockTokenResponse(fetchMock);
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 500 } }) }); // product
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { id: 600, inventory_item_id: 700 } }) }); // member variant
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 900 }] }) }); // locations
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) }); // inventory_levels/set
+
+            const result = await createShopifyProgramVariants('Inventory Program', 10, null, 5);
+
+            expect(result).toEqual({
+                shopifyProductId: '500',
+                shopifyOrgMemberVariantId: '600',
+                shopifyNonOrgMemberVariantId: null,
+            });
+            expect(fetchMock).toHaveBeenCalledTimes(5);
+            expect(String(fetchMock.mock.calls[3][0])).toContain('/locations.json');
+            const invCall = fetchMock.mock.calls[4];
+            expect(String(invCall[0])).toContain('/inventory_levels/set.json');
+            expect(JSON.parse((invCall[1] as RequestInit).body as string)).toEqual({
+                location_id: 900,
+                inventory_item_id: 700,
+                available: 5,
+            });
+        });
+
+        it('logs and does not fail the whole call when inventory_levels/set itself fails (non-fatal)', async () => {
+            mockTokenResponse(fetchMock);
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 501 } }) });
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { id: 601, inventory_item_id: 701 } }) });
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 901 }] }) });
+            fetchMock.mockResolvedValueOnce({ ok: false, status: 500, text: async () => 'inventory boom' });
+
+            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            const result = await createShopifyProgramVariants('Inventory Fail Program', 10, null, 3);
+
+            // Non-fatal: the variant itself was created fine; only the inventory
+            // step failed, and it's logged rather than surfaced as an error email.
+            expect(result).toEqual({
+                shopifyProductId: '501',
+                shopifyOrgMemberVariantId: '601',
+                shopifyNonOrgMemberVariantId: null,
+            });
+            expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to set inventory: 500'), 'inventory boom');
+            expect(sendEmail).not.toHaveBeenCalled();
+            // afterEach's jest.restoreAllMocks() cleans up errSpy — mockRestore()
+            // here would also wipe the calls we just asserted on.
+        });
+
+        it('skips inventory_levels/set when the store has no locations configured', async () => {
+            mockTokenResponse(fetchMock);
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 502 } }) });
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { id: 602, inventory_item_id: 702 } }) });
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [] }) });
+
+            const result = await createShopifyProgramVariants('No Location Program', 10, null, 2);
+
+            expect(result).toEqual({
+                shopifyProductId: '502',
+                shopifyOrgMemberVariantId: '602',
+                shopifyNonOrgMemberVariantId: null,
+            });
+            // No 5th call: locations returned empty, so inventory_levels/set is never reached.
+            expect(fetchMock).toHaveBeenCalledTimes(4);
+        });
+    });
+
     it('times out a hung product request and emails admins (does not hang)', async () => {
         mockTokenResponse(fetchMock); // token succeeds (its own AbortSignal.timeout is untouched)...
         // ...then the product create hangs: a fetch that only settles on abort stands in for a
