@@ -88,7 +88,14 @@ function withDatabase(url: string, dbName: string): string {
 }
 
 function createDatabase(adminUrl: string, dbName: string) {
-    execFileSync("psql", [adminUrl, "-v", "ON_ERROR_STOP=1", "-c", `DROP DATABASE IF EXISTS "${dbName}"; CREATE DATABASE "${dbName}";`], {
+    // DROP/CREATE DATABASE cannot run inside a transaction block, and psql
+    // sends a single `-c` argument as one query string — even semicolon-
+    // separated statements in it run as one implicit transaction. Two
+    // separate `-c` invocations, not one combined string.
+    execFileSync("psql", [adminUrl, "-v", "ON_ERROR_STOP=1", "-c", `DROP DATABASE IF EXISTS "${dbName}";`], {
+        stdio: ["ignore", "pipe", "inherit"],
+    });
+    execFileSync("psql", [adminUrl, "-v", "ON_ERROR_STOP=1", "-c", `CREATE DATABASE "${dbName}";`], {
         stdio: ["ignore", "pipe", "inherit"],
     });
 }
