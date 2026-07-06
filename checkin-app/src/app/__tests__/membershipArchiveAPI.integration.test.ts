@@ -82,26 +82,27 @@ describe('Membership application archive API', () => {
     });
 
     it.each(['INTAKE', 'PENDING_EXTERNAL_ACTION', 'PENDING_PAYMENT'] as const)(
-        'board archives a stale %s process → archivedAt/By set, drops off the list, audit written',
+        'board archives a stale %s process → status ARCHIVED, drops off the list, audit written',
         async (status) => {
             const { processId } = await makeProcess(`Stale-${status}`, status);
             asBoard(boardId);
             const res = await ARCHIVE(req({ processId }) as never);
             expect(res.status).toBe(200);
 
+            // Transitions to the terminal ARCHIVED status (single declarative axis).
             const after = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
-            expect(after?.archivedAt).not.toBeNull();
-            expect(after?.archivedById).toBe(boardId);
-            expect(after?.status).toBe(status); // status is untouched — only archived
+            expect(after?.status).toBe('ARCHIVED');
 
             // No longer surfaces on the board applications list.
             const listRes = await ADMIN_LIST(listReq() as never);
             const listed = (await listRes.json()).processes.map((p: { id: number }) => p.id);
             expect(listed).not.toContain(processId);
 
+            // The audit row captures who + the phase it was archived from.
             const audit = await prisma.auditLog.findFirst({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId }, orderBy: { id: 'desc' } });
             expect(audit?.actorId).toBe(boardId);
-            expect(audit?.newData).toMatchObject({ archived: true });
+            expect(audit?.oldData).toMatchObject({ status });
+            expect(audit?.newData).toMatchObject({ status: 'ARCHIVED' });
         },
     );
 
@@ -112,7 +113,7 @@ describe('Membership application archive API', () => {
         expect(res.status).toBe(409);
         expect((await res.json()).code).toBe('wrong_phase');
         const after = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
-        expect(after?.archivedAt).toBeNull();
+        expect(after?.status).toBe('ACTIVE');
     });
 
     it('rejects a non-board user (403)', async () => {
@@ -121,21 +122,20 @@ describe('Membership application archive API', () => {
         const res = await ARCHIVE(req({ processId }) as never);
         expect(res.status).toBe(403);
         const after = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
-        expect(after?.archivedAt).toBeNull();
+        expect(after?.status).toBe('INTAKE');
     });
 
     it('archiving an already-archived process is an idempotent no-op (200, no second audit)', async () => {
         const { processId } = await makeProcess('Idempotent', 'INTAKE');
         asBoard(boardId);
         await ARCHIVE(req({ processId }) as never);
-        const first = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         const auditCount = () => prisma.auditLog.count({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId } });
         const before = await auditCount();
 
         const res = await ARCHIVE(req({ processId }) as never);
         expect(res.status).toBe(200);
         const second = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
-        expect(second?.archivedAt?.getTime()).toBe(first?.archivedAt?.getTime());
+        expect(second?.status).toBe('ARCHIVED');
         expect(await auditCount()).toBe(before);
     });
 
@@ -158,16 +158,16 @@ describe('Membership application archive API', () => {
         expect(state.process).toBeNull();
 
         // Start again → a brand-new process, not the archived one, and no P2002 from
-        // the partial unique index (which now excludes archived rows).
+        // the partial unique index (ARCHIVED isn't in its in-flight status set, so
+        // the disposed row no longer occupies the one-in-flight slot).
         const fresh = await startIntake(userId);
         expect(fresh.id).not.toBe(processId);
         expect(fresh.status).toBe('INTAKE');
-        expect(fresh.archivedAt).toBeNull();
         expect(fresh.orgMembershipId).toBe(membershipId);
 
-        // The archived process is untouched — still on record, still archived.
+        // The archived process is untouched — still on record, terminal ARCHIVED.
         const old = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
-        expect(old?.archivedAt).not.toBeNull();
+        expect(old?.status).toBe('ARCHIVED');
     });
 
     it('a board-archived INTAKE cannot be resumed or submitted', async () => {
@@ -179,10 +179,9 @@ describe('Membership application archive API', () => {
         const started = await startIntake(userId);
         expect(started.id).not.toBe(processId);
 
-        // submitIntake targets the archived INTAKE by nothing (it's skipped) — the
-        // fresh INTAKE from startIntake is the only live one, so submit acts on that,
-        // never the disposed row. Archive it too and confirm submit finds no process.
-        await prisma.orgMembershipProcess.update({ where: { id: started.id }, data: { archivedAt: new Date() } });
+        // submitIntake only ever targets a live INTAKE — archive the fresh one too
+        // and confirm submit finds no process to act on.
+        await prisma.orgMembershipProcess.update({ where: { id: started.id }, data: { status: 'ARCHIVED' } });
         await expect(submitIntake(userId)).rejects.toMatchObject({ code: 'no_process' });
     });
 });

@@ -267,6 +267,10 @@ enum OrgMembershipProcessStatus {
   BLOCKED
   PENDING_RENEWAL
   RENEWAL_PENDING_BG
+  // Board-disposed abandoned application. Terminal, like ACTIVE/BLOCKED: it's a
+  // status value (not a parallel flag) so "is this live?" stays a single
+  // declarative status check. Who/when/from-phase live in the AuditLog row.
+  ARCHIVED
 }
 
 enum AttestationResult {
@@ -367,12 +371,6 @@ model OrgMembershipProcess {
   renewalReminderSentAt DateTime?
   /// @sensitivity:internal
   isPaymentPlanRequested Boolean @default(false)
-  /// Board disposal of an abandoned (non-ACTIVE) application: once set the process
-  /// drops off the board applications list. archivedById is the acting board member.
-  /// @sensitivity:internal
-  archivedAt            DateTime?
-  /// @sensitivity:internal
-  archivedById          Int?
 
   attestations BackgroundCheckAttestation[]
 
