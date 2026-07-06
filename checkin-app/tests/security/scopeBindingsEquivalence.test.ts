@@ -82,13 +82,8 @@ function referenceScopesHeld(
             if (householdId !== undefined && ctx.householdIdsInScopePrograms.has(householdId)) scopes.add('their_program_households');
             break;
         }
-        case 'HouseholdLead': {
-            const householdId = num(row.householdId);
-            const personId = num(row.personId);
-            if (householdId !== undefined && householdId === ctx.householdId) scopes.add('their_households');
-            if (personId !== undefined && personId === ctx.selfId) scopes.add('their_own');
-            break;
-        }
+        // 'HouseholdLead': model dropped in the a1 contract phase (superseded by
+        // Person.isHouseholdLead). No binding, no rows, no case — gone entirely.
         case 'OrgMembership': {
             const householdId = num(row.householdId);
             if (householdId !== undefined && householdId === ctx.householdId) scopes.add('their_households');
@@ -317,6 +312,6 @@ describe('S1 — scopesHeld ≡ frozen switch + intentional deltas (personas × 
     it('covers every bound model', () => {
         // Guard against the row set silently not exercising a model.
         expect(MODELS).toEqual(expect.arrayContaining(Object.keys(SCOPE_BINDINGS)));
-        expect(Object.keys(SCOPE_BINDINGS).length).toBe(19); // -Fee (Blocker 1) +AuditLog (Blocker 2)
+        expect(Object.keys(SCOPE_BINDINGS).length).toBe(18); // -Fee (Blocker 1) +AuditLog (Blocker 2) -HouseholdLead (a1 contract)
     });
 });
