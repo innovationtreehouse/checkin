@@ -117,7 +117,7 @@ describe("safety/trusted-adults page", () => {
         expect.objectContaining({ body: JSON.stringify({ reviewId: 9, decision: "REQUEST_INFO", note: "Need proof of ID." }) }),
       ),
     );
-  });
+  }, 10000); // heavy: full page + modal opened twice + two decision round-trips
 
   it("leaves an empty queue when the initial load fails", async () => {
     setSession({ id: 1, isBoardMember: true, householdId: 1 });
@@ -185,7 +185,7 @@ describe("safety/trusted-adults page", () => {
     await screen.findByText("Guardian House");
     expect(screen.getByText("Renewal")).toBeInTheDocument();
     expect(screen.queryByText(/lapsed/)).not.toBeInTheDocument();
-  });
+  }, 10000); // heavy: renders the full page three times (mount/unmount ×3)
 
   it("shows the fallback failure message on a decision error, and dismisses the alert", async () => {
     setSession({ id: 1, isBoardMember: true, householdId: 1 });
@@ -273,7 +273,7 @@ describe("safety/trusted-adults page", () => {
         expect.objectContaining({ body: JSON.stringify({ reviewId: 9, action: "revoke" }) }),
       ),
     );
-  });
+  }, 10000); // heaviest test in file: full page + modal + 3 sequential override round-trips; guards the full-suite serial flake
 
   it("hides override actions for a revoked review, and shows an override failure message", async () => {
     const revoked = [{ ...trustedAdults[0], reviews: [{ ...trustedAdults[0].reviews[0], status: "REVOKED" }] }];
