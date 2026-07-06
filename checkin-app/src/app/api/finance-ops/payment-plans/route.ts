@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/auth";
 import { handler } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { isActiveOrgMember, ACTIVE_ORG_MEMBER_INCLUDE } from "@/lib/orgMembership";
+import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 
 export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
     const requests = await prisma.programParticipant.findMany({
@@ -38,6 +39,16 @@ export const POST = withAuth(
 
             if (Number.isNaN(programId) || Number.isNaN(participantId)) {
                 return apiError("programId and participantId are required", 400);
+            }
+
+            // Conflict of interest: a board member may not approve their OWN household's
+            // program payment plan (activate an enrollment without payment for their own
+            // family). Sysadmin bypasses.
+            if (auth.type === 'session') {
+                const target = await prisma.person.findUnique({ where: { id: participantId }, select: { householdId: true } });
+                if (await hasHouseholdConflict(prisma, auth.user.id, target?.householdId, { isSysadmin: auth.user.isSysadmin === true })) {
+                    return apiError("You cannot approve your own household's payment plan — a sysadmin must.", 403);
+                }
             }
 
             // Point-in-time snapshot: membership status changes over time, so this

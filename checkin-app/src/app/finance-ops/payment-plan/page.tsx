@@ -9,6 +9,7 @@ import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { formatDateTime } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
+import { sharesHousehold } from '@/lib/conflictOfInterest';
 import { formatCents } from '@inventory/money';
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -23,6 +24,7 @@ type PaymentPlanRequest = {
     // Current (live) membership, not the point-in-time snapshot — nothing is
     // stamped until the request is approved, so this is derived on render.
     household?: { orgMembership?: { status: string } | null } | null;
+    householdId: number | null;
   };
   program: {
     id: number;
@@ -33,7 +35,11 @@ type PaymentPlanRequest = {
 };
 
 export default function PendingParticipantsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
+  const { user: me, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
+  // Conflict of interest: a board member may not approve their OWN household member's
+  // plan (mirrors the server guard). Sysadmin keeps the button. UX only — server enforces.
+  const ownHousehold = (req: PaymentPlanRequest) =>
+    me?.isSysadmin !== true && sharesHousehold(me?.householdId, req.person.householdId);
 
   const [requests, setRequests] = useState<PaymentPlanRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,7 +150,12 @@ export default function PendingParticipantsPage() {
       header: 'Actions',
       align: 'right',
       render: (req) => (
-        <Button size="xs" fz={15} color="green" variant="light" onClick={() => handleApprove(req.programId, req.personId)}>
+        <Button
+          size="xs" fz={15} color="green" variant="light"
+          disabled={ownHousehold(req)}
+          title={ownHousehold(req) ? "You can't approve your own household's plan — a sysadmin must." : undefined}
+          onClick={() => handleApprove(req.programId, req.personId)}
+        >
           Approve &amp; Mark Active
         </Button>
       ),
