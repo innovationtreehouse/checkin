@@ -185,8 +185,10 @@ describe('Phase 3 — manual PERSON_BG submit + queue gating + e2e', () => {
         });
         // Subject whose household carries no name — the render must fall back to
         // "No household on file" rather than blank (Person.householdId is required,
-        // so a nameless household is the real "no household context" case).
-        const namelessHh = await prisma.household.create({ data: { name: null } });
+        // so an empty-name household is the real "no household context" case).
+        // name is NOT NULL; "" is the empty sentinel and the render's falsy check
+        // (`household?.name ? … : "No household on file"`) treats it like the old null.
+        const namelessHh = await prisma.household.create({ data: { name: "" } });
         const orphan = await makePerson('queue-orphan', namelessHh.id, { dateOfBirth: ADULT_DOB });
         const orphanBg = await prisma.orgMembershipProcess.create({
             data: { kind: 'PERSON_BG', subjectPersonId: orphan.id, orgMembershipId: null, status: 'PENDING_BG_REVIEW' },
@@ -214,7 +216,7 @@ describe('Phase 3 — manual PERSON_BG submit + queue gating + e2e', () => {
         expect(withHh?.subjectPerson?.name).toBe('queue-subject');
         expect(withHh?.subjectPerson?.household?.name).toBe(`${TAG} queueSubjHh`);
         expect(noHh?.subjectPerson?.name).toBe('queue-orphan');
-        expect(noHh?.subjectPerson?.household?.name).toBeNull(); // nameless household → "No household on file"
+        expect(noHh?.subjectPerson?.household?.name).toBe(""); // empty-name household → "No household on file"
     });
 
     it('end-to-end: submit → two distinct reviewers attest → only the subject is stamped → dashboard clears', async () => {

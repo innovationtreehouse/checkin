@@ -49,11 +49,11 @@ describe('New-program announce notification trigger', () => {
         await prisma.person.deleteMany({ where: { id: { in: existingUserIds } } });
 
         const admin = await prisma.person.create({
-            data: { email: 'admin-announce-notify-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } },
+            data: { email: 'admin-announce-notify-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } },
         });
         adminId = admin.id;
         const lead = await prisma.person.create({
-            data: { email: 'lead-announce-notify-test@example.com', name: 'Lead', household: { create: {} } },
+            data: { email: 'lead-announce-notify-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } },
         });
         leadId = lead.id;
     });

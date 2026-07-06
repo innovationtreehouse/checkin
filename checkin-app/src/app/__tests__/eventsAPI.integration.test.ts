@@ -36,17 +36,17 @@ describe('Events API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.person.create({
-            data: { email: 'admin-events-api-test@example.com', name: 'Admin Events Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-events-api-test@example.com', name: 'Admin Events Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.person.create({
-            data: { email: 'user-events-api-test@example.com', name: 'User Events Test', household: { create: {} } }
+            data: { email: 'user-events-api-test@example.com', name: 'User Events Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
 
         const mentor = await prisma.person.create({
-            data: { email: 'mentor-events-api-test@example.com', name: 'Mentor Events Test', household: { create: {} } }
+            data: { email: 'mentor-events-api-test@example.com', name: 'Mentor Events Test', household: { create: { name: "Test HH" } } }
         });
         testLeadMentorId = mentor.id;
 

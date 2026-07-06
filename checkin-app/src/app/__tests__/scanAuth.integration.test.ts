@@ -103,7 +103,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
                     name: 'Kiosk Keyholder',
                     email: `kiosk-${TAG}@example.com`,
                     isKeyholder: true,
-                    household: { create: {} },
+                    household: { create: { name: "Test HH" } },
                 },
             });
             kioskId = k.id;
@@ -249,7 +249,7 @@ describe('POST /api/scan — REAL auth wiring (no @/lib/auth mock)', () => {
                     data: {
                         name,
                         email: `${name.replace(/\s+/g, '-').toLowerCase()}-${TAG}@example.com`,
-                        household: { create: {} },
+                        household: { create: { name: "Test HH" } },
                         ...extra,
                     },
                 });

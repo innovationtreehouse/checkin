@@ -45,12 +45,12 @@ describe('My Events API Integration Tests', () => {
 
         // Setup mock database records
         const user = await prisma.person.create({
-            data: { email: 'user-mine-events-test@example.com', name: 'User Mine Test', household: { create: {} } }
+            data: { email: 'user-mine-events-test@example.com', name: 'User Mine Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
 
         const volunteer = await prisma.person.create({
-            data: { email: 'volunteer-mine-events-test@example.com', name: 'Volunteer Mine Test', household: { create: {} } }
+            data: { email: 'volunteer-mine-events-test@example.com', name: 'Volunteer Mine Test', household: { create: { name: "Test HH" } } }
         });
         testVolunteerId = volunteer.id;
 
