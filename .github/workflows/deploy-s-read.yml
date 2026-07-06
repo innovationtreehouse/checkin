@@ -72,8 +72,6 @@ jobs:
         run: |
           SHA=$(git rev-parse HEAD)
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -200,7 +198,7 @@ jobs:
       - name: Report result
         if: always()
         env:
-          SHORT_SHA: ${{ steps.vars.outputs.short_sha }}
+          IMAGE: ${{ steps.build.outputs.image }}
           STATUS: ${{ job.status }}
           MODE: ${{ inputs.mode }}
           SYNC_ARN: ${{ steps.register_sync.outputs.sync_arn }}
@@ -210,7 +208,7 @@ jobs:
           if [ "$STATUS" = "success" ]; then
             {
               echo "### ✅ s-read deployed (\`$MODE\`)"
-              echo "- Image: \`$IMAGE_REPO:$SHORT_SHA\`"
+              echo "- Image: \`$IMAGE\`"
               echo "- Sync task def: \`$SYNC_ARN\` (the hourly schedule picks it up on its next tick)"
               if [ "$MODE" = "migrate-and-code" ]; then echo "- Migrations: applied before the sync task-def update"; fi
               echo "- [Deploy run]($RUN_URL)"
