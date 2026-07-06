@@ -206,14 +206,17 @@ defineRoute({
 });
 
 // Board's payment-plan approval queue. Returns pending ProgramParticipant rows
-// with the full participant + program nested. Board/sysadmin only, and they hold
-// everyones:* so they see every field — the win is the declared policy: any role
-// later added to this view is field-stripped automatically.
+// with the full participant + program nested, plus the participant's
+// household/orgMembership (so the board can see CURRENT membership while
+// deciding — wasOrgMemberAtApproval is only stamped on approval). Board/sysadmin
+// only, and they hold everyones:* so they see every field — the win is the
+// declared policy: any role later added to this view is field-stripped
+// automatically.
 defineRoute({
     endpoint: 'GET /api/finance-ops/payment-plans',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: null,
-    returns: ['ProgramParticipant', 'Person', 'Program'],
+    returns: ['ProgramParticipant', 'Person', 'Program', 'Household', 'OrgMembership'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],

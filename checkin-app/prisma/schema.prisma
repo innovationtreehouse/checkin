@@ -719,6 +719,12 @@ model ProgramParticipant {
   isPaymentPlanRequested Boolean                  @default(false)
   /// @sensitivity:internal
   pendingSince         DateTime?                @default(now())
+  /// Point-in-time snapshot of the household's org-membership status the moment a
+  /// scholarship/payment-plan request was APPROVED (status flipped to ACTIVE).
+  /// Membership changes over time, so this can't be derived later from the live
+  /// OrgMembership row — it must be stamped at approval. Null until approved.
+  /// @sensitivity:internal
+  wasOrgMemberAtApproval Boolean?
 
   program Program     @relation(fields: [programId], references: [id])
   person  Person @relation(fields: [personId], references: [id])

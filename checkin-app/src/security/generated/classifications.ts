@@ -205,6 +205,7 @@ export const classifications = {
         status: 'public',
         isPaymentPlanRequested: 'personal',
         pendingSince: 'internal',
+        wasOrgMemberAtApproval: 'internal',
     },
     Fee: {
         id: 'public',
