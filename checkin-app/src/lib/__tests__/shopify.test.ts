@@ -1,4 +1,4 @@
-import { createShopifyProgramVariants, resetTokenCache } from '../shopify';
+import { createShopifyProgramVariants, adjustProgramInventory, resetTokenCache } from '../shopify';
 import { sendEmail } from '../email';
 import prisma from '../prisma';
 
@@ -284,5 +284,113 @@ describe('createShopifyProgramVariants', () => {
             expect.stringContaining('timed out after 20000ms'),
         );
         timeoutSpy.mockRestore();
+    });
+});
+
+describe('adjustProgramInventory', () => {
+    let originalEnv: NodeJS.ProcessEnv;
+    let fetchMock: jest.Mock;
+
+    const program = {
+        shopifyOrgMemberVariantId: '67890',
+        shopifyNonOrgMemberVariantId: '11111',
+    };
+
+    beforeEach(() => {
+        originalEnv = { ...process.env };
+        process.env.SHOPIFY_STORE_DOMAIN = 'test.myshopify.com';
+        process.env.SHOPIFY_CLIENT_ID = 'test_client_id';
+        process.env.SHOPIFY_CLIENT_SECRET = 'test_client_secret';
+
+        fetchMock = jest.fn();
+        global.fetch = fetchMock;
+
+        jest.clearAllMocks();
+        resetTokenCache();
+    });
+
+    afterEach(() => {
+        process.env = originalEnv;
+        jest.restoreAllMocks();
+    });
+
+    it('resolves inventory_item_ids for both variants and adjusts both by delta at the store location', async () => {
+        mockTokenResponse(fetchMock);
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 555 }] }) });
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { inventory_item_id: 111 } }) });
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) }); // adjust member
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { inventory_item_id: 222 } }) });
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) }); // adjust non-member
+
+        const result = await adjustProgramInventory(program, 5);
+
+        expect(result).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(6); // token + locations + 2 * (variant get + adjust)
+
+        const adjustCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes('inventory_levels/adjust.json'));
+        expect(adjustCalls).toHaveLength(2);
+        for (const [, init] of adjustCalls) {
+            const body = JSON.parse(init.body as string);
+            expect(body).toEqual({ location_id: 555, inventory_item_id: expect.any(Number), available_adjustment: 5 });
+        }
+    });
+
+    it('adjusts only the configured variant when the program has just one', async () => {
+        mockTokenResponse(fetchMock);
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 555 }] }) });
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { inventory_item_id: 111 } }) });
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+        const result = await adjustProgramInventory(
+            { shopifyOrgMemberVariantId: '67890', shopifyNonOrgMemberVariantId: null },
+            -3,
+        );
+
+        expect(result).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(4); // token + locations + variant get + adjust
+    });
+
+    it('returns false and emails admins (non-fatal) when the adjust call fails', async () => {
+        mockTokenResponse(fetchMock);
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 555 }] }) });
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { inventory_item_id: 111 } }) });
+        fetchMock.mockResolvedValueOnce({ ok: false, status: 422, text: async () => '{"errors":"bad adjustment"}' });
+
+        (prisma.person.findMany as jest.Mock).mockResolvedValueOnce([{ email: 'admin@test.com' }]);
+
+        const result = await adjustProgramInventory(
+            { shopifyOrgMemberVariantId: '67890', shopifyNonOrgMemberVariantId: null },
+            5,
+        );
+
+        expect(result).toBe(false);
+        expect(sendEmail).toHaveBeenCalledWith(
+            'admin@test.com',
+            'Shopify Integration Error',
+            expect.stringContaining('Failed to adjust Shopify inventory'),
+        );
+    });
+
+    it('returns false without calling fetch when credentials are missing', async () => {
+        delete process.env.SHOPIFY_STORE_DOMAIN;
+        delete process.env.SHOPIFY_CLIENT_ID;
+        delete process.env.SHOPIFY_CLIENT_SECRET;
+
+        const result = await adjustProgramInventory(program, 5);
+
+        expect(result).toBe(false);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('no-ops successfully when the Shopify mock is active', async () => {
+        process.env.CHECKIN_ENV = 'local';
+        delete process.env.SHOPIFY_STORE_DOMAIN;
+        delete process.env.SHOPIFY_CLIENT_ID;
+        delete process.env.SHOPIFY_CLIENT_SECRET;
+
+        const result = await adjustProgramInventory(program, 5);
+
+        expect(result).toBe(true);
+        expect(fetchMock).not.toHaveBeenCalled();
     });
 });

@@ -288,3 +288,125 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
     return null;
   }
 }
+
+/**
+ * Shopify is the source of truth for program capacity (product decision 2026-07-06):
+ * cap edits propagate as relative inventory adjustments. Called from
+ * PATCH /api/programs/[id] whenever an edit changes maxParticipants on a program
+ * that already has at least one Shopify variant.
+ *
+ * RELATIVE (inventory_levels/adjust, `available_adjustment: delta`) is deliberate,
+ * not absolute set: Shopify decrements `available` itself as seats sell, and an
+ * absolute set here would require reconstructing how many seats already sold to
+ * avoid clobbering that ledger. A relative delta (newMax - oldMax) rides on top of
+ * whatever Shopify already has without the app needing to know that number.
+ *
+ * The schema doesn't persist inventory_item_id (only the variant id), so it's
+ * resolved here per call via GET .../variants/{id}.json — one extra round trip per
+ * configured variant, acceptable for an admin-triggered edit.
+ *
+ * Never throws: mirrors createShopifyProgramVariants' failure handling (log +
+ * admin email), returns false so the caller can surface a non-fatal warning.
+ */
+export async function adjustProgramInventory(
+    program: { shopifyOrgMemberVariantId: string | null; shopifyNonOrgMemberVariantId: string | null },
+    delta: number,
+): Promise<boolean> {
+    const variantIds = [program.shopifyOrgMemberVariantId, program.shopifyNonOrgMemberVariantId]
+        .filter((id): id is string => !!id);
+
+    if (variantIds.length === 0) return true;
+
+    // See createShopifyProgramVariants for why this branch exists (CHECKIN_ENV=local mock).
+    if (config.shopifyMockActive()) {
+        console.log(`[SHOPIFY] (mock) Would adjust inventory by ${delta} for variants: ${variantIds.join(", ")}`);
+        return true;
+    }
+
+    const storeDomain = config.shopifyStoreDomain();
+    const accessToken = await getAccessToken();
+
+    if (!storeDomain || !accessToken) {
+        console.warn("Shopify integration is disabled: Missing credentials or unable to obtain access token");
+        return false;
+    }
+
+    try {
+        // Store's primary location — same lookup pattern as createShopifyProgramVariants.
+        const locRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/locations.json`, {
+            headers: { 'X-Shopify-Access-Token': accessToken },
+        }, "Shopify get locations");
+        if (!locRes.ok) throw new Error(`Shopify locations lookup failed: ${locRes.status}`);
+        const locData = await locRes.json();
+        const locationId = locData.locations?.[0]?.id;
+        if (!locationId) throw new Error("Shopify store has no locations configured");
+
+        for (const variantId of variantIds) {
+            const variantRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/variants/${variantId}.json`, {
+                headers: { 'X-Shopify-Access-Token': accessToken },
+            }, "Shopify get variant");
+            if (!variantRes.ok) throw new Error(`Shopify variant lookup failed for ${variantId}: ${variantRes.status}`);
+            const variantData = await variantRes.json();
+            const inventoryItemId = variantData.variant?.inventory_item_id;
+            if (!inventoryItemId) throw new Error(`Shopify variant ${variantId} has no inventory_item_id`);
+
+            const adjustRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/adjust.json`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Shopify-Access-Token': accessToken,
+                },
+                body: JSON.stringify({
+                    location_id: locationId,
+                    inventory_item_id: inventoryItemId,
+                    available_adjustment: delta,
+                }),
+            }, "Shopify adjust inventory");
+            if (!adjustRes.ok) {
+                throw new Error(`Shopify inventory adjust failed for variant ${variantId}: ${adjustRes.status} ${await adjustRes.text()}`);
+            }
+
+            console.log(`[SHOPIFY] Adjusted inventory for variant ${variantId} by ${delta} at location ${locationId}`);
+        }
+
+        return true;
+    } catch (error) {
+        console.error("[Shopify Error] Failed to adjust program inventory:", error);
+
+        await logIntegrationError("shopify", error, {
+            operation: "adjustProgramInventory",
+            shopifyOrgMemberVariantId: program.shopifyOrgMemberVariantId,
+            shopifyNonOrgMemberVariantId: program.shopifyNonOrgMemberVariantId,
+            delta,
+        });
+
+        try {
+            const admins = await prisma.person.findMany({
+                where: {
+                    OR: [{ isSysadmin: true }, { isBoardMember: true }],
+                    email: { not: null }
+                },
+                select: { email: true }
+            });
+
+            const emailPromises = admins
+                .map(a => a.email)
+                .filter((e): e is string => typeof e === 'string' && e.length > 0)
+                .map(email =>
+                    sendEmail(
+                        email,
+                        "Shopify Integration Error",
+                        `<p>Failed to adjust Shopify inventory (delta ${delta}) after a program capacity change.</p><p>Error details:</p><pre>${escapeHtml(error instanceof Error ? error.message : String(error))}</pre>`
+                    )
+                );
+
+            if (emailPromises.length > 0) {
+                await Promise.all(emailPromises);
+            }
+        } catch (dbError) {
+            console.error("Failed to send Shopify error notifications:", dbError);
+        }
+
+        return false;
+    }
+}
