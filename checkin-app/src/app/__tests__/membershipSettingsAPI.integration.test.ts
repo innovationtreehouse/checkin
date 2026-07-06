@@ -26,7 +26,7 @@ function jsonReq(method: string, body?: unknown, url = 'http://localhost:4000/x'
 
 describe('Membership settings + volunteer designations API', () => {
     let boardId: number, plainId: number;
-    let prevSettings: { normalDuesCents: number; volunteerDuesCents: number } | null = null;
+    let prevSettings: { normalDuesCents: number; volunteerDuesCents: number; emailFromAddress: string | null; emailReplyToAddress: string | null } | null = null;
 
     async function wipe() {
         await prisma.volunteerDesignation.deleteMany({ where: { email: { contains: TAG } } });
@@ -43,7 +43,7 @@ describe('Membership settings + volunteer designations API', () => {
 
     beforeAll(async () => {
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-        prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents } : null;
+        prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents, emailFromAddress: existing.emailFromAddress, emailReplyToAddress: existing.emailReplyToAddress } : null;
         await wipe();
 
         boardId = (await prisma.person.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
@@ -93,6 +93,32 @@ describe('Membership settings + volunteer designations API', () => {
         const getRes = await SETTINGS_GET(jsonReq('GET'));
         const { settings } = await getRes.json();
         expect(settings.normalDuesCents).toBe(12000);
+    });
+
+    it('accepts a valid email sender identity and rejects a malformed one (keeping the prior value)', async () => {
+        asBoard(boardId);
+        // Both header shapes are accepted.
+        const ok = await SETTINGS_PUT(jsonReq('PUT', {
+            emailFromAddress: 'Treehouse <noreply@updates.example.org>',
+            emailReplyToAddress: 'board@example.org',
+        }));
+        expect(ok.status).toBe(200);
+        const saved = (await ok.json()).settings;
+        expect(saved.emailFromAddress).toBe('Treehouse <noreply@updates.example.org>');
+        expect(saved.emailReplyToAddress).toBe('board@example.org');
+
+        // A malformed From is rejected and must not clobber the saved value.
+        const bad = await SETTINGS_PUT(jsonReq('PUT', { emailFromAddress: 'not-an-email' }));
+        expect(bad.status).toBe(400);
+        const after = (await (await SETTINGS_GET(jsonReq('GET'))).json()).settings;
+        expect(after.emailFromAddress).toBe('Treehouse <noreply@updates.example.org>');
+
+        // Empty string clears back to the env default (null).
+        const cleared = await SETTINGS_PUT(jsonReq('PUT', { emailFromAddress: '', emailReplyToAddress: '' }));
+        expect(cleared.status).toBe(200);
+        const clearedSettings = (await cleared.json()).settings;
+        expect(clearedSettings.emailFromAddress).toBeNull();
+        expect(clearedSettings.emailReplyToAddress).toBeNull();
     });
 
     it('adds, lists, and removes a volunteer designation', async () => {

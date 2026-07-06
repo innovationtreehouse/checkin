@@ -443,6 +443,16 @@ model BoardSettings {
   /// (the board must set the real Treehouse policy value before renewals re-check).
   /// @sensitivity:public
   bgRecheckMonths            Int       @default(0)
+  /// Overrides the EMAIL_FROM env default as the Resend sender on every outbound
+  /// email when set. Must be on a Resend-verified domain or all mail bounces —
+  /// hence the confirm-to-edit guard in the settings UI. Null = use the env default.
+  /// @sensitivity:public
+  emailFromAddress           String?
+  /// Reply-To header set on every outbound email when set (the From address is a
+  /// no-reply, so this routes replies to a real inbox). Null = no Reply-To (replies
+  /// go to From). Need not be on the sending domain.
+  /// @sensitivity:public
+  emailReplyToAddress        String?
   /// @sensitivity:internal
   shopifyOrgMembershipProductId String?
   /// @sensitivity:internal
