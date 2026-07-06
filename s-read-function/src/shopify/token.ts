@@ -19,8 +19,9 @@
  */
 import type { ShopifyConfig } from "@inventory/s-ingest-core";
 
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // fallback when the response has no expires_in
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+const MINT_TIMEOUT_MS = 20_000; // same budget as client.ts's per-attempt REQUEST_TIMEOUT_MS
 
 let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
@@ -64,18 +65,21 @@ export async function getShopifyToken(cfg: ShopifyConfig): Promise<string> {
       client_id: cfg.clientId,
       client_secret: cfg.clientSecret,
     }).toString(),
+    // A hung exchange would otherwise run to the ECS task timeout.
+    signal: AbortSignal.timeout(MINT_TIMEOUT_MS),
   });
 
   if (!res.ok) {
     throw new Error(`Shopify token exchange failed: HTTP ${res.status} ${(await res.text()).slice(0, 500)}`);
   }
 
-  const body = (await res.json()) as { access_token?: string };
+  const body = (await res.json()) as { access_token?: string; expires_in?: number };
   if (!body.access_token) {
     throw new Error("Shopify token exchange response had no access_token");
   }
 
   cachedToken = body.access_token;
-  tokenExpiresAt = Date.now() + TOKEN_TTL_MS;
+  // Trust the response's expires_in when present; ~24h is only the documented default.
+  tokenExpiresAt = Date.now() + (typeof body.expires_in === "number" && body.expires_in > 0 ? body.expires_in * 1000 : TOKEN_TTL_MS);
   return cachedToken;
 }
