@@ -2,7 +2,14 @@
  * THE security policy. One entry per API endpoint and one per outbound surface.
  *
  * Every change here is a change to what data leaves the server, to which
- * role, through which channel. CODEOWNERS-gated.
+ * role, through which channel. CODEOWNERS-gated, and boundary changes must
+ * ship in their OWN PR (enforced by security-boundary-isolation.yml) so a
+ * widening/narrowing is always an isolated, reviewable unit.
+ *
+ * This layer exists to make the policy easy to AUDIT — it is not a substitute
+ * for careful route management. Handlers still owe tight selects and
+ * deliberate response shapes; the stripper is the declared-policy backstop,
+ * not the first line.
  *
  * orderedView is walked top-to-bottom; the first role the caller satisfies
  * decides the view. Order matters — treat reorders as policy changes.
