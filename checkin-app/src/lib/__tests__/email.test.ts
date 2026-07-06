@@ -1,5 +1,6 @@
 let mockIsDevInstance = false;
 const mockCapture = jest.fn();
+let mockIdentity: { from: string; replyTo?: string[] } = { from: 'test@test.com' };
 
 jest.mock('resend');
 jest.mock('../config.ts', () => ({
@@ -11,6 +12,9 @@ jest.mock('../config.ts', () => ({
 }));
 jest.mock('../dev/sentMail', () => ({
     captureSentEmail: (...args: unknown[]) => mockCapture(...args),
+}));
+jest.mock('../emailIdentity', () => ({
+    getEmailSenderIdentity: () => Promise.resolve(mockIdentity),
 }));
 
 import { sendEmail } from '../email';
@@ -30,6 +34,7 @@ describe('sendEmail no-key logging + capture', () => {
         originalEnv = process.env.NODE_ENV;
         mockIsDevInstance = false;
         mockCapture.mockReset();
+        mockIdentity = { from: 'test@test.com' };
     });
 
     afterEach(() => {
@@ -98,6 +103,7 @@ describe('sendEmail no-key logging + capture', () => {
 // can't reach: Resend returning `{ error }`, and Resend throwing. Both must → false.
 describe('sendEmail send-failure contract (Resend configured)', () => {
     const sendMock = jest.fn();
+    let doMockIdentity: { from: string; replyTo?: string[] } = { from: 'test@test.com' };
     const logIntegrationErrorMock = jest.fn();
     let errorSpy: jest.SpyInstance;
     let logSpy: jest.SpyInstance;
@@ -105,12 +111,14 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
     beforeEach(() => {
         jest.resetModules();
         sendMock.mockReset();
+        doMockIdentity = { from: 'test@test.com' };
         logIntegrationErrorMock.mockReset();
         // Re-mock the module's deps for the fresh module instance loaded below.
         jest.doMock('../config.ts', () => ({
             config: { resendApiKey: () => 'test-key', emailFrom: () => 'test@test.com', isDevInstance: () => false },
         }));
         jest.doMock('../dev/sentMail', () => ({ captureSentEmail: jest.fn() }));
+        jest.doMock('../emailIdentity', () => ({ getEmailSenderIdentity: () => Promise.resolve(doMockIdentity) }));
         jest.doMock('resend', () => ({
             Resend: jest.fn().mockImplementation(() => ({ emails: { send: sendMock } })),
         }));
@@ -126,6 +134,7 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         logSpy.mockRestore();
         jest.dontMock('../config.ts');
         jest.dontMock('../dev/sentMail');
+        jest.dontMock('../emailIdentity');
         jest.dontMock('resend');
         jest.dontMock('../logger');
     });
@@ -149,6 +158,44 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         const result = await send('test@test.com', 'Subject', '<p>hi</p>');
         expect(result).toBe(false);
         expect(sendMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes the resolved From and, when set, a single Reply-To through to Resend', async () => {
+        doMockIdentity = { from: 'Org <no-reply@org.test>', replyTo: ['board@org.test'] };
+        sendMock.mockResolvedValue({ data: { id: '1' }, error: null });
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { sendEmail: send } = require('../email');
+
+        const result = await send('to@org.test', 'Subject', '<p>hi</p>');
+        expect(result).toBe(true);
+        expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({
+            from: 'Org <no-reply@org.test>',
+            replyTo: ['board@org.test'],
+        }));
+    });
+
+    it('passes multiple Reply-To addresses through to Resend as an array, verbatim', async () => {
+        doMockIdentity = { from: 'Org <no-reply@org.test>', replyTo: ['info@org.test', 'ops@org.test'] };
+        sendMock.mockResolvedValue({ data: { id: '1' }, error: null });
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { sendEmail: send } = require('../email');
+
+        const result = await send('to@org.test', 'Subject', '<p>hi</p>');
+        expect(result).toBe(true);
+        expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({
+            replyTo: ['info@org.test', 'ops@org.test'],
+        }));
+    });
+
+    it('omits Reply-To entirely when the identity has none', async () => {
+        doMockIdentity = { from: 'test@test.com' };
+        sendMock.mockResolvedValue({ data: { id: '1' }, error: null });
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { sendEmail: send } = require('../email');
+
+        await send('to@test.com', 'Subject', '<p>hi</p>');
+        expect(sendMock).toHaveBeenCalledTimes(1);
+        expect(sendMock.mock.calls[0][0]).not.toHaveProperty('replyTo');
     });
 
     it('persists an IntegrationErrorLog (to+subject, no body) when Resend responds with an { error }', async () => {

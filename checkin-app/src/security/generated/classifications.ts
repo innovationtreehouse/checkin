@@ -113,6 +113,8 @@ export const classifications = {
         orgMembershipVariantId: 'internal',
         volunteerDiscountCode: 'internal',
         bgRecheckMonths: 'public',
+        emailFromAddress: 'public',
+        emailReplyToAddress: 'public',
         shopifyOrgMembershipProductId: 'internal',
         shopifyNormalVariantId: 'internal',
         shopifyVolunteerVariantId: 'internal',

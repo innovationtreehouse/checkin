@@ -19,7 +19,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
  * orgMembershipVariantId (string|null), volunteerDiscountCode (string|null).
  * Dues must be finite and >= 0; an invalid value rejects the whole update (400) so the
  * previous value survives rather than silently collapsing to zero. (The Averity consent
- * link is an env var, not a board setting.)
+ * link is an env var, not a board setting. Email sender identity lives in /api/settings/email.)
  */
 export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
