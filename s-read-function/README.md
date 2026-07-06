@@ -176,6 +176,11 @@ order status transitions (cancellation/refund), and watermark advancement.
 
 ## Deployment (Terraform)
 
+> **Ops runbook: [DEPLOY.md](DEPLOY.md)** — the ordered go-live checklist (Shopify app
+> scopes, init.sql, secrets, first deploy via the `deploy-s-read` workflow, one-time
+> backfill, verification). The shipped architecture is a **scheduled ECS task**
+> (infra#112) built from [`Dockerfile`](Dockerfile), not the Lambda sketch below.
+
 When this is deployed, **Terraform provisions the infrastructure** — it does **not** run
 schema migrations (those are a separate deploy-time step; see
 [FUTUREWORK.md](FUTUREWORK.md)). What Terraform owns:
@@ -208,7 +213,9 @@ programmatic token acquisition (#237) are **built** — see
 [`s-replay-function`](../s-replay-function), the stale-run reaper above, and "Getting the
 token" above.)
 
-- Deployment infra (EventBridge schedule, RDS Proxy, packaging) is **not** wired yet.
+- Deployment: packaging ([`Dockerfile`](Dockerfile)), the manual deploy workflow
+  (`.github/workflows/deploy-s-read.yml`), and the ops runbook ([DEPLOY.md](DEPLOY.md))
+  are in this repo; the AWS resources (ECR/ECS/EventBridge/secrets) are infra#112.
 - Cross-database de-duplication against `income-app` is **future work**; this
   function persists the identifiers income-app records (legacy order id, order name,
   payout id) so that reconciliation can be deterministic later.
