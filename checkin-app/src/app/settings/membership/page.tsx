@@ -15,8 +15,6 @@ interface Settings {
   orgMembershipVariantId: string | null;
   volunteerDiscountCode: string | null;
   bgRecheckMonths: number;
-  emailFromAddress: string | null;
-  emailReplyToAddress: string | null;
 }
 
 const dollars = (cents: number) => (cents / 100).toFixed(2);
@@ -40,9 +38,6 @@ export default function MembershipSettingsPage() {
   const [boundaryUnlocked, setBoundaryUnlocked] = useState(false);
   const [variantId, setVariantId] = useState("");
   const [discountCode, setDiscountCode] = useState("");
-  const [emailFrom, setEmailFrom] = useState("");
-  const [emailReplyTo, setEmailReplyTo] = useState("");
-  const [emailUnlocked, setEmailUnlocked] = useState(false);
 
   // Snapshot of the dues-form values as last loaded/saved; isDirty compares it to
   // current state to drive the unsaved-changes guard.
@@ -72,8 +67,6 @@ export default function MembershipSettingsPage() {
           boundary: settings.orgMembershipYearBoundary ? settings.orgMembershipYearBoundary.slice(0, 10) : "",
           variantId: settings.orgMembershipVariantId ?? "",
           discountCode: settings.volunteerDiscountCode ?? "",
-          emailFrom: settings.emailFromAddress ?? "",
-          emailReplyTo: settings.emailReplyToAddress ?? "",
         };
         setNormalDues(snap.normalDues);
         setVolunteerDues(snap.volunteerDues);
@@ -81,8 +74,6 @@ export default function MembershipSettingsPage() {
         setBoundary(snap.boundary);
         setVariantId(snap.variantId);
         setDiscountCode(snap.discountCode);
-        setEmailFrom(snap.emailFrom);
-        setEmailReplyTo(snap.emailReplyTo);
         setInitial(snap);
       }
     } finally {
@@ -95,11 +86,6 @@ export default function MembershipSettingsPage() {
   // Confirm-checkbox gate only matters when a boundary already exists — changing
   // it shifts every household's cycle. First-time set has nothing to shift.
   const boundaryWasSet = !!initial?.boundary;
-
-  // Same confirm-to-edit guard as the boundary: once a sender identity exists,
-  // changing From (wrong domain → all mail bounces) or Reply-To (misrouted replies)
-  // is high-stakes, so lock both behind an explicit unlock. First-time set is free.
-  const emailWasSet = !!(initial?.emailFrom || initial?.emailReplyTo);
 
   const saveSettings = async () => {
     setSaveNotice(null);
@@ -123,11 +109,9 @@ export default function MembershipSettingsPage() {
           // Send the boundary when the unlock is checked, or when it was never set (no
           // unlock shown then — nothing to protect from an accidental shift).
           ...(boundaryUnlocked || !boundaryWasSet ? { orgMembershipYearBoundary: boundary || null } : {}),
-          // Same rule for the sender identity: only send when unlocked or never set.
-          ...(emailUnlocked || !emailWasSet ? { emailFromAddress: emailFrom.trim() || null, emailReplyToAddress: emailReplyTo.trim() || null } : {}),
         }),
       });
-      if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); setBoundaryUnlocked(false); setEmailUnlocked(false); notifyNavRefresh(); await load(); }
+      if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); setBoundaryUnlocked(false); notifyNavRefresh(); await load(); }
       else { const d = await res.json().catch(() => ({})); setSaveNotice({ text: d.error || "Save failed.", err: true }); }
     } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
@@ -152,7 +136,7 @@ export default function MembershipSettingsPage() {
 
   const isDirty =
     !!initial &&
-    !shallowEqual(initial, { normalDues, volunteerDues, bgRecheckMonths, boundary, variantId, discountCode, emailFrom, emailReplyTo });
+    !shallowEqual(initial, { normalDues, volunteerDues, bgRecheckMonths, boundary, variantId, discountCode });
   useUnsavedGuard(isDirty);
 
   return (
@@ -264,51 +248,6 @@ export default function MembershipSettingsPage() {
                 onChange={(e) => setBoundary(e.currentTarget.value)}
                 disabled={boundaryWasSet && !boundaryUnlocked}
               />
-            </Alert>
-
-            <Title order={4} mt="lg" mb="sm">Email sender identity</Title>
-            <Alert color={emailWasSet ? "yellow" : "blue"} variant="light">
-              {emailWasSet ? (
-                <Text size="sm" mb="sm">
-                  ⚠️ These control the sender on <strong>every</strong> outbound email. The
-                  <strong> From</strong> address must be on a domain verified in Resend or all mail
-                  bounces. Only change if you are sure.
-                </Text>
-              ) : (
-                <Text size="sm" mb="sm">
-                  Optional. Leave blank to use the environment default sender. The <strong>From</strong>{" "}
-                  address must be on a domain verified in Resend; <strong>Reply-To</strong> can be any
-                  address (e.g. a real board inbox) so replies to a no-reply sender reach someone.
-                </Text>
-              )}
-              {emailWasSet && (
-                <Checkbox
-                  mb="sm"
-                  checked={emailUnlocked}
-                  onChange={(e) => setEmailUnlocked(e.currentTarget.checked)}
-                  label="I understand — let me edit the sender addresses"
-                />
-              )}
-              <Stack gap="md">
-                <TextInput
-                  label="From address"
-                  description={'Bare address or "Name <addr@domain>". Blank = environment default.'}
-                  placeholder="Innovation Treehouse <noreply@updates.innovationtreehouse.org>"
-                  w={420}
-                  value={emailFrom}
-                  onChange={(e) => setEmailFrom(e.currentTarget.value)}
-                  disabled={emailWasSet && !emailUnlocked}
-                />
-                <TextInput
-                  label="Reply-To address"
-                  description="Where replies go. Blank = replies go to the From address."
-                  placeholder="board@innovationtreehouse.org"
-                  w={420}
-                  value={emailReplyTo}
-                  onChange={(e) => setEmailReplyTo(e.currentTarget.value)}
-                  disabled={emailWasSet && !emailUnlocked}
-                />
-              </Stack>
             </Alert>
 
             {saveNotice && (
