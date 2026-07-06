@@ -105,6 +105,9 @@ Read these before changing the relevant area — start here, then follow links.
 - `SECURITY-POLICY.md` — the response-stripper / `@sensitivity` registry rules (read before adding API responses or schema fields).
 - `pentest_findings_2026-04-21.md` — prior findings.
 
+**Deploy & infra** (`checkin-app/docs/`)
+- `DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md` — infra rules + order of operations for schema migrations vs. deploys (read before writing a migration); `.claude/skills/migration-safety/` fires this as a checklist whenever a migration is being built.
+
 **Subprojects** (each has its own `README.md`)
 - `client/` — the Raspberry-Pi kiosk client (Python).
 - `packages/*` (e.g. `monitoring-db`, `pg-test-harness`, `telemetry`), `layers/prisma-runtime/`, and the Lambda `*-function/` dirs (`s-read-function/`, `s-replay-function/`, `monitoring-relay-function/`, `monitoring-watchdog-function/`) — see the README in each; `s-read-function/` also has `MONITORING-PRD.md` + `FUTUREWORK.md`.
