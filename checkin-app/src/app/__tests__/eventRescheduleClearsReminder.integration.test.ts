@@ -62,13 +62,13 @@ describe('PATCH /api/events/[id] editTime — clears reminderSentAt on reschedul
 
     beforeAll(async () => {
         const p = await prisma.person.create({
-            data: { name: 'Reschedule Attendee', email: `attendee-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Reschedule Attendee', email: `attendee-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         participantId = p.id;
         householdId = p.householdId;
 
         const admin = await prisma.person.create({
-            data: { name: 'Reschedule Admin', email: `admin-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Reschedule Admin', email: `admin-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         adminId = admin.id;
         adminHouseholdId = admin.householdId;

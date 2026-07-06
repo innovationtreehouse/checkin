@@ -56,7 +56,7 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
         // Born 2012-04-01: age 13 as of 2026-01-01 (frozen now), turns 14 on
         // 2026-04-01 — BEFORE the 2026-09-01 start. Eligible as of startAt only.
         const user = await prisma.person.create({
-            data: { email: 'turns14-age-startdate-test@example.com', name: 'Turns 14 Before Start', dateOfBirth: new Date('2012-04-01T00:00:00.000Z'), household: { create: {} } }
+            data: { email: 'turns14-age-startdate-test@example.com', name: 'Turns 14 Before Start', dateOfBirth: new Date('2012-04-01T00:00:00.000Z'), household: { create: { name: "Test HH" } } }
         });
         userId = user.id;
     });

@@ -30,7 +30,7 @@ describe("sendCheckinNotifications()", () => {
         jest.clearAllMocks();
 
         // Create household
-        const hh = await prisma.household.create({ data: {} });
+        const hh = await prisma.household.create({ data: { name: "Test HH" } });
         householdId = hh.id;
 
         // Create Lead

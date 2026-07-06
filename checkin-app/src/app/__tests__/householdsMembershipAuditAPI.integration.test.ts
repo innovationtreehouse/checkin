@@ -39,19 +39,19 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
 
         // Acting board member (in their own household).
         const board = await prisma.person.create({
-            data: { email: `board-${TAG}@example.com`, name: 'Board Actor', isBoardMember: true, household: { create: {} } },
+            data: { email: `board-${TAG}@example.com`, name: 'Board Actor', isBoardMember: true, household: { create: { name: "Test HH" } } },
         });
         boardId = board.id;
 
         // A household with no membership row → will be granted (ACTIVE).
         const inactive = await prisma.person.create({
-            data: { email: `inactive-${TAG}@example.com`, name: 'Inactive Member', household: { create: {} } },
+            data: { email: `inactive-${TAG}@example.com`, name: 'Inactive Member', household: { create: { name: "Test HH" } } },
         });
         inactiveHouseholdId = inactive.householdId;
 
         // A household that is already ACTIVE → will be revoked (REVOKED).
         const active = await prisma.person.create({
-            data: { email: `active-${TAG}@example.com`, name: 'Active Member', household: { create: {} } },
+            data: { email: `active-${TAG}@example.com`, name: 'Active Member', household: { create: { name: "Test HH" } } },
         });
         activeHouseholdId = active.householdId;
         await prisma.orgMembership.create({ data: { householdId: activeHouseholdId, status: 'ACTIVE' } });

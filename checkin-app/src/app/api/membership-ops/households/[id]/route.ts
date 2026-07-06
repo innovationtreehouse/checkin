@@ -34,8 +34,13 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
         }
 
         const body = await request.json();
-        const data: { name?: string | null } & Partial<StructuredAddress> = {};
-        if (body.name !== undefined) data.name = body.name;
+        const data: { name?: string } & Partial<StructuredAddress> = {};
+        if (body.name !== undefined) {
+            if (typeof body.name !== "string" || !body.name.trim()) {
+                return apiError("Household name cannot be empty", 400);
+            }
+            data.name = body.name.trim();
+        }
         Object.assign(data, normalizeAddressInput(body));
 
         const editsContact = body.emergencyContactName !== undefined || body.emergencyContactPhone !== undefined;

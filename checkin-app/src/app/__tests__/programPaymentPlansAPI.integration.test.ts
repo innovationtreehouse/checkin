@@ -41,7 +41,7 @@ describe('Program payment-plan routes', () => {
 
     beforeAll(async () => {
         const mentor = await prisma.person.create({
-            data: { name: 'PP Mentor', email: `mentor-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'PP Mentor', email: `mentor-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         mentorId = mentor.id;
         householdIds.push(mentor.householdId);
@@ -52,25 +52,25 @@ describe('Program payment-plan routes', () => {
         programId = program.id;
 
         const board = await prisma.person.create({
-            data: { name: 'PP Board', email: `board-${TAG}@example.com`, isBoardMember: true, household: { create: {} } },
+            data: { name: 'PP Board', email: `board-${TAG}@example.com`, isBoardMember: true, household: { create: { name: "Test HH" } } },
         });
         boardId = board.id;
         householdIds.push(board.householdId);
 
         const self = await prisma.person.create({
-            data: { name: 'PP Self', email: `self-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'PP Self', email: `self-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         selfId = self.id;
         householdIds.push(self.householdId);
 
         const other = await prisma.person.create({
-            data: { name: 'PP Other', email: `other-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'PP Other', email: `other-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         otherId = other.id;
         householdIds.push(other.householdId);
 
         const noise = await prisma.person.create({
-            data: { name: 'PP Noise', email: `noise-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'PP Noise', email: `noise-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         noiseId = noise.id;
         householdIds.push(noise.householdId);

@@ -43,8 +43,8 @@ export default async function DevShopifyPage() {
             hasVariant={hasVariant}
             processes={processes.map((p) => ({
                 id: p.id,
-                household: p.orgMembership.household?.name ?? "(unnamed household)",
-                isVolunteer: p.orgMembership.isVolunteer,
+                household: p.orgMembership?.household?.name ?? "(unnamed household)",
+                isVolunteer: p.orgMembership?.isVolunteer ?? false,
             }))}
             enrollments={pendingParticipants.map((pp) => ({
                 programId: pp.program.id,

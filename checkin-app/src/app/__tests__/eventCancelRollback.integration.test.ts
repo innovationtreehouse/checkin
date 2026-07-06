@@ -43,13 +43,13 @@ describe('PATCH /api/events/[id] cancel — transaction rollback on partial fail
 
     beforeAll(async () => {
         const p = await prisma.person.create({
-            data: { name: 'Cancel Attendee', email: `attendee-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Cancel Attendee', email: `attendee-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         participantId = p.id;
         householdId = p.householdId;
 
         const admin = await prisma.person.create({
-            data: { name: 'Cancel Admin', email: `admin-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Cancel Admin', email: `admin-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         adminId = admin.id;
         adminHouseholdId = admin.householdId;

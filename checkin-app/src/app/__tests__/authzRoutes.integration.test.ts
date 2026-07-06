@@ -36,19 +36,19 @@ describe('Sensitive route authorization', () => {
 
     beforeAll(async () => {
         const plain = await prisma.person.create({
-            data: { name: 'Authz Plain', email: `plain-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Authz Plain', email: `plain-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         plainId = plain.id;
         householdIds.push(plain.householdId);
 
         const target = await prisma.person.create({
-            data: { name: `ZZTarget ${TAG}`, email: `target-${TAG}@example.com`, phone: '555-0101', household: { create: {} } },
+            data: { name: `ZZTarget ${TAG}`, email: `target-${TAG}@example.com`, phone: '555-0101', household: { create: { name: "Test HH" } } },
         });
         searchTargetId = target.id;
         householdIds.push(target.householdId);
 
         const persona = await prisma.person.create({
-            data: { name: 'Persona One', email: `persona-${TAG}@example.com`, isSysadmin: true, household: { create: {} } },
+            data: { name: 'Persona One', email: `persona-${TAG}@example.com`, isSysadmin: true, household: { create: { name: "Test HH" } } },
         });
         personaId = persona.id;
         householdIds.push(persona.householdId);
