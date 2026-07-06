@@ -31,7 +31,15 @@ export const GET = withAuth(
                     where: { id: parseInt(id) },
                     include: {
                         householdMembers: {
-                            select: { id: true, name: true, email: true }
+                            select: {
+                                id: true, name: true, email: true,
+                                // Program enrollments for the household detail view. Extra field the
+                                // Edit Info modal (same endpoint) simply ignores.
+                                programParticipants: {
+                                    select: { status: true, program: { select: { id: true, name: true } } },
+                                    orderBy: { program: { name: "asc" } },
+                                },
+                            }
                         },
                         leads: { select: { personId: true } },
                         orgMembership: true,

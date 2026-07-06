@@ -163,7 +163,14 @@ export default function AdminHouseholdsPage() {
               return (
                 <Table.Tr key={household.id}>
                   <Table.Td>
-                    <Text fw={600}>{household.name || `Household #${household.id}`}</Text>
+                    <Text
+                      fw={600}
+                      c="blue"
+                      style={{ cursor: "pointer" }}
+                      onClick={() => router.push(`/membership-ops/households/${household.id}`)}
+                    >
+                      {household.name || `Household #${household.id}`}
+                    </Text>
                   </Table.Td>
                   <Table.Td>
                     {household.householdMembers && household.householdMembers.length > 0 ? (
