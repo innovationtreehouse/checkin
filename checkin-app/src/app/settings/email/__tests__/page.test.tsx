@@ -5,7 +5,7 @@ jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
-import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import EmailSettingsPage from "../page";
 
 beforeEach(() => resetRtl());
@@ -41,5 +41,28 @@ describe("EmailSettingsPage", () => {
     fireEvent.click(screen.getByLabelText(/let me edit the sender addresses/i));
     expect(from).not.toBeDisabled();
     expect(screen.getByRole("button", { name: "Save settings" })).not.toBeDisabled();
+  });
+
+  it("validates client-side: a malformed From shows an inline error and never PUTs", async () => {
+    setSession({ id: 1, isBoardMember: true });
+    const fetchMock = mockFetchJson({ "/api/settings/email": { settings: { emailFromAddress: null, emailReplyToAddress: null } } });
+    renderWithProviders(<EmailSettingsPage />);
+
+    const from = await screen.findByLabelText(/From address/i);
+    fireEvent.change(from, { target: { value: "not-an-email" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    expect(await screen.findByText(/Enter an email address/i)).toBeInTheDocument();
+    // Only the initial GET happened — no PUT was attempted.
+    expect(fetchMock.mock.calls.some(([, opts]) => opts?.method === "PUT")).toBe(false);
+  });
+
+  it("redirects a user without board/sysadmin and never renders the form", async () => {
+    setSession({ id: 9 }); // authenticated but no roles
+    mockFetchJson({ "/api/settings/email": { settings: { emailFromAddress: null, emailReplyToAddress: null } } });
+    renderWithProviders(<EmailSettingsPage />);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/"));
+    expect(screen.queryByLabelText(/From address/i)).not.toBeInTheDocument();
   });
 });

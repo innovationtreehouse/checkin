@@ -5,13 +5,22 @@ import { Alert, Button, Card, Center, Checkbox, Loader, Stack, Text, TextInput, 
 import { notifications } from "@mantine/notifications";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
+import { useRequireRole } from "@/hooks/useRequireRole";
+import { isValidEmailHeader } from "@/lib/emailHeader";
 
 interface Settings {
   emailFromAddress: string | null;
   emailReplyToAddress: string | null;
 }
 
+const HEADER_ERROR = 'Enter an email address or "Name <addr@domain>".';
+
 export default function EmailSettingsPage() {
+  // The sender identity is editable by board + sysadmin (same as the /settings layout
+  // admits). Gate the page client-side and redirect anyone else, rather than letting them
+  // load the form and only discover the 403 on save.
+  const { authorized, ready, loading: authLoading } = useRequireRole(["isSysadmin", "isBoardMember"]);
+
   const [emailFrom, setEmailFrom] = useState("");
   const [emailReplyTo, setEmailReplyTo] = useState("");
   // Once an identity exists, editing is high-stakes (a wrong From on an unverified
@@ -23,6 +32,7 @@ export default function EmailSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveNotice, setSaveNotice] = useState<{ text: string; err: boolean } | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ from?: string; replyTo?: string }>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,13 +50,25 @@ export default function EmailSettingsPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (ready) load(); }, [ready, load]);
 
   const wasSet = !!(initial?.emailFrom || initial?.emailReplyTo);
   const locked = wasSet && !unlocked;
 
   const save = async () => {
     setSaveNotice(null);
+    // Belt-and-suspenders: the page is role-gated and the route re-checks, but never fire
+    // a mutation the user isn't allowed to make.
+    if (!authorized) { setSaveNotice({ text: "You do not have permission to change these settings.", err: true }); return; }
+    // Validate client-side with the same rule the route enforces (imported, not
+    // duplicated) so a typo is caught inline instead of surfacing as a raw API error.
+    const from = emailFrom.trim();
+    const replyTo = emailReplyTo.trim();
+    const fe: { from?: string; replyTo?: string } = {};
+    if (from && !isValidEmailHeader(from)) fe.from = HEADER_ERROR;
+    if (replyTo && !isValidEmailHeader(replyTo)) fe.replyTo = HEADER_ERROR;
+    if (fe.from || fe.replyTo) { setFieldErrors(fe); return; }
+    setFieldErrors({});
     setSaving(true);
     try {
       const res = await fetch("/api/settings/email", {
@@ -62,6 +84,9 @@ export default function EmailSettingsPage() {
 
   const isDirty = !!initial && !shallowEqual(initial, { emailFrom, emailReplyTo });
   useUnsavedGuard(isDirty);
+
+  if (authLoading) return <Center mih="60vh"><Loader /></Center>;
+  if (!ready) return null; // redirect to / is in flight
 
   return (
     <Stack>
@@ -108,7 +133,8 @@ export default function EmailSettingsPage() {
               placeholder="Innovation Treehouse <noreply@updates.innovationtreehouse.org>"
               w={440}
               value={emailFrom}
-              onChange={(e) => setEmailFrom(e.currentTarget.value)}
+              error={fieldErrors.from}
+              onChange={(e) => { setEmailFrom(e.currentTarget.value); setFieldErrors((f) => ({ ...f, from: undefined })); }}
               disabled={locked}
             />
             <TextInput
@@ -117,7 +143,8 @@ export default function EmailSettingsPage() {
               placeholder="board@innovationtreehouse.org"
               w={440}
               value={emailReplyTo}
-              onChange={(e) => setEmailReplyTo(e.currentTarget.value)}
+              error={fieldErrors.replyTo}
+              onChange={(e) => { setEmailReplyTo(e.currentTarget.value); setFieldErrors((f) => ({ ...f, replyTo: undefined })); }}
               disabled={locked}
             />
           </Stack>

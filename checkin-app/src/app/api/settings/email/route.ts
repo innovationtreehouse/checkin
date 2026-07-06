@@ -2,21 +2,11 @@ import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { isValidEmailHeader } from "@/lib/emailHeader";
 
 export const dynamic = "force-dynamic";
 
 const SELECT = { emailFromAddress: true, emailReplyToAddress: true } as const;
-
-/**
- * Accept a bare address (`a@b.co`) or a display-name form (`Name <a@b.co>`) — the
- * two shapes Resend allows for From/Reply-To. Rejects anything without a plausible
- * address so a typo can't silently break (From) or misroute (Reply-To) all mail.
- */
-function isValidEmailHeader(value: string): boolean {
-    const angle = value.match(/<([^>]*)>\s*$/);
-    const addr = (angle ? angle[1] : value).trim();
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr);
-}
 
 /** GET /api/settings/email — outbound-email sender identity (BoardSettings singleton). */
 export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
