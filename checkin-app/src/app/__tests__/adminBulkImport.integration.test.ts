@@ -41,12 +41,12 @@ describe('Admin Bulk Import API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.person.create({
-            data: { email: 'admin-import-test@example.com', name: 'Admin Import Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-import-test@example.com', name: 'Admin Import Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.person.create({
-            data: { email: 'user-import-test@example.com', name: 'User Import Test', household: { create: {} } }
+            data: { email: 'user-import-test@example.com', name: 'User Import Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
     });

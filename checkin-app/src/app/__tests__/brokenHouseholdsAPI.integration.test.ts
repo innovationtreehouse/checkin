@@ -42,7 +42,7 @@ describe('Broken Households API Integration Tests', () => {
 
         // Acting board member (not a member of any test household below).
         const board = await prisma.person.create({
-            data: { email: 'board-broken-api-test@example.com', name: 'Board Broken Test', isBoardMember: true, household: { create: {} } }
+            data: { email: 'board-broken-api-test@example.com', name: 'Board Broken Test', isBoardMember: true, household: { create: { name: "Test HH" } } }
         });
         boardId = board.id;
 

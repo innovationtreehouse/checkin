@@ -54,19 +54,19 @@ describe('Individual Program API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.person.create({
-            data: { email: 'admin-prog-id-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-prog-id-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Lead
         const lead = await prisma.person.create({
-            data: { email: 'lead-prog-id-api-test@example.com', name: 'Lead', household: { create: {} } }
+            data: { email: 'lead-prog-id-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
         // Create Common User (no membership)
         const commonUser = await prisma.person.create({
-            data: { email: 'common-prog-id-api-test@example.com', name: 'Common', household: { create: {} } }
+            data: { email: 'common-prog-id-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 
@@ -77,6 +77,7 @@ describe('Individual Program API Integration Tests', () => {
                 name: 'Member',
                 household: {
                     create: {
+                        name: "Test HH",
                         orgMembership: {
                             create: {
                                 status: 'ACTIVE',
@@ -105,7 +106,7 @@ describe('Individual Program API Integration Tests', () => {
         // Enroll a participant with a recognizable name into the public program so
         // the leak tests have a roster identity to look for.
         const enrolled = await prisma.person.create({
-            data: { email: 'enrolled-prog-id-api-test@example.com', name: ENROLLED_NAME, household: { create: {} } }
+            data: { email: 'enrolled-prog-id-api-test@example.com', name: ENROLLED_NAME, household: { create: { name: "Test HH" } } }
         });
         enrolledId = enrolled.id;
         await prisma.programParticipant.create({

@@ -33,12 +33,12 @@ describe('Admin Badges API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.person.create({
-            data: { email: 'admin-badges-api-test@example.com', name: 'Admin Badges Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-badges-api-test@example.com', name: 'Admin Badges Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.person.create({
-            data: { email: 'user-badges-api-test@example.com', name: 'User Badges Test', household: { create: {} } }
+            data: { email: 'user-badges-api-test@example.com', name: 'User Badges Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
 

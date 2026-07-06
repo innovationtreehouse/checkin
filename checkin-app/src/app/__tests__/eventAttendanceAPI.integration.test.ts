@@ -43,27 +43,27 @@ describe('Event Attendance API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.person.create({
-            data: { email: 'admin-event-attendance-test@example.com', name: 'Admin Att Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-event-attendance-test@example.com', name: 'Admin Att Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.person.create({
-            data: { email: 'user-event-attendance-test@example.com', name: 'User Att Test', household: { create: {} } }
+            data: { email: 'user-event-attendance-test@example.com', name: 'User Att Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
 
         const mentor = await prisma.person.create({
-            data: { email: 'mentor-event-attendance-test@example.com', name: 'Mentor Att Test', household: { create: {} } }
+            data: { email: 'mentor-event-attendance-test@example.com', name: 'Mentor Att Test', household: { create: { name: "Test HH" } } }
         });
         testLeadMentorId = mentor.id;
 
         const participant1 = await prisma.person.create({
-            data: { email: 'p1-event-attendance-test@example.com', name: 'P1 Att Test', household: { create: {} } }
+            data: { email: 'p1-event-attendance-test@example.com', name: 'P1 Att Test', household: { create: { name: "Test HH" } } }
         });
         testParticipant1Id = participant1.id;
 
         const participant2 = await prisma.person.create({
-            data: { email: 'p2-event-attendance-test@example.com', name: 'P2 Att Test', household: { create: {} } }
+            data: { email: 'p2-event-attendance-test@example.com', name: 'P2 Att Test', household: { create: { name: "Test HH" } } }
         });
         testParticipant2Id = participant2.id;
 
@@ -81,7 +81,7 @@ describe('Event Attendance API Integration Tests', () => {
         // A lead of an UNRELATED program — the cross-tenant attacker for the IDOR
         // tests. Privileged in their own program, but not lead/staff of testEvent's.
         const foreignLead = await prisma.person.create({
-            data: { email: 'foreignlead-event-attendance-test@example.com', name: 'Foreign Lead Att Test', household: { create: {} } }
+            data: { email: 'foreignlead-event-attendance-test@example.com', name: 'Foreign Lead Att Test', household: { create: { name: "Test HH" } } }
         });
         foreignLeadId = foreignLead.id;
         const foreignProgram = await prisma.program.create({

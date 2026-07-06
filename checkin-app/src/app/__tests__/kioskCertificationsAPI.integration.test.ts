@@ -60,7 +60,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
 
         // Setup mock database records
         const user = await prisma.person.create({
-            data: { email: 'user-certifications-api-test@example.com', name: 'User Kiosk Test', household: { create: {} } }
+            data: { email: 'user-certifications-api-test@example.com', name: 'User Kiosk Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
         testHouseholdId = user.householdId;

@@ -48,7 +48,7 @@ describe('Nav todo-counts API', () => {
         // Household A: a lead with a full slate of *member-actionable* todos, plus
         // one reviewer-owned membership state that must NOT count for the member.
         const lead = await prisma.person.create({
-            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dateOfBirth: new Date('1985-01-01'), phone: '555-0001', household: { create: {} } },
+            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dateOfBirth: new Date('1985-01-01'), phone: '555-0001', household: { create: { name: "Test HH" } } },
         });
         leadId = lead.id;
         householdAId = lead.householdId;
@@ -135,7 +135,7 @@ describe('Nav todo-counts API', () => {
 
         // Household B: a board member with no household todos of their own.
         const board = await prisma.person.create({
-            data: { email: `board-${TAG}@example.com`, name: 'Board B', dateOfBirth: new Date('1980-01-01'), phone: '555-0000', isBoardMember: true, household: { create: {} } },
+            data: { email: `board-${TAG}@example.com`, name: 'Board B', dateOfBirth: new Date('1980-01-01'), phone: '555-0000', isBoardMember: true, household: { create: { name: "Test HH" } } },
         });
         boardId = board.id;
         householdBId = board.householdId;
@@ -302,13 +302,13 @@ describe('Nav todo-counts API', () => {
 
         // Staff household: only an org-email participant → must NOT count.
         const staff = await prisma.person.create({
-            data: { email: `staff-${TAG}@${ORG_DOMAIN}`, name: 'Staff', household: { create: {} } },
+            data: { email: `staff-${TAG}@${ORG_DOMAIN}`, name: 'Staff', household: { create: { name: "Test HH" } } },
         });
         expect(await memberFamilies()).toBe(before);
 
         // Member family: a non-org email → +1.
         const member = await prisma.person.create({
-            data: { email: `family-${TAG}@example.com`, name: 'Family', household: { create: {} } },
+            data: { email: `family-${TAG}@example.com`, name: 'Family', household: { create: { name: "Test HH" } } },
         });
         expect(await memberFamilies()).toBe(before + 1);
 

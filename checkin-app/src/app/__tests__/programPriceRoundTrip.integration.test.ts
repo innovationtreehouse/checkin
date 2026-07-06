@@ -46,12 +46,12 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
         await prisma.person.deleteMany({ where: { id: { in: existingUserIds } } });
 
         const admin = await prisma.person.create({
-            data: { email: 'admin-price-roundtrip-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } },
+            data: { email: 'admin-price-roundtrip-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } },
         });
         adminId = admin.id;
 
         const lead = await prisma.person.create({
-            data: { email: 'lead-price-roundtrip-test@example.com', name: 'Lead', household: { create: {} } },
+            data: { email: 'lead-price-roundtrip-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } },
         });
         leadId = lead.id;
     });

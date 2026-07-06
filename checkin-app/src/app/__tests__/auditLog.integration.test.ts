@@ -43,7 +43,7 @@ describe('AuditLog Integration Tests', () => {
     async function makeParticipant(suffix: string) {
         const p = await prisma.person.create({
             // 'audit-test' substring also matches the beforeAll backstop sweep.
-            data: { email: `${TAG}-${suffix}-audit-test@example.com`, name: `${TAG} ${suffix}`, household: { create: {} } },
+            data: { email: `${TAG}-${suffix}-audit-test@example.com`, name: `${TAG} ${suffix}`, household: { create: { name: "Test HH" } } },
             select: { id: true, householdId: true },
         });
         createdParticipantIds.push(p.id);
@@ -66,12 +66,12 @@ describe('AuditLog Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.person.create({
-            data: { email: 'admin-audit-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-audit-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
         const participant = await prisma.person.create({
-            data: { email: 'participant-audit-test@example.com', name: 'Participant Test', household: { create: {} } }
+            data: { email: 'participant-audit-test@example.com', name: 'Participant Test', household: { create: { name: "Test HH" } } }
         });
         testParticipantId = participant.id;
     });

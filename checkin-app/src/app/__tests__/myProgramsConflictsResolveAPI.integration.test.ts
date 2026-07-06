@@ -35,7 +35,7 @@ describe('My-programs conflicts resolve API', () => {
 
     beforeAll(async () => {
         const lead = await prisma.person.create({
-            data: { email: `lead-${TAG}@example.com`, name: 'Lead', household: { create: {} } },
+            data: { email: `lead-${TAG}@example.com`, name: 'Lead', household: { create: { name: "Test HH" } } },
         });
         leadId = lead.id;
         householdId = lead.householdId;
