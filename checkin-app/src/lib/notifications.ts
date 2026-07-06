@@ -10,11 +10,7 @@ import { escapeHtml, type VisitSource } from "./email-templates/base";
  */
 
 export type NotificationEvent =
-    | 'RSVP_REMINDER'
     | 'PROGRAM_ENROLLMENT'
-    | 'EVENT_STARTING_SOON'
-    | 'ATTENDANCE_VALIDATED'
-    | 'RSVP_UPDATED'
     | 'PROGRAM_ASSIGNMENT'
     | 'CHECKIN'
     | 'CHECKOUT';
@@ -41,14 +37,6 @@ export async function sendNotification(userId: number, eventType: NotificationEv
             case 'PROGRAM_ENROLLMENT':
                 subject = `Confirmed: Enrollment in ${payload.programName}`;
                 message = `Hi ${user.name}, you have been successfully enrolled in ${payload.programName}.`;
-                break;
-            case 'EVENT_STARTING_SOON':
-                subject = `Reminder: ${payload.eventName} starts soon!`;
-                message = `Hi ${user.name}, your event ${payload.eventName} is starting in ${payload.hours} hours.`;
-                break;
-            case 'ATTENDANCE_VALIDATED':
-                subject = `Attendance Verified: ${payload.eventName}`;
-                message = `Hi ${user.name}, your attendance at ${payload.eventName} has been recorded by administrators.`;
                 break;
             case 'CHECKIN':
                 subject = `✅ Checked In — ${user.name}`;

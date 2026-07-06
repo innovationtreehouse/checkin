@@ -13,7 +13,6 @@ const OPTIONS = [
   { key: 'emailDependentCheckins', label: 'Email me realtime receipts when my dependents check in/out' },
   { key: 'emailNewsletter', label: 'Subscribe to the monthly newsletter' },
   { key: 'notifyNewPrograms', label: 'Notify me when a new program is announced' },
-  { key: 'notifyEventReminders', label: 'Notify me before my events start' },
 ] as const;
 
 export default function CommunicationPage() {
@@ -28,8 +27,7 @@ export default function CommunicationPage() {
     emailCheckinReceipts: false,
     emailDependentCheckins: false,
     emailNewsletter: false,
-    notifyNewPrograms: true,
-    notifyEventReminders: true
+    notifyNewPrograms: true
   });
 
   const fetchSettings = useCallback(async () => {
@@ -42,8 +40,7 @@ export default function CommunicationPage() {
           emailCheckinReceipts: s.emailCheckinReceipts || false,
           emailDependentCheckins: s.emailDependentCheckins || false,
           emailNewsletter: s.emailNewsletter || false,
-          notifyNewPrograms: s.notifyNewPrograms !== undefined ? s.notifyNewPrograms : true,
-          notifyEventReminders: s.notifyEventReminders !== undefined ? s.notifyEventReminders : true
+          notifyNewPrograms: s.notifyNewPrograms !== undefined ? s.notifyNewPrograms : true
         });
       } else {
         setMessage("Failed to load settings.");
