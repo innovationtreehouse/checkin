@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Badge, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { useState, useEffect, type ReactNode } from "react";
+import { Badge, Button, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { formatPhone } from "@/lib/phone";
 import { PageLoader } from "@/components/ui/PageLoader";
 
@@ -37,11 +38,13 @@ function PersonSection({
   description,
   color,
   people,
+  renderAction,
 }: {
   title: string;
   description: string;
   color: string;
   people: PersonRow[];
+  renderAction?: (p: PersonRow) => ReactNode;
 }) {
   if (people.length === 0) return null;
   return (
@@ -58,7 +61,10 @@ function PersonSection({
                 {" · "}Household #{p.householdId}
               </Text>
             </div>
-            <Badge color={color} variant="light">{title}</Badge>
+            <Group gap="sm">
+              <Badge color={color} variant="light">{title}</Badge>
+              {renderAction?.(p)}
+            </Group>
           </Group>
         </Card>
       ))}
@@ -76,6 +82,32 @@ export default function CompliancePage() {
   const [peopleMissingDob, setPeopleMissingDob] = useState<PersonRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [submittedIds, setSubmittedIds] = useState<Set<number>>(new Set());
+
+  // Record that an external background check exists for a program person and submit
+  // it for two-reviewer approval. Board/lead-initiated — the subject may have no login.
+  const submitBg = async (personId: number) => {
+    setBusyId(personId);
+    try {
+      const res = await fetch("/api/membership-audit/person-bg", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personId }),
+      });
+      if (res.ok) {
+        setSubmittedIds((s) => new Set(s).add(personId));
+        notifications.show({ color: "green", message: "Submitted for background-check review." });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: "red", message: data.error || "Could not submit for review." });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error." });
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -168,9 +200,18 @@ export default function CompliancePage() {
 
       <PersonSection
         title="Background check needed"
-        description="Program-attached people 18 or older with no current background check. Warn-only — nothing is blocked."
+        description="Program-attached people 18 or older with no current background check. Warn-only — nothing is blocked. Once an external check exists, submit it below for two-reviewer approval."
         color="orange"
         people={peopleNeedingBgCheck}
+        renderAction={(p) =>
+          submittedIds.has(p.personId) ? (
+            <Badge color="green" variant="light">Submitted for review</Badge>
+          ) : (
+            <Button size="xs" variant="light" loading={busyId === p.personId} disabled={busyId === p.personId} onClick={() => submitBg(p.personId)}>
+              Record external check &amp; submit
+            </Button>
+          )
+        }
       />
 
       <PersonSection

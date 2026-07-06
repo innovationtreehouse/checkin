@@ -6,7 +6,7 @@ import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, Textarea, TextInput, Title, Tooltip } from '@mantine/core';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { PageContainer } from '@/components/ui/PageContainer';
-import { formatDate, calculateAge } from '@/lib/time';
+import { calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import { notifications } from '@mantine/notifications';
 import TodoCard from '@/components/TodoCard';
@@ -358,7 +358,7 @@ export default function HouseholdPage() {
             household.orgMembership?.status === 'ACTIVE' ? (
               <Alert color="green" mb="lg">
                 <Group gap="xs" wrap="wrap">
-                  <Text fw={600}>✓ Member{household.orgMembership.memberSince ? ` since ${formatDate(household.orgMembership.memberSince)}` : ''}</Text>
+                  <Text fw={600}>✓ Member{household.orgMembership.memberSince ? ` since ${new Date(household.orgMembership.memberSince).getFullYear()}` : ''}</Text>
                   {household.orgMembership.isVolunteer && <Badge color="green" variant="light">Volunteer-only family</Badge>}
                 </Group>
               </Alert>
