@@ -62,7 +62,7 @@ describe('POST /api/attendance MANUAL_CHECKIN concurrency (advisory lock)', () =
         // Keyholder so the facility-open guard passes: this suite exercises the
         // advisory lock, not the keyholder-first rule (covered separately below).
         const subject = await prisma.person.create({
-            data: { email: `subject-${EMAIL_TAG}@example.com`, name: 'Manual Checkin Concurrency Subject', isKeyholder: true, household: { create: {} } },
+            data: { email: `subject-${EMAIL_TAG}@example.com`, name: 'Manual Checkin Concurrency Subject', isKeyholder: true, household: { create: { name: "Test HH" } } },
         });
         subjectId = subject.id;
         householdId = subject.householdId;
@@ -120,11 +120,11 @@ describe('POST /api/attendance MANUAL_CHECKIN keyholder-first guard', () => {
         await prisma.household.deleteMany({ where: { id: { in: leaked.map(p => p.householdId) } } });
 
         const nk = await prisma.person.create({
-            data: { email: `nk-${GUARD_TAG}@example.com`, name: 'Guard NonKeyholder', household: { create: {} } },
+            data: { email: `nk-${GUARD_TAG}@example.com`, name: 'Guard NonKeyholder', household: { create: { name: "Test HH" } } },
         });
         nonKeyholderId = nk.id;
         const kh = await prisma.person.create({
-            data: { email: `kh-${GUARD_TAG}@example.com`, name: 'Guard Keyholder', isKeyholder: true, household: { create: {} } },
+            data: { email: `kh-${GUARD_TAG}@example.com`, name: 'Guard Keyholder', isKeyholder: true, household: { create: { name: "Test HH" } } },
         });
         keyholderId = kh.id;
         householdIds = [nk.householdId, kh.householdId];

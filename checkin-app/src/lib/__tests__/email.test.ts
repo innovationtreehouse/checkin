@@ -104,6 +104,7 @@ describe('sendEmail no-key logging + capture', () => {
 describe('sendEmail send-failure contract (Resend configured)', () => {
     const sendMock = jest.fn();
     let doMockIdentity: { from: string; replyTo?: string[] } = { from: 'test@test.com' };
+    const logIntegrationErrorMock = jest.fn();
     let errorSpy: jest.SpyInstance;
     let logSpy: jest.SpyInstance;
 
@@ -111,6 +112,7 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         jest.resetModules();
         sendMock.mockReset();
         doMockIdentity = { from: 'test@test.com' };
+        logIntegrationErrorMock.mockReset();
         // Re-mock the module's deps for the fresh module instance loaded below.
         jest.doMock('../config.ts', () => ({
             config: { resendApiKey: () => 'test-key', emailFrom: () => 'test@test.com', isDevInstance: () => false },
@@ -120,6 +122,8 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         jest.doMock('resend', () => ({
             Resend: jest.fn().mockImplementation(() => ({ emails: { send: sendMock } })),
         }));
+        // Mocked (not the real DB-writing logger) — this file is a unit test, no DB.
+        jest.doMock('../logger', () => ({ logIntegrationError: logIntegrationErrorMock }));
         // Silence the expected error logging from the failure paths.
         errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
         logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -132,6 +136,7 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         jest.dontMock('../dev/sentMail');
         jest.dontMock('../emailIdentity');
         jest.dontMock('resend');
+        jest.dontMock('../logger');
     });
 
     it('returns false when Resend responds with an { error }', async () => {
@@ -191,5 +196,37 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         await send('to@test.com', 'Subject', '<p>hi</p>');
         expect(sendMock).toHaveBeenCalledTimes(1);
         expect(sendMock.mock.calls[0][0]).not.toHaveProperty('replyTo');
+    });
+
+    it('persists an IntegrationErrorLog (to+subject, no body) when Resend responds with an { error }', async () => {
+        sendMock.mockResolvedValue({ data: null, error: { name: 'validation_error', message: 'bad recipient' } });
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { sendEmail: send } = require('../email');
+        const html = 'Sensitive body <a href="reset">Link</a>';
+
+        await send('bounced@test.com', 'Subject', html);
+
+        expect(logIntegrationErrorMock).toHaveBeenCalledTimes(1);
+        const [source, error, context] = logIntegrationErrorMock.mock.calls[0];
+        expect(source).toBe('email');
+        expect(String(error)).toContain('bad recipient');
+        expect(context).toEqual({ to: 'bounced@test.com', subject: 'Subject' });
+        expect(JSON.stringify(context)).not.toContain(html);
+    });
+
+    it('persists an IntegrationErrorLog when the Resend call throws', async () => {
+        sendMock.mockRejectedValue(new Error('network down'));
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { sendEmail: send } = require('../email');
+        const html = '<p>Another sensitive body</p>';
+
+        await send('bounced@test.com', 'Subject', html);
+
+        expect(logIntegrationErrorMock).toHaveBeenCalledTimes(1);
+        const [source, error, context] = logIntegrationErrorMock.mock.calls[0];
+        expect(source).toBe('email');
+        expect((error as Error).message).toBe('network down');
+        expect(context).toEqual({ to: 'bounced@test.com', subject: 'Subject' });
+        expect(JSON.stringify(context)).not.toContain(html);
     });
 });

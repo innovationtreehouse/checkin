@@ -46,7 +46,7 @@ describe('Attendance API Integration Tests', () => {
         testHouseholdId = household.id;
 
         const admin = await prisma.person.create({
-            data: { email: 'admin-attendance-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-attendance-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
         testAdminHouseholdId = admin.householdId;
@@ -77,7 +77,7 @@ describe('Attendance API Integration Tests', () => {
         // Keyholder present + checked in: the facility-open guard requires an
         // active keyholder before any non-keyholder MANUAL_CHECKIN succeeds.
         const keyholder = await prisma.person.create({
-            data: { email: 'keyholder-attendance-test@example.com', name: 'Keyholder Test', isKeyholder: true, household: { create: {} } }
+            data: { email: 'keyholder-attendance-test@example.com', name: 'Keyholder Test', isKeyholder: true, household: { create: { name: "Test HH" } } }
         });
         testKeyholderId = keyholder.id;
         testKeyholderHouseholdId = keyholder.householdId;

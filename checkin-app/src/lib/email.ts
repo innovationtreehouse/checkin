@@ -2,6 +2,7 @@ import { Resend } from 'resend';
 import { config } from './config';
 import { captureSentEmail } from './dev/sentMail';
 import { getEmailSenderIdentity } from './emailIdentity';
+import { logIntegrationError } from './logger';
 
 const resend = config.resendApiKey()
     ? new Resend(config.resendApiKey()!)
@@ -11,7 +12,7 @@ const resend = config.resendApiKey()
  * Send an email via Resend. Falls back to console.log if no API key is configured.
  *
  * The From (and optional Reply-To) come from getEmailSenderIdentity(): the board
- * can override the EMAIL_FROM env default and set a Reply-To in Settings → Membership.
+ * can override the EMAIL_FROM env default and set a Reply-To in Settings → Email.
  */
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
     const { from, replyTo } = await getEmailSenderIdentity();
@@ -39,6 +40,9 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
 
         if (error) {
             console.error(`[Email Error] Failed to send to ${to}:`, error);
+            // System Status > Link Status tab (see logIntegrationError). Deliberately no
+            // `html` in context — log-hygiene contract asserted in email.test.ts.
+            await logIntegrationError('email', error.message, { to, subject });
             return false;
         }
 
@@ -46,6 +50,7 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
         return true;
     } catch (err) {
         console.error(`[Email Exception] Failed to send to ${to}:`, err);
+        await logIntegrationError('email', err, { to, subject });
         return false;
     }
 }

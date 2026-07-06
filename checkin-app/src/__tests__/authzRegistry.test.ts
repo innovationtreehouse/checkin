@@ -92,6 +92,7 @@ const AUTHZ_TESTED = new Set<string>([
     'safety/emergency-contacts',
     'safety/trusted-adults/decision',
     'safety/trusted-adults/override',
+    'settings/email',
     'settings/membership',
     'settings/membership/bulk-open-renewals',
     'settings/membership/volunteer-designations',

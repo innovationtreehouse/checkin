@@ -36,10 +36,10 @@ describe('Localization settings API', () => {
         prevSettings = existing ? { timezone: existing.timezone, locale: existing.locale } : null;
 
         adminId = (await prisma.person.create({
-            data: { email: 'admin-loc-test@example.com', name: 'Loc Admin', isSysadmin: true, household: { create: {} } },
+            data: { email: 'admin-loc-test@example.com', name: 'Loc Admin', isSysadmin: true, household: { create: { name: "Test HH" } } },
         })).id;
         plainId = (await prisma.person.create({
-            data: { email: 'plain-loc-test@example.com', name: 'Loc Plain', household: { create: {} } },
+            data: { email: 'plain-loc-test@example.com', name: 'Loc Plain', household: { create: { name: "Test HH" } } },
         })).id;
     });
 

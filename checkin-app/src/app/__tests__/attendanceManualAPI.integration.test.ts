@@ -41,7 +41,7 @@ describe('Manual Attendance API Integration Tests', () => {
 
         // Setup mock database records
         const user = await prisma.person.create({
-            data: { email: 'user-manual-attendance-test@example.com', name: 'User Manual Attendance Test', household: { create: {} } }
+            data: { email: 'user-manual-attendance-test@example.com', name: 'User Manual Attendance Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
         testHouseholdId = user.householdId;
@@ -265,9 +265,9 @@ describe('Manual Attendance API keyholder-first guard (open backfills)', () => {
         await prisma.person.deleteMany({ where: { id: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: leaked.map(p => p.householdId) } } });
 
-        const nk = await prisma.person.create({ data: { email: `nk-${TAG}@example.com`, name: 'Guard NK', household: { create: {} } } });
+        const nk = await prisma.person.create({ data: { email: `nk-${TAG}@example.com`, name: 'Guard NK', household: { create: { name: "Test HH" } } } });
         nkId = nk.id;
-        const kh = await prisma.person.create({ data: { email: `kh-${TAG}@example.com`, name: 'Guard KH', isKeyholder: true, household: { create: {} } } });
+        const kh = await prisma.person.create({ data: { email: `kh-${TAG}@example.com`, name: 'Guard KH', isKeyholder: true, household: { create: { name: "Test HH" } } } });
         khId = kh.id;
         householdIds = [nk.householdId, kh.householdId];
     });

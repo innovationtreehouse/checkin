@@ -88,6 +88,11 @@ model Person {
   waiverSignedBy       Int?
   /// @sensitivity:internal
   lastBackgroundCheck  DateTime?
+  /// Set when Resend reports a bounce/complaint for this person's address
+  /// (webhooks/resend); cleared on a later `email.delivered` for the same
+  /// address (self-healing). Role/audit metadata about deliverability, not the
+  /// address itself. @sensitivity:internal
+  emailUndeliverableAt DateTime?
   /// @sensitivity:personal
   notificationSettings Json?
 
@@ -155,7 +160,7 @@ model Household {
   /// @sensitivity:public
   id      Int     @id @default(autoincrement())
   /// @sensitivity:public
-  name    String?
+  name    String
   /// @sensitivity:personal
   line1      String?
   /// @sensitivity:personal

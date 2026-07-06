@@ -15,6 +15,7 @@ export const classifications = {
         lastWaiverSign: 'internal',
         waiverSignedBy: 'internal',
         lastBackgroundCheck: 'internal',
+        emailUndeliverableAt: 'internal',
         notificationSettings: 'personal',
         householdId: 'public',
         allergies: 'personal',

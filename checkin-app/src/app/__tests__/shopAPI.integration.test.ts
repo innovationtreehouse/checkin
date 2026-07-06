@@ -63,13 +63,13 @@ describe('Shop API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.person.create({
-            data: { email: 'admin-shop-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-shop-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Board Member
         const board = await prisma.person.create({
-            data: { email: 'board-shop-api-test@example.com', name: 'Board', isBoardMember: true, household: { create: {} } }
+            data: { email: 'board-shop-api-test@example.com', name: 'Board', isBoardMember: true, household: { create: { name: "Test HH" } } }
         });
         boardId = board.id;
 
@@ -79,7 +79,7 @@ describe('Shop API Integration Tests', () => {
                 email: 'common-shop-api-test@example.com',
                 name: 'Common',
                 // Volunteer member: the household holds an ACTIVE, isVolunteer membership.
-                household: { create: { orgMembership: { create: { status: 'ACTIVE', isVolunteer: true } } } }
+                household: { create: { name: 'Test HH', orgMembership: { create: { status: 'ACTIVE', isVolunteer: true } } } }
             }
         });
         commonId = commonUser.id;
@@ -94,7 +94,7 @@ describe('Shop API Integration Tests', () => {
             data: {
                 email: 'certifier-shop-api-test@example.com',
                 name: 'Certifier',
-                household: { create: {} },
+                household: { create: { name: "Test HH" } },
                 toolStatuses: {
                     create: { toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' }
                 }
@@ -339,12 +339,12 @@ describe('Shop API Integration Tests', () => {
                 data: {
                     email: 'recert-certifier-shop-api-test@example.com',
                     name: 'Recert Certifier',
-                    household: { create: {} },
+                    household: { create: { name: "Test HH" } },
                     toolStatuses: { create: { toolId: tool.id, level: 'MAY_CERTIFY_OTHERS' } },
                 },
             });
             const target = await prisma.person.create({
-                data: { email: 'recert-target-shop-api-test@example.com', name: 'Recert Target', household: { create: {} } },
+                data: { email: 'recert-target-shop-api-test@example.com', name: 'Recert Target', household: { create: { name: "Test HH" } } },
             });
 
             try {

@@ -37,7 +37,7 @@ describe('Facility trends API', () => {
 
     beforeAll(async () => {
         const admin = await prisma.person.create({
-            data: { email: `admin-${TAG}@example.com`, name: 'Admin', isSysadmin: true, household: { create: {} } },
+            data: { email: `admin-${TAG}@example.com`, name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } },
         });
         adminId = admin.id;
         householdId = admin.householdId;
