@@ -49,15 +49,15 @@ describe('POST /api/programs/[id]/sync-shopify', () => {
         process.env.CHECKIN_ENV = 'local';
 
         const admin = await prisma.person.create({
-            data: { email: `admin-${TAG}@example.com`, name: 'Admin', isSysadmin: true, household: { create: {} } },
+            data: { email: `admin-${TAG}@example.com`, name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } },
         });
         adminId = admin.id;
         const board = await prisma.person.create({
-            data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: {} } },
+            data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: "Test HH" } } },
         });
         boardId = board.id;
         const common = await prisma.person.create({
-            data: { email: `common-${TAG}@example.com`, name: 'Common', household: { create: {} } },
+            data: { email: `common-${TAG}@example.com`, name: 'Common', household: { create: { name: "Test HH" } } },
         });
         commonId = common.id;
     });

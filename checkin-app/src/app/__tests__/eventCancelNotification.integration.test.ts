@@ -39,13 +39,13 @@ describe("PATCH /api/events/[id] cancel — attendee notification (characterizat
 
     beforeAll(async () => {
         const a = await prisma.person.create({
-            data: { name: 'Notify Attendee', email: `attendee-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Notify Attendee', email: `attendee-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         attendeeId = a.id;
         attendeeHouseholdId = a.householdId;
 
         const admin = await prisma.person.create({
-            data: { name: 'Notify Admin', email: `admin-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Notify Admin', email: `admin-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         adminId = admin.id;
         adminHouseholdId = admin.householdId;

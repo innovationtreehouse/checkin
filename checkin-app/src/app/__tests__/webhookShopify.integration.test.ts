@@ -68,12 +68,12 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         programId = program.id;
 
         const a = await prisma.person.create({
-            data: { name: 'Hook P1', email: `p1-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Hook P1', email: `p1-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         p1 = a.id;
         h1 = a.householdId;
         const b = await prisma.person.create({
-            data: { name: 'Hook P2', email: `p2-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Hook P2', email: `p2-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         p2 = b.id;
         h2 = b.householdId;

@@ -46,7 +46,7 @@ describe('Cron Reminders API Integration Tests', () => {
 
         // Setup mock database records
         const user = await prisma.person.create({
-            data: { email: 'user-cron-reminders-test@example.com', name: 'User Cron Reminders Test', household: { create: {} } }
+            data: { email: 'user-cron-reminders-test@example.com', name: 'User Cron Reminders Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
         testHouseholdId = user.householdId;

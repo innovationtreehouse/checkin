@@ -42,12 +42,12 @@ describe('Event RSVP API Integration Tests', () => {
 
         // Setup mock database records
         const user = await prisma.person.create({
-            data: { email: 'enrolled-user-rsvp-test@example.com', name: 'Enrolled RSVP Test', household: { create: {} } }
+            data: { email: 'enrolled-user-rsvp-test@example.com', name: 'Enrolled RSVP Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
 
         const unenrolledUser = await prisma.person.create({
-            data: { email: 'unenrolled-user-rsvp-test@example.com', name: 'Unenrolled RSVP Test', household: { create: {} } }
+            data: { email: 'unenrolled-user-rsvp-test@example.com', name: 'Unenrolled RSVP Test', household: { create: { name: "Test HH" } } }
         });
         testUnenrolledUserId = unenrolledUser.id;
 
@@ -73,7 +73,7 @@ describe('Event RSVP API Integration Tests', () => {
         // A lead of an UNRELATED program — the cross-tenant attacker. Privileged in
         // their own program but not enrolled/volunteering in testEvent's program.
         const foreignLead = await prisma.person.create({
-            data: { email: 'foreignlead-rsvp-test@example.com', name: 'Foreign Lead RSVP Test', household: { create: {} } }
+            data: { email: 'foreignlead-rsvp-test@example.com', name: 'Foreign Lead RSVP Test', household: { create: { name: "Test HH" } } }
         });
         foreignLeadId = foreignLead.id;
         const foreignProgram = await prisma.program.create({

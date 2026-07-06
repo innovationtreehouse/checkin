@@ -64,12 +64,12 @@ describe('Admin Participants API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.person.create({
-            data: { email: 'admin-participants-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-participants-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.person.create({
-            data: { email: 'user-participants-test@example.com', name: 'User Test', household: { create: {} } }
+            data: { email: 'user-participants-test@example.com', name: 'User Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
     });
@@ -261,7 +261,7 @@ describe('Admin Participants API Integration Tests', () => {
 
             // Create a disposable user just for this edit test
             const editUser = await prisma.person.create({
-                data: { email: 'edit-test-user@example.com', name: 'Original Name', household: { create: {} } }
+                data: { email: 'edit-test-user@example.com', name: 'Original Name', household: { create: { name: "Test HH" } } }
             });
 
             const req = new Request(`http://localhost:4000/api/membership-ops/participants/${editUser.id}`, {

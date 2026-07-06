@@ -79,9 +79,9 @@ describe('Membership EXTERNAL phase API', () => {
         process.env.ZOHO_WEBHOOK_SECRET = SECRET;
         await wipe();
 
-        const board = await prisma.person.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: {} } } });
+        const board = await prisma.person.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: "Test HH" } } } });
         boardId = board.id;
-        const user = await prisma.person.create({ data: { email: `user-${TAG}@example.com`, name: 'User', household: { create: {} } } });
+        const user = await prisma.person.create({ data: { email: `user-${TAG}@example.com`, name: 'User', household: { create: { name: "Test HH" } } } });
         plainUserId = user.id;
 
         const a = await makeProcess(`A ${TAG}`, 'zoho-A');
@@ -275,7 +275,7 @@ describe('Membership EXTERNAL phase — background-check step', () => {
         process.env.AVERITY_CONSENT_URL = AVERITY_URL;
         await wipe2();
 
-        const board = await prisma.person.create({ data: { email: `board-${TAG2}@example.com`, name: 'Board', isBoardMember: true, household: { create: {} } } });
+        const board = await prisma.person.create({ data: { email: `board-${TAG2}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: "Test HH" } } } });
         boardId2 = board.id;
 
         // Applicant household with an in-flight process already past the contract:

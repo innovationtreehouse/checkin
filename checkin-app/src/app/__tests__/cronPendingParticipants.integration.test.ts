@@ -27,7 +27,7 @@ describe('Cron Pending-Participants API Integration Tests', () => {
 
     const mkParticipant = async (key: string) => {
         const p = await prisma.person.create({
-            data: { email: `${key}-pending-cron-test@example.com`, name: `${key} Pending Cron`, household: { create: {} } }
+            data: { email: `${key}-pending-cron-test@example.com`, name: `${key} Pending Cron`, household: { create: { name: "Test HH" } } }
         });
         ids[key] = p.id;
         return p.id;

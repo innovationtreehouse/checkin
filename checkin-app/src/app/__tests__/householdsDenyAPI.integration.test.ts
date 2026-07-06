@@ -41,20 +41,20 @@ describe('POST /api/membership-ops/households — Deny Membership', () => {
 
         // Acting board member (in their own household).
         const board = await prisma.person.create({
-            data: { email: `board-${TAG}@example.com`, name: 'Board Actor', isBoardMember: true, household: { create: {} } },
+            data: { email: `board-${TAG}@example.com`, name: 'Board Actor', isBoardMember: true, household: { create: { name: "Test HH" } } },
         });
         boardId = board.id;
 
         // A plain household to deny.
         const member = await prisma.person.create({
-            data: { email: `member-${TAG}@example.com`, name: 'Plain Member', household: { create: {} } },
+            data: { email: `member-${TAG}@example.com`, name: 'Plain Member', household: { create: { name: "Test HH" } } },
         });
         plainMemberId = member.id;
         plainHouseholdId = member.householdId;
 
         // A household that contains a board member — must be undeniable.
         const protectedBoard = await prisma.person.create({
-            data: { email: `protected-${TAG}@example.com`, name: 'Protected Board', isBoardMember: true, household: { create: {} } },
+            data: { email: `protected-${TAG}@example.com`, name: 'Protected Board', isBoardMember: true, household: { create: { name: "Test HH" } } },
         });
         boardHouseholdId = protectedBoard.householdId;
     });
