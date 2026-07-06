@@ -9,9 +9,13 @@ import { logger } from "@/lib/logger";
  * errorLabel; these helpers only resolve recipients and swallow send/query errors.
  */
 
-/** Send one email to each recipient; per-send errors are logged and swallowed. */
-function fanOutEmails(emails: string[], subject: string, html: string, errorLabel: string): Promise<unknown[]> {
-    return Promise.all(emails.map((email) => sendEmail(email, subject, html).catch((e) => logger.error(errorLabel, e))));
+/**
+ * Send one email to each recipient. sendEmail never rejects (failures resolve to
+ * `false` and are already persisted via logIntegrationError) — this just fans out,
+ * nothing left to catch here.
+ */
+function fanOutEmails(emails: string[], subject: string, html: string): Promise<boolean[]> {
+    return Promise.all(emails.map((email) => sendEmail(email, subject, html)));
 }
 
 /** Email every lead of a household. Resolve + fan-out; all errors logged and swallowed. */
@@ -22,7 +26,7 @@ export async function emailHouseholdLeads(householdId: number, subject: string, 
             select: { person: { select: { email: true } } },
         });
         const emails = leads.map((l) => l.person?.email).filter((e): e is string => !!e);
-        await fanOutEmails(emails, subject, html, errorLabel);
+        await fanOutEmails(emails, subject, html);
     } catch (e) {
         logger.error(errorLabel, e);
     }
@@ -36,7 +40,7 @@ export async function emailBoardMembers(subject: string, html: string, errorLabe
             select: { email: true },
         });
         const emails = board.map((b) => b.email).filter((e): e is string => !!e);
-        await fanOutEmails(emails, subject, html, errorLabel);
+        await fanOutEmails(emails, subject, html);
     } catch (e) {
         logger.error(errorLabel, e);
     }

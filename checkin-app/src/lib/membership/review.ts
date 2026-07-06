@@ -108,11 +108,13 @@ export async function notifyReviewers(): Promise<void> {
         await Promise.all(
             reviewers.map((r) =>
                 r.email
+                    // sendEmail never rejects (resolves false + logs via logIntegrationError
+                    // on failure) — nothing here for a .catch to ever reach.
                     ? sendEmail(
                           r.email,
                           "Membership: a background-check review is needed",
                           `<p>An application is ready for your background-check review. Please sign in to review it: <a href="${base}/membership-ops/review">${base}/membership-ops/review</a></p>`,
-                      ).catch((e) => logger.error("Reviewer ping failed:", e))
+                      )
                     : Promise.resolve(),
             ),
         );
