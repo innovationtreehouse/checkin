@@ -48,7 +48,6 @@ describe('POST /api/programs/[id]/participants concurrency (capacity lock)', () 
         await prisma.programParticipant.deleteMany({ where: { personId: { in: ids } } });
         await prisma.program.deleteMany({ where: { name: { contains: TAG } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
-        await prisma.householdLead.deleteMany({ where: { personId: { in: ids } } });
         await prisma.person.deleteMany({ where: { id: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     }
@@ -63,7 +62,7 @@ describe('POST /api/programs/[id]/participants concurrency (capacity lock)', () 
             data: { email: `lead-${TAG}@example.com`, name: 'Lead', householdId },
         });
         leadId = lead.id;
-        await prisma.householdLead.create({ data: { householdId, personId: leadId } });
+        await prisma.person.update({ where: { id: leadId }, data: { isHouseholdLead: true } });
 
         const m1 = await prisma.person.create({
             data: { email: `m1-${TAG}@example.com`, name: 'Member One', householdId },

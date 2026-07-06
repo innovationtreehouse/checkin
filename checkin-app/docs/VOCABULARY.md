@@ -24,7 +24,7 @@ identifier that just says "member" is a bug against this dictionary.
 | **Person** | the human (any human: volunteer, youth, lead, enrollee) | name / "person" | `person` | **`Person`** (the umbrella person model) | — |
 | **Org Membership (A)** | Person/household ↔ **Organization** | **"Treehouse Member"** | `isActiveOrgMember`, `orgMember…` | `OrgMembership` | `/api/shop/org-members` |
 | **Household** | grouping of people | "household" (warm: "family") | `household` | `Household` | `/api/household` |
-| **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `HouseholdLead` (lead variant) | `/api/household/member` |
+| **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `Person.isHouseholdLead` (lead variant) | `/api/household/member` |
 | **Program relationship** | Person ↔ **Program** | **"participant"** | `programParticipant` | `ProgramParticipant` | — |
 
 Rules:

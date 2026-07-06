@@ -21,11 +21,11 @@ function fanOutEmails(emails: string[], subject: string, html: string): Promise<
 /** Email every lead of a household. Resolve + fan-out; all errors logged and swallowed. */
 export async function emailHouseholdLeads(householdId: number, subject: string, html: string, errorLabel: string): Promise<void> {
     try {
-        const leads = await prisma.householdLead.findMany({
-            where: { householdId },
-            select: { person: { select: { email: true } } },
+        const leads = await prisma.person.findMany({
+            where: { householdId, isHouseholdLead: true },
+            select: { email: true },
         });
-        const emails = leads.map((l) => l.person?.email).filter((e): e is string => !!e);
+        const emails = leads.map((l) => l.email).filter((e): e is string => !!e);
         await fanOutEmails(emails, subject, html);
     } catch (e) {
         logger.error(errorLabel, e);

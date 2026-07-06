@@ -336,19 +336,20 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         }
 
                         // Merge the ENTIRE source household into the target.
-                        const sourceLeads = await prisma.householdLead.findMany({
-                            where: { householdId: sourceHouseholdId }
+                        const sourceLeads = await prisma.person.findMany({
+                            where: { householdId: sourceHouseholdId, isHouseholdLead: true },
+                            select: { id: true }
                         });
 
                         // Enforce the 2-lead cap (#269) BEFORE mutating: reject
                         // the merge up front rather than start a doomed transaction.
                         const projectedLeadIds = new Set(
-                            (await prisma.householdLead.findMany({
-                                where: { householdId: targetHouseholdId },
-                                select: { personId: true }
-                            })).map((l) => l.personId)
+                            (await prisma.person.findMany({
+                                where: { householdId: targetHouseholdId, isHouseholdLead: true },
+                                select: { id: true }
+                            })).map((l) => l.id)
                         );
-                        for (const l of sourceLeads) projectedLeadIds.add(l.personId);
+                        for (const l of sourceLeads) projectedLeadIds.add(l.id);
                         if (pr.email) projectedLeadIds.add(participantId);
                         if (projectedLeadIds.size > MAX_HOUSEHOLD_LEADS) {
                             throw new HouseholdLeadLimitError(targetHouseholdId);
@@ -357,20 +358,30 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         // Atomic: if any step throws, the whole merge rolls back so
                         // participants are never left half-moved between households.
                         await prisma.$transaction(async (tx) => {
-                            // Move all participants from source to target
+                            // Move all participants from source to target. Their
+                            // isHouseholdLead flag travels with them (a1), so source
+                            // leads become target leads automatically — no re-add.
                             await tx.person.updateMany({
                                 where: { householdId: sourceHouseholdId },
                                 data: { householdId: targetHouseholdId }
                             });
 
-                            // Move all leads from source to target
-                            for (const lead of sourceLeads) {
-                                await addHouseholdLead(tx, targetHouseholdId, lead.personId);
+                            // Authoritative cap re-check UNDER the household lock. The
+                            // pre-check above runs outside the tx with no lock, so a
+                            // concurrent merge/promote could push target over the cap in
+                            // between; the moved-in source leads carry their flag, so
+                            // count target's flagged members directly and roll back if
+                            // over. (The pr.email add below re-checks its own add too.)
+                            await tx.$queryRaw`SELECT id FROM "Household" WHERE id = ${targetHouseholdId} FOR UPDATE`;
+                            const targetLeadCount = await tx.person.count({
+                                where: { householdId: targetHouseholdId, isHouseholdLead: true }
+                            });
+                            if (targetLeadCount > MAX_HOUSEHOLD_LEADS) {
+                                throw new HouseholdLeadLimitError(targetHouseholdId);
                             }
 
-                            // Delete memberships and leads from the old source household
+                            // Delete memberships from the old source household
                             await tx.orgMembership.deleteMany({ where: { householdId: sourceHouseholdId } });
-                            await tx.householdLead.deleteMany({ where: { householdId: sourceHouseholdId } });
 
                             // Finally delete the source household (empty now, so the
                             // RESTRICT FK allows it)

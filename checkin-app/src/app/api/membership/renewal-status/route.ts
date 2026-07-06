@@ -16,12 +16,11 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     const user = await prisma.person.findUnique({
         where: { id: auth.user.id },
-        select: { householdId: true, householdLeads: { select: { householdId: true } } },
+        select: { householdId: true, isHouseholdLead: true },
     });
     if (!user?.householdId) return NextResponse.json({ renewalDue: false });
 
-    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead) return NextResponse.json({ renewalDue: false });
+    if (!user.isHouseholdLead) return NextResponse.json({ renewalDue: false });
 
     const open = await prisma.orgMembershipProcess.findFirst({
         where: { kind: "RENEWAL", status: "PENDING_RENEWAL", orgMembership: { householdId: user.householdId } },

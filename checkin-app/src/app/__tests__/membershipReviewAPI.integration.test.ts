@@ -33,7 +33,7 @@ describe('Membership BG review API', () => {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
         // A parent/guardian is a household lead.
         const parent = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id, ...(parentEmail ? { email: parentEmail } : {}) } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: parent.id } });
+        await prisma.person.update({ where: { id: parent.id }, data: { isHouseholdLead: true } });
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
         const p = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } });
         return { householdId: hh.id, orgMembershipId: m.id, processId: p.id };
@@ -43,7 +43,7 @@ describe('Membership BG review API', () => {
     async function makeProcess(label: string, kind: 'INITIAL' | 'RENEWAL', status: 'PENDING_PAYMENT' | 'RENEWAL_PENDING_BG') {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
         const parent = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: parent.id } });
+        await prisma.person.update({ where: { id: parent.id }, data: { isHouseholdLead: true } });
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
         const p = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind, status } });
         return { householdId: hh.id, orgMembershipId: m.id, processId: p.id };
@@ -56,7 +56,6 @@ describe('Membership BG review API', () => {
             await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { householdId: { in: ids } } } } });
             await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
             await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
@@ -129,7 +128,7 @@ describe('Membership BG review API', () => {
         expect(updated?.status).toBe('PENDING_PAYMENT');
         const membership = await prisma.orgMembership.findUnique({ where: { id: proc.orgMembershipId } });
         expect(membership?.isVolunteer).toBe(true);
-        const parent = await prisma.person.findFirst({ where: { householdId: proc.householdId, householdLeads: { some: { householdId: proc.householdId } } } });
+        const parent = await prisma.person.findFirst({ where: { householdId: proc.householdId, isHouseholdLead: true } });
         expect(parent?.lastBackgroundCheck).not.toBeNull();
 
         // The advance audit records the reviewer whose attestation triggered it (rev2), not rev1/SYSTEM.
@@ -285,7 +284,7 @@ describe('Membership BG review API', () => {
         // Self-contained applicant household: one parent (lead) + one child (non-lead).
         const hh = await prisma.household.create({ data: { name: `ChildExcl ${TAG}` } });
         const parent = await prisma.person.create({ data: { name: 'Excl Parent', email: `exclparent-${TAG}@example.com`, householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: parent.id } });
+        await prisma.person.update({ where: { id: parent.id }, data: { isHouseholdLead: true } });
         await prisma.person.create({ data: { name: 'Excl Child', email: `exclchild-${TAG}@example.com`, householdId: hh.id } });
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
         await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' } });

@@ -71,7 +71,6 @@ async function cleanup() {
         await prisma.program.deleteMany({ where: { id: { in: progIds } } });
         await prisma.orgMembershipProcess.deleteMany({ where: { id: { in: pids } } });
         await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
@@ -149,7 +148,7 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
         // a program-attached adult member → Trigger C opens a PERSON_BG for that adult.
         const hh = await makeHousehold('joinerHh');
         const lead = await makePerson('joiner-lead', hh.id, { dateOfBirth: ADULT_DOB });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+        await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
         const joiner = await makePerson('joiner-adult', hh.id, { dateOfBirth: ADULT_DOB });
         await attachToProgram('joiner', joiner.id);
         const membership = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
@@ -178,7 +177,7 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
         // A household-mate (also a lead) with no check — the old blanket-stamp would have
         // hit them; the subject-scoped clear must NOT.
         const mate = await makePerson('mate', hh.id, { dateOfBirth: ADULT_DOB });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: mate.id } });
+        await prisma.person.update({ where: { id: mate.id }, data: { isHouseholdLead: true } });
         // The subject's household has NO OrgMembership (a program lead in a non-member
         // household) — the gate must still work off the subject's household.
         const proc = await prisma.orgMembershipProcess.create({
@@ -222,7 +221,7 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
         // Control: a household INITIAL at the same review status DOES surface.
         const appHh = await makeHousehold('queueAppHh');
         const appLead = await makePerson('queue-app-lead', appHh.id);
-        await prisma.householdLead.create({ data: { householdId: appHh.id, personId: appLead.id } });
+        await prisma.person.update({ where: { id: appLead.id }, data: { isHouseholdLead: true } });
         const appMembership = await prisma.orgMembership.create({ data: { householdId: appHh.id, status: 'NONE' } });
         const household = await prisma.orgMembershipProcess.create({
             data: { orgMembershipId: appMembership.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' },

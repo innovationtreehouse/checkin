@@ -18,7 +18,7 @@ export const POST = withAuth(
 
             const user = await prisma.person.findUnique({
                 where: { id: userId },
-                include: { householdLeads: true }
+                select: { householdId: true, isHouseholdLead: true }
             });
 
             if (!user) {
@@ -35,7 +35,7 @@ export const POST = withAuth(
                 });
             }
 
-            const isLead = user.householdId && user.householdLeads.some((lead: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => lead.householdId === user.householdId);
+            const isLead = user.isHouseholdLead;
             if (isLead && user.householdId && (emergencyContactName !== undefined || emergencyContactPhone !== undefined || emergencyContactEmail !== undefined)) {
                 // Emergency contact is a separate entity; onboarding edits the
                 // household's primary contact. Rejects a member as the contact.

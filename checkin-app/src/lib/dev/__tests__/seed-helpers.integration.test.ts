@@ -51,10 +51,10 @@ describe("dev seed-helpers (integration)", () => {
         // The created household has exactly one lead.
         const household = await prisma.household.findFirst({
             where: { name: { startsWith: "Test Family" } },
-            include: { leads: true, householdMembers: true },
+            include: { householdMembers: true },
             orderBy: { id: "desc" },
         });
-        expect(household?.leads.length).toBe(1);
+        expect(household?.householdMembers.filter((m) => m.isHouseholdLead).length).toBe(1);
         expect(household?.householdMembers.length).toBe(3);
     });
 

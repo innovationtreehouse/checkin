@@ -146,36 +146,32 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
 
         // 2. Notify household leads if the participant is in a household
         if (participant.householdId) {
-            const householdLeads = await prisma.householdLead.findMany({
-                where: { householdId: participant.householdId },
-                include: {
-                    person: {
-                        select: {
-                            id: true,
-                            email: true,
-                            name: true,
-                            notificationSettings: true
-                        }
-                    }
+            const householdLeads = await prisma.person.findMany({
+                where: { householdId: participant.householdId, isHouseholdLead: true },
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    notificationSettings: true
                 }
             });
 
             for (const lead of householdLeads) {
                 // Don't double-notify if the lead IS the participant
-                if (lead.person.id === participant.id) continue;
+                if (lead.id === participant.id) continue;
 
-                const leadSettings = lead.person.notificationSettings as unknown as Record<string, boolean>;
-                if (leadSettings?.emailDependentCheckins && lead.person.email) {
+                const leadSettings = lead.notificationSettings as unknown as Record<string, boolean>;
+                if (leadSettings?.emailDependentCheckins && lead.email) {
                     const subject = `${emoji} ${name} ${action} Innovation Treehouse`;
                     const html = householdMemberTemplate({
-                        leadName: lead.person.name || 'there',
+                        leadName: lead.name || 'there',
                         memberName: name,
                         type,
                         date: dateStr,
                         time: timeStr,
                         source
                     });
-                    emailPromises.push(sendEmail(lead.person.email, subject, html));
+                    emailPromises.push(sendEmail(lead.email, subject, html));
                 }
             }
         }

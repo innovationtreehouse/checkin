@@ -9,6 +9,7 @@ import { pickAddress, validateAddress } from "@/lib/address";
 import { openConfigIssues } from "@/lib/configHealth";
 import { PROGRAM_CHECKOUT_BROKEN_WHERE } from "@/lib/programCheckout";
 import { apiError } from "@/lib/api-response";
+import { BROKEN_HOUSEHOLD_WHERE, UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE } from "@/lib/household/filters";
 
 /**
  * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
@@ -139,9 +140,9 @@ export const GET = withAuth({}, async (_req, auth) => {
 
         const isLead =
             user.householdLead ??
-            (await prisma.householdLead.findFirst({
-                where: { householdId, personId: user.id },
-                select: { personId: true },
+            (await prisma.person.findFirst({
+                where: { id: user.id, householdId, isHouseholdLead: true },
+                select: { id: true },
             })) !== null;
 
         const [hh, leadsMissingPhone, membersMissingAge, membershipProcs, trustedAdultAction, trustedAdultExpiring, pendingPrograms] = await Promise.all([
@@ -169,9 +170,9 @@ export const GET = withAuth({}, async (_req, auth) => {
             // A household lead with no phone on file is an actionable gap — the
             // page highlights the member box; this drives the nav badge count.
             isLead
-                ? prisma.householdLead.findMany({
-                      where: { householdId, OR: [{ person: { phone: null } }, { person: { phone: "" } }] },
-                      select: { person: { select: { id: true, name: true } } },
+                ? prisma.person.findMany({
+                      where: { householdId, isHouseholdLead: true, OR: [{ phone: null }, { phone: "" }] },
+                      select: { id: true, name: true },
                   })
                 : Promise.resolve([]),
             // A member with no DoB and no 25+ declaration shows "Age Unavailable"
@@ -209,7 +210,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             householdTodos.push({ key: "household-address", label: "Add or complete your household address", href: "/my-household" });
         }
         for (const l of leadsMissingPhone) {
-            householdTodos.push({ key: `lead-phone-${l.person.id}`, label: `Add a phone number for ${l.person.name ?? "the household lead"}`, href: "/my-household" });
+            householdTodos.push({ key: `lead-phone-${l.id}`, label: `Add a phone number for ${l.name ?? "the household lead"}`, href: "/my-household" });
         }
         for (const m of membersMissingAge) {
             householdTodos.push({ key: `member-age-${m.id}`, label: `Add a date of birth for ${m.name ?? "a household member"}`, href: "/my-household" });
@@ -381,23 +382,15 @@ export const GET = withAuth({}, async (_req, auth) => {
             countHouseholdsMissingValidContact(),
             // Households nobody has claimed via Google sign-in yet: either a lead has an
             // email to chase but no lead has signed in, OR the household has no lead at
-            // all (broken). Must stay identical to /api/membership-audit/unclaimed-households
-            // or the badge count and the list diverge.
+            // all (broken). Shared predicate with /api/membership-audit/unclaimed-households
+            // so the badge count and the list can't diverge.
             prisma.household.count({
-                where: {
-                    OR: [
-                        {
-                            leads: { some: { person: { email: { not: null } } } },
-                            NOT: { leads: { some: { person: { googleId: { not: null } } } } }
-                        },
-                        { leads: { none: {} } }
-                    ]
-                },
+                where: UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE,
             }),
             // "Broken" households: no household lead at all. Mirrors
             // /api/admin/broken-households. Includes empty households.
             prisma.household.count({
-                where: { leads: { none: {} } },
+                where: BROKEN_HOUSEHOLD_WHERE,
             }),
             // People Resend has reported as undeliverable (bounce/complaint), not since
             // cleared by a later delivery. See Person.emailUndeliverableAt / webhooks/resend.

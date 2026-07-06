@@ -61,11 +61,9 @@ async function loadUserWithHousehold(userId: number) {
     return prisma.person.findUnique({
         where: { id: userId },
         include: {
-            householdLeads: true,
             household: {
                 include: {
                     householdMembers: { orderBy: { id: "asc" } },
-                    leads: true,
                     orgMembership: { include: { processes: true } },
                     emergencyContacts: { orderBy: [{ priority: "asc" }, { id: "asc" }] },
                 },
@@ -75,8 +73,7 @@ async function loadUserWithHousehold(userId: number) {
 }
 
 function assertLead(user: NonNullable<Awaited<ReturnType<typeof loadUserWithHousehold>>>) {
-    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.isSysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
+    if (!user.isHouseholdLead && !user.isSysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
 }
 
 /** Read the caller's current membership/application state, prefilled for the form. */
@@ -96,9 +93,10 @@ export async function getIntakeState(userId: number) {
         .sort((a, b) => b.id - a.id)[0] ?? null;
 
     // Parents/guardians are the household leads; children are non-lead members.
-    const leadIds = new Set((household?.leads ?? []).map((l) => l.personId));
-    const parents = (household?.householdMembers ?? []).filter((p) => leadIds.has(p.id));
-    const children = (household?.householdMembers ?? []).filter((p) => !leadIds.has(p.id));
+    const members = household?.householdMembers ?? [];
+    const leadIds = new Set(members.filter((p) => p.isHouseholdLead).map((p) => p.id));
+    const parents = members.filter((p) => p.isHouseholdLead);
+    const children = members.filter((p) => !p.isHouseholdLead);
     const primary = parents.find((p) => p.id === userId) ?? null;
     const secondary = parents.find((p) => p.id !== userId) ?? null;
 

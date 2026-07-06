@@ -34,8 +34,7 @@ export const GET = handler("GET /api/membership-ops/applications", async () => {
                     household: {
                         select: {
                             name: true,
-                            householdMembers: { select: { id: true, name: true, email: true } },
-                            leads: { select: { personId: true } },
+                            householdMembers: { select: { id: true, name: true, email: true, isHouseholdLead: true } },
                         },
                     },
                 },

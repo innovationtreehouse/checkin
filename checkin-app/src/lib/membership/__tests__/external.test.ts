@@ -106,7 +106,7 @@ describe('selfAttestBgConsent', () => {
         id: 1,
         householdId: 7,
         isSysadmin: false,
-        householdLeads: [{ householdId: 7 }],
+        isHouseholdLead: true,
         household: { orgMembership: { processes: [pendingProcess] } },
     };
 
@@ -121,7 +121,7 @@ describe('selfAttestBgConsent', () => {
     });
 
     it('not_lead when the caller is not a household lead and not a sysadmin', async () => {
-        prisma.person.findUnique.mockResolvedValue({ ...leadUser, householdLeads: [] });
+        prisma.person.findUnique.mockResolvedValue({ ...leadUser, isHouseholdLead: false });
         await expect(selfAttestBgConsent(1)).rejects.toMatchObject({ code: 'not_lead' });
     });
 
@@ -161,7 +161,7 @@ describe('getOrCreateContractSigningUrl', () => {
         isSysadmin: false,
         email: 'lead@example.com',
         name: 'Lead Person',
-        householdLeads: [{ householdId: 7 }],
+        isHouseholdLead: true,
         household: { orgMembership: { processes: [pendingProcess] } },
     };
 
@@ -182,7 +182,7 @@ describe('getOrCreateContractSigningUrl', () => {
     });
 
     it('not_lead when the caller is not a household lead and not a sysadmin', async () => {
-        prisma.person.findUnique.mockResolvedValue({ ...leadUser, householdLeads: [] });
+        prisma.person.findUnique.mockResolvedValue({ ...leadUser, isHouseholdLead: false });
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'not_lead' });
     });
 

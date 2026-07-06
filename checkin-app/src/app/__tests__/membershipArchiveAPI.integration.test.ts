@@ -47,8 +47,7 @@ async function makeProcess(label: string, status: 'INTAKE' | 'PENDING_EXTERNAL_A
 // so the intake service (getIntakeState/startIntake/submitIntake) can run.
 async function makeApplicant(label: string, status: 'INTAKE' | 'PENDING_PAYMENT') {
     const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
-    const lead = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id } });
-    await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+    const lead = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id, isHouseholdLead: true } });
     const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
     const p = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status } });
     return { householdId: hh.id, membershipId: m.id, userId: lead.id, processId: p.id };
@@ -60,7 +59,6 @@ async function wipe() {
     if (ids.length) {
         await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
         await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }

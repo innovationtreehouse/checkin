@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
+import { addHouseholdLead, removeHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
@@ -67,11 +67,11 @@ export const PATCH = withAuth(
                 let leadRejection: string | null = null;
 
                 if (isLead !== undefined && participantId !== userId) {
-                    const currentLead = await tx.householdLead.findUnique({
-                        where: {
-                            householdId_personId: { householdId: householdId, personId: participantId }
-                        }
+                    const currentTarget = await tx.person.findUnique({
+                        where: { id: participantId },
+                        select: { isHouseholdLead: true }
                     });
+                    const currentLead = !!currentTarget?.isHouseholdLead;
 
                     if (isLead && !currentLead) {
                         try {
@@ -80,7 +80,7 @@ export const PATCH = withAuth(
                                 data: {
                                     actorId: userId,
                                     action: "CREATE",
-                                    tableName: "HouseholdLead",
+                                    tableName: "Person",
                                     affectedEntityId: householdId,
                                     secondaryAffectedEntity: participantId
                                 }
@@ -93,19 +93,16 @@ export const PATCH = withAuth(
                             }
                         }
                     } else if (!isLead && currentLead) {
-                        const leadCount = await tx.householdLead.count({ where: { householdId: householdId } });
-                        if (leadCount > 1) {
-                            await tx.householdLead.delete({
-                                 where: {
-                                     householdId_personId: { householdId: householdId, personId: participantId }
-                                 }
-                            });
-
+                        // Locked demote (shared with the lead route). Silently a
+                        // no-op if this is the household's last lead — the member
+                        // edit still saves; leadership just isn't dropped.
+                        const result = await removeHouseholdLead(tx, householdId, participantId);
+                        if (result.removed) {
                             await tx.auditLog.create({
                                 data: {
                                     actorId: userId,
                                     action: "DELETE",
-                                    tableName: "HouseholdLead",
+                                    tableName: "Person",
                                     affectedEntityId: householdId,
                                     secondaryAffectedEntity: participantId
                                 }

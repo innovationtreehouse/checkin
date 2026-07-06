@@ -34,7 +34,7 @@ describe('Membership renewal', () => {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
         // The guardian is a household lead (drives the 3-yr BG-freshness check).
         const parent = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id, email: leadEmail, lastBackgroundCheck: parentBg ?? undefined } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: parent.id } });
+        await prisma.person.update({ where: { id: parent.id }, data: { isHouseholdLead: true } });
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
         return { householdId: hh.id, orgMembershipId: m.id, leadEmail };
     }
@@ -46,7 +46,6 @@ describe('Membership renewal', () => {
             await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { householdId: { in: ids } } } } });
             await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
             await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }

@@ -136,18 +136,17 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
     const households = await prisma.household.findMany({
         where: { id: { in: [...reasons.keys()] } },
         include: {
-            leads: {
-                include: {
-                    person: { select: { id: true, name: true, phone: true, email: true, lastBackgroundCheck: true } },
-                },
+            householdMembers: {
+                where: { isHouseholdLead: true },
+                select: { id: true, name: true, phone: true, email: true, lastBackgroundCheck: true },
             },
         },
         orderBy: { name: "asc" },
     });
 
     const result = households.map((h) => {
-        const checks = h.leads
-            .map((l) => l.person.lastBackgroundCheck)
+        const checks = h.householdMembers
+            .map((p) => p.lastBackgroundCheck)
             .filter((d): d is Date => d !== null);
         // Most recent lead check — the date the board is chasing on a STALE_BG row.
         const lastBackgroundCheck = checks.length
@@ -158,11 +157,11 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
             name: h.name || `Household #${h.id}`,
             reasons: [...(reasons.get(h.id) ?? [])],
             lastBackgroundCheck,
-            leads: h.leads.map((l) => ({
-                id: l.person.id,
-                name: l.person.name,
-                phone: l.person.phone,
-                email: l.person.email,
+            leads: h.householdMembers.map((p) => ({
+                id: p.id,
+                name: p.name,
+                phone: p.phone,
+                email: p.email,
             })),
         };
     });

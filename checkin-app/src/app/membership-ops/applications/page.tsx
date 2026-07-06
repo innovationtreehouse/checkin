@@ -13,6 +13,7 @@ interface Person {
   id: number;
   name: string | null;
   email: string | null;
+  isHouseholdLead: boolean;
 }
 interface Attestation {
   id: number;
@@ -33,7 +34,7 @@ interface ProcessRow {
   orgMembership: {
     householdId: number;
     isVolunteer: boolean;
-    household: { name: string | null; householdMembers: Person[]; leads: { personId: number }[] } | null;
+    household: { name: string | null; householdMembers: Person[] } | null;
   } | null;
 }
 
@@ -215,8 +216,7 @@ export default function AdminMembershipPage() {
   const householdLabel = (r: ProcessRow) => {
     const hh = r.orgMembership?.household;
     if (!hh) return `Household #${r.orgMembership?.householdId ?? "?"}`;
-    const leadIds = new Set((hh.leads || []).map((l) => l.personId));
-    const parents = (hh.householdMembers || []).filter((p) => leadIds.has(p.id)).map((p) => p.name || p.email).filter(Boolean);
+    const parents = (hh.householdMembers || []).filter((p) => p.isHouseholdLead).map((p) => p.name || p.email).filter(Boolean);
     return hh.name || parents.join(" & ") || `Household #${r.orgMembership?.householdId}`;
   };
 

@@ -44,13 +44,13 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         let isHouseholdLead = false;
         if (participantData?.householdId) {
-            const leadRecord = await prisma.householdLead.findUnique({
+            const leadRecord = await prisma.person.findFirst({
                 where: {
-                    householdId_personId: {
-                        householdId: participantData.householdId,
-                        personId: currentUserId
-                    }
-                }
+                    id: currentUserId,
+                    householdId: participantData.householdId,
+                    isHouseholdLead: true
+                },
+                select: { id: true }
             });
             isHouseholdLead = !!leadRecord;
         }

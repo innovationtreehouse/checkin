@@ -20,7 +20,7 @@ const trustedAdults = [
     familyContext: "Family friend, watches the kids after school.",
     origin: "SELF_DISCLOSED",
     createdAt: "2026-01-01T00:00:00.000Z",
-    household: { id: 5, name: "Guardian House", leads: [] },
+    household: { id: 5, name: "Guardian House", householdMembers: [] },
     trustedAdultPerson: null,
     reviews: [{ id: 9, kind: "SELF_DISCLOSED", status: "PENDING_BOARD_REVIEW", decision: null, decisionNote: null, sharedNote: null, effectiveFrom: null, reviewBy: null, createdAt: "2026-01-01T00:00:00.000Z" }],
   },
@@ -205,7 +205,7 @@ describe("safety/trusted-adults page", () => {
     const conflicted = [
       {
         ...trustedAdults[0],
-        household: { id: 1, name: "Guardian House", leads: [{ person: { name: "Lead Lucy", email: "lucy@example.com" } }] },
+        household: { id: 1, name: "Guardian House", householdMembers: [{ id: 1, name: "Lead Lucy", email: "lucy@example.com" }] },
         reviews: [{ ...trustedAdults[0].reviews[0], sharedNote: "Already shared.", reviewBy: "2026-02-01T00:00:00.000Z" }],
       },
     ];

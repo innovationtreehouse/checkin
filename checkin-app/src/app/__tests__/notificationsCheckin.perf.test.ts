@@ -6,8 +6,8 @@ import { sendEmail } from "@/lib/email";
 // A sequential `for await` loop would cap maxInFlight at 1.
 //
 // The resolve is deferred with a macrotask (setTimeout), not a microtask, so an
-// in-flight send survives the `await prisma.householdLead.findMany` that sits
-// between the participant send and the 10 household-lead sends — otherwise the
+// in-flight send survives the `await prisma.person.findMany` (household leads) that
+// sits between the participant send and the 10 household-lead sends — otherwise the
 // participant email would resolve during that await and cap the count at 10.
 let inFlight = 0;
 let maxInFlight = 0;
@@ -33,18 +33,14 @@ jest.mock("@/lib/prisma", () => ({
                 emailCheckinReceipts: true
             },
             householdId: 1
-        })
-    },
-    householdLead: {
+        }),
         findMany: jest.fn().mockResolvedValue(
             Array.from({ length: 10 }).map((_, i) => ({
-                person: {
-                    id: 2 + i,
-                    name: `Lead ${i}`,
-                    email: `lead${i}@example.com`,
-                    notificationSettings: {
-                        emailDependentCheckins: true
-                    }
+                id: 2 + i,
+                name: `Lead ${i}`,
+                email: `lead${i}@example.com`,
+                notificationSettings: {
+                    emailDependentCheckins: true
                 }
             }))
         )

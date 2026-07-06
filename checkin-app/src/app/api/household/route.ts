@@ -22,7 +22,6 @@ export const GET = withAuth(
                     household: {
                         include: {
                             householdMembers: { select: HOUSEHOLD_PEER_SELECT },
-                            leads: true,
                             orgMembership: true,
                         }
                     }

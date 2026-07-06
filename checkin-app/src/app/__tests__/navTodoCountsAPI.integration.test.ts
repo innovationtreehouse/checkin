@@ -51,7 +51,7 @@ describe('Nav todo-counts API', () => {
         });
         leadId = lead.id;
         householdAId = lead.householdId;
-        await prisma.householdLead.create({ data: { householdId: householdAId, personId: leadId } });
+        await prisma.person.update({ where: { id: leadId }, data: { isHouseholdLead: true } });
 
         const second = await prisma.person.create({
             data: { email: `member2-${TAG}@example.com`, name: 'Member A2', dateOfBirth: new Date('1987-01-01'), householdId: householdAId },
@@ -148,7 +148,6 @@ describe('Nav todo-counts API', () => {
         await prisma.program.deleteMany({ where: { id: { in: [program1Id, program2Id, ledProgramId] } } });
         await prisma.orgMembershipProcess.deleteMany({ where: { orgMembershipId } });
         await prisma.orgMembership.deleteMany({ where: { id: orgMembershipId } });
-        await prisma.householdLead.deleteMany({ where: { householdId: householdAId } });
         await prisma.person.deleteMany({ where: { id: { in: [leadId, secondMemberId, boardId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [householdAId, householdBId] } } });
     });
