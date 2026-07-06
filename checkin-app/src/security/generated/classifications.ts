@@ -72,6 +72,7 @@ export const classifications = {
     OrgMembershipProcess: {
         id: 'public',
         orgMembershipId: 'public',
+        subjectPersonId: 'public',
         kind: 'public',
         status: 'internal',
         stageEnteredAt: 'internal',
@@ -335,6 +336,7 @@ export const relations = {
         household: { model: 'Household', isList: false },
         toolStatuses: { model: 'ToolStatus', isList: true },
         bgAttestations: { model: 'BackgroundCheckAttestation', isList: true },
+        personBgProcesses: { model: 'OrgMembershipProcess', isList: true },
         householdLeads: { model: 'HouseholdLead', isList: true },
         corporationLeads: { model: 'CorporationLead', isList: true },
         corporationMembers: { model: 'CorporationMember', isList: true },
@@ -377,6 +379,7 @@ export const relations = {
     },
     OrgMembershipProcess: {
         orgMembership: { model: 'OrgMembership', isList: false },
+        subjectPerson: { model: 'Person', isList: false },
         attestations: { model: 'BackgroundCheckAttestation', isList: true },
     },
     BackgroundCheckAttestation: {

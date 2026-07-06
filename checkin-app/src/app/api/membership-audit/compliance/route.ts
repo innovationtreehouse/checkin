@@ -66,7 +66,8 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         where: { status: "PENDING_BG_CLEARANCE" },
         select: { orgMembership: { select: { householdId: true } } },
     });
-    for (const p of stuck) add(p.orgMembership.householdId, "STUCK_BG_CLEARANCE");
+    // PENDING_BG_CLEARANCE is a household-process status; orgMembership is always set.
+    for (const p of stuck) if (p.orgMembership) add(p.orgMembership.householdId, "STUCK_BG_CLEARANCE");
 
     // 4. Program-attached people ≥18 without a fresh background check (warn-only).
     //    Subject = union of ProgramParticipant / ProgramVolunteer / Program.leadMentor.
