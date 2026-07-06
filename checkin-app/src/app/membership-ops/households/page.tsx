@@ -8,6 +8,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { AdminEditHouseholdModal } from '@/components/admin/AdminEditHouseholdModal';
+import { sharesHousehold } from '@/lib/conflictOfInterest';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type Household = {
@@ -18,7 +19,7 @@ type Household = {
 };
 
 export default function AdminHouseholdsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
+  const { user: me, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
   const router = useRouter();
 
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -159,6 +160,11 @@ export default function AdminHouseholdsPage() {
               const hasActiveMembership = status === "ACTIVE";
               const isDenied = status === "DENIED";
               const hasBoardMember = household.householdMembers?.some((p) => p.isBoardMember) ?? false;
+              // Conflict of interest: a board member may not GRANT their own household
+              // membership (bypasses payment + background check). Sysadmin keeps the button.
+              // Mirrors the server guard; disabled state is UX only. Revoke stays allowed.
+              const ownGrantBlocked =
+                !hasActiveMembership && me?.isSysadmin !== true && sharesHousehold(me?.householdId, household.id);
 
               return (
                 <Table.Tr key={household.id}>
@@ -223,6 +229,8 @@ export default function AdminHouseholdsPage() {
                             size="xs" fz={15}
                             variant="light"
                             color={hasActiveMembership ? 'red' : 'green'}
+                            disabled={ownGrantBlocked}
+                            title={ownGrantBlocked ? "You can't grant your own household's membership — a sysadmin must." : undefined}
                             onClick={() => toggleMembership(household.id, hasActiveMembership)}
                           >
                             {hasActiveMembership ? "Revoke Membership" : "Grant Membership"}

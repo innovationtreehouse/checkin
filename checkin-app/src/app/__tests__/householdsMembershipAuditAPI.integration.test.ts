@@ -27,6 +27,7 @@ function post(body: unknown) {
 
 describe('POST /api/membership-ops/households — grant/revoke audit logging', () => {
     let boardId: number;
+    let boardHouseholdId: number;
     let inactiveHouseholdId: number;
     let activeHouseholdId: number;
 
@@ -42,6 +43,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
             data: { email: `board-${TAG}@example.com`, name: 'Board Actor', isBoardMember: true, household: { create: { name: "Test HH" } } },
         });
         boardId = board.id;
+        boardHouseholdId = board.householdId;
 
         // A household with no membership row → will be granted (ACTIVE).
         const inactive = await prisma.person.create({
@@ -83,6 +85,21 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         expect(audit).not.toBeNull();
         expect(audit!.actorId).toBe(boardId);
         expect((audit!.newData as { status: string }).status).toBe('ACTIVE');
+    });
+
+    it("refuses to grant the actor's OWN household (conflict of interest); sysadmin overrides", async () => {
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+        const res = await post({ householdId: boardHouseholdId, active: true });
+        expect(res.status).toBe(403);
+        const before = await prisma.orgMembership.findUnique({ where: { householdId: boardHouseholdId } });
+        expect(before?.status ?? 'NONE').not.toBe('ACTIVE'); // not granted
+
+        // Sysadmin is the deliberate remedy.
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isSysadmin: true } });
+        const ok = await post({ householdId: boardHouseholdId, active: true });
+        expect(ok.status).toBe(200);
+        const after = await prisma.orgMembership.findUnique({ where: { householdId: boardHouseholdId } });
+        expect(after?.status).toBe('ACTIVE');
     });
 
     it('revokes an active household, sets REVOKED, and writes an audit row', async () => {

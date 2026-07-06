@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 import { config } from './config';
 import { captureSentEmail } from './dev/sentMail';
+import { logIntegrationError } from './logger';
 
 const resend = config.resendApiKey()
     ? new Resend(config.resendApiKey()!)
@@ -34,6 +35,9 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
 
         if (error) {
             console.error(`[Email Error] Failed to send to ${to}:`, error);
+            // System Status > Link Status tab (see logIntegrationError). Deliberately no
+            // `html` in context — log-hygiene contract asserted in email.test.ts.
+            await logIntegrationError('email', error.message, { to, subject });
             return false;
         }
 
@@ -41,6 +45,7 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
         return true;
     } catch (err) {
         console.error(`[Email Exception] Failed to send to ${to}:`, err);
+        await logIntegrationError('email', err, { to, subject });
         return false;
     }
 }

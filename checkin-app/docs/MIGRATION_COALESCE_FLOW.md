@@ -29,10 +29,9 @@ same shape of work.
 
 Related docs: `.github/workflows/migration-safety.yml` (origin #794, the
 populated-DB migration check this flow adds a second path to) and
-`DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md` (landing in #933, not yet merged at
-the time this doc was written) — that doc covers the general deploy/migration
-sequencing rules (expand/cutover/contract); this one is specifically the
-coalesce-before-release mechanics.
+`DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md` (#933) — that doc covers the general
+deploy/migration sequencing rules (expand/cutover/contract); this one is
+specifically the coalesce-before-release mechanics.
 
 ## When to run it
 
