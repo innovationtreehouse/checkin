@@ -37,6 +37,11 @@ defineRoute({
     orderedView: [
         ['isSysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        // their_program_households:personal delivers the household band leads
+        // operationally need — emergency contacts (personal). It deliberately
+        // does NOT reach the family's home address or intake notes: address is
+        // 'internal' and intakeNotes is 'pii', both outside a household-scoped
+        // personal grant. EC yes, address no.
         ['programLeadMentor',    ['their_program_participants:pii',
                                   'their_program_participants:personal',
                                   'their_program_households:personal',
@@ -158,9 +163,15 @@ defineRoute({
     ],
 });
 
-// The caller's household trusted adults. Household-scoped: members/leads see the
-// family context (pii band) + the board's shared note (personal) + status/dates,
-// but never the board's internal decision notes.
+// The caller's household trusted adults. Household-scoped: members/leads see
+// the family context (internal — narrative safeguarding band; the family
+// authored it and the renew form prefills it) + the adult's contact + the
+// board's shared note (personal) + status/dates. The their_households:internal
+// grant nominally also covers TrustedAdultReview.decision/decisionNote (the
+// board's private notes) — those are kept out by the handler's SELECT, which
+// is pinned by trustedAdultAPI.integration.test.ts ("the family sees
+// familyContext + the board shared note, not internal fields"). Do not widen
+// that select.
 defineRoute({
     endpoint: 'GET /api/trusted-adults/mine',
     authorize: 'household-member',
@@ -168,12 +179,12 @@ defineRoute({
     // Bag: { TrustedAdult } with reviews (TrustedAdultReview).
     returns: ['TrustedAdult', 'TrustedAdultReview'],
     orderedView: [
-        ['authenticated', ['their_households:pii', 'their_households:personal', 'member', 'public']],
+        ['authenticated', ['their_households:pii', 'their_households:personal', 'their_households:internal', 'member', 'public']],
     ],
 });
 
-// Board's trusted-adult review queue. Full visibility incl. familyContext (pii)
-// and the board's internal decision notes (internal).
+// Board's trusted-adult review queue. Full visibility incl. familyContext
+// (internal — narrative band) and the board's internal decision notes.
 defineRoute({
     endpoint: 'GET /api/safety/trusted-adults',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
@@ -190,7 +201,9 @@ defineRoute({
 // Operational pickup view for keyholders (global) and program leads (the
 // households whose kids they oversee). They get the board's shared note + the
 // adult's name/contact (personal), but NOT the family's board-facing context
-// (pii) or the board's internal notes (internal). The handler restricts which
+// or the board's internal notes (both internal — the strict narrative band
+// their personal-only grants never reach). Household address is also internal,
+// so the nested Household rows expose name only. The handler restricts which
 // rows are returned; this view is the field-level backstop.
 defineRoute({
     endpoint: 'GET /api/trusted-adults/operational',
