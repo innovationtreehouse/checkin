@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
@@ -21,7 +22,7 @@ import { config } from "@/lib/config";
 const SYSTEM_ACTOR = 0;
 
 export class PaymentError extends Error {
-    constructor(public readonly code: "not_found" | "wrong_phase", message: string) {
+    constructor(public readonly code: "not_found" | "wrong_phase" | "forbidden", message: string) {
         super(message);
         this.name = "PaymentError";
     }
@@ -236,15 +237,22 @@ export async function activate(
 }
 
 /** Board override: certify a payment plan and activate without a Shopify payment. */
-export async function certifyPaymentPlan(processId: number, actorId: number) {
+export async function certifyPaymentPlan(processId: number, actorId: number, opts?: { isSysadmin?: boolean }) {
     // Unlike the webhook path, a board certify is a deliberate action — reject
     // (not silently no-op) when the process isn't actually awaiting payment, so
     // certifying an already-ACTIVE or still-in-review grant surfaces a 409
     // instead of a misleading success. activate()'s own conditional flip stays
     // idempotent for the webhook/self-serve callers.
-    const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+    const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId }, include: { orgMembership: { select: { householdId: true } } } });
     if (!process) throw new PaymentError("not_found", "Application not found.");
     if (process.status !== "PENDING_PAYMENT") throw new PaymentError("wrong_phase", "This application is not awaiting payment.");
+
+    // Conflict of interest: a board member may not certify (mark paid + activate) their
+    // OWN household's membership — else they could activate their family without paying
+    // dues. Sysadmin bypasses.
+    if (await hasHouseholdConflict(prisma, actorId, process.orgMembership?.householdId, { isSysadmin: opts?.isSysadmin })) {
+        throw new PaymentError("forbidden", "You cannot certify your own household's membership — a sysadmin must.");
+    }
     return activate(processId, { via: "certified", actorId });
 }
 

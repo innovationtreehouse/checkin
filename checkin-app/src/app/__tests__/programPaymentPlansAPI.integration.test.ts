@@ -34,6 +34,7 @@ describe('Program payment-plan routes', () => {
     let programId: number;
     let mentorId: number;
     let boardId: number;
+    let boardKinId: number;
     let selfId: number;
     let otherId: number;
     let noiseId: number;
@@ -56,6 +57,12 @@ describe('Program payment-plan routes', () => {
         });
         boardId = board.id;
         householdIds.push(board.householdId);
+
+        // A household-mate of the board member — the conflict-of-interest target.
+        const boardKin = await prisma.person.create({
+            data: { name: 'PP Board Kin', email: `boardkin-${TAG}@example.com`, householdId: board.householdId },
+        });
+        boardKinId = boardKin.id;
 
         const self = await prisma.person.create({
             data: { name: 'PP Self', email: `self-${TAG}@example.com`, household: { create: {} } },
@@ -84,7 +91,7 @@ describe('Program payment-plan routes', () => {
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.delete({ where: { id: programId } });
         await prisma.person.deleteMany({
-            where: { id: { in: [mentorId, boardId, selfId, otherId, noiseId] } },
+            where: { id: { in: [mentorId, boardId, boardKinId, selfId, otherId, noiseId] } },
         });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
@@ -160,6 +167,32 @@ describe('Program payment-plan routes', () => {
             expect(row?.status).toBe('ACTIVE');
             expect(row?.isPaymentPlanRequested).toBe(false);
             expect(row?.pendingSince).toBeNull();
+        });
+
+        it("refuses to approve a plan for the board member's OWN household (conflict of interest); sysadmin overrides", async () => {
+            await enroll(boardKinId, { requested: true });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            const res = await PlansPost(nextReq('http://localhost', {
+                method: 'POST',
+                body: JSON.stringify({ programId, participantId: boardKinId }),
+            }));
+            expect(res.status).toBe(403);
+            let row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: boardKinId } },
+            });
+            expect(row?.status).toBe('PENDING'); // unchanged — nothing approved
+
+            // Sysadmin is the deliberate remedy.
+            mockSession.mockResolvedValue({ user: { id: boardId, isSysadmin: true } });
+            const ok = await PlansPost(nextReq('http://localhost', {
+                method: 'POST',
+                body: JSON.stringify({ programId, participantId: boardKinId }),
+            }));
+            expect(ok.status).toBe(200);
+            row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: boardKinId } },
+            });
+            expect(row?.status).toBe('ACTIVE');
         });
     });
 
