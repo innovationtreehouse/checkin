@@ -2,25 +2,32 @@ name: Deploy s-read
 
 # Manual deploy of the s-read-function ECS image (v1: workflow_dispatch only, no
 # auto-trigger — run it deliberately after the change has merged and CI is green
-# on main). Builds the container image, pushes it to ECR, registers new revisions
-# of BOTH task-def families, and (in migrate-and-code mode) runs the migration
-# task in between. There is no ECS service to roll: the hourly EventBridge rule
-# targets the revision-less s-read-sync family ARN, so it runs the latest ACTIVE
-# revision on its next tick — no terraform involved.
+# on main). Builds the container image, pushes it to ghcr.io, registers new
+# revisions of BOTH task-def families, and (in migrate-and-code mode) runs the
+# migration task in between. There is no ECS service to roll: the schedule runs
+# tasks against the revision-less s-read-sync family ARN, so it uses the latest
+# ACTIVE revision on its next tick — no terraform involved.
 #
 # Ordering (migrate-and-code): migrations run BEFORE the new sync revision is
 # registered — expand/contract, same as deploy-dev.yml. The previous code keeps
 # running against the migrated schema until the next scheduled tick.
 #
-# Auth is GitHub OIDC — assumes the checkin-deploy-dev role. That role's trust
-# policy is pinned to refs/heads/main, so this workflow MUST be dispatched from
-# the main branch; a dispatch from any other ref fails at the credentials step.
+# Registry is ghcr.io with the GITHUB_TOKEN login/push pattern from deploy-dev.yml
+# (one pipeline convention, no registry credentials to manage). The package stays
+# PRIVATE — the task defs pull it via repositoryCredentials -> the shared
+# ghcr-pull-credentials secret (infra modules/shared-iam), like every other ECS
+# workload in this account. We push a unique :<git-sha> tag, never :latest.
+#
+# AWS auth (GitHub OIDC, checkin-deploy-dev role) is still needed for the
+# register-task-definition / run-task steps. That role's trust policy is pinned
+# to refs/heads/main, so this workflow MUST be dispatched from the main branch;
+# a dispatch from any other ref fails at the credentials step.
 #
 # Infra preconditions (NOT done here — innovationtreehouse/infra#112, whose PR
 # body is the authoritative contract for every resource name used below):
-#   - ECR repo `s-read` (IMMUTABLE tags — we push a unique :<git-sha>, never :latest),
-#     cluster `s-read`, task-def families `s-read-sync` / `s-read-migrate`,
-#     EventBridge rule, secret shells + IAM applied.
+#   - cluster `s-read`, task-def families `s-read-sync` / `s-read-migrate` (with
+#     the ghcr repositoryCredentials), the s-read-trigger Lambda + its schedule,
+#     secret shells + IAM applied.
 #   - init.sql run by hand + secret VALUES set (see s-read-function/DEPLOY.md).
 #   - Repo variable S_READ_NETWORK_CONFIG set (see the migrate step).
 
@@ -38,6 +45,7 @@ on:
 permissions:
   id-token: write   # assume the deploy role via OIDC
   contents: read    # checkout
+  packages: write   # push the image to ghcr.io
 
 concurrency:
   group: s-read-deploy
@@ -45,8 +53,7 @@ concurrency:
 
 env:
   AWS_REGION: us-east-2
-  ECR_REGISTRY: 639595353568.dkr.ecr.us-east-2.amazonaws.com
-  ECR_REPOSITORY: s-read
+  IMAGE_REPO: ghcr.io/innovationtreehouse/s-read
   ECS_CLUSTER: s-read
   SYNC_TASK_FAMILY: s-read-sync
   MIGRATE_TASK_FAMILY: s-read-migrate
@@ -73,13 +80,17 @@ jobs:
           role-to-assume: ${{ env.DEPLOY_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push image
         id: build
         env:
-          IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha }}
+          IMAGE: ${{ env.IMAGE_REPO }}:${{ steps.vars.outputs.sha }}
         run: |
           set -euo pipefail
           # Repo-root build context (workspace install) — see s-read-function/Dockerfile.
@@ -169,7 +180,7 @@ jobs:
           IMAGE: ${{ steps.build.outputs.image }}
         run: |
           set -euo pipefail
-          # New revision with the new image; the EventBridge rule targets the
+          # New revision with the new image; the s-read-trigger Lambda RunTasks the
           # revision-less family ARN, so the next hourly tick runs this revision —
           # no service update, no terraform.
           aws ecs describe-task-definition \
@@ -199,7 +210,7 @@ jobs:
           if [ "$STATUS" = "success" ]; then
             {
               echo "### ✅ s-read deployed (\`$MODE\`)"
-              echo "- Image: \`$ECR_REPOSITORY:$SHORT_SHA\`"
+              echo "- Image: \`$IMAGE_REPO:$SHORT_SHA\`"
               echo "- Sync task def: \`$SYNC_ARN\` (the hourly schedule picks it up on its next tick)"
               if [ "$MODE" = "migrate-and-code" ]; then echo "- Migrations: applied before the sync task-def update"; fi
               echo "- [Deploy run]($RUN_URL)"

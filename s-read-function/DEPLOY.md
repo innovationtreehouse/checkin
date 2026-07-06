@@ -9,13 +9,22 @@ previous ones are done.
 How the pieces fit:
 
 ```
-EventBridge rule (hourly, targets the revision-less s-read-sync FAMILY = latest revision)
-   └─▶ ECS task s-read-sync — image CMD runs `src/cli.ts` in ${SYNC_MODE:-incremental} mode
+Schedule (hourly) ─▶ Lambda s-read-trigger  ({"mode":"incremental"|"backfill"}; not
+   │                 VPC-attached; also the hook for future event sources)
+   └─▶ ecs:RunTask on the revision-less s-read-sync FAMILY (= latest ACTIVE revision)
+          └─▶ ECS task s-read-sync — image CMD runs `src/cli.ts` in ${SYNC_MODE:-incremental} mode
 Deploy workflow (.github/workflows/deploy-s-read.yml, manual dispatch from main)
-   └─▶ build+push image → register migrate revision → (run migrate task, wait for exit 0)
-       → register sync revision
-Backfill = one-off `aws ecs run-task` of s-read-sync with a SYNC_MODE=backfill env override
+   └─▶ build+push image to ghcr.io → register migrate revision → (run migrate task,
+       wait for exit 0) → register sync revision
+Backfill / manual sync = `aws lambda invoke` on s-read-trigger with the mode payload
+Migrate task = raw run-task from the workflow only (deliberately NOT invocable via the trigger)
 ```
+
+The image lives at **`ghcr.io/innovationtreehouse/s-read`** (pushed by the
+workflow with the GITHUB_TOKEN, tagged `:<git-sha>`) and stays **private**: the
+task defs pull it via `repositoryCredentials` → the shared ghcr-pull-credentials
+secret (infra `modules/shared-iam`), same as every other ECS workload in this
+account — no make-public step, no per-service pull PAT.
 
 ## 1. Shopify app: scopes, release, install
 
@@ -30,9 +39,10 @@ the app's **Client ID** and **Client Secret** (app Settings) for step 3.
 
 ## 2. Infra applied + database bootstrap
 
-1. infra#112 `terraform apply`d (ECR repo `s-read` — IMMUTABLE tags, cluster
-   `s-read`, task-def families `s-read-sync`/`s-read-migrate`, hourly EventBridge
-   rule, secret shells, IAM, `s-read-compute` SG).
+1. infra#112 `terraform apply`d (cluster `s-read`, task-def families
+   `s-read-sync`/`s-read-migrate` with the ghcr `repositoryCredentials`, the
+   `s-read-trigger` Lambda + hourly schedule, secret shells, IAM,
+   `s-read-compute` SG).
 2. Run `modules/s-read/init.sql` **by hand** against the shared Aurora cluster's
    master user (creates the `shopify_read` database + the `s_read_ddl` /
    `s_read_dml` roles — Terraform cannot `CREATE DATABASE`). Cluster is
@@ -88,8 +98,17 @@ The backfill is a **Bulk Operation lifecycle**: the first run submits the export
 and returns (`action: "STARTED"`); later runs poll and, once Shopify completes
 it, download + ingest (`action: "INGESTED"`). Payouts/balance transactions
 backfill inline on each run. Re-run until you've seen `INGESTED` (afterwards it
-reports `NONE`). Ready-to-paste command in the infra output
-`s_read_manual_invoke_backfill`; equivalent by hand:
+reports `NONE`). Invoke through the trigger Lambda (it RunTasks the sync family
+with the right `SYNC_MODE` override — this is also how a manual incremental sync
+is kicked, with `"mode":"incremental"`):
+
+```bash
+aws lambda invoke --function-name s-read-trigger \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"mode":"backfill"}' out.json && cat out.json
+```
+
+Fallback if the trigger Lambda is unavailable — the raw run-task it performs:
 
 ```bash
 aws ecs run-task \
@@ -102,9 +121,10 @@ aws ecs run-task \
 
 (Verified against the image: the container CMD runs
 `src/cli.ts ${SYNC_MODE:-incremental}`, and cli.ts's `backfill` command calls
-`handler({ mode: "backfill" })` — the same orchestrator the old Lambda event
-selected.) The run lock makes an overlap with the hourly incremental resolve
-cleanly (one of them skips).
+`handler({ mode: "backfill" })`.) The run lock makes an overlap with the hourly
+incremental resolve cleanly (one of them skips). The **migrate** task is
+deliberately NOT invocable through the trigger — it runs only as a raw run-task
+from the deploy workflow.
 
 ## 7. Verify
 
