@@ -6,7 +6,7 @@ import { notifications } from "@mantine/notifications";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { isValidEmailHeader } from "@/lib/emailHeader";
+import { isValidEmailHeader, parseEmailHeaderList } from "@/lib/emailHeader";
 
 interface Settings {
   emailFromAddress: string | null;
@@ -14,6 +14,7 @@ interface Settings {
 }
 
 const HEADER_ERROR = 'Enter an email address or "Name <addr@domain>".';
+const REPLY_TO_ERROR = 'Enter one or more comma-separated addresses, each an email address or "Name <addr@domain>".';
 
 export default function EmailSettingsPage() {
   // The sender identity is editable by board + sysadmin (same as the /settings layout
@@ -66,7 +67,7 @@ export default function EmailSettingsPage() {
     const replyTo = emailReplyTo.trim();
     const fe: { from?: string; replyTo?: string } = {};
     if (from && !isValidEmailHeader(from)) fe.from = HEADER_ERROR;
-    if (replyTo && !isValidEmailHeader(replyTo)) fe.replyTo = HEADER_ERROR;
+    if (replyTo && !parseEmailHeaderList(replyTo)) fe.replyTo = REPLY_TO_ERROR;
     if (fe.from || fe.replyTo) { setFieldErrors(fe); return; }
     setFieldErrors({});
     setSaving(true);
@@ -111,8 +112,8 @@ export default function EmailSettingsPage() {
             ) : (
               <Text size="sm">
                 The <strong>From</strong> address must be on a domain verified in Resend.{" "}
-                <strong>Reply-To</strong> can be any address (e.g. a real board inbox) so replies to a
-                no-reply sender reach someone.
+                <strong>Reply-To</strong> can be one or more addresses, comma-separated (e.g. real board
+                inboxes) so replies to a no-reply sender reach someone.
               </Text>
             )}
           </Alert>
@@ -139,8 +140,8 @@ export default function EmailSettingsPage() {
             />
             <TextInput
               label="Reply-To address"
-              description="Where replies go. Blank = replies go to the From address."
-              placeholder="board@innovationtreehouse.org"
+              description="Where replies go. Comma-separated for multiple addresses. Blank = replies go to the From address."
+              placeholder="info@innovationtreehouse.org, ops@innovationtreehouse.org"
               w={440}
               value={emailReplyTo}
               error={fieldErrors.replyTo}

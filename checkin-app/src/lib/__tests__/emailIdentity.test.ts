@@ -12,9 +12,19 @@ describe('getEmailSenderIdentity', () => {
         expect(await getEmailSenderIdentity()).toEqual({ from: 'env-default@example.com', replyTo: undefined });
     });
 
-    it('lets BoardSettings override the From and set a Reply-To', async () => {
+    it('lets BoardSettings override the From and set a single Reply-To (one-element array)', async () => {
         mockFindUnique.mockResolvedValue({ emailFromAddress: 'Org <no-reply@org.test>', emailReplyToAddress: 'board@org.test' });
-        expect(await getEmailSenderIdentity()).toEqual({ from: 'Org <no-reply@org.test>', replyTo: 'board@org.test' });
+        expect(await getEmailSenderIdentity()).toEqual({ from: 'Org <no-reply@org.test>', replyTo: ['board@org.test'] });
+    });
+
+    it('parses a comma-separated Reply-To into an array', async () => {
+        mockFindUnique.mockResolvedValue({ emailFromAddress: null, emailReplyToAddress: 'info@org.test, ops@org.test' });
+        expect(await getEmailSenderIdentity()).toEqual({ from: 'env-default@example.com', replyTo: ['info@org.test', 'ops@org.test'] });
+    });
+
+    it('trims whitespace and dedupes Reply-To entries', async () => {
+        mockFindUnique.mockResolvedValue({ emailFromAddress: null, emailReplyToAddress: '  info@org.test ,info@org.test,  ops@org.test' });
+        expect(await getEmailSenderIdentity()).toEqual({ from: 'env-default@example.com', replyTo: ['info@org.test', 'ops@org.test'] });
     });
 
     it('treats blank/whitespace values as unset (env From, no Reply-To)', async () => {

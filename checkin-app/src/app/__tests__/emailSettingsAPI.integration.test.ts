@@ -78,6 +78,23 @@ describe('Email sender-identity settings API', () => {
         expect(after.emailFromAddress).toBe('Good <ok@example.org>');
     });
 
+    it('accepts a comma-separated Reply-To list', async () => {
+        asBoard(boardId);
+        const put = await EMAIL_PUT(jsonReq('PUT', { emailReplyToAddress: 'info@example.org, ops@example.org' }));
+        expect(put.status).toBe(200);
+        const saved = (await put.json()).settings;
+        expect(saved.emailReplyToAddress).toBe('info@example.org, ops@example.org');
+    });
+
+    it('rejects a Reply-To list with one malformed entry and keeps the previous value', async () => {
+        asBoard(boardId);
+        await EMAIL_PUT(jsonReq('PUT', { emailReplyToAddress: 'info@example.org, ops@example.org' }));
+        const bad = await EMAIL_PUT(jsonReq('PUT', { emailReplyToAddress: 'info@example.org, not-an-email' }));
+        expect(bad.status).toBe(400);
+        const after = (await (await EMAIL_GET(jsonReq('GET'))).json()).settings;
+        expect(after.emailReplyToAddress).toBe('info@example.org, ops@example.org');
+    });
+
     it('empty strings clear back to null (env default From, no Reply-To)', async () => {
         asBoard(boardId);
         const cleared = await EMAIL_PUT(jsonReq('PUT', { emailFromAddress: '', emailReplyToAddress: '' }));

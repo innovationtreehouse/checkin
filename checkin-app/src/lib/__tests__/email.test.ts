@@ -1,6 +1,6 @@
 let mockIsDevInstance = false;
 const mockCapture = jest.fn();
-let mockIdentity: { from: string; replyTo?: string } = { from: 'test@test.com' };
+let mockIdentity: { from: string; replyTo?: string[] } = { from: 'test@test.com' };
 
 jest.mock('resend');
 jest.mock('../config.ts', () => ({
@@ -103,7 +103,7 @@ describe('sendEmail no-key logging + capture', () => {
 // can't reach: Resend returning `{ error }`, and Resend throwing. Both must → false.
 describe('sendEmail send-failure contract (Resend configured)', () => {
     const sendMock = jest.fn();
-    let doMockIdentity: { from: string; replyTo?: string } = { from: 'test@test.com' };
+    let doMockIdentity: { from: string; replyTo?: string[] } = { from: 'test@test.com' };
     let errorSpy: jest.SpyInstance;
     let logSpy: jest.SpyInstance;
 
@@ -155,8 +155,8 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         expect(sendMock).toHaveBeenCalledTimes(1);
     });
 
-    it('passes the resolved From and, when set, Reply-To through to Resend', async () => {
-        doMockIdentity = { from: 'Org <no-reply@org.test>', replyTo: 'board@org.test' };
+    it('passes the resolved From and, when set, a single Reply-To through to Resend', async () => {
+        doMockIdentity = { from: 'Org <no-reply@org.test>', replyTo: ['board@org.test'] };
         sendMock.mockResolvedValue({ data: { id: '1' }, error: null });
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { sendEmail: send } = require('../email');
@@ -165,7 +165,20 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         expect(result).toBe(true);
         expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({
             from: 'Org <no-reply@org.test>',
-            replyTo: 'board@org.test',
+            replyTo: ['board@org.test'],
+        }));
+    });
+
+    it('passes multiple Reply-To addresses through to Resend as an array, verbatim', async () => {
+        doMockIdentity = { from: 'Org <no-reply@org.test>', replyTo: ['info@org.test', 'ops@org.test'] };
+        sendMock.mockResolvedValue({ data: { id: '1' }, error: null });
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { sendEmail: send } = require('../email');
+
+        const result = await send('to@org.test', 'Subject', '<p>hi</p>');
+        expect(result).toBe(true);
+        expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({
+            replyTo: ['info@org.test', 'ops@org.test'],
         }));
     });
 

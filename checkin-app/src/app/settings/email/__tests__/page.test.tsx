@@ -43,6 +43,21 @@ describe("EmailSettingsPage", () => {
     expect(screen.getByRole("button", { name: "Save settings" })).not.toBeDisabled();
   });
 
+  it("accepts a comma-separated Reply-To list: no inline error, PUT fires", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({ "/api/settings/email": { settings: { emailFromAddress: null, emailReplyToAddress: null } } });
+    renderWithProviders(<EmailSettingsPage />);
+
+    await screen.findByLabelText(/From address/i);
+    fireEvent.change(screen.getByLabelText(/Reply-To address/i), { target: { value: "info@org.test, ops@org.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/settings/email", expect.objectContaining({ method: "PUT" })));
+    expect(screen.queryByText(/Enter one or more comma-separated addresses/i)).not.toBeInTheDocument();
+    const [, putOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PUT")!;
+    expect(JSON.parse(putOpts!.body as string)).toEqual({ emailFromAddress: null, emailReplyToAddress: "info@org.test, ops@org.test" });
+  });
+
   it("validates client-side: a malformed From shows an inline error and never PUTs", async () => {
     setSession({ id: 1, isBoardMember: true });
     const fetchMock = mockFetchJson({ "/api/settings/email": { settings: { emailFromAddress: null, emailReplyToAddress: null } } });

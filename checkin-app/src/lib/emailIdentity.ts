@@ -1,11 +1,12 @@
 import prisma from "./prisma";
 import { config } from "./config";
+import { parseEmailHeaderList } from "./emailHeader";
 
 export interface EmailSenderIdentity {
     /** The Resend `from`. BoardSettings.emailFromAddress overrides the EMAIL_FROM env default. */
     from: string;
-    /** The Resend `replyTo`, or undefined when the board hasn't configured one. */
-    replyTo?: string;
+    /** The Resend `replyTo` addresses (one or more), or undefined when the board hasn't configured any. */
+    replyTo?: string[];
 }
 
 /**
@@ -26,9 +27,10 @@ export async function getEmailSenderIdentity(): Promise<EmailSenderIdentity> {
             where: { id: 1 },
             select: { emailFromAddress: true, emailReplyToAddress: true },
         });
+        const replyToRaw = settings?.emailReplyToAddress?.trim();
         return {
             from: settings?.emailFromAddress?.trim() || envFrom,
-            replyTo: settings?.emailReplyToAddress?.trim() || undefined,
+            replyTo: (replyToRaw ? parseEmailHeaderList(replyToRaw) : null) ?? undefined,
         };
     } catch {
         return { from: envFrom };

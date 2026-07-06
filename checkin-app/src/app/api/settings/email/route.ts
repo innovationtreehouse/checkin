@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
-import { isValidEmailHeader } from "@/lib/emailHeader";
+import { isValidEmailHeader, parseEmailHeaderList } from "@/lib/emailHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +16,13 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
 
 /**
  * PUT /api/settings/email — set the Resend From override and Reply-To.
- * Body may include emailFromAddress and emailReplyToAddress (string|null). Each must be a
- * valid address shape (bare or `Name <addr@domain>`); a malformed value rejects the whole
- * update (400) so the previous value survives. Blank/empty clears back to null (env default
- * From; no Reply-To). The From must be on a Resend-verified domain to actually deliver.
+ * Body may include emailFromAddress and emailReplyToAddress (string|null). emailFromAddress
+ * is a single address shape (bare or `Name <addr@domain>`). emailReplyToAddress may be a
+ * comma-separated list of one or more addresses, each in that same shape (e.g.
+ * "info@x.org, ops@x.org") — replies can fan out to more than one inbox. A malformed value
+ * rejects the whole update (400) so the previous value survives. Blank/empty clears back to
+ * null (env default From; no Reply-To). The From must be on a Resend-verified domain to
+ * actually deliver.
  */
 export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
@@ -38,7 +41,9 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     }
     if (body.emailReplyToAddress !== undefined) {
         const replyTo = body.emailReplyToAddress?.trim();
-        if (replyTo && !isValidEmailHeader(replyTo)) return apiError("emailReplyToAddress must be an email address or \"Name <addr@domain>\"", 400);
+        if (replyTo && !parseEmailHeaderList(replyTo)) {
+            return apiError("emailReplyToAddress must be a comma-separated list of email addresses (each an address or \"Name <addr@domain>\")", 400);
+        }
         data.emailReplyToAddress = replyTo || null;
     }
 
