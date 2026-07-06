@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { withWebhook } from "@/lib/webhookAuth";
 import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
+import { adjustProgramInventory } from "@/lib/shopify";
 
 interface ShopifyOrder {
     id?: number | string;
@@ -150,6 +151,15 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 );
                 const hasProgramItem = (order.line_items ?? []).some((li) => programVariantIds.has(String(li.variant_id)));
 
+                // Which tier Shopify actually sold — needed below to mirror inventory
+                // onto the SIBLING pool. buildShopifyCheckoutUrl fixes ONE variant per
+                // order (one household = one tier per checkout), so if hasProgramItem
+                // matched and this is false, the non-member tier is the one purchased.
+                const purchasedOrgMember = !!program?.shopifyOrgMemberVariantId &&
+                    (order.line_items ?? []).some((li) => String(li.variant_id) === program.shopifyOrgMemberVariantId);
+
+                let activatedCount = 0;
+
                 for (const participantId of participantIds) {
                     // Find existing participant
                     const existing = await prisma.programParticipant.findUnique({
@@ -173,10 +183,30 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                                 pendingSince: null, // clear out the pending timer
                             }
                         });
+                        activatedCount++;
 
                         logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
                     } else {
                         logger.warn(`[SHOPIFY WEBHOOK] Participant ${participantId} not found in Program ${programId}. Ignoring payment.`);
+                    }
+                }
+
+                // Interim two-pool mirror model (product decision 2026-07-06, extended):
+                // the org-member and non-org-member variants each carry their OWN
+                // Shopify inventory pool, both seeded to maxParticipants — so Shopify
+                // only auto-decrements the pool for the tier actually purchased. Mirror
+                // the same drop onto the SIBLING pool so both pools keep meaning
+                // "remaining shared capacity" (mod webhook lag/races) until the planned
+                // customer-segment/single-variant redesign collapses them into one.
+                // Deliberately AFTER activation is committed, and never allowed to fail
+                // the webhook response — Shopify retries the whole order on a non-2xx.
+                if (activatedCount > 0) {
+                    const siblingOnly = purchasedOrgMember
+                        ? { shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: program?.shopifyNonOrgMemberVariantId ?? null }
+                        : { shopifyOrgMemberVariantId: program?.shopifyOrgMemberVariantId ?? null, shopifyNonOrgMemberVariantId: null };
+                    const ok = await adjustProgramInventory(siblingOnly, -activatedCount);
+                    if (!ok) {
+                        logger.error(`[SHOPIFY WEBHOOK] Failed to mirror sibling-variant inventory for program ${programId} after activating ${activatedCount} participant(s) — pools may be out of sync.`);
                     }
                 }
             }

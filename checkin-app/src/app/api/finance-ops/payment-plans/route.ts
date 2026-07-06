@@ -6,6 +6,7 @@ import { handler } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { isActiveOrgMember, ACTIVE_ORG_MEMBER_INCLUDE } from "@/lib/orgMembership";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
+import { adjustProgramInventory } from "@/lib/shopify";
 
 export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
     const [requests, boardSettings] = await Promise.all([
@@ -95,7 +96,26 @@ export const POST = withAuth(
                 });
             }
 
-            return NextResponse.json({ success: true });
+            // Shopify is the source of truth for program capacity (product decision
+            // 2026-07-06, extended): an approved payment-plan/scholarship participant
+            // consumes a real seat exactly like a paid one, so it decrements Shopify
+            // inventory too — both member/non-member pools in parallel, same call
+            // shape as the PATCH /api/programs/[id] maxParticipants propagation (see
+            // the interim two-pool mirror note in webhooks/shopify/route.ts).
+            // Non-fatal: approval already committed above, so a Shopify failure here
+            // surfaces as a warning, not a rejected approval.
+            let warning: string | undefined;
+            const program = await prisma.program.findUnique({ where: { id: programId } });
+            if (program && (program.shopifyOrgMemberVariantId || program.shopifyNonOrgMemberVariantId)) {
+                const ok = await adjustProgramInventory(program, -1);
+                if (!ok) {
+                    warning = "Payment plan approved, but the Shopify inventory adjustment failed. Capacity may be out of sync — check System Status > Link Status.";
+                }
+            }
+
+            const responseObj: Record<string, unknown> = { success: true };
+            if (warning) responseObj.warning = warning;
+            return NextResponse.json(responseObj);
         } catch (error) {
             logger.error("Failed to approve payment plan:", error);
             return apiError("Failed to approve payment plan", 500);

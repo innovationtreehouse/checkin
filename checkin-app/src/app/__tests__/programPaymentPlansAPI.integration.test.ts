@@ -214,6 +214,70 @@ describe('Program payment-plan routes', () => {
             expect(row?.status).toBe('ACTIVE');
             expect(row?.isPaymentPlanRequested).toBe(false);
             expect(row?.pendingSince).toBeNull();
+
+            // No Shopify variant on this program — capacity propagation never engages.
+            const data = await res.json();
+            expect(data.warning).toBeUndefined();
+        });
+
+        // Shopify is the source of truth for program capacity (product decision
+        // 2026-07-06, extended): an approved scholarship/payment-plan seat consumes
+        // real capacity exactly like a paid one, so approval must decrement Shopify
+        // too. Runs against the CHECKIN_ENV=local mock (config.shopifyMockActive),
+        // same pattern as programSyncShopifyAPI.integration.test.ts.
+        it('decrements both Shopify variant pools by 1 on approval when the program has variants configured', async () => {
+            const prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            try {
+                const shopifyProgram = await prisma.program.create({
+                    data: {
+                        name: `PP Shopify Program ${TAG}`,
+                        leadMentorId: mentorId,
+                        enrollmentStatus: 'OPEN',
+                        shopifyOrgMemberVariantId: 'dev-mock-variant-member-pp',
+                        shopifyNonOrgMemberVariantId: 'dev-mock-variant-nonmember-pp',
+                    },
+                });
+                try {
+                    await prisma.programParticipant.upsert({
+                        where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
+                        update: { status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
+                        create: { programId: shopifyProgram.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date() },
+                    });
+                    mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+                    // A cookie header is required: CHECKIN_ENV=local (for the Shopify mock)
+                    // also arms the keyless-kiosk fallback in authenticateRequest, which
+                    // hijacks any cookie-less request as `kiosk` -> 403 before the
+                    // session/role gate runs.
+                    const res = await PlansPost(nextReq('http://localhost', {
+                        method: 'POST',
+                        headers: { cookie: 'session=test' },
+                        body: JSON.stringify({ programId: shopifyProgram.id, participantId: selfId }),
+                    }));
+                    expect(res.status).toBe(200);
+                    const data = await res.json();
+                    expect(data.warning).toBeUndefined(); // mock no-ops successfully
+
+                    const row = await prisma.programParticipant.findUnique({
+                        where: { programId_personId: { programId: shopifyProgram.id, personId: selfId } },
+                    });
+                    expect(row?.status).toBe('ACTIVE');
+
+                    // Confirms BOTH pools were targeted with delta -1, not just that the
+                    // call succeeded — the mock logs the resolved variant id list.
+                    expect(logSpy).toHaveBeenCalledWith(
+                        expect.stringContaining('Would adjust inventory by -1 for variants: dev-mock-variant-member-pp, dev-mock-variant-nonmember-pp'),
+                    );
+                } finally {
+                    await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
+                    await prisma.program.delete({ where: { id: shopifyProgram.id } });
+                }
+            } finally {
+                logSpy.mockRestore();
+                process.env.CHECKIN_ENV = prevCheckinEnv;
+            }
         });
 
         it('stamps wasOrgMemberAtApproval=true approving a participant from an ACTIVE-membership household', async () => {
