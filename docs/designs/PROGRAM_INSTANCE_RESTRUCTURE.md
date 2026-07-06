@@ -3,6 +3,7 @@
 **Status:** Proposal (no code changes)
 **Supersedes:** Audit item **P2-3** (naming confusion around "session"/"program"/"event")
 **Scope:** `checkin-app` (schema + security + UI + data migration)
+**Baseline:** written to land **after** [`SHOPIFY_MEMBER_SEGMENT_PRICING.md`](../../checkin-app/docs/designs/SHOPIFY_MEMBER_SEGMENT_PRICING.md) (#929). That proposal ships **first** and collapses each program's two priced variants down to **one variant + a segment-gated automatic member discount**, retires the volunteer discount *code*, and adds a member→Shopify customer-tag sync. This doc assumes that end state. The only place the two interact is the Shopify column set (§2/§3): post-#929 a program carries **one** `shopifyVariantId` + one paired member-discount id, not the `shopify{Org,NonOrg}MemberVariantId` pair. The re-tiering decision (confirmed): **the member discount grain moves down with the variant — one automatic discount per `ProgramInstance`**, amount read from the parent `Program`'s board-set price delta. See §2a for the full 929-interaction note.
 
 ---
 
@@ -46,9 +47,10 @@ Locked names (product owner): model **`ProgramInstance`** (never bare `instance`
 | `minAge` / `maxAge` | Int? | definition (policy) |
 | `maxParticipants` | Int? | **offering** (capacity) |
 | `leadMentorNotificationSettings` | Json? | **offering** (follows lead mentor) |
-| `orgMemberPriceCents` / `nonOrgMemberPriceCents` | Int? | **offering** (pricing) |
+| `orgMemberPriceCents` / `nonOrgMemberPriceCents` | Int? | definition (**board-set** price; post-#929 the pair still exists — the member number now drives the discount *delta*, not a second variant) |
 | `shopifyProductId` | String? | **offering** |
-| `shopifyOrgMemberVariantId` / `shopifyNonOrgMemberVariantId` | String? | **offering** |
+| `shopifyVariantId` | String? | **offering** (single variant, priced at non-member rate — post-#929; replaces the old `shopify{Org,NonOrg}MemberVariantId` pair) |
+| `shopifyMemberDiscountId` | String? | **offering** (id of the segment-gated automatic member discount paired to the variant — post-#929; exact field name is whatever #929 lands) |
 
 **Child relations off Program:**
 
@@ -88,11 +90,10 @@ Locked names (product owner): model **`ProgramInstance`** (never bare `instance`
 | `startAt` / `endAt` | **→ ProgramInstance** | Run dates. The definition is dateless. |
 | `phase` (`ProgramPhase`) | **→ ProgramInstance** | PLANNING→…→done is a run's lifecycle. |
 | `enrollmentStatus` (`EnrollmentStatus`) | **→ ProgramInstance** | A run opens/closes enrollment; the definition never does. |
-| `orgMemberPriceCents` / `nonOrgMemberPriceCents` | **→ ProgramInstance** | Price varies per run (early-bird, inflation). Moves with `Fee`. |
-| `shopifyProductId` / `shopify*VariantId` | **→ ProgramInstance** | Each run is a separately-sold Shopify product/variant; the `webhooks/shopify` order maps a purchase to a concrete offering. |
 | `leadMentorNotificationSettings` | **→ ProgramInstance** | Follows the (now per-instance) lead mentor. |
-| `orgMemberPriceCents` / `nonOrgMemberPriceCents` | **stays on Program** | **Board-set** enrollment price — an authority decision that governs the definition, not something a lead mentor re-sets per run. |
-| `shopifyProductId` / `shopify*VariantId` | **→ ProgramInstance** (see note) | The *price number* is board-set on the definition, but the Shopify sellable an order maps back to must identify the concrete run, or `webhooks/shopify` can't resolve a purchase to an offering. Instance owns the variant ids; each variant's *price* is synced from the parent Program's board-set cents. |
+| `orgMemberPriceCents` / `nonOrgMemberPriceCents` | **stays on Program** | **Board-set** enrollment price — an authority decision that governs the definition, not something a lead mentor re-sets per run. Single price per definition; every run inherits it. |
+| `shopifyProductId` / `shopifyVariantId` (single, post-#929) | **→ ProgramInstance** | Each run is a separately-sold Shopify product/variant; the `webhooks/shopify` order maps a purchase to a concrete offering. The *price number* stays board-set on the definition, but the sellable an order maps back to must identify the concrete run. Instance owns the variant id; the variant's *price* is synced from the parent Program's board-set cents. |
+| `shopifyMemberDiscountId` (post-#929) | **→ ProgramInstance** | The member discount is paired to the variant, so it moves with it: **one automatic discount per instance**, amount = the parent Program's `nonOrgMemberPriceCents − orgMemberPriceCents`. See §2a. |
 | `name` | **stays on Program** | The definition name ("Woodworking 101"). *See note ↓ — the instance needs its own label too.* |
 | `minAge` / `maxAge` | **Program default, instance may NARROW** | Age band is a definition policy, but a run may restrict it tighter (never looser). Instance gets nullable `minAge`/`maxAge` overrides; effective = the **tighter** bound. See §3a. |
 | `orgMemberOnly` | **Program default, instance may NARROW** | If the definition is open (`false`), a run may set it member-only (`true`); a member-only definition can never be loosened by a run. Instance gets nullable `orgMemberOnly` override; effective = `program OR instance`. See §3a. |
@@ -101,7 +102,28 @@ Locked names (product owner): model **`ProgramInstance`** (never bare `instance`
 
 **Net:** the definition owns `name`, the board-set prices, and the *baseline* policy (`minAge`/`maxAge`/`orgMemberOnly`). The instance may carry *narrowing overrides* of that policy (§3a) but never widen it. Everything else operational moves fully down. A `Program` row is cheap to create (a catalog stub with policy + price) and the run-specific weight lives on the instance.
 
-**Price/Shopify split (DECIDED):** enrollment price lives on the definition (board authority); the Shopify *variant ids* live on the instance so orders map to a run. One price per definition applies to every run. Per-run pricing (early-bird) is explicitly *someday-maybe* — Shopify discount codes cover it with no schema change — so there is no instance price column. (§9.4)
+**Price/Shopify split (DECIDED):** enrollment price lives on the definition (board authority); the Shopify *variant id* + its *member-discount id* (single each, post-#929) live on the instance so orders map to a run and the member discount applies per run. One price per definition applies to every run. Per-run pricing (early-bird) is explicitly *someday-maybe* — and post-#929 the escape hatch is a **per-instance discount/price override**, **not** a shareable discount code (#929 retires codes precisely because a code on a public cart link is forgeable/shareable). So there is still no instance *price* column today. (§9.4)
+
+### 2a. Interaction with #929 (member-segment pricing) — the one coupled surface
+
+#929 lands first and changes the Shopify pricing shape this doc re-tiers. Post-#929 baseline, then the move:
+
+| Aspect | Today (pre-#929) | After #929 (this doc's baseline) | After this doc (re-tiered) |
+|---|---|---|---|
+| Variants per program | two (`shopify{Org,NonOrg}MemberVariantId`) | **one** `shopifyVariantId`, priced at non-member rate | one `shopifyVariantId` **per instance** |
+| Member pricing | second variant, client-side tier pick | segment-gated **automatic discount**, one **per program** | automatic discount **per instance**, amount = parent `Program` delta |
+| Discount id stored on | — | `Program` | **`ProgramInstance`** |
+| Board price columns | `Program` | `Program` (unchanged) | `Program` (unchanged) |
+
+**Why per-instance discount and not per-program:** post-#929 a program has one variant, so one discount cleanly targets it. Once a program fans out to *N* instances = *N* variants, a single program-level discount would have to enumerate every instance variant (and be edited on every instance create/archive) or target a per-program Shopify *collection* (new machinery). The **per-instance** discount is the same mechanism #929 already designs, just re-grained one tier down — it drops out of the existing "instance-create makes the variant" step (§3) at the cost of one more Shopify object per run. The board-set delta is still a single `Program`-level number; each instance's discount just *reads* it.
+
+**Consequences to wire (all mechanical, none structural):**
+- **Instance lifecycle owns the discount.** Instance-create makes variant **+ paired member discount** (amount = parent delta); instance-archive **disables** that discount. Mirrors #929's program-create-makes-variant+discount, moved to instance.
+- **Price-sync fans out over instances.** A board price edit on the `Program` definition (definition PATCH route, §6) must sync **every** live instance's variant price **and** every paired discount amount — a loop over instances, not a single write. #929's `shopifyPriceSyncedAt` writer becomes an N-fan-out. Not a hot path (price edits are rare); still, don't assume one variant.
+- **Webhook resolves the instance variant.** The single variant on the paid order resolves the concrete instance → parent Program (§3 event→instance→program hop already exists). No two-id set, no tier-confusion class of bug.
+- **No security interaction.** Discounts/tags are orthogonal to the `programsLed`→`instancesLed` claim swap (§5). The two blast radii don't overlap.
+
+**Not FUBAR — clean rewrite:** the only schema change vs. a pre-#929 world is *one fewer* variant column on the instance (single, not a pair) plus the discount id. Everything else (prices on `Program`, capacity/roster/lead on instance, security re-tier) is unchanged by #929.
 
 ---
 
@@ -129,10 +151,12 @@ model ProgramInstance {
   maxAge                         Int?
   orgMemberOnly                  Boolean?
   // Board-set enrollment price stays on Program; the instance holds only the
-  // Shopify sellable ids (variant price synced from the parent's board-set cents).
+  // Shopify sellables (variant price synced from the parent's board-set cents).
+  // Post-#929: ONE variant + ONE paired member discount (amount = parent delta),
+  // not the old org/non-org variant pair. See §2a.
   shopifyProductId               String?
-  shopifyOrgMemberVariantId      String?
-  shopifyNonOrgMemberVariantId   String?
+  shopifyVariantId               String?  // single, priced at non-member rate
+  shopifyMemberDiscountId        String?  // segment-gated automatic member discount
 
   volunteers   ProgramVolunteer[]
   participants ProgramParticipant[]
@@ -197,20 +221,27 @@ Justification for storing on both (vs deriving): the run operator sets and sees 
 
 ---
 
-## 4. Migration + seed + mocks (no data backfill — pre-launch)
+## 4. Migration + seed + mocks (REAL data backfill — the app is live)
 
-**No production rows exist yet.** There is nothing to split 1:1, no `programId → instanceId` backfill map, no reparent-existing-Events step. The migration files are pure schema DDL; the real work is updating the **seed** and the **test fixtures** so they build the 3-tier shape.
+> **UPDATE — the pre-launch assumption no longer holds.** Production rows exist. There **is** a 1:1 split to run, a `programId → instanceId` map to build, and existing `Event`/`ProgramParticipant`/`ProgramVolunteer`/`Fee` rows to reparent. The migrations are **not** pure DDL anymore — each schema step that moves an FK carries a data-backfill step, run in the same deploy, against real rows. This is the single biggest change forced by launch; §4a and §7 P1–P2 below are rewritten for it. (Post-#929 note: every live `Program` already carries one `shopifyVariantId` + one `shopifyMemberDiscountId` — those copy to the backfilled instance like any other offering column; nothing #929-specific complicates the backfill.)
 
-### 4a. Schema migrations (DDL only)
+**The backfill is 1:1 and that's what keeps it cheap.** Every existing `Program` today *is* a single run — one roster, one set of dates, one lead. So the split is exactly one `ProgramInstance` per `Program`, and we exploit that:
+
+**Backfill with the id-alias trick (DECIDED — Option A).** Insert each backfilled `ProgramInstance` with **`id = Program.id`** (force the PK, don't autoincrement). Because the new instance id then *equals* the old `programId` on every child row, the child FKs need **no value rewrite** — a plain `ALTER TABLE … RENAME COLUMN programId TO instanceId` leaves every value already correct, and the composite-PK index + the capacity `FOR UPDATE` target survive the rename untouched (the very guarantees §8 cares about). The one quirk this buys: legacy instance ids permanently alias program ids, so after the backfill **bump `ProgramInstance_id_seq` to `MAX(Program.id) + 1`** or the next new-instance insert collides with a backfilled row. That sequence bump is mandatory and easy to forget — it's in the hazard list (§8).
+
+*Fallback (Option B), if id-aliasing is unacceptable:* add fresh `instanceId` columns, backfill them via an explicit `programId → instance.id` map `UPDATE`, then drop `programId`. No id constraint, but the composite-PK index must be **dropped and recreated** on the new column (not renamed), and the `FOR UPDATE` raw SQL re-targets a genuinely new column. More index churn, more lock-window risk on large tables. Option A is preferred precisely because the 1:1 shape makes the alias safe.
+
+### 4a. Schema migrations (DDL **+ backfill**)
 
 | Step | Operation |
 |---|---|
 | **M0** | Create `ProgramInstance` table (additive). Add nullable `Event.instanceId` + FK. |
-| **M1** | Add `instanceId` to `ProgramParticipant`/`ProgramVolunteer`/`Fee`; add the moved columns (`leadMentorId`, dates, `phase`, `enrollmentStatus`, `maxParticipants`, `leadMentorNotificationSettings`, `shopify*`) + the nullable narrowing overrides (`minAge`/`maxAge`/`orgMemberOnly`) to `ProgramInstance`. |
-| **M2** | Repoint the `Fee`/`ProgramParticipant`/`ProgramVolunteer` FK+PK from `programId` to `instanceId` via **RENAME** (`ALTER TABLE … RENAME COLUMN`), not drop+add — preserves the `[programId, personId]` → `[instanceId, personId]` composite-PK index and the capacity `FOR UPDATE` raw-SQL target. Drop `Event.programId` once reads cut over (P5). |
+| **M1** | Add the moved columns (`leadMentorId`, dates, `phase`, `enrollmentStatus`, `maxParticipants`, `leadMentorNotificationSettings`, `shopify*`) + the nullable narrowing overrides (`minAge`/`maxAge`/`orgMemberOnly`) to `ProgramInstance`. |
+| **MB** *(new — data)* | **Backfill.** For every `Program`, insert one `ProgramInstance` with `id = Program.id`, copying offering columns + `name` (label seed = parent name, §4-note). Set `Event.instanceId = Event.programId`, and (Option B only) the child `instanceId`s. Then `SELECT setval('"ProgramInstance_id_seq"', (SELECT MAX(id) FROM "Program") + 1)`. Idempotent guard: skip programs that already have an instance (re-runnable deploy). |
+| **M2** | Repoint the `Fee`/`ProgramParticipant`/`ProgramVolunteer` FK+PK from `programId` to `instanceId` via **RENAME** (`ALTER TABLE … RENAME COLUMN`) — valid **only because MB aliased the ids** — swapping the FK constraint from `Program` to `ProgramInstance`; preserves the `[programId, personId]` → `[instanceId, personId]` composite-PK index and the capacity `FOR UPDATE` raw-SQL target. Drop `Event.programId` once reads cut over (P5). |
 | **M3** | Drop the vacated `Program` columns (P5, its own migration). **Prices stay on `Program`.** |
 
-No data-migration SQL between these — an empty table needs no `UPDATE`. (If a shared staging DB has throwaway rows, `prisma migrate reset` + re-seed is simpler than backfilling them.)
+**MB runs against live rows** — it needs the same care as any prod data migration: wrap in a transaction, run behind the P1/P2 dual-write window (below) so a mid-deploy failure leaves `programId` still authoritative and rolls back clean. Local throwaway DBs can still `prisma migrate reset` + re-seed; **staging and prod run MB for real** — no reset.
 
 ### 4b. Seed (`prisma/seed.ts` → `seed-helpers.ts`)
 
@@ -313,17 +344,24 @@ Re-tier the bindings — keep the **scope names** (`their_program_participants`,
 - **`/programs` (public directory, `programs/page.tsx`)** — lists **`ProgramInstance` rows with open `enrollmentStatus`** ("Fall 2026 Woodworking, enrolling now"), not definitions. Rationale: you enroll in offerings; enrollment/dates/capacity all live on the instance, and a definition with no open run is nothing to register for. Display each instance's `name` alongside its parent definition's `name` ("Woodworking 101 — Fall 2026"). A pure definition-catalog view, if ever wanted, is a separate staff/admin surface — not this page. This changes the public IA (the directory is now a *schedule*).
 - **`/my-activities/programs` (`my-activities/programs/page.tsx`)** — "programs I'm enrolled in." Enrollment (`ProgramParticipant`) moves to the instance, so this lists **instances** the person is enrolled in (rendered "Woodworking 101 — Fall 2026"). Follows the roster FK down.
 
+**Live-IA consequences (the app is not pre-launch — sign off deliberately).** Because real users hit `/programs` today, the catalog→schedule shift ships *to a live audience*, not into an empty site. Three consequences a reviewer should accept on the record before P4:
+- **Different page, more rows.** `/programs` goes from one card per *program* to one card per *open run* — a parent sees "Woodworking 101 — Fall 2026" and "…— Spring 2027" as separate cards, not one "Woodworking 101". New mental model, potentially longer list. Not a bug; a deliberate UX change worth a heads-up in release notes.
+- **Empty-state / disappearing programs.** The schedule lists only instances with **open** `enrollmentStatus`. A program whose only run is closed, full, or past shows **nothing** on the public page — it silently drops off the directory the moment its run closes. Pre-launch this was theoretical; live, confirm the org is OK with "no open run ⇒ not listed" (vs. a "coming soon" placeholder).
+- **Old links resolve to program ids.** Existing bookmarks, shared links, and any search-indexed `/programs/[id]` URLs point at *program* ids; the enrolment/edit paths now key off *instance* ids (§5d, §6). Confirm the public detail route either still accepts a program id (and picks the current open instance) or 301s — don't let live inbound links 404. No such links existed pre-launch; they do now.
+
+These don't change the decision (both surfaces list instances — LOCKED, §9.1); they're the operational cost of making it on a running site.
+
 ---
 
 ## 7. Phased plan (each phase independently shippable + tsc-green)
 
 Modeled on the Participant→Person A0–A2 cadence. Nothing breaks mid-flight; the security claim swaps atomically with its consumers.
 
-**P1 — Add the tier, don't read it yet.**
-Add `model ProgramInstance` + nullable `Event.instanceId` (migration M0). No prod data to backfill; update the seed (§4b) so `seedBaseline` produces a def+instance and Events carry `instanceId`. No reads change; `Event.programId` still authoritative. Ships green — new table + nullable column, zero consumers.
+**P1 — Add the tier + backfill it, don't read it yet.**
+Migration M0 (`model ProgramInstance` + nullable `Event.instanceId`), M1 (moved columns), then **MB — the real data backfill** (§4a): one instance per existing program, id-aliased, `Event.instanceId` set, sequence bumped. Update the seed (§4b) so `seedBaseline` also produces a def+instance. No reads change; `Event.programId` + child `programId` still authoritative. Ships green — new table + nullable columns + a backfill that populates them, zero read consumers yet. **This is now a data-migration phase, not a pure-DDL one** — MB runs against prod and must be transaction-wrapped + idempotent.
 
 **P2 — Move the child FKs onto the instance.**
-Migration M1: add `instanceId` to `ProgramParticipant`/`ProgramVolunteer`/`Fee`, add `ProgramInstance.leadMentorId` + shopify/capacity/date/phase columns + the nullable `minAge`/`maxAge`/`orgMemberOnly` **narrowing-override** columns (§3a). **Prices stay on Program.** Wire the `effectiveEligibility()` resolver + the write-time widen guard. Update the seed macros (`createProgram`/`createEvent`, §4b) to build on `instanceId`. Old `programId` columns still authoritative for reads; writers dual-write program+instance so both stay consistent through P3. Ships green.
+Migration M2: repoint `ProgramParticipant`/`ProgramVolunteer`/`Fee` from `programId` to `instanceId` (RENAME, valid because MB aliased the ids — §4a). Add `ProgramInstance.leadMentorId` + shopify/capacity/date/phase columns (done in M1) are already populated by MB. Wire the `effectiveEligibility()` resolver + the write-time widen guard. Update the seed macros (`createProgram`/`createEvent`, §4b) to build on `instanceId`. Old `programId` (where still present, e.g. `Event`) authoritative for reads; writers **dual-write** program+instance so both stay consistent through P3 — this is also the rollback net for MB (drop the instances, `programId` still points home). Ships green.
 
 **P3 — Move reads, swap the security claim atomically.**
 Cut every *read* to the instance: `buildCallerContext`, `scopeBindings`, `scopes.ts`, `registry.ts`, the event→instance→program hop, and **`programsLed` → `instancesLed`** across `auth-options`/`authClaims`/`next-auth.d.ts`/`program-ops/layout.tsx` — all in **one** PR. This is the dangerous phase: the JWT claim and its four consumers must flip together or lead mentors lose access mid-deploy. Writes still dual-write (P2). Run the **full** integration suite `--runInBand` — this is the net that catches the tsc-blind where-clause escapes.
@@ -343,7 +381,9 @@ Migration M3: drop `leadMentorId`, `startAt`, `endAt`, `phase`, `enrollmentStatu
 - [ ] **FK rename touches security config beyond the schema:** `scopeBindings.ts` + `access-resolvers.ts` are **CODEOWNERS-gated**; `generated/classifications.ts` regenerates; the `scopeBindingsEquivalence.test.ts` + `rsvp-program-scope` + `emergency-contact-program-scope` oracles hardcode `programsLed`/`programId`; frontend response mocks carry the old shape. All tsc-blind on the string fixtures. (`[[fk-rename-touches-security-config]]`)
 - [ ] **`pageRegistry.test.ts` fails on unregistered renamed routes.** `/program-ops/sessions/*` → `/program-ops/instances/*` must be updated in `pageRegistry` PAGES (or REGISTRY_EXCLUDED). (`[[page-registry-drift-guard]]`)
 - [ ] **Integration tests `--runInBand` are the real net** — never parallel (shared DB corrupts counts / "too many clients"). Run via the package.json script, append ONE path regex to narrow; never hand-roll `--testPathIgnorePatterns` (it replaces the config array → 16-min hang). (`[[integration-tests-serial-only]]`, `[[jest-cli-ignore-overrides-config]]`, `[[no-background-jest]]`)
-- [ ] **RENAME migrations, not drop+add** — preserves the capacity `FOR UPDATE` raw-SQL target and the `[programId, personId]` → `[instanceId, personId]` PK partial indexes. (`[[fk-rename-tsc-not-enough]]`)
+- [ ] **RENAME migrations, not drop+add** — preserves the capacity `FOR UPDATE` raw-SQL target and the `[programId, personId]` → `[instanceId, personId]` PK partial indexes. **The RENAME is only valid because MB id-aliases (`instance.id = program.id`, §4a);** without that, values would be wrong post-rename. (`[[fk-rename-tsc-not-enough]]`)
+- [ ] **The app is LIVE — MB is a real prod data migration.** One instance per existing program, id-aliased, transaction-wrapped, idempotent (skip programs that already have an instance so a re-run deploy is safe). Run behind the P1/P2 dual-write window so a failure rolls back to `programId`-authoritative. Not the pre-launch pure-DDL story the earlier draft assumed.
+- [ ] **Bump `ProgramInstance_id_seq` after MB** — id-aliasing sets backfilled ids to program ids; without `setval(..., MAX(Program.id)+1)` the next new-instance insert collides with a backfilled row (duplicate-PK error, or worse a silent FK cross-wire). Easiest step in the whole migration to forget.
 - [ ] **Sliced-scope trap:** don't scope a rename chip to skip a subdir — the skipped subdir's consumers of the renamed route/wire-key break silently, tsc-blind. Grep repo-wide + grep-to-zero after merge. (`[[sliced-rename-cross-dir-consumers]]`, `[[git-grep-pathspec-no-recurse]]` — use `grep -r`, not `git grep -- 'dir/*'`)
 - [ ] **Claim swap must be atomic with consumers** (P3) — JWT `instancesLed` + `layout.tsx` + `buildCallerContext` + `resolveAccess` flip in one PR, or every lead mentor is locked out mid-deploy.
 - [ ] **`shop/certifications` IDOR alerts are usually false** (status is public by design) — don't let the security-test churn in P3 spawn noise there. (`[[cert-status-public-by-design]]`)
@@ -355,4 +395,4 @@ Migration M3: drop `leadMentorId`, `startAt`, `endAt`, `phase`, `enrollmentStatu
 1. **Public `/programs` lists instances**, not definitions — open-enrollment `ProgramInstance` rows shown as a schedule ("Woodworking 101 — Fall 2026"). Public IA becomes a schedule; a definition-catalog view, if ever needed, is a separate staff surface. (§6)
 2. **`ProgramInstance.name` is a stored, separate run label** ("Fall 2026") — not derived from `program.name + term`. Editable data; the run operator sets it. (§3)
 3. **Policy narrowing** (§3a) confirmed: instance may narrow `minAge`/`maxAge`/`orgMemberOnly`, never widen; enforced by the write-time guard. An open definition correctly permits a member-only run; a member-only definition can't be loosened.
-4. **Pricing stays on `Program` (single per definition).** Per-run pricing (early-bird) is a *someday-maybe*, not now — Shopify discount codes cover that case without a schema change. No instance price column and no override. If it ever becomes real, revisit then. (§2)
+4. **Pricing stays on `Program` (single per definition).** Per-run pricing (early-bird) is a *someday-maybe*, not now. Post-#929 the escape hatch is a per-instance automatic discount/price override — **not** a shareable discount code (#929 retires codes as forgeable). No instance price column and no override today. If it ever becomes real, revisit then. (§2, §2a)
