@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Button, Group, List, Modal, Stack, Table, Text, TextInput } from '@mantine/core';
+import { Badge, Button, Group, List, Modal, Stack, Table, Text, TextInput, Tooltip } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
@@ -15,7 +15,7 @@ type Household = {
   id: number;
   name?: string | null;
   orgMembership?: { status: string } | null;
-  householdMembers?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean }[] | null;
+  householdMembers?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean; emailUndeliverableAt?: string | null }[] | null;
 };
 
 export default function AdminHouseholdsPage() {
@@ -165,24 +165,41 @@ export default function AdminHouseholdsPage() {
               // Mirrors the server guard; disabled state is UX only. Revoke stays allowed.
               const ownGrantBlocked =
                 !hasActiveMembership && me?.isSysadmin !== true && sharesHousehold(me?.householdId, household.id);
+              const hasBrokenEmail = household.householdMembers?.some((p) => p.emailUndeliverableAt) ?? false;
 
               return (
                 <Table.Tr key={household.id}>
                   <Table.Td>
-                    <Text
-                      fw={600}
-                      c="blue"
-                      style={{ cursor: "pointer" }}
-                      onClick={() => router.push(`/membership-ops/households/${household.id}`)}
-                    >
-                      {household.name || `Household #${household.id}`}
-                    </Text>
+                    <Group gap="xs" wrap="nowrap">
+                      <Text
+                        fw={600}
+                        c="blue"
+                        style={{ cursor: "pointer" }}
+                        onClick={() => router.push(`/membership-ops/households/${household.id}`)}
+                      >
+                        {household.name || `Household #${household.id}`}
+                      </Text>
+                      {hasBrokenEmail && (
+                        <Tooltip label="A member's email is undeliverable — update their address">
+                          <Badge color="red" variant="filled" size="sm" style={{ cursor: "default" }}>
+                            ✉ Broken email
+                          </Badge>
+                        </Tooltip>
+                      )}
+                    </Group>
                   </Table.Td>
                   <Table.Td>
                     {household.householdMembers && household.householdMembers.length > 0 ? (
                       <List size="sm">
                         {household.householdMembers.map((p) => (
-                          <List.Item key={p.id}>{p.name || p.email}</List.Item>
+                          <List.Item key={p.id}>
+                            {p.name || p.email}
+                            {p.emailUndeliverableAt && (
+                              <Tooltip label="This email bounced or was marked spam — undeliverable">
+                                <Text span c="red" fw={700} ml={4}>✉ undeliverable</Text>
+                              </Tooltip>
+                            )}
+                          </List.Item>
                         ))}
                       </List>
                     ) : (

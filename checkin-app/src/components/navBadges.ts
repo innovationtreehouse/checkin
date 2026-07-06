@@ -137,7 +137,15 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
       const awaiting = counts.review?.approvedAwaitingSecond ?? 0;
       const info = apps + awaiting;
       const infoLabel = `${apps} in-flight application${plural(apps, '', 's')}; ${awaiting} you approved awaiting a second reviewer`;
+      // Red (blocking): people whose email bounced/complained — surfaced on the
+      // Manage Memberships (households) tab, where the board fixes the address.
+      // Mirrors the /membership-ops/households tab pill (tabBadgeFor below).
+      const brokenEmails = counts.admin ? counts.admin.brokenEmails : 0;
+      const red = brokenEmails > 0
+        ? [{ count: brokenEmails, color: 'red', label: `${brokenEmails} member${plural(brokenEmails, '', 's')} with an undeliverable email` }]
+        : [];
       return [
+        ...red,
         ...green(action, actionLabel),
         ...gray(info, infoLabel),
       ];
@@ -215,6 +223,13 @@ export function tabBadgeFor(href: string, counts: TodoCounts | null): NavBadge |
     // section badge, which is green board-actionable (BLOCKED) only.
     case '/membership-ops/applications':
       return gray(admin.applicationsTotal, `${admin.applicationsTotal} application${plural(admin.applicationsTotal, '', 's')}`);
+    // Manage Memberships (households). Red, blocking: members whose email Resend
+    // reported undeliverable (bounce/complaint) — the board fixes the address on
+    // this page. Same count as the /membership-ops section-nav red pill.
+    case '/membership-ops/households':
+      return admin.brokenEmails > 0
+        ? { count: admin.brokenEmails, color: 'red', label: `${admin.brokenEmails} member${plural(admin.brokenEmails, '', 's')} with an undeliverable email` }
+        : null;
     // Membership Audit — mirrors the /membership-audit section badge: broken is
     // red (board must assign a lead — blocking), the other two gray (household's own gaps).
     case '/membership-audit/emergency-contacts':

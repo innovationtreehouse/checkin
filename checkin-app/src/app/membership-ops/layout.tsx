@@ -6,7 +6,7 @@ import { MEMBERSHIP_OPS_NAV_LINKS } from "@/lib/membershipOpsNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { tabBadgeFor, reviewBadges } from "@/components/navBadges";
-import { CountBadge } from "@/components/ui/CountBadge";
+import { CountBadge, badgeIntentFor } from "@/components/ui/CountBadge";
 import { SectionTabs } from "@/components/ui/SectionTabs";
 import { PageContainer } from "@/components/ui/PageContainer";
 
@@ -27,9 +27,6 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
   const navLinks = MEMBERSHIP_OPS_NAV_LINKS.filter((l) =>
     l.href === "/membership-ops/review" ? canReview : isAdmin,
   );
-
-  // Total member families, shown as a gray counter on the Manage Memberships tab.
-  const memberFamilies = todoCounts?.admin?.memberFamilies ?? null;
 
   if (loading) {
     return (
@@ -63,21 +60,14 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
         </Group>
       );
     }
+    // Honor the badge's intent color (gray Applications total vs. red broken-email
+    // count on Households) — same color→intent mapping the audit layout and left-nav use.
     const badge = tabBadgeFor(href, todoCounts);
-    if (badge) {
+    const intent = badge ? badgeIntentFor(badge.color) : null;
+    if (badge && intent) {
       return (
-        <CountBadge intent="info" aria-label={badge.label}>
+        <CountBadge intent={intent} aria-label={badge.label}>
           {badge.count}
-        </CountBadge>
-      );
-    }
-    if (href === "/membership-ops/households" && memberFamilies !== null) {
-      return (
-        <CountBadge
-          intent="info"
-          aria-label={`${memberFamilies} org member famil${memberFamilies === 1 ? "y" : "ies"}`}
-        >
-          {memberFamilies}
         </CountBadge>
       );
     }
