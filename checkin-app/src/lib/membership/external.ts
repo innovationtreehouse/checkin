@@ -205,6 +205,35 @@ export async function findProcessByEnvelope(requestId: string) {
 }
 
 /**
+ * Forget a dead Zoho signing request (declined/expired/recalled) so the next
+ * "sign" click creates a fresh one — the applicant's self-serve recovery (#876).
+ * Conditional on the process still pointing at THAT request and being unsigned,
+ * so a concurrent re-create's fresh ids are never clobbered and the audit row is
+ * written only by the caller that actually cleared.
+ */
+async function clearDeadSigningRequest(processId: number, requestId: string, actorId: number) {
+    const cleared = await prisma.$transaction(async (tx) => {
+        const { count } = await tx.orgMembershipProcess.updateMany({
+            where: { id: processId, zohoEnvelopeId: requestId, contractSignedAt: null },
+            data: { zohoEnvelopeId: null, zohoActionId: null },
+        });
+        if (count !== 1) return false;
+        await tx.auditLog.create({
+            data: {
+                actorId,
+                action: "EDIT",
+                tableName: "OrgMembershipProcess",
+                affectedEntityId: processId,
+                oldData: { zohoEnvelopeId: requestId },
+                newData: { zohoEnvelopeId: null, zohoActionId: null },
+            },
+        });
+        return true;
+    });
+    if (cleared) logger.info(`Cleared dead Zoho signing request ${requestId} for membership process ${processId}.`);
+}
+
+/**
  * Pull the contract status from Zoho for the applicant's in-flight process and
  * record it signed if Zoho says so. Called when the signer returns from embedded
  * signing (?signed=1) so completion doesn't hinge on the inbound webhook — which
@@ -225,8 +254,13 @@ export async function syncContractStatus(userId: number): Promise<ExternalStatus
     if (!process.contractSignedAt && process.zohoEnvelopeId && config.zohoAvailable()) {
         try {
             const token = await zohoSign.getAccessToken();
-            if (await zohoSign.getRequestStatus(token, process.zohoEnvelopeId)) {
+            const state = await zohoSign.getRequestStatus(token, process.zohoEnvelopeId);
+            if (state === "completed") {
                 await markContractSigned(process.id, userId);
+            } else if (state === "terminal") {
+                // Declined or expired — forget the dead request so contractStarted
+                // resets and the next click creates a fresh one (#876).
+                await clearDeadSigningRequest(process.id, process.zohoEnvelopeId, userId);
             }
         } catch (e) {
             logger.error(`Zoho status sync failed for process ${process.id}: ${e instanceof Error ? e.message : String(e)}`);
@@ -285,6 +319,25 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
     // document is never re-generated (only the embed session below is ephemeral).
     let requestId = process.zohoEnvelopeId;
     let actionId = process.zohoActionId;
+
+    // A stored request may be dead — declined by the signer, or expired after
+    // CONTRACT_EXPIRATION_DAYS — and Zoho can neither embed nor revive it. Check
+    // before reusing (#876): forget dead ids and fall through to the create path
+    // below, so the same button self-recovers. Best-effort — if the status read
+    // fails, proceed with the stored ids rather than blocking the click (worst
+    // case the embed call fails, as it did before this check existed).
+    if (requestId && actionId && !process.contractSignedAt) {
+        try {
+            if ((await zohoSign.getRequestStatus(token, requestId)) === "terminal") {
+                await clearDeadSigningRequest(process.id, requestId, userId);
+                requestId = null;
+                actionId = null;
+            }
+        } catch (e) {
+            logger.warn(`Zoho request-status check failed for membership process ${process.id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+
     if (!requestId || !actionId) {
         // Mock mode never uploads the PDF (its createRequest ignores the bytes), so
         // skip the S3 load that also 503s in dev — an empty placeholder keeps the
