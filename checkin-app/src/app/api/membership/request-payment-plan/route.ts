@@ -47,7 +47,7 @@ export const POST = withAuth({}, async (req, auth) => {
 
         // Alert the finance committee. In a real implementation this would trigger an
         // actual email via SendGrid, NodeMailer, etc.
-        logger.info(`[EMAIL DISPATCH] To: finance@innovationtreehouse.org, Subject: Membership Payment Plan Request for household ${process.orgMembership.householdId}`);
+        logger.info(`[EMAIL DISPATCH] To: finance@innovationtreehouse.org, Subject: Membership Scholarship / Payment Plan Request for household ${process.orgMembership.householdId}`);
 
         return NextResponse.json({ success: true, process: updated });
     } catch (error) {

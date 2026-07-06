@@ -25,7 +25,7 @@ jest.mock('@/lib/membership/contract/zohoClient', () => ({
     createRequest: jest.fn().mockResolvedValue({ requestId: 'REQ-1', actionId: 'ACT-1', documentId: 'DOC-1' }),
     submitRequest: jest.fn().mockResolvedValue(undefined),
     getEmbeddedSignUrl: jest.fn().mockResolvedValue('https://sign.zoho.com/embed/xyz'),
-    getRequestStatus: jest.fn().mockResolvedValue(false),
+    getRequestStatus: jest.fn().mockResolvedValue('in_progress'),
 }));
 
 // Imported AFTER the mocks so the route picks up the mocked client.
@@ -173,6 +173,34 @@ describe('POST /api/membership/contract/sign', () => {
         const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(p?.zohoEnvelopeId).toBe('REQ-1'); // overwritten with the embeddable request
         expect(p?.zohoActionId).toBe('ACT-1');
+    });
+
+    it('recreates a fresh request when the stored one is dead — declined or expired (#876)', async () => {
+        await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: 'DEAD-REQ', zohoActionId: 'DEAD-ACT' } });
+        (zoho.getRequestStatus as jest.Mock).mockResolvedValueOnce('terminal');
+
+        asUser(leadId);
+        const res = await SIGN(signReq());
+        expect(res.status).toBe(200);
+        expect((await res.json()).url).toBe('https://sign.zoho.com/embed/xyz');
+        // The dead ids were forgotten and a fresh request created + stored.
+        expect(zoho.createRequest).toHaveBeenCalledTimes(1);
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(p?.zohoEnvelopeId).toBe('REQ-1');
+        expect(p?.zohoActionId).toBe('ACT-1');
+    });
+
+    it('falls back to the stored request when the status check fails (best-effort)', async () => {
+        (zoho.getRequestStatus as jest.Mock).mockRejectedValueOnce(new Error('Zoho 503'));
+
+        asUser(leadId);
+        const res = await SIGN(signReq());
+        expect(res.status).toBe(200);
+        // No re-create: the stored request is reused exactly as before the check existed.
+        expect(zoho.createRequest).not.toHaveBeenCalled();
+        expect((zoho.getEmbeddedSignUrl as jest.Mock).mock.calls[0][0].requestId).toBe('REQ-1');
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(p?.zohoEnvelopeId).toBe('REQ-1');
     });
 
     it('lets a isSysadmin who is NOT a household lead sign (isSysadmin bypass)', async () => {
