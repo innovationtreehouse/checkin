@@ -56,7 +56,7 @@ describe('Bulk import: preview vs commit consistency', () => {
     beforeAll(async () => {
         await cleanup();
         const admin = await prisma.person.create({
-            data: { email: 'admin-consist-import-test@example.com', name: 'Admin Consist Import Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-consist-import-test@example.com', name: 'Admin Consist Import Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
         (getServerSession as jest.Mock).mockResolvedValue({

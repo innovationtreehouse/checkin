@@ -34,7 +34,7 @@ describe('Bulk import: malformed row among valid rows', () => {
     beforeAll(async () => {
         await cleanup();
         const admin = await prisma.person.create({
-            data: { email: 'admin-malrow-import-test@example.com', name: 'Admin Malrow Import Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-malrow-import-test@example.com', name: 'Admin Malrow Import Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
         (getServerSession as jest.Mock).mockResolvedValue({

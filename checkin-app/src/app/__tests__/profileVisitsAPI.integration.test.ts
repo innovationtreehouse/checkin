@@ -43,7 +43,7 @@ describe('Profile Visits API Integration Tests', () => {
 
         // Setup mock database records
         const user = await prisma.person.create({
-            data: { email: 'user-profile-visits-test@example.com', name: 'Profile Visits Tester', household: { create: {} } }
+            data: { email: 'user-profile-visits-test@example.com', name: 'Profile Visits Tester', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
         testHouseholdId = user.householdId;

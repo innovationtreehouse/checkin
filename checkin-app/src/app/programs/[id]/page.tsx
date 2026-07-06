@@ -3,7 +3,7 @@
 import { use, useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Anchor, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { formatDate } from '@/lib/time';
 import { checkProgramAge } from '@/lib/programAge';
@@ -509,9 +509,16 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 </Button>
 
                 {hasPrice && !isClosed && (
-                  <Anchor component="button" type="button" size="sm" onClick={handleRequestPaymentPlan}>
-                    request a payment plan from the finance committee of the board
-                  </Anchor>
+                  <Button
+                    fullWidth
+                    size="md"
+                    variant="light"
+                    type="button"
+                    onClick={handleRequestPaymentPlan}
+                    styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
+                  >
+                    Request a scholarship or payment plan from the Finance Committee of the Board
+                  </Button>
                 )}
               </Stack>
               )}

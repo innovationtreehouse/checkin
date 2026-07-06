@@ -29,7 +29,7 @@ describe("GET /api/cron/post-event", () => {
     it("should send emails for finished events and mark them as sent", async () => {
         // Setup data
         const lead = await prisma.person.create({
-            data: { email: "lead@example.com", name: "Lead Mentor", household: { create: {} } }
+            data: { email: "lead@example.com", name: "Lead Mentor", household: { create: { name: "Test HH" } } }
         });
 
         const program = await prisma.program.create({
@@ -52,7 +52,7 @@ describe("GET /api/cron/post-event", () => {
 
         // Add some RSVPs and Visits
         const user = await prisma.person.create({
-            data: { email: "user@example.com", name: "User", household: { create: {} } }
+            data: { email: "user@example.com", name: "User", household: { create: { name: "Test HH" } } }
         });
         
         await prisma.rSVP.create({

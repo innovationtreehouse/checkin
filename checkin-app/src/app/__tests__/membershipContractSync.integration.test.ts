@@ -108,7 +108,7 @@ describe('syncContractStatus', () => {
 
     it('HAPPY: Zoho signed=true records contractSignedAt and (with bgConsent present) advances to PENDING_PAYMENT', async () => {
         const { userId, processId } = await makeApplicant({ bgConsentAt: new Date() });
-        mockGetRequestStatus.mockResolvedValue(true);
+        mockGetRequestStatus.mockResolvedValue('completed');
 
         const status = await syncContractStatus(userId);
 
@@ -126,7 +126,7 @@ describe('syncContractStatus', () => {
 
     it('HAPPY (no bg consent): records contractSignedAt but stays EXTERNAL', async () => {
         const { userId, processId } = await makeApplicant();
-        mockGetRequestStatus.mockResolvedValue(true);
+        mockGetRequestStatus.mockResolvedValue('completed');
 
         await syncContractStatus(userId);
 
@@ -137,7 +137,7 @@ describe('syncContractStatus', () => {
 
     it('NOT-YET-SIGNED: Zoho false leaves the process untouched', async () => {
         const { userId, processId } = await makeApplicant({ bgConsentAt: new Date() });
-        mockGetRequestStatus.mockResolvedValue(false);
+        mockGetRequestStatus.mockResolvedValue('in_progress');
 
         const status = await syncContractStatus(userId);
 
@@ -151,7 +151,7 @@ describe('syncContractStatus', () => {
 
     it('IDEMPOTENT: a second sync after signing is a safe no-op (no double advance, no duplicate audit)', async () => {
         const { userId, processId } = await makeApplicant({ bgConsentAt: new Date() });
-        mockGetRequestStatus.mockResolvedValue(true);
+        mockGetRequestStatus.mockResolvedValue('completed');
 
         await syncContractStatus(userId);
         // Second call: Zoho would still say "signed", but the contract is already recorded.
@@ -162,6 +162,24 @@ describe('syncContractStatus', () => {
         const a = await audits(processId);
         expect(a.signed).toHaveLength(1);
         expect(a.advanced).toHaveLength(1);
+    });
+
+    it('TERMINAL: a declined/expired request clears the stored Zoho ids so the next click starts fresh (#876)', async () => {
+        const { userId, processId } = await makeApplicant({ zohoActionId: `act-${TAG}` });
+        mockGetRequestStatus.mockResolvedValue('terminal');
+
+        const status = await syncContractStatus(userId);
+
+        // contractStarted resets — the UI offers a fresh "Sign" instead of a dead "Resume".
+        expect(status?.contractSigned).toBe(false);
+        expect(status?.contractStarted).toBe(false);
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(p?.zohoEnvelopeId).toBeNull();
+        expect(p?.zohoActionId).toBeNull();
+        expect(p?.contractSignedAt).toBeNull();
+        expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
+        const a = await audits(processId);
+        expect(a.signed).toHaveLength(0);
     });
 
     it('ZOHO ERROR SWALLOWED: getRequestStatus throwing returns current status without throwing; process unchanged', async () => {
@@ -179,7 +197,7 @@ describe('syncContractStatus', () => {
 
     it('returns null when the user has no in-flight EXTERNAL process', async () => {
         const { userId, processId } = await makeApplicant({ status: 'ACTIVE' });
-        mockGetRequestStatus.mockResolvedValue(true);
+        mockGetRequestStatus.mockResolvedValue('completed');
 
         expect(await syncContractStatus(userId)).toBeNull();
         // Zoho never consulted, nothing signed.

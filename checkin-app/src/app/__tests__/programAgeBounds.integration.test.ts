@@ -58,47 +58,47 @@ describe('Program Age Bounds Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.person.create({
-            data: { email: 'admin-age-test@example.com', name: 'Admin Age Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-age-test@example.com', name: 'Admin Age Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
         const pValid = await prisma.person.create({
-            data: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dateOfBirth: dob16, household: { create: {} } }
+            data: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dateOfBirth: dob16, household: { create: { name: "Test HH" } } }
         });
         validUserId = pValid.id;
 
         const pUnder = await prisma.person.create({
-            data: { email: 'underage-test@example.com', name: 'Underage Test', dateOfBirth: dob12, household: { create: {} } }
+            data: { email: 'underage-test@example.com', name: 'Underage Test', dateOfBirth: dob12, household: { create: { name: "Test HH" } } }
         });
         underageUserId = pUnder.id;
 
         const pOver = await prisma.person.create({
-            data: { email: 'overage-test@example.com', name: 'Overage Test', dateOfBirth: dob20, household: { create: {} } }
+            data: { email: 'overage-test@example.com', name: 'Overage Test', dateOfBirth: dob20, household: { create: { name: "Test HH" } } }
         });
         overageUserId = pOver.id;
 
         const pNoDob = await prisma.person.create({
-            data: { email: 'no-dob-test@example.com', name: 'No DOB Test', household: { create: {} } }
+            data: { email: 'no-dob-test@example.com', name: 'No DOB Test', household: { create: { name: "Test HH" } } }
         });
         noDobUserId = pNoDob.id;
 
         const pExactlyMin = await prisma.person.create({
-            data: { email: 'exactly-min-age-test@example.com', name: 'Exactly Min Age Test', dateOfBirth: dobExactly14, household: { create: {} } }
+            data: { email: 'exactly-min-age-test@example.com', name: 'Exactly Min Age Test', dateOfBirth: dobExactly14, household: { create: { name: "Test HH" } } }
         });
         exactlyMinUserId = pExactlyMin.id;
 
         const pExactlyMax = await prisma.person.create({
-            data: { email: 'exactly-max-age-test@example.com', name: 'Exactly Max Age Test', dateOfBirth: dobExactly18, household: { create: {} } }
+            data: { email: 'exactly-max-age-test@example.com', name: 'Exactly Max Age Test', dateOfBirth: dobExactly18, household: { create: { name: "Test HH" } } }
         });
         exactlyMaxUserId = pExactlyMax.id;
 
         const pTurns14Tomorrow = await prisma.person.create({
-            data: { email: 'turns-14-tomorrow-age-test@example.com', name: 'Turns 14 Tomorrow Test', dateOfBirth: dobTurns14Tomorrow, household: { create: {} } }
+            data: { email: 'turns-14-tomorrow-age-test@example.com', name: 'Turns 14 Tomorrow Test', dateOfBirth: dobTurns14Tomorrow, household: { create: { name: "Test HH" } } }
         });
         turns14TomorrowUserId = pTurns14Tomorrow.id;
 
         const pTurned19Yesterday = await prisma.person.create({
-            data: { email: 'turned-19-yesterday-age-test@example.com', name: 'Turned 19 Yesterday Test', dateOfBirth: dobTurned19Yesterday, household: { create: {} } }
+            data: { email: 'turned-19-yesterday-age-test@example.com', name: 'Turned 19 Yesterday Test', dateOfBirth: dobTurned19Yesterday, household: { create: { name: "Test HH" } } }
         });
         turned19YesterdayUserId = pTurned19Yesterday.id;
 

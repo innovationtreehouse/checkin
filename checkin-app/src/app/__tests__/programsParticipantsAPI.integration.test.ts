@@ -61,13 +61,13 @@ describe('Program Participants API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.person.create({
-            data: { email: 'admin-partic-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-partic-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Lead
         const lead = await prisma.person.create({
-            data: { email: 'lead-partic-api-test@example.com', name: 'Lead', household: { create: {} } }
+            data: { email: 'lead-partic-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
@@ -77,7 +77,7 @@ describe('Program Participants API Integration Tests', () => {
                 email: 'common-partic-api-test@example.com',
                 name: 'Common',
                 dateOfBirth: new Date(Date.now() - (25 * 31556952000)),
-                household: { create: {} }
+                household: { create: { name: "Test HH" } }
             }
         });
         commonId = commonUser.id;
@@ -88,14 +88,14 @@ describe('Program Participants API Integration Tests', () => {
                 email: 'other-partic-api-test@example.com',
                 name: 'Other Underage',
                 dateOfBirth: new Date(Date.now() - (10 * 31556952000)),
-                household: { create: {} }
+                household: { create: { name: "Test HH" } }
             }
         });
         otherId = otherUser.id;
 
         // Board member who leads a household containing a 25yo dependent. The
         // board flag lives on the session, not the DB row — see the mocks below.
-        const boardHousehold = await prisma.household.create({ data: {} });
+        const boardHousehold = await prisma.household.create({ data: { name: "Test HH" } });
         const board = await prisma.person.create({
             data: { email: 'board-partic-api-test@example.com', name: 'Board Parent', householdId: boardHousehold.id }
         });

@@ -108,6 +108,7 @@ const admin = (over: Partial<NonNullable<TodoCounts['admin']>> = {}): TodoCounts
     householdsMissingContact: 0,
     unclaimedHouseholds: 0,
     brokenHouseholds: 0,
+    brokenEmails: 0,
     memberFamilies: 0,
     settingsMisconfig: 0,
     programsMisconfig: 0,

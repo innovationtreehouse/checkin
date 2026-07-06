@@ -810,23 +810,27 @@ export default function MembershipPage() {
                     ) : (
                       <Text c="yellow" mt="md">The payment link isn&apos;t available yet. Please check back shortly.</Text>
                     )}
+                    {planRequested ? (
+                      <Text c="green" mt="md">Scholarship or payment plan requested — the finance committee will follow up.</Text>
+                    ) : (
+                      <Button
+                        variant="light"
+                        type="button"
+                        mt="md"
+                        onClick={requestPaymentPlan}
+                        styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
+                      >
+                        Request a scholarship or payment plan from the Finance Committee of the Board
+                      </Button>
+                    )}
                     {!state.external?.bgCleared && (
                       <Alert color="blue" variant="light" mt="md">
                         Your background check is being reviewed in the background — you can pay now.
                         Your membership activates as soon as both the payment and the check are done.
                       </Alert>
                     )}
-                    {planRequested ? (
-                      <Text c="green" mt="lg">Payment plan requested — the finance committee will follow up.</Text>
-                    ) : (
-                      <Text mt="lg">
-                        <Anchor component="button" type="button" onClick={requestPaymentPlan}>
-                          request a payment plan from the finance committee of the board
-                        </Anchor>
-                      </Text>
-                    )}
                     <Text size="sm" c="dimmed" mt="md">
-                      To discuss alternative arrangements, please email{" "}
+                      For any questions, please email{" "}
                       <Anchor href="mailto:finance@innovationtreehouse.org">finance@innovationtreehouse.org</Anchor>.
                     </Text>
                   </>

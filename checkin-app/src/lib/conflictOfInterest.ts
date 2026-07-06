@@ -1,0 +1,51 @@
+import type { DbClient } from "@/lib/db-client";
+
+/**
+ * Conflict-of-interest primitives, shared by every self-approval gate.
+ *
+ * The policy is uniform across the app: an actor may not approve, certify, clear,
+ * or grant something for their OWN household — approving your own family is the
+ * same abuse whether it's a background-check review, membership dues, a program
+ * payment plan, or a direct membership grant. A sysadmin is the deliberate remedy
+ * everywhere and bypasses the gate.
+ *
+ * Two entry points, because callers differ in what they already hold:
+ *   - sharesHousehold(a, b): pure predicate for callers that already have both
+ *     household ids loaded (attest's already-loaded reviewer, isTrustedAdultConflict,
+ *     the UI gating its buttons off the same rule so client and server can't drift).
+ *   - hasHouseholdConflict(db, actorId, subjectHouseholdId, opts): resolves the
+ *     actor's household itself + applies the sysadmin bypass, for callers that only
+ *     hold an actor id (the service/route guards).
+ *
+ * What is deliberately NOT here: resolving the SUBJECT's household. That varies per
+ * caller (a person, an OrgMembership, an OrgMembershipProcess, or a raw householdId
+ * param) and folding it in would be a bigger discriminated-union resolver than the
+ * duplication it removes. Each caller resolves its own subject household — it already
+ * has the row loaded — and passes the scalar in.
+ */
+
+/** The core rule: an actor conflicts with a subject when they share a (non-null) household. */
+export function sharesHousehold(
+    actorHouseholdId: number | null | undefined,
+    subjectHouseholdId: number | null | undefined,
+): boolean {
+    return actorHouseholdId != null && actorHouseholdId === subjectHouseholdId;
+}
+
+/**
+ * Whether `actorId` has a household conflict with a subject in `subjectHouseholdId`.
+ * Resolves the actor's household so callers don't re-roll the same findUnique.
+ * Returns false (no conflict) when opts.isSysadmin — the escape hatch every gate
+ * grants a sysadmin — or when the subject has no household to conflict with.
+ */
+export async function hasHouseholdConflict(
+    db: DbClient,
+    actorId: number,
+    subjectHouseholdId: number | null | undefined,
+    opts?: { isSysadmin?: boolean },
+): Promise<boolean> {
+    if (opts?.isSysadmin) return false;
+    if (subjectHouseholdId == null) return false;
+    const actor = await db.person.findUnique({ where: { id: actorId }, select: { householdId: true } });
+    return sharesHousehold(actor?.householdId, subjectHouseholdId);
+}

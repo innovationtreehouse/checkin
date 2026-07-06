@@ -73,6 +73,24 @@ describe("membership-ops/households page", () => {
     );
   });
 
+  it("disables Grant for a board member's OWN household (conflict of interest)", async () => {
+    setSession({ id: 99, isBoardMember: true, householdId: 2 }); // same household as The Joneses (id 2)
+    mockFetchJson({ "/api/membership-ops/households": households });
+    renderWithProviders(<AdminHouseholdsPage />);
+    await screen.findByText("The Joneses");
+
+    expect(screen.getByRole("button", { name: "Grant Membership" })).toBeDisabled();
+  });
+
+  it("keeps Grant enabled for a board member in a different household", async () => {
+    setSession({ id: 99, isBoardMember: true, householdId: 500 });
+    mockFetchJson({ "/api/membership-ops/households": households });
+    renderWithProviders(<AdminHouseholdsPage />);
+    await screen.findByText("The Joneses");
+
+    expect(screen.getByRole("button", { name: "Grant Membership" })).toBeEnabled();
+  });
+
   it("navigates to the add-participant page for a household", async () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({ "/api/membership-ops/households": households });

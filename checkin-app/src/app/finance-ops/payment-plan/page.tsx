@@ -9,6 +9,7 @@ import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { formatDateTime } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
+import { sharesHousehold } from '@/lib/conflictOfInterest';
 import { formatCents } from '@inventory/money';
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -20,6 +21,10 @@ type PaymentPlanRequest = {
     id: number;
     name: string | null;
     email: string;
+    // Current (live) membership, not the point-in-time snapshot — nothing is
+    // stamped until the request is approved, so this is derived on render.
+    household?: { orgMembership?: { status: string } | null } | null;
+    householdId: number | null;
   };
   program: {
     id: number;
@@ -30,7 +35,11 @@ type PaymentPlanRequest = {
 };
 
 export default function PendingParticipantsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
+  const { user: me, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
+  // Conflict of interest: a board member may not approve their OWN household member's
+  // plan (mirrors the server guard). Sysadmin keeps the button. UX only — server enforces.
+  const ownHousehold = (req: PaymentPlanRequest) =>
+    me?.isSysadmin !== true && sharesHousehold(me?.householdId, req.person.householdId);
 
   const [requests, setRequests] = useState<PaymentPlanRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,7 +83,7 @@ export default function PendingParticipantsPage() {
       if (res.ok) {
         setRequests(prev => prev.filter(r => !(r.programId === programId && r.personId === participantId)));
         notifyNavRefresh();
-        notifications.show({ color: 'green', message: 'Payment plan approved.' });
+        notifications.show({ color: 'green', message: 'Scholarship / payment plan approved.' });
       } else {
         const data = await res.json();
         if (data.error === "No pending payment-plan request") {
@@ -127,6 +136,12 @@ export default function PendingParticipantsPage() {
       ),
     },
     {
+      header: 'Membership',
+      render: (req) => (
+        <Text size="sm">{req.person.household?.orgMembership?.status === 'ACTIVE' ? 'Member' : 'Non-member'}</Text>
+      ),
+    },
+    {
       header: 'Requested On',
       sortBy: (req) => req.pendingSince, // ISO string sorts chronologically
       render: (req) => <Text size="sm" c="dimmed">{formatDateTime(req.pendingSince)}</Text>,
@@ -135,7 +150,12 @@ export default function PendingParticipantsPage() {
       header: 'Actions',
       align: 'right',
       render: (req) => (
-        <Button size="xs" fz={15} color="green" variant="light" onClick={() => handleApprove(req.programId, req.personId)}>
+        <Button
+          size="xs" fz={15} color="green" variant="light"
+          disabled={ownHousehold(req)}
+          title={ownHousehold(req) ? "You can't approve your own household's plan — a sysadmin must." : undefined}
+          onClick={() => handleApprove(req.programId, req.personId)}
+        >
           Approve &amp; Mark Active
         </Button>
       ),
@@ -145,7 +165,7 @@ export default function PendingParticipantsPage() {
   return (
     <Stack>
       <Text c="dimmed">
-        Review pending participants who have clicked the &quot;Request Payment Plan&quot; button.
+        Review pending participants who have requested a scholarship or payment plan.
         Approving a request marks the user as ACTIVE and exempts them from the 7-day automated
         removal cron job.
       </Text>
@@ -156,17 +176,17 @@ export default function PendingParticipantsPage() {
         columns={columns}
         rows={requests}
         getRowKey={(req) => `${req.programId}-${req.personId}`}
-        emptyMessage="No pending payment plan requests."
+        emptyMessage="No pending scholarship or payment plan requests."
       />
 
       <Modal
         opened={confirmApproveOpened}
         onClose={closeConfirmApprove}
-        title={<Text span fw={700} fz="lg">Approve Payment Plan</Text>}
+        title={<Text span fw={700} fz="lg">Approve Scholarship / Payment Plan</Text>}
         centered
       >
         <Text mb="lg">
-          Approve this payment plan? This sets the participant&apos;s status to ACTIVE and stops
+          Approve this scholarship or payment plan? This sets the participant&apos;s status to ACTIVE and stops
           automated unpaid warning emails.
         </Text>
         <Group justify="flex-end">

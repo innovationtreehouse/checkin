@@ -88,6 +88,11 @@ model Person {
   waiverSignedBy       Int?
   /// @sensitivity:internal
   lastBackgroundCheck  DateTime?
+  /// Set when Resend reports a bounce/complaint for this person's address
+  /// (webhooks/resend); cleared on a later `email.delivered` for the same
+  /// address (self-healing). Role/audit metadata about deliverability, not the
+  /// address itself. @sensitivity:internal
+  emailUndeliverableAt DateTime?
   /// @sensitivity:personal
   notificationSettings Json?
 
@@ -109,6 +114,7 @@ model Person {
 
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
+  personBgProcesses   OrgMembershipProcess[]       @relation("PersonBgSubject")
   householdLeads      HouseholdLead[]
   corporationLeads    CorporationLead[]
   corporationMembers  CorporationMember[]
@@ -154,7 +160,7 @@ model Household {
   /// @sensitivity:public
   id      Int     @id @default(autoincrement())
   /// @sensitivity:public
-  name    String?
+  name    String
   /// @sensitivity:personal
   line1      String?
   /// @sensitivity:personal
@@ -251,6 +257,10 @@ enum OrgMembershipStatus {
 enum OrgMembershipProcessKind {
   INITIAL
   RENEWAL
+  // Per-person background-check obligation (Phase 2). Not tied to a household
+  // membership: orgMembershipId is null and subjectPersonId points at the person
+  // being checked. Runs through the same two-reviewer gate as household checks.
+  PERSON_BG
 }
 
 enum OrgMembershipProcessStatus {
@@ -328,9 +338,18 @@ model OrgMembership {
 model OrgMembershipProcess {
   /// @sensitivity:public
   id                    Int                        @id @default(autoincrement())
+  // Nullable since Phase 2: a PERSON_BG process is not tied to a household
+  // membership (subjectPersonId is set instead). INITIAL/RENEWAL always set it.
   /// @sensitivity:public
-  orgMembershipId       Int
-  orgMembership         OrgMembership              @relation(fields: [orgMembershipId], references: [id])
+  orgMembershipId       Int?
+  // onDelete pinned to Restrict to keep the existing constraint (Prisma's default
+  // for an optional relation is SetNull; the live FK is RESTRICT). Avoids drift.
+  orgMembership         OrgMembership?             @relation(fields: [orgMembershipId], references: [id], onDelete: Restrict)
+  // Set only for PERSON_BG processes — the person being background-checked
+  // (participant, volunteer, or lead). Null for household INITIAL/RENEWAL.
+  /// @sensitivity:public
+  subjectPersonId       Int?
+  subjectPerson         Person?                    @relation("PersonBgSubject", fields: [subjectPersonId], references: [id])
   /// @sensitivity:public
   kind                  OrgMembershipProcessKind
   /// @sensitivity:internal
@@ -429,6 +448,16 @@ model BoardSettings {
   /// (the board must set the real Treehouse policy value before renewals re-check).
   /// @sensitivity:public
   bgRecheckMonths            Int       @default(0)
+  /// Overrides the EMAIL_FROM env default as the Resend sender on every outbound
+  /// email when set. Must be on a Resend-verified domain or all mail bounces —
+  /// hence the confirm-to-edit guard in the settings UI. Null = use the env default.
+  /// @sensitivity:public
+  emailFromAddress           String?
+  /// Reply-To header set on every outbound email when set (the From address is a
+  /// no-reply, so this routes replies to a real inbox). Null = no Reply-To (replies
+  /// go to From). Need not be on the sending domain.
+  /// @sensitivity:public
+  emailReplyToAddress        String?
   /// @sensitivity:internal
   shopifyOrgMembershipProductId String?
   /// @sensitivity:internal
@@ -705,6 +734,12 @@ model ProgramParticipant {
   isPaymentPlanRequested Boolean                  @default(false)
   /// @sensitivity:internal
   pendingSince         DateTime?                @default(now())
+  /// Point-in-time snapshot of the household's org-membership status the moment a
+  /// scholarship/payment-plan request was APPROVED (status flipped to ACTIVE).
+  /// Membership changes over time, so this can't be derived later from the live
+  /// OrgMembership row — it must be stamped at approval. Null until approved.
+  /// @sensitivity:internal
+  wasOrgMemberAtApproval Boolean?
 
   program Program     @relation(fields: [programId], references: [id])
   person  Person @relation(fields: [personId], references: [id])

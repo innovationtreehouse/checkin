@@ -30,7 +30,7 @@ describe('System status health API', () => {
 
     beforeAll(async () => {
         const keyholder = await prisma.person.create({
-            data: { email: `keyholder-${TAG}@example.com`, name: 'Keyholder', isKeyholder: true, household: { create: {} } },
+            data: { email: `keyholder-${TAG}@example.com`, name: 'Keyholder', isKeyholder: true, household: { create: { name: "Test HH" } } },
         });
         keyholderId = keyholder.id;
         householdId = keyholder.householdId;

@@ -58,13 +58,13 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
 
     beforeAll(async () => {
         const admin = await prisma.person.create({
-            data: { name: 'Cancel Admin', email: `admin-${TAG}@example.com`, isSysadmin: true, household: { create: {} } },
+            data: { name: 'Cancel Admin', email: `admin-${TAG}@example.com`, isSysadmin: true, household: { create: { name: "Test HH" } } },
         });
         adminId = admin.id;
         adminHouseholdId = admin.householdId;
 
         const p = await prisma.person.create({
-            data: { name: 'Cancel Attendee', email: `attendee-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Cancel Attendee', email: `attendee-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         participantId = p.id;
         householdId = p.householdId;

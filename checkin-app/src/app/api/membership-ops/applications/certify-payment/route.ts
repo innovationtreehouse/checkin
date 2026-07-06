@@ -21,11 +21,12 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
     }
     if (!body.processId) return apiError("processId is required", 400);
     try {
-        const process = await certifyPaymentPlan(body.processId, auth.user.id);
+        const process = await certifyPaymentPlan(body.processId, auth.user.id, { isSysadmin: auth.user.isSysadmin === true });
         return NextResponse.json({ process });
     } catch (error) {
         if (error instanceof PaymentError) {
-            return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "not_found" ? 404 : 409 });
+            const status = error.code === "not_found" ? 404 : error.code === "forbidden" ? 403 : 409;
+            return NextResponse.json({ error: error.message, code: error.code }, { status });
         }
         logger.error("Certify payment error:", error);
         return apiError("Internal Server Error", 500);

@@ -84,7 +84,8 @@ export async function beginRenewal(processId: number) {
     if (!process) throw new RenewalError("not_found", "Renewal not found.");
     if (process.status !== "PENDING_RENEWAL") throw new RenewalError("wrong_phase", "This renewal is not awaiting your confirmation.");
 
-    const membership = await prisma.orgMembership.findUnique({ where: { id: process.orgMembershipId }, select: { householdId: true } });
+    // A RENEWAL always has a membership (orgMembershipId is only null for PERSON_BG).
+    const membership = await prisma.orgMembership.findUnique({ where: { id: process.orgMembershipId! }, select: { householdId: true } });
     if (!membership) throw new RenewalError("not_found", "Membership not found.");
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();

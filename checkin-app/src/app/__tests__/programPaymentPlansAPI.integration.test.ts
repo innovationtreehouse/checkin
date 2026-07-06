@@ -13,10 +13,14 @@
  */
 import { GET as PlansGet, POST as PlansPost } from '@/app/api/finance-ops/payment-plans/route';
 import { POST as RequestPost } from '@/app/api/programs/[id]/request-payment-plan/route';
+import { POST as ParticipantsPost } from '@/app/api/programs/[id]/participants/route';
 import prisma from '@/lib/prisma';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
+}));
+jest.mock('@/lib/notifications', () => ({
+    sendNotification: jest.fn(),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -34,14 +38,16 @@ describe('Program payment-plan routes', () => {
     let programId: number;
     let mentorId: number;
     let boardId: number;
+    let boardKinId: number;
     let selfId: number;
     let otherId: number;
     let noiseId: number;
+    let memberId: number;
     const householdIds: number[] = [];
 
     beforeAll(async () => {
         const mentor = await prisma.person.create({
-            data: { name: 'PP Mentor', email: `mentor-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'PP Mentor', email: `mentor-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         mentorId = mentor.id;
         householdIds.push(mentor.householdId);
@@ -52,28 +58,41 @@ describe('Program payment-plan routes', () => {
         programId = program.id;
 
         const board = await prisma.person.create({
-            data: { name: 'PP Board', email: `board-${TAG}@example.com`, isBoardMember: true, household: { create: {} } },
+            data: { name: 'PP Board', email: `board-${TAG}@example.com`, isBoardMember: true, household: { create: { name: "Test HH" } } },
         });
         boardId = board.id;
         householdIds.push(board.householdId);
 
+        // A household-mate of the board member — the conflict-of-interest target.
+        const boardKin = await prisma.person.create({
+            data: { name: 'PP Board Kin', email: `boardkin-${TAG}@example.com`, householdId: board.householdId },
+        });
+        boardKinId = boardKin.id;
+
         const self = await prisma.person.create({
-            data: { name: 'PP Self', email: `self-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'PP Self', email: `self-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         selfId = self.id;
         householdIds.push(self.householdId);
 
         const other = await prisma.person.create({
-            data: { name: 'PP Other', email: `other-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'PP Other', email: `other-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         otherId = other.id;
         householdIds.push(other.householdId);
 
         const noise = await prisma.person.create({
-            data: { name: 'PP Noise', email: `noise-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'PP Noise', email: `noise-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         noiseId = noise.id;
         householdIds.push(noise.householdId);
+
+        // Household with an ACTIVE org membership, for the point-in-time snapshot tests.
+        const member = await prisma.person.create({
+            data: { name: 'PP Member', email: `member-${TAG}@example.com`, household: { create: { name: "Member HH", orgMembership: { create: { status: 'ACTIVE' } } } } },
+        });
+        memberId = member.id;
+        householdIds.push(member.householdId);
     });
 
     beforeEach(() => {
@@ -84,8 +103,9 @@ describe('Program payment-plan routes', () => {
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.delete({ where: { id: programId } });
         await prisma.person.deleteMany({
-            where: { id: { in: [mentorId, boardId, selfId, otherId, noiseId] } },
+            where: { id: { in: [mentorId, boardId, boardKinId, selfId, otherId, noiseId, memberId] } },
         });
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: householdIds } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 
@@ -129,6 +149,21 @@ describe('Program payment-plan routes', () => {
             expect(ids).toContain(selfId);
             expect(ids).not.toContain(noiseId);
         });
+
+        it('includes each participant\'s CURRENT household org-membership status (live, for the board to decide)', async () => {
+            await enroll(memberId, { requested: true });
+            await enroll(selfId, { requested: true }); // selfId's household has no OrgMembership row
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            const res = await PlansGet(nextReq());
+            expect(res.status).toBe(200);
+            const rows = await res.json();
+            type Row = { personId: number; person: { household?: { orgMembership?: { status: string } | null } | null } };
+            const memberRow = (rows as Row[]).find(r => r.personId === memberId);
+            const nonMemberRow = (rows as Row[]).find(r => r.personId === selfId);
+            expect(memberRow?.person.household?.orgMembership?.status).toBe('ACTIVE');
+            expect(nonMemberRow?.person.household?.orgMembership).toBeFalsy();
+        });
     });
 
     describe('POST /api/finance-ops/payment-plans (approve)', () => {
@@ -160,6 +195,64 @@ describe('Program payment-plan routes', () => {
             expect(row?.status).toBe('ACTIVE');
             expect(row?.isPaymentPlanRequested).toBe(false);
             expect(row?.pendingSince).toBeNull();
+        });
+
+        it('stamps wasOrgMemberAtApproval=true approving a participant from an ACTIVE-membership household', async () => {
+            await enroll(memberId, { requested: true });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            const res = await PlansPost(nextReq('http://localhost', {
+                method: 'POST',
+                body: JSON.stringify({ programId, participantId: memberId }),
+            }));
+            expect(res.status).toBe(200);
+
+            const row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: memberId } },
+            });
+            expect(row?.wasOrgMemberAtApproval).toBe(true);
+        });
+
+        it('stamps wasOrgMemberAtApproval=false approving a participant from a non-member household', async () => {
+            await enroll(selfId, { requested: true }); // selfId's household has no OrgMembership row
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            const res = await PlansPost(nextReq('http://localhost', {
+                method: 'POST',
+                body: JSON.stringify({ programId, participantId: selfId }),
+            }));
+            expect(res.status).toBe(200);
+
+            const row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: selfId } },
+            });
+            expect(row?.wasOrgMemberAtApproval).toBe(false);
+        });
+
+        it("refuses to approve a plan for the board member's OWN household (conflict of interest); sysadmin overrides", async () => {
+            await enroll(boardKinId, { requested: true });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            const res = await PlansPost(nextReq('http://localhost', {
+                method: 'POST',
+                body: JSON.stringify({ programId, participantId: boardKinId }),
+            }));
+            expect(res.status).toBe(403);
+            let row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: boardKinId } },
+            });
+            expect(row?.status).toBe('PENDING'); // unchanged — nothing approved
+
+            // Sysadmin is the deliberate remedy.
+            mockSession.mockResolvedValue({ user: { id: boardId, isSysadmin: true } });
+            const ok = await PlansPost(nextReq('http://localhost', {
+                method: 'POST',
+                body: JSON.stringify({ programId, participantId: boardKinId }),
+            }));
+            expect(ok.status).toBe(200);
+            row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: boardKinId } },
+            });
+            expect(row?.status).toBe('ACTIVE');
         });
     });
 
@@ -214,6 +307,93 @@ describe('Program payment-plan routes', () => {
                 where: { programId_personId: { programId, personId: selfId } },
             });
             expect(row?.isPaymentPlanRequested).toBe(true);
+        });
+
+        it('409 when the enrollment is not awaiting payment (already ACTIVE)', async () => {
+            await prisma.programParticipant.upsert({
+                where: { programId_personId: { programId, personId: selfId } },
+                update: { status: 'ACTIVE', isPaymentPlanRequested: false },
+                create: { programId, personId: selfId, status: 'ACTIVE', isPaymentPlanRequested: false },
+            });
+            mockSession.mockResolvedValue({ user: { id: selfId } });
+            const res = await RequestPost(requestReq({ participantId: selfId }), params(programId));
+            expect(res.status).toBe(409);
+
+            const row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: selfId } },
+            });
+            expect(row?.isPaymentPlanRequested).toBe(false);
+        });
+    });
+
+    describe('Composed: scholarship holds a capacity seat with no Shopify involvement', () => {
+        it('enroll (PENDING) -> request plan -> board approves -> ACTIVE, seat held, no fetch fires', async () => {
+            const scholarshipProgram = await prisma.program.create({
+                data: {
+                    name: `PP Scholarship Program ${TAG}`,
+                    enrollmentStatus: 'OPEN',
+                    maxParticipants: 1,
+                    orgMemberPriceCents: 1000,
+                    nonOrgMemberPriceCents: 1500,
+                },
+            });
+
+            const fetchSpy = jest.spyOn(global, 'fetch');
+
+            try {
+                // 1. Participant enrolls — paid program, so lands PENDING and
+                // occupies the single capacity slot (capacity counts ALL statuses).
+                mockSession.mockResolvedValue({ user: { id: selfId } });
+                const enrollRes = await ParticipantsPost(
+                    new Request(`http://localhost/api/programs/${scholarshipProgram.id}/participants`, {
+                        method: 'POST',
+                        body: JSON.stringify({ participantId: selfId }),
+                    }) as unknown as import('next/server').NextRequest,
+                    { params: Promise.resolve({ id: String(scholarshipProgram.id) }) },
+                );
+                expect(enrollRes.status).toBe(200);
+                expect((await enrollRes.json()).enrollment.status).toBe('PENDING');
+
+                // 2. Participant requests a scholarship / payment plan.
+                const requestRes = await RequestPost(
+                    requestReq({ participantId: selfId }),
+                    { params: Promise.resolve({ id: String(scholarshipProgram.id) }) },
+                );
+                expect(requestRes.status).toBe(200);
+
+                // 3. Board approves via finance-ops — no Shopify checkout involved.
+                mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+                const approveRes = await PlansPost(
+                    new Request('http://localhost', {
+                        method: 'POST',
+                        body: JSON.stringify({ programId: scholarshipProgram.id, participantId: selfId }),
+                    }) as unknown as import('next/server').NextRequest,
+                );
+                expect(approveRes.status).toBe(200);
+
+                const row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: scholarshipProgram.id, personId: selfId } },
+                });
+                expect(row?.status).toBe('ACTIVE');
+                expect(fetchSpy).not.toHaveBeenCalled();
+
+                // 4. Capacity still holds: a second enrollee is rejected while the
+                // scholarship seat counts against maxParticipants.
+                mockSession.mockResolvedValue({ user: { id: otherId } });
+                const secondRes = await ParticipantsPost(
+                    new Request(`http://localhost/api/programs/${scholarshipProgram.id}/participants`, {
+                        method: 'POST',
+                        body: JSON.stringify({ participantId: otherId }),
+                    }) as unknown as import('next/server').NextRequest,
+                    { params: Promise.resolve({ id: String(scholarshipProgram.id) }) },
+                );
+                expect(secondRes.status).toBe(400);
+                expect((await secondRes.json()).error).toMatch(/maximum capacity/);
+            } finally {
+                fetchSpy.mockRestore();
+                await prisma.programParticipant.deleteMany({ where: { programId: scholarshipProgram.id } });
+                await prisma.program.delete({ where: { id: scholarshipProgram.id } });
+            }
         });
     });
 });

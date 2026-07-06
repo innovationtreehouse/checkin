@@ -61,6 +61,10 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             return apiError("Forbidden: Not authorized to request a payment plan for this participant", 403);
         }
 
+        if (participant.status !== 'PENDING') {
+            return apiError("This enrollment is not awaiting payment", 409);
+        }
+
         const updatedParticipant = await prisma.programParticipant.update({
             where: {
                 programId_personId: { programId, personId: participantId }
@@ -72,7 +76,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         // Send email to finances
         // In a real implementation this would trigger an actual email via SendGrid, NodeMailer, etc.
-        logger.info(`[EMAIL DISPATCH] To: finance@innovationtreehouse.org, Subject: Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
+        logger.info(`[EMAIL DISPATCH] To: finance@innovationtreehouse.org, Subject: Scholarship / Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
 
         return NextResponse.json({ success: true, participant: updatedParticipant });
     } catch (error) {

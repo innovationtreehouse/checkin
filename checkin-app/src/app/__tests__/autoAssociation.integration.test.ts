@@ -31,7 +31,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
 
         // Setup User
         const user = await prisma.person.create({
-            data: { email: 'auto-assoc-test@example.com', name: 'Auto Assoc Tester', household: { create: {} } }
+            data: { email: 'auto-assoc-test@example.com', name: 'Auto Assoc Tester', household: { create: { name: "Test HH" } } }
         });
         participantId = user.id;
         householdId = user.householdId;
