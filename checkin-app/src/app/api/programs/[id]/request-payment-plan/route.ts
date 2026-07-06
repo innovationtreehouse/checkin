@@ -37,16 +37,18 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         }
 
         // Authorization: only the participant themselves, a lead of their household,
-        // the program's lead mentor, or a isSysadmin/board member may request a payment
-        // plan for this enrollment. Without this gate any authenticated user could flip
-        // isPaymentPlanRequested on an arbitrary participant's enrollment (IDOR).
+        // or a isSysadmin/board member may request a payment plan for this enrollment.
+        // Without this gate any authenticated user could flip isPaymentPlanRequested
+        // on an arbitrary participant's enrollment (IDOR). Deliberately NOT the
+        // program's lead mentor: scholarship requested/denied is board/finance-
+        // confidential, and a program volunteer should neither initiate it nor
+        // observe the hardship fields.
         const currentUserId = auth.user.id;
         const isSelf = currentUserId === participantId;
         const isSysAdminOrBoard = auth.user.isSysadmin || auth.user.isBoardMember;
-        const isLeadMentor = participant.program?.leadMentorId === currentUserId;
 
         let isHouseholdLead = false;
-        if (!isSelf && !isSysAdminOrBoard && !isLeadMentor && participant.person?.householdId) {
+        if (!isSelf && !isSysAdminOrBoard && participant.person?.householdId) {
             const leadRecord = await prisma.person.findFirst({
                 where: {
                     id: currentUserId,
@@ -58,7 +60,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             isHouseholdLead = !!leadRecord;
         }
 
-        if (!isSelf && !isSysAdminOrBoard && !isLeadMentor && !isHouseholdLead) {
+        if (!isSelf && !isSysAdminOrBoard && !isHouseholdLead) {
             return apiError("Forbidden: Not authorized to request a payment plan for this participant", 403);
         }
 
@@ -87,10 +89,6 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             });
         }
 
-        const updatedParticipant = await prisma.programParticipant.findUniqueOrThrow({
-            where: { programId_personId: { programId, personId: participantId } },
-        });
-
         // Send email to finances
         // In a real implementation this would trigger an actual email via SendGrid, NodeMailer, etc.
         logger.info(`[EMAIL DISPATCH] To: finance@innovationtreehouse.org, Subject: Scholarship / Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
@@ -99,11 +97,24 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         if (holdResult.count > 0 && participant.program) {
             const ok = await adjustProgramInventory(participant.program, -1);
             if (!ok) {
-                warning = "Payment plan requested, but the Shopify inventory adjustment failed. Capacity may be out of sync — check System Status > Link Status.";
+                // The seat was never taken out of Shopify — leaving inventoryHeldAt
+                // set would be a phantom hold whose later release (+1) credits a
+                // seat that was never removed (oversell). Roll the stamp back so
+                // the ledger stays true; a re-submit retries the -1 via the
+                // inventoryHeldAt:null branch above. (adjustProgramInventory has
+                // already emailed sysadmins/board via reportShopifyFailure.)
+                await prisma.programParticipant.updateMany({
+                    where: { programId, personId: participantId, inventoryHeldAt: { not: null } },
+                    data: { inventoryHeldAt: null },
+                });
+                warning = "Payment plan requested and finance notified, but the Shopify seat hold failed and was rolled back. Re-submit to retry, or check System Status > Link Status.";
             }
         }
 
-        const responseObj: Record<string, unknown> = { success: true, participant: updatedParticipant };
+        // Deliberately no raw ProgramParticipant echo: non-board callers (self /
+        // household lead) must not read the hardship fields (paymentPlanDeniedAt,
+        // inventoryHeldAt) off this response.
+        const responseObj: Record<string, unknown> = { success: true };
         if (warning) responseObj.warning = warning;
         return NextResponse.json(responseObj);
     } catch (error) {

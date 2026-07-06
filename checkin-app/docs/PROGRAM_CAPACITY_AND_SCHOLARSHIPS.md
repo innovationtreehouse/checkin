@@ -111,6 +111,23 @@ boundary — a given row can be deleted at most once, so double-release across c
 callers isn't possible; a second delete attempt hits Prisma P2025 and is treated as an
 idempotent no-op by every caller.
 
+**Failure semantics (best-effort, not transactional).** The DB write and the Shopify
+call cannot share a transaction, so "every −1 comes back +1 exactly once" is guaranteed
+against *failed calls* but not against *crashes between the two steps*:
+
+- **Failed `-1` at application time**: the hold stamp is rolled back
+  (`request-payment-plan` clears `inventoryHeldAt` again), so no phantom hold is
+  recorded; re-submitting retries the decrement. Every failure also emails
+  sysadmins/board via `reportShopifyFailure`.
+- **Failed `+1` at release time**: the row is already deleted; the caller gets a
+  `warning` and the same failure email goes out. Reconciliation is manual (**Sync to
+  Shopify** / System Status → Link Status).
+- **Crash windows** (process dies between the DB commit and the Shopify call): a
+  stranded hold or a missed release can survive. These are visible in the DB
+  (`inventoryHeldAt` vs. Shopify's count) and are fixed by the same manual sync; a
+  periodic reconcile job is deliberately deferred until the drift is observed in
+  practice.
+
 - **(a) Withdrawal** — `DELETE /api/programs/[id]/participants` (self or admin removal;
   the same route handles both) and the non-payment kick
   (`cron/pending-participants`; denied-and-still-PENDING participants are excluded

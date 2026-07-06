@@ -701,4 +701,75 @@ describe('Program payment-plan routes', () => {
             }
         });
     });
+
+    // Scholarship state is board/finance-confidential: a program's volunteer lead
+    // mentor must neither initiate a request nor read the hardship fields
+    // (paymentPlanDeniedAt / inventoryHeldAt) off any response; and a failed
+    // Shopify -1 must not leave a phantom hold behind.
+    describe('confidentiality + failed-hold rollback', () => {
+        const params = (id: string | number) => ({ params: Promise.resolve({ id: String(id) }) });
+
+        it('403 when the program lead mentor requests a payment plan for a participant', async () => {
+            await enroll(otherId, { requested: false });
+            mockSession.mockResolvedValue({ user: { id: mentorId } });
+            const res = await RequestPost(requestReq({ participantId: otherId }), params(programId));
+            expect(res.status).toBe(403);
+        });
+
+        it('request and DELETE responses carry no raw participant row (no hardship fields)', async () => {
+            await enroll(selfId, { requested: false });
+            mockSession.mockResolvedValue({ user: { id: selfId } });
+
+            const reqRes = await RequestPost(requestReq({ participantId: selfId }), params(programId));
+            expect(reqRes.status).toBe(200);
+            const reqBody = await reqRes.json();
+            expect(reqBody.success).toBe(true);
+            expect(reqBody.participant).toBeUndefined();
+
+            const delRes = await ParticipantsDelete(
+                new Request(`http://localhost/api/programs/${programId}/participants`, {
+                    method: 'DELETE',
+                    body: JSON.stringify({ participantId: selfId }),
+                }) as unknown as import('next/server').NextRequest,
+                params(programId),
+            );
+            expect(delRes.status).toBe(200);
+            const delBody = await delRes.json();
+            expect(delBody.success).toBe(true);
+            expect(delBody.enrollment).toBeUndefined();
+        });
+
+        it('rolls the hold back when the Shopify -1 fails (no phantom hold)', async () => {
+            // Default env: shopifyMockActive() is false and no credentials are
+            // configured, so adjustProgramInventory returns false without throwing.
+            const p = await prisma.program.create({
+                data: { name: `PP Rollback Shopify Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: 'dev-mock-variant-rollback-pp' },
+            });
+            try {
+                await prisma.programParticipant.create({
+                    data: { programId: p.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: false, pendingSince: new Date() },
+                });
+                mockSession.mockResolvedValue({ user: { id: selfId } });
+
+                const res = await RequestPost(
+                    new Request(`http://localhost/api/programs/${p.id}/request-payment-plan`, {
+                        method: 'POST',
+                        body: JSON.stringify({ participantId: selfId }),
+                    }) as unknown as import('next/server').NextRequest,
+                    params(p.id),
+                );
+                expect(res.status).toBe(200);
+                expect((await res.json()).warning).toMatch(/rolled back/);
+
+                const row = await prisma.programParticipant.findUniqueOrThrow({
+                    where: { programId_personId: { programId: p.id, personId: selfId } },
+                });
+                expect(row.inventoryHeldAt).toBeNull(); // no phantom hold
+                expect(row.isPaymentPlanRequested).toBe(true); // finance request still stands
+            } finally {
+                await prisma.programParticipant.deleteMany({ where: { programId: p.id } });
+                await prisma.program.delete({ where: { id: p.id } });
+            }
+        });
+    });
 });

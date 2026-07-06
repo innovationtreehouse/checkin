@@ -221,7 +221,11 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
             }
         });
 
-        const responseObj: Record<string, unknown> = { success: true, enrollment };
+        // No raw enrollment echo: this route is reachable by the program's lead
+        // mentor, and the deleted row carries board/finance-confidential hardship
+        // fields (paymentPlanDeniedAt, inventoryHeldAt). The audit log above keeps
+        // the full row server-side.
+        const responseObj: Record<string, unknown> = { success: true, released };
         if (released && !shopifyOk) {
             responseObj.warning = "Participant removed, but the Shopify inventory release failed. Capacity may be out of sync — check System Status > Link Status.";
         }

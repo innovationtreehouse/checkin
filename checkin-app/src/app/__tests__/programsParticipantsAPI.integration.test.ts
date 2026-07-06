@@ -402,10 +402,16 @@ describe('Program Participants API Integration Tests', () => {
              });
              const res = await DELETE(req as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.enrollment.personId).toBe(commonId);
+             // The response must NOT echo the deleted row: it reaches the lead
+             // mentor and carries confidential hardship fields (see #930 review).
+             expect(data.enrollment).toBeUndefined();
+             const row = await prisma.programParticipant.findUnique({
+                 where: { programId_personId: { programId: standardProgramId, personId: commonId } },
+             });
+             expect(row).toBeNull();
         });
         
         it('should allow a common user to drop out of their own program', async () => {
