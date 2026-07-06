@@ -109,6 +109,7 @@ model Person {
 
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
+  personBgProcesses   OrgMembershipProcess[]       @relation("PersonBgSubject")
   householdLeads      HouseholdLead[]
   corporationLeads    CorporationLead[]
   corporationMembers  CorporationMember[]
@@ -251,6 +252,10 @@ enum OrgMembershipStatus {
 enum OrgMembershipProcessKind {
   INITIAL
   RENEWAL
+  // Per-person background-check obligation (Phase 2). Not tied to a household
+  // membership: orgMembershipId is null and subjectPersonId points at the person
+  // being checked. Runs through the same two-reviewer gate as household checks.
+  PERSON_BG
 }
 
 enum OrgMembershipProcessStatus {
@@ -332,9 +337,18 @@ model OrgMembership {
 model OrgMembershipProcess {
   /// @sensitivity:public
   id                    Int                        @id @default(autoincrement())
+  // Nullable since Phase 2: a PERSON_BG process is not tied to a household
+  // membership (subjectPersonId is set instead). INITIAL/RENEWAL always set it.
   /// @sensitivity:public
-  orgMembershipId       Int
-  orgMembership         OrgMembership              @relation(fields: [orgMembershipId], references: [id])
+  orgMembershipId       Int?
+  // onDelete pinned to Restrict to keep the existing constraint (Prisma's default
+  // for an optional relation is SetNull; the live FK is RESTRICT). Avoids drift.
+  orgMembership         OrgMembership?             @relation(fields: [orgMembershipId], references: [id], onDelete: Restrict)
+  // Set only for PERSON_BG processes — the person being background-checked
+  // (participant, volunteer, or lead). Null for household INITIAL/RENEWAL.
+  /// @sensitivity:public
+  subjectPersonId       Int?
+  subjectPerson         Person?                    @relation("PersonBgSubject", fields: [subjectPersonId], references: [id])
   /// @sensitivity:public
   kind                  OrgMembershipProcessKind
   /// @sensitivity:internal
