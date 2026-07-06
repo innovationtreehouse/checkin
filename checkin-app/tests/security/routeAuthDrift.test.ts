@@ -304,7 +304,6 @@ const FIX_1 =
 const EDGE_INCLUDE_ALLOWLIST: Record<string, string> = {
     'cron/nightly': 'cron-gated — withCron, no user-facing response',
     'cron/pending-participants': 'cron-gated — withCron, no user-facing response',
-    'cron/reminders': 'cron-gated — withCron, reads RSVPs to send reminders',
     'events/[id]': 'admission-gated — handler GET throws forbidden() unless staff (sysadmin/board/leadMentor/coreVol)',
     'events/mine': 'query-shaped — self + own household only (activityMembers → where participantId in memberIds)',
     'facility/trends': 'admin-role-gated — sysadmin/board',

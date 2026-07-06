@@ -822,6 +822,9 @@ model RSVP {
   /// @sensitivity:public
   status        RSVPStatus
   /// @sensitivity:internal
+  // DEPRECATED: event-start reminders were removed (calendars cover this). No code
+  // reads or writes this column. Kept for now; drop in a follow-up migration once
+  // this release is fully rolled out (see DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md).
   reminderSentAt DateTime?
 
   event       Event       @relation(fields: [eventId], references: [id])

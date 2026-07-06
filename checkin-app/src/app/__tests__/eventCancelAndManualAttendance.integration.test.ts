@@ -9,29 +9,20 @@
  *   2. manualEditAttendance vs. an OPEN scan visit (Present update / Absent reject).
  *   3. PAST-EVENT edit guard (editTime on a finished event is rejected).
  *
- * Harness mirrors eventRescheduleClearsReminder.integration.test.ts.
- *
  * BUG 2 (manual "Absent" deleting a live/open check-in) is now FIXED: an Absent
  * edit against an OPEN visit (departedAt = null) is rejected with 400 so the row
  * proving the participant is physically on-site survives. Only CLOSED visits are
  * removed on an Absent correction. See the manualEditAttendance block below.
  */
 import { PATCH } from '@/app/api/events/[id]/route';
-import { GET as cronReminders } from '@/app/api/cron/reminders/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
-import { sendNotification } from '@/lib/notifications';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
 }));
 
-jest.mock('@/lib/notifications', () => ({
-    sendNotification: jest.fn().mockResolvedValue(undefined),
-}));
-
 const TAG = 'event-cancel-manual-test';
-const SECRET = 'event-cancel-manual-secret';
 const HOUR = 60 * 60 * 1000;
 const MIN = 60 * 1000;
 
@@ -41,13 +32,6 @@ function patch(eventId: number, body: Record<string, unknown>) {
         body: JSON.stringify(body),
     });
     return PATCH(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(eventId) }) });
-}
-
-function cronReq() {
-    return new Request('http://localhost/api/cron/reminders', {
-        method: 'GET',
-        headers: { authorization: `Bearer ${SECRET}` },
-    }) as unknown as import('next/server').NextRequest;
 }
 
 describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard', () => {
@@ -72,7 +56,6 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
 
     beforeEach(() => {
         jest.clearAllMocks();
-        process.env.CRON_SECRET = SECRET;
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
     });
 
@@ -237,29 +220,17 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
     // ─── 3. PAST-EVENT GUARD ────────────────────────────────────────────────
 
     describe('past-event editTime — rejected', () => {
-        // Editing a finished event is blocked (400) before any write, so a stale
-        // reminderSentAt is never re-cleared and no past-event reminder can re-arm.
-        it('rejects the edit and leaves reminderSentAt untouched', async () => {
+        // Editing a finished event is blocked (400) before any write.
+        it('rejects the edit and leaves the event start untouched', async () => {
             const event = await makeEvent('past-edit', -2 * HOUR);
-            const sentAt = new Date();
-            await prisma.rSVP.create({
-                data: { eventId: event.id, personId: participantId, status: 'ATTENDING', reminderSentAt: sentAt },
-            });
 
             const newStart = new Date(Date.now() - 90 * MIN);
             const res = await patch(event.id, { action: 'editTime', startAt: newStart.toISOString() });
             expect(res.status).toBe(400);
 
-            // Guard fires before the clear → reminderSentAt preserved.
-            const rsvp = await prisma.rSVP.findUnique({
-                where: { eventId_personId: { eventId: event.id, personId: participantId } },
-            });
-            expect(rsvp!.reminderSentAt).not.toBeNull();
-
-            // And the cron still won't re-notify for a past start.
-            const cron = await cronReminders(cronReq());
-            expect(cron.status).toBe(200);
-            expect((sendNotification as jest.Mock).mock.calls.length).toBe(0);
+            // Guard fires before any write → event start unchanged.
+            const after = await prisma.event.findUnique({ where: { id: event.id } });
+            expect(after!.startAt.getTime()).toBe(event.startAt.getTime());
         });
     });
 });

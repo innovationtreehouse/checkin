@@ -23,7 +23,7 @@ export interface SentEmail {
 /**
  * Persist a captured email and report success.
  *
- * Returns true when the row is written (so gating callers — cron/reminders, postEventEmails —
+ * Returns true when the row is written (so gating callers — e.g. postEventEmails —
  * follow the same happy-path they'd take on a real delivery), and false if the insert throws
  * (mirroring a real send failure, so a broken dev DB isn't masked as a successful send).
  */
