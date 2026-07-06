@@ -2,17 +2,20 @@
 
 **Status:** design investigation → **option (a1) BUILT** (2026-07-05), shipped as a
 zero-downtime **expand-contract** in two PRs:
-- **This PR (expand):** additive `Person.isHouseholdLead` column + backfill
-  (`20260706110000_person_is_household_lead`) + full reader/writer cutover + an index
-  (`20260706120000`, `@@index([householdId, isHouseholdLead])`). The `HouseholdLead`
+- **Expand PR #917 (merged):** additive `Person.isHouseholdLead` column + backfill + full
+  reader/writer cutover + the `@@index([householdId, isHouseholdLead])` — all folded into
+  `20260706110000_person_is_household_lead` on merge. The `HouseholdLead`
   **table AND its Prisma model are kept** — unused, frozen at backfill, no code reads or
   writes them — so (a) draining old ECS tasks don't query a dropped table during the
   rolling deploy, and (b) `schema.prisma` still matches the physical DB (the drift check
   requires it). The scope binding + view-bag entries stay too; only the code that returns
   lead rows was cut over to `householdMembers`.
-- **Follow-up PR (contract):** `DROP TABLE "HouseholdLead"` + remove the model, relations,
-  scope binding, and view-bag entries together — merged only after this PR is fully rolled
-  out. Do NOT drop in the same release as the backfill (see DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md).
+- **Follow-up PR (contract) — BUILT (stacked on the expand PR):**
+  `DROP TABLE "HouseholdLead"` (`20260706130000_drop_household_lead`) + removed the Prisma
+  model, both relations (`Person.householdLeads`, `Household.leads`), and the three
+  `HouseholdLead` view-bag `returns:` entries in `security/registry.ts`, with
+  `classifications.ts` regenerated. Merge only after the expand PR is fully rolled out.
+  Do NOT drop in the same release as the backfill (see DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md).
 
 Verified: `tsc` clean, `eslint --max-warnings 0` clean, unit + integration suites green
 against a throwaway seeded Postgres.

@@ -122,11 +122,6 @@ model Person {
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
   personBgProcesses   OrgMembershipProcess[]       @relation("PersonBgSubject")
-  // DEPRECATED (a1): leadership is now the isHouseholdLead flag above. The
-  // HouseholdLead table is kept, unused, only until the follow-up contract
-  // migration drops it — no code reads or writes this relation. See
-  // docs/designs/HOUSEHOLD_LEAD_MODEL.md + DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md.
-  householdLeads      HouseholdLead[]
   corporationLeads    CorporationLead[]
   corporationMembers  CorporationMember[]
   programVolunteers   ProgramVolunteer[]
@@ -196,9 +191,6 @@ model Household {
   intakeNotes String?
 
   householdMembers  Person[]
-  // DEPRECATED (a1): superseded by Person.isHouseholdLead; kept unused until the
-  // follow-up contract migration drops the table (see HOUSEHOLD_LEAD_MODEL.md).
-  leads             HouseholdLead[]
   orgMembership     OrgMembership?
   trustedAdults     TrustedAdult[]
   emergencyContacts EmergencyContact[]
@@ -248,23 +240,6 @@ model EmergencyContact {
 
   @@index([householdId])
   @@index([phoneDigits])
-}
-
-/// DEPRECATED (a1): the household-lead join table. Leadership is now the boolean
-/// Person.isHouseholdLead. This model is retained ONLY so schema.prisma still
-/// matches the physical table during the expand phase — no code reads or writes
-/// it. The follow-up contract migration DROPs the table and removes this model.
-/// See docs/designs/HOUSEHOLD_LEAD_MODEL.md + DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md.
-model HouseholdLead {
-  /// @sensitivity:public
-  householdId   Int
-  /// @sensitivity:public
-  personId Int
-
-  household   Household   @relation(fields: [householdId], references: [id])
-  person Person @relation(fields: [personId], references: [id])
-
-  @@id([householdId, personId])
 }
 
 enum OrgMembershipStatus {

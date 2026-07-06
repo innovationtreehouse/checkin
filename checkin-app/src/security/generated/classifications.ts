@@ -60,10 +60,6 @@ export const classifications = {
         createdAt: 'internal',
         updatedAt: 'internal',
     },
-    HouseholdLead: {
-        householdId: 'public',
-        personId: 'public',
-    },
     OrgMembership: {
         id: 'public',
         memberSince: 'public',
@@ -342,7 +338,6 @@ export const relations = {
         toolStatuses: { model: 'ToolStatus', isList: true },
         bgAttestations: { model: 'BackgroundCheckAttestation', isList: true },
         personBgProcesses: { model: 'OrgMembershipProcess', isList: true },
-        householdLeads: { model: 'HouseholdLead', isList: true },
         corporationLeads: { model: 'CorporationLead', isList: true },
         corporationMembers: { model: 'CorporationMember', isList: true },
         programVolunteers: { model: 'ProgramVolunteer', isList: true },
@@ -366,17 +361,12 @@ export const relations = {
     },
     Household: {
         householdMembers: { model: 'Person', isList: true },
-        leads: { model: 'HouseholdLead', isList: true },
         orgMembership: { model: 'OrgMembership', isList: false },
         trustedAdults: { model: 'TrustedAdult', isList: true },
         emergencyContacts: { model: 'EmergencyContact', isList: true },
     },
     EmergencyContact: {
         household: { model: 'Household', isList: false },
-    },
-    HouseholdLead: {
-        household: { model: 'Household', isList: false },
-        person: { model: 'Person', isList: false },
     },
     OrgMembership: {
         household: { model: 'Household', isList: false },
