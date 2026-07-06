@@ -20,9 +20,16 @@ describe('Admin Households API Integration Tests', () => {
     let testUserId: number;
     let testHousehold1Id: number;
     let testHousehold2Id: number;
+    let testProgramId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
+        await prisma.programParticipant.deleteMany({
+            where: { program: { name: { contains: 'Households API Test' } } }
+        });
+        await prisma.program.deleteMany({
+            where: { name: { contains: 'Households API Test' } }
+        });
         await prisma.orgMembership.deleteMany({});
         await prisma.person.deleteMany({
             where: { email: { contains: 'households-api-test' } }
@@ -60,10 +67,26 @@ describe('Admin Households API Integration Tests', () => {
                 status: 'ACTIVE'
             }
         });
+
+        // Enroll the household-2 member in a program so the single-household
+        // (?id=) branch has an enrollment to surface for the detail view.
+        const program = await prisma.program.create({
+            data: { name: 'Households API Test Program' }
+        });
+        testProgramId = program.id;
+        await prisma.programParticipant.create({
+            data: { programId: testProgramId, personId: testUserId, status: 'ACTIVE' }
+        });
     });
 
     afterAll(async () => {
         // Clean up — scope membership deletes to this test's households
+        await prisma.programParticipant.deleteMany({
+            where: { programId: testProgramId }
+        });
+        await prisma.program.deleteMany({
+            where: { id: testProgramId }
+        });
         await prisma.orgMembership.deleteMany({
             where: { householdId: { in: [testHousehold1Id, testHousehold2Id] } }
         });
@@ -124,6 +147,51 @@ describe('Admin Households API Integration Tests', () => {
             
             expect(h2).toBeDefined();
             expect(h1).toBeUndefined(); // Should be filtered out
+        });
+    });
+
+    describe('GET /api/membership-ops/households?id= (single household detail)', () => {
+        it('returns each member with their program enrollments (name + status)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            const req = new Request(`http://localhost:4000/api/membership-ops/households?id=${testHousehold2Id}`, { method: 'GET' });
+
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.household).toBeDefined();
+            expect(data.household.id).toBe(testHousehold2Id);
+
+            const member = data.household.householdMembers.find((m: { id: number }) => m.id === testUserId);
+            expect(member).toBeDefined();
+            expect(member.programParticipants).toHaveLength(1);
+            expect(member.programParticipants[0].status).toBe('ACTIVE');
+            expect(member.programParticipants[0].program.name).toBe('Households API Test Program');
+        });
+
+        it('returns an empty enrollment list for a member in no programs', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            // Household 1 has no members; add a bare person to assert the empty case.
+            const loner = await prisma.person.create({
+                data: { email: 'loner-households-api-test@example.com', name: 'Loner Households Test', householdId: testHousehold1Id }
+            });
+
+            const req = new Request(`http://localhost:4000/api/membership-ops/households?id=${testHousehold1Id}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            const member = data.household.householdMembers.find((m: { id: number }) => m.id === loner.id);
+            expect(member).toBeDefined();
+            expect(member.programParticipants).toEqual([]);
+
+            await prisma.person.deleteMany({ where: { id: loner.id } });
         });
     });
 
