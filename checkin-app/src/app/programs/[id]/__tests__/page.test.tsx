@@ -253,7 +253,7 @@ describe("ProgramEnrollmentPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         await screen.findByText("Which of your household wants to enroll?");
 
-        fireEvent.click(screen.getByRole("button", { name: /request a payment plan/ }));
+        fireEvent.click(screen.getByRole("button", { name: /request a scholarship or payment plan/ }));
         await waitFor(() =>
             expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringMatching(/Requested! Please check your email/) })),
         );
@@ -279,7 +279,7 @@ describe("ProgramEnrollmentPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         await screen.findByText("Which of your household wants to enroll?");
 
-        fireEvent.click(screen.getByRole("button", { name: /request a payment plan/ }));
+        fireEvent.click(screen.getByRole("button", { name: /request a scholarship or payment plan/ }));
         expect(await screen.findByText("Already pending.")).toBeInTheDocument();
     });
 
@@ -298,7 +298,7 @@ describe("ProgramEnrollmentPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         await screen.findByText("Which of your household wants to enroll?");
 
-        fireEvent.click(screen.getByRole("button", { name: /request a payment plan/ }));
+        fireEvent.click(screen.getByRole("button", { name: /request a scholarship or payment plan/ }));
         expect(await screen.findByText(/failed to alert the finance committee/)).toBeInTheDocument();
     });
 
@@ -311,7 +311,7 @@ describe("ProgramEnrollmentPage", () => {
         await screen.findByText("Which of your household wants to enroll?");
 
         global.fetch = jest.fn().mockRejectedValue(new Error("down"));
-        fireEvent.click(screen.getByRole("button", { name: /request a payment plan/ }));
+        fireEvent.click(screen.getByRole("button", { name: /request a scholarship or payment plan/ }));
         await waitFor(() =>
             expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error requesting payment plan.", autoClose: false })),
         );
