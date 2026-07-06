@@ -62,7 +62,7 @@ export async function createParticipantWithHousehold(data: {
 }) {
     return prisma.$transaction(async (tx) => {
         const household = await tx.household.create({
-            data: { name: data.name ?? data.email ?? null },
+            data: { name: data.name ?? data.email ?? "Household" },
         });
         const participant = await tx.person.create({
             data: { ...data, householdId: household.id },

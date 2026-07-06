@@ -40,7 +40,7 @@ describe('GET /api/cron/reminders — auth & window edges', () => {
 
     beforeAll(async () => {
         const p = await prisma.person.create({
-            data: { name: 'Reminders Edge', email: `p-${TAG}@example.com`, household: { create: {} } },
+            data: { name: 'Reminders Edge', email: `p-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         participantId = p.id;
         householdId = p.householdId;

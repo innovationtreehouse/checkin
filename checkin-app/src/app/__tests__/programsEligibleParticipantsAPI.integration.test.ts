@@ -66,19 +66,19 @@ describe('Eligible Participants API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.person.create({
-            data: { email: 'admin-elig-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-elig-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Lead
         const lead = await prisma.person.create({
-            data: { email: 'lead-elig-api-test@example.com', name: 'Lead', household: { create: {} } }
+            data: { email: 'lead-elig-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
         // Create Common User
         const commonUser = await prisma.person.create({
-            data: { email: 'common-elig-api-test@example.com', name: 'Common', household: { create: {} } }
+            data: { email: 'common-elig-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 
@@ -89,6 +89,7 @@ describe('Eligible Participants API Integration Tests', () => {
                 name: 'Active Member Candidate',
                 household: {
                     create: {
+                        name: "Test HH",
                         orgMembership: {
                             create: {
                                 status: 'ACTIVE',
@@ -129,7 +130,7 @@ describe('Eligible Participants API Integration Tests', () => {
             data: {
                 email: 'non-member-elig-api-test@example.com',
                 name: 'Non Member Candidate',
-                household: { create: {} }
+                household: { create: { name: "Test HH" } }
             }
         });
         nonMemberId = nonMember.id;
@@ -150,7 +151,7 @@ describe('Eligible Participants API Integration Tests', () => {
             data: {
                 email: 'enrolled-elig-api-test@example.com',
                 name: 'Already Enrolled Candidate',
-                household: { create: {} },
+                household: { create: { name: "Test HH" } },
                 programParticipants: {
                     create: {
                         programId: publicProgramId

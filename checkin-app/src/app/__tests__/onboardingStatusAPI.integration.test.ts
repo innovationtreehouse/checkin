@@ -46,7 +46,7 @@ describe('Onboarding Status API Integration Tests', () => {
                 email: 'adult-onboarding-status-test@example.com',
                 name: 'Adult No Phone',
                 dateOfBirth: new Date('1990-01-01'),
-                household: { create: {} }
+                household: { create: { name: "Test HH" } }
             }
         });
         adultId = adult.id;
@@ -57,7 +57,7 @@ describe('Onboarding Status API Integration Tests', () => {
                 email: 'youth-onboarding-status-test@example.com',
                 name: 'Youth No Phone',
                 dateOfBirth: youthDob(),
-                household: { create: {} }
+                household: { create: { name: "Test HH" } }
             }
         });
         youthId = youth.id;
@@ -67,7 +67,7 @@ describe('Onboarding Status API Integration Tests', () => {
             data: {
                 email: 'nodob-onboarding-status-test@example.com',
                 name: 'No DOB No Phone',
-                household: { create: {} }
+                household: { create: { name: "Test HH" } }
             }
         });
         noDobId = noDob.id;

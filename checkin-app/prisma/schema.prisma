@@ -155,7 +155,7 @@ model Household {
   /// @sensitivity:public
   id      Int     @id @default(autoincrement())
   /// @sensitivity:public
-  name    String?
+  name    String
   /// @sensitivity:personal
   line1      String?
   /// @sensitivity:personal

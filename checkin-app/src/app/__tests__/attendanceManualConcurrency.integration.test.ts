@@ -64,7 +64,7 @@ describe('POST /api/attendance/manual concurrency (advisory lock)', () => {
         await prisma.household.deleteMany({ where: { id: { in: leakedHouseholdIds } } });
 
         const subject = await prisma.person.create({
-            data: { email: `subject-${EMAIL_TAG}@example.com`, name: 'Manual Concurrency Subject', household: { create: {} } },
+            data: { email: `subject-${EMAIL_TAG}@example.com`, name: 'Manual Concurrency Subject', household: { create: { name: "Test HH" } } },
         });
         subjectId = subject.id;
         householdId = subject.householdId;

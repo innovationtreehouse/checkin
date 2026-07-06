@@ -42,17 +42,17 @@ describe('Cron Nightly API Integration Tests', () => {
 
         // Setup Users
         const board = await prisma.person.create({
-            data: { email: 'board-nightly@example.com', name: 'Board Member', isBoardMember: true, household: { create: {} } }
+            data: { email: 'board-nightly@example.com', name: 'Board Member', isBoardMember: true, household: { create: { name: "Test HH" } } }
         });
         boardMemberId = board.id;
 
         const isKeyholder = await prisma.person.create({
-            data: { email: 'keyholder-nightly@example.com', name: 'Forgetful Keyholder', isKeyholder: true, household: { create: {} } }
+            data: { email: 'keyholder-nightly@example.com', name: 'Forgetful Keyholder', isKeyholder: true, household: { create: { name: "Test HH" } } }
         });
         keyholderId = isKeyholder.id;
 
         const normalUser = await prisma.person.create({
-            data: { email: 'user-nightly@example.com', name: 'Normal User', household: { create: {} } }
+            data: { email: 'user-nightly@example.com', name: 'Normal User', household: { create: { name: "Test HH" } } }
         });
         normalUserId = normalUser.id;
 
@@ -194,7 +194,7 @@ describe('Cron Nightly API Integration Tests', () => {
             // An extra plain participant (no program enrollment -> simple close path)
             // so we have two GOOD visits whose `departedAt` we can assert by id.
             const extra = await prisma.person.create({
-                data: { email: 'extra-nightly@example.com', name: 'Extra User', household: { create: {} } }
+                data: { email: 'extra-nightly@example.com', name: 'Extra User', household: { create: { name: "Test HH" } } }
             });
 
             const badVisit = await prisma.visit.create({
