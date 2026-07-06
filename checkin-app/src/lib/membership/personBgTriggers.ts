@@ -37,7 +37,7 @@ const PROGRAM_ATTACHED_WHERE = {
  * person (BLOCKED is a manual-followup item, not something to auto-reopen nightly).
  * Returns the created process, or null when skipped.
  */
-async function openPersonBg(personId: number, asOf: Date, threshold: Date) {
+export async function openPersonBg(personId: number, asOf: Date, threshold: Date) {
     return prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "Person" WHERE id = ${personId} FOR UPDATE`;
         const person = await tx.person.findUnique({

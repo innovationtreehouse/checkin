@@ -75,14 +75,18 @@ function isAwaitingBgReview(p: { status: OrgMembershipProcessStatus; bgConsentAt
 }
 
 /**
- * PERSON_BG is attestable at the SERVICE level (attest() still accepts it, so the
- * two-reviewer gate is exercised + tested) but must NOT surface as an actionable
- * row in the reviewer QUEUE until Phase 3 renders the subject + consent. The queue
- * GET only shows a household's leads; a PERSON_BG row would render blank yet stay
- * attestable — a reviewer could blind-approve an unidentified person. So the queue
- * listing + badge counts exclude it (warn-only Phase 2); the gate machinery stays.
+ * A PERSON_BG surfaces in the reviewer queue only once it's been SUBMITTED — i.e.
+ * bgConsentAt is set (the board recorded that an external check exists via
+ * submitPersonBgForReview). This mirrors how the household parallel track gates on
+ * bgConsentAt in AWAITING_BG_WHERE. An unsubmitted PERSON_BG (bgConsentAt == null)
+ * stays out: not listed, not counted, no reviewer ping — its subject isn't ready to
+ * approve yet, and the queue GET now renders the subject once it is. A single `NOT`
+ * key so it spreads cleanly alongside AWAITING_BG_WHERE's own `OR` (two spread
+ * objects sharing an `OR` key would clobber it).
  */
-const QUEUE_EXCLUDES_PERSON_BG: Prisma.OrgMembershipProcessWhereInput = { kind: { not: "PERSON_BG" } };
+const QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG: Prisma.OrgMembershipProcessWhereInput = {
+    NOT: { kind: "PERSON_BG", bgConsentAt: null },
+};
 
 /** Prisma `where` matching the same predicate as isAwaitingBgReview, for queue queries. */
 export const AWAITING_BG_WHERE: Prisma.OrgMembershipProcessWhereInput = {
@@ -153,7 +157,7 @@ export async function eligibleReviewProcessIds(reviewerId: number): Promise<numb
     if (!reviewer || !canReviewBackgroundChecks(reviewer)) return [];
 
     const processes = await prisma.orgMembershipProcess.findMany({
-        where: { ...AWAITING_BG_WHERE, ...QUEUE_EXCLUDES_PERSON_BG },
+        where: { ...AWAITING_BG_WHERE, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG },
         orderBy: { stageEnteredAt: "asc" },
         select: {
             id: true,
@@ -188,7 +192,7 @@ export async function reviewQueueCounts(reviewerId: number): Promise<{ canActOn:
     if (!reviewer || !canReviewBackgroundChecks(reviewer)) return { canActOn: 0, approvedAwaitingSecond: 0 };
     const [canActOnIds, approvedAwaitingSecond] = await Promise.all([
         eligibleReviewProcessIds(reviewerId),
-        prisma.orgMembershipProcess.count({ where: { ...AWAITING_BG_WHERE, ...QUEUE_EXCLUDES_PERSON_BG, attestations: { some: { reviewerId } } } }),
+        prisma.orgMembershipProcess.count({ where: { ...AWAITING_BG_WHERE, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG, attestations: { some: { reviewerId } } } }),
     ]);
     return { canActOn: canActOnIds.length, approvedAwaitingSecond };
 }
