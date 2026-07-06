@@ -5,7 +5,9 @@ import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text } from "
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
+import { useSession } from "next-auth/react";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
+import { sharesHousehold } from "@/lib/conflictOfInterest";
 
 interface Person {
   id: number;
@@ -58,6 +60,14 @@ const awaitingBg = (r: ProcessRow) =>
     ((r.status === "PENDING_PAYMENT" || r.status === "PENDING_BG_CLEARANCE") && !!r.bgConsentAt));
 
 export default function AdminMembershipPage() {
+  const { data: session } = useSession();
+  const me = session?.user;
+  // Conflict of interest: a board member may not certify/override their OWN household's
+  // application (mirrors the server guards in certifyPaymentPlan/overrideBlocked). Sysadmin
+  // is the deliberate remedy and keeps the buttons. The disabled state is UX only — the
+  // server is the real enforcement.
+  const ownHousehold = (r: ProcessRow) =>
+    me?.isSysadmin !== true && sharesHousehold(me?.householdId, r.orgMembership?.householdId);
   const [rows, setRows] = useState<ProcessRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -293,9 +303,12 @@ export default function AdminMembershipPage() {
               {r.status === "PENDING_PAYMENT" && (
                 <Group mt="md" gap="md" wrap="wrap" align="center">
                   <Text size="sm" c="dimmed">Awaiting payment.</Text>
-                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => certify(r.id)}>
+                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id || ownHousehold(r)} onClick={() => certify(r.id)}>
                     Certify payment plan → {r.bgClearedAt ? "activate" : "(holds for background check)"}
                   </Button>
+                  {ownHousehold(r) && (
+                    <Text size="xs" c="dimmed">You can&apos;t certify your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                  )}
                 </Group>
               )}
 
@@ -313,13 +326,16 @@ export default function AdminMembershipPage() {
                     </Text>
                   )}
                   <Group gap="sm" wrap="wrap">
-                    <Button size="xs" fz={15} variant="default" disabled={busyId === r.id} onClick={() => override(r.id, "reset")}>
+                    <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "reset")}>
                       Reset for re-review
                     </Button>
-                    <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => override(r.id, "approve")}>
+                    <Button size="xs" fz={15} color="green" disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "approve")}>
                       Override → {r.paidAt ? "activate" : "payment"}
                     </Button>
                   </Group>
+                  {ownHousehold(r) && (
+                    <Text size="xs" c="dimmed" mt="sm">You can&apos;t override your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                  )}
                 </Alert>
               )}
 

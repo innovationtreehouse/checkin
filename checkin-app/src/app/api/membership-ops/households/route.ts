@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 
 export const dynamic = 'force-dynamic';
 
@@ -148,6 +149,13 @@ export const POST = withAuth(
             }
 
             if (active) {
+                // Conflict of interest: a board member may not grant their OWN household
+                // ACTIVE membership — that bypasses payment AND the background check for
+                // their own family. Sysadmin bypasses. (Mirrors the deny branch's
+                // board-member protection, and certifyPaymentPlan's guard.)
+                if (auth.type === 'session' && await hasHouseholdConflict(prisma, auth.user.id, householdId, { isSysadmin: auth.user.isSysadmin === true })) {
+                    return apiError("You cannot activate your own household's membership — a sysadmin must.", 403);
+                }
                 const membership = await prisma.orgMembership.upsert({
                     where: { householdId },
                     create: { householdId, status: "ACTIVE" },

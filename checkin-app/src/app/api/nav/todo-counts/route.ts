@@ -64,6 +64,8 @@ export type TodoCounts = {
     // `membership` = board-actionable (BLOCKED, green). `applicationsTotal` =
     // every in-flight (non-ACTIVE) application, the gray count shown on the
     // Applications tab — mirrors what /api/admin/membership lists.
+    // `brokenEmails` = people whose email Resend has reported as undeliverable
+    // (bounce/complaint) and no later delivery has cleared — see webhooks/resend.
     // `brokenHouseholds` = households with no lead at all (red — blocking board action).
     // `memberFamilies` = total member families (gray), shown on the Manage Memberships tab:
     // households with >=1 non-org-email (or null-email) participant. Staff households hold
@@ -73,7 +75,7 @@ export type TodoCounts = {
     // the Settings nav + Membership Settings tab — checkout is broken until both are set.
     // `programsMisconfig` = how many programs have a price but no matching Shopify variant
     // (paid enrollment silently can't check out). Red pill on the Program Ops Programs tab.
-    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; membershipPaymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; memberFamilies: number; settingsMisconfig: number; programsMisconfig: number };
+    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; membershipPaymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; brokenEmails: number; memberFamilies: number; settingsMisconfig: number; programsMisconfig: number };
     // Config-health gaps (admins + board only): number of failing system-config checks
     // (e.g. Zoho e-sign unconfigured). Drives the red System Status nav badge; the full
     // list lives at /api/system-status/config-health. See lib/configHealth.ts.
@@ -361,7 +363,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // ---- Admin surface (board's own queue) — only for board/isSysadmin ----
     if (user.isSysadmin || user.isBoardMember) {
-        const [membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, programsMisconfig, boardSettings] = await Promise.all([
+        const [membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, memberFamilies, programsMisconfig, boardSettings] = await Promise.all([
             prisma.orgMembershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -400,6 +402,11 @@ export const GET = withAuth({}, async (_req, auth) => {
             prisma.household.count({
                 where: { leads: { none: {} } },
             }),
+            // People Resend has reported as undeliverable (bounce/complaint), not since
+            // cleared by a later delivery. See Person.emailUndeliverableAt / webhooks/resend.
+            prisma.person.count({
+                where: { emailUndeliverableAt: { not: null } },
+            }),
             // Member families: households with >=1 non-org-email participant. A null email is
             // not an org address, but Prisma's `NOT endsWith` skips null rows — list it
             // explicitly so null-email members (e.g. children) count.
@@ -428,7 +435,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             (boardSettings?.volunteerDiscountCode ? 0 : 1) +
             ((boardSettings?.bgRecheckMonths ?? 0) > 0 ? 0 : 1) +
             (boardSettings?.orgMembershipYearBoundary ? 0 : 1);
-        result.admin = { membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, memberFamilies, settingsMisconfig, programsMisconfig };
+        result.admin = { membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, memberFamilies, settingsMisconfig, programsMisconfig };
         // System-config health (env-var/deploy gaps). Synchronous, no DB — just presence
         // checks. Same admin+board gate as the rest of this block.
         result.configHealth = { openIssues: openConfigIssues() };
