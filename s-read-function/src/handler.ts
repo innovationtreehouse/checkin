@@ -24,6 +24,24 @@ export const SyncEventSchema = z
 
 export type SyncEvent = z.input<typeof SyncEventSchema>;
 
+/**
+ * Hard ceiling on a sync run's lifetime (the "limited duration" half of the
+ * infra contract: trigger Lambda → one-off ECS task). ECS RunTask has no native
+ * max-duration, so a wedged run would otherwise bill until someone notices.
+ * The timer is unref'd: a completed run lets the process exit naturally before
+ * it fires; a hung run gets force-failed, and the next tick's reapStaleRuns
+ * relabels the interrupted row. Override with SYNC_DEADLINE_MINUTES (backfill
+ * ingest steps on very large stores may need more than the default 55m).
+ */
+export function armSyncDeadline(mode: string): void {
+  const minutes = Math.max(1, Number(process.env.SYNC_DEADLINE_MINUTES) || 55);
+  const timer = setTimeout(() => {
+    logger.error("sync deadline exceeded — exiting so the task cannot run unbounded", { mode, minutes });
+    process.exit(1);
+  }, minutes * 60 * 1000);
+  timer.unref();
+}
+
 export async function handler(event: unknown = {}): Promise<Record<string, unknown>> {
   const { mode } = SyncEventSchema.parse(event ?? {});
   const dbCfg = loadDbConfig();
