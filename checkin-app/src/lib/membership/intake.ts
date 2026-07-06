@@ -87,10 +87,12 @@ export async function getIntakeState(userId: number) {
     const household = user.household;
     const membership = household?.orgMembership ?? null;
     // The current in-flight process of any kind (INITIAL or RENEWAL) — anything
-    // not yet ACTIVE. During renewal the membership stays ACTIVE while its RENEWAL
-    // process cycles, so we surface that here rather than the "you're a member" card.
+    // not in a terminal status. During renewal the membership stays ACTIVE while
+    // its RENEWAL process cycles, so we surface that here rather than the "you're
+    // a member" card. ARCHIVED (board-disposed) is terminal like ACTIVE, so a
+    // returning applicant sees a clean slate rather than resuming a ghost.
     const process = membership?.processes
-        .filter((p) => p.status !== "ACTIVE")
+        .filter((p) => p.status !== "ACTIVE" && p.status !== "ARCHIVED")
         .sort((a, b) => b.id - a.id)[0] ?? null;
 
     // Parents/guardians are the household leads; children are non-lead members.

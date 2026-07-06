@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  */
 export const GET = handler("GET /api/membership-ops/applications", async () => {
     const processes = await prisma.orgMembershipProcess.findMany({
-        where: { status: { not: "ACTIVE" } },
+        where: { status: { notIn: ["ACTIVE", "ARCHIVED"] } },
         orderBy: { createdAt: "desc" },
         select: {
             id: true,

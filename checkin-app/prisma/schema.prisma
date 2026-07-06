@@ -277,6 +277,10 @@ enum OrgMembershipProcessStatus {
   BLOCKED
   PENDING_RENEWAL
   RENEWAL_PENDING_BG
+  // Board-disposed abandoned application. Terminal, like ACTIVE/BLOCKED: it's a
+  // status value (not a parallel flag) so "is this live?" stays a single
+  // declarative status check. Who/when/from-phase live in the AuditLog row.
+  ARCHIVED
 }
 
 enum AttestationResult {
