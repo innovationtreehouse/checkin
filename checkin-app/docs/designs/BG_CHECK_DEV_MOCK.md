@@ -12,10 +12,12 @@ can't be exercised end-to-end. This mock fills that gap. Mirrors the Zoho Sign
 `config.bgMockActive()` is true iff **all** hold (see `bgMockActiveEnv` in `lib/config.ts`):
 
 - `AVERITY_CONSENT_URL` unset — setting the real link opts back into it,
-- `CHECKIN_ENV !== 'prod'` (fails safe to prod when unset),
-- `NODE_ENV !== 'production'`.
+- `CHECKIN_ENV !== 'prod'` (fails safe to prod when unset).
 
-Two server-only fuses ⇒ no mock path is reachable in prod by construction.
+One server-only fuse ⇒ no mock path is reachable in prod by construction.
+(`NODE_ENV !== 'production'` was eliminated as a second fuse in the #951 review:
+every deployed instance runs the production image, so it never distinguished
+prod from cloud-dev — it only broke dev-instance features.)
 
 ## Flow
 

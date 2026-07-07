@@ -123,7 +123,7 @@ describe("zohoConfigured", () => {
 });
 
 describe("zohoMockActive / zohoAvailable / zohoWebhookSecret", () => {
-    it("mock active when unconfigured, non-prod, non-production NODE_ENV", () => {
+    it("mock active when unconfigured on a non-prod instance", () => {
         clearZoho();
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "test";
@@ -147,11 +147,12 @@ describe("zohoMockActive / zohoAvailable / zohoWebhookSecret", () => {
         expect(config.zohoMockActive()).toBe(false);
         expect(config.zohoAvailable()).toBe(false);
     });
-    it("mock inactive when NODE_ENV is production", () => {
+    it("mock STAYS active under a production build (NODE_ENV eliminated as a fuse, #951)", () => {
+        // Deployed instances all run NODE_ENV=production; CHECKIN_ENV alone decides.
         clearZoho();
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "production";
-        expect(config.zohoMockActive()).toBe(false);
+        expect(config.zohoMockActive()).toBe(true);
     });
     it("ZOHO_WEBHOOK_SECRET env wins regardless of mock state", () => {
         clearZoho();
@@ -167,7 +168,7 @@ describe("zohoMockActive / zohoAvailable / zohoWebhookSecret", () => {
 });
 
 describe("shopifyMockActive / shopifyWebhookSecret", () => {
-    it("mock active on local, non-production NODE_ENV", () => {
+    it("mock active on local", () => {
         clearShopify();
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "test";
@@ -195,12 +196,12 @@ describe("shopifyMockActive / shopifyWebhookSecret", () => {
         expect(config.shopifyMockActive()).toBe(false);
         expect(config.shopifyWebhookSecret()).toBeNull();
     });
-    it("mock inactive when NODE_ENV is production", () => {
+    it("mock STAYS active under a production build (NODE_ENV eliminated as a fuse, #951)", () => {
         clearShopify();
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "production";
-        expect(config.shopifyMockActive()).toBe(false);
-        expect(config.shopifyWebhookSecret()).toBeNull();
+        expect(config.shopifyMockActive()).toBe(true);
+        expect(config.shopifyWebhookSecret()).toBe(DEV_MOCK_SHOPIFY_WEBHOOK_SECRET);
     });
     it("SHOPIFY_WEBHOOK_SECRET env wins regardless of mock state", () => {
         clearShopify();
@@ -211,7 +212,7 @@ describe("shopifyMockActive / shopifyWebhookSecret", () => {
 });
 
 describe("bgMockActive", () => {
-    it("mock active when Averity unset, non-prod, non-production NODE_ENV", () => {
+    it("mock active when Averity unset on a non-prod instance", () => {
         delete process.env.AVERITY_CONSENT_URL;
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "test";
@@ -229,11 +230,11 @@ describe("bgMockActive", () => {
         (process.env as Record<string, string>).NODE_ENV = "test";
         expect(config.bgMockActive()).toBe(false);
     });
-    it("mock inactive when NODE_ENV is production", () => {
+    it("mock STAYS active under a production build (NODE_ENV eliminated as a fuse, #951)", () => {
         delete process.env.AVERITY_CONSENT_URL;
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "production";
-        expect(config.bgMockActive()).toBe(false);
+        expect(config.bgMockActive()).toBe(true);
     });
 });
 
