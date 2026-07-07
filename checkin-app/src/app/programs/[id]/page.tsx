@@ -3,9 +3,10 @@
 import { use, useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
+import { Alert, Anchor, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { formatDate } from '@/lib/time';
+import { googleCalendarEventUrl } from '@/lib/calendar/ics';
 import { checkProgramAge } from '@/lib/programAge';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
@@ -41,6 +42,9 @@ type ProgramDetail = {
   minAge: number | null;
   maxAge: number | null;
   orgMemberOnly: boolean;
+  // The program's event schedule (public-tier fields; the route returns these to
+  // anyone who can see the program). Drives the "Add to calendar" affordance.
+  events?: { id: number; name: string; startAt: string; endAt: string | null; description: string | null }[];
 };
 
 type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number; householdId?: number | null };
@@ -442,6 +446,49 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             )}
           </Stack>
         </Card>
+
+        {/* Add-to-calendar affordance — signed-in viewers only (the .ics route
+            requires auth). Shown when the program has any events. */}
+        {session && (program.events?.length ?? 0) > 0 && (
+          <Card withBorder radius="md" padding="lg" mb="lg">
+            <Group justify="space-between" align="center" mb="md" wrap="wrap">
+              <Title order={4} c="dimmed">Schedule</Title>
+              <Button
+                component="a"
+                href={`/api/programs/${program.id}/calendar.ics`}
+                download
+                variant="light"
+                size="xs"
+              >
+                Add all to calendar (.ics)
+              </Button>
+            </Group>
+            <Stack gap="xs">
+              {program.events!.map((ev) => (
+                <Group key={ev.id} justify="space-between" wrap="nowrap" gap="sm">
+                  <div>
+                    <Text size="sm" fw={500}>{ev.name}</Text>
+                    <Text size="xs" c="dimmed">{formatDate(ev.startAt)}</Text>
+                  </div>
+                  <Anchor
+                    href={googleCalendarEventUrl({
+                      start: new Date(ev.startAt),
+                      end: ev.endAt ? new Date(ev.endAt) : null,
+                      summary: ev.name,
+                      description: ev.description,
+                    })}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    size="sm"
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    Add to Google Calendar
+                  </Anchor>
+                </Group>
+              ))}
+            </Stack>
+          </Card>
+        )}
 
         {message && <Alert color="red" mb="lg">{message}</Alert>}
         {successMessage && <Alert color="green" mb="lg">{successMessage}</Alert>}
