@@ -603,7 +603,9 @@ model TrustedAdultReview {
   effectiveFrom        DateTime?
   /// @sensitivity:personal
   reviewBy             DateTime?
-  /// When the 30-day-before-expiry reminder email was sent (once).
+  /// Vestigial. Once stamped the 30-day-before-expiry reminder; that warning moved
+  /// to the staleness framework (docs/designs/STALENESS_NOTIFICATIONS.md), which
+  /// dedups via NotificationLedger. Kept because dropping a column is destructive.
   /// @sensitivity:internal
   expiryWarningSentAt  DateTime?
   /// Proposed edits carried by a MODIFIED resubmission. Held HERE, not on the
@@ -1068,4 +1070,28 @@ model DevSentEmail {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// Dedup ledger for the household-direct staleness notifications
+/// (docs/designs/STALENESS_NOTIFICATIONS.md). One row = "we have already emailed
+/// the household about {subjectKey} at escalation {threshold}", written BEFORE the
+/// send and guarded by the unique constraint so overlapping/retried daily cron
+/// runs never re-send. No PII: subjectKey is composed of ids/timestamps only. The
+/// weekly board digest needs no ledger — it is periodic and only describes current
+/// state.
+model NotificationLedger {
+  /// @sensitivity:public
+  id         Int      @id @default(autoincrement())
+  /// Staleness type key, e.g. "MEMBERSHIP_RENEWAL". @sensitivity:internal
+  type       String
+  /// Stable per-instance identifier, e.g. "renewal:12" / "ta-review:34" /
+  /// "broken-email:5:1720000000000". @sensitivity:internal
+  subjectKey String
+  /// Escalation bucket: days-before-lapse the notice fired at (0 = at/after
+  /// lapse, or a no-schedule item like a broken email). @sensitivity:internal
+  threshold  Int
+  /// @sensitivity:internal
+  sentAt     DateTime @default(now())
+
+  @@unique([type, subjectKey, threshold])
 }

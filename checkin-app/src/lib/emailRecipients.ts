@@ -45,3 +45,21 @@ export async function emailBoardMembers(subject: string, html: string, errorLabe
         logger.error(errorLabel, e);
     }
 }
+
+/**
+ * Email every "admin" — sysadmin OR board member — with an address on file. This
+ * is the "tell whoever runs the org" list, the same resolution reportShopifyFailure
+ * uses. Resolve + fan-out; all errors logged and swallowed.
+ */
+export async function emailAdmins(subject: string, html: string, errorLabel: string): Promise<void> {
+    try {
+        const admins = await prisma.person.findMany({
+            where: { OR: [{ isSysadmin: true }, { isBoardMember: true }], email: { not: null } },
+            select: { email: true },
+        });
+        const emails = admins.map((a) => a.email).filter((e): e is string => !!e);
+        await fanOutEmails(emails, subject, html);
+    } catch (e) {
+        logger.error(errorLabel, e);
+    }
+}

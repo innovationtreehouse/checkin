@@ -41,7 +41,6 @@ function lockTrustedAdult(tx: TxClient, taId: number) {
 
 const SYSTEM_ACTOR = 0;
 const APPROVAL_VALID_DAYS = 365;
-const WARN_LEAD_DAYS = 30;
 
 export class TrustedAdultError extends Error {
     constructor(
@@ -528,29 +527,17 @@ export async function overrideReview(
 }
 
 /**
- * Nightly sweep: (1) warn the household 30 days before an approval lapses, once;
- * (2) expire approvals whose reviewBy has passed so they re-enter the board queue
- * via a renewal.
+ * Nightly sweep: expire approvals whose reviewBy has passed so they re-enter the
+ * board queue via a renewal.
+ *
+ * The 30-day-out expiry WARNING no longer lives here — it moved to the shared
+ * staleness framework (lib/staleness/registry.ts, cron/staleness-notifications;
+ * see docs/designs/STALENESS_NOTIFICATIONS.md), which nudges the household at
+ * escalating thresholds and dedups via the NotificationLedger. This sweep keeps
+ * only the expiry MECHANICS. `TrustedAdultReview.expiryWarningSentAt` is now
+ * vestigial (kept — dropping a column is destructive; the ledger is the new dedup).
  */
 export async function runExpirySweep(now: Date) {
-    const warnThreshold = daysFromNow(now, WARN_LEAD_DAYS);
-
-    const expiring = await prisma.trustedAdultReview.findMany({
-        where: { status: "APPROVED", expiryWarningSentAt: null, reviewBy: { not: null, lte: warnThreshold, gt: now } },
-        select: { id: true, trustedAdultId: true, householdId: true, reviewBy: true },
-    });
-    let warned = 0;
-    for (const r of expiring) {
-        const due = r.reviewBy ? r.reviewBy.toISOString().slice(0, 10) : "soon";
-        await notifyHouseholdFamily(
-            r.householdId,
-            "A trusted adult approval is expiring soon",
-            `This board-approved trusted adult expires on ${due}. You can resubmit it for board review in one click — no need to re-enter anything.`,
-        );
-        await prisma.trustedAdultReview.update({ where: { id: r.id }, data: { expiryWarningSentAt: now } });
-        warned++;
-    }
-
     const lapsed = await prisma.trustedAdultReview.findMany({
         where: { status: "APPROVED", reviewBy: { not: null, lte: now } },
         select: { id: true, trustedAdultId: true, status: true },
@@ -564,7 +551,7 @@ export async function runExpirySweep(now: Date) {
         expired++;
     }
 
-    return { warned, expired };
+    return { expired };
 }
 
 /** Actor must be a lead of the given household. */

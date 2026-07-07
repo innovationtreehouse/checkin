@@ -53,12 +53,12 @@ describe('GET /api/cron/trusted-adult-expiry — auth gate', () => {
     });
 
     it('200 with the success envelope when the secret is correct', async () => {
-        (runExpirySweep as jest.Mock).mockResolvedValue({ warned: 2, expired: 1 });
+        (runExpirySweep as jest.Mock).mockResolvedValue({ expired: 1 });
 
         const res = await GET(req(`Bearer ${SECRET}`));
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body).toEqual({ success: true, warned: 2, expired: 1 });
+        expect(body).toEqual({ success: true, expired: 1 });
         expect(runExpirySweep).toHaveBeenCalledTimes(1);
     });
 });

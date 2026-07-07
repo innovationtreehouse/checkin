@@ -309,18 +309,12 @@ describe('Trusted Adults service', () => {
         expect((await prisma.trustedAdultReview.findUnique({ where: { id: approved.id } }))?.status).toBe('REVOKED');
     });
 
-    it('expiry sweep warns the family 30 days out (once), then expires lapsed approvals', async () => {
+    // The 30-day expiry WARNING moved to the staleness framework
+    // (lib/staleness/registry.ts; see STALENESS_NOTIFICATIONS.md); runExpirySweep
+    // now only handles the EXPIRED transition, which this covers.
+    it('expiry sweep expires lapsed approvals (warning moved to the staleness framework)', async () => {
         const ta = await discloseOne();
         const r = await decideReview(ta.reviews[0].id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
-
-        const soon = new Date(Date.now() + 10 * 86400000);
-        await prisma.trustedAdultReview.update({ where: { id: r.id }, data: { reviewBy: soon, expiryWarningSentAt: null } });
-        const warnRun = await runExpirySweep(new Date());
-        expect(warnRun.warned).toBeGreaterThanOrEqual(1);
-        expect(sendEmail).toHaveBeenCalledWith(`lead-${TAG}@ex.com`, expect.stringContaining('expiring'), expect.any(String));
-
-        const again = await prisma.trustedAdultReview.findUnique({ where: { id: r.id } });
-        expect(again!.expiryWarningSentAt).not.toBeNull();
 
         await prisma.trustedAdultReview.update({ where: { id: r.id }, data: { reviewBy: new Date(Date.now() - 86400000) } });
         const expireRun = await runExpirySweep(new Date());
@@ -517,12 +511,14 @@ describe('Trusted Adults service', () => {
     });
 });
 
-// Edge cases for the nightly expiry sweep. runExpirySweep returns DB-wide
-// warned/expired counts, so these use exact === assertions — a loose >= would hide
-// a sweep that double-counts or mis-targets. That exactness is safe only because no
-// other APPROVED rows qualify during a run: this describe runs after the block
-// above (whose afterAll already wiped its rows) and the seed creates no trusted
-// adults, so the only qualifiers are the rows each test crafts under SWEEP_TAG.
+// Edge cases for the nightly expiry sweep. runExpirySweep returns a DB-wide
+// expired count (the 30-day WARNING moved to the staleness framework — see
+// STALENESS_NOTIFICATIONS.md — so the sweep no longer emails), so these use exact
+// === assertions: a loose >= would hide a sweep that double-counts or mis-targets.
+// That exactness is safe only because no other APPROVED rows qualify during a run:
+// this describe runs after the block above (whose afterAll already wiped its rows)
+// and the seed creates no trusted adults, so the only qualifiers are the rows each
+// test crafts under SWEEP_TAG.
 describe('runExpirySweep edge cases', () => {
     const SWEEP_TAG = 'trustedadult-sweep-test';
     const DAY = 86400000;
@@ -590,44 +586,34 @@ describe('runExpirySweep edge cases', () => {
         const revoked = await seedReview('REVOKED', past);
 
         const run = await runExpirySweep(now);
-        expect(run.warned).toBe(0);
         expect(run.expired).toBe(0);
         expect(sendEmail).not.toHaveBeenCalled();
 
         for (const r of [pending, denied, revoked]) {
             const after = await prisma.trustedAdultReview.findUnique({ where: { id: r.id } });
             expect(after!.status).toBe(r.status); // untouched
-            expect(after!.expiryWarningSentAt).toBeNull(); // no warn stamp
         }
     });
 
-    it('warns once: a second sweep returns warned 0 and sends no second email', async () => {
+    it('leaves a still-valid approval untouched (does not expire, does not email)', async () => {
         const now = new Date();
-        const soon = new Date(now.getTime() + 10 * DAY); // inside the 30-day warn window, still future
+        const soon = new Date(now.getTime() + 10 * DAY); // future reviewBy → not lapsed
         const r = await seedReview('APPROVED', soon);
 
-        const first = await runExpirySweep(now);
-        expect(first.warned).toBe(1);
-        expect(first.expired).toBe(0);
-        expect(sendEmail).toHaveBeenCalledTimes(1);
-        expect(sendEmail).toHaveBeenCalledWith(`sweeplead-${SWEEP_TAG}@ex.com`, expect.stringContaining('expiring'), expect.any(String));
-        const warned = await prisma.trustedAdultReview.findUnique({ where: { id: r.id } });
-        expect(warned!.expiryWarningSentAt).not.toBeNull();
+        const run = await runExpirySweep(now);
+        expect(run.expired).toBe(0);
+        expect(sendEmail).not.toHaveBeenCalled(); // the sweep never emails now
 
-        sendEmail.mockClear();
-        const second = await runExpirySweep(now);
-        expect(second.warned).toBe(0); // guard holds
-        expect(second.expired).toBe(0);
-        expect(sendEmail).not.toHaveBeenCalled();
+        const after = await prisma.trustedAdultReview.findUnique({ where: { id: r.id } });
+        expect(after!.status).toBe('APPROVED');
     });
 
-    it('expires at the boundary: reviewBy == now and reviewBy in the past both EXPIRE, never warn', async () => {
+    it('expires at the boundary: reviewBy == now and reviewBy in the past both EXPIRE', async () => {
         const now = new Date();
-        const atNow = await seedReview('APPROVED', new Date(now.getTime())); // reviewBy === now → lte:now, not gt:now
+        const atNow = await seedReview('APPROVED', new Date(now.getTime())); // reviewBy === now → lte:now
         const past = await seedReview('APPROVED', new Date(now.getTime() - 1 * DAY)); // already lapsed
 
         const run = await runExpirySweep(now);
-        expect(run.warned).toBe(0); // boundary row expires, it does not get a fresh warning
         expect(run.expired).toBe(2);
         expect(sendEmail).not.toHaveBeenCalled();
 

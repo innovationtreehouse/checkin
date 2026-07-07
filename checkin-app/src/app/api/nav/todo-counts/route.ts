@@ -40,7 +40,8 @@ const BOARD_ACTIONABLE_MEMBERSHIP: OrgMembershipProcessStatus[] = ["BLOCKED"];
 
 const APPROVED_STATUSES: TrustedAdultReviewStatus[] = ["APPROVED"];
 
-// Same warning lead as runExpirySweep (src/lib/trusted-adult/service.ts).
+// The in-app "expiring soon" badge lead, matching the staleness framework's widest
+// trusted-adult threshold (lib/staleness/registry.ts). Independent of the email path.
 const WARN_LEAD_DAYS = 30;
 
 /** A single actionable item: what to do, and where to go to do it. */

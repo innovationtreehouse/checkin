@@ -332,6 +332,13 @@ export const classifications = {
         html: 'internal',
         createdAt: 'internal',
     },
+    NotificationLedger: {
+        id: 'public',
+        type: 'internal',
+        subjectKey: 'internal',
+        threshold: 'internal',
+        sentAt: 'internal',
+    },
 } as const;
 
 export const relations = {
@@ -472,6 +479,8 @@ export const relations = {
     DevLedger: {
     },
     DevSentEmail: {
+    },
+    NotificationLedger: {
     },
 } as const;
 

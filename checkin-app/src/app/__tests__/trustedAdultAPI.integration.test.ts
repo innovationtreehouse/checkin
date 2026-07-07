@@ -204,12 +204,12 @@ describe('Trusted Adults API', () => {
 
     // Full trusted-adult journey as one continuous flow through the real routes: a lead
     // SUBMITS → it's pending and NOT yet an authorized pickup → the board APPROVES →
-    // it becomes an authorized pickup on the operational (front-desk) view → the nightly
-    // sweep WARNS 30 days out (authorization still live) → then EXPIRES it (authorization
-    // drops). The individual legs are unit-covered elsewhere; what this pins is the
-    // pending→visible→warned→gone lifecycle of the pickup authorization end to end. Keyed
-    // on this TA's id throughout, since other approved rows (Grandma/Grandpa) share familyHh.
-    it('END-TO-END: submit → pending (no pickup) → board approve → authorized pickup → warn → expiry sweep drops it', async () => {
+    // it becomes an authorized pickup on the operational (front-desk) view → a still-valid
+    // approval survives the nightly sweep → then EXPIRES it (authorization drops). The
+    // 30-day WARNING moved to the staleness framework (STALENESS_NOTIFICATIONS.md); the
+    // individual legs are unit-covered elsewhere. Keyed on this TA's id throughout, since
+    // other approved rows (Grandma/Grandpa) share familyHh.
+    it('END-TO-END: submit → pending (no pickup) → board approve → authorized pickup → expiry sweep drops it', async () => {
         const NOTE = 'Auntie May may pick up the kids.';
 
         // 1. A household lead submits a disclosure via the member-facing input route.
@@ -251,13 +251,13 @@ describe('Trusted Adults API', () => {
         expect(authorized.reviews[0].sharedNote).toBe(NOTE);
         expect(authorized.familyContext).toBeUndefined(); // pii — never on the pickup view
 
-        // 4a. 30 days out: the sweep warns the family once. A warning does NOT revoke —
-        //     the adult stays an authorized pickup while the family is reminded to renew.
-        await prisma.trustedAdultReview.update({ where: { id: reviewId }, data: { reviewBy: new Date(Date.now() + 10 * 86400000), expiryWarningSentAt: null } });
+        // 4a. Still valid (reviewBy in the future): the sweep does NOT expire it — the
+        //     adult stays an authorized pickup. (The expiry reminder now goes through the
+        //     staleness framework, not this sweep.)
+        await prisma.trustedAdultReview.update({ where: { id: reviewId }, data: { reviewBy: new Date(Date.now() + 10 * 86400000) } });
         const warnRun = await runExpirySweep(new Date());
-        expect(warnRun.warned).toBeGreaterThanOrEqual(1);
-        expect((await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } }))?.expiryWarningSentAt).not.toBeNull();
-        expect(await pickupRow()).toBeTruthy(); // warned, but still authorized
+        expect(warnRun.expired).toBe(0);
+        expect(await pickupRow()).toBeTruthy(); // still authorized
 
         // 4b. Approval lapses: reviewBy in the past → the sweep EXPIRES it and the pickup
         //     authorization drops off the operational view.
