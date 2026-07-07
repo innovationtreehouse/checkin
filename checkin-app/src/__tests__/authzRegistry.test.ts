@@ -63,6 +63,8 @@ const AUTHZ_TESTED = new Set<string>([
     'finance-ops/membership-payment-plans',
     'admin/settings/localization',
     'events',
+    // GET + POST deny-path (401 anon / 403 plain user) in badge-prints/__tests__/route.integration.test.ts.
+    'facility/badge-prints',
     'facility/badges',
     'facility/trends',
     'facility/visits',

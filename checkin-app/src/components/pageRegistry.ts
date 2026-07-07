@@ -89,6 +89,7 @@ export const PAGES: PageEntry[] = [
   { href: '/facility-ops', label: 'Facility Ops', section: 'Facility Ops', visible: BOARD },
   { href: '/facility-ops/badges', label: 'Badges', section: 'Facility Ops', visible: BOARD },
   { href: '/facility-ops/print-badges', label: 'Print Badges', section: 'Facility Ops', visible: BOARD },
+  { href: '/facility-ops/badge-prints', label: 'Badge Prints', section: 'Facility Ops', visible: BOARD },
   { href: '/facility-ops/trends', label: 'Trends', section: 'Facility Ops', visible: BOARD },
   { href: '/facility-ops/visits', label: 'Visits', section: 'Facility Ops', visible: BOARD },
 

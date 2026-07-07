@@ -251,6 +251,13 @@ export const classifications = {
         timestamp: 'personal',
         location: 'personal',
     },
+    BadgePrint: {
+        id: 'internal',
+        personId: 'public',
+        printedAt: 'internal',
+        printedById: 'internal',
+        note: 'internal',
+    },
     Visit: {
         id: 'public',
         personId: 'public',
@@ -351,6 +358,8 @@ export const relations = {
         feePayments: { model: 'FeePayment', isList: true },
         rsvps: { model: 'RSVP', isList: true },
         rawBadgeLogs: { model: 'RawBadgeLog', isList: true },
+        badgePrints: { model: 'BadgePrint', isList: true },
+        badgePrintsRecorded: { model: 'BadgePrint', isList: true },
         visits: { model: 'Visit', isList: true },
         eventsConfirmedBy: { model: 'Event', isList: true },
         trustedAdultRecordsAsAdult: { model: 'TrustedAdult', isList: true },
@@ -449,6 +458,10 @@ export const relations = {
     },
     RawBadgeLog: {
         person: { model: 'Person', isList: false },
+    },
+    BadgePrint: {
+        person: { model: 'Person', isList: false },
+        printedBy: { model: 'Person', isList: false },
     },
     Visit: {
         person: { model: 'Person', isList: false },

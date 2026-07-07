@@ -133,6 +133,8 @@ model Person {
   feePayments         FeePayment[]
   rsvps               RSVP[]
   rawBadgeLogs        RawBadgeLog[]
+  badgePrints         BadgePrint[]                 @relation("BadgePrintSubject")
+  badgePrintsRecorded BadgePrint[]                 @relation("BadgePrintActor")
   visits              Visit[]
   eventsConfirmedBy   Event[]                      @relation("EventAttendanceConfirmer")
 
@@ -913,6 +915,29 @@ model RawBadgeLog {
   person Person @relation(fields: [personId], references: [id])
 
   @@index([personId, timestamp]) // Double-badge detection in /api/scan
+}
+
+// A physical ID badge was printed for a person and handed out. Sibling of
+// RawBadgeLog (both are physical-badge lifecycle records). Ops marks these
+// explicitly — see docs/designs/BADGE_PRINT_TRACKING.md. Append-only; multiple
+// rows per person are normal (reprints, yearly refresh).
+model BadgePrint {
+  /// @sensitivity:internal
+  id          Int      @id @default(autoincrement())
+  /// @sensitivity:public
+  personId    Int
+  /// @sensitivity:internal
+  printedAt   DateTime @default(now())
+  /// @sensitivity:internal
+  printedById Int
+  /// @sensitivity:internal
+  note        String?
+
+  person    Person @relation("BadgePrintSubject", fields: [personId], references: [id])
+  printedBy Person @relation("BadgePrintActor", fields: [printedById], references: [id])
+
+  @@index([personId, printedAt]) // A person's print history
+  @@index([printedAt]) // Year-window report scan
 }
 
 model Visit {
