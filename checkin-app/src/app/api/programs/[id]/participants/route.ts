@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError, withdrawAndReleaseHold } from "@/lib/program/capacity";
 import { checkProgramAge } from "@/lib/programAge";
+import { householdMembershipLapsed } from "@/lib/membership/lapse";
 import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
@@ -107,6 +108,15 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                             ? `Participant maximum age is ${currentProgram.maxAge} years old.`
                             : "Participant is outside this program's age range.";
                 return NextResponse.json({ error, requiresOverride: true }, { status: 400 });
+            }
+
+            // Membership-lapse cascade: a member of a lapsed/revoked household is
+            // blocked from NEW enrollment. This is a hard block for the household
+            // itself (no self-override — they must renew); a board/sysadmin
+            // force-enroll from OUTSIDE the household still works because that path
+            // sets override and skips enforceLimits entirely (see isExternalAdmin).
+            if (await householdMembershipLapsed(participantData?.householdId)) {
+                return apiError("This participant's household Treehouse membership has lapsed. Renew to enroll (or a board member can force-enroll).", 403);
             }
         }
 

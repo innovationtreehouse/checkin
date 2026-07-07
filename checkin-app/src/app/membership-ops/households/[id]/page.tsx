@@ -20,7 +20,7 @@ type Member = {
 type Household = {
   id: number;
   name?: string | null;
-  orgMembership?: { status: string } | null;
+  orgMembership?: { status: string; lapseFlaggedAt?: string | null } | null;
   householdMembers?: Member[] | null;
 };
 
@@ -69,6 +69,7 @@ export default function HouseholdDetailPage({ params }: { params: Promise<{ id: 
   }
 
   const status = household.orgMembership?.status;
+  const lapsed = !!household.orgMembership?.lapseFlaggedAt;
   const members = household.householdMembers ?? [];
 
   return (
@@ -79,13 +80,18 @@ export default function HouseholdDetailPage({ params }: { params: Promise<{ id: 
 
       <Group justify="space-between" align="center">
         <Title order={3}>{household.name || `Household #${household.id}`}</Title>
-        {status === "DENIED" ? (
-          <Badge color="red">Denied</Badge>
-        ) : status === "ACTIVE" ? (
-          <Badge color="green">Member</Badge>
-        ) : (
-          <Badge color="gray">Not a member</Badge>
-        )}
+        <Group gap="xs">
+          {/* Lapse cascade: members blocked from check-in + new enrollment; pending
+              enrollments auto-withdraw after the grace window. */}
+          {lapsed && <Badge color="orange">Membership lapsed — enrollments flagged</Badge>}
+          {status === "DENIED" ? (
+            <Badge color="red">Denied</Badge>
+          ) : status === "ACTIVE" ? (
+            <Badge color="green">Member</Badge>
+          ) : (
+            <Badge color="gray">Not a member</Badge>
+          )}
+        </Group>
       </Group>
 
       {members.length === 0 ? (

@@ -343,6 +343,18 @@ model OrgMembership {
   /// @sensitivity:public
   isVolunteer Boolean             @default(false)
 
+  /// When the daily membership-lapse cascade cron first flagged this membership as
+  /// lapsed (status REVOKED/DENIED, or ACTIVE with a renewal overdue past the year
+  /// boundary). Purely a grace-clock + notification-dedup stamp — "is this household
+  /// currently lapsed?" is DERIVED live (lib/membership/lapse.ts isMembershipLapsed),
+  /// never read off this field, so a stale stamp never blocks a renewed member. The
+  /// cron sets it once (dedup: one household + board notice), auto-withdraws the
+  /// household's PENDING enrollments once BoardSettings.membershipLapseGraceDays has
+  /// elapsed since it, and clears it back to null when the household is no longer
+  /// lapsed. NULL = not currently flagged.
+  /// @sensitivity:public
+  lapseFlaggedAt DateTime?
+
   /// @sensitivity:public
   householdId Int       @unique
   household   Household @relation(fields: [householdId], references: [id])
@@ -497,6 +509,14 @@ model BoardSettings {
   /// withdrawal or payment; it never auto-expires).
   /// @sensitivity:public
   scholarshipDenialGraceDays Int?
+  /// Grace period (days) a lapsed/revoked household keeps its FLAGGED program
+  /// enrollments before the membership-lapse cascade cron auto-withdraws its PENDING
+  /// enrollments (releasing any scholarship hold +1 via withdrawAndReleaseHold).
+  /// NULL = auto-withdraw OFF — flagging, check-in/enrollment blocking, and the
+  /// household+board notification stay on; enrollments are only ever withdrawn
+  /// manually. Mirrors scholarshipDenialGraceDays' NULL-is-off semantics.
+  /// @sensitivity:public
+  membershipLapseGraceDays   Int?
   /// @sensitivity:internal
   updatedAt                  DateTime  @updatedAt
 }

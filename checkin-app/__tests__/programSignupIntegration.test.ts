@@ -60,6 +60,14 @@ jest.mock('@/lib/prisma', () => {
       create: jest.fn(),
       deleteMany: jest.fn(),
     },
+    // Enroll route now derives lapse state via householdMembershipLapsed;
+    // default (undefined) reads as "no membership row" → not lapsed.
+    orgMembership: {
+      findUnique: jest.fn(),
+    },
+    boardSettings: {
+      findUnique: jest.fn(),
+    },
     programParticipant: {
       create: jest.fn(),
       findUnique: jest.fn(),

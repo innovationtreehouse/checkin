@@ -18,7 +18,8 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
  * PUT /api/settings/membership — update board settings.
  * Body may include: normalDuesCents, volunteerDuesCents, orgMembershipYearBoundary (ISO|null),
  * orgMembershipVariantId (string|null), volunteerDiscountCode (string|null),
- * scholarshipDenialGraceDays (positive int|null — null disables the grace-period expiry cron).
+ * scholarshipDenialGraceDays (positive int|null — null disables the grace-period expiry cron),
+ * membershipLapseGraceDays (positive int|null — null disables lapse-cascade auto-withdraw).
  * Dues must be finite and >= 0; an invalid value rejects the whole update (400) so the
  * previous value survives rather than silently collapsing to zero. (The Averity consent
  * link is an env var, not a board setting. Email sender identity lives in /api/settings/email.)
@@ -34,6 +35,7 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         bgRecheckMonths?: number;
         devSigningTarget?: string | null;
         scholarshipDenialGraceDays?: number | null;
+        membershipLapseGraceDays?: number | null;
     };
     try {
         body = await req.json();
@@ -83,6 +85,15 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
             }
         }
         data.scholarshipDenialGraceDays = body.scholarshipDenialGraceDays;
+    }
+    // membershipLapseGraceDays: null = auto-withdraw off (flag/block/notify stay on); otherwise a positive integer.
+    if (body.membershipLapseGraceDays !== undefined) {
+        if (body.membershipLapseGraceDays !== null) {
+            if (!Number.isFinite(body.membershipLapseGraceDays) || !Number.isInteger(body.membershipLapseGraceDays) || body.membershipLapseGraceDays <= 0) {
+                return apiError("membershipLapseGraceDays must be a positive whole number of days, or null", 400);
+            }
+        }
+        data.membershipLapseGraceDays = body.membershipLapseGraceDays;
     }
 
     const settings = await prisma.boardSettings.upsert({

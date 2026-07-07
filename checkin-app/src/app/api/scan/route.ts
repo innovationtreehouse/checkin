@@ -4,6 +4,7 @@ import { apiError } from "@/lib/api-response";
 import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/scan-service";
 import { config } from "@/lib/config";
 import { withKiosk } from "@/lib/kioskAuth";
+import { householdMembershipLapsed } from "@/lib/membership/lapse";
 
 // High cap: kiosks burst and a whole facility may share one NAT IP. withKiosk
 // reads the raw body, authenticates it (kiosk signature OR session), rejects
@@ -56,6 +57,13 @@ export const POST = withKiosk(
             if (participant.householdId !== auth.user.householdId) {
                 return apiError("Forbidden: You are not authorized to scan this user.", 403);
             }
+        }
+
+        // Membership-lapse cascade: a member of a lapsed/revoked household can't
+        // check in until the membership is renewed (derived live — a renewal lifts
+        // this instantly). No admin override on check-in (unlike enrollment).
+        if (await householdMembershipLapsed(participant.householdId)) {
+            return apiError("Check-in is blocked: this household's Treehouse membership has lapsed. Please renew to check in.", 403);
         }
 
         // Steps 4–6 (debounce read → record event → find visit → check-in/out)

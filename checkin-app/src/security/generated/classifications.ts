@@ -65,6 +65,7 @@ export const classifications = {
         memberSince: 'public',
         status: 'public',
         isVolunteer: 'public',
+        lapseFlaggedAt: 'public',
         householdId: 'public',
     },
     OrgMembershipProcess: {
@@ -118,6 +119,7 @@ export const classifications = {
         shopifyVolunteerVariantId: 'internal',
         shopifyPriceSyncedAt: 'internal',
         scholarshipDenialGraceDays: 'public',
+        membershipLapseGraceDays: 'public',
         updatedAt: 'internal',
     },
     AppSettings: {
