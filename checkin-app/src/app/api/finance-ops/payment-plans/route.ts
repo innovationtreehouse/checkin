@@ -6,7 +6,6 @@ import { handler } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { isActiveOrgMember, ACTIVE_ORG_MEMBER_INCLUDE } from "@/lib/orgMembership";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
-import { adjustProgramInventory } from "@/lib/shopify";
 
 export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
     const [requests, boardSettings] = await Promise.all([
