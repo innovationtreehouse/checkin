@@ -7,6 +7,61 @@
 
 ---
 
+## Re-validation — 2026-07-08, against post-#930 `main` (Phase 1 implemented)
+
+This section re-validates the plan against **current `main`** and records what
+**Phase 1** actually ships (PR `feat/program-instances-phase1`). The rest of the
+doc (§0–§9) is unchanged and still authoritative for the later phases; where it
+conflicts with the findings here, **this section wins for Phase-1 scope**.
+
+### R1. The #929 baseline this doc assumed did NOT land — #930 did instead
+
+The doc's Shopify columns (§1/§2a/§3) assume **#929** (`SHOPIFY_MEMBER_SEGMENT_PRICING.md`)
+shipped first: one `shopifyVariantId` + one `shopifyMemberDiscountId` per program,
+member pricing as a segment-gated *automatic discount* whose grain moves down to
+the instance. **#929 is unmerged.** What merged is **#930**
+(`checkin-app/docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md`), whose Shopify model is:
+
+- **Single pool:** one `Program.shopifyVariantId` at the base (non-member) rate; Shopify inventory on that variant IS the program's capacity.
+- **Member pricing = per-checkout, server-minted single-use discount CODES** (`mintMemberDiscountCode`), **not** a stored discount object. There is **no `shopifyMemberDiscountId` column** anywhere.
+- **Legacy two-variant pair still present:** pre-#930 programs keep `shopifyOrgMemberVariantId` / `shopifyNonOrgMemberVariantId` (expand-only; the contract-drop is a later release).
+
+**Deviation (recorded):** `ProgramInstance` mirrors the Shopify columns that
+*actually exist* on `Program` — `shopifyProductId`, `shopifyVariantId`, and the
+legacy `shopifyOrgMemberVariantId` / `shopifyNonOrgMemberVariantId` pair. It does
+**NOT** carry `shopifyMemberDiscountId` (§3's field), because that column doesn't
+exist on `main`. Mirroring the legacy pair (rather than the doc's single-variant
+assumption) is what keeps the 1:1 backfill lossless for pre-#930 programs whose
+webhook order→program mapping still resolves through those variant ids. If #929
+later lands, the discount-grain-moves-to-instance decision (§2a) is re-instated
+then as its own change.
+
+### R2. Capacity / hold-ledger home is consistent with #930 — no Phase-1 conflict
+
+- **Capacity.** #930 makes **Shopify** the source of truth; `Program.maxParticipants` seeds the *initial* variant inventory and drives relative delta propagation (`adjustProgramInventory`, `lib/shopify.ts`). The doc puts capacity on the instance (§2). These agree in the end state — one instance = one variant = one inventory pool — but Phase 1 is **additive**: `maxParticipants` is **copied** to the instance, and `Program.maxParticipants` stays authoritative and keeps driving inventory. **Flag for P2/P3:** when reads/writes cut over, `adjustProgramInventory` and the `maxParticipants`→inventory propagation must re-target the instance's variant.
+- **Scholarship hold ledger.** #930's `ProgramParticipant.inventoryHeldAt` / `paymentPlanDeniedAt` and `BoardSettings.scholarshipDenialGraceDays` are untouched by Phase 1 — `ProgramParticipant` still FKs `programId` (its move to the instance is P2, §7). **Flag for P2:** the release paths in `lib/program/capacity.ts` (`withdrawAndReleaseHold`, the `orders/paid` webhook, `cron/scholarship-grace-expiry`) that key on `programId` must re-target `instanceId` when the roster FK moves.
+
+Neither the price columns (§2/§9.4) nor the narrowing-override decisions (§3a/§9.3)
+are affected by #930; they stand as written.
+
+### R3. What Phase 1 ships in this PR (and the precise cut line)
+
+Phase 1 = the doc's **P1** (§7), nothing more. **Additive / expand only**, safe for
+the live DB during the deploy drain window (old code neither reads nor writes the
+new surface, and nothing it *does* read is touched):
+
+- **Schema:** new `ProgramInstance` model (all offering columns mirrored + the nullable narrowing overrides), nullable `Event.instanceId` + FK, `Program.instances` / `Person.instancesLed` back-relations. Every new field carries its `/// @sensitivity` tier; `classifications.ts` regenerated.
+- **Migration `20260708040000_program_instances_phase1`:** the generated additive DDL **+ the MB backfill** — one id-aliased `ProgramInstance` per `Program`, `Event.instanceId = programId`, `setval` bump — all in one `BEGIN/COMMIT`, idempotent (skip programs that already have an instance; only fill still-null `instanceId`; `setval` derived from `MAX(id)` so it never regresses). Hand-written, not a Prisma DROP+ADD.
+- **Security:** `ProgramInstance` added to `OPT_OUT_PENDING_ROUTE` (it is sensitive+scopable via `programId` but has **no read consumers yet**; its real `their_program_participants` binding lands with the atomic claim swap in P3, §5c).
+- **Tests:** `programInstanceBackfill.integration.test.ts` runs the migration's own backfill SQL against seeded rows and asserts the id-alias, column copy, event linkage, sequence bump, and idempotency (second run is a no-op).
+
+**Deliberately deferred (NOT in this PR):**
+
+- **No FK repoint** (`ProgramParticipant`/`ProgramVolunteer`/`Fee` `programId`→`instanceId`, P2) — that is a RENAME = a *contract* step, forbidden in this additive release by the coalesce/expand-contract policy.
+- **No read cutover / security-claim swap** (`programsLed`→`instancesLed`, `buildCallerContext`, `scopeBindings`, the event→instance→program hop — P3). The claim swap must be atomic with its consumers; splitting it into an additive release would lock lead mentors out.
+- **No write/UI flip** (P4) and **no `Program` column drops / `Event.programId` drop** (P5).
+- **No admin UI, and no seed change.** The doc's P1 explicitly adds *no read consumers* ("don't read it yet"); a read-only instances page would be the first reader and duplicates data existing program pages already render from `Program`, so it is deferred to P4 with the rest of the read cutover. The backfill is proven by the integration test, and `migration-safety.yml` re-runs it against the seeded `Woodworking 101` program — the seed needs no instance-creation of its own (in P1 no live write path creates instances either, so a seed that mints one would misrepresent the running app).
+
 ## 0. The core thesis
 
 P2-3 was filed as a *naming* problem. It is actually a *missing structural layer*.

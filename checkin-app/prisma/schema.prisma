@@ -127,6 +127,7 @@ model Person {
   programVolunteers   ProgramVolunteer[]
   programParticipants ProgramParticipant[]
   programsLed         Program[]                    @relation("ProgramLeadMentor")
+  instancesLed        ProgramInstance[]            @relation("InstanceLeadMentor")
   feePayments         FeePayment[]
   rsvps               RSVP[]
   rawBadgeLogs        RawBadgeLog[]
@@ -134,8 +135,8 @@ model Person {
   eventsConfirmedBy   Event[]                      @relation("EventAttendanceConfirmer")
 
   trustedAdultRecordsAsAdult TrustedAdult[]       @relation("TrustedAdultPerson")
-  trustedAdultsDisclosed      TrustedAdult[]       @relation("TrustedAdultDiscloser")
-  trustedAdultReviewsDecided  TrustedAdultReview[] @relation("TrustedAdultDecider")
+  trustedAdultsDisclosed     TrustedAdult[]       @relation("TrustedAdultDiscloser")
+  trustedAdultReviewsDecided TrustedAdultReview[] @relation("TrustedAdultDecider")
 
   // Household-lead lookups (a1): "leads of household X" runs on the hot paths
   // (check-in notification fan-out, nav badges, broken/unclaimed-household scans).
@@ -158,21 +159,21 @@ model ToolStatus {
   /// @sensitivity:public
   personId Int
   /// @sensitivity:public
-  toolId Int
+  toolId   Int
   /// @sensitivity:member
-  level  ToolLevel
+  level    ToolLevel
 
   person Person @relation(fields: [personId], references: [id])
-  tool Tool        @relation(fields: [toolId], references: [id])
+  tool   Tool   @relation(fields: [toolId], references: [id])
 
   @@id([personId, toolId])
 }
 
 model Household {
   /// @sensitivity:public
-  id      Int     @id @default(autoincrement())
+  id         Int     @id @default(autoincrement())
   /// @sensitivity:public
-  name    String
+  name       String
   /// @sensitivity:personal
   line1      String?
   /// @sensitivity:personal
@@ -340,55 +341,55 @@ model OrgMembership {
 
 model OrgMembershipProcess {
   /// @sensitivity:public
-  id                    Int                        @id @default(autoincrement())
+  id                     Int                        @id @default(autoincrement())
   // Nullable since Phase 2: a PERSON_BG process is not tied to a household
   // membership (subjectPersonId is set instead). INITIAL/RENEWAL always set it.
   /// @sensitivity:public
-  orgMembershipId       Int?
+  orgMembershipId        Int?
   // onDelete pinned to Restrict to keep the existing constraint (Prisma's default
   // for an optional relation is SetNull; the live FK is RESTRICT). Avoids drift.
-  orgMembership         OrgMembership?             @relation(fields: [orgMembershipId], references: [id], onDelete: Restrict)
+  orgMembership          OrgMembership?             @relation(fields: [orgMembershipId], references: [id], onDelete: Restrict)
   // Set only for PERSON_BG processes — the person being background-checked
   // (participant, volunteer, or lead). Null for household INITIAL/RENEWAL.
   /// @sensitivity:public
-  subjectPersonId       Int?
-  subjectPerson         Person?                    @relation("PersonBgSubject", fields: [subjectPersonId], references: [id])
+  subjectPersonId        Int?
+  subjectPerson          Person?                    @relation("PersonBgSubject", fields: [subjectPersonId], references: [id])
   /// @sensitivity:public
-  kind                  OrgMembershipProcessKind
+  kind                   OrgMembershipProcessKind
   /// @sensitivity:internal
-  status                OrgMembershipProcessStatus
+  status                 OrgMembershipProcessStatus
   /// @sensitivity:internal
-  stageEnteredAt        DateTime?               @default(now())
+  stageEnteredAt         DateTime?                  @default(now())
   /// @sensitivity:public
-  createdAt             DateTime                @default(now())
+  createdAt              DateTime                   @default(now())
   /// @sensitivity:internal
-  zohoEnvelopeId        String?
+  zohoEnvelopeId         String?
   /// @sensitivity:internal
-  zohoActionId          String?
+  zohoActionId           String?
   /// @sensitivity:internal
-  contractSignedAt      DateTime?
+  contractSignedAt       DateTime?
   /// @sensitivity:internal
-  bgConsentAt           DateTime?
+  bgConsentAt            DateTime?
   /// When the background-check requirement was satisfied for this cycle — either
   /// two reviewers approved, or a still-valid prior check was detected at intake.
   /// The single source of truth for "BG cleared", independent of the payment
   /// track; the membership only goes ACTIVE once this is set AND dues are paid.
   /// @sensitivity:internal
-  bgClearedAt           DateTime?
+  bgClearedAt            DateTime?
   /// @sensitivity:internal
-  shopifyDraftOrderId   String?
+  shopifyDraftOrderId    String?
   /// @sensitivity:personal
-  shopifyInvoiceUrl     String?
+  shopifyInvoiceUrl      String?
   /// @sensitivity:internal
-  shopifyOrderId        String?
+  shopifyOrderId         String?
   /// @sensitivity:internal
-  paidAt                DateTime?
+  paidAt                 DateTime?
   /// @sensitivity:internal
-  certifiedById         Int?
+  certifiedById          Int?
   /// @sensitivity:internal
-  renewalReminderSentAt DateTime?
+  renewalReminderSentAt  DateTime?
   /// @sensitivity:internal
-  isPaymentPlanRequested Boolean @default(false)
+  isPaymentPlanRequested Boolean                    @default(false)
 
   attestations BackgroundCheckAttestation[]
 
@@ -398,19 +399,19 @@ model OrgMembershipProcess {
 
 model BackgroundCheckAttestation {
   /// @sensitivity:public
-  id              Int               @id @default(autoincrement())
+  id                Int                  @id @default(autoincrement())
   /// @sensitivity:public
-  processId       Int
-  process         OrgMembershipProcess @relation(fields: [processId], references: [id])
+  processId         Int
+  process           OrgMembershipProcess @relation(fields: [processId], references: [id])
   /// @sensitivity:public
-  reviewerId      Int
-  reviewer        Person       @relation("BgAttestations", fields: [reviewerId], references: [id])
+  reviewerId        Int
+  reviewer          Person               @relation("BgAttestations", fields: [reviewerId], references: [id])
   /// @sensitivity:internal
-  result          AttestationResult
+  result            AttestationResult
   /// @sensitivity:internal
-  isMarkedVolunteer Boolean           @default(false)
+  isMarkedVolunteer Boolean              @default(false)
   /// @sensitivity:public
-  createdAt       DateTime          @default(now())
+  createdAt         DateTime             @default(now())
 
   @@unique([processId, reviewerId])
 }
@@ -428,13 +429,13 @@ model VolunteerDesignation {
 
 model BoardSettings {
   /// @sensitivity:public
-  id                         Int       @id @default(1)
+  id                            Int       @id @default(1)
   /// @sensitivity:public
-  normalDuesCents            Int       @default(0)
+  normalDuesCents               Int       @default(0)
   /// @sensitivity:public
-  volunteerDuesCents         Int       @default(0)
+  volunteerDuesCents            Int       @default(0)
   /// @sensitivity:public
-  orgMembershipYearBoundary  DateTime?
+  orgMembershipYearBoundary     DateTime?
   /// Shopify variant ID of the membership product everyone checks out through.
   /// The "Pay with Shopify" link is built from it SERVER-SIDE (ensurePaymentLink
   /// in lib/membership/payment.ts) as
@@ -442,41 +443,41 @@ model BoardSettings {
   /// receives the derived checkoutUrl, never this raw field — hence internal, not
   /// public (contrast Program.shopify*VariantId, which the browser builds from).
   /// @sensitivity:internal
-  orgMembershipVariantId     String?
+  orgMembershipVariantId        String?
   /// Discount code (created in Shopify by the board) appended to the checkout
   /// link for volunteer households so Shopify applies their discount.
   /// @sensitivity:internal
-  volunteerDiscountCode      String?
+  volunteerDiscountCode         String?
   /// How long a background check stays valid, in months. 0 = not yet configured
   /// (the board must set the real Treehouse policy value before renewals re-check).
   /// @sensitivity:public
-  bgRecheckMonths            Int       @default(0)
+  bgRecheckMonths               Int       @default(0)
   /// Overrides the EMAIL_FROM env default as the Resend sender on every outbound
   /// email when set. Must be on a Resend-verified domain or all mail bounces —
   /// hence the confirm-to-edit guard in the settings UI. Null = use the env default.
   /// @sensitivity:public
-  emailFromAddress           String?
+  emailFromAddress              String?
   /// Reply-To header set on every outbound email when set (the From address is a
   /// no-reply, so this routes replies to a real inbox). Null = no Reply-To (replies
   /// go to From). Need not be on the sending domain.
   /// @sensitivity:public
-  emailReplyToAddress        String?
+  emailReplyToAddress           String?
   /// @sensitivity:internal
   shopifyOrgMembershipProductId String?
   /// @sensitivity:internal
-  shopifyNormalVariantId     String?
+  shopifyNormalVariantId        String?
   /// @sensitivity:internal
-  shopifyVolunteerVariantId  String?
+  shopifyVolunteerVariantId     String?
   /// @sensitivity:internal
-  shopifyPriceSyncedAt       DateTime?
+  shopifyPriceSyncedAt          DateTime?
   /// Grace period (days) a denied scholarship applicant keeps their held seat
   /// before the grace-period expiry cron auto-withdraws them and releases it.
   /// NULL = the expiry feature is OFF (a denied hold is only ever released by
   /// withdrawal or payment; it never auto-expires).
   /// @sensitivity:public
-  scholarshipDenialGraceDays Int?
+  scholarshipDenialGraceDays    Int?
   /// @sensitivity:internal
-  updatedAt                  DateTime  @updatedAt
+  updatedAt                     DateTime  @updatedAt
 }
 
 /// App-wide localization config (singleton, id=1). Distinct from BoardSettings,
@@ -524,45 +525,45 @@ model AppSettings {
 /// attribute — the board-facing explanation — not another name for the record.
 model TrustedAdult {
   /// @sensitivity:public
-  id                        Int                @id @default(autoincrement())
+  id                   Int                @id @default(autoincrement())
   /// A Trusted Adult belongs to a HOUSEHOLD, not an individual (e.g. "Grandma can
   /// pick up the Smith kids").
   /// @sensitivity:public
-  householdId               Int
-  household                 Household          @relation(fields: [householdId], references: [id])
+  householdId          Int
+  household            Household          @relation(fields: [householdId], references: [id])
   /// The trusted adult, if they are also a Person in the system.
   /// @sensitivity:public
   trustedAdultPersonId Int?
-  trustedAdultPerson        Person?       @relation("TrustedAdultPerson", fields: [trustedAdultPersonId], references: [id])
+  trustedAdultPerson   Person?            @relation("TrustedAdultPerson", fields: [trustedAdultPersonId], references: [id])
   /// @sensitivity:personal
-  trustedAdultName          String
+  trustedAdultName     String
   /// The trusted adult's phone and/or email. At least one is required (enforced
   /// in the app, not the DB, since "at least one of two nullable columns" has no
   /// clean SQL constraint). Both may be present.
   /// @sensitivity:personal
-  trustedAdultPhone         String?
+  trustedAdultPhone    String?
   /// @sensitivity:personal
-  trustedAdultEmail         String?
+  trustedAdultEmail    String?
   /// The family's explanation for the BOARD — what this adult may or may not do,
   /// restrictions, safeguarding context. Board + the household's own leads only
   /// (pii tier is the board/family band here; program leads & keyholders never
   /// receive it).
   /// @sensitivity:pii
-  familyContext             String
+  familyContext        String
   /// @sensitivity:internal
-  origin                    TrustedAdultOrigin @default(SELF_DISCLOSED)
+  origin               TrustedAdultOrigin @default(SELF_DISCLOSED)
   /// @sensitivity:internal
-  disclosedById             Int
-  disclosedBy               Person        @relation("TrustedAdultDiscloser", fields: [disclosedById], references: [id])
+  disclosedById        Int
+  disclosedBy          Person             @relation("TrustedAdultDiscloser", fields: [disclosedById], references: [id])
   /// @sensitivity:public
-  createdAt                 DateTime           @default(now())
+  createdAt            DateTime           @default(now())
   /// @sensitivity:internal
-  updatedAt                 DateTime           @updatedAt
+  updatedAt            DateTime           @updatedAt
   /// When the household chose to permanently hide a withdrawn trusted adult from
   /// their own view. The row is KEPT (board history / audit); the member-facing
   /// /mine list filters it out. Board & sysadmin views still see it.
   /// @sensitivity:internal
-  hiddenAt                  DateTime?
+  hiddenAt             DateTime?
 
   reviews TrustedAdultReview[]
 
@@ -574,54 +575,54 @@ model TrustedAdult {
 /// stripper can scope a nested review row to the subject (their_own).
 model TrustedAdultReview {
   /// @sensitivity:public
-  id                   Int                    @id @default(autoincrement())
+  id                  Int                       @id @default(autoincrement())
   /// @sensitivity:public
-  trustedAdultId       Int
-  trustedAdult         TrustedAdult             @relation(fields: [trustedAdultId], references: [id])
+  trustedAdultId      Int
+  trustedAdult        TrustedAdult              @relation(fields: [trustedAdultId], references: [id])
   /// Denormalized from the parent so the security stripper can scope a nested
   /// review row to the household (their_households / program / keyholder).
   /// @sensitivity:public
-  householdId          Int
+  householdId         Int
   /// @sensitivity:public
-  kind                 TrustedAdultReviewKind
+  kind                TrustedAdultReviewKind
   /// @sensitivity:personal
-  status               TrustedAdultReviewStatus @default(PENDING_BOARD_REVIEW)
+  status              TrustedAdultReviewStatus  @default(PENDING_BOARD_REVIEW)
   /// @sensitivity:internal
-  decidedById          Int?
-  decidedBy            Person?             @relation("TrustedAdultDecider", fields: [decidedById], references: [id])
+  decidedById         Int?
+  decidedBy           Person?                   @relation("TrustedAdultDecider", fields: [decidedById], references: [id])
   /// @sensitivity:internal
-  decision             TrustedAdultDecisionKind?
+  decision            TrustedAdultDecisionKind?
   /// The board's PRIVATE reasoning. Board/sysadmin only (internal tier).
   /// @sensitivity:internal
-  decisionNote         String?
+  decisionNote        String?
   /// The board's note shared OUTWARD on approval — what keyholders & program
   /// leads need to act on ("Grandma can pick up Bobby"). Required to approve.
   /// Visible to the family, board, program leads, and keyholders (personal tier).
   /// @sensitivity:personal
-  sharedNote           String?
+  sharedNote          String?
   /// @sensitivity:personal
-  effectiveFrom        DateTime?
+  effectiveFrom       DateTime?
   /// @sensitivity:personal
-  reviewBy             DateTime?
+  reviewBy            DateTime?
   /// When the 30-day-before-expiry reminder email was sent (once).
   /// @sensitivity:internal
-  expiryWarningSentAt  DateTime?
+  expiryWarningSentAt DateTime?
   /// Proposed edits carried by a MODIFIED resubmission. Held HERE, not on the
   /// parent, so a still-live prior approval keeps its own facts for the front desk
   /// until/unless the board approves these. Promoted onto the parent on approval,
   /// discarded on deny. Same bands as the parent's live facts.
   /// @sensitivity:personal
-  proposedName         String?
+  proposedName        String?
   /// @sensitivity:personal
-  proposedPhone        String?
+  proposedPhone       String?
   /// @sensitivity:personal
-  proposedEmail        String?
+  proposedEmail       String?
   /// @sensitivity:pii
-  proposedContext      String?
+  proposedContext     String?
   /// @sensitivity:public
-  createdAt            DateTime               @default(now())
+  createdAt           DateTime                  @default(now())
   /// @sensitivity:internal
-  updatedAt            DateTime               @updatedAt
+  updatedAt           DateTime                  @updatedAt
 
   @@index([trustedAdultId])
   @@index([status])
@@ -634,15 +635,15 @@ model Corporation {
   /// @sensitivity:pii
   primaryEmail String?
   /// @sensitivity:personal
-  line1      String?
+  line1        String?
   /// @sensitivity:personal
-  line2      String?
+  line2        String?
   /// @sensitivity:personal
-  city       String?
+  city         String?
   /// @sensitivity:personal
-  state      String?
+  state        String?
   /// @sensitivity:personal
-  postalCode String?
+  postalCode   String?
 
   leads   CorporationLead[]
   members CorporationMember[]
@@ -652,10 +653,10 @@ model CorporationLead {
   /// @sensitivity:public
   corporationId Int
   /// @sensitivity:public
-  personId Int
+  personId      Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
-  person      Person @relation(fields: [personId], references: [id])
+  person      Person      @relation(fields: [personId], references: [id])
 
   @@id([corporationId, personId])
 }
@@ -664,10 +665,10 @@ model CorporationMember {
   /// @sensitivity:public
   corporationId Int
   /// @sensitivity:public
-  personId Int
+  personId      Int
 
   corporation Corporation @relation(fields: [corporationId], references: [id])
-  person      Person @relation(fields: [personId], references: [id])
+  person      Person      @relation(fields: [personId], references: [id])
 
   @@id([corporationId, personId])
 }
@@ -679,7 +680,7 @@ model Program {
   name                           String
   /// @sensitivity:public
   leadMentorId                   Int?
-  leadMentor                     Person?     @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
+  leadMentor                     Person?          @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
   /// @sensitivity:public
   startAt                        DateTime?
   /// @sensitivity:public
@@ -701,12 +702,12 @@ model Program {
 
   /// @sensitivity:public
   /// Integer cents (e.g. 2599 = $25.99).
-  orgMemberPriceCents       Int?
+  orgMemberPriceCents          Int?
   /// @sensitivity:public
   /// Integer cents (e.g. 2599 = $25.99).
-  nonOrgMemberPriceCents    Int?
+  nonOrgMemberPriceCents       Int?
   /// @sensitivity:public
-  shopifyProductId          String?
+  shopifyProductId             String?
   /// @sensitivity:public
   shopifyOrgMemberVariantId    String?
   /// @sensitivity:public
@@ -719,39 +720,100 @@ model Program {
   /// expand-only migration; dropping the legacy pair (contract) is a later
   /// release once every program has migrated.
   /// @sensitivity:public
-  shopifyVariantId          String?
+  shopifyVariantId             String?
 
   volunteers   ProgramVolunteer[]
   participants ProgramParticipant[]
   fees         Fee[]
   events       Event[]
+  instances    ProgramInstance[]
+}
+
+/// Offering / run tier (PROGRAM_INSTANCE_RESTRUCTURE.md). A Program is the
+/// catalog definition ("Woodworking 101"); a ProgramInstance is a concrete run
+/// of it ("Fall 2026"). PHASE 1 is ADDITIVE ONLY: this table is created and
+/// backfilled 1:1 from Program (one instance per program, id-aliased so
+/// instance.id == program.id), but nothing reads it yet — Event.programId and
+/// the child ProgramParticipant/ProgramVolunteer/Fee.programId FKs stay
+/// authoritative. The FK repoint, read cutover, security-claim swap and UI all
+/// land in later phases (§7 P2–P5), deferred out of this release per the
+/// expand-contract migration policy. Offering columns are mirrored here (not
+/// moved off Program) so the later FK repoint needs no value rewrite.
+model ProgramInstance {
+  /// @sensitivity:public
+  id                             Int              @id @default(autoincrement())
+  /// FK to the parent Program (the definition). @sensitivity:public
+  programId                      Int
+  program                        Program          @relation(fields: [programId], references: [id])
+  /// Run label, e.g. "Fall 2026". Backfill seeds it from the parent name. @sensitivity:public
+  name                           String
+  /// @sensitivity:public
+  leadMentorId                   Int?
+  leadMentor                     Person?          @relation("InstanceLeadMentor", fields: [leadMentorId], references: [id])
+  /// @sensitivity:public
+  startAt                        DateTime?
+  /// @sensitivity:public
+  endAt                          DateTime?
+  /// @sensitivity:public
+  phase                          ProgramPhase     @default(PLANNING)
+  /// @sensitivity:public
+  enrollmentStatus               EnrollmentStatus @default(CLOSED)
+  /// @sensitivity:public
+  maxParticipants                Int?
+  /// @sensitivity:personal
+  leadMentorNotificationSettings Json?
+  /// Narrowing policy overrides (§3a). NULL = inherit the parent Program's
+  /// value; a non-null value may only make the band STRICTER, never looser —
+  /// enforced at write time in a later phase. Backfill leaves these NULL.
+  /// @sensitivity:public
+  minAge                         Int?
+  /// @sensitivity:public
+  maxAge                         Int?
+  /// @sensitivity:public
+  orgMemberOnly                  Boolean?
+
+  /// Shopify sellables mirrored from the parent Program (board-set prices stay
+  /// on Program). Against current main (#930, single-pool) this is the single
+  /// base-rate variant plus the legacy two-variant pair that pre-#930 programs
+  /// still carry — NOT the post-#929 shopifyMemberDiscountId the design doc
+  /// assumed (that pricing model is unmerged). See the re-validation section.
+  /// @sensitivity:public
+  shopifyProductId             String?
+  /// @sensitivity:public
+  shopifyVariantId             String?
+  /// @sensitivity:public
+  shopifyOrgMemberVariantId    String?
+  /// @sensitivity:public
+  shopifyNonOrgMemberVariantId String?
+
+  events Event[]
 }
 
 model ProgramVolunteer {
   /// @sensitivity:public
-  programId     Int
+  programId Int
   /// @sensitivity:public
-  personId Int
+  personId  Int
   /// @sensitivity:internal
-  isCore        Boolean @default(false)
+  isCore    Boolean @default(false)
 
-  program Program     @relation(fields: [programId], references: [id])
-  person  Person @relation(fields: [personId], references: [id])
+  program Program @relation(fields: [programId], references: [id])
+  person  Person  @relation(fields: [personId], references: [id])
 
   @@id([programId, personId])
 }
 
 model ProgramParticipant {
   /// @sensitivity:public
-  programId            Int
+  programId              Int
   /// @sensitivity:public
-  personId             Int
+  personId               Int
   /// @sensitivity:public
-  status               ProgramParticipantStatus @default(PENDING)
+  status                 ProgramParticipantStatus @default(PENDING)
   /// @sensitivity:personal
   isPaymentPlanRequested Boolean                  @default(false)
   /// @sensitivity:internal
-  pendingSince         DateTime?                @default(now())
+  pendingSince           DateTime?                @default(now())
   /// Point-in-time snapshot of the household's org-membership status the moment a
   /// scholarship/payment-plan request was APPROVED (status flipped to ACTIVE).
   /// Membership changes over time, so this can't be derived later from the live
@@ -766,28 +828,28 @@ model ProgramParticipant {
   /// +1). NOT NULL is the transactional guard every release path checks
   /// before adjusting Shopify.
   /// @sensitivity:internal
-  inventoryHeldAt      DateTime?
+  inventoryHeldAt        DateTime?
   /// Hold-ledger state: stamped when a board member denies a pending
   /// scholarship/payment-plan request (the seat stays held — see
   /// inventoryHeldAt — so the applicant may still pay normally). Cleared on
   /// re-application. Drives the grace-period expiry sweep alongside
   /// BoardSettings.scholarshipDenialGraceDays.
   /// @sensitivity:personal
-  paymentPlanDeniedAt  DateTime?
+  paymentPlanDeniedAt    DateTime?
 
-  program Program     @relation(fields: [programId], references: [id])
-  person  Person @relation(fields: [personId], references: [id])
+  program Program @relation(fields: [programId], references: [id])
+  person  Person  @relation(fields: [personId], references: [id])
 
   @@id([programId, personId])
 }
 
 model Fee {
   /// @sensitivity:public
-  id             Int    @id @default(autoincrement())
+  id                     Int    @id @default(autoincrement())
   /// @sensitivity:public
-  programId      Int
+  programId              Int
   /// @sensitivity:public
-  name           String
+  name                   String
   /// @sensitivity:public
   /// Integer cents (e.g. 2599 = $25.99).
   nonOrgMemberPriceCents Int
@@ -813,8 +875,8 @@ model FeePayment {
   /// @sensitivity:personal
   customNote        String?
 
-  fee         Fee         @relation(fields: [feeId], references: [id])
-  person      Person @relation(fields: [personId], references: [id])
+  fee    Fee    @relation(fields: [feeId], references: [id])
+  person Person @relation(fields: [personId], references: [id])
 
   @@id([feeId, personId])
 }
@@ -824,6 +886,9 @@ model Event {
   id          Int      @id @default(autoincrement())
   /// @sensitivity:public
   programId   Int?
+  /// Phase-1 additive FK to the offering tier; backfilled = programId (id-alias).
+  /// programId stays authoritative until the read cutover (§7 P3). @sensitivity:public
+  instanceId  Int?
   /// @sensitivity:public
   name        String
   /// @sensitivity:public
@@ -837,45 +902,46 @@ model Event {
   attendanceConfirmedAt   DateTime?
   /// @sensitivity:internal
   attendanceConfirmedById Int?
-  attendanceConfirmedBy   Person? @relation("EventAttendanceConfirmer", fields: [attendanceConfirmedById], references: [id])
+  attendanceConfirmedBy   Person?   @relation("EventAttendanceConfirmer", fields: [attendanceConfirmedById], references: [id])
   /// @sensitivity:internal
-  postEventEmailSent      Boolean      @default(false)
+  postEventEmailSent      Boolean   @default(false)
   /// @sensitivity:public
   recurringGroupId        String?
 
-  program Program? @relation(fields: [programId], references: [id])
-  rsvps   RSVP[]
-  visits  Visit[]
+  program  Program?         @relation(fields: [programId], references: [id])
+  instance ProgramInstance? @relation(fields: [instanceId], references: [id])
+  rsvps    RSVP[]
+  visits   Visit[]
 }
 
 model RSVP {
   /// @sensitivity:public
-  eventId       Int
+  eventId        Int
   /// @sensitivity:public
-  personId      Int
+  personId       Int
   /// @sensitivity:public
-  status        RSVPStatus
+  status         RSVPStatus
   /// @sensitivity:internal
   // DEPRECATED: event-start reminders were removed (calendars cover this). No code
   // reads or writes this column. Kept for now; drop in a follow-up migration once
   // this release is fully rolled out (see DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md).
   reminderSentAt DateTime?
 
-  event       Event       @relation(fields: [eventId], references: [id])
-  person      Person @relation(fields: [personId], references: [id])
+  event  Event  @relation(fields: [eventId], references: [id])
+  person Person @relation(fields: [personId], references: [id])
 
   @@id([eventId, personId])
 }
 
 model RawBadgeLog {
   /// @sensitivity:internal
-  id            Int      @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   /// @sensitivity:internal
-  personId Int
+  personId  Int
   /// @sensitivity:personal
-  timestamp     DateTime @default(now())
+  timestamp DateTime @default(now())
   /// @sensitivity:personal
-  location      String?
+  location  String?
 
   person Person @relation(fields: [personId], references: [id])
 
@@ -884,7 +950,7 @@ model RawBadgeLog {
 
 model Visit {
   /// @sensitivity:public
-  id                Int       @id @default(autoincrement())
+  id                Int          @id @default(autoincrement())
   /// @sensitivity:public
   personId          Int
   /// @sensitivity:personal
@@ -899,13 +965,13 @@ model Visit {
   associatedEventId Int?
 
   person Person @relation(fields: [personId], references: [id])
-  event  Event?      @relation(fields: [associatedEventId], references: [id])
-
-  @@index([personId, departedAt]) // Active visits lookup in /api/scan
+  event  Event? @relation(fields: [associatedEventId], references: [id])
   // Partial unique index "Visit_one_open_per_participant" — at most one open visit
   // (departedAt IS NULL) per participant. Prisma's DSL can't express a partial
   // unique index, so it lives in the 20260629180000_visit_one_open_per_participant
   // raw-SQL migration. DB-level backstop against double check-in races.
+
+  @@index([personId, departedAt]) // Active visits lookup in /api/scan
 }
 
 model AuditLog {
@@ -962,14 +1028,14 @@ model Account {
 
 model Session {
   /// @sensitivity:internal
-  id           String      @id @default(cuid())
+  id           String   @id @default(cuid())
   /// @sensitivity:secret
-  sessionToken String      @unique
+  sessionToken String   @unique
   /// @sensitivity:internal
-  userId       Int         @map("participant_id")
+  userId       Int      @map("participant_id")
   /// @sensitivity:internal
   expires      DateTime
-  user         Person @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         Person   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {

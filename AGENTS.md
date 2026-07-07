@@ -99,6 +99,7 @@ Read these before changing the relevant area — start here, then follow links.
 - `CUJS.md` — **critical user journeys** (the basis for flow tests).
 - `DEV_INSTANCE_DESIGN.md` — the `CHECKIN_ENV` prod/dev/local model + persona-mint/impersonation (read before touching auth/env).
 - `DEV_DASHBOARD_DESIGN.md` — dev dashboard + seed/reset macros.
+- `PROGRAM_INSTANCE_RESTRUCTURE.md` — the Program → ProgramInstance → Event 3-tier split (phased; Phase 1 = additive schema + backfill, later phases deferred). Read before touching the Program/Event tier or its FKs.
 - `PRODUCTION_PLAN.md`, `implementation_plan.md`, `MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
 
 **Security** (`docs/security/`)

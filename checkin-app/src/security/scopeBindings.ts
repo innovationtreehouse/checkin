@@ -147,6 +147,12 @@ export const ROW_SCOPE_KEY: Record<string, string> = {
  * it as pending). Removed.
  */
 export const OPT_OUT_PENDING_ROUTE = new Set<string>([
+    // Phase-1 of PROGRAM_INSTANCE_RESTRUCTURE.md: the table exists + is backfilled
+    // but has NO read consumers yet. Its `their_program_participants` binding (keyed
+    // on instancesLed/instancesCoreVolIn) lands with the atomic security-claim swap
+    // in Phase 3 (§5c/§7 P3) — binding it now would strip nothing, since
+    // buildCallerContext doesn't populate instancesLed until that phase.
+    'ProgramInstance',
     'OrgMembershipProcess', // board/admin today; a household-facing status route is plausible
     'BackgroundCheckAttestation', // bind their_own at migration, keep notes `internal`
     'Corporation', // has leads→participantId; a corp-lead view is plausible
