@@ -1,6 +1,7 @@
 import { Prisma, type OrgMembershipProcessStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { logger } from "@/lib/logger";
 import { sendCongrats } from "@/lib/membership/payment";
 import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
@@ -12,7 +13,10 @@ import { type DbClient, type TxClient } from "@/lib/db-client";
  * Background-check review — now a PARALLEL track, not a blocking phase.
  *
  * After intake the application advances to PENDING_PAYMENT regardless of the
- * check; the review happens while the applicant pays. Two DISTINCT eligible
+ * check; the review happens while the applicant pays. Exception: a household
+ * intake note (#900) holds the application at PENDING_BG_REVIEW until the review
+ * completes, so a note like "treat us as a volunteer household" can settle dues
+ * before payment opens (#907). Two DISTINCT eligible
  * reviewers (role isBackgroundCheckReviewer) must each attest independently. A
  * reviewer may not share a household with the applicant or the other reviewer,
  * and may not attest twice.
@@ -178,7 +182,11 @@ export async function attest(
     // concurrent attestations AND the payment path (payment.ts › activate takes the
     // same lock) — so the payment/clearance race can't lose an update: whoever commits
     // second sees the other's field set and flips ACTIVE. Mirrors leads.ts.
-    const result = await prisma.$transaction(async (tx) => {
+    type AttestOutcome =
+        | { status: "BLOCKED"; notifyPaidReject: boolean }
+        | { status: OrgMembershipProcessStatus; activated: boolean; householdId: number }
+        | { status: OrgMembershipProcessStatus; approvals: number };
+    const result = await prisma.$transaction<AttestOutcome>(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "OrgMembershipProcess" WHERE id = ${processId} FOR UPDATE`;
 
         const process = await tx.orgMembershipProcess.findUnique({
@@ -213,7 +221,10 @@ export async function attest(
     });
 
     // Side effects outside the transaction (a slow/failed send must not roll it back).
-    if ("activated" in result && result.activated) await sendCongrats(result.householdId);
+    if ("activated" in result) {
+        if (result.activated) await sendCongrats(result.householdId);
+        else await notifyPaymentOpen(result.householdId);
+    }
     if ("notifyPaidReject" in result && result.notifyPaidReject) await notifyBoardPaidReject(processId);
 
     if ("approvals" in result) return { status: result.status, approvals: result.approvals };
@@ -291,16 +302,24 @@ export async function applyVolunteerStatus(db: DbClient, orgMembershipId: number
 
 /** Board override on a BLOCKED application: reset for re-review, or force-clear the check. */
 export async function overrideBlocked(processId: number, actorId: number, action: "reset" | "approve") {
-    const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+    const process = await prisma.orgMembershipProcess.findUnique({
+        where: { id: processId },
+        include: { orgMembership: { select: { household: { select: { intakeNotes: true } } } } },
+    });
     if (!process) throw new ReviewError("not_found", "Application not found.");
     if (process.status !== "BLOCKED") throw new ReviewError("wrong_phase", "This application is not blocked.");
 
     if (action === "reset") {
         // Restore the review state that matches the cycle. The check runs in parallel,
         // so an initial application returns to PENDING_BG_CLEARANCE if it had already
-        // paid, else PENDING_PAYMENT; renewals go back to RENEWAL_PENDING_BG.
+        // paid, else PENDING_PAYMENT; renewals go back to RENEWAL_PENDING_BG. An
+        // unpaid initial with a household intake note re-holds at PENDING_BG_REVIEW —
+        // the reset restarts review, and a note keeps payment gated on it (#907).
         const reviewStatus: OrgMembershipProcessStatus =
-            process.kind === "RENEWAL" ? "RENEWAL_PENDING_BG" : process.paidAt ? "PENDING_BG_CLEARANCE" : "PENDING_PAYMENT";
+            process.kind === "RENEWAL" ? "RENEWAL_PENDING_BG"
+            : process.paidAt ? "PENDING_BG_CLEARANCE"
+            : process.orgMembership.household.intakeNotes?.trim() ? "PENDING_BG_REVIEW"
+            : "PENDING_PAYMENT";
         await prisma.backgroundCheckAttestation.deleteMany({ where: { processId } });
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: reviewStatus, bgClearedAt: null, stageEnteredAt: new Date() } });
         await audit(prisma, actorId, processId, { status: "BLOCKED" }, { status: reviewStatus, action: "board reset" });
@@ -316,8 +335,25 @@ export async function overrideBlocked(processId: number, actorId: number, action
         return clearBackgroundCheck(tx, processId, actorId);
     });
     if (activated) await sendCongrats(householdId);
+    else await notifyPaymentOpen(householdId);
     const status: OrgMembershipProcessStatus = activated ? "ACTIVE" : "PENDING_PAYMENT";
     return { status };
+}
+
+/**
+ * The check cleared but dues aren't paid — the process just (re)entered
+ * PENDING_PAYMENT. For an application that was held for review (intake note,
+ * renewal re-check) this is the moment payment first opens, and the status
+ * cards/banner promise an email at clearance. Best-effort (send failures log).
+ */
+async function notifyPaymentOpen(householdId: number) {
+    const base = config.baseUrl();
+    await emailHouseholdLeads(
+        householdId,
+        "Background check complete — you can now pay your membership dues",
+        `<p>Good news — your household's background-check review is complete. The last step is paying your membership dues: <a href="${base}/membership">${base}/membership</a></p>`,
+        "Payment-open notice failed:",
+    );
 }
 
 function audit(db: DbClient, actorId: number, processId: number, oldData: object, newData: object) {

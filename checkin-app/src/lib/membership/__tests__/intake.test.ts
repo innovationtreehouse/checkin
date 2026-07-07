@@ -420,4 +420,20 @@ describe('submitIntake', () => {
         expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 42, 7, false);
         expect(result).toEqual({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
     });
+
+    it('complete + fresh check + intake note → shortcut disqualified: no bgClearedAt, review holds payment (#907)', async () => {
+        prisma.person.findUnique.mockResolvedValue({
+            ...inFlightUser,
+            household: { ...inFlightUser.household, intakeNotes: 'please treat us as a volunteer household' },
+        });
+        householdBgIsFresh.mockResolvedValue(true);
+
+        await submitIntake(1);
+
+        expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith({
+            where: { id: 11 },
+            data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
+        });
+        expect(applyVolunteerStatus).not.toHaveBeenCalled();
+    });
 });

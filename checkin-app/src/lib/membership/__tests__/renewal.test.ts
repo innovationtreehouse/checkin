@@ -98,7 +98,7 @@ describe('beginRenewal', () => {
 
         beforeEach(() => {
             prisma.orgMembershipProcess.findUnique.mockResolvedValue(pending);
-            prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7 });
+            prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7, household: { intakeNotes: null } });
             prisma.boardSettings.findUnique.mockResolvedValue({ orgMembershipYearBoundary: new Date(Date.UTC(2026, 8, 1)), bgRecheckMonths: 12 });
             prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
             prisma.orgMembershipProcess.findUniqueOrThrow.mockResolvedValue({ ...pending, status: 'PENDING_PAYMENT' });
@@ -130,6 +130,21 @@ describe('beginRenewal', () => {
                 data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
             });
             expect(applyVolunteerStatus).not.toHaveBeenCalled();
+            expect(notifyReviewers).toHaveBeenCalledTimes(1);
+        });
+
+        it('fresh check + household intake note → RENEWAL_PENDING_BG: the note must reach a reviewer before payment (#907)', async () => {
+            prisma.person.findFirst.mockResolvedValue({ id: 1 }); // a lead with a valid check
+            prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7, household: { intakeNotes: 'treat us as a volunteer household' } });
+            prisma.orgMembershipProcess.findUniqueOrThrow.mockResolvedValue({ ...pending, status: 'RENEWAL_PENDING_BG' });
+
+            await beginRenewal(5);
+
+            expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith({
+                where: { id: 5, status: 'PENDING_RENEWAL' },
+                data: expect.objectContaining({ status: 'RENEWAL_PENDING_BG' }),
+            });
+            expect(applyVolunteerStatus).not.toHaveBeenCalled(); // clearBackgroundCheck applies it after the review
             expect(notifyReviewers).toHaveBeenCalledTimes(1);
         });
 

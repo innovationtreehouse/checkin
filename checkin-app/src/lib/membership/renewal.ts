@@ -75,20 +75,29 @@ export async function runRenewalSweep(now: Date) {
 }
 
 /**
- * Member begins renewal: PENDING_RENEWAL -> RENEWAL_PENDING_BG (re-review needed)
- * or PENDING_PAYMENT (background check still valid). Idempotent-ish: only acts
- * from PENDING_RENEWAL.
+ * Member begins renewal: PENDING_RENEWAL -> RENEWAL_PENDING_BG (re-review needed,
+ * or a household intake note awaits a reviewer) or PENDING_PAYMENT (background
+ * check still valid, no note). Idempotent-ish: only acts from PENDING_RENEWAL.
  */
 export async function beginRenewal(processId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new RenewalError("not_found", "Renewal not found.");
     if (process.status !== "PENDING_RENEWAL") throw new RenewalError("wrong_phase", "This renewal is not awaiting your confirmation.");
 
-    const membership = await prisma.orgMembership.findUnique({ where: { id: process.orgMembershipId }, select: { householdId: true } });
+    const membership = await prisma.orgMembership.findUnique({
+        where: { id: process.orgMembershipId },
+        select: { householdId: true, household: { select: { intakeNotes: true } } },
+    });
     if (!membership) throw new RenewalError("not_found", "Membership not found.");
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();
-    const bgFresh = await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0);
+    // A household note (#900) must reach a reviewer before payment (#907): even
+    // with a still-fresh check, the renewal goes through review so the note (e.g.
+    // "treat us as a volunteer household") can settle dues first. Households clear
+    // the note in my-household once it no longer applies.
+    const bgFresh =
+        (await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0)) &&
+        !membership.household.intakeNotes?.trim();
 
     const nextStatus = bgFresh ? "PENDING_PAYMENT" : "RENEWAL_PENDING_BG";
     // Conditional on status PENDING_RENEWAL: a double-submit has both callers reach
