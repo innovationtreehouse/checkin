@@ -10,6 +10,18 @@
  *                             'member' and 'public'; anon holds only 'public'.
  *   '<scope>:<tier>'        — tier ∈ {pii, personal, internal}; the grant
  *                             applies on rows where the caller holds <scope>
+ *
+ * Sensitive-tier SEMANTICS (which fields go where):
+ *   'pii'      — contact-identity band (email, phone, googleId). Routinely
+ *                grantable to operational roles: program leads, keyholders,
+ *                background-check reviewers.
+ *   'personal' — the STRICT band: intimate data (dateOfBirth, home address,
+ *                allergies, emergency contacts, visit times). Self, own
+ *                household, and board/sysadmin; any other grant must be a
+ *                deliberate, per-route operational decision (e.g. a lead's
+ *                own program participants).
+ *   'internal' — org/system bookkeeping (role flags, process state, audit
+ *                fields). Board/sysadmin, plus narrow self-scoped grants.
  *   scope = 'everyones'     — broad grant; held on every row by default, but a
  *                             row-scoped model missing its scope key fails
  *                             closed and does NOT hold it (see scopesHeld)

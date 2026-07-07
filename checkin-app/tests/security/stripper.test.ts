@@ -236,12 +236,12 @@ describe('stripValue — nested relations', () => {
         const household = out.household as Record<string, unknown>;
         expect(household.id).toBe(2);
         expect(household.name).toBe('Home');
-        expect(household.line1).toBeUndefined(); // personal — no token grants it
+        expect(household.line1).toBeUndefined(); // internal — no token grants it
     });
 
-    it('grants household.line1 when their_households:personal is in the view', () => {
+    it('grants household.line1 when their_households:internal is in the view', () => {
         const callerCtx = ctx({ selfId: 5, householdId: 2 });
-        const tokens = ['their_own:pii', 'their_households:personal', 'public'] as const;
+        const tokens = ['their_own:pii', 'their_households:internal', 'public'] as const;
         const row = {
             id: 5,
             email: 'me@x.com',
@@ -402,7 +402,7 @@ describe('stripBag', () => {
                 Person: { id: 5, name: 'Me', email: 'me@x.com' },
                 Household: { id: 2, name: 'Home', line1: 'street' },
             },
-            ['their_own:pii', 'their_households:personal', 'public'],
+            ['their_own:pii', 'their_households:internal', 'public'],
             ctx({ selfId: 5, householdId: 2 }),
         );
         expect((out.Person as Record<string, unknown>).email).toBe('me@x.com');
@@ -452,7 +452,7 @@ describe('Event roster strip (events/[id] view)', () => {
                         name: 'Youth Kid',     // public
                         email: 'kid@x.com',    // pii
                         phone: '555-0100',     // pii
-                        dateOfBirth: '2012-05-01', // pii
+                        dateOfBirth: '2012-05-01', // personal
                         allergies: 'peanuts',  // personal
                     },
                 },
@@ -483,8 +483,8 @@ describe('Event roster strip (events/[id] view)', () => {
     });
 
     // WHY the route gates admission instead of relying on stripping: a non-staff
-    // scope strips email/phone/dob (pii) — but the participant's NAME is tier
-    // 'public', so it survives. Stripping alone would still leak the full
+    // scope strips email/phone (pii) and dob/allergies (personal) — but the
+    // participant's NAME is tier 'public', so it survives. Stripping alone would still leak the full
     // attendee roster. This asserts that leak exists, documenting the reason the
     // handler fn 403s non-staff before the roster is ever returned.
     it('stripping alone leaves the roster name (tier public) — hence the fail-closed admission gate', () => {

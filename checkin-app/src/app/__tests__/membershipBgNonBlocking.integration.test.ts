@@ -53,7 +53,7 @@ async function makeFreshRenewal() {
     await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
     const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
     const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
-    return { orgMembershipId: m.id, processId: proc.id };
+    return { orgMembershipId: m.id, processId: proc.id, leadEmail: lead.email! };
 }
 
 /** Applicant household + a lead + membership + a process at the given status. */
@@ -86,7 +86,10 @@ async function wipe() {
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
     await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
+    await prisma.volunteerDesignation.deleteMany({ where: { email: { contains: TAG } } });
 }
+
+const isVolunteerOf = async (id: number) => (await prisma.orgMembership.findUnique({ where: { id } }))?.isVolunteer;
 
 describe('background check is non-blocking', () => {
     let revA: number, revB: number;
@@ -206,6 +209,101 @@ describe('background check is non-blocking', () => {
         await certifyPaymentPlan(processId, revA); // certifier must be outside the applicant household (conflict-of-interest guard)
         expect(await statusOf(processId)).toBe('ACTIVE');
         expect(await membershipStatusOf(orgMembershipId)).toBe('ACTIVE');
+    });
+
+    it('pre-designated volunteer family is flagged at PENDING_PAYMENT, before the check clears (#874)', async () => {
+        const { processId, orgMembershipId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const lead = await prisma.person.findUnique({ where: { id: leadId } });
+        await prisma.volunteerDesignation.create({ data: { email: lead!.email! } });
+
+        await markContractSigned(processId);
+        await markBgConsent(processId, revA); // → PENDING_PAYMENT; review not yet started
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
+        // The dues tier is read at PENDING_PAYMENT (ensurePaymentLink) — the
+        // allowlist must already be applied here, not only at clearance, or a
+        // pay-first volunteer family is charged full dues.
+        expect(await isVolunteerOf(orgMembershipId)).toBe(true);
+    });
+
+    it('fresh-check intake shortcut still matches the designation allowlist (#874)', async () => {
+        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        const { processId, orgMembershipId, householdId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION', { lastBackgroundCheck: new Date() });
+        await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
+        await prisma.household.update({ where: { id: householdId }, data: { line1: '123 Test St', city: 'Austin', state: 'TX', postalCode: '78701' } });
+        await prisma.emergencyContact.create({ data: { householdId, name: 'Out Of House', phone: '555-555-1212', phoneDigits: '5555551212', priority: 0 } });
+        const lead = await prisma.person.findUnique({ where: { id: leadId } });
+        await prisma.volunteerDesignation.create({ data: { email: lead!.email! } });
+
+        await submitIntake(leadId);
+
+        // clearBackgroundCheck never runs this cycle (auto-cleared), so the
+        // shortcut itself must have applied the designation.
+        expect(await isVolunteerOf(orgMembershipId)).toBe(true);
+    });
+
+    it('fresh-check renewal matches a designation added since the last cycle (#874)', async () => {
+        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        const { orgMembershipId, processId, leadEmail } = await makeFreshRenewal();
+        await prisma.volunteerDesignation.create({ data: { email: leadEmail } });
+
+        await beginRenewal(processId);
+
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
+        expect(await isVolunteerOf(orgMembershipId)).toBe(true);
+    });
+
+    it('an intake note holds payment at PENDING_BG_REVIEW until the review clears (#907)', async () => {
+        const { processId, householdId, orgMembershipId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        await prisma.household.update({ where: { id: householdId }, data: { intakeNotes: 'please treat us as a volunteer household' } });
+
+        await markContractSigned(processId);
+        await markBgConsent(processId, revA);
+        expect(await statusOf(processId)).toBe('PENDING_BG_REVIEW'); // held — not PENDING_PAYMENT
+
+        // Payment is genuinely gated while held.
+        await expect(certifyPaymentPlan(processId, revA)).rejects.toMatchObject({ code: 'wrong_phase' });
+
+        // The reviewers (who are shown the note) clear the check → payment opens
+        // with dues already settled by their volunteer mark.
+        await attest(revA, processId, { result: 'APPROVE', isMarkedVolunteer: true });
+        await attest(revB, processId, { result: 'APPROVE', isMarkedVolunteer: true });
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
+        expect(await isVolunteerOf(orgMembershipId)).toBe(true);
+        await certifyPaymentPlan(processId, revA);
+        expect(await statusOf(processId)).toBe('ACTIVE');
+    });
+
+    it('fresh check + intake note → no auto-clear at submit; the note goes through review (#907)', async () => {
+        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        const { processId, householdId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION', { lastBackgroundCheck: new Date() });
+        await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
+        await prisma.household.update({
+            where: { id: householdId },
+            data: { line1: '123 Test St', city: 'Austin', state: 'TX', postalCode: '78701', intakeNotes: 'volunteer only, no students' },
+        });
+        await prisma.emergencyContact.create({ data: { householdId, name: 'Out Of House', phone: '555-555-1212', phoneDigits: '5555551212', priority: 0 } });
+
+        await submitIntake(leadId);
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(proc?.status).toBe('PENDING_EXTERNAL_ACTION');
+        expect(proc?.bgClearedAt).toBeNull(); // shortcut disqualified by the note
+
+        await markContractSigned(processId);
+        await markBgConsent(processId, revA);
+        expect(await statusOf(processId)).toBe('PENDING_BG_REVIEW'); // held for the note
+    });
+
+    it('fresh-check renewal with a household note re-reviews instead of opening payment (#907)', async () => {
+        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        const { orgMembershipId, processId } = await makeFreshRenewal();
+        const m = await prisma.orgMembership.findUnique({ where: { id: orgMembershipId } });
+        await prisma.household.update({ where: { id: m!.householdId }, data: { intakeNotes: 'note for the reviewer' } });
+
+        await beginRenewal(processId);
+
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(proc?.status).toBe('RENEWAL_PENDING_BG');
+        expect(proc?.bgClearedAt).toBeNull();
     });
 
     it('conflict of interest: a certifier in the applicant household is blocked; sysadmin overrides', async () => {

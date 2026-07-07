@@ -199,9 +199,17 @@ describe("membership page", () => {
     expect(await screen.findByText("Payment received 🎉", { exact: false })).toBeInTheDocument();
   });
 
-  it("renders the default in-progress card for other statuses", async () => {
+  it("renders the held-for-review card for PENDING_BG_REVIEW (#907)", async () => {
     setSession({ id: 1 });
     mockFetchJson({ "/api/membership": state({ process: { id: 1, kind: "INITIAL", status: "PENDING_BG_REVIEW" } }) });
+    renderWithProviders(<MembershipPage />);
+
+    expect(await screen.findByText("Hang tight — your application is being reviewed")).toBeInTheDocument();
+  });
+
+  it("renders the default in-progress card for other statuses", async () => {
+    setSession({ id: 1 });
+    mockFetchJson({ "/api/membership": state({ process: { id: 1, kind: "INITIAL", status: "BLOCKED" } }) });
     renderWithProviders(<MembershipPage />);
 
     expect(await screen.findByText("Application in progress")).toBeInTheDocument();

@@ -2,6 +2,7 @@ import { PrismaClient } from '@/generated/prisma/client'
 import { Pool } from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { emailNormalizeExtension } from '@/lib/prismaEmailNormalize'
+import { auroraResumeRetryExtension } from '@/lib/auroraResumeRetry'
 
 const connectionString = `${process.env.DATABASE_URL}`
 // Tests default to a single connection so suites don't exhaust a small CI
@@ -50,8 +51,13 @@ const adapter = new PrismaPg(pool, process.env.NODE_ENV === 'test' ? { disposeEx
 // `ReturnType<typeof prismaClientSingleton>` would break every consumer typed
 // against PrismaClient / Prisma.TransactionClient / DbClient. The person.* API
 // is identical either way, so the cast hides nothing consumers use.
+// The aurora-resume-retry extension (outermost, so it wraps everything) rides
+// out the shared cluster's ~30s auto-pause resume instead of surfacing P1001
+// as a generic 500 — see lib/auroraResumeRetry.ts and components/DbWakeNotice.tsx.
 const prismaClientSingleton = (): PrismaClient => {
-    return new PrismaClient({ adapter }).$extends(emailNormalizeExtension) as unknown as PrismaClient
+    return new PrismaClient({ adapter })
+        .$extends(emailNormalizeExtension)
+        .$extends(auroraResumeRetryExtension) as unknown as PrismaClient
 }
 
 declare const globalThis: {
@@ -61,5 +67,26 @@ declare const globalThis: {
 const prisma = globalThis.prismaGlobal ?? prismaClientSingleton()
 
 export default prisma
+
+/**
+ * Fast, retry-free liveness probe for the wake-notice endpoint
+ * (/api/health/db). Goes straight to the pool — NOT through the extended
+ * client — because the whole point is to answer "is the DB awake right now?"
+ * quickly while the retry extension would sit in its ~45s resume loop.
+ */
+export async function pingDatabase(timeoutMs = 1_500): Promise<boolean> {
+    try {
+        await Promise.race([
+            pool.query('SELECT 1'),
+            new Promise((_, reject) => {
+                const t = setTimeout(() => reject(new Error('db ping timeout')), timeoutMs)
+                t.unref?.()
+            }),
+        ])
+        return true
+    } catch {
+        return false
+    }
+}
 
 if (process.env.NODE_ENV !== 'production') globalThis.prismaGlobal = prisma
