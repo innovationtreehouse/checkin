@@ -108,6 +108,7 @@ Read these before changing the relevant area — start here, then follow links.
 **Deploy & migrations** (`checkin-app/docs/`)
 - `DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md` — infra rules + order of operations for schema migrations vs. deploys (read before writing a migration); `.claude/skills/migration-safety/` fires this as a checklist whenever a migration is being built.
 - `MIGRATION_COALESCE_FLOW.md` — the pre-release migration-coalesce policy + script (`scripts/coalesce-migrations.ts`), the release gate (at most 1 new migration per release), and the dev/prod ledger-reconcile procedure.
+- `PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md` — single-pool Shopify capacity model + the scholarship hold-ledger state machine (read before touching `Program`/`ProgramParticipant` capacity or payment-plan logic).
 
 **Subprojects** (each has its own `README.md`)
 - `client/` — the Raspberry-Pi kiosk client (Python).

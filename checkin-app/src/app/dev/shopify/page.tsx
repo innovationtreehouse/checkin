@@ -33,7 +33,7 @@ export default async function DevShopifyPage() {
             personId: true,
             person: { select: { name: true } },
             program: {
-                select: { id: true, name: true, shopifyOrgMemberVariantId: true, shopifyNonOrgMemberVariantId: true },
+                select: { id: true, name: true, shopifyVariantId: true, shopifyOrgMemberVariantId: true, shopifyNonOrgMemberVariantId: true },
             },
         },
     });
@@ -51,7 +51,7 @@ export default async function DevShopifyPage() {
                 programName: pp.program.name,
                 personId: pp.personId,
                 personName: pp.person.name ?? `Person #${pp.personId}`,
-                hasVariant: !!(pp.program.shopifyOrgMemberVariantId ?? pp.program.shopifyNonOrgMemberVariantId),
+                hasVariant: !!(pp.program.shopifyVariantId ?? pp.program.shopifyOrgMemberVariantId ?? pp.program.shopifyNonOrgMemberVariantId),
             }))}
         />
     );

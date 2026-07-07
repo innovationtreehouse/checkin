@@ -477,6 +477,12 @@ model BoardSettings {
   shopifyVolunteerVariantId  String?
   /// @sensitivity:internal
   shopifyPriceSyncedAt       DateTime?
+  /// Grace period (days) a denied scholarship applicant keeps their held seat
+  /// before the grace-period expiry cron auto-withdraws them and releases it.
+  /// NULL = the expiry feature is OFF (a denied hold is only ever released by
+  /// withdrawal or payment; it never auto-expires).
+  /// @sensitivity:public
+  scholarshipDenialGraceDays Int?
   /// @sensitivity:internal
   updatedAt                  DateTime  @updatedAt
 }
@@ -713,6 +719,15 @@ model Program {
   shopifyOrgMemberVariantId    String?
   /// @sensitivity:public
   shopifyNonOrgMemberVariantId String?
+  /// Single-pool model (product decision 2026-07-06, supersedes the two-variant
+  /// mirror above for NEW program creation): one variant priced at the base
+  /// (non-member) rate; members get a server-minted single-use discount code
+  /// at checkout instead of a separate variant/pool (mintMemberDiscountCode in
+  /// lib/shopify.ts). Legacy programs keep the two columns above untouched —
+  /// expand-only migration; dropping the legacy pair (contract) is a later
+  /// release once every program has migrated.
+  /// @sensitivity:public
+  shopifyVariantId          String?
 
   volunteers   ProgramVolunteer[]
   participants ProgramParticipant[]
@@ -751,6 +766,22 @@ model ProgramParticipant {
   /// OrgMembership row — it must be stamped at approval. Null until approved.
   /// @sensitivity:internal
   wasOrgMemberAtApproval Boolean?
+  /// Hold-ledger state (product decision 2026-07-06): stamped when a
+  /// scholarship application takes a seat out of Shopify's pool (-1). Cleared
+  /// back to null exactly once, by whichever fires first: withdrawal, a
+  /// normal payment (webhook compensates the sale's auto-decrement), or
+  /// grace-period expiry (cron) — or consumed permanently by approval (no
+  /// +1). NOT NULL is the transactional guard every release path checks
+  /// before adjusting Shopify.
+  /// @sensitivity:internal
+  inventoryHeldAt      DateTime?
+  /// Hold-ledger state: stamped when a board member denies a pending
+  /// scholarship/payment-plan request (the seat stays held — see
+  /// inventoryHeldAt — so the applicant may still pay normally). Cleared on
+  /// re-application. Drives the grace-period expiry sweep alongside
+  /// BoardSettings.scholarshipDenialGraceDays.
+  /// @sensitivity:personal
+  paymentPlanDeniedAt  DateTime?
 
   program Program     @relation(fields: [programId], references: [id])
   person  Person @relation(fields: [personId], references: [id])

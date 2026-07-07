@@ -17,7 +17,8 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
 /**
  * PUT /api/settings/membership — update board settings.
  * Body may include: normalDuesCents, volunteerDuesCents, orgMembershipYearBoundary (ISO|null),
- * orgMembershipVariantId (string|null), volunteerDiscountCode (string|null).
+ * orgMembershipVariantId (string|null), volunteerDiscountCode (string|null),
+ * scholarshipDenialGraceDays (positive int|null — null disables the grace-period expiry cron).
  * Dues must be finite and >= 0; an invalid value rejects the whole update (400) so the
  * previous value survives rather than silently collapsing to zero. (The Averity consent
  * link is an env var, not a board setting. Email sender identity lives in /api/settings/email.)
@@ -32,6 +33,7 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         volunteerDiscountCode?: string | null;
         bgRecheckMonths?: number;
         devSigningTarget?: string | null;
+        scholarshipDenialGraceDays?: number | null;
     };
     try {
         body = await req.json();
@@ -72,6 +74,15 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
             return apiError("devSigningTarget must be 'zoho', 'debug', or null", 400);
         }
         data.devSigningTarget = body.devSigningTarget;
+    }
+    // scholarshipDenialGraceDays: null = feature off (never guess a default); otherwise a positive integer.
+    if (body.scholarshipDenialGraceDays !== undefined) {
+        if (body.scholarshipDenialGraceDays !== null) {
+            if (!Number.isFinite(body.scholarshipDenialGraceDays) || !Number.isInteger(body.scholarshipDenialGraceDays) || body.scholarshipDenialGraceDays <= 0) {
+                return apiError("scholarshipDenialGraceDays must be a positive whole number of days, or null", 400);
+            }
+        }
+        data.scholarshipDenialGraceDays = body.scholarshipDenialGraceDays;
     }
 
     const settings = await prisma.boardSettings.upsert({

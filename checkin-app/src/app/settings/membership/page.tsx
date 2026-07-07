@@ -17,6 +17,7 @@ interface Settings {
   volunteerDiscountCode: string | null;
   bgRecheckMonths: number;
   devSigningTarget: string | null;
+  scholarshipDenialGraceDays: number | null;
 }
 
 const dollars = (cents: number) => (cents / 100).toFixed(2);
@@ -36,6 +37,7 @@ export default function MembershipSettingsPage() {
   const [normalDues, setNormalDues] = useState("0");
   const [volunteerDues, setVolunteerDues] = useState("0");
   const [bgRecheckMonths, setBgRecheckMonths] = useState("0");
+  const [scholarshipGraceDays, setScholarshipGraceDays] = useState("");
   const [boundary, setBoundary] = useState("");
   const [boundaryUnlocked, setBoundaryUnlocked] = useState(false);
   const [variantId, setVariantId] = useState("");
@@ -55,7 +57,7 @@ export default function MembershipSettingsPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<{ normalDues?: string; volunteerDues?: string; variantId?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ normalDues?: string; volunteerDues?: string; variantId?: string; scholarshipGraceDays?: string }>({});
   const [saveNotice, setSaveNotice] = useState<{ text: string; err: boolean } | null>(null);
   const [renewalNotice, setRenewalNotice] = useState<{ text: string; err: boolean } | null>(null);
 
@@ -69,6 +71,7 @@ export default function MembershipSettingsPage() {
           normalDues: dollars(settings.normalDuesCents),
           volunteerDues: dollars(settings.volunteerDuesCents),
           bgRecheckMonths: String(settings.bgRecheckMonths ?? 0),
+          scholarshipGraceDays: settings.scholarshipDenialGraceDays != null ? String(settings.scholarshipDenialGraceDays) : "",
           boundary: settings.orgMembershipYearBoundary ? settings.orgMembershipYearBoundary.slice(0, 10) : "",
           variantId: settings.orgMembershipVariantId ?? "",
           discountCode: settings.volunteerDiscountCode ?? "",
@@ -77,6 +80,7 @@ export default function MembershipSettingsPage() {
         setNormalDues(snap.normalDues);
         setVolunteerDues(snap.volunteerDues);
         setBgRecheckMonths(snap.bgRecheckMonths);
+        setScholarshipGraceDays(snap.scholarshipGraceDays);
         setBoundary(snap.boundary);
         setVariantId(snap.variantId);
         setDiscountCode(snap.discountCode);
@@ -97,11 +101,15 @@ export default function MembershipSettingsPage() {
   const saveSettings = async () => {
     setSaveNotice(null);
     setFieldErrors({});
-    const fe: { normalDues?: string; volunteerDues?: string; variantId?: string } = {};
+    const fe: { normalDues?: string; volunteerDues?: string; variantId?: string; scholarshipGraceDays?: string } = {};
     const nd = parseFloat(normalDues); if (normalDues.trim() === "" || isNaN(nd) || nd < 0) fe.normalDues = "Enter a dollar amount of 0 or more.";
     const vd = parseFloat(volunteerDues); if (volunteerDues.trim() === "" || isNaN(vd) || vd < 0) fe.volunteerDues = "Enter a dollar amount of 0 or more.";
     if (variantId.trim() !== "" && !/^\d+$/.test(variantId.trim())) fe.variantId = "Must be a numeric Shopify variant ID.";
-    if (fe.normalDues || fe.volunteerDues || fe.variantId) { setFieldErrors(fe); return; }
+    if (scholarshipGraceDays.trim() !== "") {
+      const g = parseInt(scholarshipGraceDays.trim(), 10);
+      if (!Number.isInteger(g) || g <= 0 || String(g) !== scholarshipGraceDays.trim()) fe.scholarshipGraceDays = "Enter a positive whole number of days, or leave blank to disable.";
+    }
+    if (fe.normalDues || fe.volunteerDues || fe.variantId || fe.scholarshipGraceDays) { setFieldErrors(fe); return; }
     setSaving(true);
     try {
       const res = await fetch("/api/settings/membership", {
@@ -113,6 +121,7 @@ export default function MembershipSettingsPage() {
           orgMembershipVariantId: variantId.trim() || null,
           volunteerDiscountCode: discountCode.trim() || null,
           bgRecheckMonths: Math.round(parseInt(bgRecheckMonths || "0", 10)),
+          scholarshipDenialGraceDays: scholarshipGraceDays.trim() === "" ? null : parseInt(scholarshipGraceDays.trim(), 10),
           // Dev instances only — the API rejects it elsewhere.
           ...(isDev ? { devSigningTarget: signingTarget } : {}),
           // Send the boundary when the unlock is checked, or when it was never set (no
@@ -145,7 +154,7 @@ export default function MembershipSettingsPage() {
 
   const isDirty =
     !!initial &&
-    !shallowEqual(initial, { normalDues, volunteerDues, bgRecheckMonths, boundary, variantId, discountCode, signingTarget });
+    !shallowEqual(initial, { normalDues, volunteerDues, bgRecheckMonths, scholarshipGraceDays, boundary, variantId, discountCode, signingTarget });
   useUnsavedGuard(isDirty);
 
   return (
@@ -187,6 +196,17 @@ export default function MembershipSettingsPage() {
                 error={(!bgRecheckMonths || parseInt(bgRecheckMonths, 10) <= 0) ? "Required — not configured." : undefined}
                 value={bgRecheckMonths}
                 onChange={(e) => setBgRecheckMonths(e.currentTarget.value)}
+              />
+              <TextInput
+                label="Scholarship denial grace period"
+                description="Days a denied scholarship applicant keeps their held seat before auto-release. Blank disables auto-release."
+                rightSection={<Text size="sm" c="dimmed">days</Text>}
+                rightSectionWidth={44}
+                inputMode="numeric"
+                w={220}
+                error={fieldErrors.scholarshipGraceDays}
+                value={scholarshipGraceDays}
+                onChange={(e) => { setScholarshipGraceDays(e.currentTarget.value); setFieldErrors((f) => ({ ...f, scholarshipGraceDays: undefined })); }}
               />
             </Group>
 

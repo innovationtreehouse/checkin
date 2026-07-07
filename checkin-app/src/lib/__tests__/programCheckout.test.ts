@@ -50,4 +50,23 @@ describe("isProgramCheckoutBroken", () => {
       shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
     })).toBe(false);
   });
+
+  // Single-pool model (product decision 2026-07-06): shopifyVariantId alone
+  // covers both tiers — never flag broken when it's set, regardless of the
+  // legacy pair's state.
+  it("shopifyVariantId set covers both priced tiers — not broken", () => {
+    expect(isProgramCheckoutBroken({
+      orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 8000,
+      shopifyVariantId: "single-pool-gid",
+      shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+    })).toBe(false);
+  });
+
+  it("a priced program with neither shopifyVariantId nor a legacy variant is broken", () => {
+    expect(isProgramCheckoutBroken({
+      orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 8000,
+      shopifyVariantId: null,
+      shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+    })).toBe(true);
+  });
 });

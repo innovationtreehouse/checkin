@@ -9,16 +9,21 @@
  *   - webhookShopify.integration.test.ts seeds a HAND-WRITTEN literal variant id
  *     directly on the Program row, then proves the webhook matches it.
  *   - programSyncShopifyAPI.integration.test.ts (and shopify.test.ts) prove
- *     createShopifyProgramVariants mints + persists synthetic mock ids.
+ *     createShopifySingleVariantProgram mints + persists synthetic mock ids.
  * Neither proves the id MINTED by POST /api/programs is the SAME id the
  * webhook later matches against — this test drives both halves back-to-back:
  * create (mock active) -> assert persisted ids -> sign a webhook payload
  * carrying THOSE EXACT ids -> assert the real inbound handler flips the
  * PENDING participant ACTIVE.
  *
+ * Single-pool model (product decision 2026-07-06): program creation now mints
+ * ONE variant (shopifyVariantId), not the legacy org/non-org pair — this test
+ * was rewritten from the two-variant version it originally covered (see PR
+ * body for the design change) to prove the new-model round-trip instead.
+ *
  * Also covers the sibling branch: mock inactive + creds absent ->
- * createShopifyProgramVariants returns null -> the route falls back to its
- * `warning` response instead of persisting variants.
+ * createShopifySingleVariantProgram returns null -> the route falls back to
+ * its `warning` response instead of persisting a variant.
  */
 import crypto from 'crypto';
 import { POST as programsPOST } from '@/app/api/programs/route';
@@ -103,7 +108,7 @@ describe('Shopify variant round-trip: create -> persist -> webhook match', () =>
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
     });
 
-    it('mints + persists synthetic variant ids on create, then a webhook carrying those exact ids activates the PENDING participant', async () => {
+    it('mints + persists a synthetic single-pool variant id on create, then a webhook carrying that exact id activates the PENDING participant', async () => {
         const res = await programsPOST(programsReq({
             name: `Roundtrip Program ${TAG}`,
             leadMentorId: leadId,
@@ -116,14 +121,15 @@ describe('Shopify variant round-trip: create -> persist -> webhook match', () =>
         expect(data.warning).toBeUndefined();
         programIds.push(data.program.id);
 
-        // Synthetic mock ids, not a real Shopify product/variant.
-        expect(data.program.shopifyOrgMemberVariantId).toMatch(/^dev-mock-variant-member-/);
-        expect(data.program.shopifyNonOrgMemberVariantId).toMatch(/^dev-mock-variant-nonmember-/);
+        // Synthetic mock id, not a real Shopify product/variant. Single pool: no
+        // legacy org/non-org pair minted for a new program.
+        expect(data.program.shopifyVariantId).toMatch(/^dev-mock-variant-/);
+        expect(data.program.shopifyOrgMemberVariantId).toBeNull();
+        expect(data.program.shopifyNonOrgMemberVariantId).toBeNull();
 
         // Actually PERSISTED, not just echoed in the response.
         const persisted = await prisma.program.findUnique({ where: { id: data.program.id } });
-        expect(persisted?.shopifyOrgMemberVariantId).toBe(data.program.shopifyOrgMemberVariantId);
-        expect(persisted?.shopifyNonOrgMemberVariantId).toBe(data.program.shopifyNonOrgMemberVariantId);
+        expect(persisted?.shopifyVariantId).toBe(data.program.shopifyVariantId);
 
         // Enroll the participant the normal PENDING-awaiting-payment way (what the
         // real enroll flow does before checkout; not the part under test here).
@@ -132,11 +138,12 @@ describe('Shopify variant round-trip: create -> persist -> webhook match', () =>
         });
 
         // A real paid order carries the variant id its checkout link was built
-        // from — here, THE EXACT id createShopifyProgramVariants minted above, not
-        // a hand-seeded literal (the gap every other Shopify test leaves open).
+        // from — here, THE EXACT id createShopifySingleVariantProgram minted
+        // above, not a hand-seeded literal (the gap every other Shopify test
+        // leaves open).
         const orderBody = JSON.stringify({
             id: `roundtrip-order-${data.program.id}`,
-            line_items: [{ variant_id: data.program.shopifyOrgMemberVariantId }],
+            line_items: [{ variant_id: data.program.shopifyVariantId }],
             note_attributes: [
                 { name: 'CheckMeIn_Account_ID', value: String(participantId) },
                 { name: 'Program_ID', value: String(data.program.id) },
@@ -152,7 +159,7 @@ describe('Shopify variant round-trip: create -> persist -> webhook match', () =>
         expect(participantRow?.pendingSince).toBeNull();
     });
 
-    it('falls back to the `warning` response when Shopify is unconfigured and the mock is inactive (no variants persisted)', async () => {
+    it('falls back to the `warning` response when Shopify is unconfigured and the mock is inactive (no variant persisted)', async () => {
         const prevEnv = process.env.CHECKIN_ENV;
         process.env.CHECKIN_ENV = 'dev'; // mock inactive; SHOPIFY_* creds already absent for the whole suite
         try {
@@ -168,11 +175,10 @@ describe('Shopify variant round-trip: create -> persist -> webhook match', () =>
             programIds.push(data.program.id);
             expect(data.warning).toMatch(/Shopify integration failed or is not configured/);
             expect(data.program.shopifyProductId).toBeNull();
-            expect(data.program.shopifyOrgMemberVariantId).toBeNull();
-            expect(data.program.shopifyNonOrgMemberVariantId).toBeNull();
+            expect(data.program.shopifyVariantId).toBeNull();
 
             const persisted = await prisma.program.findUnique({ where: { id: data.program.id } });
-            expect(persisted?.shopifyOrgMemberVariantId).toBeNull();
+            expect(persisted?.shopifyVariantId).toBeNull();
         } finally {
             process.env.CHECKIN_ENV = prevEnv;
         }

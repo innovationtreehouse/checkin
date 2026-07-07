@@ -424,6 +424,62 @@ describe("ProgramEnrollmentPage", () => {
         }
     });
 
+    // Single-pool model: an ACTIVE member checking out into a single-variant
+    // program fetches a server-minted discount code before redirecting.
+    it("fetches a member discount code before redirecting for a single-pool program", async () => {
+        setSession({ id: 101 });
+        const prevDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+        process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN = "shop.example.com";
+        try {
+            const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
+            const fetchMock = mockFetchJson({
+                "/api/programs/10/discount-code": { code: "PRG10-MOCKED" },
+                "/api/household": memberHousehold,
+                "/api/programs/10": baseProgram({
+                    orgMemberPriceCents: 4000, nonOrgMemberPriceCents: 5000, minAge: null, maxAge: null,
+                    shopifyVariantId: "gid://single-pool", shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+                }),
+                "/api/programs/10/participants": { ok: true },
+            });
+            renderPage();
+            await screen.findByText("Robotics Club");
+            fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+            await screen.findByText("Which of your household wants to enroll?");
+            fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
+
+            expect(await screen.findByText("Redirecting to Shopify for secure payment...")).toBeInTheDocument();
+            await waitFor(() =>
+                expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/programs/10/discount-code"))).toBe(true),
+            );
+        } finally {
+            process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN = prevDomain;
+        }
+    });
+
+    it("does NOT fetch a discount code for a legacy two-variant program", async () => {
+        setSession({ id: 101 });
+        const prevDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+        process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN = "shop.example.com";
+        try {
+            const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
+            const fetchMock = mockFetchJson({
+                "/api/household": memberHousehold,
+                "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
+                "/api/programs/10/participants": { ok: true },
+            });
+            renderPage();
+            await screen.findByText("Robotics Club");
+            fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+            await screen.findByText("Which of your household wants to enroll?");
+            fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
+
+            await screen.findByText("Redirecting to Shopify for secure payment...");
+            expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/discount-code"))).toBe(false);
+        } finally {
+            process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN = prevDomain;
+        }
+    });
+
     it("shows different closed-enrollment reasons depending on fullness, phase, and count source", async () => {
         setSession({ id: 101 });
         const cases: [string, Record<string, unknown>][] = [
