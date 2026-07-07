@@ -74,6 +74,10 @@ export async function GET(req: Request) {
         const programs = await prisma.program.findMany({
             where: andClauses.length > 0 ? { AND: andClauses } : undefined,
             orderBy: { startAt: 'asc' },
+            // The catalog is public (anonymous callers): every other Program
+            // scalar is public-tier, but the lead's notification prefs are
+            // personal-tier and belong only to the lead/admin settings view.
+            omit: { leadMentorNotificationSettings: true },
             include: {
                 _count: {
                     select: {
