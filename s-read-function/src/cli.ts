@@ -7,7 +7,7 @@
  *   npm run inject -- <fixture.json> [--test]
  */
 import { prisma, loadDbConfig, loadShopifyConfig, injectFile, logger } from "@inventory/s-ingest-core";
-import { handler } from "./handler.js";
+import { handler, armSyncDeadline } from "./handler.js";
 import { createShopifyClient } from "./shopify/client.js";
 import {
   SHOP_PING_QUERY,
@@ -177,11 +177,13 @@ async function main(): Promise<void> {
       break;
     }
     case "incremental": {
+      armSyncDeadline("incremental");
       const result = await handler({ mode: "incremental" });
       logger.info("incremental sync done", result);
       break;
     }
     case "backfill": {
+      armSyncDeadline("backfill");
       const result = await handler({ mode: "backfill" });
       logger.info("backfill step done", result);
       break;
