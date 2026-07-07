@@ -62,6 +62,19 @@ export function getConfigHealth(): ConfigCheck[] {
                   ? "NOT configured — set RESEND_API_KEY (outbound email disabled)."
                   : "Not set (fine outside prod; outbound email disabled).",
         },
+        {
+            id: "google-groups",
+            label: "Google Groups sync",
+            // No mock/fallback (unlike Zoho/Shopify) — the integration is simply OFF
+            // when unset. Same shape as resend-email: a real gap only in prod (a dev
+            // box legitimately runs without it). Provisioning is an infra follow-up.
+            ok: !config.isProd() || config.googleGroupsConfigured(),
+            detail: config.googleGroupsConfigured()
+                ? "Service account configured."
+                : config.isProd()
+                  ? "NOT configured — set GOOGLE_SA_KEY_JSON / GOOGLE_SA_SUBJECT (program → Google Group sync disabled; infra follow-up)."
+                  : "Not set (fine outside prod; program → Google Group sync disabled).",
+        },
     ];
 }
 

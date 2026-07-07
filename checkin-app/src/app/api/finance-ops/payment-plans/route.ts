@@ -6,6 +6,7 @@ import { handler } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { isActiveOrgMember, ACTIVE_ORG_MEMBER_INCLUDE } from "@/lib/orgMembership";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
+import { pushGroupAddOnActivation } from "@/lib/program/groupSync";
 
 export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
     const [requests, boardSettings] = await Promise.all([
@@ -109,6 +110,12 @@ export const POST = withAuth(
             // stops billing them for it. This supersedes the earlier approve-time
             // decrement (see PR history — that double-counted against the
             // apply-time decrement added alongside it).
+
+            // Approval flips the participant PENDING→ACTIVE — best-effort Google
+            // Group add (never throws / fails the approval; reconcile heals).
+            const program = await prisma.program.findUnique({ where: { id: programId }, select: { id: true, googleGroupEmail: true } });
+            if (program) await pushGroupAddOnActivation(program, participantId);
+
             return NextResponse.json({ success: true });
         } catch (error) {
             logger.error("Failed to approve payment plan:", error);

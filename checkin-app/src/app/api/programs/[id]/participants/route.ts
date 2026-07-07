@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError, withdrawAndReleaseHold } from "@/lib/program/capacity";
+import { pushGroupAddOnActivation } from "@/lib/program/groupSync";
 import { checkProgramAge } from "@/lib/programAge";
 import { apiError } from "@/lib/api-response";
 
@@ -145,6 +146,13 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         // Trigger notification
         await sendNotification(participantId, 'PROGRAM_ENROLLMENT', { programName: currentProgram.name });
+
+        // A free program / board-comp override enrolls straight to ACTIVE (the
+        // paid path activates later, in the orders/paid webhook). Sync the group
+        // for the ACTIVE case here; best-effort, never fails the enrollment.
+        if (initialStatus === 'ACTIVE') {
+            await pushGroupAddOnActivation(currentProgram, participantId);
+        }
 
         return NextResponse.json({ success: true, enrollment });
     } catch (error) {

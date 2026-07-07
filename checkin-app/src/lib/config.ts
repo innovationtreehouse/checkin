@@ -204,6 +204,17 @@ export const config = {
     // /dev/bg-consent + its complete route. Always false in prod. See bgMockActiveEnv.
     bgMockActive: (): boolean => bgMockActiveEnv(),
 
+    // Google Workspace service account for Directory group-member sync (see
+    // lib/googleGroups.ts). GOOGLE_SA_KEY_JSON is the FULL service-account key JSON;
+    // GOOGLE_SA_SUBJECT is the admin user the SA impersonates via domain-wide
+    // delegation. Both null when unset — integration cleanly OFF. There is no
+    // dev/local mock (unlike Shopify/Zoho): unconfigured just log-and-skips. Wiring
+    // real creds is an infra follow-up. See docs/designs/PROGRAM_GOOGLE_GROUP_SYNC.md.
+    googleSaKeyJson: (): string | null => process.env.GOOGLE_SA_KEY_JSON || null,
+    googleSaSubject: (): string | null => process.env.GOOGLE_SA_SUBJECT || null,
+    // True only when BOTH are present — real Directory access wired.
+    googleGroupsConfigured: (): boolean => !!(process.env.GOOGLE_SA_KEY_JSON && process.env.GOOGLE_SA_SUBJECT),
+
     // App
     checkinEnv: (): CheckinEnv => readCheckinEnv(),
     // Production (default when unset). Consumers should call this rather than

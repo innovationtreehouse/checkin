@@ -45,6 +45,7 @@ export type ProgramDetail = {
   shopifyProductId: string | null;
   shopifyOrgMemberVariantId: string | null;
   shopifyNonOrgMemberVariantId: string | null;
+  googleGroupEmail: string | null;
 };
 
 export type ParticipantOption = { id: number; name: string | null; email: string; dateOfBirth?: string | null };
@@ -82,6 +83,10 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   const [orgVariantInput, setOrgVariantInput] = useState("");
   const [nonOrgVariantInput, setNonOrgVariantInput] = useState("");
 
+  // Google Group address, board-set (sysadmin/board only).
+  const [googleGroupInput, setGoogleGroupInput] = useState("");
+  const [syncingGroup, setSyncingGroup] = useState(false);
+
   // EntityPicker owns the transient query/results/loading; we keep only the selected id + its display label.
   const [mentorSearch, setMentorSearch] = useState("");
   const [isEditingMentor, setIsEditingMentor] = useState(false);
@@ -114,6 +119,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         setShopifyProductIdInput(data.shopifyProductId ?? "");
         setOrgVariantInput(data.shopifyOrgMemberVariantId ?? "");
         setNonOrgVariantInput(data.shopifyNonOrgMemberVariantId ?? "");
+        setGoogleGroupInput(data.googleGroupEmail ?? "");
         setIsEditingMentor(false);
       } else if (res.status === 404) {
         setMessage("Program not found.");
@@ -217,6 +223,45 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleSaveGoogleGroup = async () => {
+    setSyncingGroup(true);
+    try {
+      const res = await fetch(`/api/programs/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ googleGroupEmail: googleGroupInput.trim() || null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ color: "green", message: "Google Group saved." });
+        fetchProgram();
+      } else {
+        notifications.show({ color: "red", message: data.error || "Failed to save.", autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setSyncingGroup(false);
+    }
+  };
+
+  const handleSyncGoogleGroup = async () => {
+    setSyncingGroup(true);
+    try {
+      const res = await fetch(`/api/programs/${id}/sync-google-group`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ color: "green", message: `Group synced (added ${data.added ?? 0}, removed ${data.removed ?? 0}).` });
+      } else {
+        notifications.show({ color: "red", message: data.error || "Failed to sync group.", autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setSyncingGroup(false);
     }
   };
 
@@ -341,6 +386,31 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                     <Group mt="sm">
                       <Button type="button" variant="light" size="xs" loading={syncing} onClick={handleSaveShopifyIds}>
                         Save Shopify IDs
+                      </Button>
+                    </Group>
+                  </Card>
+                )}
+
+                {isSysAdminOrBoard && (
+                  <Card withBorder radius="md" padding="md">
+                    <Text fw={500} mb={4}>Google Group Mailing List</Text>
+                    <Text size="xs" c="dimmed" mb="sm">
+                      Admin/Board only. Active participants (and their household leads) are synced into this Google Group.
+                      Leave blank for none. Requires the Google service account to be configured on the server — see System Status.
+                    </Text>
+                    <TextInput
+                      label="Group Email"
+                      type="email"
+                      value={googleGroupInput}
+                      onChange={e => setGoogleGroupInput(e.currentTarget.value)}
+                      placeholder="e.g. robotics-2026@innovationtreehouse.org"
+                    />
+                    <Group mt="sm">
+                      <Button type="button" variant="light" size="xs" loading={syncingGroup} onClick={handleSaveGoogleGroup}>
+                        Save Group
+                      </Button>
+                      <Button type="button" variant="default" size="xs" loading={syncingGroup} disabled={!program.googleGroupEmail} onClick={handleSyncGoogleGroup}>
+                        Sync now
                       </Button>
                     </Group>
                   </Card>

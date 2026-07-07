@@ -2,6 +2,7 @@ import type { TxClient } from "@/lib/db-client";
 import type { ProgramParticipant } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { adjustProgramInventory } from "@/lib/shopify";
+import { pushGroupRemoveOnWithdrawal } from "@/lib/program/groupSync";
 
 /** Thrown by {@link lockProgramAndCheckCapacity} when a program is full. */
 export class ProgramCapacityError extends Error {
@@ -65,11 +66,18 @@ export async function lockProgramAndCheckCapacity(
 export async function withdrawAndReleaseHold(
     programId: number,
     personId: number,
-    program: { shopifyVariantId?: string | null; shopifyOrgMemberVariantId: string | null; shopifyNonOrgMemberVariantId: string | null },
+    program: { id?: number; googleGroupEmail?: string | null; shopifyVariantId?: string | null; shopifyOrgMemberVariantId: string | null; shopifyNonOrgMemberVariantId: string | null },
 ): Promise<{ enrollment: ProgramParticipant; released: boolean; shopifyOk: boolean }> {
     const enrollment = await prisma.programParticipant.delete({
         where: { programId_personId: { programId, personId } },
     });
+
+    // Best-effort Google Group removal AFTER the row is gone (so the remaining
+    // roster is recomputed without this person). Never throws — a Google failure
+    // must not fail the withdrawal. Fires for every exit path this shared fn
+    // serves (self/admin removal + both withdrawal crons); PENDING kicks were
+    // never in the group, so it's a harmless no-op for them.
+    await pushGroupRemoveOnWithdrawal({ id: program.id ?? programId, googleGroupEmail: program.googleGroupEmail }, personId);
 
     if (!enrollment.inventoryHeldAt) {
         return { enrollment, released: false, shopifyOk: true };

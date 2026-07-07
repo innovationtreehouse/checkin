@@ -195,6 +195,7 @@ export const classifications = {
         shopifyOrgMemberVariantId: 'public',
         shopifyNonOrgMemberVariantId: 'public',
         shopifyVariantId: 'public',
+        googleGroupEmail: 'internal',
     },
     ProgramVolunteer: {
         programId: 'public',

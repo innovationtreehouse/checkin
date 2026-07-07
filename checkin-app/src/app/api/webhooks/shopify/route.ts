@@ -6,6 +6,7 @@ import { activateByProcessId } from "@/lib/membership/payment";
 import { withWebhook } from "@/lib/webhookAuth";
 import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 import { adjustProgramInventory } from "@/lib/shopify";
+import { pushGroupAddOnActivation } from "@/lib/program/groupSync";
 
 interface ShopifyOrder {
     id?: number | string;
@@ -195,6 +196,9 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
 
                         if (activated.count > 0) {
                             logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
+                            // Best-effort Google Group add on activation. Never throws —
+                            // must not fail (and thus force Shopify to retry) the webhook.
+                            if (program) await pushGroupAddOnActivation(program, participantId);
                         }
 
                         // Hold-ledger (product decision 2026-07-06): NORMAL PAYMENT is

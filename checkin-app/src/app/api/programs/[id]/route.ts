@@ -9,6 +9,7 @@ import { adjustProgramInventory } from "@/lib/shopify";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { validateProgramAgeBounds } from "@/lib/programAge";
+import { isValidEmail } from "@/lib/emergencyContacts/identity";
 
 export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
     const programId = parseInt(params.id, 10);
@@ -120,7 +121,13 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
+        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId, googleGroupEmail } = body;
+
+        // Google Group address is board-set config (sysadmin/board only, like the
+        // Shopify ids below); validate as an email when non-empty, empty string clears it.
+        if (isSysAdminOrBoard && googleGroupEmail !== undefined && googleGroupEmail !== null && googleGroupEmail !== "" && !isValidEmail(googleGroupEmail)) {
+            return apiError("googleGroupEmail must be a valid email address", 400);
+        }
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -159,6 +166,8 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             ...(isSysAdminOrBoard && shopifyVariantId !== undefined && { shopifyVariantId: shopifyVariantId || null }),
             ...(isSysAdminOrBoard && shopifyOrgMemberVariantId !== undefined && { shopifyOrgMemberVariantId: shopifyOrgMemberVariantId || null }),
             ...(isSysAdminOrBoard && shopifyNonOrgMemberVariantId !== undefined && { shopifyNonOrgMemberVariantId: shopifyNonOrgMemberVariantId || null }),
+            // Empty string clears the group (sync becomes a no-op for the program).
+            ...(isSysAdminOrBoard && googleGroupEmail !== undefined && { googleGroupEmail: googleGroupEmail ? googleGroupEmail.trim().toLowerCase() : null }),
         };
 
         const updatedProgram = await prisma.program.update({

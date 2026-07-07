@@ -721,6 +721,12 @@ model Program {
   /// @sensitivity:public
   shopifyVariantId          String?
 
+  /// Google Group address this program's active participants are synced into
+  /// (self + household-lead emails; see docs/designs/PROGRAM_GOOGLE_GROUP_SYNC.md).
+  /// Null = no group. Board-set on program-ops, validated as an email.
+  /// @sensitivity:internal
+  googleGroupEmail          String?
+
   volunteers   ProgramVolunteer[]
   participants ProgramParticipant[]
   fees         Fee[]
