@@ -4,6 +4,7 @@ import { apiError } from "@/lib/api-response";
 import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/scan-service";
 import { config } from "@/lib/config";
 import { withKiosk } from "@/lib/kioskAuth";
+import { assertHouseholdActive, HouseholdArchivedError } from "@/lib/household/archive";
 
 // High cap: kiosks burst and a whole facility may share one NAT IP. withKiosk
 // reads the raw body, authenticates it (kiosk signature OR session), rejects
@@ -56,6 +57,15 @@ export const POST = withKiosk(
             if (participant.householdId !== auth.user.householdId) {
                 return apiError("Forbidden: You are not authorized to scan this user.", 403);
             }
+        }
+
+        // Block check-in for a member of an archived household (shared guard). This
+        // route has no catch (errors → withKiosk 500), so map the guard to a 409 here.
+        try {
+            await assertHouseholdActive(prisma, participant.householdId);
+        } catch (e) {
+            if (e instanceof HouseholdArchivedError) return apiError(e.message, 409);
+            throw e;
         }
 
         // Steps 4–6 (debounce read → record event → find visit → check-in/out)

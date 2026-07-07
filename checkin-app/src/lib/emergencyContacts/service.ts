@@ -283,6 +283,7 @@ export async function reconcileAndWarn(db: Db, householdId: number): Promise<Eme
 export async function findHouseholdsMissingValidContact(db: Db = prisma): Promise<number[]> {
     const scoped = await db.household.findMany({
         where: {
+            archivedAt: null, // archived families are out of the compliance chase scope
             orgMembership: { is: { OR: [{ status: "ACTIVE" }, { processes: { some: { status: { not: "ACTIVE" } } } }] } },
         },
         select: { id: true },

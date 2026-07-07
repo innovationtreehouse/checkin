@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgCheck";
+import { ACTIVE_HOUSEHOLD_WHERE, ACTIVE_HOUSEHOLD_PERSON_WHERE } from "@/lib/household/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +46,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
     //    bgRecheckMonths = 0 it always returns false, so skip the whole bucket.
     if (bgRecheckMonths > 0) {
         const active = await prisma.orgMembership.findMany({
-            where: { status: "ACTIVE" },
+            where: { status: "ACTIVE", household: ACTIVE_HOUSEHOLD_WHERE },
             select: { householdId: true },
         });
         for (const m of active) {
@@ -56,14 +57,14 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
 
     // 2. REVOKED / DENIED memberships — tag which.
     const revokedDenied = await prisma.orgMembership.findMany({
-        where: { status: { in: ["REVOKED", "DENIED"] } },
+        where: { status: { in: ["REVOKED", "DENIED"] }, household: ACTIVE_HOUSEHOLD_WHERE },
         select: { householdId: true, status: true },
     });
     for (const m of revokedDenied) add(m.householdId, m.status);
 
     // 3. Stuck at BG clearance — paid but never cleared.
     const stuck = await prisma.orgMembershipProcess.findMany({
-        where: { status: "PENDING_BG_CLEARANCE" },
+        where: { status: "PENDING_BG_CLEARANCE", orgMembership: { household: ACTIVE_HOUSEHOLD_WHERE } },
         select: { orgMembership: { select: { householdId: true } } },
     });
     // PENDING_BG_CLEARANCE is a household-process status; orgMembership is always set.
@@ -89,6 +90,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         const threshold = bgFreshThreshold(boundary, bgRecheckMonths);
         const people = await prisma.person.findMany({
             where: {
+                ...ACTIVE_HOUSEHOLD_PERSON_WHERE,
                 OR: [
                     { programParticipants: { some: {} } },
                     { programVolunteers: { some: {} } },

@@ -6,6 +6,7 @@ import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError, withdrawAndReleaseHold } from "@/lib/program/capacity";
 import { checkProgramAge } from "@/lib/programAge";
 import { apiError } from "@/lib/api-response";
+import { assertHouseholdActive, HouseholdArchivedError } from "@/lib/household/archive";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -41,6 +42,12 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             where: { id: participantId },
             select: { dateOfBirth: true, isDeclaredAdult: true, householdId: true }
         });
+
+        // Block enrolling a member of an archived household (shared guard) — a 4xx,
+        // not a 500. Applies to everyone, including a board override.
+        if (participantData?.householdId) {
+            await assertHouseholdActive(prisma, participantData.householdId);
+        }
 
         let isHouseholdLead = false;
         if (participantData?.householdId) {
@@ -148,6 +155,9 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         return NextResponse.json({ success: true, enrollment });
     } catch (error) {
+        if (error instanceof HouseholdArchivedError) {
+            return apiError(error.message, 409);
+        }
         if (error instanceof ProgramCapacityError) {
             return NextResponse.json({ error: "Program has reached maximum capacity.", requiresOverride: true }, { status: 400 });
         }

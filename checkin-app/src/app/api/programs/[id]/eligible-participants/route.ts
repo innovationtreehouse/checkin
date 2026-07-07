@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { ACTIVE_ORG_MEMBER_PERSON_WHERE } from "@/lib/orgMembership";
+import { ACTIVE_HOUSEHOLD_PERSON_WHERE } from "@/lib/household/filters";
 import { handler, notFound, badRequest } from "@/security/handler";
 
 // Admission + field stripping declared in src/security/registry.ts under
@@ -22,6 +23,9 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]/eligible-part
     const q = new URL(req.url).searchParams.get("q") || "";
 
     const andClauses: Prisma.PersonWhereInput[] = [
+        // Archived-household members can't be enrolled (blocked at the enroll POST),
+        // so don't offer them as candidates in the add-participant picker.
+        ACTIVE_HOUSEHOLD_PERSON_WHERE,
         {
             NOT: {
                 OR: [

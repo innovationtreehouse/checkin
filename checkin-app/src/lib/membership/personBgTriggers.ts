@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgCheck";
 import { nextBoundary } from "@/lib/membership/renewal";
+import { ACTIVE_HOUSEHOLD_PERSON_WHERE } from "@/lib/household/filters";
 
 /**
  * Triggers that OPEN a per-person background-check obligation (PERSON_BG process,
@@ -81,7 +82,8 @@ export async function runPersonBgAnnualSweep(now: Date) {
 
     const boundary = nextBoundary(settings.orgMembershipYearBoundary, now);
     const threshold = bgFreshThreshold(boundary, months);
-    const people = await prisma.person.findMany({ where: PROGRAM_ATTACHED_WHERE, select: { id: true } });
+    // Skip archived households — no new BG obligation opened for a family that's set aside.
+    const people = await prisma.person.findMany({ where: { ...PROGRAM_ATTACHED_WHERE, ...ACTIVE_HOUSEHOLD_PERSON_WHERE }, select: { id: true } });
 
     let opened = 0;
     for (const p of people) {

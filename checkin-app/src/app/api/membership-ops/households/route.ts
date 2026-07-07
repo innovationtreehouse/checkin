@@ -4,6 +4,8 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
+import { ACTIVE_HOUSEHOLD_WHERE } from "@/lib/household/filters";
+import { setHouseholdArchived } from "@/lib/household/archive";
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +28,10 @@ export const GET = withAuth(
             const url = new URL(req.url);
             const id = url.searchParams.get('id');
             const q = url.searchParams.get('q') || '';
+            // Archived households are hidden by default; the households view's
+            // "include archived" toggle passes includeArchived=1 to find them for
+            // un-archive. A direct id lookup (below) always resolves, archived or not.
+            const includeArchived = url.searchParams.get('includeArchived') === '1';
 
             if (id) {
                 const household = await prisma.household.findUnique({
@@ -56,13 +62,15 @@ export const GET = withAuth(
                 return NextResponse.json({ household: { ...withFlatContact(household), householdLeads } });
             }
 
+            const archivedFilter = includeArchived ? {} : ACTIVE_HOUSEHOLD_WHERE;
             const whereClause = q ? {
+                ...archivedFilter,
                 OR: [
                     { name: { contains: q, mode: 'insensitive' as const } },
                     { householdMembers: { some: { name: { contains: q, mode: 'insensitive' as const } } } },
                     { householdMembers: { some: { email: { contains: q, mode: 'insensitive' as const } } } },
                 ]
-            } : {};
+            } : archivedFilter;
 
             const households = await prisma.household.findMany({
                 where: whereClause,
@@ -97,10 +105,20 @@ export const POST = withAuth(
     async (req, auth) => {
         try {
             const body = await req.json();
-            const { householdId, active, deny } = body;
+            const { householdId, active, deny, archive } = body;
 
             if (!householdId) {
                 return apiError("Household ID is required", 400);
+            }
+
+            // Soft-archive toggle — a household-level "set aside" action, sibling to
+            // deny (both are board/sysadmin household-state toggles with an audit row).
+            // Unlike deny, archive doesn't block login; it hides the family from board
+            // lists/crons and blocks its members from starting new activity.
+            if (typeof archive === "boolean") {
+                if (auth.type !== 'session') return apiError("Unauthorized", 401);
+                const result = await setHouseholdArchived(householdId, archive, auth.user.id);
+                return NextResponse.json({ success: true, archivedAt: result.archivedAt });
             }
 
             const existingMembership = await prisma.orgMembership.findUnique({

@@ -190,6 +190,14 @@ model Household {
   /// @sensitivity:pii
   intakeNotes String?
 
+  /// Soft-archive stamp: non-null == the household is archived (set aside).
+  /// Hides it from default board lists/searches/pickers, skips it in
+  /// notification fan-outs + crons, and blocks its members from starting new
+  /// activity (enroll / scan / membership application). History is untouched;
+  /// clearing this restores everything. Who archived is in the AuditLog row,
+  /// not a column (see docs/designs/HOUSEHOLD_ARCHIVE.md). @sensitivity:internal
+  archivedAt DateTime?
+
   householdMembers  Person[]
   orgMembership     OrgMembership?
   trustedAdults     TrustedAdult[]

@@ -55,6 +55,8 @@ jest.mock('@/lib/prisma', () => {
     household: {
       create: jest.fn(),
       delete: jest.fn(),
+      // Archived-household enroll guard (assertHouseholdActive); null == active.
+      findUnique: jest.fn().mockResolvedValue(null),
     },
     membership: {
       create: jest.fn(),

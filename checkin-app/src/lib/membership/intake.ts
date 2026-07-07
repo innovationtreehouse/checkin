@@ -27,7 +27,7 @@ export class IntakeError extends Error {
      *                "primaryName".
      */
     constructor(
-        public readonly code: "no_household" | "not_lead" | "already_member" | "no_process" | "incomplete" | "lead_limit",
+        public readonly code: "no_household" | "not_lead" | "already_member" | "no_process" | "incomplete" | "lead_limit" | "archived",
         message: string,
         public readonly fields?: string[],
     ) {
@@ -155,6 +155,12 @@ export async function startIntake(userId: number) {
     if (!user) throw new IntakeError("no_household", "User not found.");
 
     assertLead(user);
+    // Block starting a membership application for an archived household (shared
+    // invariant with the scan/enroll guards; household is already loaded here, so
+    // this reuses intake's own error channel rather than a redundant query).
+    if (user.household?.archivedAt) {
+        throw new IntakeError("archived", "This household is archived. Ask a board member to un-archive it before applying.");
+    }
     const householdId = user.householdId!;
 
     if (user.household?.orgMembership?.status === "ACTIVE") {

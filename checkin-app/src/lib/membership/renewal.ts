@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { notifyReviewers } from "@/lib/membership/review";
 import { config } from "@/lib/config";
+import { ACTIVE_HOUSEHOLD_WHERE } from "@/lib/household/filters";
 
 /**
  * Annual renewal. A common membership-year boundary (BoardSettings) drives every
@@ -57,7 +58,8 @@ export async function runRenewalSweep(now: Date) {
     }
 
     const memberships = await prisma.orgMembership.findMany({
-        where: { status: "ACTIVE" },
+        // Skip archived households — no renewal process opened, no reminder emailed.
+        where: { status: "ACTIVE", household: ACTIVE_HOUSEHOLD_WHERE },
         // "Already open" = an in-flight RENEWAL by status (matches the partial unique
         // index + openRenewalsForAllActive), not the leakier createdAt window.
         select: { id: true, householdId: true, processes: { where: { kind: "RENEWAL", status: { in: ["PENDING_RENEWAL", "RENEWAL_PENDING_BG", "PENDING_PAYMENT"] } }, select: { id: true } } },
@@ -169,7 +171,7 @@ export async function openRenewalsForAllActive(now: Date, opts: { sendReminders?
     const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, now) : now;
 
     const memberships = await prisma.orgMembership.findMany({
-        where: { status: "ACTIVE" },
+        where: { status: "ACTIVE", household: ACTIVE_HOUSEHOLD_WHERE },
         select: {
             id: true,
             householdId: true,

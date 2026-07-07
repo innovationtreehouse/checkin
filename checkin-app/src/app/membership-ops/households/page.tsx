@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Badge, Button, Group, List, Modal, Stack, Table, Text, TextInput, Tooltip } from '@mantine/core';
+import { Badge, Button, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, Tooltip } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
@@ -14,6 +14,7 @@ import { PageLoader } from "@/components/ui/PageLoader";
 type Household = {
   id: number;
   name?: string | null;
+  archivedAt?: string | null;
   orgMembership?: { status: string } | null;
   householdMembers?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean; emailUndeliverableAt?: string | null }[] | null;
 };
@@ -27,12 +28,14 @@ export default function AdminHouseholdsPage() {
   const [error, setError] = useState("");
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
   const [filter, setFilter] = useState("");
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [confirmDenyOpened, { open: openConfirmDeny, close: closeConfirmDeny }] = useDisclosure(false);
   const [pendingDenyHouseholdId, setPendingDenyHouseholdId] = useState<number | null>(null);
 
   const fetchHouseholds = useCallback(async () => {
     try {
-      const res = await fetch('/api/membership-ops/households');
+      // Archived households are hidden server-side by default; the toggle asks for them.
+      const res = await fetch(`/api/membership-ops/households${includeArchived ? '?includeArchived=1' : ''}`);
       if (res.ok) {
         const data = await res.json();
         setHouseholds(data.households);
@@ -44,7 +47,7 @@ export default function AdminHouseholdsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [includeArchived]);
 
   useEffect(() => {
     if (ready) fetchHouseholds();
@@ -108,6 +111,27 @@ export default function AdminHouseholdsPage() {
     await doSetDenied(householdId, true);
   };
 
+  // Archive / un-archive: a soft "set aside" (distinct from Deny — no login block).
+  // Hides the family from board lists/crons and blocks its members from new activity.
+  const setArchived = async (householdId: number, archive: boolean) => {
+    try {
+      const res = await fetch('/api/membership-ops/households', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ householdId, archive }),
+      });
+      if (res.ok) {
+        fetchHouseholds();
+        notifications.show({ color: 'green', message: archive ? 'Household archived.' : 'Household un-archived.' });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: 'red', message: data.error || 'Failed to update archive status.', autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: 'red', message: 'Network error.', autoClose: false });
+    }
+  };
+
   if (authLoading || loading) {
     return <PageLoader />;
   }
@@ -137,12 +161,20 @@ export default function AdminHouseholdsPage() {
 
       <AlertBanner message={error} tone="error" />
 
-      <TextInput
-        placeholder="Filter by household or participant name/email"
-        value={filter}
-        onChange={(e) => setFilter(e.currentTarget.value)}
-        maw={400}
-      />
+      <Group justify="space-between" align="center">
+        <TextInput
+          placeholder="Filter by household or participant name/email"
+          value={filter}
+          onChange={(e) => setFilter(e.currentTarget.value)}
+          maw={400}
+          style={{ flex: 1 }}
+        />
+        <Checkbox
+          label="Include archived"
+          checked={includeArchived}
+          onChange={(e) => setIncludeArchived(e.currentTarget.checked)}
+        />
+      </Group>
 
       <Table.ScrollContainer minWidth={600}>
         <Table verticalSpacing="sm" highlightOnHover>
@@ -166,6 +198,7 @@ export default function AdminHouseholdsPage() {
               const ownGrantBlocked =
                 !hasActiveMembership && me?.isSysadmin !== true && sharesHousehold(me?.householdId, household.id);
               const hasBrokenEmail = household.householdMembers?.some((p) => p.emailUndeliverableAt) ?? false;
+              const isArchived = !!household.archivedAt;
 
               return (
                 <Table.Tr key={household.id}>
@@ -179,6 +212,11 @@ export default function AdminHouseholdsPage() {
                       >
                         {household.name || `Household #${household.id}`}
                       </Text>
+                      {isArchived && (
+                        <Badge color="gray" variant="filled" size="sm" style={{ cursor: "default" }}>
+                          Archived
+                        </Badge>
+                      )}
                       {hasBrokenEmail && (
                         <Tooltip label="A member's email is undeliverable — update their address">
                           <Badge color="red" variant="filled" size="sm" style={{ cursor: "default" }}>
@@ -230,6 +268,15 @@ export default function AdminHouseholdsPage() {
                         onClick={() => router.push(`/membership-ops/participants/new?householdId=${household.id}`)}
                       >
                         + Add Participant
+                      </Button>
+                      <Button
+                        size="xs" fz={15}
+                        variant={isArchived ? "light" : "subtle"}
+                        color="gray"
+                        onClick={() => setArchived(household.id, !isArchived)}
+                        title={isArchived ? "Restore this family to active lists and activity" : "Set this family aside: hidden from lists, members blocked from new activity. History is kept."}
+                      >
+                        {isArchived ? "Un-archive" : "Archive"}
                       </Button>
                       {isDenied ? (
                         <Button

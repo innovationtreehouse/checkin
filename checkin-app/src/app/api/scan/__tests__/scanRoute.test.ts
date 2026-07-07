@@ -14,6 +14,10 @@ jest.mock('@/lib/prisma', () => {
         person: {
             findUnique: jest.fn(),
         },
+        // Archived-household guard (assertHouseholdActive); null == active by default.
+        household: {
+            findUnique: jest.fn().mockResolvedValue(null),
+        },
         rawBadgeLog: {
             create: jest.fn(),
             findFirst: jest.fn(),

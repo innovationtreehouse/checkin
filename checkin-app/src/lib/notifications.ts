@@ -4,6 +4,7 @@ import { formatTime, formatDate } from "./time";
 import { checkinReceiptTemplate } from "./email-templates/checkin";
 import { householdMemberTemplate } from "./email-templates/household";
 import { escapeHtml, type VisitSource } from "./email-templates/base";
+import { ACTIVE_HOUSEHOLD_PERSON_WHERE } from "./household/filters";
 
 /**
  * Service to handle sending notifications to users via their defined preferences.
@@ -78,7 +79,8 @@ export async function notifyNewProgramAnnounced(programName: string): Promise<vo
         // most once per program (the UPCOMING+OPEN edge), so a table scan is fine;
         // switch to a JSON-path where-filter if the person table grows large.
         const users = await prisma.person.findMany({
-            where: { email: { not: null } },
+            // Skip members of archived households — they're set aside, don't blast them.
+            where: { email: { not: null }, ...ACTIVE_HOUSEHOLD_PERSON_WHERE },
             select: { email: true, name: true, notificationSettings: true },
         });
 
