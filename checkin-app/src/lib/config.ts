@@ -37,13 +37,15 @@ function zohoConfiguredEnv(): boolean {
 
 /**
  * The dev/local Zoho Sign MOCK is active when the real integration is unconfigured
- * AND we're on a non-prod instance (see docs/designs/ZOHO_SIGN_DEV_MOCK.md). Two
- * server-only fuses — CHECKIN_ENV (fails safe to prod) and NODE_ENV — so no mock
- * path is reachable in prod by construction. Setting real Zoho secrets in dev opts
- * back into the real client (zohoConfigured wins).
+ * AND we're on a non-prod instance (see docs/designs/ZOHO_SIGN_DEV_MOCK.md).
+ * CHECKIN_ENV is the single, server-only fuse (see the note above
+ * shopifyMockActiveEnv for why NODE_ENV was eliminated as a second fuse) — it
+ * fails safe to prod, so no mock path is reachable in prod by construction.
+ * Setting real Zoho secrets in dev opts back into the real client
+ * (zohoConfigured wins).
  */
 function zohoMockActiveEnv(): boolean {
-    return !zohoConfiguredEnv() && readCheckinEnv() !== 'prod' && process.env.NODE_ENV !== 'production';
+    return !zohoConfiguredEnv() && readCheckinEnv() !== 'prod';
 }
 
 /**
@@ -70,13 +72,18 @@ export const DEV_MOCK_WEBHOOK_SECRET = 'dev-zoho-mock-webhook-secret';
  * from a laptop, run as CHECKIN_ENV=dev with real creds — CHECKIN_ENV=local is always
  * the mock, regardless of whether creds happen to be set.
  *
- * Gated on the explicit env, NOT on cred presence. The `NODE_ENV !== 'production'`
- * clause is a hard security backstop, not a feature toggle: the mock hands out a
- * FIXED webhook secret (anyone could forge orders/paid), so it must be impossible in
- * a production build even if CHECKIN_ENV were misconfigured to 'local' there.
+ * Gated on the explicit env, NOT on cred presence — and on CHECKIN_ENV ALONE.
+ * NODE_ENV was deliberately ELIMINATED as a second "build-level fuse" across this
+ * file (#951 review): every deployed instance runs the same production image
+ * (Dockerfile sets NODE_ENV=production), so the clause could never distinguish a
+ * misconfigured prod box from a legitimate deployment — it only broke dev-instance
+ * features (the Debug-nav 404 class) while "protecting" against exactly one thing:
+ * a human explicitly setting CHECKIN_ENV=local on prod infra. That misconfig class
+ * belongs to CHECKIN_ENV itself, which fails safe to prod for any unset or
+ * unrecognized value (readCheckinEnv). One fuse, honestly owned.
  */
 function shopifyMockActiveEnv(): boolean {
-    return readCheckinEnv() === 'local' && process.env.NODE_ENV !== 'production';
+    return readCheckinEnv() === 'local';
 }
 
 
@@ -108,15 +115,16 @@ export const DEV_MOCK_MEMBERSHIP_VARIANT_ID = 'dev-mock-variant-membership';
 /**
  * The dev/local background-check MOCK is active when the real Averity consent link
  * is unconfigured (AVERITY_CONSENT_URL unset) AND we're on a non-prod instance.
- * Same two server-only fuses as the Zoho/Shopify mocks — CHECKIN_ENV (fails safe to
- * prod) and NODE_ENV — so no mock path is reachable in prod by construction. It hands
- * the applicant an in-app consent link (/dev/bg-consent) instead of Averity's hosted
- * page, so the check can be started in debug mode; board members then sign off through
- * the normal two-reviewer attestation. Setting AVERITY_CONSENT_URL opts back into the
- * real link. See docs/designs/BG_CHECK_DEV_MOCK.md.
+ * CHECKIN_ENV is the single fuse, same as the Zoho/Shopify mocks (see the note
+ * above shopifyMockActiveEnv) — it fails safe to prod, so no mock path is reachable
+ * in prod by construction. It hands the applicant an in-app consent link
+ * (/dev/bg-consent) instead of Averity's hosted page, so the check can be started
+ * in debug mode; board members then sign off through the normal two-reviewer
+ * attestation. Setting AVERITY_CONSENT_URL opts back into the real link.
+ * See docs/designs/BG_CHECK_DEV_MOCK.md.
  */
 function bgMockActiveEnv(): boolean {
-    return !process.env.AVERITY_CONSENT_URL && readCheckinEnv() !== 'prod' && process.env.NODE_ENV !== 'production';
+    return !process.env.AVERITY_CONSENT_URL && readCheckinEnv() !== 'prod';
 }
 
 export const config = {
@@ -211,6 +219,17 @@ export const config = {
     isProd: (): boolean => readCheckinEnv() === 'prod',
     // True on the cloud dev instance OR a local laptop (i.e. not prod). Server-only.
     isDevInstance: (): boolean => readCheckinEnv() !== 'prod',
+    // Gate for the /dev tools + their capture paths (sent-mail inbox, email
+    // capture). The design docs paired isDevInstance() with a
+    // `NODE_ENV !== 'production'` build fuse (the persona-mint idiom), but every
+    // DEPLOYED instance — cloud-dev included — runs the same production image
+    // (checkin-app/Dockerfile sets NODE_ENV=production), so that clause made the
+    // tools 404 on the very instance they exist for. Prod safety rests on
+    // CHECKIN_ENV, which is server-only and FAILS SAFE to 'prod' for any
+    // unset/unrecognized value (readCheckinEnv); cloud-dev pages are additionally
+    // behind the org-member login gate. Use this — not a hand-rolled
+    // NODE_ENV check — to gate any future dev tool.
+    devToolsActive: (): boolean => readCheckinEnv() !== 'prod',
     // True only on a developer laptop. Gates offline credential login + keyless kiosk.
     isLocal: (): boolean => readCheckinEnv() === 'local',
     baseUrl: (): string => {

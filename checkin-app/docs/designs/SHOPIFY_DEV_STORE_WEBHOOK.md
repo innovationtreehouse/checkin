@@ -189,7 +189,7 @@ Because both environments read the id from `BoardSettings` (not from code), ther
 ## 7. Prod safety
 
 Same posture as Zoho:
-- **Every dev-only surface is env-gated.** `/api/dev/shopify/*` 404s unless `config.shopifyMockActive()` (which is `false` in prod by construction: `readCheckinEnv() !== 'prod' && NODE_ENV !== 'production'`, both fail-safe to prod).
+- **Every dev-only surface is env-gated.** `/api/dev/shopify/*` 404s unless `config.shopifyMockActive()` (which is `false` in prod by construction: `readCheckinEnv() === 'local'`, failing safe to prod when unset — the `NODE_ENV` fuse was eliminated in the #951 review).
 - **No dev store domain hardcoded.** `SHOPIFY_STORE_DOMAIN` stays env-only; the dev store's `*.myshopify.com` never appears in source or seed defaults.
 - **Fixed dev webhook secret is unreachable in prod** — only returned by `shopifyWebhookSecret()` when the mock is active, never in prod (same guard as `DEV_MOCK_WEBHOOK_SECRET`).
 - **Prod webhook path is byte-for-byte unchanged** — real secret, real HMAC, real store. This proposal adds env values and a gated dev route; it touches no prod branch.
