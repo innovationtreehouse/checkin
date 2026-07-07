@@ -703,7 +703,14 @@ export default function MembershipPage() {
                   <section>
                     <Textarea
                       label="Anything else we should know?"
-                      description="Optional. Tell us anything that would help us review your application — for example, if your household is applying to volunteer only, with no students enrolled."
+                      description={
+                        <>
+                          Optional. Tell us anything that would help us review your application — for example, if your household is applying to volunteer only, with no students enrolled.{" "}
+                          <Text component="span" fw={700} c="red">
+                            Your application will pause for human review before you can pay
+                          </Text>
+                        </>
+                      }
                       autosize
                       minRows={3}
                       value={notes}
