@@ -26,6 +26,7 @@ jest.mock('@/lib/notifications', () => ({
 // Avoid hitting the real Shopify API; the route tolerates a null result.
 jest.mock('@/lib/shopify', () => ({
     createShopifyProgramVariants: jest.fn().mockResolvedValue(null),
+    createShopifySingleVariantProgram: jest.fn().mockResolvedValue(null),
 }));
 
 const PROGRAM_NAME_TAG = 'Price RoundTrip Test Program';

@@ -116,6 +116,7 @@ export const classifications = {
         shopifyNormalVariantId: 'internal',
         shopifyVolunteerVariantId: 'internal',
         shopifyPriceSyncedAt: 'internal',
+        scholarshipDenialGraceDays: 'public',
         updatedAt: 'internal',
     },
     AppSettings: {
@@ -193,6 +194,7 @@ export const classifications = {
         shopifyProductId: 'public',
         shopifyOrgMemberVariantId: 'public',
         shopifyNonOrgMemberVariantId: 'public',
+        shopifyVariantId: 'public',
     },
     ProgramVolunteer: {
         programId: 'public',
@@ -206,6 +208,8 @@ export const classifications = {
         isPaymentPlanRequested: 'personal',
         pendingSince: 'internal',
         wasOrgMemberAtApproval: 'internal',
+        inventoryHeldAt: 'internal',
+        paymentPlanDeniedAt: 'personal',
     },
     Fee: {
         id: 'public',

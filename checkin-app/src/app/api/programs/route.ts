@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuth, getOptionalSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
-import { createShopifyProgramVariants } from "@/lib/shopify";
+import { createShopifySingleVariantProgram } from "@/lib/shopify";
 import { logBackendError, logger } from "@/lib/logger";
 import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
@@ -96,7 +96,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
 
     // Hoisted so the catch can name an orphaned Shopify product (created, but DB write failed) for manual cleanup.
-    let shopifyData: { shopifyProductId: string, shopifyOrgMemberVariantId: string | null, shopifyNonOrgMemberVariantId: string | null } | null = null;
+    let shopifyData: { shopifyProductId: string, shopifyVariantId: string } | null = null;
 
     try {
         const body = await req.json();
@@ -120,10 +120,17 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         const nmPrice = dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined);
         const maxPart = maxParticipants ? parseInt(maxParticipants, 10) : null;
 
-        // Try to create Shopify entities
-        // Only try to create if at least one price is provided. Otherwise it's a free program.
-        if ((mPrice && mPrice > 0) || (nmPrice && nmPrice > 0)) {
-            shopifyData = await createShopifyProgramVariants(name, mPrice, nmPrice, maxPart);
+        // Single-pool model (product decision 2026-07-06): ONE Shopify variant,
+        // priced at the base/non-member rate — replaces the two-variant model for
+        // NEW program creation going forward (legacy programs keep working via
+        // the columns createShopifyProgramVariants still writes; see
+        // sync-shopify's repair route). ponytail: falls back to the member price
+        // only when no non-member price is set (e.g. a members-only-priced
+        // program with no listed non-member tier) — normally sells at the
+        // non-member/base rate per the design.
+        const basePriceCents = nmPrice ?? mPrice ?? null;
+        if (basePriceCents && basePriceCents > 0) {
+            shopifyData = await createShopifySingleVariantProgram(name, basePriceCents, maxPart);
         }
 
         const newProgram = await prisma.program.create({
@@ -139,8 +146,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 nonOrgMemberPriceCents: nmPrice,
                 maxParticipants: maxPart,
                 shopifyProductId: shopifyData?.shopifyProductId || null,
-                shopifyOrgMemberVariantId: shopifyData?.shopifyOrgMemberVariantId || null,
-                shopifyNonOrgMemberVariantId: shopifyData?.shopifyNonOrgMemberVariantId || null,
+                shopifyVariantId: shopifyData?.shopifyVariantId || null,
             }
         });
 

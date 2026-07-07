@@ -321,9 +321,11 @@ describe('Individual Program API Integration Tests', () => {
              });
              const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.program.maxParticipants).toBe(50);
+             // No Shopify variant on this program — capacity propagation never engages.
+             expect(data.warning).toBeUndefined();
         });
 
         it('should allow admins to update a program', async () => {
@@ -358,6 +360,102 @@ describe('Individual Program API Integration Tests', () => {
              const after = await prisma.program.findUnique({ where: { id: publicProgramId } });
              expect(after?.name).toBe(before?.name);
              expect(after?.name).not.toBe('Denied Hack');
+        });
+    });
+
+    // Shopify is the source of truth for program capacity (product decision
+    // 2026-07-06): a maxParticipants edit on a program with a Shopify variant
+    // propagates as a relative inventory adjustment. Runs against the
+    // CHECKIN_ENV=local mock (config.shopifyMockActive), same as
+    // programSyncShopifyAPI.integration.test.ts, so no real Admin API calls happen.
+    describe('PATCH /api/programs/[id] — Shopify capacity propagation', () => {
+        let prevCheckinEnv: string | undefined;
+        let cappedProgramId: number;
+        let uncappedProgramId: number;
+
+        beforeAll(async () => {
+            prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
+
+            const capped = await prisma.program.create({
+                data: {
+                    name: 'Prog ID API Test Shopify Capacity',
+                    phase: 'RUNNING',
+                    leadMentorId: leadId,
+                    orgMemberPriceCents: 5000,
+                    maxParticipants: 20,
+                    shopifyOrgMemberVariantId: 'dev-mock-variant-member-capacity',
+                },
+            });
+            cappedProgramId = capped.id;
+
+            const uncapped = await prisma.program.create({
+                data: {
+                    name: 'Prog ID API Test Shopify Uncapped',
+                    phase: 'RUNNING',
+                    leadMentorId: leadId,
+                    orgMemberPriceCents: 5000,
+                    maxParticipants: null,
+                    shopifyOrgMemberVariantId: 'dev-mock-variant-member-uncapped',
+                },
+            });
+            uncappedProgramId = uncapped.id;
+        });
+
+        afterAll(async () => {
+            process.env.CHECKIN_ENV = prevCheckinEnv;
+            await prisma.program.deleteMany({ where: { id: { in: [cappedProgramId, uncappedProgramId] } } });
+        });
+
+        it('returns 200 with no warning when the mock adjusts inventory for a maxParticipants change', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            // A cookie header is required: CHECKIN_ENV=local (for the Shopify mock) also
+            // arms the keyless-kiosk fallback in authenticateRequest, which hijacks any
+            // cookie-less request as `kiosk` -> 403 before the session/role gate runs.
+            const req = new Request(`http://localhost:4000/api/programs/${cappedProgramId}`, {
+                method: 'PATCH',
+                headers: { cookie: 'session=test' },
+                body: JSON.stringify({ maxParticipants: 25 }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(cappedProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.maxParticipants).toBe(25);
+            expect(data.warning).toBeUndefined();
+        });
+
+        it('returns 200 with a warning transitioning capped -> uncapped (inventory not auto-adjusted)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${cappedProgramId}`, {
+                method: 'PATCH',
+                headers: { cookie: 'session=test' },
+                body: JSON.stringify({ maxParticipants: null }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(cappedProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.maxParticipants).toBeNull();
+            expect(data.warning).toMatch(/capped and uncapped/i);
+        });
+
+        it('returns 200 with a warning transitioning uncapped -> capped (inventory not auto-adjusted)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${uncappedProgramId}`, {
+                method: 'PATCH',
+                headers: { cookie: 'session=test' },
+                body: JSON.stringify({ maxParticipants: 30 }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(uncappedProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.maxParticipants).toBe(30);
+            expect(data.warning).toMatch(/capped and uncapped/i);
         });
     });
 });

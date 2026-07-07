@@ -3,21 +3,28 @@
  */
 /**
  * Integration tests for POST /api/programs/[id]/sync-shopify — the checkout
- * repair path that mints Shopify variants for a program that was priced AFTER
+ * repair path that mints Shopify variant(s) for a program that was priced AFTER
  * creation (PATCH never mints variants, so it sits checkout-broken). This was
  * the one fully-built-but-untested route in the program domain; webhookShopify
  * covers inbound MEMBERSHIP webhooks, not this outbound program-category sync.
  *
+ * Single-pool transition (product decision 2026-07-06): a program with NO
+ * legacy variant configured repairs onto the NEW single-variant model
+ * (shopifyVariantId); a program already carrying one legacy variant repairs
+ * via the LEGACY two-variant path (createShopifyProgramVariants), keeping the
+ * matching set — see the route's own comment for why.
+ *
  * Runs against the CHECKIN_ENV=local Shopify mock (config.shopifyMockActive) so
- * createShopifyProgramVariants returns synthetic dev-mock ids instead of hitting
- * the real Admin API — same explicit env gate PR #888 established.
+ * createShopifySingleVariantProgram/createShopifyProgramVariants return
+ * synthetic dev-mock ids instead of hitting the real Admin API — same explicit
+ * env gate PR #888 established.
  *
  * NOTE (Q13): this route has NO empty/mis-categorized-category detection. An
- * IntegrationErrorLog row is written only inside createShopifyProgramVariants'
- * catch on a REAL Shopify API failure, which the mock branch never reaches; the
- * route's own catch writes a BackendErrorLog (logBackendError), not an
- * IntegrationErrorLog. So the "empty-category warning surface" is a separate,
- * unbuilt feature — the success-path assertion below pins that no
+ * IntegrationErrorLog row is written only inside the shopify.ts creation
+ * functions' catch on a REAL Shopify API failure, which the mock branch never
+ * reaches; the route's own catch writes a BackendErrorLog (logBackendError),
+ * not an IntegrationErrorLog. So the "empty-category warning surface" is a
+ * separate, unbuilt feature — the success-path assertion below pins that no
  * IntegrationErrorLog is emitted here today.
  */
 import { POST } from '@/app/api/programs/[id]/sync-shopify/route';
@@ -94,9 +101,9 @@ describe('POST /api/programs/[id]/sync-shopify', () => {
         expect(after?.shopifyProductId).toBeNull();
     });
 
-    it('upserts Shopify product + variants and persists the ids on the program', async () => {
+    it('repairs onto the single-pool model: mints ONE variant and persists shopifyVariantId', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
-        const program = await makeBrokenProgram();
+        const program = await makeBrokenProgram(); // no legacy variant set -> new-model repair
         const errLogsBefore = await prisma.integrationErrorLog.count({ where: { source: 'shopify' } });
 
         const res = await POST(req(), params(program.id));
@@ -104,15 +111,16 @@ describe('POST /api/programs/[id]/sync-shopify', () => {
 
         const data = await res.json();
         expect(data.success).toBe(true);
-        // Success contract: a product id + a variant id per priced tier, echoed back...
+        // Success contract: a product id + ONE variant id (single pool), echoed back...
         expect(data.program.shopifyProductId).toMatch(/^dev-mock-product-/);
-        expect(data.program.shopifyOrgMemberVariantId).toMatch(/^dev-mock-variant-member-/);
-        expect(data.program.shopifyNonOrgMemberVariantId).toMatch(/^dev-mock-variant-nonmember-/);
+        expect(data.program.shopifyVariantId).toMatch(/^dev-mock-variant-/);
+        expect(data.program.shopifyOrgMemberVariantId).toBeNull();
+        expect(data.program.shopifyNonOrgMemberVariantId).toBeNull();
 
         // ...and PERSISTED — this is what fails if the route stops upserting.
         const persisted = await prisma.program.findUnique({ where: { id: program.id } });
         expect(persisted?.shopifyProductId).toBe(data.program.shopifyProductId);
-        expect(persisted?.shopifyOrgMemberVariantId).toBe(data.program.shopifyOrgMemberVariantId);
+        expect(persisted?.shopifyVariantId).toBe(data.program.shopifyVariantId);
 
         // Audit trail written.
         const audit = await prisma.auditLog.findFirst({
@@ -124,6 +132,32 @@ describe('POST /api/programs/[id]/sync-shopify', () => {
         // IntegrationErrorLog is emitted. Pins current behavior (see file header).
         const errLogsAfter = await prisma.integrationErrorLog.count({ where: { source: 'shopify' } });
         expect(errLogsAfter).toBe(errLogsBefore);
+    });
+
+    it('repairs a program already on the LEGACY model (one variant set) via the two-variant path', async () => {
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+        // Already has ONE legacy variant (partial legacy state) -> still checkout-broken
+        // (the non-org tier has no variant) -> repairs via createShopifyProgramVariants,
+        // not the single-pool path.
+        const program = await prisma.program.create({
+            data: {
+                name: `Legacy Broken Prog ${TAG} ${Math.round(performance.now())}`,
+                phase: 'RUNNING',
+                orgMemberPriceCents: 5000,
+                nonOrgMemberPriceCents: 7500,
+                shopifyProductId: 'dev-mock-product-existing-legacy',
+                shopifyOrgMemberVariantId: 'dev-mock-variant-member-existing-legacy',
+            },
+        });
+
+        const res = await POST(req(), params(program.id));
+        expect(res.status).toBe(200);
+
+        const data = await res.json();
+        expect(data.success).toBe(true);
+        expect(data.program.shopifyVariantId).toBeNull();
+        expect(data.program.shopifyOrgMemberVariantId).toMatch(/^dev-mock-variant-member-/);
+        expect(data.program.shopifyNonOrgMemberVariantId).toMatch(/^dev-mock-variant-nonmember-/);
     });
 
     it('refuses a program whose checkout is already configured (400)', async () => {
