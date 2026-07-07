@@ -43,6 +43,7 @@ export default function MyProgramsLayout({ children }: { children: React.ReactNo
   const TABS = [
     { value: "/my-programs/attendance", label: "Attendance" },
     { value: "/my-programs/conflicts", label: "Conflicts" },
+    { value: "/my-programs/contacts", label: "Contacts" },
   ];
   const active =
     TABS.filter((t) => pathname === t.value || pathname.startsWith(`${t.value}/`))
@@ -53,6 +54,7 @@ export default function MyProgramsLayout({ children }: { children: React.ReactNo
   const subtitle: Record<string, string> = {
     "/my-programs/attendance": "Manage Attendance for Programs you lead",
     "/my-programs/conflicts": "Resolve Duplicate or overlapping check-ins for your programs",
+    "/my-programs/contacts": "View emergency contacts for families in your programs (while they're running)",
   };
 
   return (
@@ -71,6 +73,7 @@ export default function MyProgramsLayout({ children }: { children: React.ReactNo
           >
             Conflicts
           </Tabs.Tab>
+          <Tabs.Tab value="/my-programs/contacts">Contacts</Tabs.Tab>
         </ScrollableTabsList>
       </Tabs>
       {subtitle[active] && <Text c="dimmed" mb="md">{subtitle[active]}</Text>}

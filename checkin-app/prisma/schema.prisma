@@ -32,6 +32,10 @@ enum AuditAction {
   EDIT
   DELETE
   BECOME_ADMIN
+  // A read/view of sensitive data worth a durable trail. Used by the time-scoped
+  // lead emergency-contact view (docs/designs/LEAD_EMERGENCY_CONTACT_ACCESS.md):
+  // one READ row per household whose contacts a program lead viewed.
+  READ
 }
 
 /// How a visit arrival/departure was recorded.

@@ -315,6 +315,7 @@ const EDGE_INCLUDE_ALLOWLIST: Record<string, string> = {
     'membership-audit/compliance': 'admin-role-gated — withAuth roles [sysadmin, board]; reads ProgramParticipant/Volunteer to flag people needing a background check',
     'membership-ops/households': 'admin-role-gated — withAuth roles [sysadmin, board]; ?id= branch includes each member ProgramParticipant for the household detail view',
     'membership-ops/participants/merge/analyze': 'admin-role-gated — sysadmin/board',
+    'my-programs/programs/[programId]/emergency-contacts': "admission-gated + query-shaped — withAuth; only the program's lead mentor, within the program's date window (±7d), sees its roster households' emergency contacts. Reads ProgramParticipant to derive those households, then 403s off-roster/out-of-window (LEAD_EMERGENCY_CONTACT_ACCESS.md).",
     'nav/todo-counts': 'query-shaped — counts scoped to caller (own household + programs the caller leads)',
     'profile': "query-shaped — authorize 'self'; visits are the caller's own",
     'profile/visits': 'query-shaped — self only (where participantId = caller)',
