@@ -67,6 +67,10 @@ routes, auth, and DB together.
   reseeds every run). Don't rely on re-running against the same DB locally.
 - `*.flow.test.ts` is excluded from the unit/integration runs (it needs a live
   server) — keep it that way; run it only via `npm run test:flow`.
+- `*.shopify-live.test.ts` (`checkin-app/shopify-live/`) hits the REAL Shopify
+  dev store — excluded from every local/CI run; executed only by
+  `.github/workflows/shopify-live.yml` (`npm run test:shopify-live`). Dev-store-only
+  by a triple guard; see `checkin-app/docs/designs/SHOPIFY_LIVE_TESTS.md`.
 - **No test tier exercises real Google OAuth.** Flow tests authenticate via
   persona-mint (a credentials sign-in), which — with JWT sessions — never
   touches the NextAuth **PrismaAdapter**; the adapter's user methods run only

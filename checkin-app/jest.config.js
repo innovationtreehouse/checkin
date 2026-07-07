@@ -90,6 +90,10 @@ const customJestConfig = {
         // Flow tests drive a running dev server over HTTP — excluded from the
         // default/unit run; run with `npm run test:flow` (see AGENTS.md).
         '\\.flow\\.test\\.[jt]sx?$',
+        // Shopify LIVE contract tests hit the real dev store — excluded from
+        // every local/CI run; run by .github/workflows/shopify-live.yml via
+        // `npm run test:shopify-live` (see docs/designs/SHOPIFY_LIVE_TESTS.md).
+        '\\.shopify-live\\.test\\.[jt]sx?$',
     ],
     modulePathIgnorePatterns: [
         '<rootDir>/../.claude/worktrees/',
