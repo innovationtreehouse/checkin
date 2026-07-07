@@ -46,11 +46,12 @@ describe("signingMockActive", () => {
         expect(findUnique).not.toHaveBeenCalled();
     });
 
-    it("NODE_ENV=production backstop: always real even on a dev instance", async () => {
+    it("works under a production BUILD on a dev instance (cloud-dev runs the prod image)", async () => {
+        // Regression guard: an earlier NODE_ENV fuse would have made the radio
+        // inert on cloud-dev, whose container sets NODE_ENV=production (see #951).
         setEnv({ CHECKIN_ENV: "dev", NODE_ENV: "production", ...ALL_SECRETS });
         findUnique.mockResolvedValue({ devSigningTarget: "debug" });
-        expect(await signingMockActive()).toBe(false);
-        expect(findUnique).not.toHaveBeenCalled();
+        expect(await signingMockActive()).toBe(true);
     });
 
     it("credless dev/local: always mock, DB never consulted (nothing real to call)", async () => {

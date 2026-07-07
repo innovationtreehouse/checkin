@@ -6,18 +6,22 @@ import prisma from "@/lib/prisma";
  * /dev/zoho-sign debug interstitial) or the real Zoho client.
  *
  * Layered on top of config.zohoMockActive() (env-level truth):
- *   - prod (or a production build): always real — the DB override is never
- *     even read. Same two hard fuses as zohoMockActiveEnv().
+ *   - prod (CHECKIN_ENV, failing safe to 'prod' when unset): always real —
+ *     the DB override is never even read.
  *   - creds unset on a non-prod instance: always mock (there is no real
  *     client to talk to) — unchanged local/dev behavior.
- *   - CHECKIN_ENV=dev WITH real creds: BoardSettings.devSigningTarget picks —
- *     'debug' → mock, 'zoho' or NULL → real (the pre-override behavior).
+ *   - CHECKIN_ENV=dev otherwise: BoardSettings.devSigningTarget picks —
+ *     'debug' → mock, 'zoho' or NULL → whatever the env dictates.
  *
  * DB-backed so the ops-dev instance can flip between real Zoho and debug
  * signing from the settings page without a redeploy.
  */
 export async function signingMockActive(): Promise<boolean> {
-    if (config.isProd() || process.env.NODE_ENV === "production") return false;
+    // CHECKIN_ENV only — NOT a NODE_ENV fuse: every deployed instance (cloud-dev
+    // included) runs the production image, so a NODE_ENV check would make the
+    // radio inert on the one instance it exists for (see #951 / devToolsActive).
+    // readCheckinEnv fails safe to 'prod' when unset/unrecognized.
+    if (config.isProd()) return false;
     if (config.zohoMockActive()) return true; // no real creds on a non-prod instance
     if (config.checkinEnv() !== "dev") return false;
 
