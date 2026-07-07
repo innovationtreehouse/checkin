@@ -16,7 +16,11 @@ module.exports = createJestConfig({
     // polyfills fetch for in-process unit tests — the live suite wants native
     // fetch and mocks only what it declares (same convention as flow tests).
     setupFilesAfterEnv: [],
-    testMatch: ['<rootDir>/shopify-live/**/*.shopify-live.test.[jt]s'],
+    // Deliberately NOT *.test.ts: the default jest testMatch (and any script
+    // that overrides testPathIgnorePatterns on the CLI, e.g. test:coverage)
+    // matches every *.test.ts under rootDir — the .test-free suffix makes the
+    // live suite structurally invisible to every other jest invocation.
+    testMatch: ['<rootDir>/shopify-live/**/*.shopify-live.[jt]s'],
     moduleNameMapper: { '^@/(.*)$': '<rootDir>/src/$1' },
     modulePathIgnorePatterns: ['<rootDir>/.next/'],
     maxWorkers: 1,
