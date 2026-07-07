@@ -11,6 +11,7 @@ import DevImpersonationBar from '@/components/DevImpersonationBar';
 import DevDashboard from '@/components/DevDashboard';
 import OnboardingGate from '@/components/OnboardingGate';
 import RenewalBanner from '@/components/RenewalBanner';
+import DbWakeNotice from '@/components/DbWakeNotice';
 import AppFrame from '@/components/AppFrame';
 import { UnsavedChangesProvider } from '@/components/UnsavedChangesProvider';
 import { brand } from '@/brand';
@@ -45,6 +46,7 @@ export default function RootLayout({
                   <DevImpersonationBar />
                   <UnsavedChangesProvider>
                     <AppFrame>
+                      <DbWakeNotice />
                       <RenewalBanner />
                       {children}
                     </AppFrame>
