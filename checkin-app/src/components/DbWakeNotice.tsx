@@ -68,14 +68,15 @@ export default function DbWakeNotice() {
 
     if (!waking) return null;
 
+    // Deliberately generic copy (no infrastructure specifics for end users);
+    // the actual cause is the DB auto-pause resume — see the module docblock.
     return (
-        <Alert color="blue" variant="light" radius={0} title="Waking up the database…">
+        <Alert color="blue" variant="light" radius={0} title="Getting the system ready…">
             <Group align="center" gap="sm" wrap="nowrap">
                 <Loader size="sm" color="blue" />
                 <Text size="sm">
-                    To save cost, the database goes to sleep when nobody has used it for a
-                    while. It&apos;s starting back up now — this usually takes about 30
-                    seconds, and the page will refresh automatically.
+                    The system is getting ready for you — this usually takes under a
+                    minute, and the page will refresh automatically.
                 </Text>
             </Group>
         </Alert>

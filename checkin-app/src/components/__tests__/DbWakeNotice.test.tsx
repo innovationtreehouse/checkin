@@ -7,7 +7,7 @@ import { act, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders, setSession, resetRtl } from "@/test-helpers/rtl";
 import DbWakeNotice, { hardReload } from "../DbWakeNotice";
 
-const TITLE = "Waking up the database…";
+const TITLE = "Getting the system ready…";
 
 /** Scripted probe responses, consumed in order; the last entry repeats. */
 function mockProbeSequence(...outcomes: ("ok" | "waking" | "reject")[]) {
@@ -55,7 +55,7 @@ describe("DbWakeNotice", () => {
             renderWithProviders(<DbWakeNotice />);
 
             expect(await screen.findByText(TITLE)).toBeInTheDocument();
-            expect(screen.getByText(/starting back up now/)).toBeInTheDocument();
+            expect(screen.getByText(/refresh automatically/)).toBeInTheDocument();
 
             // Advance past the poll interval; the second probe returns ok → reload.
             await act(async () => {
