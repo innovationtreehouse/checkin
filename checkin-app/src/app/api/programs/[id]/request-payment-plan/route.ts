@@ -78,13 +78,18 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         // fires -1. Branch 2 (inventoryHeldAt already set): re-application while
         // holding (or an idempotent re-POST) — just (re)flips the request flag
         // and clears any denial stamp, no second decrement.
+        // Both stamps are compare-and-set on status: 'PENDING' (matching
+        // approve/refuse) — the findUnique status read above is stale by write
+        // time, and without this a concurrent approval (ACTIVE, hold consumed
+        // to null) would match branch 1, re-stamp the hold, fire a second -1,
+        // and reopen a resolved scholarship.
         const holdResult = await prisma.programParticipant.updateMany({
-            where: { programId, personId: participantId, inventoryHeldAt: null },
+            where: { programId, personId: participantId, status: 'PENDING', inventoryHeldAt: null },
             data: { isPaymentPlanRequested: true, inventoryHeldAt: new Date(), paymentPlanDeniedAt: null },
         });
         if (holdResult.count === 0) {
             await prisma.programParticipant.updateMany({
-                where: { programId, personId: participantId, inventoryHeldAt: { not: null } },
+                where: { programId, personId: participantId, status: 'PENDING', inventoryHeldAt: { not: null } },
                 data: { isPaymentPlanRequested: true, paymentPlanDeniedAt: null },
             });
         }
