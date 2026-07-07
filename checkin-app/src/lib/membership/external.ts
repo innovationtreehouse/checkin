@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
 import { backgroundCheckProvider } from "@/lib/membership/background-check/manual-adapter";
-import { notifyReviewers } from "@/lib/membership/review";
+import { notifyReviewers, applyVolunteerStatus } from "@/lib/membership/review";
 import { zohoSign } from "@/lib/membership/contract/zohoProvider";
 import { signingMockActive } from "@/lib/membership/contract/signingTarget";
 import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
@@ -73,6 +73,9 @@ export async function getExternalStatus(process: {
  * — advance from EXTERNAL straight to PENDING_PAYMENT. The check no longer gates
  * payment: when it still needs a human review (no prior valid check), it runs in
  * PARALLEL while the applicant pays, and only the final ACTIVE flip waits on it.
+ * EXCEPTION: a household intake note holds the application at PENDING_BG_REVIEW
+ * instead — payment opens only after the reviewers (who are shown the note) clear
+ * the check, so a note like "treat us as a volunteer household" settles dues first.
  *
  * The conditional updateMany (status guard) is the atomic gate: two concurrent
  * callers (Zoho webhook + board "mark bg consent") both reach here, but only the
@@ -88,6 +91,22 @@ export async function advanceExternalIfComplete(processId: number) {
     if (!process.bgClearedAt && !process.bgConsentAt) return process;
 
     const advanced = await prisma.$transaction(async (tx) => {
+        // A household INITIAL/RENEWAL always has a membership (orgMembershipId is
+        // only null for PERSON_BG, which never sits at PENDING_EXTERNAL_ACTION).
+        const membership = await tx.orgMembership.findUnique({
+            where: { id: process.orgMembershipId! },
+            select: { householdId: true, household: { select: { intakeNotes: true } } },
+        });
+        // An applicant note ("anything else we should know?", #900) can change what
+        // the reviewer decides — e.g. "treat us as a volunteer household" from a
+        // family not on the allowlist — so payment must not run in parallel with a
+        // review that hasn't read it. Hold at PENDING_BG_REVIEW; clearBackgroundCheck
+        // moves it to PENDING_PAYMENT once two reviewers have seen the note. A
+        // still-valid prior check (bgClearedAt) keeps the direct path: submitIntake
+        // no longer takes the fresh shortcut when a note exists, so that combination
+        // is only pre-existing in-flight rows, which the review queue can't see.
+        const holdForNote = !process.bgClearedAt && !!membership?.household.intakeNotes?.trim();
+        const nextStatus = holdForNote ? "PENDING_BG_REVIEW" : "PENDING_PAYMENT";
         const { count } = await tx.orgMembershipProcess.updateMany({
             where: {
                 id: processId,
@@ -95,9 +114,14 @@ export async function advanceExternalIfComplete(processId: number) {
                 contractSignedAt: { not: null },
                 OR: [{ bgClearedAt: { not: null } }, { bgConsentAt: { not: null } }],
             },
-            data: { status: "PENDING_PAYMENT", stageEnteredAt: new Date() },
+            data: { status: nextStatus, stageEnteredAt: new Date() },
         });
         if (count !== 1) return null; // lost the race or no longer eligible — no audit, no notify
+        // Dues are read at PENDING_PAYMENT (ensurePaymentLink), normally BEFORE the
+        // background check clears — so a pre-designated volunteer family must get
+        // isVolunteer here, not only at clearance (#874). Sticky + idempotent;
+        // clearBackgroundCheck's reviewer-marked pass remains the supplement.
+        if (membership) await applyVolunteerStatus(tx, process.orgMembershipId!, membership.householdId, false);
         await tx.auditLog.create({
             data: {
                 actorId: SYSTEM_ACTOR,
@@ -105,7 +129,7 @@ export async function advanceExternalIfComplete(processId: number) {
                 tableName: "OrgMembershipProcess",
                 affectedEntityId: processId,
                 oldData: { status: "PENDING_EXTERNAL_ACTION" },
-                newData: { status: "PENDING_PAYMENT" },
+                newData: { status: nextStatus },
             },
         });
         return tx.orgMembershipProcess.findUnique({ where: { id: processId } });

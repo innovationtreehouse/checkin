@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
-import { notifyReviewers } from "@/lib/membership/review";
+import { notifyReviewers, applyVolunteerStatus } from "@/lib/membership/review";
 import { config } from "@/lib/config";
 
 /**
@@ -75,9 +75,9 @@ export async function runRenewalSweep(now: Date) {
 }
 
 /**
- * Member begins renewal: PENDING_RENEWAL -> RENEWAL_PENDING_BG (re-review needed)
- * or PENDING_PAYMENT (background check still valid). Idempotent-ish: only acts
- * from PENDING_RENEWAL.
+ * Member begins renewal: PENDING_RENEWAL -> RENEWAL_PENDING_BG (re-review needed,
+ * or a household intake note awaits a reviewer) or PENDING_PAYMENT (background
+ * check still valid, no note). Idempotent-ish: only acts from PENDING_RENEWAL.
  */
 export async function beginRenewal(processId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
@@ -85,11 +85,20 @@ export async function beginRenewal(processId: number) {
     if (process.status !== "PENDING_RENEWAL") throw new RenewalError("wrong_phase", "This renewal is not awaiting your confirmation.");
 
     // A RENEWAL always has a membership (orgMembershipId is only null for PERSON_BG).
-    const membership = await prisma.orgMembership.findUnique({ where: { id: process.orgMembershipId! }, select: { householdId: true } });
+    const membership = await prisma.orgMembership.findUnique({
+        where: { id: process.orgMembershipId! },
+        select: { householdId: true, household: { select: { intakeNotes: true } } },
+    });
     if (!membership) throw new RenewalError("not_found", "Membership not found.");
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();
-    const bgFresh = await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0);
+    // A household note (#900) must reach a reviewer before payment (#907): even
+    // with a still-fresh check, the renewal goes through review so the note (e.g.
+    // "treat us as a volunteer household") can settle dues first. Households clear
+    // the note in my-household once it no longer applies.
+    const bgFresh =
+        (await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0)) &&
+        !membership.household.intakeNotes?.trim();
 
     const nextStatus = bgFresh ? "PENDING_PAYMENT" : "RENEWAL_PENDING_BG";
     // Conditional on status PENDING_RENEWAL: a double-submit has both callers reach
@@ -108,6 +117,10 @@ export async function beginRenewal(processId: number) {
             data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: nextStatus, ...(bgFresh ? { bgClearedAt: true } : {}) } },
         });
         if (nextStatus === "RENEWAL_PENDING_BG") await notifyReviewers();
+        // Fresh check ⇒ clearBackgroundCheck never runs this cycle, so a household
+        // designated volunteer since last cycle would pay full dues — match the
+        // allowlist at this PENDING_PAYMENT transition too (#874).
+        if (bgFresh) await applyVolunteerStatus(prisma, process.orgMembershipId!, membership.householdId, false);
     }
     return prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id: processId } });
 }
