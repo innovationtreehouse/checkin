@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { withWebhook } from "@/lib/webhookAuth";
 import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
+import { adjustProgramInventory } from "@/lib/shopify";
 
 interface ShopifyOrder {
     id?: number | string;
@@ -142,13 +143,28 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 // built from — not order total. Fail CLOSED: no variant
                 // configured on the Program, or
                 // no line-item match, means we do NOT activate.
+                // Single-pool model (product decision 2026-07-06): shopifyVariantId,
+                // when set, is matched alongside the legacy pair during the
+                // transition — old programs never get shopifyVariantId, new ones
+                // never get the legacy pair, so this is additive, not a widening
+                // of what any one program accepts.
                 const program = await prisma.program.findUnique({ where: { id: programId } });
                 const programVariantIds = new Set(
-                    [program?.shopifyOrgMemberVariantId, program?.shopifyNonOrgMemberVariantId].filter(
+                    [program?.shopifyVariantId, program?.shopifyOrgMemberVariantId, program?.shopifyNonOrgMemberVariantId].filter(
                         (v): v is string => !!v,
                     ),
                 );
                 const hasProgramItem = (order.line_items ?? []).some((li) => programVariantIds.has(String(li.variant_id)));
+
+                // Which tier Shopify actually sold — needed below to mirror inventory
+                // onto the SIBLING pool. buildShopifyCheckoutUrl fixes ONE variant per
+                // order (one household = one tier per checkout), so if hasProgramItem
+                // matched and this is false, the non-member tier is the one purchased.
+                const purchasedOrgMember = !!program?.shopifyOrgMemberVariantId &&
+                    (order.line_items ?? []).some((li) => String(li.variant_id) === program.shopifyOrgMemberVariantId);
+
+                let activatedCount = 0;
+                let releasedHoldCount = 0;
 
                 for (const participantId of participantIds) {
                     // Find existing participant
@@ -164,19 +180,79 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                             continue;
                         }
 
-                        await prisma.programParticipant.update({
-                            where: {
-                                programId_personId: { programId, personId: participantId }
-                            },
+                        // Guarded transactionally (status PENDING -> ACTIVE) so a webhook
+                        // redelivery — or a participant already activated elsewhere —
+                        // can't inflate activatedCount and double-fire the sibling
+                        // mirror's -1 below.
+                        const activated = await prisma.programParticipant.updateMany({
+                            where: { programId, personId: participantId, status: 'PENDING' },
                             data: {
                                 status: 'ACTIVE',
                                 pendingSince: null, // clear out the pending timer
                             }
                         });
+                        activatedCount += activated.count;
 
-                        logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
+                        if (activated.count > 0) {
+                            logger.info(`[SHOPIFY WEBHOOK] Marked participant ${participantId} as ACTIVE for program ${programId}`);
+                        }
+
+                        // Hold-ledger (product decision 2026-07-06): NORMAL PAYMENT is
+                        // one of the three release paths. A denied scholarship
+                        // applicant who pays anyway still had inventoryHeldAt set
+                        // from application time; this sale just made Shopify
+                        // auto-decrement a SECOND unit for the same seat. Release the
+                        // hold (+1) to compensate, guarded transactionally
+                        // (inventoryHeldAt NOT NULL -> NULL) so a webhook retry can't
+                        // release twice. Without this, every denied-then-paying
+                        // applicant permanently leaks a seat of capacity.
+                        if (existing.inventoryHeldAt) {
+                            const release = await prisma.programParticipant.updateMany({
+                                where: { programId, personId: participantId, inventoryHeldAt: { not: null } },
+                                data: { inventoryHeldAt: null },
+                            });
+                            releasedHoldCount += release.count;
+                        }
                     } else {
                         logger.warn(`[SHOPIFY WEBHOOK] Participant ${participantId} not found in Program ${programId}. Ignoring payment.`);
+                    }
+                }
+
+                // Release path (b), continued: fire the compensating +1 for every
+                // hold released above, in one call. Never allowed to fail the
+                // webhook response — same non-fatal posture as the sibling-mirror
+                // block below (Shopify retries the whole order on a non-2xx).
+                if (releasedHoldCount > 0) {
+                    const ok = await adjustProgramInventory(
+                        {
+                            shopifyVariantId: program?.shopifyVariantId ?? null,
+                            shopifyOrgMemberVariantId: program?.shopifyOrgMemberVariantId ?? null,
+                            shopifyNonOrgMemberVariantId: program?.shopifyNonOrgMemberVariantId ?? null,
+                        },
+                        releasedHoldCount,
+                    );
+                    if (!ok) {
+                        logger.error(`[SHOPIFY WEBHOOK] Failed to release ${releasedHoldCount} scholarship inventory hold(s) for program ${programId} after payment — capacity may be out of sync.`);
+                    }
+                }
+
+                // LEGACY-ONLY two-pool mirror (product decision 2026-07-06, single-
+                // pool redesign): the org-member and non-org-member variants each
+                // carry their OWN Shopify inventory pool, both seeded to
+                // maxParticipants — so Shopify only auto-decrements the pool for the
+                // tier actually purchased, and the sibling pool needs a compensating
+                // mirror. Single-pool (shopifyVariantId) programs need NO mirror —
+                // there's exactly one pool, and Shopify already auto-decremented it
+                // on the sale. Deliberately AFTER activation is committed, and never
+                // allowed to fail the webhook response — Shopify retries the whole
+                // order on a non-2xx.
+                if (activatedCount > 0 && !program?.shopifyVariantId) {
+                    const siblingOnly = purchasedOrgMember
+                        ? { shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: program?.shopifyNonOrgMemberVariantId ?? null }
+                        : { shopifyOrgMemberVariantId: program?.shopifyOrgMemberVariantId ?? null, shopifyNonOrgMemberVariantId: null };
+                    const ok = await adjustProgramInventory(siblingOnly, -activatedCount);
+                    if (!ok) {
+                        logger.error(`[SHOPIFY WEBHOOK] Failed to mirror sibling-variant inventory for program ${programId} after activating ${activatedCount} participant(s) — pools may be out of sync.`);
                     }
                 }
             }

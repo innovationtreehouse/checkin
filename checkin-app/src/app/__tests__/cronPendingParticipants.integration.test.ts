@@ -55,6 +55,7 @@ describe('Cron Pending-Participants API Integration Tests', () => {
         await mkParticipant('day6');
         await mkParticipant('day7');
         await mkParticipant('plan'); // isPaymentPlanRequested -> never swept
+        await mkParticipant('denied'); // denied applicant -> grace-expiry cron's job, never this sweep's
 
         await prisma.programParticipant.createMany({
             data: [
@@ -63,6 +64,9 @@ describe('Cron Pending-Participants API Integration Tests', () => {
                 { programId, personId: ids.day6, status: 'PENDING', pendingSince: daysAgo(now, 6) },
                 { programId, personId: ids.day7, status: 'PENDING', pendingSince: daysAgo(now, 7) },
                 { programId, personId: ids.plan, status: 'PENDING', pendingSince: daysAgo(now, 8), isPaymentPlanRequested: true },
+                // Denied 10 days after enrolling: pendingSince is way past the 7-day
+                // kick, but paymentPlanDeniedAt hands the timeline to scholarship-grace-expiry.
+                { programId, personId: ids.denied, status: 'PENDING', pendingSince: daysAgo(now, 10), isPaymentPlanRequested: false, paymentPlanDeniedAt: daysAgo(now, 0), inventoryHeldAt: daysAgo(now, 10) },
             ]
         });
     });
@@ -107,10 +111,11 @@ describe('Cron Pending-Participants API Integration Tests', () => {
             expect(data.warned).toBe(3);
             expect(data.kicked).toBe(1);
 
-            // DB reality: only day7 deleted; the warned rows and the payment-plan row survive.
+            // DB reality: only day7 deleted; the warned rows, the payment-plan row,
+            // and the denied-applicant row (grace-expiry cron's responsibility) survive.
             const survivors = await prisma.programParticipant.findMany({ where: { programId } });
             const survivorPids = survivors.map(s => s.personId).sort((a, b) => a - b);
-            expect(survivorPids).toEqual([ids.day1, ids.day3, ids.day6, ids.plan].sort((a, b) => a - b));
+            expect(survivorPids).toEqual([ids.day1, ids.day3, ids.day6, ids.plan, ids.denied].sort((a, b) => a - b));
 
             const day7 = await prisma.programParticipant.findUnique({
                 where: { programId_personId: { programId, personId: ids.day7 } }

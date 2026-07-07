@@ -7,6 +7,14 @@
 
 > A note on naming, since the sibling doc above got called out for it: the status line above is accurate. This document proposes nothing has landed; it is not implemented in part, and no PR against `main` should claim otherwise until code exists.
 
+> **Update (PR #930, single-pool capacity):** the companion effort referenced above
+> shipped single-pool capacity + per-enrollee, server-minted single-use discount codes
+> as the **interim** member-pricing mechanism (see
+> `checkin-app/docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md` §2). That does not change this
+> doc's status or recommendation — segment-gated automatic discounts remain the intended
+> **end-state** for checkout identity; the interim codes are exactly the kind of narrow
+> stopgap this doc's own §5 (option (d)) names.
+
 ---
 
 ## 0. Scope check — what already exists

@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
-import { lockProgramAndCheckCapacity, ProgramCapacityError } from "@/lib/program/capacity";
+import { lockProgramAndCheckCapacity, ProgramCapacityError, withdrawAndReleaseHold } from "@/lib/program/capacity";
 import { checkProgramAge } from "@/lib/programAge";
 import { apiError } from "@/lib/api-response";
 
@@ -203,14 +203,12 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
             return apiError("Forbidden: Not authorized to remove this participant", 403);
         }
 
-        const enrollment = await prisma.programParticipant.delete({
-            where: {
-                programId_personId: {
-                    programId,
-                    personId: participantId
-                }
-            }
-        });
+        // Hold-ledger (product decision 2026-07-06): withdrawal is one of the
+        // three release paths — if this PENDING participant was holding a
+        // scholarship seat (inventoryHeldAt set), releasing it back to
+        // Shopify (+1) happens with the removal, exactly once (see
+        // withdrawAndReleaseHold).
+        const { enrollment, released, shopifyOk } = await withdrawAndReleaseHold(programId, participantId, currentProgram);
 
         await prisma.auditLog.create({
             data: {
@@ -223,7 +221,15 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
             }
         });
 
-        return NextResponse.json({ success: true, enrollment });
+        // No raw enrollment echo: this route is reachable by the program's lead
+        // mentor, and the deleted row carries board/finance-confidential hardship
+        // fields (paymentPlanDeniedAt, inventoryHeldAt). The audit log above keeps
+        // the full row server-side.
+        const responseObj: Record<string, unknown> = { success: true, released };
+        if (released && !shopifyOk) {
+            responseObj.warning = "Participant removed, but the Shopify inventory release failed. Capacity may be out of sync — check System Status > Link Status.";
+        }
+        return NextResponse.json(responseObj);
     } catch (error) {
         // P2025 = row to delete not found. Benign double-submit (participant
         // already un-enrolled); idempotent 200 instead of a 500.

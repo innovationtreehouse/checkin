@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { isActiveOrgMember } from "@/lib/orgMembership";
 import { notifyNewProgramAnnounced } from "@/lib/notifications";
+import { adjustProgramInventory } from "@/lib/shopify";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { validateProgramAgeBounds } from "@/lib/programAge";
@@ -119,7 +120,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
+        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -155,6 +156,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             // Empty string clears the field. This is the manual repair path when there's
             // no live Shopify to sync against (local/testing).
             ...(isSysAdminOrBoard && shopifyProductId !== undefined && { shopifyProductId: shopifyProductId || null }),
+            ...(isSysAdminOrBoard && shopifyVariantId !== undefined && { shopifyVariantId: shopifyVariantId || null }),
             ...(isSysAdminOrBoard && shopifyOrgMemberVariantId !== undefined && { shopifyOrgMemberVariantId: shopifyOrgMemberVariantId || null }),
             ...(isSysAdminOrBoard && shopifyNonOrgMemberVariantId !== undefined && { shopifyNonOrgMemberVariantId: shopifyNonOrgMemberVariantId || null }),
         };
@@ -183,7 +185,33 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             await notifyNewProgramAnnounced(updatedProgram.name);
         }
 
-        return NextResponse.json({ success: true, program: updatedProgram });
+        // Shopify is the source of truth for program capacity (product decision
+        // 2026-07-06): cap edits propagate as relative inventory adjustments.
+        // Only fires when the program already has Shopify checkout wired up —
+        // creation and sync-shopify set inventory absolutely and are unaffected.
+        let warning: string | undefined;
+        const oldMax = currentProgram.maxParticipants;
+        const newMax = updatedProgram.maxParticipants;
+        const hasShopifyVariant = !!(updatedProgram.shopifyVariantId || updatedProgram.shopifyOrgMemberVariantId || updatedProgram.shopifyNonOrgMemberVariantId);
+
+        if (oldMax !== newMax && hasShopifyVariant) {
+            if (oldMax !== null && newMax !== null) {
+                const ok = await adjustProgramInventory(updatedProgram, newMax - oldMax);
+                if (!ok) {
+                    warning = "Program updated, but the Shopify inventory adjustment failed. Capacity may be out of sync — check System Status > Link Status.";
+                }
+            } else {
+                // Null transition (capped <-> uncapped): a relative adjust can't express
+                // "start/stop tracking inventory" — that needs an inventory_management
+                // flip on the variant, which this PR intentionally doesn't attempt.
+                logger.warn(`[SHOPIFY] Program ${updatedProgram.id} maxParticipants transitioned ${oldMax} -> ${newMax} (capped/uncapped); inventory not adjusted automatically.`);
+                warning = "Capacity changed between capped and uncapped. Shopify inventory was not updated automatically — run Sync to Shopify or edit inventory directly in Shopify.";
+            }
+        }
+
+        const responseObj: Record<string, unknown> = { success: true, program: updatedProgram };
+        if (warning) responseObj.warning = warning;
+        return NextResponse.json(responseObj);
     } catch (error) {
         logger.error("Program update error:", error);
         return apiError("Failed to update program", 500);
