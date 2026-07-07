@@ -720,6 +720,18 @@ model Program {
   /// release once every program has migrated.
   /// @sensitivity:public
   shopifyVariantId          String?
+  /// Set when a board/sysadmin RETIRES this program's Shopify listing (program-ops
+  /// → Shopify section). While set: the Shopify product is `archived` status (no
+  /// checkout on the store) and every app-side checkout surface — checkout-link
+  /// building, member discount minting, capacity pushes (adjustProgramInventory),
+  /// and the sync-shopify repair path — treats the program as having NO live
+  /// listing. Un-archiving (clearing it) restores the product to `active` and
+  /// re-enables checkout. The orders/paid webhook STILL processes late-arriving
+  /// paid orders regardless (money already moved). Independent of program
+  /// archiving — a future program-archive hook should chain to this. See
+  /// docs/designs/SHOPIFY_LISTING_ARCHIVE.md.
+  /// @sensitivity:internal
+  shopifyArchivedAt         DateTime?
 
   volunteers   ProgramVolunteer[]
   participants ProgramParticipant[]

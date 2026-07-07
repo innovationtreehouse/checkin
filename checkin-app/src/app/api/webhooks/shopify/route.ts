@@ -228,6 +228,10 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                             shopifyVariantId: program?.shopifyVariantId ?? null,
                             shopifyOrgMemberVariantId: program?.shopifyOrgMemberVariantId ?? null,
                             shopifyNonOrgMemberVariantId: program?.shopifyNonOrgMemberVariantId ?? null,
+                            // Archived listing: the DB hold was still cleared above (the
+                            // paid order is processed either way); only the Shopify sync
+                            // no-ops. See SHOPIFY_LISTING_ARCHIVE.md.
+                            shopifyArchivedAt: program?.shopifyArchivedAt ?? null,
                         },
                         releasedHoldCount,
                     );
@@ -248,8 +252,8 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 // order on a non-2xx.
                 if (activatedCount > 0 && !program?.shopifyVariantId) {
                     const siblingOnly = purchasedOrgMember
-                        ? { shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: program?.shopifyNonOrgMemberVariantId ?? null }
-                        : { shopifyOrgMemberVariantId: program?.shopifyOrgMemberVariantId ?? null, shopifyNonOrgMemberVariantId: null };
+                        ? { shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: program?.shopifyNonOrgMemberVariantId ?? null, shopifyArchivedAt: program?.shopifyArchivedAt ?? null }
+                        : { shopifyOrgMemberVariantId: program?.shopifyOrgMemberVariantId ?? null, shopifyNonOrgMemberVariantId: null, shopifyArchivedAt: program?.shopifyArchivedAt ?? null };
                     const ok = await adjustProgramInventory(siblingOnly, -activatedCount);
                     if (!ok) {
                         logger.error(`[SHOPIFY WEBHOOK] Failed to mirror sibling-variant inventory for program ${programId} after activating ${activatedCount} participant(s) — pools may be out of sync.`);

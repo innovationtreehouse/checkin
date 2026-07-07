@@ -189,12 +189,14 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         // 2026-07-06): cap edits propagate as relative inventory adjustments.
         // Only fires when the program already has Shopify checkout wired up —
         // creation and sync-shopify set inventory absolutely and are unaffected.
+        // Archived listing (SHOPIFY_LISTING_ARCHIVE.md): no live listing to push
+        // to — skip the adjust AND the null-transition warning entirely.
         let warning: string | undefined;
         const oldMax = currentProgram.maxParticipants;
         const newMax = updatedProgram.maxParticipants;
         const hasShopifyVariant = !!(updatedProgram.shopifyVariantId || updatedProgram.shopifyOrgMemberVariantId || updatedProgram.shopifyNonOrgMemberVariantId);
 
-        if (oldMax !== newMax && hasShopifyVariant) {
+        if (oldMax !== newMax && hasShopifyVariant && !updatedProgram.shopifyArchivedAt) {
             if (oldMax !== null && newMax !== null) {
                 const ok = await adjustProgramInventory(updatedProgram, newMax - oldMax);
                 if (!ok) {

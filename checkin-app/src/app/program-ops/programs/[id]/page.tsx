@@ -43,8 +43,10 @@ export type ProgramDetail = {
   orgMemberPriceCents: number | null;
   nonOrgMemberPriceCents: number | null;
   shopifyProductId: string | null;
+  shopifyVariantId: string | null;
   shopifyOrgMemberVariantId: string | null;
   shopifyNonOrgMemberVariantId: string | null;
+  shopifyArchivedAt: string | null;
 };
 
 export type ParticipantOption = { id: number; name: string | null; email: string; dateOfBirth?: string | null };
@@ -220,6 +222,31 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     }
   };
 
+  // Archive / un-archive the program's Shopify LISTING (retire it from the store
+  // without touching sales history — see SHOPIFY_LISTING_ARCHIVE.md).
+  const handleToggleShopifyArchive = async (archived: boolean) => {
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/programs/${id}/archive-shopify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ color: data.warning ? "yellow" : "green", autoClose: data.warning ? false : undefined, message: data.warning || (archived ? "Shopify listing archived." : "Shopify listing restored.") });
+        notifyNavRefresh();
+        fetchProgram();
+      } else {
+        notifications.show({ color: "red", message: data.error || "Failed to update Shopify listing.", autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   if (loading || authLoading) {
     return <PageLoader />;
   }
@@ -342,6 +369,38 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                       <Button type="button" variant="light" size="xs" loading={syncing} onClick={handleSaveShopifyIds}>
                         Save Shopify IDs
                       </Button>
+                    </Group>
+                  </Card>
+                )}
+
+                {/* Archive / un-archive the Shopify LISTING — retire checkout without
+                    touching sales history (SHOPIFY_LISTING_ARCHIVE.md). Only shown once
+                    a listing exists to act on. */}
+                {isSysAdminOrBoard && (program.shopifyProductId || program.shopifyVariantId || program.shopifyOrgMemberVariantId || program.shopifyNonOrgMemberVariantId) && (
+                  <Card withBorder radius="md" padding="md">
+                    <Group justify="space-between" align="center" wrap="wrap">
+                      <Box>
+                        <Group gap="xs" mb={4}>
+                          <Text fw={500}>Shopify Listing</Text>
+                          {program.shopifyArchivedAt
+                            ? <Badge color="orange" variant="filled">Archived</Badge>
+                            : <Badge color="green" variant="light">Live</Badge>}
+                        </Group>
+                        <Text size="xs" c="dimmed" maw={520}>
+                          {program.shopifyArchivedAt
+                            ? "Retired: the Shopify product is archived and checkout is disabled. Sales history is untouched — un-archive to restore checkout."
+                            : "Live: the Shopify product is active and purchasable. Archiving retires it (no checkout) without touching sales history."}
+                        </Text>
+                      </Box>
+                      {program.shopifyArchivedAt ? (
+                        <Button type="button" color="green" variant="light" size="xs" loading={syncing} onClick={() => handleToggleShopifyArchive(false)}>
+                          Un-archive Listing
+                        </Button>
+                      ) : (
+                        <Button type="button" color="orange" variant="light" size="xs" loading={syncing} onClick={() => handleToggleShopifyArchive(true)}>
+                          Archive Listing
+                        </Button>
+                      )}
                     </Group>
                   </Card>
                 )}

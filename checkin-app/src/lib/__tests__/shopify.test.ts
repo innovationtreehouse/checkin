@@ -1,4 +1,4 @@
-import { createShopifyProgramVariants, createShopifySingleVariantProgram, adjustProgramInventory, mintMemberDiscountCode, resetTokenCache } from '../shopify';
+import { createShopifyProgramVariants, createShopifySingleVariantProgram, adjustProgramInventory, mintMemberDiscountCode, setProgramListingArchived, resetTokenCache } from '../shopify';
 import { sendEmail } from '../email';
 import prisma from '../prisma';
 
@@ -394,6 +394,19 @@ describe('adjustProgramInventory', () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    // Archived listing (SHOPIFY_LISTING_ARCHIVE.md): the single choke point for
+    // every capacity push no-ops when the program's listing is archived, even
+    // with real creds present — no live listing to adjust.
+    it('no-ops successfully when the program listing is archived (no fetch)', async () => {
+        const result = await adjustProgramInventory(
+            { shopifyOrgMemberVariantId: '67890', shopifyNonOrgMemberVariantId: '11111', shopifyArchivedAt: new Date() },
+            5,
+        );
+
+        expect(result).toBe(true);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     // Single-pool model (product decision 2026-07-06): shopifyVariantId, when
     // set, IS the whole capacity — adjust ONLY that id, never the legacy pair,
     // even if stale legacy values linger on the row.
@@ -587,5 +600,128 @@ describe('mintMemberDiscountCode', () => {
         const result = await mintMemberDiscountCode(42, '999888', 1000);
         expect(result).toBeNull();
         expect(fetchMock).not.toHaveBeenCalled();
+    });
+});
+
+describe('setProgramListingArchived', () => {
+    let originalEnv: NodeJS.ProcessEnv;
+    let fetchMock: jest.Mock;
+
+    beforeEach(() => {
+        originalEnv = { ...process.env };
+        process.env.SHOPIFY_STORE_DOMAIN = 'test.myshopify.com';
+        process.env.SHOPIFY_CLIENT_ID = 'test_client_id';
+        process.env.SHOPIFY_CLIENT_SECRET = 'test_client_secret';
+
+        fetchMock = jest.fn();
+        global.fetch = fetchMock;
+
+        jest.clearAllMocks();
+        resetTokenCache();
+    });
+
+    afterEach(() => {
+        process.env = originalEnv;
+        jest.restoreAllMocks();
+    });
+
+    it('PUTs the stored product id to status=archived on archive', async () => {
+        mockTokenResponse(fetchMock);
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 123, status: 'archived' } }) });
+
+        const result = await setProgramListingArchived(
+            { shopifyProductId: '123', shopifyVariantId: '456', shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null },
+            true,
+        );
+
+        expect(result).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(2); // token + product PUT
+        const putCall = fetchMock.mock.calls[1];
+        expect(String(putCall[0])).toContain('/products/123.json');
+        expect((putCall[1] as RequestInit).method).toBe('PUT');
+        expect(JSON.parse((putCall[1] as RequestInit).body as string)).toEqual({ product: { id: 123, status: 'archived' } });
+    });
+
+    it('PUTs status=active on un-archive', async () => {
+        mockTokenResponse(fetchMock);
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+        const result = await setProgramListingArchived(
+            { shopifyProductId: '789', shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null },
+            false,
+        );
+
+        expect(result).toBe(true);
+        expect(JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)).toEqual({ product: { id: 789, status: 'active' } });
+    });
+
+    it('derives the product id from a variant when only variant ids are stored', async () => {
+        mockTokenResponse(fetchMock);
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { product_id: 555 } }) }); // GET variant
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) }); // PUT product
+
+        const result = await setProgramListingArchived(
+            { shopifyProductId: null, shopifyOrgMemberVariantId: '456', shopifyNonOrgMemberVariantId: null },
+            true,
+        );
+
+        expect(result).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(3); // token + variant get + product PUT
+        expect(String(fetchMock.mock.calls[1][0])).toContain('/variants/456.json');
+        expect(String(fetchMock.mock.calls[2][0])).toContain('/products/555.json');
+    });
+
+    it('no-ops success for a program with no listing (no fetch)', async () => {
+        const result = await setProgramListingArchived(
+            { shopifyProductId: null, shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null },
+            true,
+        );
+        expect(result).toBe(true);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('no-ops success when the Shopify mock is active (local)', async () => {
+        process.env.CHECKIN_ENV = 'local';
+        delete process.env.SHOPIFY_STORE_DOMAIN;
+        delete process.env.SHOPIFY_CLIENT_ID;
+        delete process.env.SHOPIFY_CLIENT_SECRET;
+
+        const result = await setProgramListingArchived(
+            { shopifyProductId: '123', shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null },
+            true,
+        );
+        expect(result).toBe(true);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('returns false without calling fetch when credentials are missing (real env)', async () => {
+        delete process.env.SHOPIFY_STORE_DOMAIN;
+        delete process.env.SHOPIFY_CLIENT_ID;
+        delete process.env.SHOPIFY_CLIENT_SECRET;
+
+        const result = await setProgramListingArchived(
+            { shopifyProductId: '123', shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null },
+            true,
+        );
+        expect(result).toBe(false);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('returns false and emails admins (non-fatal) when the status update fails', async () => {
+        mockTokenResponse(fetchMock);
+        fetchMock.mockResolvedValueOnce({ ok: false, status: 422, text: async () => '{"errors":"bad status"}' });
+        (prisma.person.findMany as jest.Mock).mockResolvedValueOnce([{ email: 'admin@test.com' }]);
+
+        const result = await setProgramListingArchived(
+            { shopifyProductId: '123', shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null },
+            true,
+        );
+
+        expect(result).toBe(false);
+        expect(sendEmail).toHaveBeenCalledWith(
+            'admin@test.com',
+            'Shopify Integration Error',
+            expect.stringContaining('Failed to set the Shopify product status'),
+        );
     });
 });

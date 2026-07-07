@@ -465,9 +465,20 @@ export async function adjustProgramInventory(
         shopifyVariantId?: string | null;
         shopifyOrgMemberVariantId: string | null;
         shopifyNonOrgMemberVariantId: string | null;
+        shopifyArchivedAt?: Date | null;
     },
     delta: number,
 ): Promise<boolean> {
+    // Archived listing (SHOPIFY_LISTING_ARCHIVE.md): the program has NO live
+    // Shopify listing, so there is nothing to adjust. This is the single choke
+    // point for every relative inventory push — capacity edits, scholarship
+    // holds/releases, the webhook's sibling mirror — so one guard here silences
+    // them all while archived. Success no-op (true) so callers surface no warning.
+    if (program.shopifyArchivedAt) {
+        console.log(`[SHOPIFY] Skipping inventory adjust (delta ${delta}): program's Shopify listing is archived.`);
+        return true;
+    }
+
     const variantIds = program.shopifyVariantId
         ? [program.shopifyVariantId]
         : [program.shopifyOrgMemberVariantId, program.shopifyNonOrgMemberVariantId].filter((id): id is string => !!id);
@@ -653,5 +664,96 @@ export async function mintMemberDiscountCode(
             amountOffCents,
         });
         return null;
+    }
+}
+
+/**
+ * Retire (archive) or restore (un-archive) a program's Shopify LISTING by
+ * flipping the product's status (SHOPIFY_LISTING_ARCHIVE.md). `archived: true`
+ * → PUT the product to `archived` status (hidden from the storefront, not
+ * purchasable, sales history preserved); `archived: false` → restore to
+ * `active`. Board/sysadmin action, called from POST /api/programs/[id]/archive-shopify.
+ *
+ * The product id is normally stored on the program (shopifyProductId); if only
+ * variant ids are (possible via the manual-repair PATCH path), it's derived by
+ * fetching the variant — mirroring adjustProgramInventory's variant lookup.
+ * A program with neither (free program / no listing) is a no-op success.
+ *
+ * Never throws: mirrors the rest of this module (mock branch, hard fetch
+ * timeout, reportShopifyFailure + admin email on failure). Returns false on a
+ * real Shopify failure so the caller can archive the checkin side anyway and
+ * surface a non-fatal warning (reconcile via retry / the Shopify admin).
+ */
+export async function setProgramListingArchived(
+    program: {
+        shopifyProductId: string | null;
+        shopifyVariantId?: string | null;
+        shopifyOrgMemberVariantId: string | null;
+        shopifyNonOrgMemberVariantId: string | null;
+    },
+    archived: boolean,
+): Promise<boolean> {
+    const status = archived ? "archived" : "active";
+    const anyVariantId = program.shopifyVariantId || program.shopifyOrgMemberVariantId || program.shopifyNonOrgMemberVariantId || null;
+
+    // No product AND no variant → free program / no listing: nothing to act on.
+    if (!program.shopifyProductId && !anyVariantId) return true;
+
+    // See createShopifyProgramVariants above for why this branch exists (CHECKIN_ENV=local mock).
+    if (config.shopifyMockActive()) {
+        console.log(`[SHOPIFY] (mock) Would set product status to ${status} for program listing (product ${program.shopifyProductId ?? "?"}).`);
+        return true;
+    }
+
+    const storeDomain = config.shopifyStoreDomain();
+    const accessToken = await getAccessToken();
+
+    if (!storeDomain || !accessToken) {
+        console.warn("Shopify integration is disabled: Missing credentials or unable to obtain access token");
+        return false;
+    }
+
+    try {
+        // Resolve the product id: stored id if present, else derive from a variant.
+        let productId = program.shopifyProductId;
+        if (!productId && anyVariantId) {
+            const variantRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/variants/${anyVariantId}.json`, {
+                headers: { 'X-Shopify-Access-Token': accessToken },
+            }, "Shopify get variant");
+            if (!variantRes.ok) throw new Error(`Shopify variant lookup failed for ${anyVariantId}: ${variantRes.status}`);
+            const variantData = await variantRes.json();
+            productId = variantData.variant?.product_id ? String(variantData.variant.product_id) : null;
+        }
+        if (!productId) return true; // variant carried no product_id — nothing to act on.
+
+        const res = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products/${productId}.json`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Shopify-Access-Token': accessToken,
+            },
+            body: JSON.stringify({ product: { id: Number(productId), status } }),
+        }, "Shopify update product status");
+        if (!res.ok) {
+            throw new Error(`Shopify product status update failed for ${productId}: ${res.status} ${await res.text()}`);
+        }
+
+        console.log(`[SHOPIFY] Set product ${productId} status to ${status}.`);
+        return true;
+    } catch (error) {
+        console.error("[Shopify Error] Failed to update program listing status:", error);
+
+        await reportShopifyFailure(
+            "setProgramListingArchived",
+            error,
+            {
+                shopifyProductId: program.shopifyProductId,
+                shopifyVariantId: program.shopifyVariantId ?? null,
+                archived,
+            },
+            `Failed to set the Shopify product status to <strong>${status}</strong> while ${archived ? "archiving" : "un-archiving"} a program's listing.`,
+        );
+
+        return false;
     }
 }

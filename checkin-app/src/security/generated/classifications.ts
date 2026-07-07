@@ -195,6 +195,7 @@ export const classifications = {
         shopifyOrgMemberVariantId: 'public',
         shopifyNonOrgMemberVariantId: 'public',
         shopifyVariantId: 'public',
+        shopifyArchivedAt: 'internal',
     },
     ProgramVolunteer: {
         programId: 'public',

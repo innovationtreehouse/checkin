@@ -21,6 +21,10 @@ export const POST = withAuth({}, async (_req, auth, { params }: { params: Promis
     const program = await prisma.program.findUnique({ where: { id: programId } });
     if (!program) return apiError("Program not found", 404);
 
+    // Archived listing (SHOPIFY_LISTING_ARCHIVE.md): no live listing to price —
+    // treat like a legacy/free program and fall through to an undiscounted link.
+    if (program.shopifyArchivedAt) return NextResponse.json({ code: null });
+
     // Legacy (two-variant) programs already charge the right tier via variant
     // choice — no discount code needed. Both prices must be known to compute
     // the discount amount.

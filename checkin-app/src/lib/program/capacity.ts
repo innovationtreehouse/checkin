@@ -65,7 +65,7 @@ export async function lockProgramAndCheckCapacity(
 export async function withdrawAndReleaseHold(
     programId: number,
     personId: number,
-    program: { shopifyVariantId?: string | null; shopifyOrgMemberVariantId: string | null; shopifyNonOrgMemberVariantId: string | null },
+    program: { shopifyVariantId?: string | null; shopifyOrgMemberVariantId: string | null; shopifyNonOrgMemberVariantId: string | null; shopifyArchivedAt?: Date | null },
 ): Promise<{ enrollment: ProgramParticipant; released: boolean; shopifyOk: boolean }> {
     const enrollment = await prisma.programParticipant.delete({
         where: { programId_personId: { programId, personId } },

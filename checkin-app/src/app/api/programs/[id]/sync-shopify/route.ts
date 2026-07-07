@@ -32,6 +32,11 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
     const program = await prisma.program.findUnique({ where: { id: programId } });
     if (!program) return apiError("Program not found", 404);
+    // Archived listing (SHOPIFY_LISTING_ARCHIVE.md): never re-mint a live listing
+    // for a retired program — un-archive it first.
+    if (program.shopifyArchivedAt) {
+        return apiError("This program's Shopify listing is archived. Un-archive it before syncing checkout.", 400);
+    }
     if (!isProgramCheckoutBroken(program)) {
         return apiError("Program checkout is already configured (or the program is free).", 400);
     }

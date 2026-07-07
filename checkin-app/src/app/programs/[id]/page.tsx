@@ -38,6 +38,9 @@ type ProgramDetail = {
   shopifyVariantId: string | null;
   shopifyOrgMemberVariantId: string | null;
   shopifyNonOrgMemberVariantId: string | null;
+  // Set when the program's Shopify listing is archived — no live listing, so no
+  // checkout link is built (SHOPIFY_LISTING_ARCHIVE.md).
+  shopifyArchivedAt: string | null;
   minAge: number | null;
   maxAge: number | null;
   orgMemberOnly: boolean;
@@ -246,6 +249,13 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       let mockPay = false;
       let isMember = false;
       if (isPayingOnShopify && program) {
+        // Archived listing (SHOPIFY_LISTING_ARCHIVE.md): no live Shopify listing,
+        // so there is no checkout to build — bail before creating an unchargeable
+        // enrollment, same posture as a missing variant below.
+        if (program.shopifyArchivedAt) {
+          notifications.show({ color: "red", autoClose: false, message: "Enrollment for this program is closed — its checkout has been archived. Contact an admin." });
+          return;
+        }
         const householdRes = await fetch('/api/household');
         if (householdRes.ok) {
           const householdData = await householdRes.json();
