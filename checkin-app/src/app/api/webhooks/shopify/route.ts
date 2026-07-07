@@ -35,13 +35,12 @@ function verifyShopifyHmac(req: Request, rawBody: string): { ok: true } | { ok: 
         .update(rawBody, "utf8")
         .digest("base64");
 
-    // Convert both signatures to Buffers to prevent timing attacks using crypto.timingSafeEqual.
-    // Since HMAC-SHA256 in base64 is a known fixed length, an early length check does not leak
-    // any secret information about the signature itself.
-    const generatedBuffer = Buffer.from(generatedSignature);
-    const headerBuffer = Buffer.from(headerSignature);
+    // Hash both signatures to a fixed length before comparison to prevent timing attacks
+    // and avoid leaking the expected signature length, then use crypto.timingSafeEqual.
+    const generatedBuffer = crypto.createHash('sha256').update(generatedSignature).digest();
+    const headerBuffer = crypto.createHash('sha256').update(headerSignature).digest();
 
-    if (generatedBuffer.length !== headerBuffer.length || !crypto.timingSafeEqual(generatedBuffer, headerBuffer)) {
+    if (!crypto.timingSafeEqual(generatedBuffer, headerBuffer)) {
         logger.error("Shopify webhook signature mismatch.");
         return { ok: false, status: 401, error: "Invalid signature" };
     }
