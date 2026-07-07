@@ -211,6 +211,17 @@ export const config = {
     isProd: (): boolean => readCheckinEnv() === 'prod',
     // True on the cloud dev instance OR a local laptop (i.e. not prod). Server-only.
     isDevInstance: (): boolean => readCheckinEnv() !== 'prod',
+    // Gate for the /dev tools + their capture paths (sent-mail inbox, email
+    // capture). The design docs paired isDevInstance() with a
+    // `NODE_ENV !== 'production'` build fuse (the persona-mint idiom), but every
+    // DEPLOYED instance — cloud-dev included — runs the same production image
+    // (checkin-app/Dockerfile sets NODE_ENV=production), so that clause made the
+    // tools 404 on the very instance they exist for. Prod safety rests on
+    // CHECKIN_ENV, which is server-only and FAILS SAFE to 'prod' for any
+    // unset/unrecognized value (readCheckinEnv); cloud-dev pages are additionally
+    // behind the org-member login gate. Use this — not a hand-rolled
+    // NODE_ENV check — to gate any future dev tool.
+    devToolsActive: (): boolean => readCheckinEnv() !== 'prod',
     // True only on a developer laptop. Gates offline credential login + keyless kiosk.
     isLocal: (): boolean => readCheckinEnv() === 'local',
     baseUrl: (): string => {

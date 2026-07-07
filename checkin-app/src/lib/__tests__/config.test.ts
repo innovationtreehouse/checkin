@@ -55,17 +55,19 @@ describe("requireEnv-backed getters", () => {
     });
 });
 
-describe("checkinEnv / isProd / isDevInstance / isLocal", () => {
+describe("checkinEnv / isProd / isDevInstance / isLocal / devToolsActive", () => {
     it("unset fails safe to prod", () => {
         delete process.env.CHECKIN_ENV;
         expect(config.checkinEnv()).toBe("prod");
         expect(config.isProd()).toBe(true);
         expect(config.isDevInstance()).toBe(false);
         expect(config.isLocal()).toBe(false);
+        expect(config.devToolsActive()).toBe(false);
     });
     it("garbage value also fails safe to prod", () => {
         process.env.CHECKIN_ENV = "staging";
         expect(config.checkinEnv()).toBe("prod");
+        expect(config.devToolsActive()).toBe(false);
     });
     it("'dev'", () => {
         process.env.CHECKIN_ENV = "dev";
@@ -73,12 +75,29 @@ describe("checkinEnv / isProd / isDevInstance / isLocal", () => {
         expect(config.isProd()).toBe(false);
         expect(config.isDevInstance()).toBe(true);
         expect(config.isLocal()).toBe(false);
+        expect(config.devToolsActive()).toBe(true);
     });
     it("'local'", () => {
         process.env.CHECKIN_ENV = "local";
         expect(config.checkinEnv()).toBe("local");
         expect(config.isDevInstance()).toBe(true);
         expect(config.isLocal()).toBe(true);
+        expect(config.devToolsActive()).toBe(true);
+    });
+    it("devToolsActive ignores NODE_ENV: cloud-dev runs the production image", () => {
+        // Regression for the Debug-nav 404: every deployed instance has
+        // NODE_ENV=production (Dockerfile), so a NODE_ENV fuse killed the /dev
+        // tools on cloud-dev itself. The gate must be CHECKIN_ENV alone.
+        const original = process.env.NODE_ENV;
+        Object.defineProperty(process.env, "NODE_ENV", { value: "production", configurable: true });
+        try {
+            process.env.CHECKIN_ENV = "dev";
+            expect(config.devToolsActive()).toBe(true);
+            process.env.CHECKIN_ENV = "prod";
+            expect(config.devToolsActive()).toBe(false);
+        } finally {
+            Object.defineProperty(process.env, "NODE_ENV", { value: original, configurable: true });
+        }
     });
 });
 
