@@ -88,6 +88,12 @@ export const classifications = {
         renewalReminderSentAt: 'internal',
         isPaymentPlanRequested: 'internal',
     },
+    PersonBgNudge: {
+        id: 'public',
+        processId: 'public',
+        thresholdDay: 'public',
+        sentAt: 'internal',
+    },
     BackgroundCheckAttestation: {
         id: 'public',
         processId: 'public',
@@ -381,6 +387,10 @@ export const relations = {
         orgMembership: { model: 'OrgMembership', isList: false },
         subjectPerson: { model: 'Person', isList: false },
         attestations: { model: 'BackgroundCheckAttestation', isList: true },
+        nudges: { model: 'PersonBgNudge', isList: true },
+    },
+    PersonBgNudge: {
+        process: { model: 'OrgMembershipProcess', isList: false },
     },
     BackgroundCheckAttestation: {
         process: { model: 'OrgMembershipProcess', isList: false },

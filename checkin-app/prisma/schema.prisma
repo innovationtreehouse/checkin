@@ -405,9 +405,31 @@ model OrgMembershipProcess {
   isPaymentPlanRequested Boolean @default(false)
 
   attestations BackgroundCheckAttestation[]
+  nudges       PersonBgNudge[]
 
   @@index([orgMembershipId])
   @@index([status])
+}
+
+/// One sent escalating background-check nudge, per (obligation, threshold). The
+/// unique(processId, thresholdDay) index is the dedup ledger: the nightly nudge
+/// sweep inserts before it emails, so a repeated cron run never re-sends the same
+/// threshold for the same PERSON_BG obligation. See docs/designs/BG_STUDENT_NUDGES.md;
+/// folds into #958's NotificationLedger as a `PERSON_BG_NUDGE` row-type at merge.
+model PersonBgNudge {
+  /// @sensitivity:public
+  id           Int                  @id @default(autoincrement())
+  /// @sensitivity:public
+  processId    Int
+  process      OrgMembershipProcess @relation(fields: [processId], references: [id], onDelete: Restrict)
+  /// Obligation-age (in whole days) bucket this nudge was sent at: 0, 14, 30, then
+  /// monthly (60, 90, ...). Doubles as the dedup key with processId.
+  /// @sensitivity:public
+  thresholdDay Int
+  /// @sensitivity:internal
+  sentAt       DateTime             @default(now())
+
+  @@unique([processId, thresholdDay])
 }
 
 model BackgroundCheckAttestation {

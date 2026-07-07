@@ -99,6 +99,7 @@ Read these before changing the relevant area — start here, then follow links.
 - `CUJS.md` — **critical user journeys** (the basis for flow tests).
 - `DEV_INSTANCE_DESIGN.md` — the `CHECKIN_ENV` prod/dev/local model + persona-mint/impersonation (read before touching auth/env).
 - `DEV_DASHBOARD_DESIGN.md` — dev dashboard + seed/reset macros.
+- `BG_STUDENT_NUDGES.md` — escalating background-check nudges to 18+ students' households (warn-only, dedup ledger; folds into #958's NotificationLedger).
 - `PRODUCTION_PLAN.md`, `implementation_plan.md`, `MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
 
 **Security** (`docs/security/`)
