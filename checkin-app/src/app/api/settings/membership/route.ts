@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { config } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         orgMembershipVariantId?: string | null;
         volunteerDiscountCode?: string | null;
         bgRecheckMonths?: number;
+        devSigningTarget?: string | null;
         scholarshipDenialGraceDays?: number | null;
     };
     try {
@@ -61,6 +63,18 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         data.volunteerDiscountCode = body.volunteerDiscountCode?.trim() || null;
     }
     if (body.bgRecheckMonths !== undefined) data.bgRecheckMonths = Math.max(0, Math.round(body.bgRecheckMonths));
+    if (body.devSigningTarget !== undefined) {
+        // Dev-instance-only knob (signing target radio). Rejected outright on any
+        // other env so prod's DB can never even hold a value — the read side
+        // (signingMockActive) has its own hard fuse regardless.
+        if (config.checkinEnv() !== "dev") {
+            return apiError("devSigningTarget can only be set on a dev instance", 400);
+        }
+        if (body.devSigningTarget !== null && body.devSigningTarget !== "zoho" && body.devSigningTarget !== "debug") {
+            return apiError("devSigningTarget must be 'zoho', 'debug', or null", 400);
+        }
+        data.devSigningTarget = body.devSigningTarget;
+    }
     // scholarshipDenialGraceDays: null = feature off (never guess a default); otherwise a positive integer.
     if (body.scholarshipDenialGraceDays !== undefined) {
         if (body.scholarshipDenialGraceDays !== null) {

@@ -451,6 +451,14 @@ model BoardSettings {
   /// (the board must set the real Treehouse policy value before renewals re-check).
   /// @sensitivity:public
   bgRecheckMonths            Int       @default(0)
+  /// DEV-INSTANCE-ONLY override for where contract signing requests go:
+  /// 'debug' routes them to the in-app mock interstitial (/dev/zoho-sign) even
+  /// when real Zoho creds are set; 'zoho' or NULL uses whatever the env
+  /// dictates (real client when creds are set). Only ever read when
+  /// CHECKIN_ENV=dev — hard fuse in lib/membership/contract/signingTarget.ts;
+  /// prod and local never consult it.
+  /// @sensitivity:internal
+  devSigningTarget           String?
   /// Overrides the EMAIL_FROM env default as the Resend sender on every outbound
   /// email when set. Must be on a Resend-verified domain or all mail bounces —
   /// hence the confirm-to-edit guard in the settings UI. Null = use the env default.

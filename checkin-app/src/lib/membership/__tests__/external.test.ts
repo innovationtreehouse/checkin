@@ -16,6 +16,8 @@ jest.mock('@/lib/prisma', () => ({
         person: { findUnique: jest.fn() },
         orgMembershipProcess: { findUnique: jest.fn(), update: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
         auditLog: { create: jest.fn() },
+        // signingMockActive reads the dev signing-target radio; null = default ('zoho').
+        boardSettings: { findUnique: jest.fn().mockResolvedValue(null) },
         $transaction: jest.fn(),
     },
 }));
