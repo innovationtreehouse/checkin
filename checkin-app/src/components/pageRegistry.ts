@@ -54,6 +54,7 @@ export const PAGES: PageEntry[] = [
   // payload (leadsAnyProgram), matching the nav gate. Distinct from the attendee
   // "My Programs" tab above.
   { href: '/my-programs/attendance', label: 'My Programs (as Volunteer)', section: 'Personal', keywords: 'lead mentor program staff attendance', visible: LEADS_PROGRAM },
+  { href: '/my-programs/roster', label: 'Program Roster', section: 'Personal', keywords: 'lead mentor roster contact attendance summary csv export', visible: LEADS_PROGRAM },
   { href: '/my-programs/conflicts', label: 'Attendance Conflicts', section: 'Personal', keywords: 'lead mentor duplicate overlapping visit attendance', visible: LEADS_PROGRAM },
   // Stays visible to all members: also the Join/renewal entry for new applicants
   // who aren't a household lead yet (gating it on lead would break joining).

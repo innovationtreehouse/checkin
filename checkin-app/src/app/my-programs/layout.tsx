@@ -42,6 +42,7 @@ export default function MyProgramsLayout({ children }: { children: React.ReactNo
 
   const TABS = [
     { value: "/my-programs/attendance", label: "Attendance" },
+    { value: "/my-programs/roster", label: "Roster" },
     { value: "/my-programs/conflicts", label: "Conflicts" },
   ];
   const active =
@@ -52,6 +53,7 @@ export default function MyProgramsLayout({ children }: { children: React.ReactNo
   const conflictCount = conflicts?.length ?? 0;
   const subtitle: Record<string, string> = {
     "/my-programs/attendance": "Manage Attendance for Programs you lead",
+    "/my-programs/roster": "Roster, contact info, attendance summary, and CSV export for programs you lead",
     "/my-programs/conflicts": "Resolve Duplicate or overlapping check-ins for your programs",
   };
 
@@ -65,6 +67,7 @@ export default function MyProgramsLayout({ children }: { children: React.ReactNo
           >
             Attendance
           </Tabs.Tab>
+          <Tabs.Tab value="/my-programs/roster">Roster</Tabs.Tab>
           <Tabs.Tab
             value="/my-programs/conflicts"
             rightSection={conflictCount > 0 ? <CountBadge intent="alert">{conflictCount}</CountBadge> : undefined}
