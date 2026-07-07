@@ -45,6 +45,7 @@ export type ProgramDetail = {
   shopifyProductId: string | null;
   shopifyOrgMemberVariantId: string | null;
   shopifyNonOrgMemberVariantId: string | null;
+  archivedAt: string | null;
 };
 
 export type ParticipantOption = { id: number; name: string | null; email: string; dateOfBirth?: string | null };
@@ -201,6 +202,33 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
     }
   };
 
+  // Archive / un-archive (board/sysadmin only). Rides the existing PATCH via the
+  // `archived` boolean; the backend gates it and skips Shopify. See PROGRAM_ARCHIVE.md.
+  const handleToggleArchive = async () => {
+    if (!program) return;
+    const archiving = !program.archivedAt;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/programs/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived: archiving }),
+      });
+      if (res.ok) {
+        notifications.show({ color: archiving ? 'gray' : 'green', message: archiving ? 'Program archived.' : 'Program un-archived.' });
+        notifyNavRefresh();
+        fetchProgram();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: 'red', message: data.error || 'Failed to update archive state.', autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: 'red', message: 'Network error.', autoClose: false });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSyncShopify = async () => {
     setSyncing(true);
     try {
@@ -275,9 +303,30 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
           <Group align="center" gap="sm">
             <Title order={1}>{program.name}</Title>
             {phaseBadge && <Badge color={phaseBadge.color} variant="light" size="lg">{phaseBadge.label}</Badge>}
+            {program.archivedAt && <Badge color="gray" variant="outline" size="lg">Archived</Badge>}
           </Group>
-          <Button variant="default" onClick={() => router.push('/program-ops/programs')}>← Back to Programs</Button>
+          <Group gap="sm">
+            {isSysAdminOrBoard && (
+              <Button
+                variant="light"
+                color={program.archivedAt ? 'green' : 'gray'}
+                loading={saving}
+                onClick={handleToggleArchive}
+              >
+                {program.archivedAt ? 'Un-archive' : 'Archive'}
+              </Button>
+            )}
+            <Button variant="default" onClick={() => router.push('/program-ops/programs')}>← Back to Programs</Button>
+          </Group>
         </Group>
+
+        {program.archivedAt && (
+          <Alert color="gray" variant="light" mb="lg" title="This program is archived">
+            It is hidden from the public catalog, pickers, and dashboards, and frozen for new activity
+            (enrollment, payment plans, volunteer signup, Shopify capacity pushes). Existing roster and
+            history stay readable. Un-archive to make it active again.
+          </Alert>
+        )}
 
         <AlertBanner message={message} tone="info" mb="lg" />
 

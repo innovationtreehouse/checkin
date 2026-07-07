@@ -20,6 +20,7 @@ type Program = {
   shopifyVariantId?: string | null;
   shopifyOrgMemberVariantId?: string | null;
   shopifyNonOrgMemberVariantId?: string | null;
+  archivedAt?: string | null;
   _count?: { participants?: number; events?: number };
 };
 
@@ -52,10 +53,11 @@ export default function AdminProgramsIndex() {
   const [loading, setLoading] = useState(true);
   const [activeOnly, setActiveOnly] = useState(false);
   const [publicOnly, setPublicOnly] = useState(false);
+  const [includeArchived, setIncludeArchived] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    fetch('/api/programs')
+    fetch(`/api/programs${includeArchived ? '?includeArchived=true' : ''}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -67,7 +69,7 @@ export default function AdminProgramsIndex() {
         console.error(err);
         setLoading(false);
       });
-  }, []);
+  }, [includeArchived]);
 
   const visiblePrograms = programs.filter(
     (p) =>
@@ -80,7 +82,8 @@ export default function AdminProgramsIndex() {
       header: "Program",
       render: (p) => (
         <Group gap="xs" wrap="nowrap">
-          <Text fw={600}>{p.name}</Text>
+          <Text fw={600} c={p.archivedAt ? "dimmed" : undefined}>{p.name}</Text>
+          {p.archivedAt && <Badge color="gray" variant="outline">Archived</Badge>}
           {isProgramCheckoutBroken(p) && (
             <Tooltip label="Priced but no Shopify checkout variant — paid enrollment will not work. Open the program to sync.">
               <Badge color="red" variant="filled">⚠️ Broken checkout</Badge>
@@ -164,6 +167,11 @@ export default function AdminProgramsIndex() {
           label="Only show programs available to the public"
           checked={publicOnly}
           onChange={(e) => setPublicOnly(e.currentTarget.checked)}
+        />
+        <Checkbox
+          label="Include archived"
+          checked={includeArchived}
+          onChange={(e) => setIncludeArchived(e.currentTarget.checked)}
         />
       </Group>
 

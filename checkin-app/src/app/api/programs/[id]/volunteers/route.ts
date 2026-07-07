@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { programArchivedError } from "@/lib/program/archive";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -33,6 +34,10 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         if (!isLeadMentor && !isSysAdminOrBoard) {
             return apiError("Forbidden: Not authorized to assign volunteers", 403);
         }
+
+        // Archived programs are frozen for new activity (see PROGRAM_ARCHIVE.md).
+        const archivedErr = programArchivedError(currentProgram);
+        if (archivedErr) return archivedErr;
 
         // ponytail: no eligibility gate (age/membership) on volunteers — they're
         // staff/mentors, not enrollees. ProgramVolunteer has only isCore; any

@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError, withdrawAndReleaseHold } from "@/lib/program/capacity";
+import { programArchivedError } from "@/lib/program/archive";
 import { checkProgramAge } from "@/lib/programAge";
 import { apiError } from "@/lib/api-response";
 
@@ -32,6 +33,13 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         if (!currentProgram) {
             return apiError("Program not found", 404);
         }
+
+        // Archived programs are frozen for new activity. Guard BEFORE any
+        // capacity lock / hold — even a board force-enroll override is blocked
+        // (archived is a hard freeze, not an over-ridable soft limit; unarchive
+        // first). See docs/designs/PROGRAM_ARCHIVE.md.
+        const archivedErr = programArchivedError(currentProgram);
+        if (archivedErr) return archivedErr;
 
         const currentUserId = auth.user.id;
         const isSelfEnrollment = currentUserId === participantId;

@@ -721,6 +721,17 @@ model Program {
   /// @sensitivity:public
   shopifyVariantId          String?
 
+  /// Soft-archive timestamp. NULL = live; non-null = archived. When archived the
+  /// program is hidden from default lists/pickers/dashboards and frozen for NEW
+  /// activity (enrollment, payment-plan/scholarship requests, volunteer signup,
+  /// capacity→Shopify pushes); crons skip it. Orthogonal to `phase` — a program in
+  /// ANY phase can be archived: `phase`/FINISHED is a lifecycle fact (did it run?),
+  /// archived is a board visibility/activity decision (should we still surface it?).
+  /// Existing participant history stays readable through ops surfaces; board/sysadmin
+  /// set/clear it on the program-ops program page. See docs/designs/PROGRAM_ARCHIVE.md.
+  /// @sensitivity:internal
+  archivedAt                DateTime?
+
   volunteers   ProgramVolunteer[]
   participants ProgramParticipant[]
   fees         Fee[]

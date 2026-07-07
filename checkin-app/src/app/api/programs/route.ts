@@ -8,6 +8,7 @@ import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { validateProgramAgeBounds } from "@/lib/programAge";
+import { NOT_ARCHIVED } from "@/lib/program/archive";
 
 // GET is the PUBLIC program catalog — anonymous callers legitimately get the
 // non-draft, non-orgMemberOnly list (asserted by programsAPI.integration.test.ts),
@@ -35,6 +36,16 @@ export async function GET(req: Request) {
         }
 
         const andClauses: Record<string, unknown>[] = [];
+
+        // Archived programs are hidden from every default listing (public catalog,
+        // program-ops list, pickers). Only board/sysadmin may opt back in with
+        // ?includeArchived=true (the ops "include archived" toggle) — a plain
+        // caller cannot pass it to unhide retired programs. See PROGRAM_ARCHIVE.md.
+        const includeArchived = searchParams.get("includeArchived") === "true"
+            && !!user && (user.isSysadmin || user.isBoardMember);
+        if (!includeArchived) {
+            andClauses.push(NOT_ARCHIVED);
+        }
 
         if (activeOnly) {
             andClauses.push({

@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { withdrawAndReleaseHold } from "@/lib/program/capacity";
+import { NOT_ARCHIVED } from "@/lib/program/archive";
 
 const SYSTEM_ACTOR = 0;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -36,6 +37,9 @@ export const GET = withCron(async () => {
             isPaymentPlanRequested: false,
             inventoryHeldAt: { not: null },
             paymentPlanDeniedAt: { not: null, lte: cutoff },
+            // Archived programs are frozen — the grace-expiry sweep skips them
+            // (PROGRAM_ARCHIVE.md cron table).
+            program: NOT_ARCHIVED,
         },
         include: { program: true, person: true },
     });

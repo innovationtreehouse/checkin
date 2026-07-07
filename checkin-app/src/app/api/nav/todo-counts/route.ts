@@ -8,6 +8,7 @@ import { getLeadConflicts } from "@/lib/attendanceConflicts";
 import { pickAddress, validateAddress } from "@/lib/address";
 import { openConfigIssues } from "@/lib/configHealth";
 import { PROGRAM_CHECKOUT_BROKEN_WHERE } from "@/lib/programCheckout";
+import { NOT_ARCHIVED } from "@/lib/program/archive";
 import { apiError } from "@/lib/api-response";
 import { BROKEN_HOUSEHOLD_WHERE, UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE } from "@/lib/household/filters";
 
@@ -245,7 +246,7 @@ export const GET = withAuth({}, async (_req, auth) => {
         user.householdId
             ? prisma.visit.count({ where: { departedAt: null, person: { householdId: user.householdId } } })
             : Promise.resolve(0),
-        prisma.program.count({ where: { phase: "RUNNING" } }),
+        prisma.program.count({ where: { phase: "RUNNING", ...NOT_ARCHIVED } }),
     ]);
 
     const result: TodoCounts = {
@@ -261,7 +262,8 @@ export const GET = withAuth({}, async (_req, auth) => {
     // leads. Surfaced in-app additively; the email keeps firing. Each item deep-
     // links to the existing confirm screen — no new capability, no new PII.
     const ledPrograms = await prisma.program.findMany({
-        where: { leadMentorId: user.id },
+        // Archived programs raise no lead-surface todos (PROGRAM_ARCHIVE.md).
+        where: { leadMentorId: user.id, ...NOT_ARCHIVED },
         select: { id: true, name: true },
     });
     if (ledPrograms.length > 0) {

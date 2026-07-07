@@ -120,7 +120,17 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
+        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId, archived } = body;
+
+        // Archive / un-archive is board/sysadmin-only (same gate as the Shopify
+        // identifiers). Only the NULL<->now transitions write, so re-saving an
+        // already-archived program never re-stamps the original archive instant.
+        // See docs/designs/PROGRAM_ARCHIVE.md.
+        let archivedAtUpdate: Date | null | undefined;
+        if (isSysAdminOrBoard && archived !== undefined) {
+            if (archived && !currentProgram.archivedAt) archivedAtUpdate = new Date();
+            else if (!archived) archivedAtUpdate = null;
+        }
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -159,6 +169,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             ...(isSysAdminOrBoard && shopifyVariantId !== undefined && { shopifyVariantId: shopifyVariantId || null }),
             ...(isSysAdminOrBoard && shopifyOrgMemberVariantId !== undefined && { shopifyOrgMemberVariantId: shopifyOrgMemberVariantId || null }),
             ...(isSysAdminOrBoard && shopifyNonOrgMemberVariantId !== undefined && { shopifyNonOrgMemberVariantId: shopifyNonOrgMemberVariantId || null }),
+            ...(archivedAtUpdate !== undefined && { archivedAt: archivedAtUpdate }),
         };
 
         const updatedProgram = await prisma.program.update({
@@ -194,7 +205,11 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         const newMax = updatedProgram.maxParticipants;
         const hasShopifyVariant = !!(updatedProgram.shopifyVariantId || updatedProgram.shopifyOrgMemberVariantId || updatedProgram.shopifyNonOrgMemberVariantId);
 
-        if (oldMax !== newMax && hasShopifyVariant) {
+        // Archived programs are frozen: a capacity edit still saves to the DB but
+        // is NOT pushed to Shopify (new-activity block, PROGRAM_ARCHIVE.md).
+        if (oldMax !== newMax && hasShopifyVariant && updatedProgram.archivedAt) {
+            warning = "Program is archived — capacity saved, but not pushed to Shopify. Un-archive to sync inventory.";
+        } else if (oldMax !== newMax && hasShopifyVariant) {
             if (oldMax !== null && newMax !== null) {
                 const ok = await adjustProgramInventory(updatedProgram, newMax - oldMax);
                 if (!ok) {

@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
 import { adjustProgramInventory } from "@/lib/shopify";
+import { programArchivedError } from "@/lib/program/archive";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -66,6 +67,13 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         if (participant.status !== 'PENDING') {
             return apiError("This enrollment is not awaiting payment", 409);
+        }
+
+        // Archived programs are frozen for new activity. Guard BEFORE the hold
+        // decrement (-1) below so an archived program can't leak a Shopify seat.
+        if (participant.program) {
+            const archivedErr = programArchivedError(participant.program);
+            if (archivedErr) return archivedErr;
         }
 
         // Hold-ledger (product decision 2026-07-06): APPLICATION takes a seat out

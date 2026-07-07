@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { withdrawAndReleaseHold } from "@/lib/program/capacity";
+import { NOT_ARCHIVED } from "@/lib/program/archive";
 
 export const GET = withCron(async () => {
         const now = new Date();
@@ -15,7 +16,10 @@ export const GET = withCron(async () => {
                 // not this 7-day clock — a denial never resets pendingSince, so
                 // without this exclusion they'd be kicked the night after denial.
                 paymentPlanDeniedAt: null,
-                pendingSince: { not: null }
+                pendingSince: { not: null },
+                // Archived programs are frozen — the non-payment kick skips them
+                // (PROGRAM_ARCHIVE.md cron table).
+                program: NOT_ARCHIVED,
             },
             include: {
                 person: true,

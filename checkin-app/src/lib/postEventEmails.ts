@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
+import { NOT_ARCHIVED } from "@/lib/program/archive";
 import { sendEmail } from "@/lib/email";
 import { config } from "@/lib/config";
 import { postEventTemplate } from "@/lib/email-templates/post-event";
@@ -39,6 +40,8 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
             postEventEmailSent: false,
             attendanceConfirmedAt: null,
             programId: { not: null },
+            // Archived programs are frozen — no post-event nag (PROGRAM_ARCHIVE.md).
+            program: NOT_ARCHIVED,
             ...(cursorId ? { id: { gt: cursorId } } : {})
         };
 
