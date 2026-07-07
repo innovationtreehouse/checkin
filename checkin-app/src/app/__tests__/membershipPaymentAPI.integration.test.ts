@@ -54,7 +54,7 @@ describe('Membership payment API', () => {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
         if (withLead) {
             const lead = await prisma.person.create({ data: { email: `lead-${TAG}@example.com`, name: 'Lead', householdId: hh.id } });
-            await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+            await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
             leadId = lead.id;
         }
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer } });
@@ -71,7 +71,6 @@ describe('Membership payment API', () => {
         if (ids.length) {
             await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
             await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
@@ -202,7 +201,7 @@ describe('Membership payment API', () => {
         // Fresh proc with a lead so a congrats email would fire.
         const hh = await prisma.household.create({ data: { name: `Concurrent ${TAG}` } });
         const lead = await prisma.person.create({ data: { email: `concurrent-${TAG}@example.com`, name: 'C Lead', householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, personId: lead.id } });
+        await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer: false } });
         // bgClearedAt set so paying activates (and the one congrats email fires).
         const p = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT', bgClearedAt: new Date() } });

@@ -3,6 +3,7 @@ import { withAuth } from "@/lib/auth";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
 import { ZOHO_WEBHOOK_HEADER } from "@/lib/membership/contract/zoho";
+import { signingMockActive } from "@/lib/membership/contract/signingTarget";
 import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,9 @@ export const dynamic = "force-dynamic";
  * 404s whenever the mock isn't active — always in prod.
  */
 export const POST = withAuth({}, async (req, auth) => {
-    if (!config.zohoMockActive()) return apiError("Not available", 404);
+    // Honors the dev settings radio too (signingMockActive) — available exactly
+    // when signing requests are routed to the debug interstitial.
+    if (!(await signingMockActive())) return apiError("Not available", 404);
     if (auth.type !== "session") return apiError("Unauthorized", 401);
 
     const { rid } = await req.json().catch(() => ({ rid: undefined }));

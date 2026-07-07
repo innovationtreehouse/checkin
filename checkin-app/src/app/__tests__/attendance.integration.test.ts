@@ -31,7 +31,6 @@ describe('Attendance API Integration Tests', () => {
     beforeAll(async () => {
         // Clean up any leaked state
         await prisma.visit.deleteMany({});
-        await prisma.householdLead.deleteMany({});
         await prisma.person.deleteMany({
             where: { email: { contains: 'attendance-test' } }
         });
@@ -46,7 +45,7 @@ describe('Attendance API Integration Tests', () => {
         testHouseholdId = household.id;
 
         const admin = await prisma.person.create({
-            data: { email: 'admin-attendance-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-attendance-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
         testAdminHouseholdId = admin.householdId;
@@ -61,8 +60,9 @@ describe('Attendance API Integration Tests', () => {
         testParticipantId = participant.id;
 
         // Make participant the household lead
-        await prisma.householdLead.create({
-            data: { householdId: testHouseholdId, personId: testParticipantId }
+        await prisma.person.update({
+            where: { id: testParticipantId },
+            data: { isHouseholdLead: true }
         });
 
         const householdMember = await prisma.person.create({
@@ -77,7 +77,7 @@ describe('Attendance API Integration Tests', () => {
         // Keyholder present + checked in: the facility-open guard requires an
         // active keyholder before any non-keyholder MANUAL_CHECKIN succeeds.
         const keyholder = await prisma.person.create({
-            data: { email: 'keyholder-attendance-test@example.com', name: 'Keyholder Test', isKeyholder: true, household: { create: {} } }
+            data: { email: 'keyholder-attendance-test@example.com', name: 'Keyholder Test', isKeyholder: true, household: { create: { name: "Test HH" } } }
         });
         testKeyholderId = keyholder.id;
         testKeyholderHouseholdId = keyholder.householdId;
@@ -94,9 +94,6 @@ describe('Attendance API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.visit.deleteMany({});
-        await prisma.householdLead.deleteMany({
-            where: { householdId: testHouseholdId }
-        });
         await prisma.person.deleteMany({
             where: { id: { in: [testAdminId, testParticipantId, testHouseholdMemberId, testKeyholderId] } }
         });

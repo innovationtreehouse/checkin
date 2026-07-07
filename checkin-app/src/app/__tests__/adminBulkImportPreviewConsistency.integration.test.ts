@@ -46,7 +46,6 @@ describe('Bulk import: preview vs commit consistency', () => {
     const cleanup = async () => {
         try {
             await prisma.orgMembership.deleteMany({});
-            await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({ where: { email: { contains: 'consist-import-test' } } });
             await prisma.person.deleteMany({ where: { name: { contains: 'Consist Import Test' } } });
             await prisma.household.deleteMany({ where: { householdMembers: { none: {} } } });
@@ -56,7 +55,7 @@ describe('Bulk import: preview vs commit consistency', () => {
     beforeAll(async () => {
         await cleanup();
         const admin = await prisma.person.create({
-            data: { email: 'admin-consist-import-test@example.com', name: 'Admin Consist Import Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-consist-import-test@example.com', name: 'Admin Consist Import Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
         (getServerSession as jest.Mock).mockResolvedValue({
@@ -144,7 +143,7 @@ describe('Bulk import: preview vs commit consistency', () => {
         const anchor = await prisma.person.findUnique({ where: { email: ANCHOR_EMAIL }, select: { id: true, dateOfBirth: true } });
         expect(anchor?.dateOfBirth?.getUTCFullYear()).toBe(1991);
         // ...and commit therefore makes the adult a household lead.
-        const lead = await prisma.householdLead.findFirst({ where: { personId: anchor!.id } });
+        const lead = await prisma.person.findFirst({ where: { id: anchor!.id, isHouseholdLead: true }, select: { id: true } });
         expect(lead).not.toBeNull();
 
         // Preview must agree Anchor is an adult: NO "Student (under 18)" warning.

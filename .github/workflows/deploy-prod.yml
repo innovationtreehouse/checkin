@@ -63,9 +63,69 @@ jobs:
       ref: ${{ github.event.release.tag_name }}
     secrets: inherit
 
+  # Release gate: a release may apply AT MOST ONE new database migration.
+  # Migrations accumulate on main between releases and must be coalesced into
+  # a single migration (checkin-app/scripts/coalesce-migrations.ts, a manual
+  # PR) before a release ships them — see
+  # checkin-app/docs/MIGRATION_COALESCE_FLOW.md for the policy and flow.
+  #
+  # This is not a step inside `validate`: that job is a reusable-workflow
+  # `uses: ./.github/workflows/ci.yml` call, which has no step surface of its
+  # own to add to. Runs as its own job instead; `deploy` needs both.
+  migration-release-gate:
+    name: Release gate — at most 1 new migration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout released tag (full history + tags)
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Find the previous v* release tag and count added migrations
+        run: |
+          set -euo pipefail
+          CURRENT_TAG="${{ github.event.release.tag_name }}"
+          git fetch --tags --force
+
+          # `git tag -l` lists annotated and lightweight tags identically — no
+          # special-casing needed for either kind. `sort -V` is a real version
+          # sort (v1.2.10 sorts after v1.2.9), not a lexical one.
+          mapfile -t TAGS < <(git tag -l 'v*' | sort -V)
+
+          PREV_TAG=""
+          for i in "${!TAGS[@]}"; do
+            if [ "${TAGS[$i]}" = "$CURRENT_TAG" ]; then
+              if [ "$i" -gt 0 ]; then PREV_TAG="${TAGS[$((i-1))]}"; fi
+              break
+            fi
+          done
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "No v* release tag found before $CURRENT_TAG — this is the first release, nothing to gate against. Skipping."
+            exit 0
+          fi
+          echo "Previous release tag: $PREV_TAG"
+
+          # Count ADDED migration directories only — a coalesce release
+          # deletes many old ones and adds exactly 1, and that must PASS, not
+          # fail on the deletes. Count directories, not files: a coalesce
+          # baseline adds both migration.sql and reconcile.sql under one dir.
+          # --no-renames: a rewritten baseline must never be mistaken for a
+          # rename of one of the migrations it replaces.
+          mapfile -t ADDED < <(git diff --no-renames --name-status "$PREV_TAG"..HEAD -- checkin-app/prisma/migrations \
+            | awk '$1=="A" {print $2}' | awk -F/ '{print $4}' | grep -v '^migration_lock.toml$' | sort -u)
+          echo "New migration dir(s) since $PREV_TAG (${#ADDED[@]}): ${ADDED[*]:-none}"
+
+          if [ "${#ADDED[@]}" -gt 1 ]; then
+            echo "::error::This release would apply ${#ADDED[@]} new migrations (${ADDED[*]}) — a release may apply at most 1. Coalesce them into a single migration first: checkin-app/docs/MIGRATION_COALESCE_FLOW.md"
+            exit 1
+          fi
+          echo "OK — at most 1 new migration since the previous release."
+
   deploy:
     name: Build, migrate, roll out
-    needs: validate   # do not build/migrate/roll out unless the tag re-passed all of CI
+    needs: [validate, migration-release-gate]   # do not build/migrate/roll out unless the tag re-passed all of CI and the release gate
     runs-on: ubuntu-24.04-arm  # native ARM64 — task defs require arm64 images
     environment:
       name: production

@@ -42,7 +42,7 @@ describe('GET /api/directory/board', () => {
                 dateOfBirth: new Date('1980-01-01'),
                 googleId: `google-${TAG}`,
                 isBoardMember: true,
-                household: { create: {} },
+                household: { create: { name: "Test HH" } },
             },
         });
         boardId = board.id;
@@ -53,7 +53,7 @@ describe('GET /api/directory/board', () => {
                 name: `Keyholder ${TAG}`,
                 email: `isKeyholder-${TAG}@example.com`,
                 isKeyholder: true,
-                household: { create: {} },
+                household: { create: { name: "Test HH" } },
             },
         });
         keyholderId = isKeyholder.id;

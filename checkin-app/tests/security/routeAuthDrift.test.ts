@@ -304,7 +304,7 @@ const FIX_1 =
 const EDGE_INCLUDE_ALLOWLIST: Record<string, string> = {
     'cron/nightly': 'cron-gated — withCron, no user-facing response',
     'cron/pending-participants': 'cron-gated — withCron, no user-facing response',
-    'cron/reminders': 'cron-gated — withCron, reads RSVPs to send reminders',
+    'cron/scholarship-grace-expiry': 'cron-gated — withCron, no user-facing response',
     'events/[id]': 'admission-gated — handler GET throws forbidden() unless staff (sysadmin/board/leadMentor/coreVol)',
     'events/mine': 'query-shaped — self + own household only (activityMembers → where participantId in memberIds)',
     'facility/trends': 'admin-role-gated — sysadmin/board',
@@ -312,6 +312,8 @@ const EDGE_INCLUDE_ALLOWLIST: Record<string, string> = {
     'finance-ops/payment-plans': 'admin-role-gated — registry authorize anyRole [sysadmin, board]',
     'household/visits': "query-shaped — own household only (where householdId = caller's)",
     'kioskdisplay/certifications': 'admin-role-gated — sysadmin/board/keyholder (+ kiosk)',
+    'membership-audit/compliance': 'admin-role-gated — withAuth roles [sysadmin, board]; reads ProgramParticipant/Volunteer to flag people needing a background check',
+    'membership-ops/households': 'admin-role-gated — withAuth roles [sysadmin, board]; ?id= branch includes each member ProgramParticipant for the household detail view',
     'membership-ops/participants/merge/analyze': 'admin-role-gated — sysadmin/board',
     'nav/todo-counts': 'query-shaped — counts scoped to caller (own household + programs the caller leads)',
     'profile': "query-shaped — authorize 'self'; visits are the caller's own",

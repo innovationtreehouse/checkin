@@ -31,7 +31,6 @@ async function wipe() {
     await prisma.emergencyContact.deleteMany({ where: { householdId: { in: hhIds } } });
     await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: hhIds } } } });
     await prisma.orgMembership.deleteMany({ where: { householdId: { in: hhIds } } });
-    await prisma.householdLead.deleteMany({ where: { householdId: { in: hhIds } } });
     await prisma.person.deleteMany({ where: { householdId: { in: hhIds } } });
     await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
 }

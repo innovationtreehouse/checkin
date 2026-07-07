@@ -46,7 +46,6 @@ describe('Membership Intake API', () => {
         await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { householdId: { in: hhIds } } } } });
         await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: hhIds } } } });
         await prisma.orgMembership.deleteMany({ where: { householdId: { in: hhIds } } });
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: allIds } } });
         await prisma.person.deleteMany({ where: { householdId: { in: hhIds } } });
         await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
@@ -60,7 +59,7 @@ describe('Membership Intake API', () => {
         });
         leadId = lead.id;
         leadHouseholdId = lead.householdId!;
-        await prisma.householdLead.create({ data: { householdId: leadHouseholdId, personId: leadId } });
+        await prisma.person.update({ where: { id: leadId }, data: { isHouseholdLead: true } });
 
         const nonLead = await prisma.person.create({
             data: { email: `nonlead-${TAG}@example.com`, name: 'Non Lead', householdId: leadHouseholdId },
@@ -75,7 +74,7 @@ describe('Membership Intake API', () => {
             },
         });
         activeLeadId = activeLead.id;
-        await prisma.householdLead.create({ data: { householdId: activeLead.householdId!, personId: activeLeadId } });
+        await prisma.person.update({ where: { id: activeLeadId }, data: { isHouseholdLead: true } });
     });
 
     afterAll(async () => {
@@ -148,7 +147,7 @@ describe('Membership Intake API', () => {
         // Kid One was created as a non-lead (child).
         const kid = await prisma.person.findFirst({ where: { householdId: leadHouseholdId, name: 'Kid One' } });
         expect(kid).not.toBeNull();
-        const kidLead = await prisma.householdLead.findFirst({ where: { householdId: leadHouseholdId, personId: kid!.id } });
+        const kidLead = await prisma.person.findFirst({ where: { id: kid!.id, householdId: leadHouseholdId, isHouseholdLead: true }, select: { id: true } });
         expect(kidLead).toBeNull();
     });
 
@@ -184,7 +183,7 @@ describe('Membership Intake API', () => {
         const lead = await prisma.person.create({
             data: { email: `audit-lead-${TAG}@example.com`, name: 'Audit Lead', household: { create: { name: 'Audit Intake HH' } } },
         });
-        await prisma.householdLead.create({ data: { householdId: lead.householdId!, personId: lead.id } });
+        await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
         asUser(lead.id);
 
         const startRes = await POST(req() as never);

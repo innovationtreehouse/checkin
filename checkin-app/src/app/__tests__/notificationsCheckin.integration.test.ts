@@ -17,7 +17,6 @@ describe("sendCheckinNotifications()", () => {
         // delete is global (any participant-less household), so the membership chain
         // for those households must go first or Membership_householdId_fkey blocks it.
         await prisma.visit.deleteMany();
-        await prisma.householdLead.deleteMany();
         await prisma.person.deleteMany({
             where: { email: { contains: "notify-test" } }
         });
@@ -30,7 +29,7 @@ describe("sendCheckinNotifications()", () => {
         jest.clearAllMocks();
 
         // Create household
-        const hh = await prisma.household.create({ data: {} });
+        const hh = await prisma.household.create({ data: { name: "Test HH" } });
         householdId = hh.id;
 
         // Create Lead
@@ -47,8 +46,9 @@ describe("sendCheckinNotifications()", () => {
         });
         leadId = lead.id;
 
-        await prisma.householdLead.create({
-            data: { householdId, personId: leadId }
+        await prisma.person.update({
+            where: { id: leadId },
+            data: { isHouseholdLead: true }
         });
 
         // Create Dependent
@@ -68,7 +68,6 @@ describe("sendCheckinNotifications()", () => {
 
     afterAll(async () => {
         await prisma.visit.deleteMany();
-        await prisma.householdLead.deleteMany();
         await prisma.person.deleteMany({
             where: { email: { contains: "notify-test" } }
         });

@@ -102,7 +102,6 @@ describe('Ownership-boundary authorization', () => {
             await prisma.auditLog.deleteMany({ where: { tableName: 'EmergencyContact', secondaryAffectedEntity: { in: ids } } });
             await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
             await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
@@ -113,7 +112,7 @@ describe('Ownership-boundary authorization', () => {
     }
     async function mkMember(householdId: number, name: string, lead = false) {
         const p = await prisma.person.create({ data: { name: `${name} ${TAG}`, householdId } });
-        if (lead) await prisma.householdLead.create({ data: { householdId, personId: p.id } });
+        if (lead) await prisma.person.update({ where: { id: p.id }, data: { isHouseholdLead: true } });
         return p.id;
     }
     async function mkPendingProcess(householdId: number, status: 'PENDING_PAYMENT' | 'PENDING_RENEWAL', kind: 'INITIAL' | 'RENEWAL') {

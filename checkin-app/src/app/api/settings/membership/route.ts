@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { config } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,11 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
 /**
  * PUT /api/settings/membership — update board settings.
  * Body may include: normalDuesCents, volunteerDuesCents, orgMembershipYearBoundary (ISO|null),
- * orgMembershipVariantId (string|null), volunteerDiscountCode (string|null).
+ * orgMembershipVariantId (string|null), volunteerDiscountCode (string|null),
+ * scholarshipDenialGraceDays (positive int|null — null disables the grace-period expiry cron).
  * Dues must be finite and >= 0; an invalid value rejects the whole update (400) so the
  * previous value survives rather than silently collapsing to zero. (The Averity consent
- * link is an env var, not a board setting.)
+ * link is an env var, not a board setting. Email sender identity lives in /api/settings/email.)
  */
 export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
@@ -30,6 +32,8 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         orgMembershipVariantId?: string | null;
         volunteerDiscountCode?: string | null;
         bgRecheckMonths?: number;
+        devSigningTarget?: string | null;
+        scholarshipDenialGraceDays?: number | null;
     };
     try {
         body = await req.json();
@@ -59,6 +63,27 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         data.volunteerDiscountCode = body.volunteerDiscountCode?.trim() || null;
     }
     if (body.bgRecheckMonths !== undefined) data.bgRecheckMonths = Math.max(0, Math.round(body.bgRecheckMonths));
+    if (body.devSigningTarget !== undefined) {
+        // Dev-instance-only knob (signing target radio). Rejected outright on any
+        // other env so prod's DB can never even hold a value — the read side
+        // (signingMockActive) has its own hard fuse regardless.
+        if (config.checkinEnv() !== "dev") {
+            return apiError("devSigningTarget can only be set on a dev instance", 400);
+        }
+        if (body.devSigningTarget !== null && body.devSigningTarget !== "zoho" && body.devSigningTarget !== "debug") {
+            return apiError("devSigningTarget must be 'zoho', 'debug', or null", 400);
+        }
+        data.devSigningTarget = body.devSigningTarget;
+    }
+    // scholarshipDenialGraceDays: null = feature off (never guess a default); otherwise a positive integer.
+    if (body.scholarshipDenialGraceDays !== undefined) {
+        if (body.scholarshipDenialGraceDays !== null) {
+            if (!Number.isFinite(body.scholarshipDenialGraceDays) || !Number.isInteger(body.scholarshipDenialGraceDays) || body.scholarshipDenialGraceDays <= 0) {
+                return apiError("scholarshipDenialGraceDays must be a positive whole number of days, or null", 400);
+            }
+        }
+        data.scholarshipDenialGraceDays = body.scholarshipDenialGraceDays;
+    }
 
     const settings = await prisma.boardSettings.upsert({
         where: { id: 1 },

@@ -21,10 +21,10 @@ describe('Admin Participants API Integration Tests', () => {
     let testAdminId: number;
     let testUserId: number;
 
-    // Scoping membership/householdLead deletes to exactly the households these
+    // Scoping membership deletes to exactly the households these
     // filters own (not a blanket deleteMany({})) matters: this suite runs
     // alongside ~285 other integration files sharing one DB per jest worker, and
-    // an unscoped wipe of every Membership/HouseholdLead row would silently
+    // an unscoped wipe of every Membership row would silently
     // corrupt their fixtures.
     //
     // Two scopes, matching the two lifetimes in this file: the admin/user
@@ -41,13 +41,12 @@ describe('Admin Participants API Integration Tests', () => {
         { email: 'updated-email@example.com' },
     ];
 
-    /** Delete participants matching `filters`, their memberships/leads, then sweep any household left empty. */
+    /** Delete participants matching `filters`, their memberships, then sweep any household left empty. */
     async function wipe(filters: Array<Record<string, unknown>>) {
         const rows = await prisma.person.findMany({ where: { OR: filters }, select: { householdId: true } });
         const householdIds = [...new Set(rows.map((r) => r.householdId).filter((id): id is number => id != null))];
         if (householdIds.length) {
             await prisma.orgMembership.deleteMany({ where: { householdId: { in: householdIds } } });
-            await prisma.householdLead.deleteMany({ where: { householdId: { in: householdIds } } });
         }
         await prisma.person.deleteMany({ where: { OR: filters } });
         // Only sweep households the deletion above emptied — a household this file
@@ -64,12 +63,12 @@ describe('Admin Participants API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.person.create({
-            data: { email: 'admin-participants-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-participants-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.person.create({
-            data: { email: 'user-participants-test@example.com', name: 'User Test', household: { create: {} } }
+            data: { email: 'user-participants-test@example.com', name: 'User Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
     });
@@ -261,7 +260,7 @@ describe('Admin Participants API Integration Tests', () => {
 
             // Create a disposable user just for this edit test
             const editUser = await prisma.person.create({
-                data: { email: 'edit-test-user@example.com', name: 'Original Name', household: { create: {} } }
+                data: { email: 'edit-test-user@example.com', name: 'Original Name', household: { create: { name: "Test HH" } } }
             });
 
             const req = new Request(`http://localhost:4000/api/membership-ops/participants/${editUser.id}`, {

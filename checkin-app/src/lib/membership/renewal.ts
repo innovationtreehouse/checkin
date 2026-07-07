@@ -84,8 +84,9 @@ export async function beginRenewal(processId: number) {
     if (!process) throw new RenewalError("not_found", "Renewal not found.");
     if (process.status !== "PENDING_RENEWAL") throw new RenewalError("wrong_phase", "This renewal is not awaiting your confirmation.");
 
+    // A RENEWAL always has a membership (orgMembershipId is only null for PERSON_BG).
     const membership = await prisma.orgMembership.findUnique({
-        where: { id: process.orgMembershipId },
+        where: { id: process.orgMembershipId! },
         select: { householdId: true, household: { select: { intakeNotes: true } } },
     });
     if (!membership) throw new RenewalError("not_found", "Membership not found.");
@@ -119,7 +120,7 @@ export async function beginRenewal(processId: number) {
         // Fresh check ⇒ clearBackgroundCheck never runs this cycle, so a household
         // designated volunteer since last cycle would pay full dues — match the
         // allowlist at this PENDING_PAYMENT transition too (#874).
-        if (bgFresh) await applyVolunteerStatus(prisma, process.orgMembershipId, membership.householdId, false);
+        if (bgFresh) await applyVolunteerStatus(prisma, process.orgMembershipId!, membership.householdId, false);
     }
     return prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id: processId } });
 }
@@ -220,7 +221,7 @@ export async function householdBgIsFresh(householdId: number, boundary: Date, re
     if (recheckMonths <= 0) return false;
     const threshold = monthsBefore(boundary, recheckMonths);
     const fresh = await prisma.person.findFirst({
-        where: { householdId, householdLeads: { some: { householdId } }, lastBackgroundCheck: { gte: threshold } },
+        where: { householdId, isHouseholdLead: true, lastBackgroundCheck: { gte: threshold } },
         select: { id: true },
     });
     return fresh !== null;

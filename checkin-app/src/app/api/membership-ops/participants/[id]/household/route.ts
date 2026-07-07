@@ -36,16 +36,12 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
             const newHousehold = await prisma.household.create({
                 data: {
                     name: `${participant.name || 'User'}'s Household`,
-                    leads: {
-                        create: {
-                            personId: participant.id
-                        }
-                    }
                 }
             });
             targetHouseholdId = newHousehold.id;
             // New household starts as a visitor (no membership) — membership is
             // earned via the application process or set on the households page.
+            // Leadership (isHouseholdLead) is set on the person.update below.
         } else {
             targetHouseholdId = parseInt(householdId);
             if (isNaN(targetHouseholdId)) {
@@ -58,9 +54,20 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
             }
         }
 
+        // a1 leadership (HOUSEHOLD_LEAD_MODEL.md): createNew makes the person the
+        // sole lead of the household we just created; a real move into another
+        // household de-leads them (they lead their OWN household — re-promote if
+        // they should lead the new one). A same-household no-op leaves the flag
+        // untouched, matching the prior behavior that only cleaned up on a change.
+        const leadFlag = createNew
+            ? { isHouseholdLead: true }
+            : participant.householdId !== targetHouseholdId
+                ? { isHouseholdLead: false }
+                : {};
+
         const updatedParticipant = await prisma.person.update({
             where: { id: participantId },
-            data: { householdId: targetHouseholdId },
+            data: { householdId: targetHouseholdId, ...leadFlag },
             include: { household: true }
         });
 
@@ -74,15 +81,6 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
                 newData: { householdId: targetHouseholdId, createNew: Boolean(createNew) },
             },
         });
-
-        if (participant.householdId && participant.householdId !== targetHouseholdId) {
-            await prisma.householdLead.deleteMany({
-                where: {
-                    personId: participant.id,
-                    householdId: participant.householdId
-                }
-            });
-        }
 
         return NextResponse.json({ success: true, participant: updatedParticipant });
     } catch (error) {

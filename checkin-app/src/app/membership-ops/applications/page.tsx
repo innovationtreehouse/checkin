@@ -4,12 +4,16 @@ import { useState, useEffect, useCallback } from "react";
 import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifications } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
+import { useSession } from "next-auth/react";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
+import { sharesHousehold } from "@/lib/conflictOfInterest";
 
 interface Person {
   id: number;
   name: string | null;
   email: string | null;
+  isHouseholdLead: boolean;
 }
 interface Attestation {
   id: number;
@@ -30,7 +34,7 @@ interface ProcessRow {
   orgMembership: {
     householdId: number;
     isVolunteer: boolean;
-    household: { name: string | null; householdMembers: Person[]; leads: { personId: number }[] } | null;
+    household: { name: string | null; householdMembers: Person[] } | null;
   } | null;
 }
 
@@ -57,6 +61,14 @@ const awaitingBg = (r: ProcessRow) =>
     ((r.status === "PENDING_PAYMENT" || r.status === "PENDING_BG_CLEARANCE") && !!r.bgConsentAt));
 
 export default function AdminMembershipPage() {
+  const { data: session } = useSession();
+  const me = session?.user;
+  // Conflict of interest: a board member may not certify/override their OWN household's
+  // application (mirrors the server guards in certifyPaymentPlan/overrideBlocked). Sysadmin
+  // is the deliberate remedy and keeps the buttons. The disabled state is UX only — the
+  // server is the real enforcement.
+  const ownHousehold = (r: ProcessRow) =>
+    me?.isSysadmin !== true && sharesHousehold(me?.householdId, r.orgMembership?.householdId);
   const [rows, setRows] = useState<ProcessRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -131,6 +143,48 @@ export default function AdminMembershipPage() {
     }
   };
 
+  const archive = async (processId: number) => {
+    setBusyId(processId);
+    setMessageId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/membership-ops/applications/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ color: "green", message: "Application archived." });
+        await load();
+        notifyNavRefresh();
+      } else {
+        setMessage(data.error || "Archive failed.");
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Disposing an abandoned application removes it from the board list. Confirm
+  // because it's a deliberate cleanup action (kept in the audit log, not deleted).
+  const confirmArchive = (r: ProcessRow) => {
+    modals.openConfirmModal({
+      title: "Archive this application?",
+      children: (
+        <Text size="sm">
+          This removes <strong>{householdLabel(r)}</strong> (application #{r.id}) from the board list.
+          A record is kept in the audit log. Only do this for abandoned applications.
+        </Text>
+      ),
+      labels: { confirm: "Archive", cancel: "Cancel" },
+      confirmProps: { color: "red" },
+      onConfirm: () => archive(r.id),
+    });
+  };
+
   const certify = async (processId: number) => {
     setBusyId(processId);
     setMessageId(processId);
@@ -162,8 +216,7 @@ export default function AdminMembershipPage() {
   const householdLabel = (r: ProcessRow) => {
     const hh = r.orgMembership?.household;
     if (!hh) return `Household #${r.orgMembership?.householdId ?? "?"}`;
-    const leadIds = new Set((hh.leads || []).map((l) => l.personId));
-    const parents = (hh.householdMembers || []).filter((p) => leadIds.has(p.id)).map((p) => p.name || p.email).filter(Boolean);
+    const parents = (hh.householdMembers || []).filter((p) => p.isHouseholdLead).map((p) => p.name || p.email).filter(Boolean);
     return hh.name || parents.join(" & ") || `Household #${r.orgMembership?.householdId}`;
   };
 
@@ -250,9 +303,12 @@ export default function AdminMembershipPage() {
               {r.status === "PENDING_PAYMENT" && (
                 <Group mt="md" gap="md" wrap="wrap" align="center">
                   <Text size="sm" c="dimmed">Awaiting payment.</Text>
-                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => certify(r.id)}>
+                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id || ownHousehold(r)} onClick={() => certify(r.id)}>
                     Certify payment plan → {r.bgClearedAt ? "activate" : "(holds for background check)"}
                   </Button>
+                  {ownHousehold(r) && (
+                    <Text size="xs" c="dimmed">You can&apos;t certify your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                  )}
                 </Group>
               )}
 
@@ -270,19 +326,28 @@ export default function AdminMembershipPage() {
                     </Text>
                   )}
                   <Group gap="sm" wrap="wrap">
-                    <Button size="xs" fz={15} variant="default" disabled={busyId === r.id} onClick={() => override(r.id, "reset")}>
+                    <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "reset")}>
                       Reset for re-review
                     </Button>
-                    <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => override(r.id, "approve")}>
+                    <Button size="xs" fz={15} color="green" disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "approve")}>
                       Override → {r.paidAt ? "activate" : "payment"}
                     </Button>
                   </Group>
+                  {ownHousehold(r) && (
+                    <Text size="xs" c="dimmed" mt="sm">You can&apos;t override your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                  )}
                 </Alert>
               )}
 
               {messageId === r.id && (
                 <AlertBanner message={message} tone="error" mt="md" />
               )}
+
+              <Group justify="flex-end" mt="md">
+                <Button size="xs" fz={15} variant="subtle" color="red" disabled={busyId === r.id} onClick={() => confirmArchive(r)}>
+                  Archive
+                </Button>
+              </Group>
             </Card>
           ))}
         </Stack>

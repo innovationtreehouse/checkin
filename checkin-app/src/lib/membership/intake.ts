@@ -62,11 +62,9 @@ async function loadUserWithHousehold(userId: number) {
     return prisma.person.findUnique({
         where: { id: userId },
         include: {
-            householdLeads: true,
             household: {
                 include: {
                     householdMembers: { orderBy: { id: "asc" } },
-                    leads: true,
                     orgMembership: { include: { processes: true } },
                     emergencyContacts: { orderBy: [{ priority: "asc" }, { id: "asc" }] },
                 },
@@ -76,8 +74,7 @@ async function loadUserWithHousehold(userId: number) {
 }
 
 function assertLead(user: NonNullable<Awaited<ReturnType<typeof loadUserWithHousehold>>>) {
-    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.isSysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
+    if (!user.isHouseholdLead && !user.isSysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
 }
 
 /** Read the caller's current membership/application state, prefilled for the form. */
@@ -88,16 +85,19 @@ export async function getIntakeState(userId: number) {
     const household = user.household;
     const membership = household?.orgMembership ?? null;
     // The current in-flight process of any kind (INITIAL or RENEWAL) — anything
-    // not yet ACTIVE. During renewal the membership stays ACTIVE while its RENEWAL
-    // process cycles, so we surface that here rather than the "you're a member" card.
+    // not in a terminal status. During renewal the membership stays ACTIVE while
+    // its RENEWAL process cycles, so we surface that here rather than the "you're
+    // a member" card. ARCHIVED (board-disposed) is terminal like ACTIVE, so a
+    // returning applicant sees a clean slate rather than resuming a ghost.
     const process = membership?.processes
-        .filter((p) => p.status !== "ACTIVE")
+        .filter((p) => p.status !== "ACTIVE" && p.status !== "ARCHIVED")
         .sort((a, b) => b.id - a.id)[0] ?? null;
 
     // Parents/guardians are the household leads; children are non-lead members.
-    const leadIds = new Set((household?.leads ?? []).map((l) => l.personId));
-    const parents = (household?.householdMembers ?? []).filter((p) => leadIds.has(p.id));
-    const children = (household?.householdMembers ?? []).filter((p) => !leadIds.has(p.id));
+    const members = household?.householdMembers ?? [];
+    const leadIds = new Set(members.filter((p) => p.isHouseholdLead).map((p) => p.id));
+    const parents = members.filter((p) => p.isHouseholdLead);
+    const children = members.filter((p) => !p.isHouseholdLead);
     const primary = parents.find((p) => p.id === userId) ?? null;
     const secondary = parents.find((p) => p.id !== userId) ?? null;
 
@@ -411,7 +411,7 @@ export async function submitIntake(userId: number) {
 
     // Fresh-check shortcut ⇒ clearBackgroundCheck never runs this cycle, so match
     // the volunteer-designation allowlist here or it would never be applied (#874).
-    if (bgFresh) await applyVolunteerStatus(prisma, process.orgMembershipId, household.id, false);
+    if (bgFresh) await applyVolunteerStatus(prisma, process.orgMembershipId!, household.id, false);
 
     return advanced;
 }

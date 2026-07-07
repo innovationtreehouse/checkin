@@ -24,7 +24,6 @@ const attendanceData = {
 
 const householdData = {
   household: {
-    leads: [{ personId: 1 }],
     householdMembers: [{ id: 90, name: "Jamie Kid", email: "jamie@example.com" }],
   },
 };
@@ -41,7 +40,7 @@ function mockRoutes(overrides: Record<string, unknown | (() => unknown)> = {}) {
 // The admin (id 1, sysadmin + keyholder) is not checked in and has a household,
 // so both the self check-in button and the household check-in row render.
 function setAdminSession() {
-  setSession({ id: 1, isSysadmin: true, isKeyholder: true, householdId: 5 });
+  setSession({ id: 1, isSysadmin: true, isKeyholder: true, householdId: 5, householdLead: true });
 }
 
 describe("attendance/current page", () => {

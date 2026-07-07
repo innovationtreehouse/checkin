@@ -30,15 +30,11 @@ describe('Household API Integration Tests', () => {
         
         const existingUserIds = existingUsers.map(u => u.id);
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter(id => id !== null) as number[];
-        
-        await prisma.householdLead.deleteMany({
-            where: { personId: { in: existingUserIds } }
-        });
-        
+
         await prisma.orgMembership.deleteMany({
             where: { householdId: { in: existingHouseholdIds } }
         });
-        
+
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: existingUserIds } }
         });
@@ -63,9 +59,7 @@ describe('Household API Integration Tests', () => {
         });
         testUserId = leadUser.id;
 
-        await prisma.householdLead.create({
-            data: { householdId: household.id, personId: leadUser.id }
-        });
+        await prisma.person.update({ where: { id: leadUser.id }, data: { isHouseholdLead: true } });
 
         const memberUser = await prisma.person.create({
             data: { email: 'member-user-household-api-test@example.com', name: 'Member User', householdId: household.id }
@@ -101,10 +95,6 @@ describe('Household API Integration Tests', () => {
             otherHouseholdId,
             ...participants.map(p => p.householdId)
         ])].filter((id): id is number => id !== undefined && id !== null);
-
-        await prisma.householdLead.deleteMany({
-            where: { personId: { in: currentIds } }
-        });
 
         await prisma.orgMembership.deleteMany({
             where: { householdId: { in: validHouseholdIds } }

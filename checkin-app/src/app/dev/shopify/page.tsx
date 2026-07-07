@@ -33,7 +33,7 @@ export default async function DevShopifyPage() {
             personId: true,
             person: { select: { name: true } },
             program: {
-                select: { id: true, name: true, shopifyOrgMemberVariantId: true, shopifyNonOrgMemberVariantId: true },
+                select: { id: true, name: true, shopifyVariantId: true, shopifyOrgMemberVariantId: true, shopifyNonOrgMemberVariantId: true },
             },
         },
     });
@@ -43,15 +43,15 @@ export default async function DevShopifyPage() {
             hasVariant={hasVariant}
             processes={processes.map((p) => ({
                 id: p.id,
-                household: p.orgMembership.household?.name ?? "(unnamed household)",
-                isVolunteer: p.orgMembership.isVolunteer,
+                household: p.orgMembership?.household?.name ?? "(unnamed household)",
+                isVolunteer: p.orgMembership?.isVolunteer ?? false,
             }))}
             enrollments={pendingParticipants.map((pp) => ({
                 programId: pp.program.id,
                 programName: pp.program.name,
                 personId: pp.personId,
                 personName: pp.person.name ?? `Person #${pp.personId}`,
-                hasVariant: !!(pp.program.shopifyOrgMemberVariantId ?? pp.program.shopifyNonOrgMemberVariantId),
+                hasVariant: !!(pp.program.shopifyVariantId ?? pp.program.shopifyOrgMemberVariantId ?? pp.program.shopifyNonOrgMemberVariantId),
             }))}
         />
     );

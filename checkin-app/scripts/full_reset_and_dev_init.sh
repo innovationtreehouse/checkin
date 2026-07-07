@@ -68,14 +68,13 @@ async function seed() {
         );
         console.log('  ✓ ' + p.name + (p.email ? ' (' + p.email + ')' : ' (no email — minor)'));
 
-        // Make household leads for adults with households
+        // Make household leads for adults with households (a1: Person.isHouseholdLead)
         if (p.householdId && p.dob) {
             const age = (Date.now() - new Date(p.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000);
             if (age >= 18) {
                 await pool.query(
-                    \`INSERT INTO \"HouseholdLead\" (\"householdId\", \"participantId\") VALUES (\\\$1, \\\$2)
-                     ON CONFLICT DO NOTHING\`,
-                    [p.householdId, result.rows[0].id]
+                    \`UPDATE \"Person\" SET \"isHouseholdLead\" = true WHERE \"id\" = \\\$1\`,
+                    [result.rows[0].id]
                 );
             }
         }

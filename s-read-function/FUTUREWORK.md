@@ -141,9 +141,13 @@ deliberate step — **not** Terraform, and **not** the app Lambdas:
 - **Locally (today):** migrations are applied by hand — `npm run db:deploy` from
   `s-ingest-core`, pointed at the dev DB.
 
-## 5. Token acquisition for deployed Lambda
+## 5. Token acquisition for deployed Lambda — done (#237)
 Dev Dashboard apps issue a short-lived (~24h) Admin API token via the client-credentials
-grant (see README "Getting the token"). For the deployed Lambda, fetch the token
-programmatically each run from `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET` (a small
-addition to `shopify/client.ts`) instead of storing a static `SHOPIFY_ADMIN_TOKEN` that
-expires. Cache it in memory across warm invocations; refresh on 401.
+grant (see README "Getting the token"). `shopify/client.ts` now mints it programmatically
+from `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET` (`shopify/token.ts`) instead of
+requiring a hand-pasted static `SHOPIFY_ADMIN_TOKEN`, caches it in memory across warm
+invocations (refreshing a few minutes before expiry), and invalidates + re-mints once on
+a 401 mid-run. `SHOPIFY_ADMIN_TOKEN` still works unchanged as the local-dev/legacy path
+(static-token precedence). No refresh-token / encrypted-DB layer: the client-credentials
+grant issues none, so renewing is just re-running the exchange — confirmed against the
+issue thread, which corrected the original refresh-token diagram.

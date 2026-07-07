@@ -11,6 +11,7 @@
  * Uses the global `fetch` (Node 18+); no SDK dependency, so the bundle stays small.
  */
 import { type ShopifyConfig, logger } from "@inventory/s-ingest-core";
+import { getShopifyToken, invalidateShopifyToken } from "./token.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -98,9 +99,13 @@ export interface ShopifyClient {
 export function createShopifyClient(cfg: ShopifyConfig): ShopifyClient {
   async function request<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
     let attempt = 0;
+    // A warm Lambda can hold a token that's since expired/been rotated; allow exactly one
+    // invalidate-and-remint retry per request, not a loop (see token.ts / #237).
+    let authRetried = false;
 
     while (true) {
       attempt++;
+      const token = await getShopifyToken(cfg);
       let res: Response;
       // Per-attempt deadline INSIDE the loop so a hang aborts and retries (not a single
       // failure that runs to the Lambda timeout). Timer cleared in finally so it can't leak.
@@ -111,7 +116,7 @@ export function createShopifyClient(cfg: ShopifyConfig): ShopifyClient {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-Shopify-Access-Token": cfg.adminToken,
+            "X-Shopify-Access-Token": token,
           },
           body: JSON.stringify({ query, variables }),
           signal: controller.signal,
@@ -128,6 +133,15 @@ export function createShopifyClient(cfg: ShopifyConfig): ShopifyClient {
         continue;
       } finally {
         clearTimeout(timer);
+      }
+
+      // Stale cached token → invalidate and re-mint once, then retry immediately (no backoff;
+      // this isn't a rate limit). If it 401s again, fall through to the generic !res.ok throw.
+      if (res.status === 401 && !authRetried) {
+        authRetried = true;
+        invalidateShopifyToken();
+        logger.warn("shopify 401; invalidating cached token and retrying once", { attempt });
+        continue;
       }
 
       // Transport-level throttle / server errors → jittered backoff (honor Retry-After).

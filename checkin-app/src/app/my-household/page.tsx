@@ -6,7 +6,7 @@ import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, Textarea, TextInput, Title, Tooltip } from '@mantine/core';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { PageContainer } from '@/components/ui/PageContainer';
-import { formatDate, calculateAge } from '@/lib/time';
+import { calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import { notifications } from '@mantine/notifications';
 import TodoCard from '@/components/TodoCard';
@@ -44,12 +44,11 @@ function ageBadge(p: HouseholdMember): { label: string; color: string; variant: 
   return { label: 'Age Unavailable', color: 'red', variant: 'filled' };
 }
 
-type HouseholdMember = { id: number; name?: string; email?: string; dateOfBirth?: string; phone?: string; isDeclaredAdult?: boolean; allergies?: string | null };
+type HouseholdMember = { id: number; name?: string; email?: string; dateOfBirth?: string; phone?: string; isDeclaredAdult?: boolean; allergies?: string | null; isHouseholdLead?: boolean };
 type EmergencyContact = { id: number; name: string; phone: string; email?: string | null; relationship?: string | null; priority: number; invalid: boolean };
 type HouseholdData = {
   id?: number;
   name?: string;
-  leads?: Array<{ personId: number }>;
   householdMembers?: HouseholdMember[];
   orgMembership?: { status?: string; memberSince?: string; isVolunteer?: boolean } | null;
 } & Partial<StructuredAddress> | null;
@@ -334,7 +333,7 @@ export default function HouseholdPage() {
   // Staff (@innovationtreehouse.org) accounts aren't real member families; the add-member
   // control is hidden for them (server also enforces this — see /api/household PATCH).
   const isStaffAccount = isOrgAccount(sessionUser as { hd?: string | null; email?: string | null });
-  const isLead = (pid: number) => household?.leads?.some((l) => l.personId === pid) ?? false;
+  const isLead = (pid: number) => household?.householdMembers?.find((m) => m.id === pid)?.isHouseholdLead ?? false;
   const viewerIsLead = isLead(userId);
 
   const sortedHouseholdMembers = (household?.householdMembers || []).slice().sort((a, b) => {
@@ -358,7 +357,7 @@ export default function HouseholdPage() {
             household.orgMembership?.status === 'ACTIVE' ? (
               <Alert color="green" mb="lg">
                 <Group gap="xs" wrap="wrap">
-                  <Text fw={600}>✓ Member{household.orgMembership.memberSince ? ` since ${formatDate(household.orgMembership.memberSince)}` : ''}</Text>
+                  <Text fw={600}>✓ Member{household.orgMembership.memberSince ? ` since ${new Date(household.orgMembership.memberSince).getFullYear()}` : ''}</Text>
                   {household.orgMembership.isVolunteer && <Badge color="green" variant="light">Volunteer-only family</Badge>}
                 </Group>
               </Alert>

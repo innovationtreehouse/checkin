@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { backgroundCheckProvider } from "@/lib/membership/background-check/manual-adapter";
 import { notifyReviewers, applyVolunteerStatus } from "@/lib/membership/review";
 import { zohoSign } from "@/lib/membership/contract/zohoProvider";
+import { signingMockActive } from "@/lib/membership/contract/signingTarget";
 import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
 import { latestPendingExternal } from "@/lib/membership/phases";
 
@@ -90,8 +91,10 @@ export async function advanceExternalIfComplete(processId: number) {
     if (!process.bgClearedAt && !process.bgConsentAt) return process;
 
     const advanced = await prisma.$transaction(async (tx) => {
+        // A household INITIAL/RENEWAL always has a membership (orgMembershipId is
+        // only null for PERSON_BG, which never sits at PENDING_EXTERNAL_ACTION).
         const membership = await tx.orgMembership.findUnique({
-            where: { id: process.orgMembershipId },
+            where: { id: process.orgMembershipId! },
             select: { householdId: true, household: { select: { intakeNotes: true } } },
         });
         // An applicant note ("anything else we should know?", #900) can change what
@@ -118,7 +121,7 @@ export async function advanceExternalIfComplete(processId: number) {
         // background check clears — so a pre-designated volunteer family must get
         // isVolunteer here, not only at clearance (#874). Sticky + idempotent;
         // clearBackgroundCheck's reviewer-marked pass remains the supplement.
-        if (membership) await applyVolunteerStatus(tx, process.orgMembershipId, membership.householdId, false);
+        if (membership) await applyVolunteerStatus(tx, process.orgMembershipId!, membership.householdId, false);
         await tx.auditLog.create({
             data: {
                 actorId: SYSTEM_ACTOR,
@@ -191,14 +194,12 @@ export async function selfAttestBgConsent(userId: number): Promise<ExternalStatu
     const user = await prisma.person.findUnique({
         where: { id: userId },
         include: {
-            householdLeads: true,
             household: { include: { orgMembership: { include: { processes: true } } } },
         },
     });
     if (!user) throw new ExternalError("not_found", "Application not found.");
     if (!user.householdId) throw new ExternalError("no_household", "You must create a household first.");
-    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.isSysadmin) {
+    if (!user.isHouseholdLead && !user.isSysadmin) {
         throw new ExternalError("not_lead", "Only a household lead can confirm background-check consent.");
     }
 
@@ -227,6 +228,35 @@ export async function findProcessByEnvelope(requestId: string) {
 }
 
 /**
+ * Forget a dead Zoho signing request (declined/expired/recalled) so the next
+ * "sign" click creates a fresh one — the applicant's self-serve recovery (#876).
+ * Conditional on the process still pointing at THAT request and being unsigned,
+ * so a concurrent re-create's fresh ids are never clobbered and the audit row is
+ * written only by the caller that actually cleared.
+ */
+async function clearDeadSigningRequest(processId: number, requestId: string, actorId: number) {
+    const cleared = await prisma.$transaction(async (tx) => {
+        const { count } = await tx.orgMembershipProcess.updateMany({
+            where: { id: processId, zohoEnvelopeId: requestId, contractSignedAt: null },
+            data: { zohoEnvelopeId: null, zohoActionId: null },
+        });
+        if (count !== 1) return false;
+        await tx.auditLog.create({
+            data: {
+                actorId,
+                action: "EDIT",
+                tableName: "OrgMembershipProcess",
+                affectedEntityId: processId,
+                oldData: { zohoEnvelopeId: requestId },
+                newData: { zohoEnvelopeId: null, zohoActionId: null },
+            },
+        });
+        return true;
+    });
+    if (cleared) logger.info(`Cleared dead Zoho signing request ${requestId} for membership process ${processId}.`);
+}
+
+/**
  * Pull the contract status from Zoho for the applicant's in-flight process and
  * record it signed if Zoho says so. Called when the signer returns from embedded
  * signing (?signed=1) so completion doesn't hinge on the inbound webhook — which
@@ -247,8 +277,13 @@ export async function syncContractStatus(userId: number): Promise<ExternalStatus
     if (!process.contractSignedAt && process.zohoEnvelopeId && config.zohoAvailable()) {
         try {
             const token = await zohoSign.getAccessToken();
-            if (await zohoSign.getRequestStatus(token, process.zohoEnvelopeId)) {
+            const state = await zohoSign.getRequestStatus(token, process.zohoEnvelopeId);
+            if (state === "completed") {
                 await markContractSigned(process.id, userId);
+            } else if (state === "terminal") {
+                // Declined or expired — forget the dead request so contractStarted
+                // resets and the next click creates a fresh one (#876).
+                await clearDeadSigningRequest(process.id, process.zohoEnvelopeId, userId);
             }
         } catch (e) {
             logger.error(`Zoho status sync failed for process ${process.id}: ${e instanceof Error ? e.message : String(e)}`);
@@ -279,14 +314,12 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
     const user = await prisma.person.findUnique({
         where: { id: userId },
         include: {
-            householdLeads: true,
             household: { include: { orgMembership: { include: { processes: true } } } },
         },
     });
     if (!user) throw new ExternalError("not_found", "Application not found.");
     if (!user.householdId) throw new ExternalError("no_household", "You must create a household first.");
-    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.isSysadmin) {
+    if (!user.isHouseholdLead && !user.isSysadmin) {
         throw new ExternalError("not_lead", "Only a household lead can sign the membership agreement.");
     }
 
@@ -307,12 +340,36 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
     // document is never re-generated (only the embed session below is ephemeral).
     let requestId = process.zohoEnvelopeId;
     let actionId = process.zohoActionId;
+
+    // A stored request may be dead — declined by the signer, or expired after
+    // CONTRACT_EXPIRATION_DAYS — and Zoho can neither embed nor revive it. Check
+    // before reusing (#876): forget dead ids and fall through to the create path
+    // below, so the same button self-recovers. Best-effort — if the status read
+    // fails, proceed with the stored ids rather than blocking the click (worst
+    // case the embed call fails, as it did before this check existed).
+    if (requestId && actionId && !process.contractSignedAt) {
+        try {
+            if ((await zohoSign.getRequestStatus(token, requestId)) === "terminal") {
+                await clearDeadSigningRequest(process.id, requestId, userId);
+                requestId = null;
+                actionId = null;
+            }
+        } catch (e) {
+            logger.warn(`Zoho request-status check failed for membership process ${process.id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+
     if (!requestId || !actionId) {
+        // Resolved ONCE for this request so the PDF-skip, watermark, and the
+        // provider calls below can't disagree if the dev signing-target radio
+        // flips mid-flow (signingMockActive also honors BoardSettings.devSigningTarget).
+        const signingMock = await signingMockActive();
+
         // Mock mode never uploads the PDF (its createRequest ignores the bytes), so
         // skip the S3 load that also 503s in dev — an empty placeholder keeps the
         // create/submit calls type-identical. See ZOHO_SIGN_DEV_MOCK.md §5.
         let agreement;
-        if (config.zohoMockActive()) {
+        if (signingMock) {
             agreement = { pdf: Buffer.alloc(0), lastPageNo: 0, pageWidth: 0, pageHeight: 0 };
         } else {
             try {
@@ -331,7 +388,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
         // create/submit/embed flow is otherwise identical across envs. (Mock mode
         // skips the watermark — the empty placeholder PDF is never rendered.)
         const isProd = config.isProd();
-        const pdf = isProd || config.zohoMockActive() ? agreement.pdf : await stampWatermark(agreement.pdf, "DEV TEST — NOT A LEGAL AGREEMENT");
+        const pdf = isProd || signingMock ? agreement.pdf : await stampWatermark(agreement.pdf, "DEV TEST — NOT A LEGAL AGREEMENT");
         const requestName = `${isProd ? "" : "[DEV TEST — NOT BINDING] "}Membership Agreement — ${recipientName}`;
 
         // Return the embedded signer to checkin when they finish (Zoho navigates

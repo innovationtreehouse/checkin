@@ -1,4 +1,7 @@
 import type { TxClient } from "@/lib/db-client";
+import type { ProgramParticipant } from "@/generated/prisma/client";
+import prisma from "@/lib/prisma";
+import { adjustProgramInventory } from "@/lib/shopify";
 
 /** Thrown by {@link lockProgramAndCheckCapacity} when a program is full. */
 export class ProgramCapacityError extends Error {
@@ -37,4 +40,41 @@ export async function lockProgramAndCheckCapacity(
     if (count + seats > maxParticipants) {
         throw new ProgramCapacityError(Math.max(0, maxParticipants - count));
     }
+}
+
+/**
+ * Delete a PENDING participant and release its scholarship inventory hold
+ * (+1), exactly once. This is the ONE implementation of "exit a participant"
+ * shared by every code path that does it — manual self/admin withdrawal
+ * (DELETE /api/programs/[id]/participants), the non-payment kick
+ * (cron/pending-participants), and grace-period auto-withdrawal
+ * (cron/scholarship-grace-expiry) — so the hold-ledger invariant (every
+ * scholarship -1 comes back +1 exactly once) has one implementation, not
+ * three.
+ *
+ * `delete()` IS the atomicity boundary: a given row can be deleted at most
+ * once, so "was inventoryHeldAt set on the row we just deleted" can never be
+ * double-counted even under concurrent callers — a second delete() throws
+ * Prisma P2025 (row already gone), which callers handle as an idempotent
+ * no-op and never reach this function for.
+ *
+ * Never throws on the Shopify leg (adjustProgramInventory already logs +
+ * emails on failure); the boolean return lets the caller surface a
+ * non-fatal warning the same way every other Shopify-adjusting endpoint does.
+ */
+export async function withdrawAndReleaseHold(
+    programId: number,
+    personId: number,
+    program: { shopifyVariantId?: string | null; shopifyOrgMemberVariantId: string | null; shopifyNonOrgMemberVariantId: string | null },
+): Promise<{ enrollment: ProgramParticipant; released: boolean; shopifyOk: boolean }> {
+    const enrollment = await prisma.programParticipant.delete({
+        where: { programId_personId: { programId, personId } },
+    });
+
+    if (!enrollment.inventoryHeldAt) {
+        return { enrollment, released: false, shopifyOk: true };
+    }
+
+    const shopifyOk = await adjustProgramInventory(program, 1);
+    return { enrollment, released: true, shopifyOk };
 }

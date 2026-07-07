@@ -19,6 +19,8 @@ jest.mock('@/lib/prisma', () => ({
         orgMembership: { findUnique: jest.fn() },
         orgMembershipProcess: { findUnique: jest.fn(), update: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
         auditLog: { create: jest.fn() },
+        // signingMockActive reads the dev signing-target radio; null = default ('zoho').
+        boardSettings: { findUnique: jest.fn().mockResolvedValue(null) },
         $transaction: jest.fn(),
     },
 }));
@@ -116,7 +118,7 @@ describe('selfAttestBgConsent', () => {
         id: 1,
         householdId: 7,
         isSysadmin: false,
-        householdLeads: [{ householdId: 7 }],
+        isHouseholdLead: true,
         household: { orgMembership: { processes: [pendingProcess] } },
     };
 
@@ -131,7 +133,7 @@ describe('selfAttestBgConsent', () => {
     });
 
     it('not_lead when the caller is not a household lead and not a sysadmin', async () => {
-        prisma.person.findUnique.mockResolvedValue({ ...leadUser, householdLeads: [] });
+        prisma.person.findUnique.mockResolvedValue({ ...leadUser, isHouseholdLead: false });
         await expect(selfAttestBgConsent(1)).rejects.toMatchObject({ code: 'not_lead' });
     });
 
@@ -275,7 +277,7 @@ describe('getOrCreateContractSigningUrl', () => {
         isSysadmin: false,
         email: 'lead@example.com',
         name: 'Lead Person',
-        householdLeads: [{ householdId: 7 }],
+        isHouseholdLead: true,
         household: { orgMembership: { processes: [pendingProcess] } },
     };
 
@@ -296,7 +298,7 @@ describe('getOrCreateContractSigningUrl', () => {
     });
 
     it('not_lead when the caller is not a household lead and not a sysadmin', async () => {
-        prisma.person.findUnique.mockResolvedValue({ ...leadUser, householdLeads: [] });
+        prisma.person.findUnique.mockResolvedValue({ ...leadUser, isHouseholdLead: false });
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'not_lead' });
     });
 
@@ -329,12 +331,53 @@ describe('getOrCreateContractSigningUrl', () => {
             household: { orgMembership: { processes: [{ ...pendingProcess, zohoEnvelopeId: 'req-existing', zohoActionId: 'act-existing' }] } },
         });
         zohoSign.getAccessToken.mockResolvedValue('token-1');
+        zohoSign.getRequestStatus.mockResolvedValue('in_progress');
         zohoSign.getEmbeddedSignUrl.mockResolvedValue('https://sign.example/embed-existing');
 
         const url = await getOrCreateContractSigningUrl(1);
 
         expect(zohoSign.createRequest).not.toHaveBeenCalled();
         expect(zohoSign.submitRequest).not.toHaveBeenCalled();
+        expect(url).toBe('https://sign.example/embed-existing');
+    });
+
+    it('dead stored request (declined/expired) → clears the ids and creates a fresh one (#876)', async () => {
+        prisma.person.findUnique.mockResolvedValue({
+            ...leadUser,
+            household: { orgMembership: { processes: [{ ...pendingProcess, zohoEnvelopeId: 'req-dead', zohoActionId: 'act-dead' }] } },
+        });
+        zohoSign.getAccessToken.mockResolvedValue('token-1');
+        zohoSign.getRequestStatus.mockResolvedValue('terminal');
+        zohoSign.createRequest.mockResolvedValue({ requestId: 'req-fresh', actionId: 'act-fresh', documentId: 'doc-fresh' });
+        zohoSign.getEmbeddedSignUrl.mockResolvedValue('https://sign.example/embed-fresh');
+        prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
+        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
+
+        const url = await getOrCreateContractSigningUrl(1);
+
+        // The dead pair is forgotten (conditional on still pointing at it)…
+        expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith({
+            where: { id: 20, zohoEnvelopeId: 'req-dead', contractSignedAt: null },
+            data: { zohoEnvelopeId: null, zohoActionId: null },
+        });
+        // …and a fresh request is created and embedded.
+        expect(zohoSign.createRequest).toHaveBeenCalledTimes(1);
+        expect(zohoSign.getEmbeddedSignUrl).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'req-fresh', actionId: 'act-fresh' }));
+        expect(url).toBe('https://sign.example/embed-fresh');
+    });
+
+    it('status check failure → falls back to embedding the stored request (best-effort)', async () => {
+        prisma.person.findUnique.mockResolvedValue({
+            ...leadUser,
+            household: { orgMembership: { processes: [{ ...pendingProcess, zohoEnvelopeId: 'req-existing', zohoActionId: 'act-existing' }] } },
+        });
+        zohoSign.getAccessToken.mockResolvedValue('token-1');
+        zohoSign.getRequestStatus.mockRejectedValue(new Error('Zoho 503'));
+        zohoSign.getEmbeddedSignUrl.mockResolvedValue('https://sign.example/embed-existing');
+
+        const url = await getOrCreateContractSigningUrl(1);
+
+        expect(zohoSign.createRequest).not.toHaveBeenCalled();
         expect(url).toBe('https://sign.example/embed-existing');
     });
 

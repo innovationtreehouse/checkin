@@ -10,11 +10,7 @@ import { escapeHtml, type VisitSource } from "./email-templates/base";
  */
 
 export type NotificationEvent =
-    | 'RSVP_REMINDER'
     | 'PROGRAM_ENROLLMENT'
-    | 'EVENT_STARTING_SOON'
-    | 'ATTENDANCE_VALIDATED'
-    | 'RSVP_UPDATED'
     | 'PROGRAM_ASSIGNMENT'
     | 'CHECKIN'
     | 'CHECKOUT';
@@ -41,14 +37,6 @@ export async function sendNotification(userId: number, eventType: NotificationEv
             case 'PROGRAM_ENROLLMENT':
                 subject = `Confirmed: Enrollment in ${payload.programName}`;
                 message = `Hi ${user.name}, you have been successfully enrolled in ${payload.programName}.`;
-                break;
-            case 'EVENT_STARTING_SOON':
-                subject = `Reminder: ${payload.eventName} starts soon!`;
-                message = `Hi ${user.name}, your event ${payload.eventName} is starting in ${payload.hours} hours.`;
-                break;
-            case 'ATTENDANCE_VALIDATED':
-                subject = `Attendance Verified: ${payload.eventName}`;
-                message = `Hi ${user.name}, your attendance at ${payload.eventName} has been recorded by administrators.`;
                 break;
             case 'CHECKIN':
                 subject = `✅ Checked In — ${user.name}`;
@@ -158,36 +146,32 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
 
         // 2. Notify household leads if the participant is in a household
         if (participant.householdId) {
-            const householdLeads = await prisma.householdLead.findMany({
-                where: { householdId: participant.householdId },
-                include: {
-                    person: {
-                        select: {
-                            id: true,
-                            email: true,
-                            name: true,
-                            notificationSettings: true
-                        }
-                    }
+            const householdLeads = await prisma.person.findMany({
+                where: { householdId: participant.householdId, isHouseholdLead: true },
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    notificationSettings: true
                 }
             });
 
             for (const lead of householdLeads) {
                 // Don't double-notify if the lead IS the participant
-                if (lead.person.id === participant.id) continue;
+                if (lead.id === participant.id) continue;
 
-                const leadSettings = lead.person.notificationSettings as unknown as Record<string, boolean>;
-                if (leadSettings?.emailDependentCheckins && lead.person.email) {
+                const leadSettings = lead.notificationSettings as unknown as Record<string, boolean>;
+                if (leadSettings?.emailDependentCheckins && lead.email) {
                     const subject = `${emoji} ${name} ${action} Innovation Treehouse`;
                     const html = householdMemberTemplate({
-                        leadName: lead.person.name || 'there',
+                        leadName: lead.name || 'there',
                         memberName: name,
                         type,
                         date: dateStr,
                         time: timeStr,
                         source
                     });
-                    emailPromises.push(sendEmail(lead.person.email, subject, html));
+                    emailPromises.push(sendEmail(lead.email, subject, html));
                 }
             }
         }

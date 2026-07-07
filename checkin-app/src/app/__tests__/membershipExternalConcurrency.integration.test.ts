@@ -17,9 +17,14 @@ import { notifyReviewers } from '@/lib/membership/review';
 import prisma from '@/lib/prisma';
 
 jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+// Bare stubs, deliberately NOT a requireActual spread: review.ts sits on an
+// import cycle (review → payment → personBgTriggers → renewal → review), so an
+// eager requireActual inside this factory re-enters review.ts mid-init and
+// throws a TDZ ReferenceError. external.ts only needs these two symbols here;
+// the real applyVolunteerStatus behavior is covered by membershipBgNonBlocking.
 jest.mock('@/lib/membership/review', () => ({
-    ...jest.requireActual('@/lib/membership/review'),
     notifyReviewers: jest.fn().mockResolvedValue(undefined),
+    applyVolunteerStatus: jest.fn().mockResolvedValue(undefined),
 }));
 
 const TAG = 'external-concurrency-test';

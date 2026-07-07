@@ -50,4 +50,37 @@ describe("loadShopifyConfig", () => {
     expect(() => loadShopifyConfig({ SHOPIFY_ADMIN_TOKEN: "tok", CUTOVER_DATE: "2026-01-01" } as NodeJS.ProcessEnv)).toThrow();
     expect(() => loadShopifyConfig({ SHOPIFY_SHOP: "s", SHOPIFY_ADMIN_TOKEN: "tok" } as NodeJS.ProcessEnv)).toThrow();
   });
+
+  it("accepts SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET in place of a static admin token (#237)", () => {
+    const cfg = loadShopifyConfig({
+      SHOPIFY_SHOP: "shop.myshopify.com",
+      SHOPIFY_CLIENT_ID: "cid",
+      SHOPIFY_CLIENT_SECRET: "csecret",
+      CUTOVER_DATE: "2026-01-01",
+    } as NodeJS.ProcessEnv);
+    expect(cfg.adminToken).toBeUndefined();
+    expect(cfg.clientId).toBe("cid");
+    expect(cfg.clientSecret).toBe("csecret");
+  });
+
+  it("passes through both a static token and client-credential fields when all are present (precedence is enforced at token-acquisition time, not here)", () => {
+    const cfg = loadShopifyConfig({
+      SHOPIFY_SHOP: "s",
+      SHOPIFY_ADMIN_TOKEN: "tok",
+      SHOPIFY_CLIENT_ID: "cid",
+      SHOPIFY_CLIENT_SECRET: "csecret",
+      CUTOVER_DATE: "2026-01-01",
+    } as NodeJS.ProcessEnv);
+    expect(cfg.adminToken).toBe("tok");
+    expect(cfg.clientId).toBe("cid");
+    expect(cfg.clientSecret).toBe("csecret");
+  });
+
+  it("throws when neither a static token nor a full client-credentials pair is present", () => {
+    expect(() => loadShopifyConfig({ SHOPIFY_SHOP: "s", CUTOVER_DATE: "2026-01-01" } as NodeJS.ProcessEnv)).toThrow();
+    // A lone client id (no secret) doesn't satisfy the pair either.
+    expect(() =>
+      loadShopifyConfig({ SHOPIFY_SHOP: "s", SHOPIFY_CLIENT_ID: "cid", CUTOVER_DATE: "2026-01-01" } as NodeJS.ProcessEnv),
+    ).toThrow();
+  });
 });

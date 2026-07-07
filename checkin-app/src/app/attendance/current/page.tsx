@@ -42,7 +42,7 @@ type FullResponse = { access: "full"; attendance: Visit[]; counts: Counts; safet
 type LimitedResponse = { access: "limited"; counts: Counts; safety: SafetyFlags; self: Visit | null; household: Visit[] };
 type AttendanceResponse = FullResponse | LimitedResponse;
 
-type SessionUser = { id: number; isSysadmin?: boolean; isKeyholder?: boolean; isBoardMember?: boolean; householdId?: number | null };
+type SessionUser = { id: number; isSysadmin?: boolean; isKeyholder?: boolean; isBoardMember?: boolean; householdId?: number | null; householdLead?: boolean };
 
 function KioskDisplayInner() {
   const searchParams = useSearchParams();
@@ -52,7 +52,7 @@ function KioskDisplayInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState<number | null>(null);
-  const [household, setHousehold] = useState<{ leads: { personId: number }[], householdMembers: Person[] } | null>(null);
+  const [household, setHousehold] = useState<{ householdMembers: Person[] } | null>(null);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [searchSignOutQuery, setSearchSignOutQuery] = useState("");
   const [selectedParticipant, setSelectedParticipant] = useState<Person | null>(null);
@@ -317,7 +317,7 @@ function KioskDisplayInner() {
 
   const canCheckoutVisit = (visit: Visit): boolean => Boolean(
     visit.participant.id === (session?.user as SessionUser)?.id ||
-    (household?.leads?.some((l) => l.personId === (session?.user as SessionUser)?.id) &&
+    ((session?.user as SessionUser)?.householdLead &&
       visit.participant.householdId === currentUserHouseholdId)
   );
 
@@ -378,7 +378,7 @@ function KioskDisplayInner() {
         </Group>
 
         {/* Household check-in buttons — hidden in kiosk mode */}
-        {!isKioskMode && canCheckInHousehold && household && household.leads?.some((l) => l.personId === userId) && (
+        {!isKioskMode && canCheckInHousehold && household && (session?.user as SessionUser)?.householdLead && (
           <Box mb="lg">
             <Title order={4} c="blue" mb="sm">Check In Household Members</Title>
             <Group gap="xs" wrap="wrap">

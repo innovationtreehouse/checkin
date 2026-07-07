@@ -15,7 +15,6 @@ export const GET = withAuth(
             const user = await prisma.person.findUnique({
                 where: { id: userId },
                 include: {
-                    householdLeads: true,
                     household: {
                         include: { emergencyContacts: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
                     },
@@ -28,7 +27,7 @@ export const GET = withAuth(
 
             // Youth are never required to provide a phone number (issue #169)
             const needsPhone = !user.phone && !isYouth(user.dateOfBirth);
-            const isLead = user.householdId && user.householdLeads.some((lead: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => lead.householdId === user.householdId);
+            const isLead = user.isHouseholdLead;
 
             // A lead needs a contact when no valid (non-member, complete) one exists.
             const validContact = user.household?.emergencyContacts.find(

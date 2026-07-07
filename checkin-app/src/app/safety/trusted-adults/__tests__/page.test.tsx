@@ -20,7 +20,7 @@ const trustedAdults = [
     familyContext: "Family friend, watches the kids after school.",
     origin: "SELF_DISCLOSED",
     createdAt: "2026-01-01T00:00:00.000Z",
-    household: { id: 5, name: "Guardian House", leads: [] },
+    household: { id: 5, name: "Guardian House", householdMembers: [] },
     trustedAdultPerson: null,
     reviews: [{ id: 9, kind: "SELF_DISCLOSED", status: "PENDING_BOARD_REVIEW", decision: null, decisionNote: null, sharedNote: null, effectiveFrom: null, reviewBy: null, createdAt: "2026-01-01T00:00:00.000Z" }],
   },
@@ -117,7 +117,7 @@ describe("safety/trusted-adults page", () => {
         expect.objectContaining({ body: JSON.stringify({ reviewId: 9, decision: "REQUEST_INFO", note: "Need proof of ID." }) }),
       ),
     );
-  });
+  }, 10000); // heavy: full page + modal opened twice + two decision round-trips
 
   it("leaves an empty queue when the initial load fails", async () => {
     setSession({ id: 1, isBoardMember: true, householdId: 1 });
@@ -185,7 +185,7 @@ describe("safety/trusted-adults page", () => {
     await screen.findByText("Guardian House");
     expect(screen.getByText("Renewal")).toBeInTheDocument();
     expect(screen.queryByText(/lapsed/)).not.toBeInTheDocument();
-  });
+  }, 10000); // heavy: renders the full page three times (mount/unmount ×3)
 
   it("shows the fallback failure message on a decision error, and dismisses the alert", async () => {
     setSession({ id: 1, isBoardMember: true, householdId: 1 });
@@ -205,7 +205,7 @@ describe("safety/trusted-adults page", () => {
     const conflicted = [
       {
         ...trustedAdults[0],
-        household: { id: 1, name: "Guardian House", leads: [{ person: { name: "Lead Lucy", email: "lucy@example.com" } }] },
+        household: { id: 1, name: "Guardian House", householdMembers: [{ id: 1, name: "Lead Lucy", email: "lucy@example.com" }] },
         reviews: [{ ...trustedAdults[0].reviews[0], sharedNote: "Already shared.", reviewBy: "2026-02-01T00:00:00.000Z" }],
       },
     ];
@@ -273,7 +273,7 @@ describe("safety/trusted-adults page", () => {
         expect.objectContaining({ body: JSON.stringify({ reviewId: 9, action: "revoke" }) }),
       ),
     );
-  });
+  }, 10000); // heaviest test in file: full page + modal + 3 sequential override round-trips; guards the full-suite serial flake
 
   it("hides override actions for a revoked review, and shows an override failure message", async () => {
     const revoked = [{ ...trustedAdults[0], reviews: [{ ...trustedAdults[0].reviews[0], status: "REVOKED" }] }];

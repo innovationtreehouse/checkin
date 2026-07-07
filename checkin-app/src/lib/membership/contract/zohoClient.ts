@@ -248,18 +248,28 @@ export async function getEmbeddedSignUrl(params: {
     return signUrl;
 }
 
+/** Request states Zoho can never collect a signature from — a fresh request is required (#876). */
+const TERMINAL_REQUEST_STATUSES = new Set(["declined", "expired", "recalled", "deleted"]);
+
+export type ZohoRequestState = "completed" | "in_progress" | "terminal";
+
 /**
- * Read a signing request's current status. Returns true once the request is fully
- * completed. Used to sync state on the applicant's return from embedded signing,
- * so completion doesn't depend on the inbound webhook (which is unreliable against
- * a scale-to-zero dev instance).
+ * Read a signing request's current state, normalized to the three cases checkin
+ * acts on: "completed" (record the contract signed), "terminal" (declined,
+ * expired, recalled or deleted — the request is dead, a fresh one must be
+ * created), and "in_progress" (anything else — still signable). Used to sync
+ * state on the applicant's return from embedded signing (the inbound webhook is
+ * unreliable against a scale-to-zero dev instance) and to detect dead requests
+ * on the resume path.
  */
-export async function getRequestStatus(token: string, requestId: string): Promise<boolean> {
+export async function getRequestStatus(token: string, requestId: string): Promise<ZohoRequestState> {
     const resp = await zohoFetch(`${config.zohoSignApi()}/requests/${requestId}`, {
         method: "GET",
         headers: authHeader(token),
     }, "Zoho getRequestStatus");
     if (!resp.ok) throw new ZohoError(`Failed to get request status (${resp.status}): ${await resp.text()}`);
     const result = (await resp.json()) as { requests?: { request_status?: string } };
-    return result.requests?.request_status?.toLowerCase() === "completed";
+    const status = result.requests?.request_status?.toLowerCase() ?? "";
+    if (status === "completed") return "completed";
+    return TERMINAL_REQUEST_STATUSES.has(status) ? "terminal" : "in_progress";
 }

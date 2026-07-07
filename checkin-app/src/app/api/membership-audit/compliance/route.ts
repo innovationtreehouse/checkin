@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
+import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgCheck";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,13 @@ export const dynamic = "force-dynamic";
  *   REVOKED / DENIED — OrgMembership status.
  *   STUCK_BG_CLEARANCE — a process parked at PENDING_BG_CLEARANCE (paid, never cleared).
  * A household with multiple problems gets all its reason tags.
+ *
+ * Also returns two PERSON-scoped lists (program people may not sit in a member
+ * household, so they can't key on householdId):
+ *   peopleNeedingBgCheck — program-attached people ≥18 (as of the boundary) with
+ *                          no fresh check. Skipped when bgRecheckMonths = 0.
+ *   peopleMissingDob     — program-attached people whose age is unknown (no DOB,
+ *                          not declared 25+): data hygiene, NOT bg-needed.
  */
 export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
@@ -58,25 +66,87 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         where: { status: "PENDING_BG_CLEARANCE" },
         select: { orgMembership: { select: { householdId: true } } },
     });
-    for (const p of stuck) add(p.orgMembership.householdId, "STUCK_BG_CLEARANCE");
+    // PENDING_BG_CLEARANCE is a household-process status; orgMembership is always set.
+    for (const p of stuck) if (p.orgMembership) add(p.orgMembership.householdId, "STUCK_BG_CLEARANCE");
 
-    if (reasons.size === 0) return NextResponse.json({ households: [] });
+    // 4. Program-attached people ≥18 without a fresh background check (warn-only).
+    //    Subject = union of ProgramParticipant / ProgramVolunteer / Program.leadMentor.
+    //    A program lead/volunteer may sit in a household that isn't a member household,
+    //    so these are person-scoped, NOT folded into the householdId reason map above.
+    //    Skip the whole bucket when the board hasn't set a recheck window, exactly
+    //    like STALE_BG — bgRecheckMonths = 0 means "no policy", nothing is stale.
+    type PersonRow = {
+        personId: number;
+        name: string;
+        householdId: number;
+        programId: number | null;
+        programName: string | null;
+        reason: string;
+    };
+    const peopleNeedingBgCheck: PersonRow[] = [];
+    const peopleMissingDob: PersonRow[] = [];
+    if (bgRecheckMonths > 0) {
+        const threshold = bgFreshThreshold(boundary, bgRecheckMonths);
+        const people = await prisma.person.findMany({
+            where: {
+                OR: [
+                    { programParticipants: { some: {} } },
+                    { programVolunteers: { some: {} } },
+                    { programsLed: { some: {} } },
+                ],
+            },
+            select: {
+                id: true,
+                name: true,
+                householdId: true,
+                dateOfBirth: true,
+                isDeclaredAdult: true,
+                lastBackgroundCheck: true,
+                programParticipants: { select: { program: { select: { id: true, name: true } } } },
+                programVolunteers: { select: { program: { select: { id: true, name: true } } } },
+                programsLed: { select: { id: true, name: true } },
+            },
+            orderBy: { name: "asc" },
+        });
+        for (const p of people) {
+            const verdict = personBgVerdict(p, boundary, threshold);
+            if (verdict === "FRESH" || verdict === "MINOR") continue;
+            // One program for context — first attachment found across the three roles.
+            const prog =
+                p.programParticipants[0]?.program ??
+                p.programVolunteers[0]?.program ??
+                p.programsLed[0] ??
+                null;
+            const row: PersonRow = {
+                personId: p.id,
+                name: p.name || `Person #${p.id}`,
+                householdId: p.householdId,
+                programId: prog?.id ?? null,
+                programName: prog?.name ?? null,
+                reason: verdict === "DOB_MISSING" ? "DOB_MISSING" : "PERSON_BG_NEEDED",
+            };
+            (verdict === "DOB_MISSING" ? peopleMissingDob : peopleNeedingBgCheck).push(row);
+        }
+    }
+
+    if (reasons.size === 0) {
+        return NextResponse.json({ households: [], peopleNeedingBgCheck, peopleMissingDob });
+    }
 
     const households = await prisma.household.findMany({
         where: { id: { in: [...reasons.keys()] } },
         include: {
-            leads: {
-                include: {
-                    person: { select: { id: true, name: true, phone: true, email: true, lastBackgroundCheck: true } },
-                },
+            householdMembers: {
+                where: { isHouseholdLead: true },
+                select: { id: true, name: true, phone: true, email: true, lastBackgroundCheck: true },
             },
         },
         orderBy: { name: "asc" },
     });
 
     const result = households.map((h) => {
-        const checks = h.leads
-            .map((l) => l.person.lastBackgroundCheck)
+        const checks = h.householdMembers
+            .map((p) => p.lastBackgroundCheck)
             .filter((d): d is Date => d !== null);
         // Most recent lead check — the date the board is chasing on a STALE_BG row.
         const lastBackgroundCheck = checks.length
@@ -87,14 +157,14 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
             name: h.name || `Household #${h.id}`,
             reasons: [...(reasons.get(h.id) ?? [])],
             lastBackgroundCheck,
-            leads: h.leads.map((l) => ({
-                id: l.person.id,
-                name: l.person.name,
-                phone: l.person.phone,
-                email: l.person.email,
+            leads: h.householdMembers.map((p) => ({
+                id: p.id,
+                name: p.name,
+                phone: p.phone,
+                email: p.email,
             })),
         };
     });
 
-    return NextResponse.json({ households: result });
+    return NextResponse.json({ households: result, peopleNeedingBgCheck, peopleMissingDob });
 });

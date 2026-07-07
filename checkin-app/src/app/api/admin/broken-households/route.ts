@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { BROKEN_HOUSEHOLD_WHERE } from "@/lib/household/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export const GET = withAuth(
     async () => {
         try {
             const households = await prisma.household.findMany({
-                where: { leads: { none: {} } },
+                where: BROKEN_HOUSEHOLD_WHERE,
                 include: {
                     householdMembers: {
                         select: { id: true, name: true, dateOfBirth: true },

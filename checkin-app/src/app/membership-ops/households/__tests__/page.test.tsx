@@ -73,6 +73,49 @@ describe("membership-ops/households page", () => {
     );
   });
 
+  it("disables Grant for a board member's OWN household (conflict of interest)", async () => {
+    setSession({ id: 99, isBoardMember: true, householdId: 2 }); // same household as The Joneses (id 2)
+    mockFetchJson({ "/api/membership-ops/households": households });
+    renderWithProviders(<AdminHouseholdsPage />);
+    await screen.findByText("The Joneses");
+
+    expect(screen.getByRole("button", { name: "Grant Membership" })).toBeDisabled();
+  });
+
+  it("keeps Grant enabled for a board member in a different household", async () => {
+    setSession({ id: 99, isBoardMember: true, householdId: 500 });
+    mockFetchJson({ "/api/membership-ops/households": households });
+    renderWithProviders(<AdminHouseholdsPage />);
+    await screen.findByText("The Joneses");
+
+    expect(screen.getByRole("button", { name: "Grant Membership" })).toBeEnabled();
+  });
+
+  it("flags a household whose member has an undeliverable email", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/membership-ops/households": {
+        households: [
+          {
+            id: 3,
+            name: "The Bounces",
+            orgMembership: { status: "ACTIVE" },
+            householdMembers: [{ id: 30, name: "Bo Bounce", email: "bo@example.com", isBoardMember: false, emailUndeliverableAt: "2026-07-01T00:00:00.000Z" }],
+          },
+          ...households.households,
+        ],
+      },
+    });
+    renderWithProviders(<AdminHouseholdsPage />);
+    await screen.findByText("The Bounces");
+
+    // Household-level flag next to the name, and the per-member marker in the list.
+    expect(screen.getByText("✉ Broken email")).toBeInTheDocument();
+    expect(screen.getByText("✉ undeliverable")).toBeInTheDocument();
+    // Households with all-deliverable emails carry neither.
+    expect(screen.getAllByText("✉ Broken email")).toHaveLength(1);
+  });
+
   it("navigates to the add-participant page for a household", async () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({ "/api/membership-ops/households": households });

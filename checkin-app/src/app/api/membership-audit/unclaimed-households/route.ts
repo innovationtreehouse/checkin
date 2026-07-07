@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE } from "@/lib/household/filters";
 
 export const dynamic = 'force-dynamic';
 
@@ -17,17 +18,10 @@ export const GET = withAuth(
             //   2. Broken: no household lead at all. These also show on
             //      /membership-ops/broken and must show here too — no email requirement,
             //      since a broken household may have no contactable member yet.
-            // Mirrors the unclaimedHouseholds nav count in /api/nav/todo-counts.
+            // Mirrors the unclaimedHouseholds nav count in /api/nav/todo-counts —
+            // shared predicate so the list and the badge can't drift.
             const households = await prisma.household.findMany({
-                where: {
-                    OR: [
-                        {
-                            leads: { some: { person: { email: { not: null } } } },
-                            NOT: { leads: { some: { person: { googleId: { not: null } } } } }
-                        },
-                        { leads: { none: {} } }
-                    ]
-                },
+                where: UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE,
                 include: { householdMembers: true }
             });
 

@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 
 export const dynamic = 'force-dynamic';
 
@@ -31,9 +32,16 @@ export const GET = withAuth(
                     where: { id: parseInt(id) },
                     include: {
                         householdMembers: {
-                            select: { id: true, name: true, email: true }
+                            select: {
+                                id: true, name: true, email: true, isHouseholdLead: true,
+                                // Program enrollments for the household detail view. Extra field the
+                                // Edit Info modal (same endpoint) simply ignores.
+                                programParticipants: {
+                                    select: { status: true, program: { select: { id: true, name: true } } },
+                                    orderBy: { program: { name: "asc" } },
+                                },
+                            }
                         },
-                        leads: { select: { personId: true } },
                         orgMembership: true,
                         emergencyContacts: {
                             where: PRIMARY_CONTACT_WHERE,
@@ -44,8 +52,8 @@ export const GET = withAuth(
                     }
                 });
                 if (!household) return NextResponse.json({ household: null });
-                const { leads: householdLeads, ...rest } = household;
-                return NextResponse.json({ household: { ...withFlatContact(rest), householdLeads } });
+                const householdLeads = household.householdMembers.filter(p => p.isHouseholdLead).map(p => ({ personId: p.id }));
+                return NextResponse.json({ household: { ...withFlatContact(household), householdLeads } });
             }
 
             const whereClause = q ? {
@@ -60,7 +68,7 @@ export const GET = withAuth(
                 where: whereClause,
                 include: {
                     householdMembers: {
-                        select: { id: true, name: true, email: true, isBoardMember: true }
+                        select: { id: true, name: true, email: true, isBoardMember: true, emailUndeliverableAt: true }
                     },
                     orgMembership: true,
                     emergencyContacts: {
@@ -140,6 +148,13 @@ export const POST = withAuth(
             }
 
             if (active) {
+                // Conflict of interest: a board member may not grant their OWN household
+                // ACTIVE membership — that bypasses payment AND the background check for
+                // their own family. Sysadmin bypasses. (Mirrors the deny branch's
+                // board-member protection, and certifyPaymentPlan's guard.)
+                if (auth.type === 'session' && await hasHouseholdConflict(prisma, auth.user.id, householdId, { isSysadmin: auth.user.isSysadmin === true })) {
+                    return apiError("You cannot activate your own household's membership — a sysadmin must.", 403);
+                }
                 const membership = await prisma.orgMembership.upsert({
                     where: { householdId },
                     create: { householdId, status: "ACTIVE" },

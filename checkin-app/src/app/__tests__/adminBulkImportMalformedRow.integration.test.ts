@@ -24,7 +24,6 @@ describe('Bulk import: malformed row among valid rows', () => {
     const cleanup = async () => {
         try {
             await prisma.orgMembership.deleteMany({});
-            await prisma.householdLead.deleteMany({});
             await prisma.person.deleteMany({ where: { email: { contains: 'malrow-import-test' } } });
             await prisma.person.deleteMany({ where: { name: { contains: 'Malrow Import Test' } } });
             await prisma.household.deleteMany({ where: { householdMembers: { none: {} } } });
@@ -34,7 +33,7 @@ describe('Bulk import: malformed row among valid rows', () => {
     beforeAll(async () => {
         await cleanup();
         const admin = await prisma.person.create({
-            data: { email: 'admin-malrow-import-test@example.com', name: 'Admin Malrow Import Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-malrow-import-test@example.com', name: 'Admin Malrow Import Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
         (getServerSession as jest.Mock).mockResolvedValue({

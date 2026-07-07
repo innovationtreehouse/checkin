@@ -15,7 +15,8 @@
     "test:coverage": "INTEGRATION_DB=1 jest --ci --coverage --testPathIgnorePatterns \"/node_modules/|/\\.next/|/\\.claude/worktrees/|\\.flow\\.test\\.\"",
     "check-route-coverage": "ts-node --project scripts/tsconfig.json scripts/check-route-coverage.ts",
     "import:zoho": "tsx scripts/import-zoho.ts",
-    "shopify:webhook": "tsx scripts/register-shopify-webhook.ts"
+    "shopify:webhook": "tsx scripts/register-shopify-webhook.ts",
+    "coalesce-migrations": "tsx scripts/coalesce-migrations.ts"
   },
   "engines": {
     "node": ">=24"
@@ -48,7 +49,8 @@
     "react-dom": "^19.2.3",
     "react-qr-code": "^2.0.18",
     "resend": "^6.9.3",
-    "xlsx": "^0.18.5"
+    "svix": "^1.84.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@prisma/generator-helper": "7.8.0",

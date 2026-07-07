@@ -25,11 +25,14 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
         return apiError("processId and action (reset|approve) are required", 400);
     }
     try {
-        const outcome = await overrideBlocked(body.processId, auth.user.id, body.action);
+        const outcome = await overrideBlocked(body.processId, auth.user.id, body.action, {
+            isSysadmin: auth.user.isSysadmin === true,
+        });
         return NextResponse.json({ outcome });
     } catch (error) {
         if (error instanceof ReviewError) {
-            return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "not_found" ? 404 : 409 });
+            const status = error.code === "not_found" ? 404 : error.code === "same_household_applicant" ? 403 : 409;
+            return NextResponse.json({ error: error.message, code: error.code }, { status });
         }
         logger.error("Review override error:", error);
         return apiError("Internal Server Error", 500);

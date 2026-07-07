@@ -26,9 +26,6 @@ describe('Broken Households API Integration Tests', () => {
     let brokenAdultId: number;
 
     const cleanup = async () => {
-        await prisma.householdLead.deleteMany({
-            where: { household: { name: { contains: 'Broken API Test' } } }
-        });
         await prisma.person.deleteMany({
             where: { email: { contains: 'broken-api-test' } }
         });
@@ -42,7 +39,7 @@ describe('Broken Households API Integration Tests', () => {
 
         // Acting board member (not a member of any test household below).
         const board = await prisma.person.create({
-            data: { email: 'board-broken-api-test@example.com', name: 'Board Broken Test', isBoardMember: true, household: { create: {} } }
+            data: { email: 'board-broken-api-test@example.com', name: 'Board Broken Test', isBoardMember: true, household: { create: { name: "Test HH" } } }
         });
         boardId = board.id;
 
@@ -67,9 +64,7 @@ describe('Broken Households API Integration Tests', () => {
         const leadMember = await prisma.person.create({
             data: { email: 'lead-broken-api-test@example.com', name: 'Existing Lead', householdId: ledHouseholdId, dateOfBirth: new Date('1985-01-01') }
         });
-        await prisma.householdLead.create({
-            data: { householdId: ledHouseholdId, personId: leadMember.id }
-        });
+        await prisma.person.update({ where: { id: leadMember.id }, data: { isHouseholdLead: true } });
     });
 
     afterAll(cleanup);
@@ -106,8 +101,9 @@ describe('Broken Households API Integration Tests', () => {
         const res = await POST(req as unknown as import('next/server').NextRequest);
         expect(res.status).toBe(200);
 
-        const lead = await prisma.householdLead.findUnique({
-            where: { householdId_personId: { householdId: brokenHouseholdId, personId: brokenAdultId } }
+        const lead = await prisma.person.findFirst({
+            where: { id: brokenAdultId, householdId: brokenHouseholdId, isHouseholdLead: true },
+            select: { id: true }
         });
         expect(lead).not.toBeNull();
 

@@ -34,7 +34,6 @@ describe('Membership settings + volunteer designations API', () => {
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
             await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
@@ -93,6 +92,25 @@ describe('Membership settings + volunteer designations API', () => {
         const getRes = await SETTINGS_GET(jsonReq('GET'));
         const { settings } = await getRes.json();
         expect(settings.normalDuesCents).toBe(12000);
+    });
+
+    it('accepts a positive scholarshipDenialGraceDays and clears it back to null', async () => {
+        asBoard(boardId);
+        const res = await SETTINGS_PUT(jsonReq('PUT', { scholarshipDenialGraceDays: 14 }));
+        expect(res.status).toBe(200);
+        expect((await res.json()).settings.scholarshipDenialGraceDays).toBe(14);
+
+        const cleared = await SETTINGS_PUT(jsonReq('PUT', { scholarshipDenialGraceDays: null }));
+        expect(cleared.status).toBe(200);
+        expect((await cleared.json()).settings.scholarshipDenialGraceDays).toBeNull();
+    });
+
+    it('rejects a non-positive or fractional scholarshipDenialGraceDays', async () => {
+        asBoard(boardId);
+        for (const bad of [0, -1, 1.5]) {
+            const res = await SETTINGS_PUT(jsonReq('PUT', { scholarshipDenialGraceDays: bad }));
+            expect(res.status).toBe(400);
+        }
     });
 
     it('adds, lists, and removes a volunteer designation', async () => {

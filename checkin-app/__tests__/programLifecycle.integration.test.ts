@@ -34,7 +34,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 isSysadmin: false,
                 isBoardMember: true,
                 dateOfBirth: new Date('1990-01-01'),
-                household: { create: {} }
+                household: { create: { name: "Test HH" } }
             }
         });
         boardAdminId = adminUser.id;
@@ -46,7 +46,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 email: "mentor@test.com",
                 googleId: "test-auth-mentor",
                 dateOfBirth: new Date('1985-01-01'),
-                household: { create: {} }
+                household: { create: { name: "Test HH" } }
             }
         });
         leadMentorId = mentorUser.id;
@@ -58,7 +58,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 email: "participant@test.com",
                 googleId: "test-auth-std",
                 dateOfBirth: new Date('2000-01-01'),
-                household: { create: {} }
+                household: { create: { name: "Test HH" } }
             }
         });
         testParticipantId = standardUser.id;

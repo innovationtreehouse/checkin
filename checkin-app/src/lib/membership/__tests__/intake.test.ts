@@ -62,7 +62,7 @@ const user = {
     id: 1,
     householdId: 7,
     isSysadmin: false,
-    householdLeads: [{ householdId: 7 }],
+    isHouseholdLead: true,
     household: { orgMembership: null },
 };
 
@@ -102,7 +102,7 @@ describe('startIntake race guard', () => {
     });
 
     it('not_lead: caller is not a household lead and not a sysadmin', async () => {
-        prisma.person.findUnique.mockResolvedValue({ ...user, householdLeads: [] });
+        prisma.person.findUnique.mockResolvedValue({ ...user, isHouseholdLead: false });
 
         await expect(startIntake(1)).rejects.toMatchObject({ code: 'not_lead' });
         expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -169,11 +169,10 @@ describe('getIntakeState', () => {
                 name: 'Test Household',
                 intakeNotes: 'volunteer only, no students',
                 line1: '1 Main St', line2: null, city: 'Austin', state: 'TX', postalCode: '78701',
-                leads: [{ personId: 1 }, { personId: 2 }],
                 householdMembers: [
-                    { id: 1, name: 'Primary', email: 'p@x.com', dateOfBirth: dob, allergies: null },
-                    { id: 2, name: 'Secondary', email: 's@x.com', dateOfBirth: null, allergies: 'peanuts' },
-                    { id: 3, name: 'Kid', email: null, dateOfBirth: null, allergies: null },
+                    { id: 1, name: 'Primary', email: 'p@x.com', dateOfBirth: dob, allergies: null, isHouseholdLead: true },
+                    { id: 2, name: 'Secondary', email: 's@x.com', dateOfBirth: null, allergies: 'peanuts', isHouseholdLead: true },
+                    { id: 3, name: 'Kid', email: null, dateOfBirth: null, allergies: null, isHouseholdLead: false },
                 ],
                 orgMembership: {
                     status: 'NONE',
@@ -209,8 +208,7 @@ describe('getIntakeState', () => {
             householdId: 7,
             household: {
                 name: 'H', line1: null, line2: null, city: null, state: null, postalCode: null,
-                leads: [{ personId: 1 }],
-                householdMembers: [{ id: 1, name: 'P', email: null, dateOfBirth: null, allergies: null }],
+                householdMembers: [{ id: 1, name: 'P', email: null, dateOfBirth: null, allergies: null, isHouseholdLead: true }],
                 orgMembership: { status: 'ACTIVE', processes: [{ id: 5, kind: 'INITIAL', status: 'ACTIVE' }] },
                 emergencyContacts: [],
             },
@@ -228,12 +226,11 @@ describe('saveIntake', () => {
         id: 1,
         householdId: 7,
         isSysadmin: false,
-        householdLeads: [{ householdId: 7 }],
+        isHouseholdLead: true,
         household: {
             name: 'H',
             line1: null, line2: null, city: null, state: null, postalCode: null,
-            leads: [{ personId: 1 }],
-            householdMembers: [{ id: 1 }, { id: 4 }],
+            householdMembers: [{ id: 1, isHouseholdLead: true }, { id: 4, isHouseholdLead: false }],
             orgMembership: null,
             emergencyContacts: [],
         },
@@ -250,7 +247,7 @@ describe('saveIntake', () => {
     });
 
     it('not_lead when the caller is not a household lead', async () => {
-        prisma.person.findUnique.mockResolvedValue({ ...baseUser, householdLeads: [] });
+        prisma.person.findUnique.mockResolvedValue({ ...baseUser, isHouseholdLead: false });
         await expect(saveIntake(1, {})).rejects.toMatchObject({ code: 'not_lead' });
     });
 
@@ -353,7 +350,7 @@ describe('submitIntake', () => {
         id: 1,
         householdId: 7,
         isSysadmin: false,
-        householdLeads: [{ householdId: 7 }],
+        isHouseholdLead: true,
         household: {
             id: 7,
             line1: '1 Main St',

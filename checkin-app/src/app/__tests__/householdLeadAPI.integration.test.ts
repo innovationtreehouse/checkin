@@ -32,11 +32,7 @@ describe('Household Lead API Integration Tests', () => {
         
         const existingUserIds = existingUsers.map(u => u.id);
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter(id => id !== null) as number[];
-        
-        await prisma.householdLead.deleteMany({
-            where: { personId: { in: existingUserIds } }
-        });
-        
+
         await prisma.orgMembership.deleteMany({
             where: { householdId: { in: existingHouseholdIds } }
         });
@@ -65,9 +61,7 @@ describe('Household Lead API Integration Tests', () => {
         });
         testLeadId = leadUser.id;
 
-        await prisma.householdLead.create({
-            data: { householdId: household.id, personId: leadUser.id }
-        });
+        await prisma.person.update({ where: { id: leadUser.id }, data: { isHouseholdLead: true } });
 
         const adultUser = await prisma.person.create({
             data: { email: 'adult-lead-api-test@example.com', name: 'Adult User', householdId: household.id }
@@ -89,9 +83,7 @@ describe('Household Lead API Integration Tests', () => {
         });
         testOtherLeadId = otherLead.id;
 
-        await prisma.householdLead.create({
-            data: { householdId: otherHousehold.id, personId: otherLead.id }
-        });
+        await prisma.person.update({ where: { id: otherLead.id }, data: { isHouseholdLead: true } });
 
         const otherMember = await prisma.person.create({
             data: { email: 'other-adult-lead-api-test@example.com', name: 'Other Adult', householdId: otherHousehold.id }
@@ -103,14 +95,10 @@ describe('Household Lead API Integration Tests', () => {
         const currentIds = [testLeadId, testAdultId, testChildId, testOtherLeadId, testOtherMemberId];
         const validHouseholdIds = [householdId, otherHouseholdId];
 
-        await prisma.householdLead.deleteMany({
-            where: { personId: { in: currentIds } }
-        });
-        
         await prisma.orgMembership.deleteMany({
             where: { householdId: { in: validHouseholdIds } }
         });
-        
+
         await prisma.auditLog.deleteMany({
             where: { actorId: { in: currentIds } }
         });
@@ -194,19 +182,15 @@ describe('Household Lead API Integration Tests', () => {
             expect(data.message).toBe('Member promoted to lead successfully.');
 
             // Validate the changes
-            const newLead = await prisma.householdLead.findUnique({ 
-                where: { 
-                    householdId_personId: {
-                        householdId: householdId,
-                        personId: testAdultId
-                    }
-                } 
+            const newLead = await prisma.person.findFirst({
+                where: { id: testAdultId, householdId: householdId, isHouseholdLead: true },
+                select: { id: true }
             });
-            expect(newLead).toBeDefined();
+            expect(newLead).not.toBeNull();
 
             // Verify Audit Trail is populated
             const auditLogs = await prisma.auditLog.findMany({
-                where: { actorId: testLeadId, action: 'CREATE', tableName: 'HouseholdLead', secondaryAffectedEntity: testAdultId }
+                where: { actorId: testLeadId, action: 'CREATE', tableName: 'Person', secondaryAffectedEntity: testAdultId }
             });
             expect(auditLogs.length).toBeGreaterThan(0);
         });
@@ -226,9 +210,10 @@ describe('Household Lead API Integration Tests', () => {
             const data = await res.json();
             expect(data.error).toBe('A household can have at most 2 leads.');
 
-            // No lead row should have been created for the third member.
-            const noLead = await prisma.householdLead.findUnique({
-                where: { householdId_personId: { householdId, personId: testChildId } }
+            // The third member should not have been flagged as a lead.
+            const noLead = await prisma.person.findFirst({
+                where: { id: testChildId, householdId, isHouseholdLead: true },
+                select: { id: true }
             });
             expect(noLead).toBeNull();
         });
@@ -290,13 +275,9 @@ describe('Household Lead API Integration Tests', () => {
             expect(data.message).toBe('Lead removed successfully.');
 
             // Validate the changes
-            const demotedLead = await prisma.householdLead.findUnique({ 
-                where: { 
-                    householdId_personId: {
-                        householdId: householdId,
-                        personId: testAdultId
-                    }
-                } 
+            const demotedLead = await prisma.person.findFirst({
+                where: { id: testAdultId, householdId: householdId, isHouseholdLead: true },
+                select: { id: true }
             });
             expect(demotedLead).toBeNull();
         });
@@ -311,9 +292,7 @@ describe('Household Lead API Integration Tests', () => {
             const boardUser = await prisma.person.create({
                 data: { email: 'board-lead-api-test@example.com', name: 'Board User', isBoardMember: true, householdId: boardHousehold.id }
             });
-            await prisma.householdLead.create({
-                data: { householdId: otherHouseholdId, personId: testOtherMemberId }
-            });
+            await prisma.person.update({ where: { id: testOtherMemberId }, data: { isHouseholdLead: true } });
 
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardUser.id } });
 
@@ -324,8 +303,9 @@ describe('Household Lead API Integration Tests', () => {
             const res = await DELETE(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
 
-            const removed = await prisma.householdLead.findUnique({
-                where: { householdId_personId: { householdId: otherHouseholdId, personId: testOtherLeadId } }
+            const removed = await prisma.person.findFirst({
+                where: { id: testOtherLeadId, householdId: otherHouseholdId, isHouseholdLead: true },
+                select: { id: true }
             });
             expect(removed).toBeNull();
         });

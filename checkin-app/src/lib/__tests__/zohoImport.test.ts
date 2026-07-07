@@ -390,7 +390,6 @@ describe("applyImport", () => {
                     return p;
                 }),
             },
-            householdLead: { upsert: jest.fn(async () => ({})) },
             orgMembership: {
                 findUnique: jest.fn(async ({ where }: { where: { householdId: number } }) => membershipsByHousehold.get(where.householdId) ?? null),
                 upsert: jest.fn(async ({ where, create }: { where: { householdId: number }; create: { status: string } }) => {

@@ -19,7 +19,7 @@ type MembershipPaymentPlanRequest = {
     isVolunteer: boolean;
     household: {
       id: number;
-      name: string | null;
+      name: string;
     };
   };
 };
@@ -100,10 +100,10 @@ export default function MembershipPaymentPlansPage() {
   const columns: DataTableColumn<MembershipPaymentPlanRequest>[] = [
     {
       header: 'Household',
-      sortBy: (req) => (req.orgMembership.household.name ?? '').toLowerCase(),
+      sortBy: (req) => req.orgMembership.household.name.toLowerCase(),
       render: (req) => (
         <>
-          <Text fw={500}>{req.orgMembership.household.name ?? `Household #${req.orgMembership.household.id}`}</Text>
+          <Text fw={500}>{req.orgMembership.household.name}</Text>
           <Text size="sm" c="dimmed">{req.orgMembership.isVolunteer ? 'Volunteer household' : 'Standard household'}</Text>
         </>
       ),
@@ -127,9 +127,9 @@ export default function MembershipPaymentPlansPage() {
   return (
     <Stack>
       <Text c="dimmed">
-        Review households that have asked to pay their membership dues on a plan. Approving a
-        request activates the membership without a Shopify payment (it still holds for background
-        clearance if that isn&apos;t done yet).
+        Review households that have requested a scholarship or payment plan for their membership
+        dues. Approving a request activates the membership without a Shopify payment (it still holds
+        for background clearance if that isn&apos;t done yet).
       </Text>
 
       <AlertBanner message={message} tone="error" />
@@ -138,17 +138,17 @@ export default function MembershipPaymentPlansPage() {
         columns={columns}
         rows={requests}
         getRowKey={(req) => `${req.id}`}
-        emptyMessage="No pending membership payment plan requests."
+        emptyMessage="No pending membership scholarship or payment plan requests."
       />
 
       <Modal
         opened={confirmApproveOpened}
         onClose={closeConfirmApprove}
-        title={<Text span fw={700} fz="lg">Approve Payment Plan</Text>}
+        title={<Text span fw={700} fz="lg">Approve Scholarship / Payment Plan</Text>}
         centered
       >
         <Text mb="lg">
-          Approve this payment plan? This activates the household&apos;s membership without a
+          Approve this scholarship or payment plan? This activates the household&apos;s membership without a
           Shopify payment (holding for background clearance if it isn&apos;t done yet).
         </Text>
         <Group justify="flex-end">

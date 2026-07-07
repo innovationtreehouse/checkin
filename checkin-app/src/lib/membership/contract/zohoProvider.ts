@@ -1,6 +1,6 @@
 import crypto from "crypto";
-import { config } from "@/lib/config";
 import * as realClient from "@/lib/membership/contract/zohoClient";
+import { signingMockActive } from "@/lib/membership/contract/signingTarget";
 
 /**
  * Zoho Sign provider seam (see docs/designs/ZOHO_SIGN_DEV_MOCK.md).
@@ -51,17 +51,26 @@ const mockProvider: ZohoSignProvider = {
         return `${host}/dev/zoho-sign?rid=${encodeURIComponent(requestId)}`;
     },
     // The webhook records signing in the mock; this backs the ?signed=1 sync path,
-    // which then no-ops idempotently. Report completed so a sync-only race still lands.
+    // which then no-ops idempotently. Report completed so a sync-only race still
+    // lands. Never "terminal": mock requests don't expire, so the dead-request
+    // recovery path (#876) stays dormant in mock mode.
     async getRequestStatus() {
-        return true;
+        return "completed" as const;
     },
 };
 
-/** Per-call selection so tests toggling CHECKIN_ENV / secrets pick up the change. */
+/**
+ * Per-call selection so tests toggling CHECKIN_ENV / secrets pick up the change,
+ * and so the dev-instance settings radio (signingMockActive → BoardSettings.
+ * devSigningTarget) takes effect without a redeploy. All methods are async, so
+ * awaiting the pick doesn't change the interface.
+ */
+const pick = async (): Promise<ZohoSignProvider> => ((await signingMockActive()) ? mockProvider : realProvider);
+
 export const zohoSign: ZohoSignProvider = {
-    getAccessToken: (...a) => (config.zohoMockActive() ? mockProvider : realProvider).getAccessToken(...a),
-    createRequest: (...a) => (config.zohoMockActive() ? mockProvider : realProvider).createRequest(...a),
-    submitRequest: (...a) => (config.zohoMockActive() ? mockProvider : realProvider).submitRequest(...a),
-    getEmbeddedSignUrl: (...a) => (config.zohoMockActive() ? mockProvider : realProvider).getEmbeddedSignUrl(...a),
-    getRequestStatus: (...a) => (config.zohoMockActive() ? mockProvider : realProvider).getRequestStatus(...a),
+    getAccessToken: async (...a) => (await pick()).getAccessToken(...a),
+    createRequest: async (...a) => (await pick()).createRequest(...a),
+    submitRequest: async (...a) => (await pick()).submitRequest(...a),
+    getEmbeddedSignUrl: async (...a) => (await pick()).getEmbeddedSignUrl(...a),
+    getRequestStatus: async (...a) => (await pick()).getRequestStatus(...a),
 };

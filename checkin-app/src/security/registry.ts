@@ -128,9 +128,9 @@ defineRoute({
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: 'processes',
     // Bag: { OrgMembershipProcess } with attestations (BackgroundCheckAttestation),
-    // membership (OrgMembership → household Household → participants Person,
-    // leads HouseholdLead).
-    returns: ['OrgMembershipProcess', 'BackgroundCheckAttestation', 'OrgMembership', 'Household', 'Person', 'HouseholdLead'],
+    // membership (OrgMembership → household Household → householdMembers Person,
+    // leads flagged isHouseholdLead).
+    returns: ['OrgMembershipProcess', 'BackgroundCheckAttestation', 'OrgMembership', 'Household', 'Person'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
@@ -146,8 +146,8 @@ defineRoute({
     authorize: { anyRole: ['isBackgroundCheckReviewer', 'isBoardMember'] },
     envelope: 'queue',
     // Bag: { OrgMembershipProcess } with membership (OrgMembership → household Household
-    // → leads HouseholdLead → participant Person).
-    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'HouseholdLead', 'Person'],
+    // → householdMembers Person, leads flagged isHouseholdLead).
+    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'Person'],
     orderedView: [
         ['isBackgroundCheckReviewer', ['everyones:pii', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'member', 'public']],
@@ -174,9 +174,9 @@ defineRoute({
     endpoint: 'GET /api/safety/trusted-adults',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: 'trustedAdults',
-    // Bag: { TrustedAdult } with household (Household → leads HouseholdLead →
-    // participant Person), trustedAdultPerson (Person), reviews (TrustedAdultReview).
-    returns: ['TrustedAdult', 'Household', 'HouseholdLead', 'Person', 'TrustedAdultReview'],
+    // Bag: { TrustedAdult } with household (Household → householdMembers Person,
+    // leads flagged isHouseholdLead), trustedAdultPerson (Person), reviews (TrustedAdultReview).
+    returns: ['TrustedAdult', 'Household', 'Person', 'TrustedAdultReview'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
@@ -206,14 +206,17 @@ defineRoute({
 });
 
 // Board's payment-plan approval queue. Returns pending ProgramParticipant rows
-// with the full participant + program nested. Board/sysadmin only, and they hold
-// everyones:* so they see every field — the win is the declared policy: any role
-// later added to this view is field-stripped automatically.
+// with the full participant + program nested, plus the participant's
+// household/orgMembership (so the board can see CURRENT membership while
+// deciding — wasOrgMemberAtApproval is only stamped on approval). Board/sysadmin
+// only, and they hold everyones:* so they see every field — the win is the
+// declared policy: any role later added to this view is field-stripped
+// automatically.
 defineRoute({
     endpoint: 'GET /api/finance-ops/payment-plans',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: null,
-    returns: ['ProgramParticipant', 'Person', 'Program'],
+    returns: ['ProgramParticipant', 'Person', 'Program', 'Household', 'OrgMembership', 'BoardSettings'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],

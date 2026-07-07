@@ -57,6 +57,8 @@ const AUTHZ_TESTED = new Set<string>([
     'admin/broken-households',
     // POST deny-path (401 anon / 403 non-board) in programPaymentPlansAPI.integration.test.ts.
     'finance-ops/payment-plans',
+    // POST deny-path (401 anon / 403 non-board) in programPaymentPlansAPI.integration.test.ts.
+    'finance-ops/payment-plans/refuse',
     // POST deny-path (401 anon / 403 non-board) in membershipPaymentPlansAPI.integration.test.ts.
     'finance-ops/membership-payment-plans',
     'admin/settings/localization',
@@ -66,8 +68,11 @@ const AUTHZ_TESTED = new Set<string>([
     'facility/visits',
     'kioskdisplay/certifications',
     'membership-audit/compliance',
+    // POST deny-path (403 non-board) in personBgManualSubmit.integration.test.ts.
+    'membership-audit/person-bg',
     'membership-audit/households-missing-contact',
     'membership-audit/unclaimed-households',
+    'membership-ops/applications/archive',
     'membership-ops/applications/certify-payment',
     'membership-ops/applications/external',
     'membership-ops/applications/review-override',
@@ -90,6 +95,7 @@ const AUTHZ_TESTED = new Set<string>([
     'safety/emergency-contacts',
     'safety/trusted-adults/decision',
     'safety/trusted-adults/override',
+    'settings/email',
     'settings/membership',
     'settings/membership/bulk-open-renewals',
     'settings/membership/volunteer-designations',

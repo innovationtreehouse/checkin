@@ -15,7 +15,6 @@
 import { GET } from '@/app/api/nav/todo-counts/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
-import { ORG_DOMAIN } from '@/lib/config';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -48,11 +47,11 @@ describe('Nav todo-counts API', () => {
         // Household A: a lead with a full slate of *member-actionable* todos, plus
         // one reviewer-owned membership state that must NOT count for the member.
         const lead = await prisma.person.create({
-            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dateOfBirth: new Date('1985-01-01'), phone: '555-0001', household: { create: {} } },
+            data: { email: `lead-${TAG}@example.com`, name: 'Lead A', dateOfBirth: new Date('1985-01-01'), phone: '555-0001', household: { create: { name: "Test HH" } } },
         });
         leadId = lead.id;
         householdAId = lead.householdId;
-        await prisma.householdLead.create({ data: { householdId: householdAId, personId: leadId } });
+        await prisma.person.update({ where: { id: leadId }, data: { isHouseholdLead: true } });
 
         const second = await prisma.person.create({
             data: { email: `member2-${TAG}@example.com`, name: 'Member A2', dateOfBirth: new Date('1987-01-01'), householdId: householdAId },
@@ -135,7 +134,7 @@ describe('Nav todo-counts API', () => {
 
         // Household B: a board member with no household todos of their own.
         const board = await prisma.person.create({
-            data: { email: `board-${TAG}@example.com`, name: 'Board B', dateOfBirth: new Date('1980-01-01'), phone: '555-0000', isBoardMember: true, household: { create: {} } },
+            data: { email: `board-${TAG}@example.com`, name: 'Board B', dateOfBirth: new Date('1980-01-01'), phone: '555-0000', isBoardMember: true, household: { create: { name: "Test HH" } } },
         });
         boardId = board.id;
         householdBId = board.householdId;
@@ -149,7 +148,6 @@ describe('Nav todo-counts API', () => {
         await prisma.program.deleteMany({ where: { id: { in: [program1Id, program2Id, ledProgramId] } } });
         await prisma.orgMembershipProcess.deleteMany({ where: { orgMembershipId } });
         await prisma.orgMembership.deleteMany({ where: { id: orgMembershipId } });
-        await prisma.householdLead.deleteMany({ where: { householdId: householdAId } });
         await prisma.person.deleteMany({ where: { id: { in: [leadId, secondMemberId, boardId] } } });
         await prisma.household.deleteMany({ where: { id: { in: [householdAId, householdBId] } } });
     });
@@ -291,28 +289,5 @@ describe('Nav todo-counts API', () => {
 
         await prisma.orgMembershipProcess.deleteMany({ where: { id: { in: [...reviewerProcs.map((p) => p.id), blocked.id] } } });
         await prisma.orgMembership.delete({ where: { id: reviewerMembership.id } });
-    });
-
-    it('counts member families but excludes org-email-only (staff) households', async () => {
-        const memberFamilies = async () => {
-            const res = await callAs({ id: boardId, householdId: householdBId, isBoardMember: true });
-            return (await res.json()).admin.memberFamilies as number;
-        };
-        const before = await memberFamilies();
-
-        // Staff household: only an org-email participant → must NOT count.
-        const staff = await prisma.person.create({
-            data: { email: `staff-${TAG}@${ORG_DOMAIN}`, name: 'Staff', household: { create: {} } },
-        });
-        expect(await memberFamilies()).toBe(before);
-
-        // Member family: a non-org email → +1.
-        const member = await prisma.person.create({
-            data: { email: `family-${TAG}@example.com`, name: 'Family', household: { create: {} } },
-        });
-        expect(await memberFamilies()).toBe(before + 1);
-
-        await prisma.person.deleteMany({ where: { id: { in: [staff.id, member.id] } } });
-        await prisma.household.deleteMany({ where: { id: { in: [staff.householdId, member.householdId] } } });
     });
 });

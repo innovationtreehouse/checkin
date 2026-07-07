@@ -36,17 +36,17 @@ describe('Events API Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.person.create({
-            data: { email: 'admin-events-api-test@example.com', name: 'Admin Events Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-events-api-test@example.com', name: 'Admin Events Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
         const user = await prisma.person.create({
-            data: { email: 'user-events-api-test@example.com', name: 'User Events Test', household: { create: {} } }
+            data: { email: 'user-events-api-test@example.com', name: 'User Events Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
 
         const mentor = await prisma.person.create({
-            data: { email: 'mentor-events-api-test@example.com', name: 'Mentor Events Test', household: { create: {} } }
+            data: { email: 'mentor-events-api-test@example.com', name: 'Mentor Events Test', household: { create: { name: "Test HH" } } }
         });
         testLeadMentorId = mentor.id;
 
@@ -229,6 +229,58 @@ describe('Events API Integration Tests', () => {
 
             const events = await prisma.event.findMany({ where: { name: 'Recurring Test Event' } });
             expect(events.length).toBe(4);
+        });
+
+        it('should keep the same local wall-clock time across the DST fall-back boundary', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testLeadMentorId, isSysadmin: false, isBoardMember: false }
+            });
+
+            // US DST ends on the first Sunday of November — Nov 1 2026 (2am CDT -> 1am CST).
+            // Weekly on Wednesday (3) from Oct 28 to Nov 11 2026 spans that boundary:
+            //   Oct 28 (CDT, -05:00), Nov 4 (CST, -06:00), Nov 11 (CST, -06:00) -> 3 events.
+            // Local time is fixed at 13:00 (a daytime hour, well clear of the 1-2am
+            // repeated-hour ambiguity), so every occurrence must read 13:00:00 local
+            // even though its UTC instant shifts by an hour when DST ends.
+            const req = new Request('http://localhost:4000/api/events', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: 'DST Boundary Test Event',
+                    programId: testProgramId,
+                    startDate: '2026-10-28',
+                    startTime: '13:00',
+                    endTime: '15:00',
+                    recurrence: {
+                        daysOfWeek: [3],
+                        until: '2026-11-11'
+                    }
+                })
+            });
+
+            const res = await POST(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.success).toBe(true);
+            expect(data.count).toBe(3);
+
+            const events = await prisma.event.findMany({
+                where: { name: 'DST Boundary Test Event' },
+                orderBy: { startAt: 'asc' }
+            });
+            expect(events.length).toBe(3);
+
+            // Every occurrence keeps the same 13:00 local wall-clock, before and after fall-back.
+            for (const occ of events) {
+                expect(formatInTimeZone(occ.startAt, 'America/Chicago', 'HH:mm:ss')).toBe('13:00:00');
+                expect(formatInTimeZone(occ.endAt, 'America/Chicago', 'HH:mm:ss')).toBe('15:00:00');
+            }
+
+            // Prove the series actually crossed DST: the UTC offset differs before vs after.
+            const offsets = events.map(occ => formatInTimeZone(occ.startAt, 'America/Chicago', 'xxx'));
+            expect(offsets[0]).toBe('-05:00');  // Oct 28, CDT
+            expect(offsets[1]).toBe('-06:00');  // Nov 4, CST
+            expect(offsets[2]).toBe('-06:00');  // Nov 11, CST
         });
     });
 });

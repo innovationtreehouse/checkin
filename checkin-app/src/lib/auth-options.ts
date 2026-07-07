@@ -62,7 +62,7 @@ export async function createParticipantWithHousehold(data: {
 }) {
     return prisma.$transaction(async (tx) => {
         const household = await tx.household.create({
-            data: { name: data.name ?? data.email ?? null },
+            data: { name: data.name?.trim() || data.email?.trim() || "Household" },
         });
         const participant = await tx.person.create({
             data: { ...data, householdId: household.id },
@@ -331,8 +331,6 @@ export const authOptions: NextAuthOptions = {
                                 level: true
                             }
                         },
-                        // One row is enough to mark this participant a household lead.
-                        householdLeads: { take: 1, select: { personId: true } },
                         // Program ids led — drives the client program-ops row gate.
                         programsLed: { select: { id: true } },
                         household: { include: { orgMembership: true } }
@@ -372,8 +370,6 @@ export const authOptions: NextAuthOptions = {
                                 level: true
                             }
                         },
-                        // One row is enough to mark this participant a household lead.
-                        householdLeads: { take: 1, select: { personId: true } },
                         // Program ids led — drives the client program-ops row gate.
                         programsLed: { select: { id: true } },
                         household: { include: { orgMembership: true } }

@@ -40,9 +40,6 @@ describe('General Attendance API Integration Tests', () => {
         });
         const existingUserIds = existingUsers.map(u => u.id);
         
-        await prisma.householdLead.deleteMany({
-            where: { personId: { in: existingUserIds } }
-        });
         await prisma.visit.deleteMany({
             where: { personId: { in: existingUserIds } }
         });
@@ -72,19 +69,19 @@ describe('General Attendance API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.person.create({
-            data: { email: 'admin-attend-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: {} } }
+            data: { email: 'admin-attend-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Board Member
         const isBoardMember = await prisma.person.create({
-            data: { email: 'board-attend-api-test@example.com', name: 'Board Member', isBoardMember: true, household: { create: {} } }
+            data: { email: 'board-attend-api-test@example.com', name: 'Board Member', isBoardMember: true, household: { create: { name: "Test HH" } } }
         });
         boardMemberId = isBoardMember.id;
 
         // Create Common User
         const commonUser = await prisma.person.create({
-            data: { email: 'common-attend-api-test@example.com', name: 'Common', household: { create: {} } }
+            data: { email: 'common-attend-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 
@@ -98,7 +95,7 @@ describe('General Attendance API Integration Tests', () => {
                 email: 'lead-attend-api-test@example.com', 
                 name: 'Household Lead',
                 household: { connect: { id: household.id } },
-                householdLeads: { create: { householdId: household.id } }
+                isHouseholdLead: true
             }
         });
         householdLeadId = householdLead.id;
@@ -115,7 +112,7 @@ describe('General Attendance API Integration Tests', () => {
         // Keyholder present + checked in: the facility-open guard requires an
         // active keyholder before any non-keyholder MANUAL_CHECKIN succeeds.
         const keyholder = await prisma.person.create({
-            data: { email: 'keyholder-attend-api-test@example.com', name: 'Keyholder', isKeyholder: true, household: { create: {} } }
+            data: { email: 'keyholder-attend-api-test@example.com', name: 'Keyholder', isKeyholder: true, household: { create: { name: "Test HH" } } }
         });
         keyholderId = keyholder.id;
         await prisma.visit.create({
@@ -138,9 +135,6 @@ describe('General Attendance API Integration Tests', () => {
         const existingUserIds = [adminId, commonId, householdLeadId, householdChildId, boardMemberId, keyholderId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
-            await prisma.householdLead.deleteMany({
-                where: { personId: { in: existingUserIds } }
-            });
             await prisma.visit.deleteMany({
                 where: { personId: { in: existingUserIds } }
             });

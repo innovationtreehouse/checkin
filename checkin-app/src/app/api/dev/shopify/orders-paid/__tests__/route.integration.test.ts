@@ -210,4 +210,105 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
         expect(proc?.status).toBe('PENDING_BG_CLEARANCE');
         expect(proc?.paidAt).not.toBeNull();
     });
+
+    // fireProgram — the { programId, participantIds } branch was previously
+    // untested at the route level (only fireMembership had coverage here).
+    // Mirrors the fireMembership suite's structure: same global.fetch stand-in
+    // and CHECKIN_ENV/creds wiring from the outer beforeAll, own Program/Person
+    // fixtures, self-cleaning in this block's own afterAll.
+    describe('fireProgram (program branch)', () => {
+        let programId: number;
+        let personId: number;
+        let householdId: number;
+
+        beforeAll(async () => {
+            const hh = await prisma.household.create({ data: { name: `Dev Mock Program HH ${TAG}` } });
+            householdId = hh.id;
+            const person = await prisma.person.create({ data: { name: 'Dev Mock Participant', household: { connect: { id: hh.id } } } });
+            personId = person.id;
+            const program = await prisma.program.create({ data: { name: `Dev Mock Program ${TAG}` } });
+            programId = program.id;
+        });
+
+        afterAll(async () => {
+            await prisma.programParticipant.deleteMany({ where: { programId } });
+            await prisma.program.delete({ where: { id: programId } });
+            await prisma.person.delete({ where: { id: personId } });
+            await prisma.household.delete({ where: { id: householdId } });
+        });
+
+        afterEach(async () => {
+            // Each test below manages its own participant status; leave no
+            // PENDING/ACTIVE row behind for the next test in this block.
+            await prisma.programParticipant.deleteMany({ where: { programId } });
+        });
+
+        it('400s when participantIds is empty', async () => {
+            asSession();
+            const res = await POST(jsonReq({ programId, participantIds: [] }));
+            expect(res.status).toBe(400);
+        });
+
+        it('404s when no PENDING participants match', async () => {
+            asSession();
+            // No ProgramParticipant row exists for personId yet -> nothing PENDING.
+            const res = await POST(jsonReq({ programId, participantIds: [personId] }));
+            expect(res.status).toBe(404);
+        });
+
+        it('409s when the program has no Shopify variant configured', async () => {
+            asSession();
+            await prisma.programParticipant.create({
+                data: { programId, personId, status: 'PENDING', pendingSince: new Date() },
+            });
+
+            const res = await POST(jsonReq({ programId, participantIds: [personId] }));
+            expect(res.status).toBe(409);
+
+            // Gate held: participant left PENDING, no webhook fired.
+            const row = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } });
+            expect(row?.status).toBe('PENDING');
+        });
+
+        it('200s, fires the real inbound webhook, and activates the PENDING participant (legacy variant)', async () => {
+            asSession();
+            await prisma.program.update({ where: { id: programId }, data: { shopifyOrgMemberVariantId: 'dev-mock-variant-route-program-test' } });
+            await prisma.programParticipant.create({
+                data: { programId, personId, status: 'PENDING', pendingSince: new Date() },
+            });
+
+            const res = await POST(jsonReq({ programId, participantIds: [personId] }));
+            expect(res.status).toBe(200);
+            const body = await res.json();
+            expect(body).toEqual({ ok: true, participants: [{ personId, status: 'ACTIVE' }] });
+
+            // The real proof: the webhook actually ran end-to-end and mutated the DB.
+            const row = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } });
+            expect(row?.status).toBe('ACTIVE');
+            expect(row?.pendingSince).toBeNull();
+        });
+
+        // Single-pool model (product decision 2026-07-06): the mock tool must
+        // echo shopifyVariantId too, or every new-model program's local mock-pay
+        // flow 409s despite being fully configured.
+        it('200s, fires the real inbound webhook, and activates the PENDING participant (single-pool variant)', async () => {
+            asSession();
+            await prisma.program.update({
+                where: { id: programId },
+                data: { shopifyOrgMemberVariantId: null, shopifyVariantId: 'dev-mock-variant-single-pool-route-test' },
+            });
+            await prisma.programParticipant.create({
+                data: { programId, personId, status: 'PENDING', pendingSince: new Date() },
+            });
+
+            const res = await POST(jsonReq({ programId, participantIds: [personId] }));
+            expect(res.status).toBe(200);
+            const body = await res.json();
+            expect(body).toEqual({ ok: true, participants: [{ personId, status: 'ACTIVE' }] });
+
+            const row = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } });
+            expect(row?.status).toBe('ACTIVE');
+            expect(row?.pendingSince).toBeNull();
+        });
+    });
 });

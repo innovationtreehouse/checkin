@@ -37,22 +37,22 @@ describe('Admin Roles API Integration Tests', () => {
 
         // Setup mock database records
         const isSysadmin = await prisma.person.create({
-            data: { email: 'sysadmin-roles-api-test@example.com', name: 'Admin Roles Test', isSysadmin: true, household: { create: {} } }
+            data: { email: 'sysadmin-roles-api-test@example.com', name: 'Admin Roles Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testSysAdminId = isSysadmin.id;
 
         const isBoardMember = await prisma.person.create({
-            data: { email: 'board-roles-api-test@example.com', name: 'Board Roles Test', isBoardMember: true, household: { create: {} } }
+            data: { email: 'board-roles-api-test@example.com', name: 'Board Roles Test', isBoardMember: true, household: { create: { name: "Test HH" } } }
         });
         testBoardMemberId = isBoardMember.id;
 
         const user = await prisma.person.create({
-            data: { email: 'user-roles-api-test@example.com', name: 'User Roles Test', household: { create: {} } }
+            data: { email: 'user-roles-api-test@example.com', name: 'User Roles Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
 
         const targetUser = await prisma.person.create({
-            data: { email: 'target-roles-api-test@example.com', name: 'Target Roles Test', dateOfBirth: new Date('1990-01-01'), household: { create: {} } }
+            data: { email: 'target-roles-api-test@example.com', name: 'Target Roles Test', dateOfBirth: new Date('1990-01-01'), household: { create: { name: "Test HH" } } }
         });
         testTargetUserId = targetUser.id;
 
@@ -60,7 +60,7 @@ describe('Admin Roles API Integration Tests', () => {
         const tenYearsAgo = new Date(now.getFullYear() - 10, now.getMonth(), now.getDate());
         
         const student = await prisma.person.create({
-            data: { email: 'student-roles-api-test@example.com', name: 'Student Roles Test', dateOfBirth: tenYearsAgo, household: { create: {} } }
+            data: { email: 'student-roles-api-test@example.com', name: 'Student Roles Test', dateOfBirth: tenYearsAgo, household: { create: { name: "Test HH" } } }
         });
         testStudentId = student.id;
     });

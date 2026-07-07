@@ -3,7 +3,7 @@
 import { use, useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Anchor, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { formatDate } from '@/lib/time';
 import { checkProgramAge } from '@/lib/programAge';
@@ -31,6 +31,11 @@ type ProgramDetail = {
   enrollmentStatus: string;
   orgMemberPriceCents: number | null;
   nonOrgMemberPriceCents: number | null;
+  // Single-pool model (product decision 2026-07-06): when set, this is the
+  // ONE variant for both tiers — member pricing comes from a checkout-time
+  // discount code (see handleEnroll), not a separate variant. Legacy programs
+  // leave this null and keep using the pair below.
+  shopifyVariantId: string | null;
   shopifyOrgMemberVariantId: string | null;
   shopifyNonOrgMemberVariantId: string | null;
   minAge: number | null;
@@ -239,14 +244,16 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       // Variant is always required — local synthesizes dev-mock-variant ids, so a null
       // one is a real config gap in every env.
       let mockPay = false;
+      let isMember = false;
       if (isPayingOnShopify && program) {
         const householdRes = await fetch('/api/household');
-        let isMember = false;
         if (householdRes.ok) {
           const householdData = await householdRes.json();
           isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
         }
-        variantId = isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId;
+        // Single-pool programs sell the SAME variant to everyone — the discount
+        // code (below, at redirect time) does the member pricing, not a variant pick.
+        variantId = program.shopifyVariantId || (isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId);
         storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
         mockPay = isLocalInstance;
         if (!variantId || (!mockPay && !storeDomain)) {
@@ -292,9 +299,23 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           fetchProgram();
         } else if (isPayingOnShopify && program && variantId && storeDomain) {
           setSuccessMessage("Redirecting to Shopify for secure payment...");
-          // qty=N single variant + comma-joined account ids — see buildShopifyCheckoutUrl.
           navigating = true;
-          window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id);
+          // Single-pool model only: a member checking out gets a per-enrollee,
+          // single-use discount code minted server-side (the browser never has
+          // Shopify credentials to do this itself). Legacy two-variant programs
+          // already charged the right tier via the variant pick above — no code
+          // needed. Failure here is non-fatal: an undiscounted link is always a
+          // safe fallback (never blocks checkout), per lib/shopify.ts's
+          // mintMemberDiscountCode contract.
+          let discountCode: string | null = null;
+          if (program.shopifyVariantId && isMember) {
+            try {
+              const discRes = await fetch(`/api/programs/${id}/discount-code`, { method: 'POST' });
+              if (discRes.ok) discountCode = (await discRes.json()).code ?? null;
+            } catch { /* undiscounted link is an acceptable fallback */ }
+          }
+          // qty=N single variant + comma-joined account ids — see buildShopifyCheckoutUrl.
+          window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id, discountCode);
           return; // spinner stays; page unloads on redirect
         } else {
           notifications.show({ color: "green", message: enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!" });
@@ -509,9 +530,16 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 </Button>
 
                 {hasPrice && !isClosed && (
-                  <Anchor component="button" type="button" size="sm" onClick={handleRequestPaymentPlan}>
-                    request a payment plan from the finance committee of the board
-                  </Anchor>
+                  <Button
+                    fullWidth
+                    size="md"
+                    variant="light"
+                    type="button"
+                    onClick={handleRequestPaymentPlan}
+                    styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
+                  >
+                    Request a scholarship or payment plan from the Finance Committee of the Board
+                  </Button>
                 )}
               </Stack>
               )}
