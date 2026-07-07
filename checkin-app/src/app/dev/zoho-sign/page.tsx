@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { config } from "@/lib/config";
+import { signingMockActive } from "@/lib/membership/contract/signingTarget";
 import DevZohoSignClient from "./DevZohoSignClient";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,9 @@ export default async function DevZohoSignPage({
 }: {
     searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-    if (!config.zohoMockActive()) notFound();
+    // Honors the dev settings radio too (signingMockActive), so the interstitial
+    // is reachable exactly when signing requests are actually routed to it.
+    if (!(await signingMockActive())) notFound();
     const { rid } = await searchParams;
     return <DevZohoSignClient rid={typeof rid === "string" ? rid : null} />;
 }

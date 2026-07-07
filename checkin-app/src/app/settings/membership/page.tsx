@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Alert, Button, Card, Center, Checkbox, Group, Loader, Modal, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Card, Center, Checkbox, Group, Loader, Modal, Radio, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
+import { useIsDevInstance } from "@/components/EnvProvider";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface Settings {
@@ -15,6 +16,7 @@ interface Settings {
   orgMembershipVariantId: string | null;
   volunteerDiscountCode: string | null;
   bgRecheckMonths: number;
+  devSigningTarget: string | null;
 }
 
 const dollars = (cents: number) => (cents / 100).toFixed(2);
@@ -38,6 +40,9 @@ export default function MembershipSettingsPage() {
   const [boundaryUnlocked, setBoundaryUnlocked] = useState(false);
   const [variantId, setVariantId] = useState("");
   const [discountCode, setDiscountCode] = useState("");
+  // Dev-instance-only: where contract signing requests go ('zoho' | 'debug').
+  const isDev = useIsDevInstance();
+  const [signingTarget, setSigningTarget] = useState("zoho");
 
   // Snapshot of the dues-form values as last loaded/saved; isDirty compares it to
   // current state to drive the unsaved-changes guard.
@@ -67,6 +72,7 @@ export default function MembershipSettingsPage() {
           boundary: settings.orgMembershipYearBoundary ? settings.orgMembershipYearBoundary.slice(0, 10) : "",
           variantId: settings.orgMembershipVariantId ?? "",
           discountCode: settings.volunteerDiscountCode ?? "",
+          signingTarget: settings.devSigningTarget ?? "zoho",
         };
         setNormalDues(snap.normalDues);
         setVolunteerDues(snap.volunteerDues);
@@ -74,6 +80,7 @@ export default function MembershipSettingsPage() {
         setBoundary(snap.boundary);
         setVariantId(snap.variantId);
         setDiscountCode(snap.discountCode);
+        setSigningTarget(snap.signingTarget);
         setInitial(snap);
       }
     } finally {
@@ -106,6 +113,8 @@ export default function MembershipSettingsPage() {
           orgMembershipVariantId: variantId.trim() || null,
           volunteerDiscountCode: discountCode.trim() || null,
           bgRecheckMonths: Math.round(parseInt(bgRecheckMonths || "0", 10)),
+          // Dev instances only — the API rejects it elsewhere.
+          ...(isDev ? { devSigningTarget: signingTarget } : {}),
           // Send the boundary when the unlock is checked, or when it was never set (no
           // unlock shown then — nothing to protect from an accidental shift).
           ...(boundaryUnlocked || !boundaryWasSet ? { orgMembershipYearBoundary: boundary || null } : {}),
@@ -136,7 +145,7 @@ export default function MembershipSettingsPage() {
 
   const isDirty =
     !!initial &&
-    !shallowEqual(initial, { normalDues, volunteerDues, bgRecheckMonths, boundary, variantId, discountCode });
+    !shallowEqual(initial, { normalDues, volunteerDues, bgRecheckMonths, boundary, variantId, discountCode, signingTarget });
   useUnsavedGuard(isDirty);
 
   return (
@@ -249,6 +258,29 @@ export default function MembershipSettingsPage() {
                 disabled={boundaryWasSet && !boundaryUnlocked}
               />
             </Alert>
+
+            {isDev && (
+              <Alert color="grape" variant="light" mt="md" title="Contract signing target (dev instance only)">
+                <Text size="sm" mb="sm">
+                  🧪 Where membership contract signing requests go on <strong>this dev instance</strong>.
+                  Prod always uses Zoho; this switch never exists there.
+                </Text>
+                <Radio.Group value={signingTarget} onChange={setSigningTarget}>
+                  <Stack gap="xs">
+                    <Radio
+                      value="zoho"
+                      label="Real Zoho Sign"
+                      description="Requests go to Zoho (requires Zoho credentials on this instance; dev requests are watermarked NOT BINDING)."
+                    />
+                    <Radio
+                      value="debug"
+                      label="Debug signing"
+                      description="Requests go to the in-app /dev/zoho-sign interstitial — no Zoho account or credentials involved."
+                    />
+                  </Stack>
+                </Radio.Group>
+              </Alert>
+            )}
 
             {saveNotice && (
               <Alert mt="lg" color={saveNotice.err ? "red" : "green"} variant="light">

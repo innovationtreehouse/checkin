@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { backgroundCheckProvider } from "@/lib/membership/background-check/manual-adapter";
 import { notifyReviewers } from "@/lib/membership/review";
 import { zohoSign } from "@/lib/membership/contract/zohoProvider";
+import { signingMockActive } from "@/lib/membership/contract/signingTarget";
 import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
 import { latestPendingExternal } from "@/lib/membership/phases";
 
@@ -335,11 +336,16 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
     }
 
     if (!requestId || !actionId) {
+        // Resolved ONCE for this request so the PDF-skip, watermark, and the
+        // provider calls below can't disagree if the dev signing-target radio
+        // flips mid-flow (signingMockActive also honors BoardSettings.devSigningTarget).
+        const signingMock = await signingMockActive();
+
         // Mock mode never uploads the PDF (its createRequest ignores the bytes), so
         // skip the S3 load that also 503s in dev — an empty placeholder keeps the
         // create/submit calls type-identical. See ZOHO_SIGN_DEV_MOCK.md §5.
         let agreement;
-        if (config.zohoMockActive()) {
+        if (signingMock) {
             agreement = { pdf: Buffer.alloc(0), lastPageNo: 0, pageWidth: 0, pageHeight: 0 };
         } else {
             try {
@@ -358,7 +364,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
         // create/submit/embed flow is otherwise identical across envs. (Mock mode
         // skips the watermark — the empty placeholder PDF is never rendered.)
         const isProd = config.isProd();
-        const pdf = isProd || config.zohoMockActive() ? agreement.pdf : await stampWatermark(agreement.pdf, "DEV TEST — NOT A LEGAL AGREEMENT");
+        const pdf = isProd || signingMock ? agreement.pdf : await stampWatermark(agreement.pdf, "DEV TEST — NOT A LEGAL AGREEMENT");
         const requestName = `${isProd ? "" : "[DEV TEST — NOT BINDING] "}Membership Agreement — ${recipientName}`;
 
         // Return the embedded signer to checkin when they finish (Zoho navigates
