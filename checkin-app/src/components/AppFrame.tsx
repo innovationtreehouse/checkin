@@ -293,23 +293,16 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
         <AppShell.Navbar
           p="md"
           bg={brand.nav.sidebar}
-          // On the dark sidebar, Mantine's hover fill for non-active items is the near-white
-          // `default-hover` token, which left white labels invisible (white-on-white, #284).
-          // Scope that token to a translucent white so hovering just lightens the purple and the
-          // white label stays readable — and it works in dark mode too, unlike a fixed color.
+          // On the colored sidebar the white labels need a readable hover fill; that lives in
+          // globals.css (.appframe-sidebar-navlink) so it can't silently regress when a Mantine
+          // upgrade renames the internal NavLink hover token (which is what reintroduced the
+          // white-on-white bug, #284).
           //
           // overflowY:auto: when the nav list outgrows the viewport it scrolls instead of
           // clipping. The <nav> element persists across route changes (only AppShell.Main's
           // children swap), so the browser keeps its scrollTop — "back to X" leaves the
           // sidebar scroll where it was rather than jumping to the top.
-          style={
-            {
-              overflowY: 'auto',
-              ...(onColoredSidebar
-                ? { '--mantine-color-default-hover': 'rgba(255, 255, 255, 0.12)' }
-                : {}),
-            } as React.CSSProperties
-          }
+          style={{ overflowY: 'auto' }}
         >
           {visibleItems.map((item) => {
             const href = item.hrefFor?.(user) ?? item.href;
@@ -366,6 +359,9 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                 color={brand.nav.accent}
                 onClick={closeMobile}
                 mb={4}
+                classNames={
+                  onColoredSidebar ? { root: 'appframe-sidebar-navlink' } : undefined
+                }
                 styles={{
                   root: { borderRadius: 'var(--mantine-radius-md)' },
                   label: { color: sidebarText, fontWeight: 600 },

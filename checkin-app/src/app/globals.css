@@ -20,3 +20,22 @@ body {
 .kiosk-mode * {
   cursor: none !important;
 }
+
+/*
+ * Colored sidebar nav (AppFrame): non-active NavLink hover.
+ *
+ * Mantine's NavLink hover fill for a non-active item is a near-white token
+ * (`--mantine-color-gray-0` in light, `--mantine-color-dark-6` in dark; see
+ * @mantine/core NavLink.css). On the purple sidebar the labels are white, so that
+ * near-white fill made hovered items unreadable — white-on-white (#284, and again
+ * after a Mantine bump moved the token off `default-hover`). Pin the hover to a
+ * translucent white instead: the purple just lightens and the white label stays
+ * legible, in both light and dark mode. Owning the rule here (rather than
+ * overriding whichever internal token Mantine happens to use) keeps it from
+ * silently regressing on the next Mantine upgrade. The `:not([data-active])` keeps
+ * the active item's own (readable) highlight untouched, and the class is only
+ * attached on the colored sidebar so plain-white sidebars are unaffected.
+ */
+.appframe-sidebar-navlink:not([data-active]):hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
