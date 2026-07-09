@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
-import { getExternalStatus } from "@/lib/membership/external";
+import { getExternalStatus, advanceExternalIfComplete } from "@/lib/membership/external";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { applyVolunteerStatus } from "@/lib/membership/review";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
@@ -413,5 +413,12 @@ export async function submitIntake(userId: number) {
     // the volunteer-designation allowlist here or it would never be applied (#874).
     if (bgFresh) await applyVolunteerStatus(prisma, process.orgMembershipId!, household.id, false);
 
-    return advanced;
+    // The external actions (contract sign, BG consent) can already be satisfied the
+    // moment we land at PENDING_EXTERNAL_ACTION: bgFresh stamps bgClearedAt above,
+    // and the board can pre-mark contractSignedAt/bgConsentAt on the INTAKE row via
+    // the ops API (#878). advanceExternalIfComplete didn't re-fire on those marks
+    // (status wasn't PENDING_EXTERNAL_ACTION yet), so without this the process would
+    // strand here with its gate already met. Re-run the advance now — it's a no-op
+    // (status guard, contract/BG checks) when the actions aren't actually done.
+    return (await advanceExternalIfComplete(process.id)) ?? advanced;
 }
