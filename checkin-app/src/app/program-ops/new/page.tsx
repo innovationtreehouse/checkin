@@ -60,7 +60,7 @@ export default function CreateProgramPage() {
           minAge: minAge ? parseInt(minAge) : null,
           maxAge: maxAge ? parseInt(maxAge) : null,
           memberPrice: (!isFree && memberPrice) ? memberPrice : null,
-          nonMemberPrice: (!isFree && nonMemberPrice) ? nonMemberPrice : null,
+          nonMemberPrice: (!isFree && !orgMemberOnly && nonMemberPrice) ? nonMemberPrice : null,
           maxParticipants: maxParticipants ? parseInt(maxParticipants) : null,
           leadMentorId: leadMentorId ? parseInt(leadMentorId) : null
         })
@@ -175,12 +175,14 @@ export default function CreateProgramPage() {
 
             {!isFree && (
               <>
-                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                <SimpleGrid cols={{ base: 1, sm: orgMemberOnly ? 1 : 2 }}>
                   <NumberInput label="Treehouse Member Price ($)" value={memberPrice} onChange={(v) => setMemberPrice(String(v))} min={0} placeholder="0" />
-                  <NumberInput label="Non-Member Price ($)" value={nonMemberPrice} onChange={(v) => setNonMemberPrice(String(v))} min={0} placeholder="0" />
+                  {!orgMemberOnly && (
+                    <NumberInput label="Non-Member Price ($)" value={nonMemberPrice} onChange={(v) => setNonMemberPrice(String(v))} min={0} placeholder="0" />
+                  )}
                 </SimpleGrid>
                 <Text size="xs" c="dimmed">Setting a price automatically creates a checkout flow on Shopify.</Text>
-                {Number(memberPrice) > Number(nonMemberPrice) && (
+                {!orgMemberOnly && Number(memberPrice) > Number(nonMemberPrice) && (
                   <Alert color="yellow" variant="light">⚠️ Member price is higher than non-member price.</Alert>
                 )}
               </>
