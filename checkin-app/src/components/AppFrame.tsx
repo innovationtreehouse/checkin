@@ -293,22 +293,15 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
         <AppShell.Navbar
           p="md"
           bg={brand.nav.sidebar}
-          // On the colored sidebar the white labels need a readable hover fill; that lives in
-          // globals.css (.appframe-sidebar-navlink) so it can't silently regress when a Mantine
-          // upgrade renames the internal NavLink hover token (which is what reintroduced the
-          // white-on-white bug, #284).
-          //
-          // overflowY:auto: when the nav list outgrows the viewport it scrolls instead of
-          // clipping. The <nav> element persists across route changes (only AppShell.Main's
-          // children swap), so the browser keeps its scrollTop — "back to X" leaves the
-          // sidebar scroll where it was rather than jumping to the top.
+          // overflowY:auto lets the nav scroll when it outgrows the viewport. The <nav>
+          // persists across route changes (only AppShell.Main's children swap), so its
+          // scrollTop survives navigation instead of jumping to the top.
           style={{ overflowY: 'auto' }}
         >
           {visibleItems.map((item) => {
             const href = item.hrefFor?.(user) ?? item.href;
             const active = isActive(pathname, href);
-            // On the colored sidebar all text is white; the 'light' variant gives a soft
-            // translucent overlay on the active item rather than a harsh solid fill.
+            // White labels on the colored sidebar; theme default (dark) elsewhere.
             const sidebarText = onColoredSidebar ? 'var(--mantine-color-white)' : undefined;
             // Badge keys off the canonical section href, not the per-role
             // destination — a reviewer-only user's link points at /review, but its
@@ -360,6 +353,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                 onClick={closeMobile}
                 mb={4}
                 classNames={
+                  // Readable hover fill; see globals.css .appframe-sidebar-navlink.
                   onColoredSidebar ? { root: 'appframe-sidebar-navlink' } : undefined
                 }
                 styles={{
