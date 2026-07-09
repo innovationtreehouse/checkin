@@ -213,7 +213,34 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
     // Determine product title
     const productTitle = `Program Enrollment: ${name}`;
 
-    // 1. Create Product
+    // Variants go INLINE in the product-create call. Creating the product bare
+    // makes Shopify mint a "Default Title" variant (price $0, requires_shipping
+    // true), which then collides with any follow-up POST /variants.json that
+    // doesn't set a distinct option1 (422 "The variant 'Default Title' already
+    // exists") AND leaves a physical $0 variant on the product so checkout asks
+    // for a shipping address. Inline variants replace the default entirely.
+    const variants = [];
+
+    if (orgMemberPriceCents !== null && orgMemberPriceCents > 0) {
+        variants.push({
+            option1: "Member",
+            price: (orgMemberPriceCents / 100).toFixed(2),
+            requires_shipping: false,
+            inventory_management: maxParticipants ? 'shopify' : null,
+            inventory_policy: maxParticipants ? 'deny' : 'continue',
+        });
+    }
+
+    if (nonOrgMemberPriceCents !== null && nonOrgMemberPriceCents > 0) {
+        variants.push({
+            option1: "Non-Member",
+            price: (nonOrgMemberPriceCents / 100).toFixed(2),
+            requires_shipping: false,
+            inventory_management: maxParticipants ? 'shopify' : null,
+            inventory_policy: maxParticipants ? 'deny' : 'continue',
+        });
+    }
+
     const productRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products.json`, {
       method: 'POST',
       headers: {
@@ -225,7 +252,7 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
           title: productTitle,
           status: 'active',
           product_type: "Educational Services",
-          options: [{ name: "Membership Type" }]
+          ...(variants.length > 0 ? { options: [{ name: "Membership Type" }], variants } : {}),
         }
       })
     }, "Shopify create product");
@@ -239,60 +266,21 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
     const productData = await productRes.json();
     productId = productData.product.id;
 
-    // 2. Create Variants
-    const variants = [];
-
-    if (orgMemberPriceCents !== null && orgMemberPriceCents > 0) {
-        variants.push({
-            product_id: productId,
-            option1: "Member",
-            price: (orgMemberPriceCents / 100).toFixed(2),
-            requires_shipping: false,
-            inventory_management: maxParticipants ? 'shopify' : null,
-            inventory_policy: maxParticipants ? 'deny' : 'continue',
-        });
-    }
-
-    if (nonOrgMemberPriceCents !== null && nonOrgMemberPriceCents > 0) {
-        variants.push({
-            product_id: productId,
-            option1: "Non-Member",
-            price: (nonOrgMemberPriceCents / 100).toFixed(2),
-            requires_shipping: false,
-            inventory_management: maxParticipants ? 'shopify' : null,
-            inventory_policy: maxParticipants ? 'deny' : 'continue',
-        });
-    }
-
     let memberVariantId: string | null = null;
     let nonMemberVariantId: string | null = null;
 
-    if (variants.length > 0) {
-        for (const variant of variants) {
-            const variantRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products/${productId}/variants.json`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Shopify-Access-Token': accessToken,
-                },
-                body: JSON.stringify({ variant })
-            }, "Shopify create variant");
+    for (const created of productData.product.variants ?? []) {
+        if (created.option1 === "Member") {
+            memberVariantId = created.id.toString();
+        } else if (created.option1 === "Non-Member") {
+            nonMemberVariantId = created.id.toString();
+        } else {
+            continue; // e.g. a default variant on the no-priced-tiers path — nothing to track
+        }
 
-            if (variantRes.ok) {
-                const variantData = await variantRes.json();
-                if (variant.option1 === "Member") {
-                    memberVariantId = variantData.variant.id.toString();
-                } else {
-                    nonMemberVariantId = variantData.variant.id.toString();
-                }
-
-                // Set inventory level if maxParticipants is configured
-                if (maxParticipants && variantData.variant.inventory_item_id) {
-                    await setInitialShopifyInventory(storeDomain, accessToken, variantData.variant.inventory_item_id, maxParticipants, variant.option1);
-                }
-            } else {
-                console.error("Failed to create Shopify variant:", await variantRes.text());
-            }
+        // Set inventory level if maxParticipants is configured
+        if (maxParticipants && created.inventory_item_id) {
+            await setInitialShopifyInventory(storeDomain, accessToken, created.inventory_item_id, maxParticipants, created.option1);
         }
     }
 
@@ -359,6 +347,13 @@ export async function createShopifySingleVariantProgram(
     let productId: string | number | null = null;
 
     try {
+        // The variant goes INLINE in the product-create call. Creating the
+        // product bare makes Shopify mint a "Default Title" variant (price $0,
+        // requires_shipping true), and the follow-up POST /variants.json —
+        // which has no option1 either — collides with it (422 "The variant
+        // 'Default Title' already exists"). Net effect of the old two-call
+        // shape: no variant id ever stored, and the orphaned product kept its
+        // physical $0 default variant so checkout demanded a shipping address.
         const productRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products.json`, {
             method: 'POST',
             headers: {
@@ -370,6 +365,12 @@ export async function createShopifySingleVariantProgram(
                     title: `Program Enrollment: ${name}`,
                     status: 'active',
                     product_type: "Educational Services",
+                    variants: [{
+                        price: (basePriceCents / 100).toFixed(2),
+                        requires_shipping: false,
+                        inventory_management: maxParticipants ? 'shopify' : null,
+                        inventory_policy: maxParticipants ? 'deny' : 'continue',
+                    }],
                 }
             })
         }, "Shopify create product");
@@ -383,34 +384,17 @@ export async function createShopifySingleVariantProgram(
         const productData = await productRes.json();
         productId = productData.product.id;
 
-        const variantRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products/${productId}/variants.json`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Shopify-Access-Token': accessToken,
-            },
-            body: JSON.stringify({
-                variant: {
-                    product_id: productId,
-                    price: (basePriceCents / 100).toFixed(2),
-                    requires_shipping: false,
-                    inventory_management: maxParticipants ? 'shopify' : null,
-                    inventory_policy: maxParticipants ? 'deny' : 'continue',
-                }
-            })
-        }, "Shopify create variant");
-
-        if (!variantRes.ok) {
-            const errorData = await variantRes.text();
-            console.error("Failed to create Shopify variant:", errorData);
-            throw new Error(`Shopify API responded with status: ${variantRes.status}`);
+        // Unlike the legacy path, the single variant is the whole point here —
+        // without its id the program can never match a webhook line-item, so a
+        // missing variant is a hard failure (the catch names the orphan).
+        const variant = productData.product.variants?.[0];
+        if (!variant?.id) {
+            throw new Error("Shopify product creation response is missing the created variant");
         }
+        const variantId = variant.id.toString();
 
-        const variantData = await variantRes.json();
-        const variantId = variantData.variant.id.toString();
-
-        if (maxParticipants && variantData.variant.inventory_item_id) {
-            await setInitialShopifyInventory(storeDomain, accessToken, variantData.variant.inventory_item_id, maxParticipants, "Standard");
+        if (maxParticipants && variant.inventory_item_id) {
+            await setInitialShopifyInventory(storeDomain, accessToken, variant.inventory_item_id, maxParticipants, "Standard");
         }
 
         return {

@@ -80,22 +80,13 @@ describe('createShopifyProgramVariants', () => {
         // Token request
         mockTokenResponse(fetchMock);
 
-        // Product creation
+        // Product creation — variants come back inline on the created product
         fetchMock.mockResolvedValueOnce({
             ok: true,
-            json: async () => ({ product: { id: 12345 } })
-        });
-
-        // Member variant
-        fetchMock.mockResolvedValueOnce({
-            ok: true,
-            json: async () => ({ variant: { id: 67890 } })
-        });
-
-        // Non-member variant
-        fetchMock.mockResolvedValueOnce({
-            ok: true,
-            json: async () => ({ variant: { id: 11111 } })
+            json: async () => ({ product: { id: 12345, variants: [
+                { id: 67890, option1: 'Member' },
+                { id: 11111, option1: 'Non-Member' },
+            ] } })
         });
 
         const result = await createShopifyProgramVariants('Test Program', 10, 20);
@@ -106,7 +97,16 @@ describe('createShopifyProgramVariants', () => {
             shopifyNonOrgMemberVariantId: '11111'
         });
 
-        expect(fetchMock).toHaveBeenCalledTimes(4); // token + product + 2 variants
+        // ONE product call with inline variants — a bare product create would
+        // mint a physical $0 "Default Title" variant and 422 the follow-up
+        // variant POSTs (the original bug).
+        expect(fetchMock).toHaveBeenCalledTimes(2); // token + product (variants inline)
+        const productBody = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string);
+        expect(productBody.product.options).toEqual([{ name: 'Membership Type' }]);
+        expect(productBody.product.variants).toEqual([
+            expect.objectContaining({ option1: 'Member', price: '0.10', requires_shipping: false }),
+            expect.objectContaining({ option1: 'Non-Member', price: '0.20', requires_shipping: false }),
+        ]);
         expect(sendEmail).not.toHaveBeenCalled();
     });
 
@@ -189,12 +189,11 @@ describe('createShopifyProgramVariants', () => {
     });
 
     describe('inventory branch (maxParticipants configured, real Shopify path)', () => {
-        // Single priced tier (member only) keeps the fetch sequence to one variant:
-        // token, product, variant, locations, [inventory_levels/set] — see shopify.ts:157-238.
+        // Single priced tier (member only) keeps the fetch sequence short:
+        // token, product (variant inline), locations, [inventory_levels/set].
         it('sets inventory at the store location when maxParticipants is configured', async () => {
             mockTokenResponse(fetchMock);
-            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 500 } }) }); // product
-            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { id: 600, inventory_item_id: 700 } }) }); // member variant
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 500, variants: [{ id: 600, option1: 'Member', inventory_item_id: 700 }] } }) }); // product + inline variant
             fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 900 }] }) }); // locations
             fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) }); // inventory_levels/set
 
@@ -205,9 +204,9 @@ describe('createShopifyProgramVariants', () => {
                 shopifyOrgMemberVariantId: '600',
                 shopifyNonOrgMemberVariantId: null,
             });
-            expect(fetchMock).toHaveBeenCalledTimes(5);
-            expect(String(fetchMock.mock.calls[3][0])).toContain('/locations.json');
-            const invCall = fetchMock.mock.calls[4];
+            expect(fetchMock).toHaveBeenCalledTimes(4);
+            expect(String(fetchMock.mock.calls[2][0])).toContain('/locations.json');
+            const invCall = fetchMock.mock.calls[3];
             expect(String(invCall[0])).toContain('/inventory_levels/set.json');
             expect(JSON.parse((invCall[1] as RequestInit).body as string)).toEqual({
                 location_id: 900,
@@ -218,8 +217,7 @@ describe('createShopifyProgramVariants', () => {
 
         it('logs and does not fail the whole call when inventory_levels/set itself fails (non-fatal)', async () => {
             mockTokenResponse(fetchMock);
-            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 501 } }) });
-            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { id: 601, inventory_item_id: 701 } }) });
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 501, variants: [{ id: 601, option1: 'Member', inventory_item_id: 701 }] } }) });
             fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 901 }] }) });
             fetchMock.mockResolvedValueOnce({ ok: false, status: 500, text: async () => 'inventory boom' });
 
@@ -241,8 +239,7 @@ describe('createShopifyProgramVariants', () => {
 
         it('skips inventory_levels/set when the store has no locations configured', async () => {
             mockTokenResponse(fetchMock);
-            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 502 } }) });
-            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { id: 602, inventory_item_id: 702 } }) });
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 502, variants: [{ id: 602, option1: 'Member', inventory_item_id: 702 }] } }) });
             fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [] }) });
 
             const result = await createShopifyProgramVariants('No Location Program', 10, null, 2);
@@ -252,8 +249,8 @@ describe('createShopifyProgramVariants', () => {
                 shopifyOrgMemberVariantId: '602',
                 shopifyNonOrgMemberVariantId: null,
             });
-            // No 5th call: locations returned empty, so inventory_levels/set is never reached.
-            expect(fetchMock).toHaveBeenCalledTimes(4);
+            // No 4th call: locations returned empty, so inventory_levels/set is never reached.
+            expect(fetchMock).toHaveBeenCalledTimes(3);
         });
     });
 
@@ -475,27 +472,30 @@ describe('createShopifySingleVariantProgram', () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('creates one product + one variant at the base price and sets inventory', async () => {
+    it('creates the product with its ONE variant inline (non-physical, base price) and sets inventory', async () => {
         mockTokenResponse(fetchMock);
-        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 700 } }) });
-        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ variant: { id: 800, inventory_item_id: 900 } }) });
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 700, variants: [{ id: 800, inventory_item_id: 900 }] } }) });
         fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 950 }] }) });
         fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
 
         const result = await createShopifySingleVariantProgram('Single Pool Program', 3500, 10);
 
         expect(result).toEqual({ shopifyProductId: '700', shopifyVariantId: '800' });
-        expect(fetchMock).toHaveBeenCalledTimes(5); // token + product + variant + locations + inventory set
-        const variantCall = fetchMock.mock.calls[2];
-        expect(JSON.parse((variantCall[1] as RequestInit).body as string)).toMatchObject({
-            variant: { price: '35.00', inventory_management: 'shopify', inventory_policy: 'deny' },
+        expect(fetchMock).toHaveBeenCalledTimes(4); // token + product (variant inline) + locations + inventory set
+
+        // The variant MUST ride inside the product create: a bare create mints a
+        // physical $0 "Default Title" variant that 422s the follow-up variant
+        // POST (no variant stored) and makes checkout ask for shipping.
+        const productCall = fetchMock.mock.calls[1];
+        expect(String(productCall[0])).toContain('/products.json');
+        expect(JSON.parse((productCall[1] as RequestInit).body as string)).toMatchObject({
+            product: { variants: [{ price: '35.00', requires_shipping: false, inventory_management: 'shopify', inventory_policy: 'deny' }] },
         });
     });
 
-    it('returns null and emails admins when variant creation fails', async () => {
+    it('returns null and emails admins when product creation fails', async () => {
         mockTokenResponse(fetchMock);
-        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 701 } }) });
-        fetchMock.mockResolvedValueOnce({ ok: false, status: 422, text: async () => '{"errors":"bad variant"}' });
+        fetchMock.mockResolvedValueOnce({ ok: false, status: 422, statusText: 'Unprocessable Entity', text: async () => '{"errors":"bad variant"}' });
         (prisma.person.findMany as jest.Mock).mockResolvedValueOnce([{ email: 'admin@test.com' }]);
 
         const result = await createShopifySingleVariantProgram('Broken Program', 3500);
@@ -505,6 +505,21 @@ describe('createShopifySingleVariantProgram', () => {
             'admin@test.com',
             'Shopify Integration Error',
             expect.stringContaining('Shopify API responded with status: 422'),
+        );
+    });
+
+    it('returns null and emails admins when the created product comes back without a variant', async () => {
+        mockTokenResponse(fetchMock);
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 702, variants: [] } }) });
+        (prisma.person.findMany as jest.Mock).mockResolvedValueOnce([{ email: 'admin@test.com' }]);
+
+        const result = await createShopifySingleVariantProgram('Variantless Program', 3500);
+
+        expect(result).toBeNull();
+        expect(sendEmail).toHaveBeenCalledWith(
+            'admin@test.com',
+            'Shopify Integration Error',
+            expect.stringContaining('missing the created variant'),
         );
     });
 });
