@@ -8,7 +8,6 @@ type ErrorLogRow = {
   timestamp: string;
   route: string | null;
   message: string;
-  stack: string | null;
   context: unknown;
 };
 
@@ -51,7 +50,7 @@ export function ErrorLogPanel() {
     <Card withBorder radius="md" padding="lg">
       <Title order={4} mb="md">Recent Backend Errors</Title>
       <Text c="dimmed" size="sm" mb="md">
-        Up to 100 most recent entries (auto-purged after 30 days). Click a row to expand stack/context.
+        Up to 100 most recent entries (auto-purged after 30 days). Click a row to expand context.
       </Text>
       <Table.ScrollContainer minWidth={600}>
         <Table striped highlightOnHover verticalSpacing="sm">
@@ -79,19 +78,13 @@ export function ErrorLogPanel() {
                   <Table.Tr>
                     <Table.Td colSpan={3}>
                       <Stack gap="xs">
-                        {e.stack && (
-                          <div>
-                            <Text size="xs" fw={700} tt="uppercase" c="dimmed">Stack</Text>
-                            <Code block fz="xs">{e.stack}</Code>
-                          </div>
-                        )}
                         {e.context != null && (
                           <div>
                             <Text size="xs" fw={700} tt="uppercase" c="dimmed">Context</Text>
                             <Code block fz="xs">{JSON.stringify(e.context, null, 2)}</Code>
                           </div>
                         )}
-                        {!e.stack && e.context == null && (
+                        {e.context == null && (
                           <Text c="dimmed" size="sm">No additional detail.</Text>
                         )}
                       </Stack>
