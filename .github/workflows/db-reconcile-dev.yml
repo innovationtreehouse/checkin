@@ -1,0 +1,95 @@
+# One-off, human-triggered ledger reconcile for the DEV database after a
+# migration-coalesce PR merges — the manual step MIGRATION_COALESCE_FLOW.md
+# documents (reactive path): deploy-dev's migrate step fails loudly once
+# (P3018/P3009), this workflow applies the baseline's reconcile.sql to the
+# _prisma_migrations ledger, then the failed deploy job gets re-run.
+#
+# Runs the same one-off ECS task pattern as deploy-dev.yml's migrate step,
+# against the LATEST checkin-migrate-dev task-definition revision — the failed
+# deploy already registered a revision pointing at the image built from the
+# coalesce merge commit, so reconcile.sql exists inside that image.
+name: Reconcile dev DB ledger
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: "Coalesce baseline migration name (directory under prisma/migrations)"
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+  ECS_CLUSTER: checkin-dev
+  ECS_SERVICE: checkin-dev
+  MIGRATE_TASK_FAMILY: checkin-migrate-dev
+  DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-dev
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run reconcile task
+        env:
+          BASELINE: ${{ inputs.baseline }}
+        run: |
+          set -euo pipefail
+
+          # Reuse the service's own network config (subnets / SG / public IP) so
+          # the one-off task lands exactly where the service runs.
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].networkConfiguration' --output json)
+
+          # Same Aurora Serverless v2 auto-pause retry loop as deploy-dev's
+          # migrate step: the first connection races the ~30s resume.
+          cat > "$RUNNER_TEMP/reconcile-overrides.json" <<EOF
+          {
+            "containerOverrides": [{
+              "name": "checkin-migrate",
+              "command": ["sh", "-c",
+                "cd checkin-app && for i in 1 2 3 4 5; do npx prisma db execute --file prisma/migrations/$BASELINE/reconcile.sql && exit 0; echo \"attempt \$i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"]
+            }]
+          }
+          EOF
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$MIGRATE_TASK_FAMILY" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG" \
+            --overrides "file://$RUNNER_TEMP/reconcile-overrides.json" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Reconcile task: $TASK_ARN"
+
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          echo "Reconcile exit code: $EXIT_CODE"
+
+          # Surface the container's own output either way, same as deploy-dev.
+          TASK_ID="${TASK_ARN##*/}"
+          echo "--- reconcile container logs (/ecs/checkin-migrate-dev) ---"
+          aws logs get-log-events \
+            --log-group-name /ecs/checkin-migrate-dev \
+            --log-stream-name "ecs/checkin-migrate/$TASK_ID" \
+            --start-from-head --limit 200 \
+            --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+          echo "--- end reconcile container logs ---"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Ledger reconcile failed (exit $EXIT_CODE) — see container logs above"
+            exit 1
+          fi
