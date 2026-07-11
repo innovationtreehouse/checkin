@@ -40,7 +40,7 @@ export default function RootLayout({
         <MantineProvider theme={brand.theme} defaultColorScheme="auto">
           <ModalsProvider>
             <Notifications />
-            <EnvProvider value={config.checkinEnv()}>
+            <EnvProvider value={{ checkinEnv: config.checkinEnv(), shopifyStoreDomain: config.shopifyStoreDomain() }}>
               <AuthProvider>
                 <OnboardingGate>
                   <DevImpersonationBar />

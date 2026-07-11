@@ -86,15 +86,11 @@ jobs:
         id: build
         env:
           IMAGE: ${{ env.IMAGE_REPO }}:${{ steps.vars.outputs.sha }}
-          # Public store domain baked into the client bundle (NEXT_PUBLIC_*, build-time).
-          # Set as a repo variable (Settings > Variables); empty is harmless.
-          NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN: ${{ vars.SHOPIFY_STORE_DOMAIN }}
         run: |
           set -euo pipefail
           # Native arm64 runner -> a plain build produces the arm64 image the
           # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
           docker build \
-            --build-arg NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN="$NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN" \
             --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
             -f checkin-app/Dockerfile \
             -t "$IMAGE" .
