@@ -160,14 +160,11 @@ jobs:
         env:
           IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha }}
           IMAGE_TAGGED: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.tag }}
-          # Public store domain baked into the client bundle (NEXT_PUBLIC_*, build-time).
-          NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN: ${{ vars.SHOPIFY_STORE_DOMAIN }}
         run: |
           set -euo pipefail
           # Native arm64 runner -> a plain build produces the arm64 image the
           # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
           docker build \
-            --build-arg NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN="$NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN" \
             -t "$IMAGE" -t "$IMAGE_TAGGED" .
           docker push "$IMAGE"
           docker push "$IMAGE_TAGGED"

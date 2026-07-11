@@ -266,11 +266,8 @@ jobs:
       # on its own runner for ECS.
       - name: Build deploy image (no push)
         if: needs.changes.outputs.app == 'true'
-        env:
-          NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN: ${{ vars.SHOPIFY_STORE_DOMAIN }}
         run: |
           docker build \
-            --build-arg NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN="$NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN" \
             -f checkin-app/Dockerfile \
             -t checkin-deploy-build:${{ github.sha }} .
 

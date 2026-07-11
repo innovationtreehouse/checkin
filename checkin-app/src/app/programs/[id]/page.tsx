@@ -11,7 +11,7 @@ import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { aggregateEnrollOutcomes, buildShopifyCheckoutUrl, type EnrollOutcome } from './enroll';
 import FirstTimeIntakePanel from './FirstTimeIntakePanel';
-import { useIsLocalInstance } from '@/components/EnvProvider';
+import { useIsLocalInstance, useShopifyStoreDomain } from '@/components/EnvProvider';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type ProgramDetail = {
@@ -50,6 +50,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const { data: session, status } = useSession();
   const router = useRouter();
   const isLocalInstance = useIsLocalInstance();
+  const shopifyStoreDomain = useShopifyStoreDomain();
 
   const [program, setProgram] = useState<ProgramDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -254,7 +255,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         // Single-pool programs sell the SAME variant to everyone — the discount
         // code (below, at redirect time) does the member pricing, not a variant pick.
         variantId = program.shopifyVariantId || (isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId);
-        storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+        storeDomain = shopifyStoreDomain ?? undefined;
         mockPay = isLocalInstance;
         if (!variantId || (!mockPay && !storeDomain)) {
           notifications.show({ color: "red", autoClose: false, message: variantId
