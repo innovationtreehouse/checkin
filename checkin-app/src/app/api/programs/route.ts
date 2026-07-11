@@ -110,6 +110,11 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             return apiError("Lead Mentor is required", 400);
         }
 
+        const maxPart = maxParticipants != null ? parseInt(maxParticipants, 10) : null;
+        if (maxPart == null || isNaN(maxPart) || maxPart < 1) {
+            return apiError("Max participants is required and must be at least 1", 400);
+        }
+
         const ageErr = validateProgramAgeBounds(minAge, maxAge);
         if (ageErr) {
             return apiError(ageErr, 400);
@@ -118,7 +123,6 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         // Client sends a raw dollar string; tolerate a number too. Convert to cents here.
         const mPrice = dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined);
         const nmPrice = dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined);
-        const maxPart = maxParticipants ? parseInt(maxParticipants, 10) : null;
 
         // Single-pool model (product decision 2026-07-06): ONE Shopify variant,
         // priced at the base/non-member rate — replaces the two-variant model for
