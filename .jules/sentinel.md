@@ -26,3 +26,8 @@
 **Vulnerability:** Found early returns checking buffer lengths (e.g., `providedBuffer.length !== expectedBuffer.length`) on webhook secrets and cron auth tokens before using `crypto.timingSafeEqual`.
 **Learning:** Returning early on length mismatch leaks the exact length of the expected secret.
 **Prevention:** Hash both the expected and provided secrets to a fixed length (e.g., using SHA-256) before passing them to `crypto.timingSafeEqual` to avoid leaking secret lengths while still safely catching any mismatch.
+
+## 2024-07-12 - Prevent Leaking Stack Traces to Admin Dashboards
+**Vulnerability:** The `logBackendError` utility was saving raw error stack traces to the `ErrorLog` table, which feeds directly into the administrative UI (`ErrorLogPanel`).
+**Learning:** Persisting raw error stack traces in database tables accessible via application dashboards violates defense-in-depth principles. Stack traces can inadvertently expose internal server information, directory structures, and dependency versions to users with dashboard access.
+**Prevention:** Do not persist error stack traces to database tables. Stack traces should only be sent to secure, centralized logging infrastructure (e.g., via standard server logs like `console.error`) where access is strictly controlled.
