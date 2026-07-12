@@ -22,7 +22,7 @@ import { config } from '@/lib/config';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'CheckMeIn Next',
+  title: 'Innovation Treehouse',
   description: 'The Innovation Treehouse next-generation check-in system',
 };
 
