@@ -157,6 +157,32 @@ async function setInitialShopifyInventory(
             const locData = await locRes.json();
             const locationId = locData.locations?.[0]?.id;
             if (locationId) {
+                // Connect the inventory item to the location FIRST. A variant
+                // freshly minted with inventory_management:'shopify' is tracked
+                // but not yet stocked at any location, and inventory_levels/set
+                // does NOT reliably auto-connect a new item at a standard
+                // location — it 422s ("inventory item is not stocked at the
+                // location"). connect.json creates the inventory level (at 0),
+                // after which set.json can set the absolute quantity. Without
+                // this, set silently failed and every priced program launched
+                // out of stock. A 422 here means the level already exists
+                // (e.g. a re-sync), which is fine — fall through to set.
+                const connectRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/connect.json`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Shopify-Access-Token': accessToken,
+                    },
+                    body: JSON.stringify({
+                        location_id: locationId,
+                        inventory_item_id: inventoryItemId,
+                    })
+                }, "Shopify connect inventory");
+                if (!connectRes.ok && connectRes.status !== 422) {
+                    console.error(`[SHOPIFY] Failed to connect inventory item to location: ${connectRes.status}`, await connectRes.text());
+                    return;
+                }
+
                 const invRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/set.json`, {
                     method: 'POST',
                     headers: {
