@@ -136,48 +136,85 @@ async function reportShopifyFailure(
 }
 
 /**
- * Best-effort: resolve the store's primary location, then set an absolute
- * inventory level for one inventory_item_id. Used at variant-creation time
- * (both the legacy two-variant path and the single-variant path) where
- * `available` should be exactly maxParticipants. Never throws — a failure
- * here doesn't undo the variant that was just created successfully.
+ * Set the initial absolute inventory (== maxParticipants) for one variant's
+ * inventory_item_id. A capped program's variant is created inline with
+ * inventory_management='shopify' + inventory_policy='deny' and Shopify's default
+ * 0 available, so WITHOUT this the storefront immediately shows "Sold out". This
+ * call is the only thing that lifts it off zero.
+ *
+ * Hardened against the two real-store failure modes that previously left products
+ * silently sold out:
+ *   - `/locations.json` returns deactivated + fulfillment-service locations in an
+ *     arbitrary order; setting at an inactive one 422s. We pick an ACTIVE location,
+ *     not blindly `locations[0]`.
+ *   - a freshly-created inventory item is often not stocked at that location yet,
+ *     so REST `set` 422s ("not stocked at location"). We `connect` it, then retry.
+ *
+ * Still never throws (a failure must not undo the created variant), but now RETURNS
+ * whether stock was actually set and SURFACES failures to IntegrationErrorLog
+ * (System Status → Link Status) — a sold-out product is visible instead of silent.
  */
 async function setInitialShopifyInventory(
     storeDomain: string,
     accessToken: string,
-    inventoryItemId: number,
+    inventoryItemId: number | undefined,
     quantity: number,
     label: string,
-): Promise<void> {
+): Promise<boolean> {
+    const jsonHeaders = { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': accessToken };
     try {
+        if (!inventoryItemId) {
+            // The product-create response carried no inventory_item_id for this tracked
+            // variant, so we can't set stock — it would ship sold out. Surface it.
+            await logIntegrationError("shopify", new Error(`Variant '${label}' has no inventory_item_id; cannot set initial stock (product would be sold out)`), { operation: "setInitialShopifyInventory", label, quantity });
+            return false;
+        }
+
         const locRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/locations.json`, {
             headers: { 'X-Shopify-Access-Token': accessToken },
         }, "Shopify get locations");
-        if (locRes.ok) {
-            const locData = await locRes.json();
-            const locationId = locData.locations?.[0]?.id;
-            if (locationId) {
-                const invRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/set.json`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': accessToken,
-                    },
-                    body: JSON.stringify({
-                        location_id: locationId,
-                        inventory_item_id: inventoryItemId,
-                        available: quantity,
-                    })
-                }, "Shopify set inventory");
-                if (invRes.ok) {
-                    console.log(`[SHOPIFY] Set inventory for variant ${label} to ${quantity} at location ${locationId}`);
-                } else {
-                    console.error(`[SHOPIFY] Failed to set inventory: ${invRes.status}`, await invRes.text());
-                }
-            }
+        if (!locRes.ok) {
+            await logIntegrationError("shopify", new Error(`locations.json returned ${locRes.status}`), { operation: "setInitialShopifyInventory", label, quantity });
+            return false;
         }
+
+        const locData = await locRes.json();
+        const locations: Array<{ id?: number; active?: boolean }> = locData.locations ?? [];
+        // Prefer an active location; `locations[0]` may be a deactivated or
+        // fulfillment-service location that `set` can't write to.
+        const locationId = (locations.find((l) => l.active !== false) ?? locations[0])?.id;
+        if (!locationId) {
+            await logIntegrationError("shopify", new Error("no Shopify location available to set inventory"), { operation: "setInitialShopifyInventory", label, quantity });
+            return false;
+        }
+
+        const setUrl = `https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/set.json`;
+        const setBody = JSON.stringify({ location_id: locationId, inventory_item_id: inventoryItemId, available: quantity });
+        let invRes = await shopifyFetch(setUrl, { method: 'POST', headers: jsonHeaders, body: setBody }, "Shopify set inventory");
+
+        // A just-created inventory item is often not stocked at this location yet, so
+        // `set` 422s ("not stocked at location"). Connect it, then retry the set.
+        if (!invRes.ok && invRes.status === 422) {
+            await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/connect.json`, {
+                method: 'POST',
+                headers: jsonHeaders,
+                body: JSON.stringify({ location_id: locationId, inventory_item_id: inventoryItemId }),
+            }, "Shopify connect inventory");
+            invRes = await shopifyFetch(setUrl, { method: 'POST', headers: jsonHeaders, body: setBody }, "Shopify set inventory (retry)");
+        }
+
+        if (invRes.ok) {
+            console.log(`[SHOPIFY] Set inventory for variant ${label} to ${quantity} at location ${locationId}`);
+            return true;
+        }
+        const errBody = await invRes.text();
+        console.error(`[SHOPIFY] Failed to set inventory: ${invRes.status}`, errBody);
+        await logIntegrationError("shopify", new Error(`inventory_levels/set returned ${invRes.status}: ${errBody}`), { operation: "setInitialShopifyInventory", label, quantity, locationId });
+        return false;
     } catch (invErr) {
         console.error("Failed to set Shopify inventory level:", invErr);
+        await logIntegrationError("shopify", invErr, { operation: "setInitialShopifyInventory", label, quantity });
+        return false;
     }
 }
 
@@ -279,7 +316,7 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
         }
 
         // Set inventory level if maxParticipants is configured
-        if (maxParticipants && created.inventory_item_id) {
+        if (maxParticipants) {
             await setInitialShopifyInventory(storeDomain, accessToken, created.inventory_item_id, maxParticipants, created.option1);
         }
     }
@@ -393,7 +430,7 @@ export async function createShopifySingleVariantProgram(
         }
         const variantId = variant.id.toString();
 
-        if (maxParticipants && variant.inventory_item_id) {
+        if (maxParticipants) {
             await setInitialShopifyInventory(storeDomain, accessToken, variant.inventory_item_id, maxParticipants, "Standard");
         }
 

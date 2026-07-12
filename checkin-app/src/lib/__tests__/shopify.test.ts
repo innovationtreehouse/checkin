@@ -15,6 +15,11 @@ jest.mock('../prisma', () => ({
     }
 }));
 
+jest.mock('../logger', () => ({
+    logIntegrationError: jest.fn().mockResolvedValue(undefined),
+}));
+import { logIntegrationError } from '../logger';
+
 // Helper: mock a successful token response
 function mockTokenResponse(fetchMock: jest.Mock) {
     fetchMock.mockResolvedValueOnce({
@@ -215,42 +220,102 @@ describe('createShopifyProgramVariants', () => {
             });
         });
 
-        it('logs and does not fail the whole call when inventory_levels/set itself fails (non-fatal)', async () => {
+        it('picks an ACTIVE location, not locations[0], to avoid a 422 that leaves the product sold out', async () => {
+            mockTokenResponse(fetchMock);
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 510, variants: [{ id: 610, option1: 'Member', inventory_item_id: 710 }] } }) });
+            // A deactivated location sorts first; the active one is second.
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 111, active: false }, { id: 222, active: true }] }) });
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) }); // set
+
+            const result = await createShopifyProgramVariants('Active Location Program', 10, null, 4);
+
+            expect(result?.shopifyOrgMemberVariantId).toBe('610');
+            const invCall = fetchMock.mock.calls[3];
+            expect(String(invCall[0])).toContain('/inventory_levels/set.json');
+            expect(JSON.parse((invCall[1] as RequestInit).body as string)).toEqual({
+                location_id: 222, // the ACTIVE location, not the first (deactivated) one
+                inventory_item_id: 710,
+                available: 4,
+            });
+            expect(logIntegrationError).not.toHaveBeenCalled();
+        });
+
+        it('connects the inventory item then retries set when the first set 422s (not stocked at location)', async () => {
+            mockTokenResponse(fetchMock);
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 520, variants: [{ id: 620, option1: 'Member', inventory_item_id: 720 }] } }) });
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 990, active: true }] }) });
+            fetchMock.mockResolvedValueOnce({ ok: false, status: 422, text: async () => 'inventory item is not stocked at location' }); // set → 422
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) }); // connect
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) }); // set retry
+
+            const result = await createShopifyProgramVariants('Not Stocked Program', 10, null, 6);
+
+            expect(result?.shopifyOrgMemberVariantId).toBe('620');
+            expect(fetchMock).toHaveBeenCalledTimes(6); // token, product, locations, set(422), connect, set(retry)
+            expect(String(fetchMock.mock.calls[4][0])).toContain('/inventory_levels/connect.json');
+            expect(JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string)).toEqual({ location_id: 990, inventory_item_id: 720 });
+            expect(String(fetchMock.mock.calls[5][0])).toContain('/inventory_levels/set.json');
+            expect(JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string)).toEqual({ location_id: 990, inventory_item_id: 720, available: 6 });
+            expect(logIntegrationError).not.toHaveBeenCalled(); // retry succeeded → no surfaced failure
+        });
+
+        it('surfaces to IntegrationErrorLog when inventory set ultimately fails — a sold-out product is visible, not silent', async () => {
             mockTokenResponse(fetchMock);
             fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 501, variants: [{ id: 601, option1: 'Member', inventory_item_id: 701 }] } }) });
-            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 901 }] }) });
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [{ id: 901, active: true }] }) });
             fetchMock.mockResolvedValueOnce({ ok: false, status: 500, text: async () => 'inventory boom' });
 
-            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            jest.spyOn(console, 'error').mockImplementation(() => {});
             const result = await createShopifyProgramVariants('Inventory Fail Program', 10, null, 3);
 
-            // Non-fatal: the variant itself was created fine; only the inventory
-            // step failed, and it's logged rather than surfaced as an error email.
+            // Non-fatal to the create: the variant itself was made fine (returned),
+            // but the inventory failure is now logged to the Link Status tab so the
+            // resulting sold-out product doesn't ship silently. Still no admin email.
             expect(result).toEqual({
                 shopifyProductId: '501',
                 shopifyOrgMemberVariantId: '601',
                 shopifyNonOrgMemberVariantId: null,
             });
-            expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to set inventory: 500'), 'inventory boom');
+            expect(logIntegrationError).toHaveBeenCalledWith(
+                'shopify',
+                expect.objectContaining({ message: expect.stringContaining('inventory_levels/set returned 500') }),
+                expect.objectContaining({ operation: 'setInitialShopifyInventory' }),
+            );
             expect(sendEmail).not.toHaveBeenCalled();
-            // afterEach's jest.restoreAllMocks() cleans up errSpy — mockRestore()
-            // here would also wipe the calls we just asserted on.
         });
 
-        it('skips inventory_levels/set when the store has no locations configured', async () => {
+        it('surfaces (not silently skips) when the store has no locations configured', async () => {
             mockTokenResponse(fetchMock);
             fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 502, variants: [{ id: 602, option1: 'Member', inventory_item_id: 702 }] } }) });
             fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ locations: [] }) });
 
             const result = await createShopifyProgramVariants('No Location Program', 10, null, 2);
 
-            expect(result).toEqual({
-                shopifyProductId: '502',
-                shopifyOrgMemberVariantId: '602',
-                shopifyNonOrgMemberVariantId: null,
-            });
-            // No 4th call: locations returned empty, so inventory_levels/set is never reached.
+            expect(result?.shopifyOrgMemberVariantId).toBe('602');
+            // No inventory_levels/set call (no location), but the failure is surfaced.
             expect(fetchMock).toHaveBeenCalledTimes(3);
+            expect(logIntegrationError).toHaveBeenCalledWith(
+                'shopify',
+                expect.objectContaining({ message: expect.stringContaining('no Shopify location') }),
+                expect.objectContaining({ operation: 'setInitialShopifyInventory' }),
+            );
+        });
+
+        it('surfaces when the created variant has no inventory_item_id (would be sold out)', async () => {
+            mockTokenResponse(fetchMock);
+            // Product create response omits inventory_item_id on the tracked variant.
+            fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ product: { id: 503, variants: [{ id: 603, option1: 'Member' }] } }) });
+
+            const result = await createShopifyProgramVariants('No Inventory Item Program', 10, null, 2);
+
+            expect(result?.shopifyOrgMemberVariantId).toBe('603');
+            // Bails before locations/set (nothing to set stock on), but surfaces it.
+            expect(fetchMock).toHaveBeenCalledTimes(2); // token, product only
+            expect(logIntegrationError).toHaveBeenCalledWith(
+                'shopify',
+                expect.objectContaining({ message: expect.stringContaining('no inventory_item_id') }),
+                expect.objectContaining({ operation: 'setInitialShopifyInventory' }),
+            );
         });
     });
 
