@@ -188,20 +188,32 @@ async function setInitialShopifyInventory(
             return false;
         }
 
+        // CONNECT FIRST, unconditionally (credit: @dkaygithub, #985). A variant freshly
+        // minted with inventory_management:'shopify' is tracked but not yet *stocked* at
+        // any location, and `set` does NOT reliably auto-connect it — it 422s ("not
+        // stocked at the location"). Connecting first creates the inventory level (at 0)
+        // so the `set` below can write the absolute quantity.
+        //
+        // Deliberately not "optimistic set, connect+retry on 422": that costs an extra
+        // round trip on every capped create (the 422 is the norm for a new item, not the
+        // exception) and, worse, makes the whole fix hinge on Shopify returning exactly
+        // 422 — a different status and the product silently ships sold out again.
+        // A 422 HERE just means the level already exists (e.g. a re-sync) → fall through.
+        const connectRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/connect.json`, {
+            method: 'POST',
+            headers: jsonHeaders,
+            body: JSON.stringify({ location_id: locationId, inventory_item_id: inventoryItemId }),
+        }, "Shopify connect inventory");
+        if (!connectRes.ok && connectRes.status !== 422) {
+            const connectBody = await connectRes.text();
+            console.error(`[SHOPIFY] Failed to connect inventory item to location: ${connectRes.status}`, connectBody);
+            await logIntegrationError("shopify", new Error(`inventory_levels/connect returned ${connectRes.status}: ${connectBody}`), { operation: "setInitialShopifyInventory", label, quantity, locationId });
+            return false;
+        }
+
         const setUrl = `https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/set.json`;
         const setBody = JSON.stringify({ location_id: locationId, inventory_item_id: inventoryItemId, available: quantity });
-        let invRes = await shopifyFetch(setUrl, { method: 'POST', headers: jsonHeaders, body: setBody }, "Shopify set inventory");
-
-        // A just-created inventory item is often not stocked at this location yet, so
-        // `set` 422s ("not stocked at location"). Connect it, then retry the set.
-        if (!invRes.ok && invRes.status === 422) {
-            await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/connect.json`, {
-                method: 'POST',
-                headers: jsonHeaders,
-                body: JSON.stringify({ location_id: locationId, inventory_item_id: inventoryItemId }),
-            }, "Shopify connect inventory");
-            invRes = await shopifyFetch(setUrl, { method: 'POST', headers: jsonHeaders, body: setBody }, "Shopify set inventory (retry)");
-        }
+        const invRes = await shopifyFetch(setUrl, { method: 'POST', headers: jsonHeaders, body: setBody }, "Shopify set inventory");
 
         if (invRes.ok) {
             console.log(`[SHOPIFY] Set inventory for variant ${label} to ${quantity} at location ${locationId}`);
