@@ -1,22 +1,24 @@
 # s-read deployment runbook
 
-Go-live checklist for the s-read sync as a **scheduled ECS task** (infra:
-innovationtreehouse/infra#112 — its PR body is the authoritative resource
-contract; app chain: checkin#940 → infra#112 → this). Region `us-east-2`,
-account `639595353568`. Work through it **in order** — each step assumes the
-previous ones are done.
+Go-live checklist for the s-read sync as a **scheduled ECS task**, once per
+**environment** (`dev` | `prod` — infra#114 split every resource per env;
+substitute `<env>` throughout). Resource contract: infra#112's PR body as
+amended by infra#114 (env split) and infra#117 (automated DB bootstrap); app
+chain: checkin#940 → infra#112/#114/#117 → this. Region `us-east-2`, account
+`639595353568`. Work through it **in order** — each step assumes the previous
+ones are done. Do dev first as the rehearsal.
 
 How the pieces fit:
 
 ```
-Schedule (hourly) ─▶ Lambda s-read-trigger  ({"mode":"incremental"|"backfill"}; not
+Schedule (hourly) ─▶ Lambda s-read-<env>-trigger  ({"mode":"incremental"|"backfill"}; not
    │                 VPC-attached; also the hook for future event sources)
-   └─▶ ecs:RunTask on the revision-less s-read-sync FAMILY (= latest ACTIVE revision)
-          └─▶ ECS task s-read-sync — image CMD runs `src/cli.ts` in ${SYNC_MODE:-incremental} mode
+   └─▶ ecs:RunTask on the revision-less s-read-<env>-sync FAMILY (= latest ACTIVE revision)
+          └─▶ ECS task s-read-<env>-sync — image CMD runs `src/cli.ts` in ${SYNC_MODE:-incremental} mode
 Deploy workflow (.github/workflows/deploy-s-read.yml, manual dispatch from main)
    └─▶ build+push image to ghcr.io → register migrate revision → (run migrate task,
        wait for exit 0) → register sync revision
-Backfill / manual sync = `aws lambda invoke` on s-read-trigger with the mode payload
+Backfill / manual sync = `aws lambda invoke` on s-read-<env>-trigger with the mode payload
 Migrate task = raw run-task from the workflow only (deliberately NOT invocable via the trigger)
 ```
 
@@ -39,24 +41,33 @@ the app's **Client ID** and **Client Secret** (app Settings) for step 3.
 
 ## 2. Infra applied + database bootstrap
 
-1. infra#112 `terraform apply`d (cluster `s-read`, task-def families
-   `s-read-sync`/`s-read-migrate` with the ghcr `repositoryCredentials`, the
-   `s-read-trigger` Lambda + hourly schedule, secret shells, IAM,
-   `s-read-compute` SG).
-2. Run `modules/s-read/init.sql` **by hand** against the shared Aurora cluster's
-   master user (creates the `shopify_read` database + the `s_read_ddl` /
-   `s_read_dml` roles — Terraform cannot `CREATE DATABASE`). Cluster is
-   Serverless v2 with auto-pause: the first connection can take ~30s to wake it.
+1. infra applied (auto-applies on merge to infra main): per env, cluster
+   `s-read-<env>`, task-def families `s-read-<env>-sync`/`s-read-<env>-migrate`
+   with the ghcr `repositoryCredentials`, the `s-read-<env>-trigger` Lambda +
+   hourly schedule, secret shells, IAM, and the shared `s-read-compute` SG.
+2. Run the **bootstrap task** (infra modules/checkin-bootstrap) scoped to
+   s-read — it creates `shopify_read_<env>` + the `s_read_<env>_ddl` /
+   `s_read_<env>_dml` roles for BOTH envs and writes their database-url
+   secrets itself (so step 3's DB pair is automated):
+
+   ```bash
+   # from infra/live/mgmt
+   $(terraform output -raw run_command) \
+     --overrides '{"containerOverrides":[{"name":"checkin-bootstrap","environment":[{"name":"TARGETS","value":"s-read"}]}]}'
+   ```
+
+   Watch `/ecs/checkin-bootstrap` for the `ok:` lines. Manual fallback:
+   `modules/s-read/init.sql` (see its header).
 
 ## 3. Secret values (4)
 
 Shells exist after step 2; set the values out-of-band:
 
 ```bash
-aws secretsmanager put-secret-value --secret-id s-read/database-url     --secret-string 'postgresql://s_read_dml:...@.../shopify_read'
-aws secretsmanager put-secret-value --secret-id s-read/database-url-ddl --secret-string 'postgresql://s_read_ddl:...@.../shopify_read'
-aws secretsmanager put-secret-value --secret-id s-read/shopify-client-id     --secret-string '...'
-aws secretsmanager put-secret-value --secret-id s-read/shopify-client-secret --secret-string '...'
+aws secretsmanager put-secret-value --secret-id s-read-<env>/database-url     --secret-string 'postgresql://s_read_dml:...@.../shopify_read'
+aws secretsmanager put-secret-value --secret-id s-read-<env>/database-url-ddl --secret-string 'postgresql://s_read_ddl:...@.../shopify_read'
+aws secretsmanager put-secret-value --secret-id s-read-<env>/shopify-client-id     --secret-string '...'
+aws secretsmanager put-secret-value --secret-id s-read-<env>/shopify-client-secret --secret-string '...'
 ```
 
 ECS injects these natively via the task definitions' `secrets` blocks as
@@ -89,7 +100,7 @@ Variables) to the run-task network JSON — SG id from the infra output
 Then run **Actions → "Deploy s-read" → Run workflow** (from `main` — the OIDC
 role's trust is pinned to `refs/heads/main`) with mode **migrate-and-code**.
 It builds/pushes the image, runs the migrate task (waits for exit 0), then
-registers the new `s-read-sync` revision. From that moment the hourly schedule
+registers the new `s-read-<env>-sync` revision. From that moment the hourly schedule
 runs real syncs.
 
 ## 6. One-time backfill
@@ -103,7 +114,7 @@ with the right `SYNC_MODE` override — this is also how a manual incremental sy
 is kicked, with `"mode":"incremental"`):
 
 ```bash
-aws lambda invoke --function-name s-read-trigger \
+aws lambda invoke --function-name s-read-<env>-trigger \
   --cli-binary-format raw-in-base64-out \
   --payload '{"mode":"backfill"}' out.json && cat out.json
 ```
@@ -112,11 +123,11 @@ Fallback if the trigger Lambda is unavailable — the raw run-task it performs:
 
 ```bash
 aws ecs run-task \
-  --cluster s-read \
-  --task-definition s-read-sync \
+  --cluster s-read-<env> \
+  --task-definition s-read-<env>-sync \
   --launch-type FARGATE \
   --network-configuration "$S_READ_NETWORK_CONFIG" \
-  --overrides '{"containerOverrides":[{"name":"s-read-sync","environment":[{"name":"SYNC_MODE","value":"backfill"}]}]}'
+  --overrides '{"containerOverrides":[{"name":"s-read-<env>-sync","environment":[{"name":"SYNC_MODE","value":"backfill"}]}]}'
 ```
 
 (Verified against the image: the container CMD runs
@@ -128,9 +139,9 @@ from the deploy workflow.
 
 ## 7. Verify
 
-- **Logs**: CloudWatch log group `/ecs/s-read-sync` — the backfill run logs
+- **Logs**: CloudWatch log group `/ecs/s-read-<env>-sync` — the backfill run logs
   `backfill step done` with counts; incremental runs log `incremental sync done`.
-  Migrate task logs land in `/ecs/s-read-migrate`.
+  Migrate task logs land in `/ecs/s-read-<env>-migrate`.
 - **Rows**: against `shopify_read` (DML role):
 
   ```sql
