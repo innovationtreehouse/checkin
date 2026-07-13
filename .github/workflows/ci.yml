@@ -246,6 +246,57 @@ jobs:
   # see) slipped through CI and broke the post-merge deploy. Building here gates the MR.
   # It ALSO boots the built image and probes `/` (smoke test) — `docker build` alone can't
   # catch a runtime crash on startup, which only surfaced post-merge as a hung ECS rollout.
+  # The s-read workspaces (s-read-function + s-ingest-core vitest suites) were
+  # invisible to CI — the `test` job runs only checkin-app's jest, so a failing
+  # s-read test could merge green (and nearly did: PR #992's first push carried
+  # a failing normalize test behind all-green checks). Same always-report
+  # pattern as `test` so this can be added as a required check.
+  s-read-tests:
+    name: s-read tests
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip notice (client-only change)
+        if: needs.changes.outputs.app != 'true'
+        run: echo "Only client/** changed — nothing to test; reporting success."
+
+      - name: Checkout code
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}   # empty on push/PR = default ref; the tag when called by deploy-prod
+
+      - name: Setup Node.js
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: needs.changes.outputs.app == 'true'
+        run: npm ci
+
+      # prisma generate only writes clients — no database needed. Both s-read
+      # packages' generated clients are imported by the code under test.
+      - name: Generate Prisma clients
+        if: needs.changes.outputs.app == 'true'
+        run: |
+          npm run db:generate -w @inventory/s-ingest-core
+          npm run db:generate -w @inventory/monitoring-db
+
+      - name: Typecheck s-read-function
+        if: needs.changes.outputs.app == 'true'
+        run: npm run typecheck -w s-read-function
+
+      - name: Test s-ingest-core
+        if: needs.changes.outputs.app == 'true'
+        run: npm test -w @inventory/s-ingest-core
+
+      - name: Test s-read-function
+        if: needs.changes.outputs.app == 'true'
+        run: npm test -w s-read-function
+
   deploy-build:
     name: Deploy build (no deploy)
     needs: changes
