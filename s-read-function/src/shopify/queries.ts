@@ -29,12 +29,13 @@ export const SHOP_PING_QUERY = `
   }
 `;
 
-/** Authoritative store identity, resolved at sync start to derive store_id. */
+/** Authoritative store identity, resolved at sync start to derive store_id.
+ * NOTE: unlike Order/Payout, the Shop type does NOT expose legacyResourceId —
+ * requesting it fails the whole query. The numeric id is derived from the gid. */
 export const SHOP_IDENTITY_QUERY = `
   query ShopIdentity {
     shop {
       id
-      legacyResourceId
       myshopifyDomain
       name
     }
