@@ -5,13 +5,10 @@
  * `associatedOrder`, `sourceOrderTransactionId`, `associatedPayout`) and the `processed_at`
  * search filter all exist.
  *
- * ⚠️ ONE FIELD STILL TO CONFIRM — `PAYOUT_FIELDS.summary` selects `refundsGross`, but the
- * documented sibling on ShopifyPaymentsPayoutSummary is `refundsFeeGross`. GraphQL rejects
- * the ENTIRE request on an unknown field, so confirm the exact spelling before the first live
- * payouts run:
- *   https://shopify.dev/docs/api/admin-graphql/2025-07/objects/ShopifyPaymentsPayoutSummary
- * The Zod schemas are lenient (a missing value degrades to 0/undefined), but the query itself
- * must validate.
+ * CONFIRMED live (2026-07-13, first dev payouts run): ShopifyPaymentsPayoutSummary has NO
+ * `refundsGross` — the gross-refunds field is named `refundsFeeGross` (sic; Shopify's naming,
+ * verified against the schema docs and the live API). GraphQL rejects the ENTIRE request on an
+ * unknown field. Internally we still call it refundsGrossCents, because that's what it is.
  */
 
 const MONEY_BAG = `{ shopMoney { amount currencyCode } }`;
@@ -176,7 +173,7 @@ const PAYOUT_FIELDS = `
   summary {
     chargesGross ${MONEY_V2}
     chargesFee ${MONEY_V2}
-    refundsGross ${MONEY_V2}
+    refundsFeeGross ${MONEY_V2}
     refundsFee ${MONEY_V2}
     adjustmentsGross ${MONEY_V2}
     adjustmentsFee ${MONEY_V2}
