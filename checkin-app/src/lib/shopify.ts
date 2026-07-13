@@ -260,7 +260,7 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
 
   try {
     // Determine product title
-    const productTitle = `Program Enrollment: ${name}`;
+    const productTitle = `${name} Program Enrollment`;
 
     // Variants go INLINE in the product-create call. Creating the product bare
     // makes Shopify mint a "Default Title" variant (price $0, requires_shipping
@@ -411,7 +411,7 @@ export async function createShopifySingleVariantProgram(
             },
             body: JSON.stringify({
                 product: {
-                    title: `Program Enrollment: ${name}`,
+                    title: `${name} Program Enrollment`,
                     status: 'active',
                     product_type: "Educational Services",
                     variants: [{
