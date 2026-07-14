@@ -96,7 +96,7 @@ it("coalesce sweeping only RELEASED migrations: passes (rules 1 and 2)", () => {
     expect(r.out).toContain("OK");
 });
 
-it("RULE 2: coalesce sweeping an UNRELEASED migration: blocked", () => {
+it("RULE 2: coalesce (reconcile-bearing) sweeping an UNRELEASED migration: blocked", () => {
     addMigration("0001_a");
     git("tag v1.0.0");
     addMigration("0002_b"); // merged after the release...
@@ -104,8 +104,42 @@ it("RULE 2: coalesce sweeping an UNRELEASED migration: blocked", () => {
     git("tag v1.1.0");
     const r = gate("v1.1.0");
     expect(r.code).toBe(1);
-    expect(r.out).toContain("swept unreleased");
+    expect(r.out).toContain("reconcile.sql");
     expect(r.out).toContain("0002_b");
+});
+
+// ── Dev freedom between tags: the contract is at-tag equivalence only. ──────
+
+it("a plain REVERT of an unreleased migration (no reconcile) is dev's business: passes", () => {
+    addMigration("0001_a");
+    git("tag v1.0.0");
+    addMigration("0002_b");
+    rmSync(path.join(repo, MIG, "0002_b"), { recursive: true });
+    git("add -A");
+    git('commit -q -m "revert: 0002_b was wrong"');
+    addMigration("0002_b2"); // the rework that replaced it
+    git("tag v1.1.0");
+    const r = gate("v1.1.0");
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("OK");
+});
+
+it("consolidating two UNRELEASED migrations into one (no reconcile.sql) passes", () => {
+    addMigration("0001_a");
+    git("tag v1.0.0");
+    addMigration("0002_b");
+    addMigration("0003_c");
+    // rework: replace both with a single combined migration — NOT a coalesce
+    // (no reconcile.sql), so prod just applies the one combined dir at the tag.
+    for (const d of ["0002_b", "0003_c"]) rmSync(path.join(repo, MIG, d), { recursive: true });
+    mkdirSync(path.join(repo, MIG, "0004_bc"), { recursive: true });
+    writeFileSync(path.join(repo, MIG, "0004_bc", "migration.sql"), "-- b+c\n");
+    git("add -A");
+    git('commit -q -m "rework: consolidate b+c"');
+    git("tag v1.1.0");
+    const r = gate("v1.1.0");
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("OK");
 });
 
 it("version-sorted tag order: v1.2.10 gates against v1.2.9, not lexically", () => {

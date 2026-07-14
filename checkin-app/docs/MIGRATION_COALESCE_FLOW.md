@@ -17,11 +17,22 @@ earlier at PR time by `migration-safety.yml`). Coalescing *before* a release
 sweeps migrations prod has never applied, and the ledger reconcile would mark
 their DDL applied without running it — silent schema loss.
 
-### The tag rule
+### The contract: equivalence at tags, freedom between them
+
+Dev and prod must be schema-identical **at every release tag** — that is the
+whole contract. **Between tags, dev history is free**: merge a migration,
+revert it, rework two into one — prod never saw those intermediate dirs and
+simply applies whatever the tag ships (dev repairs its own database along
+the way; that's dev's business). The guards below constrain exactly one
+artifact, because it is the only one that can break the contract silently.
+
+### The tag rule (reconcile-bearing baselines only)
 
 A coalesce baseline's `reconcile.sql` rewrites an environment's ledger to
 "baseline applied" **without running any DDL** — which is only truthful if
-that environment already applied every swept migration. Dev always has
+that environment already applied every migration the baseline stands in for.
+A plain revert or rework (no `reconcile.sql`) needs no guard: the DDL leaves
+the schema along with the file, and the tag stays self-consistent. Dev always has
 (it migrates on every merge). **Prod sits at the last release tag** — so a
 coalesce that sweeps an unreleased migration would, after reconcile, leave
 prod's ledger claiming DDL that never ran there: silent schema loss that

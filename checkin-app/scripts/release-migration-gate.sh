@@ -13,11 +13,14 @@
 #     then release the second. Coalescing before a release is NOT the fix —
 #     see RULE 2.
 #
-#   RULE 2 — NOTHING SWEPT UNRELEASED. Every migration added anywhere in the
-#     window must still exist at the released tag. A coalesce that sweeps an
-#     unreleased migration erases DDL prod has never run, while its ledger
-#     reconcile marks it applied — silent schema loss. An endpoint diff cannot
-#     see added-then-swept-inside-the-window, so this walks the commits.
+#   RULE 2 — A RECONCILE MAY ONLY STAND IN FOR RELEASED MIGRATIONS. Between
+#     tags, dev history is FREE: migrations may be added, reverted, or
+#     reworked — prod never saw them and simply applies whatever the tag
+#     ships. The one dangerous artifact is a coalesce baseline's
+#     reconcile.sql: it rewrites the ledger to "baseline applied" WITHOUT
+#     running DDL — only truthful if the baseline replaces exactly what prod
+#     already applied: the previous tag's chain. So any commit introducing a
+#     reconcile.sql may only delete migration dirs present at the previous tag.
 #
 # Exit codes: 0 = pass (or first release: nothing to gate), 1 = violation.
 # Tested by scripts/__tests__/release-migration-gate.test.ts on scratch repos.
@@ -67,17 +70,22 @@ if [ "${#ADDED[@]}" -gt 1 ]; then
     exit 1
 fi
 
-# ── RULE 2: nothing swept unreleased (commit-walk; endpoint diffs are blind
-#    to added-then-swept-inside-the-window). ──────────────────────────────────
-mapfile -t WINDOW_ADDED < <(git log --no-renames --diff-filter=A --name-only --format= "$PREV_TAG"..HEAD -- "$MIG_DIR" |
-    awk -F/ 'NF>=5 {print $4}' | sort -u)
-MISSING=()
-for d in "${WINDOW_ADDED[@]}"; do
-    [ -d "$MIG_DIR/$d" ] || MISSING+=("$d")
+# ── RULE 2: reconcile-bearing coalesces may only sweep RELEASED migrations.
+#    (Endpoint diffs are blind to added-then-swept-inside-the-window, so this
+#    walks the window's commits — but ONLY commits that introduce a
+#    reconcile.sql; plain reverts/rework between tags are dev's freedom.) ─────
+mapfile -t PREV_DIRS < <(git ls-tree --name-only "$PREV_TAG" -- "$MIG_DIR/" |
+    awk -F/ '{print $NF}' | grep -v '^migration_lock.toml$' | sort -u)
+mapfile -t COALESCE_COMMITS < <(git log --no-renames --diff-filter=A --format=%H "$PREV_TAG"..HEAD -- "$MIG_DIR/*/reconcile.sql")
+for c in "${COALESCE_COMMITS[@]}"; do
+    mapfile -t SWEPT < <(git diff-tree --no-renames --name-status -r "$c^" "$c" -- "$MIG_DIR" |
+        awk '$1=="D" {print $2}' | awk -F/ 'NF>=5 {print $4}' | sort -u)
+    for d in "${SWEPT[@]}"; do
+        if ! printf '%s\n' "${PREV_DIRS[@]}" | grep -qxF "$d"; then
+            echo "::error::RULE 2: coalesce commit ${c:0:10} sweeps migration '$d', which is NOT in the previous release ($PREV_TAG). Prod never ran its DDL, and the baseline's reconcile.sql would mark it applied anyway — silent schema loss. A reconcile may only stand in for released migrations: coalesce AFTER a release, sweeping only that release's chain (MIGRATION_COALESCE_FLOW.md, 'The tag rule')."
+            exit 1
+        fi
+    done
 done
-if [ "${#MISSING[@]}" -gt 0 ]; then
-    echo "::error::RULE 2: migration(s) ${MISSING[*]} were merged after $PREV_TAG but are GONE at $CURRENT_TAG — a coalesce swept unreleased work. Prod (at $PREV_TAG) never ran their DDL, and the ledger reconcile would mark it applied anyway. Only coalesce migrations already contained in a release (MIGRATION_COALESCE_FLOW.md, 'The tag rule')."
-    exit 1
-fi
 
-echo "OK — at most one new migration, and nothing merged since $PREV_TAG was swept."
+echo "OK — at most one new migration, and every reconcile-bearing coalesce swept only released migrations."

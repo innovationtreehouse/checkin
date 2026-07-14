@@ -101,13 +101,19 @@ jobs:
           if [ "${#REMOVED[@]}" -ge 2 ] && [ "${#ADDED[@]}" -eq 1 ]; then
             echo "Shape matches a coalesce PR — routing to the schema-identity check."
 
-            # TAG-ANCESTRY GUARD: a coalesce may only sweep migrations already
-            # contained in the latest v* release. Prod sits at that tag, and the
-            # ledger reconcile marks the swept set applied WITHOUT running any
-            # DDL — so sweeping an unreleased migration silently drops its DDL
-            # from prod forever (see MIGRATION_COALESCE_FLOW.md, "The tag rule").
+            # TAG-ANCESTRY GUARD — applies ONLY to reconcile-bearing baselines.
+            # Between tags dev history is free (revert/rework at will); prod
+            # never saw those dirs. But a baseline's reconcile.sql rewrites the
+            # ledger WITHOUT running DDL, so it may only stand in for
+            # migrations the latest v* release actually shipped — sweeping an
+            # unreleased one silently drops its DDL from prod forever
+            # (see MIGRATION_COALESCE_FLOW.md, "The tag rule").
             git fetch --tags --force --quiet
             LATEST_TAG=$(git tag -l 'v*' | sort -V | tail -1)
+            if [ ! -f "checkin-app/prisma/migrations/${ADDED[0]}/reconcile.sql" ]; then
+              echo "Added dir has no reconcile.sql — rework/consolidation shape; tag-ancestry guard not applicable."
+              LATEST_TAG=""
+            fi
             if [ -n "$LATEST_TAG" ]; then
               for d in "${REMOVED[@]}"; do
                 if ! git ls-tree -d "$LATEST_TAG" -- "checkin-app/prisma/migrations/$d" | grep -q .; then
